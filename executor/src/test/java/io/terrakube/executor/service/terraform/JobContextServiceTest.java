@@ -14,6 +14,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class JobContextServiceTest {
@@ -28,6 +29,29 @@ class JobContextServiceTest {
 
         assertEquals(1234, connection.getConnectTimeout());
         assertEquals(5678, connection.getReadTimeout());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void getCurrentContextThrowsWhenTheContextCannotBeRead() throws Exception {
+        TerrakubeClient terrakubeClient = Mockito.mock(TerrakubeClient.class);
+        Job job = new Job();
+        job.setId("100");
+        JobAttributes attrs = new JobAttributes();
+        attrs.setStatus("running");
+        job.setAttributes(attrs);
+        ResponseWithInclude<Job, ?> jobDataResponse = new ResponseWithInclude<>();
+        jobDataResponse.setData(job);
+        Mockito.when(terrakubeClient.getJobById("org-1", "100")).thenReturn((ResponseWithInclude) jobDataResponse);
+
+        JobContextService service = Mockito.spy(new JobContextService(
+                Mockito.mock(WorkspaceSecurity.class), new ObjectMapper(), "http://localhost:8080", terrakubeClient));
+        HttpURLConnection connection = Mockito.mock(HttpURLConnection.class);
+        Mockito.when(connection.getResponseCode()).thenReturn(503);
+        Mockito.doReturn(connection).when(service).buildConnection("http://localhost:8080/context/v1/100", "GET");
+
+        // An empty map here would be merged and saved over the stored context by every caller.
+        assertThrows(IllegalStateException.class, () -> service.getCurrentContext("org-1", "100"));
     }
 
     @Test

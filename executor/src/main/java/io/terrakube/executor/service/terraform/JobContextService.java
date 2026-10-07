@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.UncheckedIOException;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
@@ -57,6 +58,11 @@ public class JobContextService {
                 DEFAULT_CONNECT_TIMEOUT_MS, DEFAULT_READ_TIMEOUT_MS);
     }
 
+    /**
+     * Throws when the context cannot be read, so read-merge-write callers skip their write instead
+     * of saving an otherwise empty context over the stored one. A job that is no longer running
+     * still reads as empty: its context can no longer be written either.
+     */
     public Map<String, Object> getCurrentContext(String organizationId, String jobId) {
         HttpURLConnection connection = null;
         try {
@@ -64,13 +70,13 @@ public class JobContextService {
             if (jobInfo.getAttributes().getStatus().equals("running")) {
                 log.info("Job {} exists, Terrakube should be able to get the context", jobId);
             } else {
-                throw new IllegalStateException("Job is not running, cannot get context");
+                log.warn("Job {} is not running, cannot get context", jobId);
+                return new HashMap<>();
             }
             connection = buildConnection(terrakubeApiUrl + "/context/v1/" + jobInfo.getId(), "GET");
             int statusCode = connection.getResponseCode();
             if (statusCode >= 400) {
-                log.warn("Unable to read context for job {}. Response status: {}", jobInfo.getId(), statusCode);
-                return new HashMap<>();
+                throw new IllegalStateException("Unable to read context for job " + jobInfo.getId() + ". Response status: " + statusCode);
             }
 
             String body = readResponseBody(connection);
@@ -80,9 +86,8 @@ public class JobContextService {
 
             return objectMapper.readValue(body, new TypeReference<>() {
             });
-        } catch (Exception ex) {
-            log.warn("Unable to read context for job {}", jobId, ex);
-            return new HashMap<>();
+        } catch (IOException ex) {
+            throw new UncheckedIOException("Unable to read context for job " + jobId, ex);
         } finally {
             if (connection != null) {
                 connection.disconnect();

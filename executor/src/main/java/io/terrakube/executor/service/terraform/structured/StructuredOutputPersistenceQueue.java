@@ -268,8 +268,8 @@ public class StructuredOutputPersistenceQueue {
                 persisting = false;
                 continue;
             }
-            afterDequeue.run();
             try {
+                afterDequeue.run();
                 persistWithRetry(snapshot);
             } catch (Throwable t) {
                 log.warn("structured-output worker skipped a snapshot for job {} step {}: {}",
