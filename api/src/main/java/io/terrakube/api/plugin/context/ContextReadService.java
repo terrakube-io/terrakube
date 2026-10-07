@@ -127,6 +127,17 @@ public class ContextReadService {
         }
     }
 
+    /**
+     * Read straight from the object store, bypassing the cache and single-flight, then refresh the
+     * cache with the result. For read-modify-write callers that must not see a stale snapshot.
+     */
+    public String readFresh(int jobId) {
+        countRequest("bypass");
+        String fresh = loadFromStore(jobId);
+        invalidate(jobId, fresh);
+        return fresh;
+    }
+
     private CompletableFuture<String> startLoad(int jobId) {
         CompletableFuture<String> future = new CompletableFuture<>();
         try {

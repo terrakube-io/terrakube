@@ -3,6 +3,7 @@ package io.terrakube.api.plugin.context;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import io.terrakube.api.plugin.security.user.AuthenticatedUser;
 import io.terrakube.api.plugin.storage.StorageTypeService;
 import io.terrakube.api.plugin.streaming.StreamingService;
 import io.terrakube.api.repository.JobRepository;
@@ -15,16 +16,29 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
 import java.io.IOException;
+import java.security.Principal;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class ContextControllerTest {
+
+    private final Principal executorPrincipal = Mockito.mock(Principal.class);
+
+    private final Principal uiPrincipal = Mockito.mock(Principal.class);
+
+    private AuthenticatedUser authenticatedUser() {
+        AuthenticatedUser authenticatedUser = Mockito.mock(AuthenticatedUser.class);
+        when(authenticatedUser.isServiceAccountInternal(Mockito.any()))
+                .thenAnswer(invocation -> invocation.<com.yahoo.elide.core.security.User>getArgument(0).getPrincipal() == executorPrincipal);
+        return authenticatedUser;
+    }
 
     private ContextController controller(StorageTypeService storageTypeService, JobRepository jobRepository) {
         return controller(storageTypeService, jobRepository, new SimpleMeterRegistry());
@@ -36,7 +50,7 @@ class ContextControllerTest {
         ContextReadService readService = new ContextReadService(storageTypeService, storageMetrics, properties, meterRegistry);
         io.terrakube.api.plugin.policy.PolicyEvaluationService policyEvaluationService = Mockito.mock(io.terrakube.api.plugin.policy.PolicyEvaluationService.class);
         return new ContextController(storageTypeService, jobRepository, new ContextSanitizer(new ObjectMapper()),
-                Mockito.mock(StreamingService.class), storageMetrics, readService, properties, policyEvaluationService);
+                Mockito.mock(StreamingService.class), storageMetrics, readService, properties, policyEvaluationService, authenticatedUser());
     }
 
     @Test
@@ -146,7 +160,7 @@ class ContextControllerTest {
                 """);
         ContextController controller = controller(storageTypeService, jobRepository);
 
-        ResponseEntity<String> response = controller.getContext(22);
+        ResponseEntity<String> response = controller.getContext(22, uiPrincipal);
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertFalse(response.getBody().contains("\"value\":\"0\""));
@@ -267,7 +281,7 @@ class ContextControllerTest {
         SimpleMeterRegistry registry = new SimpleMeterRegistry();
         ContextController controller = controller(storageTypeService, jobRepository, registry);
 
-        ResponseEntity<String> response = controller.getContext(9);
+        ResponseEntity<String> response = controller.getContext(9, uiPrincipal);
 
         assertEquals(HttpStatus.SERVICE_UNAVAILABLE, response.getStatusCode());
         assertTrue(response.getBody().contains("\"state\":\"UNAVAILABLE\""));
@@ -283,7 +297,7 @@ class ContextControllerTest {
         when(storageTypeService.getContext(4)).thenReturn(null);
         ContextController controller = controller(storageTypeService, jobRepository);
 
-        ResponseEntity<String> response = controller.getContext(4);
+        ResponseEntity<String> response = controller.getContext(4, uiPrincipal);
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertTrue(response.getBody().contains("\"state\":\"PENDING\""));
@@ -301,11 +315,49 @@ class ContextControllerTest {
         ContextController controller = controller(storageTypeService, jobRepository);
 
         controller.saveContext(1, "{\"planStructuredOutput\":{\"step-1\":[]}}");
-        ResponseEntity<String> read = controller.getContext(1);
+        ResponseEntity<String> read = controller.getContext(1, uiPrincipal);
 
         assertEquals(HttpStatus.OK, read.getStatusCode());
         assertTrue(read.getBody().contains("\"planStructuredOutput\""));
         verify(storageTypeService, never()).getContext(1);
+    }
+
+    @Test
+    void executorReadBypassesStaleCacheAndReturnsStorageValue() throws IOException {
+        StorageTypeService storageTypeService = Mockito.mock(StorageTypeService.class);
+        JobRepository jobRepository = Mockito.mock(JobRepository.class);
+        Job job = Mockito.mock(Job.class);
+        when(job.getStatus()).thenReturn(JobStatus.running);
+        when(jobRepository.findById(1)).thenReturn(Optional.of(job));
+        when(storageTypeService.saveContext(Mockito.eq(1), Mockito.anyString()))
+                .thenAnswer(invocation -> invocation.getArgument(1));
+        ContextController controller = controller(storageTypeService, jobRepository);
+        // This pod caches the "stale" write; a newer snapshot then lands in storage via another replica.
+        controller.saveContext(1, "{\"planStructuredOutput\":{\"stale\":[]}}");
+        when(storageTypeService.getContext(1)).thenReturn("{\"planStructuredOutput\":{\"fresh\":[]}}");
+
+        ResponseEntity<String> read = controller.getContext(1, executorPrincipal);
+
+        assertEquals(HttpStatus.OK, read.getStatusCode());
+        assertTrue(read.getBody().contains("\"fresh\""));
+        verify(storageTypeService, times(1)).getContext(1);
+        // The fresh value also replaces the stale cache entry for UI readers.
+        assertTrue(controller.getContext(1, uiPrincipal).getBody().contains("\"fresh\""));
+        verify(storageTypeService, times(1)).getContext(1);
+    }
+
+    @Test
+    void uiReadIsServedFromCache() throws IOException {
+        StorageTypeService storageTypeService = Mockito.mock(StorageTypeService.class);
+        JobRepository jobRepository = Mockito.mock(JobRepository.class);
+        when(storageTypeService.getContext(1)).thenReturn("{\"planStructuredOutput\":{}}");
+        ContextController controller = controller(storageTypeService, jobRepository);
+
+        controller.getContext(1, uiPrincipal);
+        ResponseEntity<String> read = controller.getContext(1, uiPrincipal);
+
+        assertEquals(HttpStatus.OK, read.getStatusCode());
+        verify(storageTypeService, times(1)).getContext(1);
     }
 
     @Test
@@ -338,7 +390,7 @@ class ContextControllerTest {
         ContextController controller = new ContextController(storageTypeService, jobRepository,
                 new ContextSanitizer(new ObjectMapper()), streamingService, storageMetrics,
                 new ContextReadService(storageTypeService, storageMetrics, properties, registry), properties,
-                Mockito.mock(io.terrakube.api.plugin.policy.PolicyEvaluationService.class));
+                Mockito.mock(io.terrakube.api.plugin.policy.PolicyEvaluationService.class), authenticatedUser());
 
         controller.streamContext("42", null);
 

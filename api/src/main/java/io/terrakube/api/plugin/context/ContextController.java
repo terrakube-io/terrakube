@@ -1,6 +1,7 @@
 package io.terrakube.api.plugin.context;
 
 import com.fasterxml.jackson.core.JacksonException;
+import com.yahoo.elide.core.security.User;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.connection.stream.RecordId;
@@ -11,6 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+import io.terrakube.api.plugin.security.user.AuthenticatedUser;
 import io.terrakube.api.plugin.storage.StorageTypeService;
 import io.terrakube.api.plugin.streaming.StreamingService;
 import io.terrakube.api.repository.JobRepository;
@@ -18,6 +20,7 @@ import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
 
 import java.io.IOException;
+import java.security.Principal;
 import java.util.EnumSet;
 import java.util.Optional;
 import java.util.Set;
@@ -54,11 +57,16 @@ public class ContextController {
 
     private final io.terrakube.api.plugin.policy.PolicyEvaluationService policyEvaluationService;
 
+    private final AuthenticatedUser authenticatedUser;
+
     @GetMapping(value = "/{jobId}", produces = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<String> getContext(@PathVariable("jobId") int jobId) {
+    public ResponseEntity<String> getContext(@PathVariable("jobId") int jobId, Principal principal) {
+        // The executor merges its output into what it reads here and writes it back, so a stale
+        // per-pod cache entry would overwrite newer data; only UI polling is served from the cache.
+        boolean executor = principal != null && authenticatedUser.isServiceAccountInternal(new User(principal));
         String context;
         try {
-            context = contextReadService.read(jobId);
+            context = executor ? contextReadService.readFresh(jobId) : contextReadService.read(jobId);
         } catch (RuntimeException e) {
             log.warn("Controlled context-read failure for job {}: {}", jobId, e.getMessage());
             return unavailable();
