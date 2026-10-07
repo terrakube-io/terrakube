@@ -1,10 +1,12 @@
 package io.terrakube.registry.configuration;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
+@Slf4j
 @Configuration
 public class DownloadCountExecutorConfig {
 
@@ -12,8 +14,8 @@ public class DownloadCountExecutorConfig {
     // (ModuleServiceImpl.updateModuleDownloadCount), so it never blocks the Terraform-facing
     // metadata response (ModuleWebServiceImpl.getModuleVersionPath). Deliberately small: this is
     // one lightweight, best-effort API call per module download, not a fan-out. A full queue
-    // rejects rather than blocks the caller - a dropped update only affects a non-critical
-    // download counter, never the client-visible response.
+    // drops the update (logged, no exception) rather than blocking or failing the caller - a
+    // dropped update only affects a non-critical download counter, never the client-visible response.
     @Bean("downloadCountExecutor")
     public ThreadPoolTaskExecutor downloadCountExecutor(
             @Value("${io.terrakube.registry.download-count.executor.corePoolSize:2}") int corePoolSize,
@@ -24,6 +26,8 @@ public class DownloadCountExecutorConfig {
         executor.setMaxPoolSize(maxPoolSize);
         executor.setQueueCapacity(queueCapacity);
         executor.setThreadNamePrefix("download-count-");
+        executor.setRejectedExecutionHandler((task, pool) ->
+                log.warn("Download-count executor saturated, dropping a module download-count update"));
         executor.initialize();
         return executor;
     }
