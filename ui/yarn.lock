@@ -859,6 +859,22 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@dagrejs/dagre@npm:^3.1.1":
+  version: 3.1.1
+  resolution: "@dagrejs/dagre@npm:3.1.1"
+  dependencies:
+    "@dagrejs/graphlib": "npm:4.0.5"
+  checksum: 10c0/e2607e941e54407d07650c13b7c4c6aca1466e12d56fd7d1e704eab686837b049700f05ca9a723aa34f027ec71bee61914594339a0e74b1f4ad7b69c5fa55242
+  languageName: node
+  linkType: hard
+
+"@dagrejs/graphlib@npm:4.0.5":
+  version: 4.0.5
+  resolution: "@dagrejs/graphlib@npm:4.0.5"
+  checksum: 10c0/698c9ceb996bc1da3a4a141858db57b8380854d412fcd5c9daa48f159f385fc0fb07ef84967409c224d3a82fb8460018d871657c90175bffd9b34ef9c538c1f7
+  languageName: node
+  linkType: hard
+
 "@emnapi/core@npm:1.10.0":
   version: 1.10.0
   resolution: "@emnapi/core@npm:1.10.0"
@@ -4995,6 +5011,7 @@ __metadata:
   resolution: "azb-client@workspace:."
   dependencies:
     "@ant-design/icons": "npm:^6.3.4"
+    "@dagrejs/dagre": "npm:^3.1.1"
     "@eslint/js": "npm:^10.0.1"
     "@monaco-editor/react": "npm:^4.7.0"
     "@scalar/api-reference-react": "npm:^0.9.77"

@@ -4,7 +4,9 @@ import com.yahoo.elide.annotation.LifeCycleHookBinding;
 import com.yahoo.elide.core.lifecycle.LifeCycleHook;
 import com.yahoo.elide.core.security.ChangeSpec;
 import com.yahoo.elide.core.security.RequestScope;
+import io.terrakube.api.plugin.scheduler.trigger.MissingPlanOnlyTemplateException;
 import io.terrakube.api.plugin.scheduler.trigger.WorkspaceGraphValidationService;
+import io.terrakube.api.rs.workspace.trigger.RunTriggerOnDestroyPolicy;
 import io.terrakube.api.rs.workspace.trigger.WorkspaceRunTrigger;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -53,6 +55,13 @@ public class WorkspaceRunTriggerHook implements LifeCycleHook<WorkspaceRunTrigge
                     trigger.getSourceWorkspace().getId(),
                     trigger.isEnabled());
         }
+
+        if (planOnlyTemplateApplies(operation, changes)
+                && trigger.getOnDestroy() == RunTriggerOnDestroyPolicy.PLAN_ONLY
+                && trigger.getOnDestroyPlanTemplate() == null) {
+            throw new MissingPlanOnlyTemplateException(
+                    "Run trigger " + trigger.getId() + " has onDestroy=PLAN_ONLY but no onDestroyPlanTemplate set");
+        }
     }
 
     /**
@@ -88,6 +97,22 @@ public class WorkspaceRunTriggerHook implements LifeCycleHook<WorkspaceRunTrigge
         }
         return changes.filter(c -> "enabled".equals(c.getFieldName()) && Boolean.TRUE.equals(c.getModified()))
                 .or(() -> changes.filter(c -> "sourceWorkspace".equals(c.getFieldName())))
+                .isPresent();
+    }
+
+    /**
+     * True on create, and on an update that touches either {@code onDestroy} or {@code
+     * onDestroyPlanTemplate} - the only two fields whose combination this check cares about.
+     */
+    private boolean planOnlyTemplateApplies(LifeCycleHookBinding.Operation operation, Optional<ChangeSpec> changes) {
+        if (operation == LifeCycleHookBinding.Operation.CREATE) {
+            return true;
+        }
+        if (operation != LifeCycleHookBinding.Operation.UPDATE) {
+            return false;
+        }
+        return changes.filter(c -> "onDestroy".equals(c.getFieldName())
+                        || "onDestroyPlanTemplate".equals(c.getFieldName()))
                 .isPresent();
     }
 }

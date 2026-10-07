@@ -24,6 +24,16 @@ public interface RunTriggerEventRepository extends JpaRepository<RunTriggerEvent
 
     Optional<RunTriggerEvent> findByJob_Id(int jobId);
 
+    /**
+     * Backs the admin listing endpoint - operator-facing, so newest first. Joins {@code job}
+     * (and its {@code workspace}) in the same query: the endpoint reads both off every row it
+     * returns, and without the fetch join that would be a lazy-init query per row instead.
+     */
+    @Query("SELECT e FROM run_trigger_event e JOIN FETCH e.job j JOIN FETCH j.workspace "
+            + "WHERE e.status = :status ORDER BY e.createdDate DESC")
+    List<RunTriggerEvent> findByStatusOrderByCreatedDateDesc(
+            @Param("status") RunTriggerEventStatus status, Pageable pageable);
+
     // Atomic claim: flips PENDING -> PROCESSING in one statement, so only one of several
     // concurrent callers (overlapping poller cycle, another replica) ever sees rows == 1.
     @Modifying(clearAutomatically = true)

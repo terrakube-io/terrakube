@@ -1,9 +1,9 @@
-import { Button, Drawer, Popconfirm, Table, Typography, message } from "antd";
+import { Button, Popconfirm, Table, Typography, message } from "antd";
 import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import CascadeStatusTag from "@/components/display/CascadeStatusTag/CascadeStatusTag";
 import { RunCascadeRow, RunCascadeStatus } from "@/domain/types";
 import { cancelCascade, getAdminErrorMessage, listCascadesForWorkspace } from "@/modules/cascades/cascadeService";
-import { CascadeGraph } from "./CascadeGraph";
 
 type Props = {
   organizationId: string;
@@ -18,7 +18,6 @@ const CANCELLABLE_STATUSES = [RunCascadeStatus.Running, RunCascadeStatus.Degrade
 export const Cascades = ({ organizationId, workspaceId, workspaceName }: Props) => {
   const [cascades, setCascades] = useState<RunCascadeRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedCascadeId, setSelectedCascadeId] = useState<string>();
 
   const loadCascades = useCallback(() => {
     setLoading(true);
@@ -63,9 +62,9 @@ export const Cascades = ({ organizationId, workspaceId, workspaceName }: Props) 
       key: "action",
       render: (_: string, record: RunCascadeRow) => (
         <>
-          <Button type="link" onClick={() => setSelectedCascadeId(record.id)}>
-            View
-          </Button>
+          <Link to={`/organizations/${organizationId}/workspaces/${workspaceId}/cascades/${record.id}`}>
+            <Button type="link">View</Button>
+          </Link>
           {CANCELLABLE_STATUSES.includes(record.status) && (
             <Popconfirm
               okButtonProps={{ danger: true }}
@@ -101,15 +100,6 @@ export const Cascades = ({ organizationId, workspaceId, workspaceName }: Props) 
         pagination={false}
         locale={{ emptyText: "No cascade has started from this workspace yet." }}
       />
-      <Drawer
-        width="70%"
-        title="Cascade"
-        open={!!selectedCascadeId}
-        onClose={() => setSelectedCascadeId(undefined)}
-        destroyOnClose
-      >
-        {selectedCascadeId && <CascadeGraph cascadeId={selectedCascadeId} organizationId={organizationId} />}
-      </Drawer>
     </div>
   );
 };

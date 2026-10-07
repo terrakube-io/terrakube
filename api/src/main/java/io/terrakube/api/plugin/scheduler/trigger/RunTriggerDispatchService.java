@@ -12,8 +12,10 @@ import io.terrakube.api.rs.cascade.RunCascade;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.job.step.Step;
+import io.terrakube.api.rs.template.Template;
 import io.terrakube.api.rs.workspace.Workspace;
 import io.terrakube.api.rs.workspace.history.History;
+import io.terrakube.api.rs.workspace.trigger.RunTriggerOnDestroyPolicy;
 import io.terrakube.api.rs.workspace.trigger.WorkspaceRunTrigger;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -118,10 +120,19 @@ public class RunTriggerDispatchService {
         // coming. A no-op for a job outside any cascade, which is still most of them today.
         cascadeCoordinatorService.resolveNode(completedJob);
 
-        if (!changedState(completedJob)) {
+        // Fetched once and classified once: every completed step's flow type is read from its
+        // job's TCL (a full YAML parse, no caching) exactly one time each, shared by both the
+        // state-changed check and the onDestroy check below, instead of two separate per-step
+        // loops each paying that parse again.
+        List<Step> steps = stepRepository.findByJobId(completedJobId);
+        StepFlowClassification classification = classifyCompletedSteps(completedJob, steps);
+        if (!changedState(completedJob, classification)) {
             log.debug("Job {} changed no state, no run trigger dispatched", completedJobId);
             return;
         }
+        // Only matters per-edge below, via each trigger's own onDestroy - EACH/TRIGGER (the
+        // only behavior before this) ignores it entirely, so this costs nothing for them.
+        boolean wasDestroy = classification.wasDestroy();
 
         // Checked before loading the edges: at the limit the answer is the same for every
         // dependent, and saying so once is more useful than repeating it per edge.
@@ -154,11 +165,25 @@ public class RunTriggerDispatchService {
             // Per-dependent isolation: one workspace missing a template, or failing to
             // schedule, must not cost the dependents that come after it in the list.
             try {
+                if (wasDestroy && trigger.getOnDestroy() == RunTriggerOnDestroyPolicy.IGNORE) {
+                    // The edge only reacts to non-destroy state changes - behaves as if it
+                    // weren't there for this dispatch. The node is left exactly as it was,
+                    // ready to react normally to a later, non-destroy run.
+                    continue;
+                }
+                if (wasDestroy && trigger.getOnDestroy() == RunTriggerOnDestroyPolicy.BLOCK) {
+                    // "Reject the destroy" can only mean rejecting what it would have done to
+                    // THIS edge's destination: a destroy can fan out across several edges with
+                    // different policies, so refusing to run the destroy itself was never an
+                    // option - RunCascadeNodeStatus.BLOCKED already anticipates exactly this.
+                    cascadeCoordinatorService.blockNode(cascade, trigger);
+                    continue;
+                }
                 // EACH (the only mode before this) is unconditionally true here - never gated.
                 if (!cascadeCoordinatorService.shouldDispatch(cascade, trigger)) {
                     continue;
                 }
-                Job created = enqueue(trigger, completedJob, nextDepth);
+                Job created = enqueue(trigger, completedJob, nextDepth, wasDestroy);
                 if (created != null) {
                     cascadeCoordinatorService.recordDispatch(cascade, trigger, created);
                 }
@@ -178,37 +203,56 @@ public class RunTriggerDispatchService {
     }
 
     /**
-     * True when at least one step that actually ran changed remote state.
-     * 1. A state-changing flow type (apply, destroy, customScripts) must have completed.
-     * 2. For Terraform flows (apply, destroy), state identity (serial, md5) is compared
-     *    against the baseline immediately prior to this state's write time.
-     *    If serial did not increase and md5 did not change, remote state was untouched.
+     * One pass over a job's completed steps, reading each step's flow type exactly once - the
+     * single shared source for both {@link #changedState} and whether this run was a destroy,
+     * rather than each re-deriving it with its own loop over the same steps.
      */
-    private boolean changedState(Job job) {
-        List<Step> steps = stepRepository.findByJobId(job.getId());
+    private record StepFlowClassification(boolean hasStateChangingFlow, boolean hasTerraformFlow,
+            boolean wasDestroy) {
+    }
+
+    private StepFlowClassification classifyCompletedSteps(Job job, List<Step> steps) {
         boolean hasStateChangingFlow = false;
         boolean hasTerraformFlow = false;
+        boolean wasDestroy = false;
 
         for (Step step : steps) {
             if (step.getStatus() != JobStatus.completed) {
                 continue;
             }
             String flowType = tclService.getFlowTypeForStep(job, step.getStepNumber());
-            if (flowType != null) {
-                if (TERRAFORM_STATE_FLOWS.contains(flowType)) {
-                    hasTerraformFlow = true;
-                    hasStateChangingFlow = true;
-                } else if (STATE_CHANGING_FLOWS.contains(flowType)) {
-                    hasStateChangingFlow = true;
-                }
+            if (flowType == null) {
+                continue;
+            }
+            if (TERRAFORM_STATE_FLOWS.contains(flowType)) {
+                hasTerraformFlow = true;
+                hasStateChangingFlow = true;
+            } else if (STATE_CHANGING_FLOWS.contains(flowType)) {
+                hasStateChangingFlow = true;
+            }
+            // Not terraformPlanDestroy, which only plans destroying this same workspace and
+            // has nothing to do with what an edge's onDestroy policy means for a dependent.
+            if (FlowType.terraformDestroy.toString().equals(flowType)) {
+                wasDestroy = true;
             }
         }
 
-        if (!hasStateChangingFlow) {
+        return new StepFlowClassification(hasStateChangingFlow, hasTerraformFlow, wasDestroy);
+    }
+
+    /**
+     * True when at least one step that actually ran changed remote state.
+     * 1. A state-changing flow type (apply, destroy, customScripts) must have completed.
+     * 2. For Terraform flows (apply, destroy), state identity (serial, md5) is compared
+     *    against the baseline immediately prior to this state's write time.
+     *    If serial did not increase and md5 did not change, remote state was untouched.
+     */
+    private boolean changedState(Job job, StepFlowClassification classification) {
+        if (!classification.hasStateChangingFlow()) {
             return false;
         }
 
-        if (!hasTerraformFlow) {
+        if (!classification.hasTerraformFlow()) {
             return true;
         }
 
@@ -250,8 +294,9 @@ public class RunTriggerDispatchService {
     }
 
     /** @return the job created, or null if this dependent had no template to run and was skipped. */
-    private Job enqueue(WorkspaceRunTrigger trigger, Job completedJob, int depth) throws Exception {
+    private Job enqueue(WorkspaceRunTrigger trigger, Job completedJob, int depth, boolean wasDestroy) throws Exception {
         Workspace destination = trigger.getDestinationWorkspace();
+        boolean planOnly = wasDestroy && trigger.getOnDestroy() == RunTriggerOnDestroyPolicy.PLAN_ONLY;
 
         // Idempotency key for this fan-out edge: a RunTriggerEvent can be reclaimed and
         // reprocessed (lease expiry, a crashed pod, a slow recordResult) after some dependents
@@ -261,15 +306,22 @@ public class RunTriggerDispatchService {
                 .findFirstByWorkspaceAndTriggeredByJobIdOrderByIdDesc(destination, completedJob.getId());
         if (existingJob.isPresent()) {
             reconcilePreviouslyEnqueued(existingJob.get(), completedJob, destination);
-            return;
+            return existingJob.get();
         }
 
         // Resolved here rather than in the writer: it reads fields already loaded by the
         // dispatch query, so it costs nothing and keeps the writer to a single concern.
-        String templateReference = resolveTemplate(trigger, destination);
+        String templateReference = planOnly ? resolvePlanOnlyTemplate(trigger) : resolveTemplate(trigger, destination);
         if (templateReference == null || templateReference.isBlank()) {
-            log.warn("Run trigger {} has no template and workspace {} has no default template, skipping",
-                    trigger.getId(), destination.getName());
+            if (planOnly) {
+                // No fallback on purpose: the destination's default template could just as
+                // easily be an apply template, which would defeat PLAN_ONLY entirely.
+                log.warn("Run trigger {} is PLAN_ONLY on destroy but has no plan-only template configured, skipping",
+                        trigger.getId());
+            } else {
+                log.warn("Run trigger {} has no template and workspace {} has no default template, skipping",
+                        trigger.getId(), destination.getName());
+            }
             return null;
         }
 
@@ -331,6 +383,12 @@ public class RunTriggerDispatchService {
             return trigger.getTemplate().getId().toString();
         }
         return destination.getDefaultTemplate();
+    }
+
+    /** No destination-default fallback - see the PLAN_ONLY branch in {@link #enqueue}. */
+    private String resolvePlanOnlyTemplate(WorkspaceRunTrigger trigger) {
+        Template planTemplate = trigger.getOnDestroyPlanTemplate();
+        return planTemplate != null ? planTemplate.getId().toString() : null;
     }
 
     private static String destinationName(WorkspaceRunTrigger trigger) {

@@ -11,6 +11,9 @@ public interface RunCascadeNodeAttemptRepository extends JpaRepository<RunCascad
 
     List<RunCascadeNodeAttempt> findByNode_IdOrderByAttemptNumberAsc(UUID nodeId);
 
+    /** The most recent attempt dispatched for a node - what a retry reuses the template from. */
+    Optional<RunCascadeNodeAttempt> findTopByNode_IdOrderByAttemptNumberDesc(UUID nodeId);
+
     /** Whether a completed job is itself part of an existing cascade - how a chained completion continues one. */
     Optional<RunCascadeNodeAttempt> findByJob_Id(int jobId);
 }

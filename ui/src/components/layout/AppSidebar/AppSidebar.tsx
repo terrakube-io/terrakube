@@ -6,6 +6,7 @@ import {
   BellOutlined,
   BgColorsOutlined,
   BranchesOutlined,
+  ClusterOutlined,
   CloudOutlined,
   CodeOutlined,
   DashboardOutlined,
@@ -184,6 +185,8 @@ export default function AppSidebar({
       setDefaultSelected(["registry"]);
     } else if (location.pathname.includes("projects")) {
       setDefaultSelected(["projects"]);
+    } else if (location.pathname.includes("dependency-graph")) {
+      setDefaultSelected(["dependency-graph"]);
     } else if (orgIdFromUrl) {
       setDefaultSelected(["workspaces"]);
     } else {
@@ -460,6 +463,7 @@ export default function AppSidebar({
             ? [
                 { key: "projects", name: "Projects", icon: <ProjectOutlined /> },
                 { key: "workspaces", name: "Workspaces", icon: <AppstoreOutlined /> },
+                { key: "dependency-graph", name: "Dependency Graph", icon: <ClusterOutlined /> },
                 { key: "registry", name: "Registry", icon: <CloudOutlined /> },
                 { key: "settings", name: "Settings", icon: <SettingOutlined /> },
               ].map((item) => ({

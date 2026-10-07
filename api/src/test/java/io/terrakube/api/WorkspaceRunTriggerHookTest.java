@@ -2,10 +2,13 @@ package io.terrakube.api;
 
 import com.yahoo.elide.annotation.LifeCycleHookBinding;
 import com.yahoo.elide.core.security.ChangeSpec;
+import io.terrakube.api.plugin.scheduler.trigger.MissingPlanOnlyTemplateException;
 import io.terrakube.api.plugin.scheduler.trigger.WorkspaceGraphValidationService;
 import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.hooks.trigger.WorkspaceRunTriggerHook;
+import io.terrakube.api.rs.template.Template;
 import io.terrakube.api.rs.workspace.Workspace;
+import io.terrakube.api.rs.workspace.trigger.RunTriggerOnDestroyPolicy;
 import io.terrakube.api.rs.workspace.trigger.WorkspaceRunTrigger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -13,6 +16,7 @@ import org.junit.jupiter.api.Test;
 import java.util.Optional;
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.eq;
@@ -128,6 +132,52 @@ class WorkspaceRunTriggerHookTest {
                 trigger, null, Optional.of(new ChangeSpec(null, "sourceWorkspace", UUID.randomUUID(), trigger.getSourceWorkspace())));
 
         verify(graphValidationService).validateFanOutLimit(trigger.getSourceWorkspace().getId(), true);
+    }
+
+    /** The UI requires a plan-only template client-side; the hook is what enforces it server-side. */
+    @Test
+    void createWithPlanOnlyAndNoTemplateIsRejected() {
+        WorkspaceRunTrigger trigger = trigger(true);
+        trigger.setOnDestroy(RunTriggerOnDestroyPolicy.PLAN_ONLY);
+
+        assertThatThrownBy(() -> hook.execute(LifeCycleHookBinding.Operation.CREATE,
+                LifeCycleHookBinding.TransactionPhase.PRECOMMIT, trigger, null, Optional.empty()))
+                .isInstanceOf(MissingPlanOnlyTemplateException.class);
+    }
+
+    @Test
+    void createWithPlanOnlyAndATemplateIsAccepted() {
+        WorkspaceRunTrigger trigger = trigger(true);
+        trigger.setOnDestroy(RunTriggerOnDestroyPolicy.PLAN_ONLY);
+        Template planTemplate = new Template();
+        planTemplate.setId(UUID.randomUUID());
+        trigger.setOnDestroyPlanTemplate(planTemplate);
+
+        hook.execute(LifeCycleHookBinding.Operation.CREATE, LifeCycleHookBinding.TransactionPhase.PRECOMMIT,
+                trigger, null, Optional.empty());
+    }
+
+    /** Flipping an existing TRIGGER edge over to PLAN_ONLY without a template must still be caught. */
+    @Test
+    void updateChangingOnDestroyToPlanOnlyWithNoTemplateIsRejected() {
+        WorkspaceRunTrigger trigger = trigger(true);
+        trigger.setOnDestroy(RunTriggerOnDestroyPolicy.PLAN_ONLY);
+
+        assertThatThrownBy(() -> hook.execute(LifeCycleHookBinding.Operation.UPDATE,
+                LifeCycleHookBinding.TransactionPhase.PRECOMMIT, trigger, null,
+                Optional.of(new ChangeSpec(null, "onDestroy", RunTriggerOnDestroyPolicy.TRIGGER,
+                        RunTriggerOnDestroyPolicy.PLAN_ONLY))))
+                .isInstanceOf(MissingPlanOnlyTemplateException.class);
+    }
+
+    /** An update to an unrelated field on an already-invalid row must not be newly rejected by it. */
+    @Test
+    void updateOfAnUnrelatedFieldSkipsThePlanOnlyCheck() {
+        WorkspaceRunTrigger trigger = trigger(true);
+        trigger.setOnDestroy(RunTriggerOnDestroyPolicy.PLAN_ONLY);
+
+        hook.execute(LifeCycleHookBinding.Operation.UPDATE, LifeCycleHookBinding.TransactionPhase.PRECOMMIT,
+                trigger, null, Optional.of(new ChangeSpec(null, "template", null, null)));
     }
 
     @Test

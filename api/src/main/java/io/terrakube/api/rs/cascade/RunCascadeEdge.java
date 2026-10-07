@@ -11,6 +11,7 @@ import com.yahoo.elide.annotation.Include;
 import com.yahoo.elide.annotation.ReadPermission;
 import com.yahoo.elide.annotation.UpdatePermission;
 import io.terrakube.api.plugin.security.audit.GenericAuditFields;
+import io.terrakube.api.rs.template.Template;
 import io.terrakube.api.rs.workspace.Workspace;
 import io.terrakube.api.rs.workspace.trigger.RunTriggerOnDestroyPolicy;
 import io.terrakube.api.rs.workspace.trigger.RunTriggerSynchronizationMode;
@@ -67,6 +68,11 @@ public class RunCascadeEdge extends GenericAuditFields {
     @Enumerated(EnumType.STRING)
     @Column(name = "on_destroy")
     private RunTriggerOnDestroyPolicy onDestroy;
+
+    /** Copied from the live edge at snapshot time - see {@link WorkspaceRunTrigger#getOnDestroyPlanTemplate()}. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "plan_template_id")
+    private Template planTemplate;
 
     /** Traceability only - the live row this snapshot came from may since have changed or been deleted. */
     @ManyToOne(fetch = FetchType.LAZY)

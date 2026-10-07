@@ -1,4 +1,10 @@
-import { DownOutlined, PoweroffOutlined, SettingOutlined, UserOutlined } from "@ant-design/icons";
+import {
+  DownOutlined,
+  PoweroffOutlined,
+  SafetyCertificateOutlined,
+  SettingOutlined,
+  UserOutlined,
+} from "@ant-design/icons";
 import { Avatar, Dropdown } from "antd";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
@@ -46,6 +52,10 @@ export const UserMenu = () => {
           <Link to="/settings/tokens" className="user-menu-item" onClick={() => setIsOpen(false)}>
             <SettingOutlined className="user-menu-item-icon" />
             <span>Account settings</span>
+          </Link>
+          <Link to="/admin/run-trigger-events" className="user-menu-item" onClick={() => setIsOpen(false)}>
+            <SafetyCertificateOutlined className="user-menu-item-icon" />
+            <span>Admin</span>
           </Link>
           <button type="button" className="user-menu-item" onClick={signOutClickHandler}>
             <PoweroffOutlined className="user-menu-item-icon" />

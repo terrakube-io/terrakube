@@ -98,7 +98,11 @@ public class RunCascadeCoordinatorService {
     /**
      * BFS forward from a node that just resolved unsuccessfully, blocking every PENDING
      * descendant whose readiness condition can no longer be satisfied, and propagating from
-     * each of those in turn - a BLOCKED node can itself strand further descendants.
+     * each of those in turn - a BLOCKED node can itself strand further descendants. Each
+     * descendant is read through the same row lock {@link #shouldDispatch} and {@link
+     * #blockNode} take: without it, a concurrent transaction could dispatch that same node to
+     * {@code RUNNING} and commit between this method's read and its write, and the stale
+     * in-memory copy would then overwrite that commit back to {@code BLOCKED}.
      */
     private void propagateBlocking(RunCascade cascade, Workspace unsuccessfulWorkspace) {
         Deque<UUID> frontier = new ArrayDeque<>();
@@ -110,7 +114,7 @@ public class RunCascadeCoordinatorService {
                     .findByCascade_IdAndSourceWorkspace_Id(cascade.getId(), sourceId)) {
                 Workspace destination = edge.getDestinationWorkspace();
                 RunCascadeNode destinationNode = runCascadeNodeRepository
-                        .findByCascade_IdAndWorkspace_Id(cascade.getId(), destination.getId())
+                        .lockByCascade_IdAndWorkspace_IdForUpdate(cascade.getId(), destination.getId())
                         .orElse(null);
                 if (destinationNode == null || destinationNode.getStatus() != RunCascadeNodeStatus.PENDING) {
                     continue;
@@ -192,8 +196,14 @@ public class RunCascadeCoordinatorService {
         }
 
         Workspace destination = trigger.getDestinationWorkspace();
+        // Locked, not a plain read: this is reached from concurrent transactions - the event
+        // worker's claim only dedupes one event row, not the destination node shared by two
+        // different parents of the same ANY/ALL join. Without the lock, two parents completing
+        // at nearly the same time could both read PENDING before either commits RUNNING and
+        // both dispatch. The second transaction blocks here until the first commits, then
+        // re-reads and correctly sees the node already RUNNING.
         RunCascadeNode node = runCascadeNodeRepository
-                .findByCascade_IdAndWorkspace_Id(cascade.getId(), destination.getId())
+                .lockByCascade_IdAndWorkspace_IdForUpdate(cascade.getId(), destination.getId())
                 .orElse(null);
         // Missing would mean the destination isn't part of this cascade's snapshot at all,
         // which should never happen for an edge the snapshot itself was built from.
@@ -216,6 +226,29 @@ public class RunCascadeCoordinatorService {
             return true;
         }
         return false;
+    }
+
+    /**
+     * Blocks this edge's destination instead of dispatching it - the {@code BLOCK} branch of
+     * {@code onDestroy}, called in place of {@link #shouldDispatch} for a destroy-originated
+     * event. Locked the same way {@code shouldDispatch} is: another parent of the same join
+     * could be dispatching or blocking concurrently, and whichever gets there first should win
+     * rather than both racing to set a different status on the same row. A no-op once the node
+     * has already left {@code PENDING} - including a second BLOCK edge into the same join.
+     */
+    @Transactional
+    public void blockNode(RunCascade cascade, WorkspaceRunTrigger trigger) {
+        Workspace destination = trigger.getDestinationWorkspace();
+        RunCascadeNode node = runCascadeNodeRepository
+                .lockByCascade_IdAndWorkspace_IdForUpdate(cascade.getId(), destination.getId())
+                .orElse(null);
+        if (node == null || node.getStatus() != RunCascadeNodeStatus.PENDING) {
+            return;
+        }
+        node.setStatus(RunCascadeNodeStatus.BLOCKED);
+        runCascadeNodeRepository.save(node);
+        propagateBlocking(cascade, destination);
+        metrics.nodeBlocked();
     }
 
     /** Records the attempt just dispatched for this edge's destination, within the snapshot. */
@@ -271,7 +304,15 @@ public class RunCascadeCoordinatorService {
 
     // ---------------------------------------------------------------- operator actions
 
-    /** Re-dispatches a failed or skipped node, with a fresh attempt against the same template. */
+    /**
+     * Re-dispatches a failed or skipped node, with a fresh attempt against the same template as
+     * its last one - read directly off that attempt's job, not re-derived from the inbound
+     * edges. A node can have several inbound edges with different policies (an everyday
+     * {@code TRIGGER} edge alongside an unrelated {@code PLAN_ONLY} one into the same join);
+     * re-deriving from scratch would have no way to know which edge actually produced the
+     * attempt being retried and could silently substitute a different template than the one
+     * that just failed.
+     */
     @Transactional
     public Job retryNode(UUID nodeId) {
         RunCascadeNode node = runCascadeNodeRepository.findById(nodeId)
@@ -282,10 +323,19 @@ public class RunCascadeCoordinatorService {
         }
 
         RunCascade cascade = node.getCascade();
-        Job createdJob = dispatchNode(cascade, node);
+        String templateReference = lastAttemptTemplate(node);
+        Job createdJob = dispatchNode(cascade, node, templateReference);
         recomputeStatus(cascade.getId());
         metrics.nodeRetried();
         return createdJob;
+    }
+
+    /** The template actually dispatched last time, so a retry really is "the same template". */
+    private String lastAttemptTemplate(RunCascadeNode node) {
+        return runCascadeNodeAttemptRepository.findTopByNode_IdOrderByAttemptNumberDesc(node.getId())
+                .map(RunCascadeNodeAttempt::getJob)
+                .map(Job::getTemplateReference)
+                .orElse(null);
     }
 
     /**
@@ -311,7 +361,7 @@ public class RunCascadeCoordinatorService {
             return Optional.empty();
         }
 
-        Job createdJob = dispatchNode(cascade, node);
+        Job createdJob = dispatchNode(cascade, node, resolveTemplateForNode(cascade, node.getWorkspace()));
         recomputeStatus(cascade.getId());
         metrics.nodeResumed(true);
         return Optional.ofNullable(createdJob);
@@ -360,14 +410,12 @@ public class RunCascadeCoordinatorService {
     }
 
     /**
-     * Dispatches a fresh attempt for {@code node}, resolving its template the same way the
-     * first attempt did. Operator-triggered, not on the hot fan-out loop's own per-dependent
-     * try/catch, so a scheduling failure here is reported as an unchecked exception rather than
-     * silently logged.
+     * Dispatches a fresh attempt for {@code node} against {@code templateReference}. Operator-
+     * triggered, not on the hot fan-out loop's own per-dependent try/catch, so a scheduling
+     * failure here is reported as an unchecked exception rather than silently logged.
      */
-    private Job dispatchNode(RunCascade cascade, RunCascadeNode node) {
+    private Job dispatchNode(RunCascade cascade, RunCascadeNode node, String templateReference) {
         Workspace destination = node.getWorkspace();
-        String templateReference = resolveTemplateForNode(cascade, destination);
         if (templateReference == null || templateReference.isBlank()) {
             throw new IllegalStateException(
                     "Workspace " + destination.getName() + " has no template to dispatch with");
@@ -393,11 +441,17 @@ public class RunCascadeCoordinatorService {
      * then the destination's default - same precedence {@code RunTriggerDispatchService} uses
      * for a first attempt. The live trigger can be gone (the FK is {@code SET NULL}) if it was
      * deleted since the snapshot was taken, in which case this falls through to the default.
+     *
+     * <p>Only used by {@link #resumeNode} - a previously-{@code BLOCKED} node's first real
+     * dispatch, not itself a destroy propagation, so {@code onDestroy}'s {@code PLAN_ONLY}
+     * template never applies here. {@link #retryNode} does not call this: it reuses the exact
+     * template its last attempt already dispatched with.
      */
     private String resolveTemplateForNode(RunCascade cascade, Workspace destination) {
-        return runCascadeEdgeRepository
-                .findByCascade_IdAndDestinationWorkspace_Id(cascade.getId(), destination.getId())
-                .stream()
+        List<RunCascadeEdge> inbound = runCascadeEdgeRepository
+                .findByCascade_IdAndDestinationWorkspace_Id(cascade.getId(), destination.getId());
+
+        return inbound.stream()
                 .map(RunCascadeEdge::getSourceTrigger)
                 .filter(java.util.Objects::nonNull)
                 .map(WorkspaceRunTrigger::getTemplate)
@@ -459,6 +513,7 @@ public class RunCascadeCoordinatorService {
         edge.setDestinationWorkspace(trigger.getDestinationWorkspace());
         edge.setSynchronizationMode(trigger.getSynchronizationMode());
         edge.setOnDestroy(trigger.getOnDestroy());
+        edge.setPlanTemplate(trigger.getOnDestroyPlanTemplate());
         edge.setSourceTrigger(trigger);
         runCascadeEdgeRepository.save(edge);
     }

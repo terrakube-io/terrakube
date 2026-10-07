@@ -1,9 +1,31 @@
-import { DeleteOutlined, PlusOutlined } from "@ant-design/icons";
-import { Alert, Button, Form, message, Modal, Popconfirm, Select, Space, Switch, Table, Tag, Typography } from "antd";
+import { ClusterOutlined, DeleteOutlined, EditOutlined, PlusOutlined } from "@ant-design/icons";
+import {
+  Alert,
+  Button,
+  Flex,
+  Form,
+  message,
+  Modal,
+  Popconfirm,
+  Select,
+  Space,
+  Switch,
+  Table,
+  Tag,
+  Typography,
+} from "antd";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { LinkButton } from "@/components/navigation/LinkButton";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
-import { RunTrigger, RunTriggerRow, Template, Workspace } from "../types";
+import {
+  RunTrigger,
+  RunTriggerOnDestroyPolicy,
+  RunTriggerRow,
+  RunTriggerSynchronizationMode,
+  Template,
+  Workspace,
+} from "../types";
 import "./Workspaces.css";
 
 type Props = {
@@ -16,6 +38,36 @@ type Props = {
 type TriggerForm = {
   sourceWorkspaceId: string;
   templateId?: string;
+  synchronizationMode: RunTriggerSynchronizationMode;
+  onDestroy: RunTriggerOnDestroyPolicy;
+  onDestroyPlanTemplateId?: string;
+};
+
+const SYNCHRONIZATION_MODE_OPTIONS = [
+  { label: "EACH - run every time a parent succeeds", value: RunTriggerSynchronizationMode.Each },
+  { label: "ANY - run once, on the first parent to succeed", value: RunTriggerSynchronizationMode.Any },
+  { label: "ALL - run once, only after every parent has succeeded", value: RunTriggerSynchronizationMode.All },
+];
+
+const ON_DESTROY_OPTIONS = [
+  { label: "TRIGGER - a destroy fires this edge like any other run", value: RunTriggerOnDestroyPolicy.Trigger },
+  { label: "PLAN_ONLY - plan the drift on a destroy, never apply it", value: RunTriggerOnDestroyPolicy.PlanOnly },
+  { label: "BLOCK - block this destination instead of running it", value: RunTriggerOnDestroyPolicy.Block },
+  { label: "IGNORE - a destroy does not fire this edge at all", value: RunTriggerOnDestroyPolicy.Ignore },
+];
+
+const SYNC_MODE_TAG_COLOR: Record<RunTriggerSynchronizationMode, string> = {
+  [RunTriggerSynchronizationMode.Each]: "default",
+  [RunTriggerSynchronizationMode.Any]: "blue",
+  [RunTriggerSynchronizationMode.All]: "purple",
+};
+
+const SYNC_MODE_COLUMN = {
+  title: "Sync mode",
+  key: "synchronizationMode",
+  render: (_: string, record: RunTriggerRow) => (
+    <Tag color={SYNC_MODE_TAG_COLOR[record.synchronizationMode]}>{record.synchronizationMode}</Tag>
+  ),
 };
 
 /** Every resource in an include block, keyed so an edge can resolve its own ends. */
@@ -40,13 +92,15 @@ export const RunTriggers = ({ organizationId, workspaceId, workspaceName, manage
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(true);
   const [visible, setVisible] = useState(false);
+  const [editingRow, setEditingRow] = useState<RunTriggerRow>();
+  const onDestroy = Form.useWatch("onDestroy", form);
 
   const loadTriggers = useCallback(() => {
     setLoading(true);
     axiosInstance
       .get("runTrigger", {
         params: {
-          include: "sourceWorkspace,destinationWorkspace,template",
+          include: "sourceWorkspace,destinationWorkspace,template,onDestroyPlanTemplate",
           // Both directions in one round trip: a comma is OR in Elide's filter syntax.
           "filter[runTrigger]": `sourceWorkspace.id==${workspaceId},destinationWorkspace.id==${workspaceId}`,
         },
@@ -58,6 +112,7 @@ export const RunTriggers = ({ organizationId, workspaceId, workspaceName, manage
         const toRow = (trigger: RunTrigger, otherEnd: "sourceWorkspace" | "destinationWorkspace"): RunTriggerRow => {
           const otherId = trigger.relationships[otherEnd]?.data?.id;
           const templateId = trigger.relationships.template?.data?.id;
+          const onDestroyPlanTemplateId = trigger.relationships.onDestroyPlanTemplate?.data?.id;
           return {
             id: trigger.id,
             enabled: trigger.attributes.enabled,
@@ -65,6 +120,10 @@ export const RunTriggers = ({ organizationId, workspaceId, workspaceName, manage
             workspaceName: nameOf(index, "workspace", otherId) ?? otherId,
             templateId,
             templateName: nameOf(index, "template", templateId),
+            synchronizationMode: trigger.attributes.synchronizationMode,
+            onDestroy: trigger.attributes.onDestroy,
+            onDestroyPlanTemplateId,
+            onDestroyPlanTemplateName: nameOf(index, "template", onDestroyPlanTemplateId),
           };
         };
 
@@ -107,35 +166,76 @@ export const RunTriggers = ({ organizationId, workspaceId, workspaceName, manage
 
   const onAdd = () => {
     loadPickerData();
+    setEditingRow(undefined);
     form.resetFields();
+    form.setFieldsValue({
+      synchronizationMode: RunTriggerSynchronizationMode.Each,
+      onDestroy: RunTriggerOnDestroyPolicy.Trigger,
+    });
     setVisible(true);
   };
 
-  const onCreate = (values: TriggerForm) => {
-    const relationships: Record<string, unknown> = {
-      // This workspace is the destination: it is the one that will start running. That is
-      // also the end the API checks manage rights on, so this is the direction that can be
-      // configured from here.
-      sourceWorkspace: { data: { type: "workspace", id: values.sourceWorkspaceId } },
-      destinationWorkspace: { data: { type: "workspace", id: workspaceId } },
+  const onEdit = (row: RunTriggerRow) => {
+    loadPickerData();
+    setEditingRow(row);
+    form.setFieldsValue({
+      sourceWorkspaceId: row.workspaceId,
+      templateId: row.templateId,
+      synchronizationMode: row.synchronizationMode,
+      onDestroy: row.onDestroy,
+      onDestroyPlanTemplateId: row.onDestroyPlanTemplateId,
+    });
+    setVisible(true);
+  };
+
+  const onSubmit = (values: TriggerForm) => {
+    const attributes: Record<string, unknown> = {
+      synchronizationMode: values.synchronizationMode,
+      onDestroy: values.onDestroy,
     };
-    if (values.templateId) {
-      relationships.template = { data: { type: "template", id: values.templateId } };
+    const relationships: Record<string, unknown> = {
+      template: values.templateId ? { data: { type: "template", id: values.templateId } } : { data: null },
+      onDestroyPlanTemplate:
+        values.onDestroy === RunTriggerOnDestroyPolicy.PlanOnly && values.onDestroyPlanTemplateId
+          ? { data: { type: "template", id: values.onDestroyPlanTemplateId } }
+          : { data: null },
+    };
+
+    const onSuccess = (verb: string) => {
+      message.success(`Run trigger ${verb} successfully`);
+      setVisible(false);
+      form.resetFields();
+      loadTriggers();
+    };
+    const onFailure = (err: unknown) => message.error(getErrorMessage(err));
+
+    if (editingRow) {
+      axiosInstance
+        .patch(
+          `runTrigger/${editingRow.id}`,
+          { data: { type: "runTrigger", id: editingRow.id, attributes, relationships } },
+          { headers: { "Content-Type": "application/vnd.api+json" } }
+        )
+        .then(() => onSuccess("updated"))
+        .catch(onFailure);
+      return;
     }
+
+    attributes.enabled = true;
+    // This workspace is the destination: it is the one that will start running. That is
+    // also the end the API checks manage rights on, so this is the direction that can be
+    // configured from here. Immutable once created - only PATCH-able fields are sent above.
+    relationships.sourceWorkspace = { data: { type: "workspace", id: values.sourceWorkspaceId } };
+    relationships.destinationWorkspace = { data: { type: "workspace", id: workspaceId } };
 
     axiosInstance
       .post(
         "runTrigger",
-        { data: { type: "runTrigger", attributes: { enabled: true }, relationships } },
+        { data: { type: "runTrigger", attributes, relationships } },
         { headers: { "Content-Type": "application/vnd.api+json" } }
       )
-      .then(() => {
-        message.success("Run trigger created successfully");
-        setVisible(false);
-        form.resetFields();
-        loadTriggers();
-      })
-      .catch((err) => message.error(getErrorMessage(err)));
+      .then(() => onSuccess("created"))
+      .catch(onFailure);
   };
 
   const onToggle = (row: RunTriggerRow, enabled: boolean) => {
@@ -196,6 +296,7 @@ export const RunTriggers = ({ organizationId, workspaceId, workspaceName, manage
             <Typography.Text type="secondary">Default template</Typography.Text>
           ),
       },
+      SYNC_MODE_COLUMN,
       {
         title: "Enabled",
         key: "enabled",
@@ -211,23 +312,28 @@ export const RunTriggers = ({ organizationId, workspaceId, workspaceName, manage
         title: "Actions",
         key: "action",
         render: (_: string, record: RunTriggerRow) => (
-          <Popconfirm
-            okButtonProps={{ danger: true }}
-            onConfirm={() => onDelete(record.id)}
-            title={
-              <p>
-                This will stop <b>{workspaceName}</b> from running after <b>{record.workspaceName}</b>.
-                <br />
-                Are you sure?
-              </p>
-            }
-            okText="Yes"
-            cancelText="No"
-          >
-            <Button danger type="link" icon={<DeleteOutlined />} disabled={!manageWorkspace}>
-              Delete
+          <>
+            <Button type="link" icon={<EditOutlined />} disabled={!manageWorkspace} onClick={() => onEdit(record)}>
+              Edit
             </Button>
-          </Popconfirm>
+            <Popconfirm
+              okButtonProps={{ danger: true }}
+              onConfirm={() => onDelete(record.id)}
+              title={
+                <p>
+                  This will stop <b>{workspaceName}</b> from running after <b>{record.workspaceName}</b>.
+                  <br />
+                  Are you sure?
+                </p>
+              }
+              okText="Yes"
+              cancelText="No"
+            >
+              <Button danger type="link" icon={<DeleteOutlined />} disabled={!manageWorkspace}>
+                Delete
+              </Button>
+            </Popconfirm>
+          </>
         ),
       },
     ],
@@ -251,6 +357,7 @@ export const RunTriggers = ({ organizationId, workspaceId, workspaceName, manage
             <Typography.Text type="secondary">Default template</Typography.Text>
           ),
       },
+      SYNC_MODE_COLUMN,
       {
         title: "Enabled",
         key: "enabled",
@@ -263,13 +370,21 @@ export const RunTriggers = ({ organizationId, workspaceId, workspaceName, manage
 
   return (
     <div>
-      <Typography.Title level={2} className="workspace-flush-title">
-        Run triggers
-      </Typography.Title>
-      <Typography.Paragraph type="secondary" className="run-triggers-intro">
-        A run trigger starts a run on one workspace after another one changes state. Only runs that apply, destroy or
-        execute custom scripts fire them - a plan on its own does not.
-      </Typography.Paragraph>
+      <Flex justify="space-between" align="flex-start" wrap gap="small">
+        <div>
+          <Typography.Title level={2} className="workspace-flush-title">
+            Run triggers
+          </Typography.Title>
+          <Typography.Paragraph type="secondary" className="run-triggers-intro">
+            A run trigger starts a run on one workspace after another one changes state. Only runs that apply,
+            destroy or execute custom scripts fire them - a plan on its own does not.
+          </Typography.Paragraph>
+        </div>
+        <LinkButton to={`/organizations/${organizationId}/dependency-graph/${workspaceId}`} icon={<ClusterOutlined />}>
+          View dependency graph
+        </LinkButton>
+      </Flex>
+      <div style={{ marginTop: 24 }} />
 
       <Typography.Title level={4}>Runs after</Typography.Title>
       <Typography.Paragraph type="secondary">
@@ -308,41 +423,49 @@ export const RunTriggers = ({ organizationId, workspaceId, workspaceName, manage
       <Modal
         width="600px"
         open={visible}
-        title="Add source workspace"
-        okText="Create"
+        title={editingRow ? "Edit source workspace" : "Add source workspace"}
+        okText={editingRow ? "Save" : "Create"}
         onCancel={() => setVisible(false)}
         onOk={() => {
           form
             .validateFields()
-            .then(onCreate)
+            .then(onSubmit)
             .catch(() => {});
         }}
       >
-        <Alert
-          type="info"
-          showIcon
-          className="run-triggers-modal-alert"
-          description={
-            <>
-              <b>{workspaceName}</b> will start a run every time the workspace you pick finishes a run that changed
-              state. A dependency that would close a loop is rejected.
-            </>
-          }
-        />
+        {!editingRow && (
+          <Alert
+            type="info"
+            showIcon
+            className="run-triggers-modal-alert"
+            description={
+              <>
+                <b>{workspaceName}</b> will start a run every time the workspace you pick finishes a run that changed
+                state. A dependency that would close a loop is rejected.
+              </>
+            }
+          />
+        )}
         <Form form={form} layout="vertical" name="runTriggerForm">
-          <Form.Item
-            name="sourceWorkspaceId"
-            label="Source workspace"
-            rules={[{ required: true, message: "Source workspace is required!" }]}
-            extra="The workspace whose runs will trigger this one."
-          >
-            <Select
-              showSearch
-              placeholder="Select a workspace"
-              optionFilterProp="label"
-              options={selectableSources.map((item) => ({ label: item.attributes.name, value: item.id }))}
-            />
-          </Form.Item>
+          {editingRow ? (
+            <Form.Item label="Source workspace" extra="Immutable once created - delete and re-add to change it.">
+              <Typography.Text strong>{editingRow.workspaceName}</Typography.Text>
+            </Form.Item>
+          ) : (
+            <Form.Item
+              name="sourceWorkspaceId"
+              label="Source workspace"
+              rules={[{ required: true, message: "Source workspace is required!" }]}
+              extra="The workspace whose runs will trigger this one."
+            >
+              <Select
+                showSearch
+                placeholder="Select a workspace"
+                optionFilterProp="label"
+                options={selectableSources.map((item) => ({ label: item.attributes.name, value: item.id }))}
+              />
+            </Form.Item>
+          )}
           <Form.Item name="templateId" label="Template" extra="Leave empty to use this workspace's default template.">
             <Select
               allowClear
@@ -351,6 +474,30 @@ export const RunTriggers = ({ organizationId, workspaceId, workspaceName, manage
               options={templates.map((item) => ({ label: item.attributes.name, value: item.id }))}
             />
           </Form.Item>
+          <Form.Item
+            name="synchronizationMode"
+            label="Sync mode"
+            extra="How this workspace waits when it has more than one enabled upstream edge."
+          >
+            <Select options={SYNCHRONIZATION_MODE_OPTIONS} />
+          </Form.Item>
+          <Form.Item name="onDestroy" label="On a destroy upstream" extra="What a destroy on the source does here.">
+            <Select options={ON_DESTROY_OPTIONS} />
+          </Form.Item>
+          {onDestroy === RunTriggerOnDestroyPolicy.PlanOnly && (
+            <Form.Item
+              name="onDestroyPlanTemplateId"
+              label="Plan-only template"
+              rules={[{ required: true, message: "A plan-only template is required for the PLAN_ONLY policy!" }]}
+              extra="Dispatched instead of the normal template on a destroy, so the drift is only ever planned."
+            >
+              <Select
+                placeholder="Select a template"
+                optionFilterProp="label"
+                options={templates.map((item) => ({ label: item.attributes.name, value: item.id }))}
+              />
+            </Form.Item>
+          )}
         </Form>
       </Modal>
     </div>

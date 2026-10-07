@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+            http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+
+    <!-- Required when onDestroy is PLAN_ONLY (terrakube-io/terrakube#3629): the template
+         dispatched on the destination instead of its normal one, so a destroy's drift is only
+         ever planned, never applied. Nullable - every existing edge keeps its onDestroy at the
+         default TRIGGER, which never reads this column. -->
+    <changeSet id="2-34-0-run-trigger-on-destroy-plan-template" author="jake">
+        <addColumn tableName="workspace_run_trigger">
+            <column name="on_destroy_plan_template_id" type="varchar(36)">
+                <constraints foreignKeyName="fk_run_trigger_on_destroy_plan_template"
+                             references="template(id)" />
+            </column>
+        </addColumn>
+    </changeSet>
+
+    <!-- Copied from the live edge at snapshot time, same as the rest of RunCascadeEdge. -->
+    <changeSet id="2-34-0-run-cascade-edge-plan-template" author="jake">
+        <addColumn tableName="run_cascade_edge">
+            <column name="plan_template_id" type="varchar(36)">
+                <constraints foreignKeyName="fk_run_cascade_edge_plan_template"
+                             references="template(id)" />
+            </column>
+        </addColumn>
+    </changeSet>
+
+</databaseChangeLog>

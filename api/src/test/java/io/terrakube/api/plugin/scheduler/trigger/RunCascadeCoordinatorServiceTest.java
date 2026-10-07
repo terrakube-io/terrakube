@@ -15,6 +15,7 @@ import io.terrakube.api.rs.cascade.RunCascadeNodeAttempt;
 import io.terrakube.api.rs.cascade.RunCascadeNodeStatus;
 import io.terrakube.api.rs.cascade.RunCascadeStatus;
 import io.terrakube.api.rs.job.Job;
+import io.terrakube.api.rs.template.Template;
 import io.terrakube.api.rs.workspace.Workspace;
 import io.terrakube.api.rs.workspace.trigger.RunTriggerOnDestroyPolicy;
 import io.terrakube.api.rs.workspace.trigger.RunTriggerSynchronizationMode;
@@ -34,6 +35,7 @@ import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 /**
  * The coordinator's own decisions in isolation: EACH never gated, ANY/ALL gated exactly once per
@@ -126,6 +128,11 @@ class RunCascadeCoordinatorServiceTest {
         node.setCascade(cascade);
         node.setWorkspace(workspace);
         node.setStatus(RunCascadeNodeStatus.PENDING);
+        // Stubs both lookups: shouldDispatch/blockNode/propagateBlocking's destination checks
+        // all go through the locked variant, while isSucceeded/isUnsuccessful's plain find is
+        // used when this same node is instead being read as someone else's parent.
+        doReturn(Optional.of(node)).when(runCascadeNodeRepository)
+                .lockByCascade_IdAndWorkspace_IdForUpdate(cascade.getId(), workspace.getId());
         doReturn(Optional.of(node)).when(runCascadeNodeRepository)
                 .findByCascade_IdAndWorkspace_Id(cascade.getId(), workspace.getId());
         return node;
@@ -142,7 +149,7 @@ class RunCascadeCoordinatorServiceTest {
         // No node stub at all - EACH must not even look one up.
         assertThat(subject.shouldDispatch(cascade, trigger)).isTrue();
         assertThat(subject.shouldDispatch(cascade, trigger)).isTrue();
-        verify(runCascadeNodeRepository, never()).findByCascade_IdAndWorkspace_Id(any(), any());
+        verify(runCascadeNodeRepository, never()).lockByCascade_IdAndWorkspace_IdForUpdate(any(), any());
     }
 
     // ---------------------------------------------------------------- ANY
@@ -211,6 +218,8 @@ class RunCascadeCoordinatorServiceTest {
         node.setCascade(cascade);
         node.setWorkspace(workspace);
         node.setStatus(status);
+        // Only ever used here for a *parent* (left/right), checked via isSucceeded/isUnsuccessful's
+        // plain read - not the destination join, which pendingNode() stubs with the locked lookup.
         doReturn(Optional.of(node)).when(runCascadeNodeRepository)
                 .findByCascade_IdAndWorkspace_Id(cascade.getId(), workspace.getId());
     }
@@ -473,6 +482,53 @@ class RunCascadeCoordinatorServiceTest {
         assertThat(nodeC.getStatus()).isEqualTo(RunCascadeNodeStatus.BLOCKED);
     }
 
+    /**
+     * blockNode is the BLOCK branch of onDestroy, called instead of shouldDispatch - it must
+     * reuse the exact same propagateBlocking a FAILED/SKIPPED resolution does, so a BLOCK on one
+     * edge strands a downstream ALL/ANY join exactly like any other kind of unsuccessful parent.
+     */
+    @Test
+    void blockNodePropagatesToStrandedDescendants() {
+        RunCascade cascade = cascade();
+        Workspace a = workspace("a");
+        Workspace b = workspace("b");
+        Workspace c = workspace("c");
+
+        RunCascadeNode nodeB = pendingNode(cascade, b);
+        RunCascadeNode nodeC = pendingNode(cascade, c);
+
+        WorkspaceRunTrigger aToB = trigger(a, b, RunTriggerSynchronizationMode.ALL);
+        WorkspaceRunTrigger bToC = trigger(b, c, RunTriggerSynchronizationMode.ALL);
+        RunCascadeEdge edgeBC = edge(cascade, bToC);
+
+        doReturn(List.of(edgeBC)).when(runCascadeEdgeRepository)
+                .findByCascade_IdAndSourceWorkspace_Id(cascade.getId(), b.getId());
+        doReturn(List.of()).when(runCascadeEdgeRepository)
+                .findByCascade_IdAndSourceWorkspace_Id(cascade.getId(), c.getId());
+        doReturn(List.of(edgeBC)).when(runCascadeEdgeRepository)
+                .findByCascade_IdAndDestinationWorkspace_Id(cascade.getId(), c.getId());
+
+        subject.blockNode(cascade, aToB);
+
+        assertThat(nodeB.getStatus()).isEqualTo(RunCascadeNodeStatus.BLOCKED);
+        assertThat(nodeC.getStatus()).isEqualTo(RunCascadeNodeStatus.BLOCKED);
+        verify(metrics).nodeBlocked();
+    }
+
+    @Test
+    void blockNodeIsANoOpOnceTheNodeHasAlreadyLeftPending() {
+        RunCascade cascade = cascade();
+        Workspace destination = workspace("destination");
+        RunCascadeNode node = pendingNode(cascade, destination);
+        node.setStatus(RunCascadeNodeStatus.RUNNING);
+        WorkspaceRunTrigger trigger = trigger(workspace("source"), destination, RunTriggerSynchronizationMode.EACH);
+
+        subject.blockNode(cascade, trigger);
+
+        assertThat(node.getStatus()).isEqualTo(RunCascadeNodeStatus.RUNNING);
+        verify(metrics, never()).nodeBlocked();
+    }
+
     // ---------------------------------------------------------------- status reduction (blocked/degraded)
 
     @Test
@@ -536,9 +592,8 @@ class RunCascadeCoordinatorServiceTest {
         node.setStatus(RunCascadeNodeStatus.FAILED);
         doReturn(Optional.of(node)).when(runCascadeNodeRepository).findById(node.getId());
         doReturn(Optional.of(cascade)).when(runCascadeRepository).findById(cascade.getId());
-        doReturn(List.of()).when(runCascadeEdgeRepository)
-                .findByCascade_IdAndDestinationWorkspace_Id(cascade.getId(), destination.getId());
         doReturn(List.of(node)).when(runCascadeNodeRepository).findByCascade_Id(cascade.getId());
+        lastAttemptTemplate(node, destination, "default-template-id");
 
         Job retryJob = job(destination, 1);
         doReturn(retryJob).when(jobWriter).persist(destination, "default-template-id", cascade.getOriginJob(), node.getDepth());
@@ -550,6 +605,45 @@ class RunCascadeCoordinatorServiceTest {
         verify(scheduleJobService).createJobContext(retryJob);
         verify(jobNotificationTrigger).notifyStatusChanged(retryJob);
         verify(metrics).nodeRetried();
+    }
+
+    /**
+     * The node can have an unrelated PLAN_ONLY edge into the same join alongside the normal
+     * edge that actually produced the attempt being retried - retry must not let the PLAN_ONLY
+     * template win just because such an edge exists on the node; it is not necessarily why this
+     * particular attempt failed. Reusing the last attempt's own template sidesteps the question
+     * entirely instead of re-guessing which edge is "responsible".
+     */
+    @Test
+    void retryNodeReusesLastAttemptTemplateEvenWithAnUnrelatedPlanOnlyEdge() throws Exception {
+        RunCascade cascade = cascade();
+        cascade.setOriginJob(job(workspace("origin"), 0));
+        Workspace destination = destinationWorkspaceWithTemplate("destination");
+        RunCascadeNode node = pendingNode(cascade, destination);
+        node.setStatus(RunCascadeNodeStatus.FAILED);
+        doReturn(Optional.of(node)).when(runCascadeNodeRepository).findById(node.getId());
+        doReturn(Optional.of(cascade)).when(runCascadeRepository).findById(cascade.getId());
+        doReturn(List.of(node)).when(runCascadeNodeRepository).findByCascade_Id(cascade.getId());
+        lastAttemptTemplate(node, destination, "normal-template-id");
+
+        Job retryJob = job(destination, 1);
+        doReturn(retryJob).when(jobWriter)
+                .persist(destination, "normal-template-id", cascade.getOriginJob(), node.getDepth());
+
+        Job result = subject.retryNode(node.getId());
+
+        assertThat(result).isSameAs(retryJob);
+        verifyNoInteractions(runCascadeEdgeRepository);
+    }
+
+    private void lastAttemptTemplate(RunCascadeNode node, Workspace destination, String templateReference) {
+        Job priorJob = job(destination, 0);
+        priorJob.setTemplateReference(templateReference);
+        RunCascadeNodeAttempt priorAttempt = new RunCascadeNodeAttempt();
+        priorAttempt.setNode(node);
+        priorAttempt.setJob(priorJob);
+        doReturn(Optional.of(priorAttempt)).when(runCascadeNodeAttemptRepository)
+                .findTopByNode_IdOrderByAttemptNumberDesc(node.getId());
     }
 
     @Test

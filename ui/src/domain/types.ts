@@ -501,6 +501,19 @@ export type FlatSchedule = {
 } & ScheduleAttributes;
 
 // Run triggers
+export enum RunTriggerSynchronizationMode {
+  Each = "EACH",
+  Any = "ANY",
+  All = "ALL",
+}
+
+export enum RunTriggerOnDestroyPolicy {
+  Trigger = "TRIGGER",
+  PlanOnly = "PLAN_ONLY",
+  Block = "BLOCK",
+  Ignore = "IGNORE",
+}
+
 export type RunTrigger = {
   id: string;
   attributes: RunTriggerAttributes;
@@ -508,11 +521,14 @@ export type RunTrigger = {
     sourceWorkspace: RelationshipItem;
     destinationWorkspace: RelationshipItem;
     template?: RelationshipItem;
+    onDestroyPlanTemplate?: RelationshipItem;
   };
 };
 
 export type RunTriggerAttributes = {
   enabled: boolean;
+  synchronizationMode: RunTriggerSynchronizationMode;
+  onDestroy: RunTriggerOnDestroyPolicy;
 } & AuditFieldBase;
 
 /** One edge as the run trigger table renders it, with the other end already resolved. */
@@ -523,6 +539,10 @@ export type RunTriggerRow = {
   workspaceName: string;
   templateId?: string;
   templateName?: string;
+  synchronizationMode: RunTriggerSynchronizationMode;
+  onDestroy: RunTriggerOnDestroyPolicy;
+  onDestroyPlanTemplateId?: string;
+  onDestroyPlanTemplateName?: string;
 };
 
 // Run cascades - one upstream job's completion propagating a run across dependent workspaces.

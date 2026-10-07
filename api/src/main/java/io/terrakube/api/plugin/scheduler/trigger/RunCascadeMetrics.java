@@ -36,4 +36,8 @@ public class RunCascadeMetrics {
     public void cascadeCancelled() {
         registry.counter("terrakube.cascade.cancelled").increment();
     }
+
+    public void nodeBlocked() {
+        registry.counter("terrakube.cascade.node.blocked").increment();
+    }
 }

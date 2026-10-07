@@ -5,14 +5,16 @@ import { RunTriggers } from "../RunTriggers";
 
 const getMock = jest.fn();
 const deleteMock = jest.fn();
+const postMock = jest.fn();
+const patchMock = jest.fn();
 
 jest.mock("../../../config/axiosConfig", () => ({
   __esModule: true,
   default: {
     get: (...args: unknown[]) => getMock(...args),
     delete: (...args: unknown[]) => deleteMock(...args),
-    post: jest.fn(),
-    patch: jest.fn(),
+    post: (...args: unknown[]) => postMock(...args),
+    patch: (...args: unknown[]) => patchMock(...args),
   },
   getErrorMessage: () => "error",
 }));
@@ -30,7 +32,7 @@ const bothDirections = {
     data: [
       {
         id: "edge-incoming",
-        attributes: { enabled: true },
+        attributes: { enabled: true, synchronizationMode: "ALL", onDestroy: "TRIGGER" },
         relationships: {
           sourceWorkspace: { data: { type: "workspace", id: SOURCE } },
           destinationWorkspace: { data: { type: "workspace", id: WORKSPACE } },
@@ -39,7 +41,7 @@ const bothDirections = {
       },
       {
         id: "edge-outgoing",
-        attributes: { enabled: false },
+        attributes: { enabled: false, synchronizationMode: "EACH", onDestroy: "TRIGGER" },
         relationships: {
           sourceWorkspace: { data: { type: "workspace", id: WORKSPACE } },
           destinationWorkspace: { data: { type: "workspace", id: DESTINATION } },
@@ -70,7 +72,11 @@ describe("RunTriggers", () => {
   beforeEach(() => {
     getMock.mockReset();
     deleteMock.mockReset();
+    postMock.mockReset();
+    patchMock.mockReset();
     getMock.mockResolvedValue(bothDirections);
+    postMock.mockResolvedValue({});
+    patchMock.mockResolvedValue({});
   });
 
   it("asks the API for both directions in a single request", async () => {
@@ -162,5 +168,63 @@ describe("RunTriggers", () => {
 
     expect(await screen.findByText("This workspace does not run after any other workspace.")).toBeInTheDocument();
     expect(screen.getByText("No workspace runs after this one.")).toBeInTheDocument();
+  });
+
+  it("shows each edge's sync mode", async () => {
+    renderPage();
+
+    await screen.findByRole("link", { name: "network" });
+    expect(screen.getByText("ALL")).toBeInTheDocument();
+    expect(screen.getByText("EACH")).toBeInTheDocument();
+  });
+
+  /**
+   * Editing an existing edge must never touch sourceWorkspace/destinationWorkspace - the API
+   * rejects that from anyone but a superuser, since repointing an edge is really deleting one
+   * dependency and declaring another.
+   */
+  it("edits an existing edge without touching its immutable ends", async () => {
+    renderPage();
+
+    await screen.findByRole("link", { name: "network" });
+    await userEvent.click(screen.getByRole("button", { name: /edit/i }));
+
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("combobox", { name: /sync mode/i }));
+    await userEvent.click(await screen.findByTitle("ANY - run once, on the first parent to succeed"));
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(patchMock).toHaveBeenCalled());
+    const [url, body] = patchMock.mock.calls[0];
+    expect(url).toBe("runTrigger/edge-incoming");
+    expect(body.data.attributes.synchronizationMode).toBe("ANY");
+    expect(body.data.relationships.sourceWorkspace).toBeUndefined();
+    expect(body.data.relationships.destinationWorkspace).toBeUndefined();
+  });
+
+  /** PLAN_ONLY has no safe default template to fall back to, so the UI demands one up front. */
+  it("requires a plan-only template once the PLAN_ONLY policy is picked", async () => {
+    getMock.mockImplementation((url: string) => {
+      if (url === "runTrigger") return Promise.resolve(bothDirections);
+      if (url.includes("/template")) {
+        return Promise.resolve({ data: { data: [{ id: "tpl-plan", attributes: { name: "Plan Only" } }] } });
+      }
+      return Promise.resolve({ data: { data: [{ id: "ws-free", attributes: { name: "free-to-pick" } }] } });
+    });
+    renderPage();
+    await screen.findByRole("link", { name: "network" });
+
+    await userEvent.click(screen.getByRole("button", { name: /add source workspace/i }));
+    await userEvent.click(await screen.findByRole("combobox", { name: /on a destroy upstream/i }));
+    await userEvent.click(await screen.findByTitle("PLAN_ONLY - plan the drift on a destroy, never apply it"));
+
+    expect(await screen.findByRole("combobox", { name: /plan-only template/i })).toBeInTheDocument();
+  });
+
+  it("links to this workspace's own scoped dependency graph", async () => {
+    renderPage();
+
+    const link = await screen.findByRole("link", { name: /view dependency graph/i });
+    expect(link).toHaveAttribute("href", `/organizations/org-1/dependency-graph/${WORKSPACE}`);
   });
 });

@@ -12,12 +12,6 @@ jest.mock("@/modules/cascades/cascadeService", () => ({
   getAdminErrorMessage: () => "error",
 }));
 
-// The drawer's graph view is CascadeGraph's own concern (CascadeGraph.test.tsx) - stubbed here
-// so this file only asserts on the list/cancel behavior.
-jest.mock("../CascadeGraph", () => ({
-  CascadeGraph: ({ cascadeId }: { cascadeId: string }) => <div>graph for {cascadeId}</div>,
-}));
-
 const renderPage = () =>
   render(
     <MemoryRouter>
@@ -81,12 +75,11 @@ describe("Cascades", () => {
     expect(await screen.findByText("Cancelled")).toBeInTheDocument();
   });
 
-  it("opens the graph drawer for the selected cascade", async () => {
+  it("links View to the cascade's own page, not a drawer", async () => {
     listMock.mockResolvedValue([{ id: "cascade-1", status: "RUNNING", originJobId: "900" }]);
     renderPage();
 
-    await userEvent.click(await screen.findByRole("button", { name: /view/i }));
-
-    expect(await screen.findByText("graph for cascade-1")).toBeInTheDocument();
+    const viewLink = (await screen.findByRole("button", { name: /view/i })).closest("a");
+    expect(viewLink).toHaveAttribute("href", "/organizations/org-1/workspaces/ws-1/cascades/cascade-1");
   });
 });

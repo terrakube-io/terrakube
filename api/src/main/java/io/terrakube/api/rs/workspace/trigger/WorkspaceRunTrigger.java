@@ -5,6 +5,7 @@ import com.yahoo.elide.annotation.Exclude;
 import com.yahoo.elide.annotation.DeletePermission;
 import com.yahoo.elide.annotation.Include;
 import com.yahoo.elide.annotation.LifeCycleHookBinding;
+import com.yahoo.elide.annotation.Paginate;
 import com.yahoo.elide.annotation.ReadPermission;
 import com.yahoo.elide.annotation.UpdatePermission;
 import io.terrakube.api.plugin.security.audit.GenericAuditFields;
@@ -42,9 +43,16 @@ import java.util.UUID;
  * changing an edge requires manage rights on the destination - see
  * {@code TeamManageWorkspaceTrigger}.
  *
- * <p>{@code synchronizationMode} and {@code onDestroy} are declared here per edge but read by
- * the cascade coordinator, not by this class - today's dispatch path ignores both.
+ * <p>{@code synchronizationMode} and {@code onDestroy} are declared here per edge and read by
+ * {@code RunTriggerDispatchService}/{@code RunCascadeCoordinatorService} at dispatch time, not
+ * by this class itself.
+ *
+ * <p>Paginated well above Elide's 500-row framework default (same fix as {@code Tag}/
+ * {@code WorkspaceTag}): the organization dependency graph fetches every edge in one request,
+ * and silently truncating that for a large organization would drop real edges from the graph
+ * rather than erroring, which is worse than just returning everything up to a generous cap.
  */
+@Paginate(defaultPageSize = 10000, maxPageSize = 10000)
 @ReadPermission(expression = "team view workspace trigger")
 @CreatePermission(expression = "team manage workspace trigger")
 @UpdatePermission(expression = "team manage workspace trigger")
@@ -122,6 +130,16 @@ public class WorkspaceRunTrigger extends GenericAuditFields {
     @Enumerated(EnumType.STRING)
     @Column(name = "on_destroy", nullable = false)
     private RunTriggerOnDestroyPolicy onDestroy = RunTriggerOnDestroyPolicy.TRIGGER;
+
+    /**
+     * Required when {@code onDestroy} is {@code PLAN_ONLY}: the template dispatched on the
+     * destination instead of its normal template, so the drift is only ever planned, never
+     * applied. There is no safe default to fall back to here - the destination's own default
+     * template could just as easily be an apply template, which would defeat the policy.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "on_destroy_plan_template_id")
+    private Template onDestroyPlanTemplate;
 
     /**
      * Derives the owning organization from the destination workspace.

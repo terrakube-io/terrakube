@@ -17,6 +17,7 @@ import io.terrakube.api.rs.job.step.Step;
 import io.terrakube.api.rs.template.Template;
 import io.terrakube.api.rs.workspace.Workspace;
 import io.terrakube.api.rs.workspace.history.History;
+import io.terrakube.api.rs.workspace.trigger.RunTriggerOnDestroyPolicy;
 import io.terrakube.api.rs.workspace.trigger.WorkspaceRunTrigger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -169,6 +170,14 @@ class RunTriggerDispatchServiceTest {
         return trigger;
     }
 
+    private WorkspaceRunTrigger triggerWithOnDestroy(Workspace destination, RunTriggerOnDestroyPolicy policy,
+            Template planTemplate) {
+        WorkspaceRunTrigger trigger = trigger(destination, null);
+        trigger.setOnDestroy(policy);
+        trigger.setOnDestroyPlanTemplate(planTemplate);
+        return trigger;
+    }
+
     private void triggersFromSource(WorkspaceRunTrigger... triggers) {
         doReturn(new ArrayList<>(List.of(triggers)))
                 .when(triggerRepository).findEnabledBySourceWorkspaceId(SOURCE_ID);
@@ -220,6 +229,104 @@ class RunTriggerDispatchServiceTest {
         subject.dispatchFor(COMPLETED_JOB_ID);
 
         verify(jobWriter).persist(any(), any(), any(), anyInt());
+    }
+
+    // ---------------------------------------------------------------- onDestroy
+
+    /** TRIGGER (the default) treats a destroy as a state-changing run like any other. */
+    @Test
+    void destroyWithTriggerPolicyDispatchesNormally() {
+        Job completed = completedJob(0);
+        stepsWithFlow(completed, FlowType.terraformDestroy, JobStatus.completed);
+        triggersFromSource(triggerWithOnDestroy(workspace("consumer", "template-default"),
+                RunTriggerOnDestroyPolicy.TRIGGER, null));
+
+        subject.dispatchFor(COMPLETED_JOB_ID);
+
+        verify(jobWriter).persist(any(), eq("template-default"), any(), anyInt());
+    }
+
+    @Test
+    void destroyWithPlanOnlyPolicyDispatchesPlanTemplate() {
+        Job completed = completedJob(0);
+        stepsWithFlow(completed, FlowType.terraformDestroy, JobStatus.completed);
+        Template planTemplate = new Template();
+        planTemplate.setId(UUID.randomUUID());
+        triggersFromSource(triggerWithOnDestroy(workspace("consumer", "template-default"),
+                RunTriggerOnDestroyPolicy.PLAN_ONLY, planTemplate));
+
+        subject.dispatchFor(COMPLETED_JOB_ID);
+
+        // Not the destination's own template or default - the plan-only override specifically.
+        verify(jobWriter).persist(any(), eq(planTemplate.getId().toString()), any(), anyInt());
+    }
+
+    /**
+     * No fallback to the destination's default template on purpose: that could just as easily
+     * be an apply template, which would defeat the whole point of PLAN_ONLY.
+     */
+    @Test
+    void destroyWithPlanOnlyPolicyAndNoPlanTemplateSkips() {
+        Job completed = completedJob(0);
+        stepsWithFlow(completed, FlowType.terraformDestroy, JobStatus.completed);
+        triggersFromSource(triggerWithOnDestroy(workspace("consumer", "template-default"),
+                RunTriggerOnDestroyPolicy.PLAN_ONLY, null));
+
+        subject.dispatchFor(COMPLETED_JOB_ID);
+
+        verify(jobWriter, never()).persist(any(), any(), any(), anyInt());
+    }
+
+    @Test
+    void destroyWithBlockPolicyBlocksNodeInsteadOfDispatching() {
+        Job completed = completedJob(0);
+        stepsWithFlow(completed, FlowType.terraformDestroy, JobStatus.completed);
+        WorkspaceRunTrigger trigger = triggerWithOnDestroy(workspace("consumer", "template-default"),
+                RunTriggerOnDestroyPolicy.BLOCK, null);
+        triggersFromSource(trigger);
+
+        subject.dispatchFor(COMPLETED_JOB_ID);
+
+        verify(cascadeCoordinatorService).blockNode(any(), eq(trigger));
+        verify(jobWriter, never()).persist(any(), any(), any(), anyInt());
+        verify(cascadeCoordinatorService, never()).shouldDispatch(any(), eq(trigger));
+    }
+
+    @Test
+    void destroyWithIgnorePolicySkipsEdge() {
+        Job completed = completedJob(0);
+        stepsWithFlow(completed, FlowType.terraformDestroy, JobStatus.completed);
+        WorkspaceRunTrigger trigger = triggerWithOnDestroy(workspace("consumer", "template-default"),
+                RunTriggerOnDestroyPolicy.IGNORE, null);
+        triggersFromSource(trigger);
+
+        subject.dispatchFor(COMPLETED_JOB_ID);
+
+        verify(jobWriter, never()).persist(any(), any(), any(), anyInt());
+        verify(cascadeCoordinatorService, never()).shouldDispatch(any(), eq(trigger));
+        verify(cascadeCoordinatorService, never()).blockNode(any(), eq(trigger));
+    }
+
+    /**
+     * onDestroy only ever changes behavior for a destroy-originated event - a normal apply
+     * across the very same BLOCK/IGNORE-configured edges dispatches exactly as EACH/TRIGGER
+     * always have, which is what lets an operator configure onDestroy without affecting how
+     * the edge behaves the rest of the time.
+     */
+    @Test
+    void applyIsNeverGatedByOnDestroy() {
+        Job completed = completedJob(0);
+        stepsWithFlow(completed, FlowType.terraformApply, JobStatus.completed);
+        triggersFromSource(
+                triggerWithOnDestroy(workspace("blocked-on-destroy-only", "template-default"),
+                        RunTriggerOnDestroyPolicy.BLOCK, null),
+                triggerWithOnDestroy(workspace("ignored-on-destroy-only", "template-default"),
+                        RunTriggerOnDestroyPolicy.IGNORE, null));
+
+        subject.dispatchFor(COMPLETED_JOB_ID);
+
+        verify(jobWriter, times(2)).persist(any(), any(), any(), anyInt());
+        verify(cascadeCoordinatorService, never()).blockNode(any(), any());
     }
 
     @Test

@@ -43,6 +43,9 @@ const OrganizationsPickerPage = lazy(() => import("@/modules/organizations/Organ
 const OrganizationsDetailPage = lazy(() => import("@/modules/organizations/OrganizationDetailsPage"));
 const ProjectsPage = lazy(() => import("@/modules/projects/ProjectsPage"));
 const ProjectDetailPage = lazy(() => import("@/modules/projects/ProjectDetailPage"));
+const DependencyGraph = lazy(() => import("@/domain/Organizations/DependencyGraph"));
+const CascadeExecutionPage = lazy(() => import("@/domain/Workspaces/CascadeExecutionPage"));
+const FailedRunTriggerEvents = lazy(() => import("@/domain/Admin/FailedRunTriggerEvents"));
 
 // Workspaces
 const CreateWorkspace = lazy(() =>
@@ -320,6 +323,14 @@ const router = createBrowserRouter(
           element: <OrganizationsProjectDetailRoute />,
         },
         {
+          path: "/organizations/:id/dependency-graph",
+          element: <DependencyGraph />,
+        },
+        {
+          path: "/organizations/:id/dependency-graph/:workspaceId",
+          element: <DependencyGraph />,
+        },
+        {
           path: "/workspaces/create",
           element: <CreateWorkspace />,
         },
@@ -402,6 +413,14 @@ const router = createBrowserRouter(
         {
           path: "/organizations/:orgid/workspaces/:id/cascades",
           element: <WorkspaceDetailsRoute selectedTab="8" />,
+        },
+        {
+          path: "/workspaces/:id/cascades/:cascadeId",
+          element: <CascadeExecutionPage />,
+        },
+        {
+          path: "/organizations/:orgid/workspaces/:id/cascades/:cascadeId",
+          element: <CascadeExecutionPage />,
         },
         {
           path: "/workspaces/:id/settings",
@@ -554,6 +573,10 @@ const router = createBrowserRouter(
         {
           path: "/settings/theme",
           element: <UserSettingsPage />,
+        },
+        {
+          path: "/admin/run-trigger-events",
+          element: <FailedRunTriggerEvents />,
         },
         {
           path: "/organizations/:orgid/settings/ssh",

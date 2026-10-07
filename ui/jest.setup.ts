@@ -75,6 +75,13 @@ class FakeMessageChannel {
 }
 global.MessageChannel = FakeMessageChannel as unknown as typeof global.MessageChannel;
 
+// jsdom's test environment doesn't provide structuredClone, but @dagrejs/graphlib (dagre's own
+// dependency, used for the organization dependency graph's layout) needs one. A real browser
+// always has it; this is purely a test-environment gap.
+if (typeof global.structuredClone !== "function") {
+  global.structuredClone = (value: unknown) => JSON.parse(JSON.stringify(value));
+}
+
 // jsdom doesn't implement ResizeObserver, but antd's Table/rc-resize-observer needs one.
 global.ResizeObserver = class ResizeObserver {
   observe() {}
