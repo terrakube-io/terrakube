@@ -341,9 +341,9 @@ class ContextControllerTest {
         assertEquals(HttpStatus.OK, read.getStatusCode());
         assertTrue(read.getBody().contains("\"fresh\""));
         verify(storageTypeService, times(1)).getContext(1);
-        // The fresh value also replaces the stale cache entry for UI readers.
+        // The stale cache entry is dropped, so the next UI read goes back to storage.
         assertTrue(controller.getContext(1, uiPrincipal).getBody().contains("\"fresh\""));
-        verify(storageTypeService, times(1)).getContext(1);
+        verify(storageTypeService, times(2)).getContext(1);
     }
 
     @Test

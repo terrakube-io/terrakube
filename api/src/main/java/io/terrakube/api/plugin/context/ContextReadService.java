@@ -128,14 +128,26 @@ public class ContextReadService {
     }
 
     /**
-     * Read straight from the object store, bypassing the cache and single-flight, then refresh the
-     * cache with the result. For read-modify-write callers that must not see a stale snapshot.
+     * Read straight from the object store, bypassing the cache and single-flight, within the same
+     * worker pool and read budget as {@link #read}. For read-modify-write callers that must not see
+     * a stale snapshot. The cache entry is dropped rather than refreshed, so a concurrent write can
+     * never be overwritten in the cache by this older read.
      */
     public String readFresh(int jobId) {
         countRequest("bypass");
-        String fresh = loadFromStore(jobId);
-        invalidate(jobId, fresh);
-        return fresh;
+        try {
+            String fresh = startLoad(jobId).get(properties.getReadTimeout().toMillis(), TimeUnit.MILLISECONDS);
+            cache.invalidate(jobId);
+            return fresh;
+        } catch (TimeoutException | ExecutionException e) {
+            countRequest("failure");
+            throw new ContextUnavailableException("context read failed for job " + jobId,
+                    e instanceof ExecutionException ? e.getCause() : e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            countRequest("failure");
+            throw new ContextUnavailableException("context read interrupted for job " + jobId, e);
+        }
     }
 
     private CompletableFuture<String> startLoad(int jobId) {
