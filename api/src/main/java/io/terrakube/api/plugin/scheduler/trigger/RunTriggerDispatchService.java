@@ -16,6 +16,7 @@ import io.terrakube.api.rs.workspace.history.History;
 import io.terrakube.api.rs.workspace.trigger.WorkspaceRunTrigger;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.quartz.ObjectAlreadyExistsException;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -128,15 +129,25 @@ public class RunTriggerDispatchService {
             return;
         }
 
+        // Tracked rather than logged-and-forgotten: a dependent that failed to enqueue must
+        // still fail the batch so the caller (RunTriggerEventDispatchService) retries this job
+        // with backoff instead of marking the outbox event PROCESSED. Re-running the loop is
+        // safe because enqueue() is idempotent per (destination, completedJob) - see below.
+        boolean partialFailure = false;
         for (WorkspaceRunTrigger trigger : triggers) {
             // Per-dependent isolation: one workspace missing a template, or failing to
             // schedule, must not cost the dependents that come after it in the list.
             try {
                 enqueue(trigger, completedJob, nextDepth);
             } catch (Exception e) {
+                partialFailure = true;
                 log.error("Could not enqueue run triggered by job {} on workspace {}: {}",
                         completedJobId, destinationName(trigger), e.getMessage(), e);
             }
+        }
+        if (partialFailure) {
+            throw new RunTriggerDispatchPartialFailureException(
+                    "One or more run triggers failed to dispatch for job " + completedJobId);
         }
     }
 
@@ -215,6 +226,17 @@ public class RunTriggerDispatchService {
     private void enqueue(WorkspaceRunTrigger trigger, Job completedJob, int depth) throws Exception {
         Workspace destination = trigger.getDestinationWorkspace();
 
+        // Idempotency key for this fan-out edge: a RunTriggerEvent can be reclaimed and
+        // reprocessed (lease expiry, a crashed pod, a slow recordResult) after some dependents
+        // already committed, so dispatchInternal's loop must tolerate running twice for the
+        // same completedJob without creating a second downstream job per destination.
+        Optional<Job> existingJob = jobRepository
+                .findFirstByWorkspaceAndTriggeredByJobIdOrderByIdDesc(destination, completedJob.getId());
+        if (existingJob.isPresent()) {
+            reconcilePreviouslyEnqueued(existingJob.get(), completedJob, destination);
+            return;
+        }
+
         // Resolved here rather than in the writer: it reads fields already loaded by the
         // dispatch query, so it costs nothing and keeps the writer to a single concern.
         String templateReference = resolveTemplate(trigger, destination);
@@ -235,6 +257,39 @@ public class RunTriggerDispatchService {
 
         log.info("Job {} triggered job {} on workspace {} (depth {})",
                 completedJob.getId(), savedJob.getId(), destination.getName(), depth);
+    }
+
+    /**
+     * A job already exists for this (destination, completedJob) pair from an earlier attempt
+     * at this same dispatch. Two cases, distinguished by status rather than by any flag of our
+     * own, because Quartz's job store - not this table - is the real source of truth for
+     * whether the dependent is actually scheduled:
+     *
+     * <p>Still {@code pending}: the row committed on a prior attempt but that attempt did not
+     * get as far as recording a result (died before, or failed during, {@code createJobContext}).
+     * Re-running the scheduling step is safe either way: if Quartz never got the job, this is
+     * what finally schedules it; if Quartz already has it, {@code scheduler.scheduleJob} throws
+     * {@link ObjectAlreadyExistsException}, which is treated as confirmation rather than a
+     * failure (the same tolerance {@code JobReconciliationService} applies when it removes a
+     * trigger).
+     *
+     * <p>Anything else: the dependent already ran its course on a prior attempt. Nothing to do.
+     */
+    private void reconcilePreviouslyEnqueued(Job existingJob, Job completedJob, Workspace destination)
+            throws Exception {
+        if (existingJob.getStatus() != JobStatus.pending) {
+            log.info("Job {} already triggered job {} on workspace {} (status {}), skipping duplicate dispatch",
+                    completedJob.getId(), existingJob.getId(), destination.getName(), existingJob.getStatus());
+            return;
+        }
+        try {
+            scheduleJobService.createJobContext(existingJob);
+            log.info("Re-scheduled previously persisted job {} on workspace {} triggered by job {}",
+                    existingJob.getId(), destination.getName(), completedJob.getId());
+        } catch (ObjectAlreadyExistsException e) {
+            log.debug("Job {} on workspace {} already has a Quartz context, nothing to do",
+                    existingJob.getId(), destination.getName());
+        }
     }
 
     /**

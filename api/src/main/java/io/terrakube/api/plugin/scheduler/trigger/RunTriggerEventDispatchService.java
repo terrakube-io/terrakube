@@ -24,6 +24,7 @@ public class RunTriggerEventDispatchService {
     private final RunTriggerEventTransactions runTriggerEventTransactions;
     private final RunTriggerDispatchService runTriggerDispatchService;
     private final RunTriggerProperties properties;
+    private final RunTriggerEventMetrics metrics;
 
     /**
      * Never throws: called once per due row from a poll loop, where one event's problem must
@@ -51,6 +52,7 @@ public class RunTriggerEventDispatchService {
             runTriggerDispatchService.dispatchInternal(claimed.jobId());
             runTriggerEventTransactions.recordResult(eventId, claimed.lastAttemptAt(),
                     RunTriggerEventStatus.PROCESSED, null, null);
+            metrics.processed();
         } catch (Exception e) {
             handleFailure(eventId, claimed, e);
         }
@@ -65,6 +67,7 @@ public class RunTriggerEventDispatchService {
                     eventId, claimed.jobId(), claimed.attemptCount(), message, e);
             runTriggerEventTransactions.recordResult(eventId, claimed.lastAttemptAt(),
                     RunTriggerEventStatus.FAILED, message, null);
+            metrics.failed();
             return;
         }
 
@@ -75,5 +78,6 @@ public class RunTriggerEventDispatchService {
                 eventId, claimed.jobId(), claimed.attemptCount(), maxAttempts, nextAttemptAt, message, e);
         runTriggerEventTransactions.recordResult(eventId, claimed.lastAttemptAt(),
                 RunTriggerEventStatus.PENDING, message, nextAttemptAt);
+        metrics.retried();
     }
 }

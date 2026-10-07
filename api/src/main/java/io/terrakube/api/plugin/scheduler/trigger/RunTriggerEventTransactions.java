@@ -23,9 +23,11 @@ import lombok.extern.slf4j.Slf4j;
 public class RunTriggerEventTransactions {
 
     private final RunTriggerEventRepository runTriggerEventRepository;
+    private final RunTriggerEventMetrics metrics;
 
-    RunTriggerEventTransactions(RunTriggerEventRepository runTriggerEventRepository) {
+    RunTriggerEventTransactions(RunTriggerEventRepository runTriggerEventRepository, RunTriggerEventMetrics metrics) {
         this.runTriggerEventRepository = runTriggerEventRepository;
+        this.metrics = metrics;
     }
 
     @Transactional
@@ -71,14 +73,22 @@ public class RunTriggerEventTransactions {
                 "Processing attempt did not complete within the stuck-row threshold; the claiming instance "
                         + "likely crashed",
                 new Date());
+        if (reclaimed > 0) {
+            metrics.stuckReclaimed(reclaimed);
+        }
+        if (failed > 0) {
+            metrics.failed();
+        }
         if (reclaimed > 0 || failed > 0) {
             log.warn("Run trigger event sweep reclaimed {} stuck PROCESSING row(s) for retry and permanently "
                     + "failed {} that had already exhausted their attempts", reclaimed, failed);
         }
     }
 
-    // Operator replay of a permanently failed event. Public, unlike claim/recordResult, since
-    // its caller is an admin endpoint in a different package.
+    // Would back an operator-triggered replay of a permanently failed event, mirroring
+    // NotificationOutboxTransactions and the admin REST endpoint it has. No such endpoint exists
+    // for run_trigger_event yet, so this currently has zero callers - kept public (unlike
+    // claim/recordResult) in anticipation of one, not because one already calls it.
     @Transactional
     public boolean rearmForRetry(UUID eventId) {
         int rows = runTriggerEventRepository.rearmFailedForRetry(eventId, RunTriggerEventStatus.FAILED,
@@ -92,6 +102,7 @@ public class RunTriggerEventTransactions {
         int deleted = runTriggerEventRepository.deleteTerminalRowsCreatedBefore(
                 List.of(RunTriggerEventStatus.PROCESSED, RunTriggerEventStatus.FAILED), cutoff);
         if (deleted > 0) {
+            metrics.pruned(deleted);
             log.info("Run trigger event retention sweep deleted {} row(s) older than {}", deleted, cutoff);
         }
         return deleted;

@@ -14,6 +14,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doReturn;
@@ -24,12 +25,14 @@ import static org.mockito.Mockito.verify;
 class RunTriggerEventTransactionsTest {
 
     RunTriggerEventRepository runTriggerEventRepository;
+    RunTriggerEventMetrics metrics;
     RunTriggerEventTransactions subject;
 
     @BeforeEach
     void setup() {
         runTriggerEventRepository = mock(RunTriggerEventRepository.class);
-        subject = new RunTriggerEventTransactions(runTriggerEventRepository);
+        metrics = mock(RunTriggerEventMetrics.class);
+        subject = new RunTriggerEventTransactions(runTriggerEventRepository, metrics);
     }
 
     @Test
@@ -102,6 +105,11 @@ class RunTriggerEventTransactionsTest {
     @Test
     void sweepStuckProcessingRowsReclaimsAndFailsInOneCall() {
         Date cutoff = new Date();
+        doReturn(2).when(runTriggerEventRepository).reclaimStuckProcessingRows(eq(RunTriggerEventStatus.PROCESSING),
+                eq(RunTriggerEventStatus.PENDING), eq(cutoff), eq(3), any());
+        doReturn(1).when(runTriggerEventRepository).failStuckProcessingRowsAtMaxAttempts(
+                eq(RunTriggerEventStatus.PROCESSING), eq(RunTriggerEventStatus.FAILED), eq(cutoff), eq(3), any(),
+                any());
 
         subject.sweepStuckProcessingRows(cutoff, 3);
 
@@ -109,6 +117,18 @@ class RunTriggerEventTransactionsTest {
                 eq(RunTriggerEventStatus.PENDING), eq(cutoff), eq(3), any());
         verify(runTriggerEventRepository).failStuckProcessingRowsAtMaxAttempts(eq(RunTriggerEventStatus.PROCESSING),
                 eq(RunTriggerEventStatus.FAILED), eq(cutoff), eq(3), any(), any());
+        verify(metrics).stuckReclaimed(2);
+        verify(metrics).failed();
+    }
+
+    @Test
+    void sweepStuckProcessingRowsWithNothingToDoRecordsNoMetrics() {
+        Date cutoff = new Date();
+
+        subject.sweepStuckProcessingRows(cutoff, 3);
+
+        verify(metrics, never()).stuckReclaimed(anyInt());
+        verify(metrics, never()).failed();
     }
 
     @Test
@@ -138,5 +158,17 @@ class RunTriggerEventTransactionsTest {
         int deleted = subject.pruneTerminalRowsOlderThan(cutoff);
 
         assertThat(deleted).isEqualTo(5);
+        verify(metrics).pruned(5);
+    }
+
+    @Test
+    void pruneTerminalRowsOlderThanRecordsNoMetricWhenNothingIsDeleted() {
+        Date cutoff = new Date();
+        doReturn(0).when(runTriggerEventRepository).deleteTerminalRowsCreatedBefore(
+                eq(List.of(RunTriggerEventStatus.PROCESSED, RunTriggerEventStatus.FAILED)), eq(cutoff));
+
+        subject.pruneTerminalRowsOlderThan(cutoff);
+
+        verify(metrics, never()).pruned(anyInt());
     }
 }

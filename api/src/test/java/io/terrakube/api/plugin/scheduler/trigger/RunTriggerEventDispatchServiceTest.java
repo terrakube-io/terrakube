@@ -23,6 +23,7 @@ class RunTriggerEventDispatchServiceTest {
     RunTriggerEventTransactions runTriggerEventTransactions;
     RunTriggerDispatchService runTriggerDispatchService;
     RunTriggerProperties properties;
+    RunTriggerEventMetrics metrics;
     RunTriggerEventDispatchService subject;
 
     @BeforeEach
@@ -30,8 +31,9 @@ class RunTriggerEventDispatchServiceTest {
         runTriggerEventTransactions = mock(RunTriggerEventTransactions.class);
         runTriggerDispatchService = mock(RunTriggerDispatchService.class);
         properties = new RunTriggerProperties();
+        metrics = mock(RunTriggerEventMetrics.class);
         subject = new RunTriggerEventDispatchService(runTriggerEventTransactions, runTriggerDispatchService,
-                properties);
+                properties, metrics);
     }
 
     private ClaimedEvent claimed(int jobId, int attemptCount, Date lastAttemptAt) {
@@ -60,6 +62,7 @@ class RunTriggerEventDispatchServiceTest {
         verify(runTriggerDispatchService).dispatchInternal(900);
         verify(runTriggerEventTransactions).recordResult(eq(id), eq(lastAttemptAt),
                 eq(RunTriggerEventStatus.PROCESSED), isNull(), isNull());
+        verify(metrics).processed();
     }
 
     @Test
@@ -76,6 +79,7 @@ class RunTriggerEventDispatchServiceTest {
         verify(runTriggerEventTransactions).recordResult(eq(id), eq(lastAttemptAt),
                 eq(RunTriggerEventStatus.PENDING), eq("boom"), nextAttemptAt.capture());
         assertThat(nextAttemptAt.getValue()).isAfter(lastAttemptAt);
+        verify(metrics).retried();
     }
 
     @Test
@@ -90,6 +94,7 @@ class RunTriggerEventDispatchServiceTest {
 
         verify(runTriggerEventTransactions).recordResult(eq(id), eq(lastAttemptAt),
                 eq(RunTriggerEventStatus.FAILED), eq("boom"), isNull());
+        verify(metrics).failed();
     }
 
     @Test

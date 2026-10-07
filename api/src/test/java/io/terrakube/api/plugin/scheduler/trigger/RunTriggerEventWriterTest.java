@@ -10,14 +10,12 @@ import io.terrakube.api.rs.workspace.trigger.RunTriggerEventStatus;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-import org.springframework.dao.DataIntegrityViolationException;
 
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doReturn;
-import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -108,7 +106,11 @@ class RunTriggerEventWriterTest {
         verify(runTriggerEventRepository, never()).save(any());
     }
 
-    /** reconcile() should only ever reach this once per job, but the check is defense in depth. */
+    /**
+     * Not just defense in depth: this is the only guard against a duplicate insert at all now,
+     * because the lockForUpdate held by the caller (JobReconciliationService.reconcile) rules
+     * out a concurrent caller reaching this same check for the same job.
+     */
     @Test
     void skipsWhenAnEventForThisJobAlreadyExists() {
         doReturn(true).when(runTriggerEventRepository).existsByJob_Id(900);
@@ -116,16 +118,5 @@ class RunTriggerEventWriterTest {
         subject.enqueueIfQualifying(completedJob(900));
 
         verify(runTriggerEventRepository, never()).save(any());
-    }
-
-    /** The database's unique constraint is the real guarantee; this is the race the pre-check can miss. */
-    @Test
-    void toleratesAConcurrentDuplicateInsertAtTheDatabaseLevel() {
-        doThrow(new DataIntegrityViolationException("duplicate key")).when(runTriggerEventRepository).save(any());
-
-        subject.enqueueIfQualifying(completedJob(900));
-
-        verify(runTriggerEventRepository).save(any());
-        // No exception propagates - the duplicate is treated as success.
     }
 }

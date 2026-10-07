@@ -167,7 +167,7 @@ public class RunTriggerEventIntegrationTest extends ServerApplicationTests {
     }
 
     @Test
-    void reconcilingAnUnqualifyingJobWritesNoEvent() {
+    void reconcilingJobWithNonStateChangingStepStillWritesEventForProcessTimeQualification() {
         Workspace source = workspace(WORKSPACE_SOURCE);
         Workspace destination = workspace(WORKSPACE_DESTINATION);
         destination.setDefaultTemplate(TEMPLATE_PLAN_APPLY);
@@ -278,6 +278,40 @@ public class RunTriggerEventIntegrationTest extends ServerApplicationTests {
 
         RunTriggerEvent failed = runTriggerEventRepository.findById(event.getId()).orElseThrow();
         assertThat(failed.getStatus()).isEqualTo(RunTriggerEventStatus.FAILED);
+    }
+
+    /**
+     * The scenario the fan-out idempotency check exists for, distinct from
+     * {@link #aRowStuckInProcessingIsReclaimedByTheSweepAndThenSucceeds}: there the reclaim
+     * happens before any dispatch work ran, so re-processing is trivially safe. Here the first
+     * attempt actually ran to completion - the downstream job was created and scheduled - and
+     * only then is the row forced back to PENDING, as a stuck-row sweep would if recordResult
+     * itself failed after a successful dispatch. Reprocessing must not create a second job.
+     */
+    @Test
+    void reclaimAfterACompletedDispatchDoesNotDuplicateTheDownstreamJob() {
+        Workspace source = workspace(WORKSPACE_SOURCE);
+        Workspace destination = workspace(WORKSPACE_DESTINATION);
+        destination.setDefaultTemplate(TEMPLATE_PLAN_APPLY);
+        workspaceRepository.save(destination);
+        trigger(source, destination);
+
+        Job upstream = runningJob(source, JobStatus.completed);
+        jobReconciliationService.reconcile(upstream.getId(), false);
+        RunTriggerEvent event = runTriggerEventRepository.findByJob_Id(upstream.getId()).orElseThrow();
+
+        runTriggerEventDispatchService.process(event.getId());
+        assertThat(triggeredJobsOn(destination)).hasSize(1);
+
+        // Force the already-PROCESSED row back to PENDING, as the stuck-row sweep would if this
+        // replica died (or recordResult itself failed) immediately after a successful dispatch.
+        RunTriggerEvent reloaded = runTriggerEventRepository.findById(event.getId()).orElseThrow();
+        reloaded.setStatus(RunTriggerEventStatus.PENDING);
+        runTriggerEventRepository.save(reloaded);
+
+        runTriggerEventDispatchService.process(event.getId());
+
+        assertThat(triggeredJobsOn(destination)).hasSize(1);
     }
 
     @Test

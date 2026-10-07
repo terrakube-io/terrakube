@@ -2,7 +2,6 @@ package io.terrakube.api.plugin.scheduler.trigger;
 
 import java.util.UUID;
 
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
 import io.terrakube.api.repository.RunTriggerEventRepository;
@@ -49,8 +48,11 @@ public class RunTriggerEventWriter {
             return;
         }
 
-        // Belt-and-suspenders ahead of the unique constraint on job_id - reconcile() should
-        // only reach this once per job, but the DB constraint is the real guarantee.
+        // Not actually racy: JobReconciliationService.reconcile() takes jobRepository.lockForUpdate
+        // on the upstream job before calling here, so no concurrent caller can reach this existence
+        // check for the same job while another is between it and the save below. The unique
+        // constraint on job_id is the real guarantee against a row written outside that path, not
+        // a race this method needs to catch - a constraint violation here is a genuine bug.
         if (runTriggerEventRepository.existsByJob_Id(completedJob.getId())) {
             return;
         }
@@ -59,12 +61,6 @@ public class RunTriggerEventWriter {
         event.setId(UUID.randomUUID());
         event.setJob(completedJob);
         event.setStatus(RunTriggerEventStatus.PENDING);
-        try {
-            runTriggerEventRepository.save(event);
-        } catch (DataIntegrityViolationException e) {
-            // The unique constraint caught a race the existence check above missed - success either way.
-            log.debug("Run trigger event for job {} already exists, skipping duplicate insert",
-                    completedJob.getId());
-        }
+        runTriggerEventRepository.save(event);
     }
 }
