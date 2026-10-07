@@ -67,6 +67,8 @@ public class StructuredOutputPersistenceQueue {
     private volatile boolean persisting;
     private Thread worker;
     private ScheduledExecutorService recoveryScheduler;
+    // Test seam: runs on the worker after a snapshot leaves `pending` and before it is persisted.
+    volatile Runnable afterDequeue = () -> { };
 
     /** One snapshot held for delayed recovery after its normal retry budget was spent. */
     private static final class RetainedSnapshot {
@@ -258,11 +260,15 @@ public class StructuredOutputPersistenceQueue {
 
     private void drainOnce() {
         for (Key key : new ArrayList<>(pending.keySet())) {
+            // Mark in-flight before removing, so awaitDrain never sees an empty queue while this
+            // snapshot is still unpersisted.
+            persisting = true;
             StructuredSnapshot snapshot = pending.remove(key);
             if (snapshot == null) {
+                persisting = false;
                 continue;
             }
-            persisting = true;
+            afterDequeue.run();
             try {
                 persistWithRetry(snapshot);
             } catch (Throwable t) {
