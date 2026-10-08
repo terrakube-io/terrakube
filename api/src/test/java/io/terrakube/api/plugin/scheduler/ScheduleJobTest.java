@@ -39,7 +39,11 @@ import org.quartz.Scheduler;
 import graphql.Assert;
 import io.terrakube.api.helpers.FailUnkownMethod;
 import io.terrakube.api.plugin.notification.JobNotificationTrigger;
+import io.terrakube.api.plugin.scheduler.dispatchretry.DispatchRetryCalculator;
+import io.terrakube.api.plugin.scheduler.dispatchretry.DispatchRetryMetrics;
+import io.terrakube.api.plugin.scheduler.dispatchretry.DispatchRetryProperties;
 import io.terrakube.api.plugin.scheduler.job.tcl.TclService;
+import io.terrakube.api.plugin.scheduler.job.tcl.executor.DispatchRetryableException;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutionException;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutorService;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutorUnavailableException;
@@ -103,6 +107,9 @@ public class ScheduleJobTest {
     JobNotificationTrigger jobNotificationTrigger;
     io.terrakube.api.plugin.scheduler.reconciliation.JobReconciliationService jobReconciliationService;
     io.terrakube.api.plugin.scheduler.reconciliation.ReconciliationProperties reconciliationProperties;
+    DispatchRetryProperties dispatchRetryProperties;
+    DispatchRetryCalculator dispatchRetryCalculator;
+    DispatchRetryMetrics dispatchRetryMetrics;
 
     UUID stepId = UUID.randomUUID();
 
@@ -149,6 +156,19 @@ public class ScheduleJobTest {
         // queries; a dedicated test flips it on. Behaviour is identical either way (same rows).
         reconciliationProperties = new io.terrakube.api.plugin.scheduler.reconciliation.ReconciliationProperties();
         reconciliationProperties.setAdmissionGuardEnabled(false);
+
+        // Real (not mocked) properties/calculator: deterministic pure logic, so asserting on the
+        // resulting Job fields is more direct than stubbing a mock calculator. Plain mock (not
+        // FailUnkownMethod) for metrics since most tests don't care about every counter call.
+        dispatchRetryProperties = new DispatchRetryProperties();
+        // Deferral guard off by default so the existing admission-guard-flag tests keep
+        // exercising isJobNextInDispatchOrderExecutable/findNextDispatchableExecutableJobId
+        // unchanged; no current test here needs the deferral-aware FIFO ladder itself (that's
+        // covered by JobDispatchOrderRepositoryIntegrationTest / ExecutorAvailabilityListenerTest
+        // / SchedulerQueueMetricsTest) - these tests are about the backoff bookkeeping only.
+        dispatchRetryProperties.setAdmissionDeferralEnabled(false);
+        dispatchRetryCalculator = new DispatchRetryCalculator(dispatchRetryProperties);
+        dispatchRetryMetrics = mock(DispatchRetryMetrics.class);
     }
 
     private ScheduleJob subject() {
@@ -172,7 +192,10 @@ public class ScheduleJobTest {
                 workspaceVariableValidationService,
                 jobNotificationTrigger,
                 jobReconciliationService,
-                reconciliationProperties);
+                reconciliationProperties,
+                dispatchRetryProperties,
+                dispatchRetryCalculator,
+                dispatchRetryMetrics);
     }
 
     private Job job(JobStatus status) {
@@ -333,6 +356,68 @@ public class ScheduleJobTest {
     }
 
     @Test
+    public void pendingJobFailsSafelyWhenTheDispatchExceptionHasANullMessage() throws Exception {
+        Job job = job(JobStatus.pending);
+        job.setPlanChanges(true);
+
+        Flow flow = new Flow();
+        flow.setType(FlowType.terraformPlan.name());
+
+        doReturn(false).when(tclService).isTemplatePlanOnly(any());
+        doReturn(Optional.of(Collections.emptyList()))
+                .when(jobRepository)
+                .findByWorkspaceAndStatusNotInAndIdLessThan(any(Workspace.class), anyList(), anyInt());
+        doReturn(job).when(tclService).initJobConfiguration(any(Job.class));
+        doReturn(flow).when(tclService).getNextFlow(any());
+        doReturn(stepId.toString()).when(tclService).getCurrentStepId(any());
+        doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
+        doReturn(job).when(jobRepository).save(any());
+        doReturn(job.getStep().get(0)).when(stepRepository).getReferenceById(any());
+        doReturn(job.getStep()).when(stepRepository).findByJobId(anyInt());
+        doReturn(null).when(stepRepository).save(any());
+        doThrow(new ExecutionException((String) null, null)).when(executorService).execute(any(), any(), any());
+        doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any(), any());
+
+        // Regression test: errorJobAtStep used to call e.getMessage() unconditionally, which
+        // NPEs for an exception with no message instead of failing the job cleanly.
+        Assert.assertTrue(subject().runExecution(job));
+
+        Assertions.assertEquals(JobStatus.failed, job.getStatus());
+        Assertions.assertEquals(JobStatus.failed, job.getStep().get(0).getStatus());
+        Assertions.assertEquals("Error sending to executor: ExecutionException", job.getStep().get(0).getName());
+    }
+
+    @Test
+    public void pendingJobFailureStepNameIsNotTruncatedEarlyForAShortMessage() throws Exception {
+        Job job = job(JobStatus.pending);
+        job.setPlanChanges(true);
+
+        Flow flow = new Flow();
+        flow.setType(FlowType.terraformPlan.name());
+
+        doReturn(false).when(tclService).isTemplatePlanOnly(any());
+        doReturn(Optional.of(Collections.emptyList()))
+                .when(jobRepository)
+                .findByWorkspaceAndStatusNotInAndIdLessThan(any(Workspace.class), anyList(), anyInt());
+        doReturn(job).when(tclService).initJobConfiguration(any(Job.class));
+        doReturn(flow).when(tclService).getNextFlow(any());
+        doReturn(stepId.toString()).when(tclService).getCurrentStepId(any());
+        doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
+        doReturn(job).when(jobRepository).save(any());
+        doReturn(job.getStep().get(0)).when(stepRepository).getReferenceById(any());
+        doReturn(job.getStep()).when(stepRepository).findByJobId(anyInt());
+        doReturn(null).when(stepRepository).save(any());
+        doThrow(new ExecutionException("Boom!", null)).when(executorService).execute(any(), any(), any());
+        doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any(), any());
+
+        // Regression test: the old code bounded the substring by the raw message's length
+        // instead of the formatted string's length, truncating a short message early.
+        Assert.assertTrue(subject().runExecution(job));
+
+        Assertions.assertEquals("Error sending to executor: Boom!", job.getStep().get(0).getName());
+    }
+
+    @Test
     public void pendingJobFailsClearlyWithWorkspaceAndKeyWhenVariableHasNoCategory() throws Exception {
         Job job = job(JobStatus.pending);
         job.setPlanChanges(true);
@@ -429,6 +514,194 @@ public class ScheduleJobTest {
         verify(stepRepository, times(0)).save(any());
         verify(gitLabWebhookService, times(0)).sendCommitStatus(any(), any(), any());
         Assertions.assertEquals(JobStatus.pending, job.getStatus());
+    }
+
+    @Test
+    public void pendingJobSchedulesRetryOnDispatchRetryableFailure() throws Exception {
+        Job job = job(JobStatus.pending);
+        job.setPlanChanges(true);
+
+        Flow flow = new Flow();
+        flow.setType(FlowType.terraformPlan.name());
+
+        doReturn(false).when(tclService).isTemplatePlanOnly(any());
+        doReturn(Optional.of(Collections.emptyList()))
+                .when(jobRepository)
+                .findByWorkspaceAndStatusNotInAndIdLessThan(any(Workspace.class), anyList(), anyInt());
+        doReturn(job).when(tclService).initJobConfiguration(any(Job.class));
+        doReturn(flow).when(tclService).getNextFlow(any());
+        doReturn(stepId.toString()).when(tclService).getCurrentStepId(any());
+        doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
+        doReturn(job).when(jobRepository).save(any());
+        doThrow(new DispatchRetryableException("GitHub rate-limited this request (429). Will retry.", null, null))
+                .when(executorService).execute(any(), any(), any());
+
+        // A transient/rate-limited pre-submission failure must not fail the job outright - it
+        // should stay pending and keep its existing 30s trigger, with the attempt recorded.
+        Assert.assertFalse(subject().runExecution(job));
+
+        Assertions.assertEquals(JobStatus.pending, job.getStatus());
+        Assertions.assertEquals(1, job.getDispatchFailureCount());
+        Assertions.assertNotNull(job.getDispatchFirstFailureAt());
+        Assertions.assertNotNull(job.getDispatchNextRetryAt());
+        Assertions.assertTrue(job.getDispatchNextRetryAt().after(new Date()));
+        Assertions.assertEquals("GitHub rate-limited this request (429). Will retry.", job.getDispatchLastError());
+        verify(gitLabWebhookService, times(0)).sendCommitStatus(any(), any(), any());
+        verify(dispatchRetryMetrics).retryScheduled();
+        verify(dispatchRetryMetrics, never()).budgetExhausted();
+    }
+
+    @Test
+    public void pendingJobFailsWhenDispatchRetryBudgetExhausted() throws Exception {
+        Job job = job(JobStatus.pending);
+        job.setPlanChanges(true);
+        job.setDispatchFailureCount(dispatchRetryProperties.getMaxAttempts() - 1);
+        job.setDispatchFirstFailureAt(new Date());
+
+        Flow flow = new Flow();
+        flow.setType(FlowType.terraformPlan.name());
+
+        doReturn(false).when(tclService).isTemplatePlanOnly(any());
+        doReturn(Optional.of(Collections.emptyList()))
+                .when(jobRepository)
+                .findByWorkspaceAndStatusNotInAndIdLessThan(any(Workspace.class), anyList(), anyInt());
+        doReturn(job).when(tclService).initJobConfiguration(any(Job.class));
+        doReturn(flow).when(tclService).getNextFlow(any());
+        doReturn(stepId.toString()).when(tclService).getCurrentStepId(any());
+        doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
+        doReturn(job).when(jobRepository).save(any());
+        doReturn(job.getStep().get(0)).when(stepRepository).getReferenceById(any());
+        doReturn(job.getStep()).when(stepRepository).findByJobId(anyInt());
+        doReturn(null).when(stepRepository).save(any());
+        doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any(), any());
+        doThrow(new DispatchRetryableException("GitHub rate-limited this request (429). Will retry.", null, null))
+                .when(executorService).execute(any(), any(), any());
+
+        // The Nth attempt (maxAttempts) must fail the job for good instead of retrying forever.
+        Assert.assertTrue(subject().runExecution(job));
+
+        Assertions.assertEquals(JobStatus.failed, job.getStatus());
+        Assertions.assertEquals(JobStatus.failed, job.getStep().get(0).getStatus());
+        verify(dispatchRetryMetrics).budgetExhausted();
+        verify(dispatchRetryMetrics, never()).retryScheduled();
+    }
+
+    @Test
+    public void pendingJobDefersWithoutCallingExecutorWhenDispatchRetryIsPending() throws Exception {
+        Job job = job(JobStatus.pending);
+        job.setPlanChanges(true);
+        job.setDispatchNextRetryAt(new Date(System.currentTimeMillis() + 60_000));
+
+        Flow flow = new Flow();
+        flow.setType(FlowType.terraformPlan.name());
+
+        doReturn(false).when(tclService).isTemplatePlanOnly(any());
+        doReturn(Optional.of(Collections.emptyList()))
+                .when(jobRepository)
+                .findByWorkspaceAndStatusNotInAndIdLessThan(any(Workspace.class), anyList(), anyInt());
+        doReturn(job).when(tclService).initJobConfiguration(any(Job.class));
+        doReturn(flow).when(tclService).getNextFlow(any());
+        doReturn(stepId.toString()).when(tclService).getCurrentStepId(any());
+        doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
+
+        // Still in backoff: must not even check dispatch order or call the executor.
+        Assert.assertFalse(subject().runExecution(job));
+
+        verify(jobRepository, never()).isJobNextInDispatchOrder(anyInt());
+        verify(executorService, never()).execute(any(), any(), any());
+        Assertions.assertEquals(JobStatus.pending, job.getStatus());
+    }
+
+    @Test
+    public void pendingJobFailsImmediatelyOnDispatchRetryableFailureWhenDispatchRetryIsDisabled() throws Exception {
+        dispatchRetryProperties.setEnabled(false);
+        Job job = job(JobStatus.pending);
+        job.setPlanChanges(true);
+
+        Flow flow = new Flow();
+        flow.setType(FlowType.terraformPlan.name());
+
+        doReturn(false).when(tclService).isTemplatePlanOnly(any());
+        doReturn(Optional.of(Collections.emptyList()))
+                .when(jobRepository)
+                .findByWorkspaceAndStatusNotInAndIdLessThan(any(Workspace.class), anyList(), anyInt());
+        doReturn(job).when(tclService).initJobConfiguration(any(Job.class));
+        doReturn(flow).when(tclService).getNextFlow(any());
+        doReturn(stepId.toString()).when(tclService).getCurrentStepId(any());
+        doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
+        doReturn(job).when(jobRepository).save(any());
+        doReturn(job.getStep().get(0)).when(stepRepository).getReferenceById(any());
+        doReturn(job.getStep()).when(stepRepository).findByJobId(anyInt());
+        doReturn(null).when(stepRepository).save(any());
+        doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any(), any());
+        doThrow(new DispatchRetryableException("GitHub rate-limited this request (429). Will retry.", null, null))
+                .when(executorService).execute(any(), any(), any());
+
+        // Master switch off: today's behaviour exactly - instant terminal failure, no backoff.
+        Assert.assertTrue(subject().runExecution(job));
+
+        Assertions.assertEquals(JobStatus.failed, job.getStatus());
+        Assertions.assertEquals(0, job.getDispatchFailureCount());
+        verify(dispatchRetryMetrics, never()).retryScheduled();
+        verify(dispatchRetryMetrics, never()).budgetExhausted();
+    }
+
+    @Test
+    public void successfulDispatchClearsPriorDispatchRetryState() throws Exception {
+        Job job = job(JobStatus.pending);
+        job.setPlanChanges(true);
+        job.setDispatchFailureCount(2);
+        job.setDispatchLastError("previous attempt: GitHub returned a server error (503)");
+        job.setDispatchNextRetryAt(new Date(System.currentTimeMillis() - 1_000));
+
+        Flow flow = new Flow();
+        flow.setType(FlowType.terraformPlan.name());
+
+        doReturn(false).when(tclService).isTemplatePlanOnly(any());
+        doReturn(Optional.of(Collections.emptyList()))
+                .when(jobRepository)
+                .findByWorkspaceAndStatusNotInAndIdLessThan(any(Workspace.class), anyList(), anyInt());
+        doReturn(job).when(tclService).initJobConfiguration(any(Job.class));
+        doReturn(flow).when(tclService).getNextFlow(any());
+        doReturn(stepId.toString()).when(tclService).getCurrentStepId(any());
+        doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
+        doReturn(job).when(jobRepository).save(any());
+        doNothing().when(executorService).execute(any(), any(), any());
+
+        Assert.assertTrue(subject().runExecution(job));
+
+        Assertions.assertEquals(JobStatus.queue, job.getStatus());
+        Assertions.assertNull(job.getDispatchNextRetryAt());
+        Assertions.assertNull(job.getDispatchLastError());
+        // Attempt count is left as a historical record, not cleared on success.
+        Assertions.assertEquals(2, job.getDispatchFailureCount());
+    }
+
+    @Test
+    public void executorUnavailableDoesNotConsumeTheDispatchRetryBudget() throws Exception {
+        Job job = job(JobStatus.pending);
+        job.setPlanChanges(true);
+
+        Flow flow = new Flow();
+        flow.setType(FlowType.terraformPlan.name());
+
+        doReturn(false).when(tclService).isTemplatePlanOnly(any());
+        doReturn(Optional.of(Collections.emptyList()))
+                .when(jobRepository)
+                .findByWorkspaceAndStatusNotInAndIdLessThan(any(Workspace.class), anyList(), anyInt());
+        doReturn(job).when(tclService).initJobConfiguration(any(Job.class));
+        doReturn(flow).when(tclService).getNextFlow(any());
+        doReturn(stepId.toString()).when(tclService).getCurrentStepId(any());
+        doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
+        doThrow(new ExecutorUnavailableException("no ready executor")).when(executorService).execute(any(), any(), any());
+
+        Assert.assertFalse(subject().runExecution(job));
+
+        Assertions.assertEquals(0, job.getDispatchFailureCount());
+        Assertions.assertNull(job.getDispatchNextRetryAt());
+        verify(dispatchRetryMetrics, never()).retryScheduled();
+        verify(dispatchRetryMetrics, never()).budgetExhausted();
+        verify(dispatchRetryMetrics, never()).failureClassified(any());
     }
 
     @Test
