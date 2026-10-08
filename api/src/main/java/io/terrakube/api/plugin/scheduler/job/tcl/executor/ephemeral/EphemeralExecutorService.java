@@ -329,9 +329,12 @@ public class EphemeralExecutorService {
                 .withResources(hasResources ? resourceBuilder.build() : null)
                 .endContainer()
                 .withRestartPolicy("Never")
+                .withTerminationGracePeriodSeconds(ephemeralConfiguration.getTerminationGracePeriodSeconds())
                 .endSpec()
                 .endTemplate()
-                .withTtlSecondsAfterFinished(30)
+                .withTtlSecondsAfterFinished(ephemeralConfiguration.getTtlSecondsAfterFinished())
+                .withActiveDeadlineSeconds(ephemeralConfiguration.getActiveDeadlineSeconds())
+                .withBackoffLimit(ephemeralConfiguration.getBackoffLimit())
                 .endSpec();
 
         if (!podAnnotations.isEmpty()) {
