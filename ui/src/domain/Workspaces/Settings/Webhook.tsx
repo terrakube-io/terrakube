@@ -57,12 +57,14 @@ type Props = {
   manageWorkspace: boolean;
   orgTemplates: Template[];
   vcsProvider?: VcsType;
+  vcsAppWebhook?: boolean;
   onWorkspaceUpdate?: () => void;
 };
 
 export const WorkspaceWebhook = ({
   workspace,
   vcsProvider,
+  vcsAppWebhook = false,
   orgTemplates,
   manageWorkspace,
   onWorkspaceUpdate,
@@ -313,19 +315,28 @@ export const WorkspaceWebhook = ({
             {webhookEnabled && webhookId && (
               <>
                 <IdField id="webhook-id" label="Webhook ID" value={webhookId} copiedMessage="Webhook ID copied" />
-                {migratedV2 ? (
+                {vcsAppWebhook && migratedV2 ? (
+                  <Form.Item label="Repository webhook">Delivered via the GitHub App.</Form.Item>
+                ) : migratedV2 ? (
                   <Form.Item label="Repository webhook">Shared with every workspace on this repository.</Form.Item>
                 ) : (
-                  remoteHookId && (
-                    <IdField
-                      id="webhook-remote-id"
-                      label="Repository webhook ID"
-                      value={remoteHookId}
-                      copiedMessage="Repository webhook ID copied"
-                    />
-                  )
+                  <>
+                    {remoteHookId && (
+                      <IdField
+                        id="webhook-remote-id"
+                        label="Repository webhook ID"
+                        value={remoteHookId}
+                        copiedMessage="Repository webhook ID copied"
+                      />
+                    )}
+                    {vcsAppWebhook && (
+                      <Form.Item label="GitHub App delivery">
+                        Save the webhook to switch to GitHub App delivery.
+                      </Form.Item>
+                    )}
+                  </>
                 )}
-                {!migratedV2 && vcsProvider && SHARED_WEBHOOK_VCS.includes(vcsProvider) && (
+                {!migratedV2 && !vcsAppWebhook && vcsProvider && SHARED_WEBHOOK_VCS.includes(vcsProvider) && (
                   <Form.Item
                     label="Shared webhook"
                     extra="Experimental. One webhook serves every workspace that uses this repository."

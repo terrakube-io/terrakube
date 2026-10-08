@@ -91,6 +91,20 @@ public class GitHubWebhookServiceTest {
         assertTrue(description.startsWith("Your task has been completed successfully. Plan:"));
     }
 
+    @Test
+    public void pullRequestApiUrlIsBuiltOnlyForAPlainOwnerAndRepo() {
+        Vcs vcs = new Vcs();
+        vcs.setApiUrl("https://GHE.example.com/api/v3/");
+
+        assertEquals("https://ghe.example.com/api/v3/repos/my-org/my.repo_1/pulls/7",
+                subject.pullRequestApiUrl(vcs, "https://github.com/my-org/my.repo_1.git", 7));
+        for (String repoUrl : List.of("https://github.com/owner/%2e%2e", "https://github.com/owner/.",
+                "https://github.com/%2e%2e/repo", "https://github.com/owner/re%3fpo", "https://github.com/owner/re%23po",
+                "https://github.com/owner", "not a url")) {
+            assertNull(subject.pullRequestApiUrl(vcs, repoUrl, 7), repoUrl);
+        }
+    }
+
     @Nested
     class ParseChangedFilesFromPage {
 

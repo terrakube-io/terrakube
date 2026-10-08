@@ -7,6 +7,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 import io.terrakube.api.plugin.vcs.RepoWebhookDispatchService;
 import io.terrakube.api.plugin.vcs.RepoWebhookService;
 import io.terrakube.api.plugin.vcs.WebhookService;
@@ -77,6 +78,39 @@ public class WebHookController {
             // never claimed it), so RepoWebhookDeliveryPollerJob picks it up on its next tick.
             log.warn("Repo webhook dispatch executor rejected delivery {}, will be picked up by the poller",
                     deliveryId);
+        }
+        return ResponseEntity.ok().build();
+    }
+
+    // Raw bytes, not a re-serialised Map or a decoded String: the GitHub App signature covers the
+    // exact bytes sent.
+    @PostMapping("/webhook/github-app/{vcsId}")
+    public ResponseEntity<String> processGitHubAppWebhook(@PathVariable String vcsId,
+            @RequestBody(required = false) byte[] payload, @RequestHeader Map<String, String> headers) {
+        if (!UUID_PATTERN.matcher(vcsId).matches()) {
+            return ResponseEntity.status(401).build();
+        }
+        UUID deliveryId;
+        try {
+            deliveryId = repoWebhookService.acceptGitHubAppWebhook(vcsId, payload == null ? new byte[0] : payload,
+                    headers);
+        } catch (IllegalArgumentException | SecurityException e) {
+            log.warn("GitHub App webhook request rejected: {}", e.getMessage());
+            return ResponseEntity.status(401).build();
+        } catch (ResponseStatusException e) {
+            return ResponseEntity.status(e.getStatusCode()).build();
+        } catch (Exception e) {
+            log.error("Error processing GitHub App webhook", e);
+            return ResponseEntity.internalServerError().build();
+        }
+        if (deliveryId != null) {
+            try {
+                repoWebhookDispatchService.dispatchAsync(deliveryId);
+            } catch (RejectedExecutionException e) {
+                // Still PENDING, RepoWebhookDeliveryPollerJob picks it up (see processV2Webhook).
+                log.warn("Repo webhook dispatch executor rejected delivery {}, will be picked up by the poller",
+                        deliveryId);
+            }
         }
         return ResponseEntity.ok().build();
     }

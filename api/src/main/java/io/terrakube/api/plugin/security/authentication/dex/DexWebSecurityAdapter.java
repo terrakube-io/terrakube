@@ -76,7 +76,8 @@ public class DexWebSecurityAdapter {
                 http.cors(Customizer.withDefaults())
                                 .csrf(crsf -> crsf.ignoringRequestMatchers("/remote/tfe/v2/configuration-versions/*",
                                                 "/tfstate/v1/archive/*/terraform.tfstate",
-                                                "/tfstate/v1/archive/*/terraform.json.tfstate", "/webhook/v1/**", "/webhook/v2/**"))
+                                                "/tfstate/v1/archive/*/terraform.json.tfstate", "/webhook/v1/**", "/webhook/v2/**",
+                                                "/webhook/github-app/**"))
                                 .authorizeHttpRequests(authz -> {
                                         authz
                                                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
@@ -85,6 +86,7 @@ public class DexWebSecurityAdapter {
                                                         .requestMatchers("/callback/v1/**").permitAll()
                                                         .requestMatchers("/webhook/v1/**").permitAll()
                                                         .requestMatchers("/webhook/v2/**").permitAll()
+                                                        .requestMatchers("/webhook/github-app/**").permitAll()
                                                         .requestMatchers("/.well-known/terraform.json").permitAll()
                                                         .requestMatchers("/.well-known/openid-configuration")
                                                         .permitAll()

@@ -9,6 +9,8 @@ import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 import java.util.List;
 
@@ -124,6 +126,31 @@ public class WebhookServiceTest {
         result.setFileChanges(List.of("main.tf"));
         result.setCreatedBy("octocat");
         return result;
+    }
+
+    @Test
+    public void v1DeliveryForAMigratedWebhookCreatesNoJob() {
+        UUID webhookId = UUID.randomUUID();
+        webhook.setMigratedV2(true);
+        when(webhookRepository.getReferenceById(webhookId)).thenReturn(webhook);
+
+        subject.processWebhook(webhookId.toString(), "{}", Map.of("x-github-event", "push"));
+
+        verifyNoInteractions(gitHubWebhookService, jobRepository, scheduleJobService);
+    }
+
+    @Test
+    public void v1DeliveryForAMigratedBitbucketWebhookIsStillProcessed() {
+        UUID webhookId = UUID.randomUUID();
+        workspace.setId(UUID.randomUUID());
+        workspace.getVcs().setVcsType(VcsType.BITBUCKET);
+        webhook.setMigratedV2(true);
+        when(webhookRepository.getReferenceById(webhookId)).thenReturn(webhook);
+        when(bitBucketWebhookService.processWebhook(any(), any(), any())).thenReturn(new WebhookResult());
+
+        subject.processWebhook(webhookId.toString(), "{}", Map.of());
+
+        verify(bitBucketWebhookService).processWebhook(any(), any(), any());
     }
 
     @Test

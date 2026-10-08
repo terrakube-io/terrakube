@@ -6,6 +6,7 @@ import java.util.UUID;
 
 import org.hibernate.annotations.JdbcTypeCode;
 import io.terrakube.api.plugin.security.audit.GenericAuditFields;
+import io.terrakube.api.rs.vcs.Vcs;
 
 import com.yahoo.elide.annotation.Exclude;
 
@@ -43,6 +44,18 @@ public class RepoWebhookDelivery extends GenericAuditFields {
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "repo_webhook_id")
     private RepoWebhook repoWebhook;
+
+    // Set only for deliveries received through a GitHub App webhook: the VCS whose secret
+    // verified the signature, which scopes the fan-out (see RepoWebhookService.processClaimedDelivery).
+    @ManyToOne(fetch = FetchType.LAZY, optional = true)
+    @JoinColumn(name = "vcs_id")
+    private Vcs vcs;
+
+    // The verified X-Hub-Signature-256 of a GitHub App delivery, null for every other delivery. It
+    // binds to the body, so the unique index drops GitHub redeliveries and replays under a new
+    // X-GitHub-Delivery alike. Non-null marks an App delivery (see RepoWebhookDeliveryTransactions.claim).
+    @Column(name = "dedupe_key")
+    private String dedupeKey;
 
     // Plain @Column, not @Lob: see RepoWebhookDeliveryRepository.findDueForDispatch, which runs
     // with no surrounding transaction from a Quartz job - a clob/Large Object column requires one

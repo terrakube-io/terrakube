@@ -1,4 +1,4 @@
-import { Form, Input, Spin, message } from "antd";
+import { Alert, Form, Input, Spin, Switch, message } from "antd";
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
@@ -9,6 +9,7 @@ import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
 import { SettingsForm } from "@/components/settings/SettingsForm";
 import { IdField } from "@/components/settings/IdField";
 import {
+  getApiOrigin,
   getCallbackUrl,
   getClientIdName,
   getDocsUrl,
@@ -33,6 +34,8 @@ type EditVcsForm = {
   clientId: string;
   clientSecret: string;
   privateKey: string;
+  appWebhookEnabled: boolean;
+  webhookSecret: string;
 };
 
 export const EditVCS = ({ vcsId, setMode, loadVCS }: Props) => {
@@ -42,7 +45,11 @@ export const EditVCS = ({ vcsId, setMode, loadVCS }: Props) => {
   const [vcsTypeExtended, setVcsTypeExtended] = useState<VcsTypeExtended>(VcsTypeExtended.GITHUB);
   const [connectionType, setConnectionType] = useState<VcsConnectionType>(VcsConnectionType.OAUTH);
   const [callbackId, setCallbackId] = useState(vcsId);
+  // A VCS that was already in App webhook mode has a stored secret, so a blank field keeps it.
+  const [appWebhookInitiallyEnabled, setAppWebhookInitiallyEnabled] = useState(false);
   const [form] = Form.useForm<EditVcsForm>();
+  const appWebhookEnabled = Form.useWatch("appWebhookEnabled", form);
+  const isGithubApp = connectionType === VcsConnectionType.STANDALONE;
 
   useEffect(() => {
     setLoading(true);
@@ -53,6 +60,7 @@ export const EditVCS = ({ vcsId, setMode, loadVCS }: Props) => {
         setVcsTypeExtended(getVcsTypeExtended(attrs.vcsType, attrs.connectionType, attrs.endpoint));
         setConnectionType(attrs.connectionType);
         setCallbackId(attrs.callback ?? vcsId);
+        setAppWebhookInitiallyEnabled(!!attrs.appWebhookEnabled);
         form.setFieldsValue({
           name: attrs.name,
           endpoint: attrs.endpoint ?? "",
@@ -60,6 +68,8 @@ export const EditVCS = ({ vcsId, setMode, loadVCS }: Props) => {
           clientId: attrs.clientId,
           clientSecret: "",
           privateKey: "",
+          appWebhookEnabled: !!attrs.appWebhookEnabled,
+          webhookSecret: "",
         });
       })
       .catch((err) => {
@@ -82,6 +92,12 @@ export const EditVCS = ({ vcsId, setMode, loadVCS }: Props) => {
     }
     if (connectionType === VcsConnectionType.STANDALONE && values.privateKey) {
       attributes.privateKey = values.privateKey;
+    }
+    if (isGithubApp) {
+      attributes.appWebhookEnabled = !!values.appWebhookEnabled;
+      if (values.webhookSecret) {
+        attributes.webhookSecret = values.webhookSecret;
+      }
     }
 
     setSaving(true);
@@ -161,6 +177,36 @@ export const EditVCS = ({ vcsId, setMode, loadVCS }: Props) => {
         >
           <Input.TextArea className="resource-mono" placeholder="-----BEGIN PRIVATE KEY-----" rows={8} />
         </Form.Item>
+        {isGithubApp && (
+          <Form.Item name="appWebhookEnabled" label="Receive events via the GitHub App webhook" valuePropName="checked">
+            <Switch />
+          </Form.Item>
+        )}
+        {isGithubApp && appWebhookInitiallyEnabled && !appWebhookEnabled && (
+          <Alert
+            type="warning"
+            showIcon
+            style={{ marginBottom: 24 }}
+            title='Turning this off re-creates repository webhooks. Grant the GitHub App "Webhooks: Read and write" first.'
+          />
+        )}
+        {isGithubApp && appWebhookEnabled && (
+          <>
+            <IdField
+              id="vcs-app-webhook-url"
+              label="Webhook URL"
+              value={`${getApiOrigin()}/webhook/github-app/${vcsId}`}
+            />
+            <Form.Item
+              name="webhookSecret"
+              label="Webhook secret"
+              extra={appWebhookInitiallyEnabled ? "Leave blank to keep the current secret." : undefined}
+              rules={[{ required: !appWebhookInitiallyEnabled, message: "Webhook secret is required" }]}
+            >
+              <Input.Password className="resource-mono" autoComplete="new-password" />
+            </Form.Item>
+          </>
+        )}
       </SettingsForm>
     </Spin>
   );

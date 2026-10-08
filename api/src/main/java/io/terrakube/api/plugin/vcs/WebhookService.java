@@ -56,6 +56,13 @@ public class WebhookService {
         if (webhook == null) {
             throw new IllegalArgumentException("Webhook not found");
         }
+        // A migrated webhook gets its events through the shared repo hook or the GitHub App webhook;
+        // a v1 hook left behind (e.g. one whose delete was refused) must not fire a second job.
+        // Bitbucket has no shared hook, so its migratedV2 flag means nothing here.
+        if (webhook.isMigratedV2() && RepoWebhookService.isSharedWebhookProvider(webhook.getWorkspace().getVcs())) {
+            log.info("Ignoring v1 delivery for webhook {}: it is migrated to v2", webhookId);
+            return result;
+        }
         Workspace workspace = webhook.getWorkspace();
         Vcs vcs = workspace.getVcs();
 
