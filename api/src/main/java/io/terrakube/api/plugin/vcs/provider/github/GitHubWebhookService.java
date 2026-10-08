@@ -598,7 +598,8 @@ public class GitHubWebhookService extends WebhookServiceBase {
         String token = "";
         try {
             token = tokenService.getAccessToken(ownerAndRepo, vcs);
-        } catch (JsonProcessingException | NoSuchAlgorithmException | InvalidKeySpecException e) {
+        } catch (JsonProcessingException | NoSuchAlgorithmException | InvalidKeySpecException
+                | io.terrakube.api.plugin.vcs.provider.exception.VcsTokenAcquisitionException e) {
             log.error("Error retrieving tokens for access to owner/organization {}, error {}", ownerAndRepo[0], e);
             return null;
         }

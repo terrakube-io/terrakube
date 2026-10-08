@@ -8,22 +8,29 @@ import static org.mockito.Mockito.when;
 
 import io.terrakube.api.plugin.scheduler.job.tcl.model.Flow;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.FlowType;
+import io.terrakube.api.plugin.vcs.TokenService;
+import io.terrakube.api.plugin.vcs.provider.exception.VcsTokenAcquisitionException;
 import io.terrakube.api.repository.AddressRepository;
 import io.terrakube.api.repository.JobRepository;
 import io.terrakube.api.repository.VariableRepository;
 import io.terrakube.api.repository.WorkspaceRepository;
+import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.ssh.Ssh;
 import io.terrakube.api.rs.vcs.Vcs;
+import io.terrakube.api.rs.vcs.VcsConnectionType;
+import io.terrakube.api.rs.vcs.VcsType;
 import io.terrakube.api.rs.workspace.Workspace;
 import io.terrakube.api.rs.workspace.parameters.Category;
 import io.terrakube.api.rs.workspace.parameters.Variable;
 import io.terrakube.api.rs.job.address.Address;
 import io.terrakube.api.rs.job.address.AddressType;
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -45,6 +52,9 @@ class ExecutorServiceTest {
 
     @Mock
     private JobRepository jobRepository;
+
+    @Mock
+    private TokenService tokenService;
 
     @InjectMocks
     private ExecutorService executorService;
@@ -392,5 +402,59 @@ class ExecutorServiceTest {
         ExecutorContext result = executorService.validateJobAddress(context, job);
 
         assertThat(result.getEnvironmentVariables()).containsEntry("TF_CLI_ARGS_plan", "-existing-flag");
+    }
+
+    private Job jobWithVcsWorkspace() {
+        Vcs vcs = new Vcs();
+        vcs.setVcsType(VcsType.GITHUB);
+        vcs.setConnectionType(VcsConnectionType.STANDALONE);
+
+        Organization organization = new Organization();
+        organization.setId(UUID.randomUUID());
+
+        Workspace vcsWorkspace = new Workspace();
+        vcsWorkspace.setId(UUID.randomUUID());
+        vcsWorkspace.setName("my-workspace");
+        vcsWorkspace.setBranch("main");
+        vcsWorkspace.setVcs(vcs);
+        vcsWorkspace.setSource("https://github.com/example/repo.git");
+
+        Job vcsJob = new Job();
+        vcsJob.setId(42);
+        vcsJob.setOrganization(organization);
+        vcsJob.setWorkspace(vcsWorkspace);
+        return vcsJob;
+    }
+
+    // Issue #3665: a terminal VcsTokenAcquisitionException (e.g. the GitHub App is not
+    // installed) must stop dispatch with a plain terminal ExecutionException, not escape
+    // unchecked or be swallowed.
+    @Test
+    void shouldRethrowTerminalVcsTokenFailureAsExecutionException() throws Exception {
+        Job vcsJob = jobWithVcsWorkspace();
+        when(tokenService.getAccessToken(vcsJob.getWorkspace().getSource(), vcsJob.getWorkspace().getVcs()))
+                .thenThrow(new VcsTokenAcquisitionException("GitHub App cannot access 'example/repo' (404).", null, false));
+
+        assertThatThrownBy(() -> executorService.execute(vcsJob, "step-1", flow(FlowType.terraformPlan)))
+                .isInstanceOf(ExecutionException.class)
+                .isNotInstanceOf(DispatchRetryableException.class)
+                .hasMessageContaining("GitHub App cannot access");
+    }
+
+    // Issue #3665/#3666: a retryable VcsTokenAcquisitionException (e.g. a GitHub rate limit)
+    // must surface as DispatchRetryableException, carrying the provider's retry-after hint, so
+    // ScheduleJob's bounded dispatch-retry budget (not an instant failure) handles it.
+    @Test
+    void shouldRethrowRetryableVcsTokenFailureAsDispatchRetryableExceptionWithHint() throws Exception {
+        Job vcsJob = jobWithVcsWorkspace();
+        Duration retryAfter = Duration.ofSeconds(30);
+        when(tokenService.getAccessToken(vcsJob.getWorkspace().getSource(), vcsJob.getWorkspace().getVcs()))
+                .thenThrow(new VcsTokenAcquisitionException("GitHub rate-limited this request (429). Will retry.",
+                        null, true, retryAfter));
+
+        assertThatThrownBy(() -> executorService.execute(vcsJob, "step-1", flow(FlowType.terraformPlan)))
+                .isInstanceOf(DispatchRetryableException.class)
+                .extracting(thrown -> ((DispatchRetryableException) thrown).getRetryAfter())
+                .isEqualTo(retryAfter);
     }
 }

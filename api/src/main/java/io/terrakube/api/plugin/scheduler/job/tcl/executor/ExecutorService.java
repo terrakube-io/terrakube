@@ -24,6 +24,7 @@ import io.terrakube.api.plugin.scheduler.job.tcl.model.Flow;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.FlowType;
 import io.terrakube.api.plugin.token.dynamic.DynamicCredentialsService;
 import io.terrakube.api.plugin.vcs.TokenService;
+import io.terrakube.api.plugin.vcs.provider.exception.VcsTokenAcquisitionException;
 import io.terrakube.api.repository.AddressRepository;
 import io.terrakube.api.repository.GlobalVarRepository;
 import io.terrakube.api.repository.JobRepository;
@@ -116,10 +117,21 @@ public class ExecutorService {
             executorContext.setConnectionType(vcs.getConnectionType().toString());
             try {
                 executorContext.setAccessToken(tokenService.getAccessToken(job.getWorkspace().getSource(), vcs));
+            } catch (VcsTokenAcquisitionException e) {
+                // Previously this exception type could not even be thrown here (RestTemplate's
+                // unchecked HttpClientErrorException escaped uncaught); now it's classified and
+                // must stop dispatch rather than letting the job race ahead with no token.
+                if (e.isRetryable()) {
+                    throw new DispatchRetryableException(e.getMessage(), e, e.getRetryAfter());
+                }
+                throw new ExecutionException(e.getMessage(), e);
             } catch (JsonProcessingException | NoSuchAlgorithmException | InvalidKeySpecException
                     | URISyntaxException e) {
-                log.error("Failed to fetch access token for job {} on workspace {}, error {}", job.getId(),
-                        job.getWorkspace().getName(), e);
+                // Previously logged and continued, dispatching the job with no access token at
+                // all. A checked token-acquisition failure must also stop dispatch.
+                throw new ExecutionException(String.format(
+                        "Failed to prepare VCS access token for job %d on workspace %s: %s", job.getId(),
+                        job.getWorkspace().getName(), e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()), e);
             }
             log.info("Private Repository {}", executorContext.getVcsType());
         } else if (job.getWorkspace().getSsh() != null) {
@@ -360,7 +372,7 @@ public class ExecutorService {
     }
 
     private HashMap<String, String> loadOtherEnvironmentVariables(Job job, Flow flow,
-            HashMap<String, String> workspaceEnvVariables) {
+            HashMap<String, String> workspaceEnvVariables) throws ExecutionException {
         if (flow.getInputsEnv() != null
                 || (flow.getImportCommands() != null && flow.getImportCommands().getInputsEnv() != null)) {
             if (flow.getImportCommands() != null && flow.getImportCommands().getInputsEnv() != null) {
@@ -420,11 +432,17 @@ public class ExecutorService {
                         try {
                             String accessToken = tokenService.getAccessToken(toolsRepository, vcs.get());
                             workspaceEnvVariables.put("TERRAKUBE_PRIVATE_EXTENSION_REPO_TOKEN", accessToken);
-                        } catch (JsonProcessingException | NoSuchAlgorithmException | InvalidKeySpecException
-                                | URISyntaxException e) {
-                            log.error(
-                                    "Failed to fetch access token for private extension repository for job {} on workspace {}, error {}",
-                                    job.getId(), job.getWorkspace().getName(), e);
+                        } catch (VcsTokenAcquisitionException | JsonProcessingException | NoSuchAlgorithmException
+                                | InvalidKeySpecException | URISyntaxException e) {
+                            // Fixed for consistency with the main workspace-token fetch above: a
+                            // failure here must stop dispatch rather than silently proceeding with
+                            // no private-extension-repo token. Not wired into the bounded
+                            // dispatch-retry budget (ScheduleJob) - this is a secondary env-var
+                            // lookup, not the primary dispatch path.
+                            throw new ExecutionException(String.format(
+                                    "Failed to fetch access token for private extension repository for job %d on workspace %s: %s",
+                                    job.getId(), job.getWorkspace().getName(),
+                                    e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()), e);
                         }
                     }
                 }

@@ -27,6 +27,7 @@ import com.yahoo.elide.core.security.RequestScope;
 
 import io.terrakube.api.plugin.scheduler.module.DeleteStorageCacheJob;
 import io.terrakube.api.plugin.scheduler.module.ModuleRefreshService;
+import io.terrakube.api.plugin.vcs.provider.exception.VcsTokenAcquisitionException;
 import io.terrakube.api.plugin.vcs.provider.github.GitHubTokenService;
 import io.terrakube.api.repository.ModuleRepository;
 import io.terrakube.api.rs.module.Module;
@@ -174,7 +175,8 @@ public class ModuleManageHook implements LifeCycleHook<Module> {
             gitHubTokenService.getGitHubAppToken(module.getVcs(), ownerAndRepo);
             log.debug("Successfully fetched GitHub App Token for module {}/{}/{}", module.getOrganization().getName(),
                     module.getName(), module.getProvider());
-        } catch (URISyntaxException | JsonProcessingException | NoSuchAlgorithmException | InvalidKeySpecException e) {
+        } catch (URISyntaxException | JsonProcessingException | NoSuchAlgorithmException | InvalidKeySpecException
+                | VcsTokenAcquisitionException e) {
             log.error("Failed to fetch GitHub App Token for module {}/{}/{}, error {}",
                     module.getOrganization().getName(), module.getName(), module.getProvider(), e.getMessage());
         }

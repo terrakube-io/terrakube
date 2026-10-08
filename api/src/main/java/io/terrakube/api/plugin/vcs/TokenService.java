@@ -21,6 +21,7 @@ import io.terrakube.api.plugin.vcs.provider.azdevops.AzDevOpsTokenService;
 import io.terrakube.api.plugin.vcs.provider.bitbucket.BitBucketToken;
 import io.terrakube.api.plugin.vcs.provider.bitbucket.BitbucketTokenService;
 import io.terrakube.api.plugin.vcs.provider.exception.TokenException;
+import io.terrakube.api.plugin.vcs.provider.exception.VcsTokenAcquisitionException;
 import io.terrakube.api.plugin.vcs.provider.github.GitHubToken;
 import io.terrakube.api.plugin.vcs.provider.github.GitHubTokenService;
 import io.terrakube.api.plugin.vcs.provider.gitlab.GitLabToken;
@@ -168,7 +169,8 @@ public class TokenService {
     // Get the access token for access to the supplied repository, ownerAndRepo is
     // an array of the owner and the repository name
     public String getAccessToken(String[] ownerAndRepo, Vcs vcs)
-            throws JsonMappingException, JsonProcessingException, NoSuchAlgorithmException, InvalidKeySpecException {
+            throws JsonMappingException, JsonProcessingException, NoSuchAlgorithmException, InvalidKeySpecException,
+            VcsTokenAcquisitionException {
         String token = vcs.getAccessToken();
         // If the token is already set, return it, normally this is oAuth token
         if (token!=null && !token.isEmpty()) return token;
@@ -179,7 +181,7 @@ public class TokenService {
 
     // Get the access token for access to the supplied repository in full URL
     public String getAccessToken(String gitPath, Vcs vcs) throws URISyntaxException, JsonMappingException,
-            JsonProcessingException, NoSuchAlgorithmException, InvalidKeySpecException {
+            JsonProcessingException, NoSuchAlgorithmException, InvalidKeySpecException, VcsTokenAcquisitionException {
         log.info("Getting access token for repository {} using vcs id: {}", gitPath, vcs.getId());
 
         String token = vcs.getAccessToken();

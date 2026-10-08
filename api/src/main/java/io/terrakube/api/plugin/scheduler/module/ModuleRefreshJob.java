@@ -193,7 +193,8 @@ public class ModuleRefreshJob implements Job {
 
     private Map<String, Ref> getVersionFromRepository(String source, Vcs vcs, Ssh ssh)
             throws JsonProcessingException, NoSuchAlgorithmException, InvalidKeySpecException,
-            URISyntaxException, GitAPIException {
+            URISyntaxException, GitAPIException,
+            io.terrakube.api.plugin.vcs.provider.exception.VcsTokenAcquisitionException {
         CredentialsProvider credentialsProvider = null;
         TransportConfigCallback transportConfigCallback = null;
         Map<String, Ref> tags = new HashMap<>(), originalTags = new HashMap<>();
