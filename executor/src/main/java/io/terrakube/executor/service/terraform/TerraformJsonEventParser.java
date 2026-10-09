@@ -9,9 +9,14 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 @Slf4j
 public class TerraformJsonEventParser {
+
+    // A resource at one of these can't fail any further; any other status is just in-progress.
+    private static final Set<String> TERMINAL_STATUSES = Set.of(
+            "applied", "errored", "ephemeral-renewed", "ephemeral-errored");
 
     private final ObjectMapper objectMapper;
     private volatile boolean sawTerraformEvent;
@@ -205,11 +210,12 @@ public class TerraformJsonEventParser {
             // this address - typically because evaluation errored before Terraform could
             // determine an action (e.g. a provider that can't authenticate) - so the resource
             // still surfaces instead of the diagnostic (and the only record of this resource
-            // even being part of the run) being silently dropped. Only set status on a freshly
-            // seeded entry (no status key yet) - an already-seeded resource keeps whatever
-            // status its own events already gave it.
+            // even being part of the run) being silently dropped. A non-terminal status is
+            // corrected to errored, since Terraform/OpenTofu don't always pair a failure with a
+            // dedicated apply_errored event (#3672); a terminal status is left alone.
             Map<String, Object> change = findOrSeedChange(changes, addressString);
-            if ("error".equals(severity) && !change.containsKey("status")) {
+            Object currentStatus = change.get("status");
+            if ("error".equals(severity) && (currentStatus == null || !TERMINAL_STATUSES.contains(currentStatus))) {
                 change.put("status", "errored");
             }
             addDiagnostic(change, diagnosticEntry);
