@@ -28,13 +28,12 @@ import org.mockito.InOrder;
 import org.mockito.Mockito;
 import org.mockito.stubbing.Answer;
 import org.slf4j.LoggerFactory;
-import org.springframework.data.redis.core.RedisTemplate;
-import org.springframework.data.redis.core.StreamOperations;
 
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Files;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -52,6 +51,7 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
@@ -71,8 +71,6 @@ class TerraformExecutorServiceImplTest {
     private final ApplyStructuredOutputService applyStructuredOutputService = Mockito.mock(ApplyStructuredOutputService.class);
     private final TerraformOutputsService terraformOutputsService = Mockito.mock(TerraformOutputsService.class);
     private final ObjectMapper objectMapper = new ObjectMapper();
-    private final RedisTemplate redisTemplate = Mockito.mock(RedisTemplate.class);
-    private final StreamOperations streamOperations = Mockito.mock(StreamOperations.class);
     private final StructuredOutputPersistenceQueue structuredOutputPersistenceQueue = Mockito.mock(StructuredOutputPersistenceQueue.class);
     private final ExecutorFlagsProperties executorFlagsProperties = new ExecutorFlagsProperties();
     private final StructuredOutputProperties structuredOutputProperties = new StructuredOutputProperties();
@@ -80,8 +78,6 @@ class TerraformExecutorServiceImplTest {
     private final BinaryCacheRecoveryService binaryCacheRecoveryService = Mockito.mock(BinaryCacheRecoveryService.class);
 
     private TerraformExecutorServiceImpl subject() {
-        when(redisTemplate.opsForStream()).thenReturn(streamOperations);
-        when(streamOperations.size(anyString())).thenReturn(0L);
         when(terraformState.getBackendStateFile(anyString(), anyString(), any(File.class), anyString())).thenReturn("backend.tfvars");
         when(structuredOutputPersistenceQueue.awaitDrain(any())).thenReturn(true);
         structuredOutputProperties.setDrainTimeoutMs(1000);
@@ -96,7 +92,6 @@ class TerraformExecutorServiceImplTest {
                 terraformOutputsService,
                 objectMapper,
                 false,
-                redisTemplate,
                 1,
                 structuredOutputPersistenceQueue,
                 executorFlagsProperties,
@@ -1114,5 +1109,52 @@ class TerraformExecutorServiceImplTest {
         assertTrue(captureIndex > diagnosticIndex, "real diagnostic must precede the capture note: " + result.getOutputLog());
         assertTrue(result.getOutputLog().contains("The Terraform/OpenTofu diagnostic above is the primary error."));
         assertEquals(1.0, meterRegistry.get("terrakube.executor.process.stream.drain.timeouts").counter().count());
+    }
+
+    // Each step used to pad itself with fixed sleeps (init, banner, state read, then polling the
+    // log stream until it looked quiet) - over 10s of a plan and 15s of an apply doing nothing.
+    // The only real requirement was that every line is out before the step reports finished,
+    // which flush() now signals directly.
+    @Test
+    void planAndApplyFlushTheirLogsOnceAtTheEndWithoutSleeping() throws Exception {
+        TerraformExecutorServiceImpl subject = spy(subject());
+        List<String> logCalls = new ArrayList<>();
+        doAnswer(invocation -> logCalls.add("line")).when(logsService).sendLogs(any(), any(), anyInt(), any());
+        doAnswer(invocation -> logCalls.add("flush")).when(logsService).flush();
+
+        when(terraformClient.init(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(true));
+        when(terraformClient.show(any(TerraformProcessData.class), any(Consumer.class), any(Consumer.class)))
+                .thenReturn(CompletableFuture.completedFuture(false));
+        when(terraformClient.statePull(any(TerraformProcessData.class), any(Consumer.class), any(Consumer.class)))
+                .thenReturn(CompletableFuture.completedFuture(false));
+        when(terraformClient.apply(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenAnswer(invocation -> {
+                    invocation.<Consumer<String>>getArgument(1).accept("Apply complete!");
+                    return CompletableFuture.completedFuture(true);
+                });
+        TerraformClient jsonPlanClient = Mockito.mock(TerraformClient.class);
+        when(jsonPlanClient.planDetailExitCode(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenAnswer(invocation -> {
+                    invocation.<Consumer<String>>getArgument(1).accept("{\"@message\":\"Plan: 0 to add\",\"type\":\"change_summary\"}");
+                    return CompletableFuture.completedFuture(0);
+                });
+        doReturn(jsonPlanClient).when(subject).buildJsonEnabledPlanClient();
+
+        long planStart = System.nanoTime();
+        ExecutorJobResult plan = subject.plan(createJob(), tempDir.toFile(), false);
+        long planMs = (System.nanoTime() - planStart) / 1_000_000;
+        assertEquals(0, plan.getExitCode(), plan.getOutputLog());
+        assertTrue(planMs < 5000, "plan took " + planMs + " ms");
+        assertEquals(List.of("flush"), logCalls.subList(logCalls.indexOf("flush"), logCalls.size()));
+
+        logCalls.clear();
+        long applyStart = System.nanoTime();
+        ExecutorJobResult apply = subject.apply(createJob(), tempDir.toFile());
+        long applyMs = (System.nanoTime() - applyStart) / 1_000_000;
+        assertTrue(apply.isSuccessfulExecution(), apply.getOutputLog());
+        assertTrue(applyMs < 5000, "apply took " + applyMs + " ms");
+        assertEquals(List.of("flush"), logCalls.subList(logCalls.indexOf("flush"), logCalls.size()));
+        assertTrue(logCalls.size() > 1, "apply sent no log lines");
     }
 }
