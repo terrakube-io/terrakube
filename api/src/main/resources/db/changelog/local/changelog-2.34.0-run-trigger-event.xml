@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+            http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+
+    <changeSet id="2-34-0-run-trigger-event" author="jake">
+        <!-- Added onDelete="CASCADE" to the FK after this changeset had already run against
+             some local/dev databases on this branch; ANY lets Liquibase accept the new body
+             instead of failing checksum validation on those. Same precedent as
+             changelog-2.34.0-workspace-run-trigger.xml. -->
+        <validCheckSum>ANY</validCheckSum>
+        <!-- last_error is "text", not "clob" - mirrors notification_outbox.payload/last_error;
+             see changelog-2.33.0-notification.xml for why. -->
+        <createTable tableName="run_trigger_event">
+            <column name="id" type="varchar(36)">
+                <constraints primaryKey="true" nullable="false" />
+            </column>
+            <column name="job_id" type="BIGINT">
+                <constraints nullable="false" />
+            </column>
+            <column name="status" type="varchar(20)" defaultValue="PENDING">
+                <constraints nullable="false" />
+            </column>
+            <column name="attempt_count" type="int" defaultValueNumeric="0">
+                <constraints nullable="false" />
+            </column>
+            <column name="last_attempt_at" type="datetime" />
+            <!-- Null means "due as soon as picked up" (first attempt). -->
+            <column name="next_attempt_at" type="datetime" />
+            <column name="last_error" type="text" />
+            <column name="created_date" type="datetime" />
+            <column name="updated_date" type="datetime" />
+            <column name="created_by" type="varchar(128)" />
+            <column name="updated_by" type="varchar(128)" />
+        </createTable>
+        <!-- onDelete="CASCADE": job history retention (ScheduleJob, KEEP_JOB_HISTORY) and
+             RemoteTfeService both hard-delete old job rows directly, and an event can easily
+             outlive its job under the 90-day default retention. Without cascade, that delete
+             fails with a FK violation instead of taking the now-pointless event row with it. -->
+        <addForeignKeyConstraint baseTableName="run_trigger_event" baseColumnNames="job_id"
+            constraintName="fk_run_trigger_event_job_id" referencedTableName="job"
+            referencedColumnNames="id" onDelete="CASCADE" />
+        <!-- One event per job: the enforced idempotency key, not just application logic. -->
+        <addUniqueConstraint tableName="run_trigger_event" columnNames="job_id"
+            constraintName="uk_run_trigger_event_job_id" />
+        <!-- Backs findDueForProcessing's WHERE status = ? ORDER BY created_date. -->
+        <createIndex tableName="run_trigger_event" indexName="idx_run_trigger_event_status_created_date">
+            <column name="status" />
+            <column name="created_date" />
+        </createIndex>
+        <!-- Backs the stuck-row sweep's WHERE status = PROCESSING AND last_attempt_at < ?. -->
+        <createIndex tableName="run_trigger_event" indexName="idx_run_trigger_event_status_last_attempt">
+            <column name="status" />
+            <column name="last_attempt_at" />
+        </createIndex>
+    </changeSet>
+
+    <!--
+      Backs RunTriggerDispatchService's fan-out idempotency check
+      (findFirstByWorkspaceAndTriggeredByJobIdOrderByIdDesc), run once per dependent on every
+      dispatch. Not a unique constraint: SQL Server counts multiple NULLs as a duplicate key
+      under a plain unique index, and triggered_by_job_id is NULL for every job that was not
+      itself created by a run trigger, so uniqueness has to stay an application-level invariant
+      enforced by this lookup, not a database one.
+    -->
+    <changeSet id="2-34-0-job-run-trigger-lineage-index" author="jake">
+        <createIndex tableName="job" indexName="idx_job_workspace_triggered_by_job_id">
+            <column name="workspace_id" />
+            <column name="triggered_by_job_id" />
+        </createIndex>
+    </changeSet>
+
+</databaseChangeLog>

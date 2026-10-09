@@ -56,6 +56,9 @@ public interface WorkspaceRunTriggerRepository extends JpaRepository<WorkspaceRu
     /** Guards the unique constraint with a friendly error instead of a DB violation. */
     boolean existsBySourceWorkspaceIdAndDestinationWorkspaceId(UUID sourceWorkspaceId, UUID destinationWorkspaceId);
 
+    /** Whether a workspace has anything to dispatch to - checked before writing a RunTriggerEvent. */
+    boolean existsBySourceWorkspaceIdAndEnabledTrueAndDestinationWorkspace_DeletedFalse(UUID sourceWorkspaceId);
+
     /**
      * How many enabled edges already fan out from a workspace, for the configuration-time cap
      * that keeps dispatch from ever having to drop one at runtime. Mirrors

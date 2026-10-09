@@ -21,6 +21,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
+import org.quartz.ObjectAlreadyExistsException;
 import org.springframework.dao.DataIntegrityViolationException;
 
 import java.util.ArrayList;
@@ -31,6 +32,7 @@ import java.util.UUID;
 import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
@@ -87,6 +89,12 @@ class RunTriggerDispatchServiceTest {
         lenient().doReturn(Optional.of(baselineHistory))
                 .when(historyRepository)
                 .findFirstByWorkspaceAndCreatedDateLessThanOrderByCreatedDateDesc(any(), any());
+
+        // No prior attempt at this edge by default; individual tests override this to exercise
+        // the idempotency path.
+        lenient().doReturn(Optional.empty())
+                .when(jobRepository)
+                .findFirstByWorkspaceAndTriggeredByJobIdOrderByIdDesc(any(), any());
 
         // The writer owns the shape of the job and its transaction boundary, both covered by
         // RunTriggerJobWriterTest. Here it stands in for a committed row, so the assertions can
@@ -525,6 +533,114 @@ class RunTriggerDispatchServiceTest {
         subject.dispatchFor(COMPLETED_JOB_ID);
 
         verify(jobWriter, never()).persist(any(), any(), any(), anyInt());
+    }
+
+    // ---------------------------------------------------------------- fan-out idempotency
+
+    /**
+     * The case a reclaimed/retried RunTriggerEvent produces: this same job already fired this
+     * same edge once, and that attempt is still pending because it never got as far as
+     * scheduling. Re-dispatching must retry only the Quartz step, not create a second job.
+     */
+    @Test
+    void previouslyPersistedPendingJobIsRescheduledInsteadOfDuplicated() throws Exception {
+        Job completed = completedJob(0);
+        stepsWithFlow(completed, FlowType.terraformApply, JobStatus.completed);
+        Workspace destination = workspace("consumer", "template-default");
+        triggersFromSource(trigger(destination, null));
+
+        Job existing = new Job();
+        existing.setId(2001);
+        existing.setWorkspace(destination);
+        existing.setStatus(JobStatus.pending);
+        doReturn(Optional.of(existing)).when(jobRepository)
+                .findFirstByWorkspaceAndTriggeredByJobIdOrderByIdDesc(destination, COMPLETED_JOB_ID);
+
+        subject.dispatchFor(COMPLETED_JOB_ID);
+
+        verify(jobWriter, never()).persist(any(), any(), any(), anyInt());
+        verify(jobNotificationTrigger, never()).notifyStatusChanged(any());
+        verify(scheduleJobService).createJobContext(existing);
+    }
+
+    /**
+     * The other half of the same reclaim: the prior attempt actually finished, including
+     * scheduling, before the row was reclaimed. Quartz still has the context, so retrying it
+     * throws - and that must be treated as confirmation, not a dispatch failure.
+     */
+    @Test
+    void previouslyPersistedPendingJobAlreadyScheduledIsLeftAlone() throws Exception {
+        Job completed = completedJob(0);
+        stepsWithFlow(completed, FlowType.terraformApply, JobStatus.completed);
+        Workspace destination = workspace("consumer", "template-default");
+        triggersFromSource(trigger(destination, null));
+
+        Job existing = new Job();
+        existing.setId(2001);
+        existing.setWorkspace(destination);
+        existing.setStatus(JobStatus.pending);
+        doReturn(Optional.of(existing)).when(jobRepository)
+                .findFirstByWorkspaceAndTriggeredByJobIdOrderByIdDesc(destination, COMPLETED_JOB_ID);
+        doThrow(new ObjectAlreadyExistsException("already scheduled"))
+                .when(scheduleJobService).createJobContext(existing);
+
+        subject.dispatchFor(COMPLETED_JOB_ID);
+
+        verify(jobWriter, never()).persist(any(), any(), any(), anyInt());
+    }
+
+    /** A dependent that already ran to completion on a prior attempt needs nothing further. */
+    @Test
+    void previouslyPersistedNonPendingJobIsSkipped() throws Exception {
+        Job completed = completedJob(0);
+        stepsWithFlow(completed, FlowType.terraformApply, JobStatus.completed);
+        Workspace destination = workspace("consumer", "template-default");
+        triggersFromSource(trigger(destination, null));
+
+        Job existing = new Job();
+        existing.setId(2001);
+        existing.setWorkspace(destination);
+        existing.setStatus(JobStatus.completed);
+        doReturn(Optional.of(existing)).when(jobRepository)
+                .findFirstByWorkspaceAndTriggeredByJobIdOrderByIdDesc(destination, COMPLETED_JOB_ID);
+
+        subject.dispatchFor(COMPLETED_JOB_ID);
+
+        verify(jobWriter, never()).persist(any(), any(), any(), anyInt());
+        verify(scheduleJobService, never()).createJobContext(any());
+    }
+
+    // ---------------------------------------------------------------- failure propagation
+
+    /**
+     * dispatchFor (the legacy/fire-and-forget entry point) must stay silent on a run that
+     * already succeeded, but dispatchInternal itself - the one RunTriggerEventDispatchService
+     * calls directly - has to surface a partial failure so the event is retried with backoff
+     * instead of being recorded PROCESSED. See RunTriggerEventDispatchServiceTest for that
+     * side of the contract.
+     */
+    @Test
+    void dispatchInternalThrowsWhenADependentFailsToEnqueue() throws Exception {
+        Job completed = completedJob(0);
+        stepsWithFlow(completed, FlowType.terraformApply, JobStatus.completed);
+        triggersFromSource(trigger(workspace("consumer", "template-default"), null));
+
+        doThrow(new IllegalStateException("scheduler down")).when(scheduleJobService).createJobContext(any());
+
+        assertThatThrownBy(() -> subject.dispatchInternal(COMPLETED_JOB_ID))
+                .isInstanceOf(RunTriggerDispatchPartialFailureException.class);
+    }
+
+    /** dispatchFor must never surface that same failure - it has no retry mechanism of its own. */
+    @Test
+    void dispatchForSwallowsThePartialFailureDispatchInternalThrows() throws Exception {
+        Job completed = completedJob(0);
+        stepsWithFlow(completed, FlowType.terraformApply, JobStatus.completed);
+        triggersFromSource(trigger(workspace("consumer", "template-default"), null));
+
+        doThrow(new IllegalStateException("scheduler down")).when(scheduleJobService).createJobContext(any());
+
+        subject.dispatchFor(COMPLETED_JOB_ID);
     }
 
     private static Job argThatTargets(Workspace workspace) {

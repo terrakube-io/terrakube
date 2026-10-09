@@ -4,7 +4,7 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import io.terrakube.api.helpers.FailUnkownMethod;
 import io.terrakube.api.plugin.notification.JobNotificationTrigger;
 import io.terrakube.api.plugin.scheduler.ScheduleJobService;
-import io.terrakube.api.plugin.scheduler.trigger.RunTriggerDispatchService;
+import io.terrakube.api.plugin.scheduler.trigger.RunTriggerEventWriter;
 import io.terrakube.api.plugin.scheduler.reconciliation.ReconciliationResult.ReconciliationDisposition;
 import io.terrakube.api.repository.JobRepository;
 import io.terrakube.api.repository.StepRepository;
@@ -22,7 +22,6 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
@@ -38,7 +37,7 @@ class JobReconciliationServiceTest {
     JobNotificationTrigger jobNotificationTrigger;
     ScheduleJobService scheduleJobService;
     Scheduler scheduler;
-    RunTriggerDispatchService runTriggerDispatchService;
+    RunTriggerEventWriter runTriggerEventWriter;
     JobReconciliationService subject;
 
     @BeforeEach
@@ -53,11 +52,11 @@ class JobReconciliationServiceTest {
         lenient().doAnswer(i -> i.getArgument(0)).when(jobRepository).save(any());
         lenient().doAnswer(i -> i.getArgument(0)).when(workspaceRepository).save(any());
         lenient().doReturn(null).when(jobRepository).findNextDispatchableExecutableJobId();
-        runTriggerDispatchService = mock(RunTriggerDispatchService.class);
+        runTriggerEventWriter = mock(RunTriggerEventWriter.class);
         subject = new JobReconciliationService(jobRepository, stepRepository, workspaceRepository,
                 new JobTerminalStateDeriver(), jobNotificationTrigger, scheduleJobService,
                 scheduler, new JobReconciliationMetrics(new SimpleMeterRegistry()),
-                runTriggerDispatchService);
+                runTriggerEventWriter);
     }
 
     private Job job(int id, JobStatus status) {
@@ -95,18 +94,18 @@ class JobReconciliationServiceTest {
     }
 
     /**
-     * Anchoring dispatch to the transition, not to the job status, is what makes it fire once:
-     * a second caller finds the job already terminal and returns before this point.
+     * Anchoring the event write to the transition, not to the job status, is what makes it fire
+     * once: a second caller finds the job already terminal and returns before this point.
      */
     @Test
-    void transitionToCompletedDispatchesRunTriggersOnce() {
+    void transitionToCompletedEnqueuesARunTriggerEventOnce() {
         Job j = job(755, JobStatus.approved);
         doReturn(j).when(jobRepository).lockForUpdate(755);
         doReturn(List.of(step(JobStatus.completed, 100))).when(stepRepository).findByJobId(755);
 
         subject.reconcile(755, false);
 
-        verify(runTriggerDispatchService, times(1)).dispatchFor(755);
+        verify(runTriggerEventWriter, times(1)).enqueueIfQualifying(j);
     }
 
     @Test
@@ -119,7 +118,7 @@ class JobReconciliationServiceTest {
         ReconciliationResult result = subject.reconcile(756, false);
 
         assertThat(result.targetStatus()).isEqualTo(JobStatus.failed);
-        verify(runTriggerDispatchService, never()).dispatchFor(anyInt());
+        verify(runTriggerEventWriter, never()).enqueueIfQualifying(any());
     }
 
     @Test
@@ -130,7 +129,7 @@ class JobReconciliationServiceTest {
 
         subject.reconcile(755, false);
 
-        verify(runTriggerDispatchService, never()).dispatchFor(anyInt());
+        verify(runTriggerEventWriter, never()).enqueueIfQualifying(any());
     }
 
     @Test
@@ -141,7 +140,7 @@ class JobReconciliationServiceTest {
 
         subject.reconcile(755, true);
 
-        verify(runTriggerDispatchService, never()).dispatchFor(anyInt());
+        verify(runTriggerEventWriter, never()).enqueueIfQualifying(any());
     }
 
     @Test
