@@ -1,5 +1,7 @@
 package io.terrakube.api.plugin.state;
 
+import io.terrakube.api.plugin.security.user.InternalTokens;
+
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.terrakube.api.plugin.scheduler.ScheduleJobService;
@@ -207,7 +209,7 @@ public class RemoteTfeService {
     }
 
     private boolean validateTerrakubeUser(JwtAuthenticationToken currentUser) {
-        return currentUser.getTokenAttributes().get("iss").equals("TerrakubeInternal");
+        return InternalTokens.isService(currentUser.getTokenAttributes());
     }
 
     private boolean validateUserIsMemberOrg(Organization organization, JwtAuthenticationToken currentUser) {
@@ -223,6 +225,14 @@ public class RemoteTfeService {
             });
         });
         return userIsMemberOrg.get();
+    }
+
+    // The remote backend reads the organization's entitlements before it reads shared state.
+    private boolean validateJobBelongsToOrg(Organization organization, JwtAuthenticationToken currentUser) {
+        String jobWorkspaceId = InternalTokens.jobWorkspaceId(currentUser.getTokenAttributes());
+        return jobWorkspaceId != null && workspaceRepository.findById(UUID.fromString(jobWorkspaceId))
+                .map(workspace -> workspace.getOrganization().getId().equals(organization.getId()))
+                .orElse(false);
     }
 
     private boolean validateUserLimitedWorkspaceAccess(Organization organization, JwtAuthenticationToken currentUser) {
@@ -378,7 +388,8 @@ public class RemoteTfeService {
     EntitlementData getOrgEntitlementSet(String organizationName, JwtAuthenticationToken currentUser) {
         Organization organization = organizationRepository.getOrganizationByName(organizationName);
 
-        if (organization != null && (validateUserIsMemberOrg(organization, currentUser) || validateUserLimitedWorkspaceAccess(organization, currentUser))) {
+        if (organization != null && (validateUserIsMemberOrg(organization, currentUser) || validateUserLimitedWorkspaceAccess(organization, currentUser)
+                || validateJobBelongsToOrg(organization, currentUser))) {
             EntitlementModel entitlementModel = new EntitlementModel();
             entitlementModel.setId("org-" + organizationName);
             Map<String, Object> entitlementAttributes = new HashMap<>();
@@ -1268,26 +1279,6 @@ public class RemoteTfeService {
 
     public String getWorkspaceName(String id){
         return workspaceRepository.getReferenceById(UUID.fromString(id)).getName();
-    }
-
-    public boolean validateWorkspaceIdTokenCanAccessState(String workspaceIdToken, String workspaceId) {
-        Optional<Workspace> workspaceOptinal = workspaceRepository.findById(UUID.fromString(workspaceId));
-        boolean hasAcess = false;
-        if (!workspaceOptinal.isEmpty()) {
-            Workspace workspace = workspaceOptinal.get();
-            if (workspace.isGlobalRemoteState()) {
-                hasAcess = true;
-            } else {
-                String[] sharedIds = workspace.getSharedIds().split(",");
-                for (String sharedId : sharedIds) {
-                    log.info("Checking if workspace {} is shared with {} result {}", workspace.getName(), workspaceIdToken, sharedId.trim().equals(workspaceIdToken));
-                    if (sharedId.trim().equals(workspaceIdToken)) {
-                        hasAcess = true;
-                    }
-                }
-            }
-        }
-        return hasAcess;
     }
 
     StateData getWorkspaceState(String historyId) {

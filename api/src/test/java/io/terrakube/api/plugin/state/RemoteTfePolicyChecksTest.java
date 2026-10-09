@@ -32,6 +32,7 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 
 import java.time.Instant;
 import java.util.*;
+import io.terrakube.api.plugin.security.state.StateService;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -89,7 +90,7 @@ class RemoteTfePolicyChecksTest {
         remoteTfeService.setPolicyOverrideRepository(policyOverrideRepository);
         remoteTfeService.setPolicySetRepository(policySetRepository);
 
-        remoteTfeController = new RemoteTfeController(remoteTfeService);
+        remoteTfeController = new RemoteTfeController(remoteTfeService, mock(StateService.class));
     }
 
     private JwtAuthenticationToken createJwtToken(String email, List<String> groups) {

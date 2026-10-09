@@ -1,5 +1,7 @@
 package io.terrakube.api.plugin.security.policy;
 
+import io.terrakube.api.plugin.security.user.InternalTokens;
+
 import io.terrakube.api.plugin.security.rbac.RbacService;
 import io.terrakube.api.plugin.token.team.TeamTokenService;
 import io.terrakube.api.repository.TeamRepository;
@@ -50,7 +52,7 @@ public class PolicyWorkspaceAccessService {
 
         if (authentication instanceof JwtAuthenticationToken principalJwt) {
             String issuer = (String) principalJwt.getTokenAttributes().get("iss");
-            if ("TerrakubeInternal".equals(issuer)) {
+            if (InternalTokens.isService(principalJwt.getTokenAttributes())) {
                 return true;
             }
 

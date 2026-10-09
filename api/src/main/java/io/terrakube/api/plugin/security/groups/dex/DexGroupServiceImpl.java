@@ -1,5 +1,7 @@
 package io.terrakube.api.plugin.security.groups.dex;
 
+import io.terrakube.api.plugin.security.user.InternalTokens;
+
 import com.yahoo.elide.core.security.User;
 import io.terrakube.api.plugin.security.federated.FederatedLookupService;
 import io.terrakube.api.plugin.security.request.RequestScopedMemo;
@@ -60,7 +62,7 @@ public class DexGroupServiceImpl implements GroupService {
     @Override
     public boolean isServiceMember(User user, String group) {
         JwtAuthenticationToken principal = ((JwtAuthenticationToken) user.getPrincipal());
-        if ("TerrakubeInternal".equals(principal.getTokenAttributes().get("iss"))) {
+        if (InternalTokens.isService(principal.getTokenAttributes())) {
             log.debug("TerrakubeInternal Client Service Group Membership");
             return true;
         }

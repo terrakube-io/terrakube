@@ -1,5 +1,7 @@
 package io.terrakube.api.plugin.vcs.discovery;
 
+import io.terrakube.api.plugin.security.user.InternalTokens;
+
 import java.util.List;
 import java.util.UUID;
 
@@ -32,7 +34,7 @@ public class VcsRepositoryAccessService {
 
     @Transactional
     public boolean hasViewPermission(Authentication authentication, String vcsId) {
-        if (((JwtAuthenticationToken) authentication).getTokenAttributes().get("iss").equals("TerrakubeInternal")) {
+        if (InternalTokens.isService(authentication)) {
             return true;
         }
 

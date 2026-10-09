@@ -1,5 +1,7 @@
 package io.terrakube.api.plugin.scheduler.reconciliation;
 
+import io.terrakube.api.plugin.security.user.InternalTokens;
+
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
@@ -14,8 +16,6 @@ import java.util.List;
 @Service
 public class SchedulerReconciliationAccessService {
 
-    private static final String INTERNAL_ISSUER = "TerrakubeInternal";
-
     private final String instanceOwner;
 
     public SchedulerReconciliationAccessService(@Value("${io.terrakube.owner}") String instanceOwner) {
@@ -26,7 +26,7 @@ public class SchedulerReconciliationAccessService {
         if (!(authentication instanceof JwtAuthenticationToken token)) {
             return false;
         }
-        if (INTERNAL_ISSUER.equals(token.getTokenAttributes().get("iss"))) {
+        if (InternalTokens.isService(token)) {
             return true;
         }
         Object groups = token.getTokenAttributes().get("groups");

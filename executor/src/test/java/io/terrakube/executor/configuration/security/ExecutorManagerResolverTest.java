@@ -39,10 +39,14 @@ class ExecutorManagerResolverTest {
     }
 
     private String createSignedToken(String base64Secret) {
+        return createSignedToken(base64Secret, "TERRAKUBE_INTERNAL");
+    }
+
+    private String createSignedToken(String base64Secret, String issuer) {
         byte[] secretBytes = Decoders.BASE64URL.decode(base64Secret);
         SecretKey key = Keys.hmacShaKeyFor(secretBytes);
         return Jwts.builder()
-                .issuer("TERRAKUBE_INTERNAL")
+                .issuer(issuer)
                 .subject("Terrakube Internal (Token)")
                 .audience().add("TERRAKUBE_INTERNAL").and()
                 .id(UUID.randomUUID().toString())
@@ -120,6 +124,20 @@ class ExecutorManagerResolverTest {
         String tokenSignedWithDifferentKey = createSignedToken(anotherSecret);
         assertThrows(org.springframework.security.oauth2.server.resource.InvalidBearerTokenException.class, () ->
                 manager.authenticate(new BearerTokenAuthenticationToken(tokenSignedWithDifferentKey))
+        );
+    }
+
+    @Test
+    void resolve_jobTokenSignedWithTheSameSecret_failsAuthentication() {
+        String secret = generateSecret(64);
+        AuthenticationManager manager = ExecutorManagerResolver.builder()
+                .internalJwtSecret(secret)
+                .build()
+                .resolve(request);
+
+        String jobToken = createSignedToken(secret, "TerrakubeInternal");
+        assertThrows(org.springframework.security.oauth2.server.resource.InvalidBearerTokenException.class, () ->
+                manager.authenticate(new BearerTokenAuthenticationToken(jobToken))
         );
     }
 }

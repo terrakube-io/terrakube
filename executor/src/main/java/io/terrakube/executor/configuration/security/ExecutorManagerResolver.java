@@ -13,6 +13,7 @@ import org.springframework.security.authentication.ProviderManager;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import java.util.concurrent.atomic.AtomicReference;
+import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationProvider;
 
@@ -23,6 +24,8 @@ import javax.crypto.SecretKey;
 @Setter
 @Slf4j
 public class ExecutorManagerResolver implements AuthenticationManagerResolver<HttpServletRequest> {
+
+    static final String API_ISSUER = "TERRAKUBE_INTERNAL";
 
     private String internalJwtSecret;
 
@@ -56,7 +59,10 @@ public class ExecutorManagerResolver implements AuthenticationManagerResolver<Ht
             byte[] secretBytes = Decoders.BASE64URL.decode(internalJwtSecret);
             SecretKey jwtSecretKey = Keys.hmacShaKeyFor(secretBytes);
             MacAlgorithm macAlgorithm = getMacAlgorithm(secretBytes.length);
-            return NimbusJwtDecoder.withSecretKey(jwtSecretKey).macAlgorithm(macAlgorithm).build();
+            NimbusJwtDecoder decoder = NimbusJwtDecoder.withSecretKey(jwtSecretKey).macAlgorithm(macAlgorithm).build();
+            // Job tokens are signed with the same secret and readable by job code; only the API may submit jobs.
+            decoder.setJwtValidator(JwtValidators.createDefaultWithIssuer(API_ISSUER));
+            return decoder;
         });
     }
 

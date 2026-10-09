@@ -1,5 +1,7 @@
 package io.terrakube.api.plugin.security.user.dex;
 
+import io.terrakube.api.plugin.security.user.InternalTokens;
+
 import com.yahoo.elide.core.security.User;
 import io.terrakube.api.plugin.security.federated.FederatedLookupService;
 import lombok.extern.slf4j.Slf4j;
@@ -59,8 +61,7 @@ public class DexAuthenticatedUserImpl implements AuthenticatedUser {
 
     @Override
     public boolean isServiceAccountInternal(User user) {
-        log.debug("isServiceAccountInternal {}", getSecurityPrincipal(user).getTokenAttributes().get("iss").equals("TerrakubeInternal"));
-        return getSecurityPrincipal(user).getTokenAttributes().get("iss").equals("TerrakubeInternal");
+        return InternalTokens.isService(getSecurityPrincipal(user).getTokenAttributes());
     }
 
     @Override

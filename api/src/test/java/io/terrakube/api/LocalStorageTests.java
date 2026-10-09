@@ -1,6 +1,9 @@
 package io.terrakube.api;
 
+import io.terrakube.api.rs.workspace.Workspace;
 import org.apache.commons.io.FileUtils;
+import org.hamcrest.Matchers;
+import org.hamcrest.core.IsEqual;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.MockitoAnnotations;
@@ -9,6 +12,8 @@ import org.springframework.http.HttpStatus;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.Charset;
+import java.util.Map;
+import java.util.UUID;
 
 import static io.restassured.RestAssured.given;
 import static org.mockito.Mockito.when;
@@ -104,6 +109,57 @@ public class LocalStorageTests extends ServerApplicationTests {
                 .all()
                 .statusCode(HttpStatus.FORBIDDEN.value());
 
+    }
+
+    @Test
+    void jobTokenReadsOnlyStateSharedWithItsWorkspace() throws IOException {
+        String orgId = "d9b58bd3-f3fc-4056-a026-1163297e80a8";
+        String sharedWorkspaceId = "5ed411ca-7ab8-4d2f-b591-02d0d5788afc";
+        String jobWorkspaceId = "24480d33-2649-4c34-aabd-cbc988eb6265";
+        FileUtils.writeStringToFile(
+                new File(String.format(STATE_DIRECTORY_JSON, FileUtils.getUserDirectoryPath(), orgId, sharedWorkspaceId, "1")),
+                "SAMPLE",
+                Charset.defaultCharset().toString()
+        );
+        String stateUrl = "/tfstate/v1/organization/" + orgId + "/workspace/" + sharedWorkspaceId + "/state/1.json";
+        String jobToken = generateSystemToken(Map.of("workspaceId", jobWorkspaceId));
+
+        Workspace workspace = workspaceRepository.findById(UUID.fromString(sharedWorkspaceId)).get();
+        workspace.setGlobalRemoteState(false);
+        workspace.setSharedIds("");
+        workspaceRepository.save(workspace);
+        try {
+            given().headers("Authorization", "Bearer " + jobToken)
+                    .when().get(stateUrl)
+                    .then().statusCode(HttpStatus.FORBIDDEN.value());
+
+            workspace.setSharedIds(jobWorkspaceId);
+            workspaceRepository.save(workspace);
+            given().headers("Authorization", "Bearer " + jobToken)
+                    .when().get(stateUrl)
+                    .then().statusCode(HttpStatus.OK.value());
+
+            given().headers("Authorization", "Bearer " + jobToken)
+                    .when().put("/tfstate/v1/organization/" + orgId + "/workspace/" + sharedWorkspaceId + "/rollback/1.json")
+                    .then().statusCode(HttpStatus.FORBIDDEN.value());
+        } finally {
+            workspace.setGlobalRemoteState(true);
+            workspace.setSharedIds(null);
+            workspaceRepository.save(workspace);
+        }
+    }
+
+    @Test
+    void jobTokenIsNotTreatedAsInstanceOwner() {
+        given().headers("Authorization", "Bearer " + generateSystemToken(Map.of("workspaceId", "24480d33-2649-4c34-aabd-cbc988eb6265")))
+                .when().get("/api/v1/organization")
+                .then().statusCode(HttpStatus.OK.value())
+                .body("data.size()", IsEqual.equalTo(0));
+
+        given().headers("Authorization", "Bearer " + generateSystemToken())
+                .when().get("/api/v1/organization")
+                .then().statusCode(HttpStatus.OK.value())
+                .body("data.size()", Matchers.greaterThan(0));
     }
 
     @Test

@@ -94,6 +94,31 @@ class TfcApiTests extends ServerApplicationTests {
     }
 
     @Test
+    void getOrgEntitlementSetWithJobTokenOnlyForItsOrganization() {
+        String jobToken = generateSystemToken(Map.of("workspaceId", "24480d33-2649-4c34-aabd-cbc988eb6265"));
+        given()
+                .headers("Authorization", "Bearer " + jobToken)
+                .when()
+                .get("/remote/tfe/v2/organizations/simple/entitlement-set")
+                .then()
+                .statusCode(HttpStatus.OK.value());
+
+        given()
+                .headers("Authorization", "Bearer " + jobToken)
+                .when()
+                .get("/remote/tfe/v2/organizations/aws/entitlement-set")
+                .then()
+                .statusCode(HttpStatus.NOT_FOUND.value());
+        // Org membership is granted for the entitlement read only, not for the other organization endpoints
+        given()
+                .headers("Authorization", "Bearer " + jobToken)
+                .when()
+                .get("/remote/tfe/v2/organizations/simple/projects")
+                .then()
+                .statusCode(HttpStatus.NOT_FOUND.value());
+    }
+
+    @Test
     void getOrgCapacity() {
         given()
                 .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))

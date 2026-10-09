@@ -286,6 +286,7 @@ class DexGroupServiceTests {
             assertFalse(service.isServiceMember(user, "OTHER"));
         }
         assertTrue(service.isServiceMember(userWith(Map.of("iss", "TerrakubeInternal")), "ANY"));
+        assertFalse(service.isServiceMember(userWith(Map.of("iss", "TerrakubeInternal", "workspaceId", "ws")), "ANY"));
     }
 
     @Test

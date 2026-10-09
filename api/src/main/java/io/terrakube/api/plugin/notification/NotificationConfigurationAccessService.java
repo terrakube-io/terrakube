@@ -1,5 +1,7 @@
 package io.terrakube.api.plugin.notification;
 
+import io.terrakube.api.plugin.security.user.InternalTokens;
+
 import java.util.List;
 import java.util.UUID;
 
@@ -90,7 +92,7 @@ public class NotificationConfigurationAccessService {
     }
 
     private boolean isInternalIssuer(Authentication authentication) {
-        return ((JwtAuthenticationToken) authentication).getTokenAttributes().get("iss").equals("TerrakubeInternal");
+        return InternalTokens.isService(authentication);
     }
 
     @SuppressWarnings("unchecked")

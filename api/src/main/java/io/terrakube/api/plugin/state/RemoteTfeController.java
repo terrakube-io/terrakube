@@ -15,6 +15,8 @@ import io.terrakube.api.plugin.state.model.runs.RunsDataList;
 import io.terrakube.api.plugin.state.model.state.StateData;
 import io.terrakube.api.plugin.state.model.workspace.WorkspaceData;
 import io.terrakube.api.plugin.state.model.workspace.WorkspaceError;
+import io.terrakube.api.plugin.security.state.StateService;
+import io.terrakube.api.plugin.security.user.InternalTokens;
 import io.terrakube.api.plugin.state.model.workspace.WorkspaceList;
 import io.terrakube.api.plugin.state.model.workspace.state.consumers.StateConsumerList;
 import io.terrakube.api.plugin.state.model.workspace.tags.TagBindingList;
@@ -52,6 +54,7 @@ import java.util.UUID;
 public class RemoteTfeController {
 
     RemoteTfeService remoteTfeService;
+    StateService stateService;
 
     /**
      * Handles AccessDeniedException thrown by RemoteTfeService authorization checks.
@@ -261,11 +264,10 @@ public class RemoteTfeController {
             throws JsonProcessingException {
         log.info("Get current workspace state {}", workspaceId);
 
-        JwtAuthenticationToken principalJwt = (JwtAuthenticationToken) principal;
-        if (principalJwt.getTokenAttributes().containsKey("workspaceId")) {
-            String workspaceIdToken = (String) principalJwt.getTokenAttributes().get("workspaceId");
+        String workspaceIdToken = InternalTokens.jobWorkspaceId(((JwtAuthenticationToken) principal).getTokenAttributes());
+        if (workspaceIdToken != null) {
             log.info("WorkspaceIdToken: {}", workspaceIdToken);
-            if (!remoteTfeService.validateWorkspaceIdTokenCanAccessState(workspaceIdToken, workspaceId)) {
+            if (!stateService.canJobReadState(workspaceIdToken, workspaceId)) {
                 String messageFormat = """
                          This Terrakube job is not authorized to read the state of the workspace '%s'.
                          Most commonly, this is required when using the terraform_remote_state data source.
@@ -459,11 +461,10 @@ public class RemoteTfeController {
     public ResponseEntity<StateOutputs> getCurrentOutputs(@PathVariable("workspaceId") String workspaceId, Principal principal) {
         log.info("Get current outputs for: {}", workspaceId);
 
-        JwtAuthenticationToken principalJwt = (JwtAuthenticationToken) principal;
-        if (principalJwt.getTokenAttributes().containsKey("workspaceId")) {
-            String workspaceIdToken = (String) principalJwt.getTokenAttributes().get("workspaceId");
+        String workspaceIdToken = InternalTokens.jobWorkspaceId(((JwtAuthenticationToken) principal).getTokenAttributes());
+        if (workspaceIdToken != null) {
             log.info("Token WorkspaceId: {}", workspaceIdToken);
-            if (!workspaceIdToken.equals(workspaceId)) {
+            if (!stateService.canJobReadState(workspaceIdToken, workspaceId)) {
                 return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
             }
         }

@@ -16,6 +16,7 @@ import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.nio.charset.Charset;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Date;
@@ -28,6 +29,8 @@ public class WorkspaceSecurityImpl implements WorkspaceSecurity {
     private static final String SUBJECT = "TerrakubeInternal (TOKEN)";
     private static final String EMAIL = "no-reply@terrakube.io";
     private static final String NAME = "TerrakubeInternal Client";
+    // Job code can read this token, so it must not outlive the job by much.
+    private static final Duration JOB_TOKEN_LIFETIME = Duration.ofDays(1);
     private static final String CREDENTIALS_FILE_NAME = "/.terraformrc";
     private static final String CREDENTIALS_CONTENT = "credentials \"%s\" {\n" +
             "token = \"%s\"" +
@@ -50,6 +53,10 @@ public class WorkspaceSecurityImpl implements WorkspaceSecurity {
     @Override
     public String generateAccessToken(String workspaceId) {
         log.error("Generate Dex Authentication Private Token");
+        // Without the claim the API would treat this token as the platform itself.
+        if (workspaceId == null || workspaceId.isBlank()) {
+            throw new IllegalArgumentException("A job token needs a workspace id");
+        }
 
         SecretKey key = Keys.hmacShaKeyFor(Decoders.BASE64URL.decode(this.internalSecret));
 
@@ -63,7 +70,7 @@ public class WorkspaceSecurityImpl implements WorkspaceSecurity {
                 .claim("name", WorkspaceSecurityImpl.NAME)
                 .claim("workspaceId", workspaceId)
                 .setIssuedAt(Date.from(Instant.now()))
-                .setExpiration(Date.from(Instant.now().plus(30, ChronoUnit.DAYS)))
+                .setExpiration(Date.from(Instant.now().plus(JOB_TOKEN_LIFETIME)))
                 .signWith(key)
                 .compact();
 
