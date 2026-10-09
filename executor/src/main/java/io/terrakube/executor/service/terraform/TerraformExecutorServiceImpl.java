@@ -27,7 +27,6 @@ import org.apache.commons.io.FileUtils;
 import org.apache.commons.text.TextStringBuilder;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
@@ -72,7 +71,6 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
     TerraformClient terraformClient;
     TerraformState terraformState;
     ScriptEngineService scriptEngineService;
-    RedisTemplate redisTemplate;
     boolean enableColorOutput;
     ProcessLogs logsService;
     int redisTimeout;
@@ -92,16 +90,15 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
     // lock) inside terminationGracePeriodSeconds, instead of the JVM exiting out from under it.
     private final Set<TerraformClient> liveJsonClients = ConcurrentHashMap.newKeySet();
 
-    public TerraformExecutorServiceImpl(TerraformClient terraformClient, TerraformState terraformState, ScriptEngineService scriptEngineService, ProcessLogs logsService, PlanStructuredOutputService planStructuredOutputService, ApplyStructuredOutputService applyStructuredOutputService, TerraformOutputsService terraformOutputsService, ObjectMapper objectMapper, @Value("${io.terrakube.terraform.flags.enableColor}") boolean enableColorOutput, RedisTemplate redisTemplate, @Value("${io.terrakube.executor.redis.timeout}") int redisTimeout, StructuredOutputPersistenceQueue structuredOutputPersistenceQueue, ExecutorFlagsProperties executorFlagsProperties, StructuredOutputProperties structuredOutputProperties, MeterRegistry meterRegistry, BinaryCacheRecoveryService binaryCacheRecoveryService) {
-        this(terraformClient, terraformState, scriptEngineService, logsService, planStructuredOutputService, applyStructuredOutputService, terraformOutputsService, objectMapper, enableColorOutput, redisTemplate, redisTimeout, structuredOutputPersistenceQueue, executorFlagsProperties, structuredOutputProperties, meterRegistry, binaryCacheRecoveryService, null);
+    public TerraformExecutorServiceImpl(TerraformClient terraformClient, TerraformState terraformState, ScriptEngineService scriptEngineService, ProcessLogs logsService, PlanStructuredOutputService planStructuredOutputService, ApplyStructuredOutputService applyStructuredOutputService, TerraformOutputsService terraformOutputsService, ObjectMapper objectMapper, @Value("${io.terrakube.terraform.flags.enableColor}") boolean enableColorOutput, @Value("${io.terrakube.executor.redis.timeout}") int redisTimeout, StructuredOutputPersistenceQueue structuredOutputPersistenceQueue, ExecutorFlagsProperties executorFlagsProperties, StructuredOutputProperties structuredOutputProperties, MeterRegistry meterRegistry, BinaryCacheRecoveryService binaryCacheRecoveryService) {
+        this(terraformClient, terraformState, scriptEngineService, logsService, planStructuredOutputService, applyStructuredOutputService, terraformOutputsService, objectMapper, enableColorOutput, redisTimeout, structuredOutputPersistenceQueue, executorFlagsProperties, structuredOutputProperties, meterRegistry, binaryCacheRecoveryService, null);
     }
 
     @Autowired
-    public TerraformExecutorServiceImpl(TerraformClient terraformClient, TerraformState terraformState, ScriptEngineService scriptEngineService, ProcessLogs logsService, PlanStructuredOutputService planStructuredOutputService, ApplyStructuredOutputService applyStructuredOutputService, TerraformOutputsService terraformOutputsService, ObjectMapper objectMapper, @Value("${io.terrakube.terraform.flags.enableColor}") boolean enableColorOutput, RedisTemplate redisTemplate, @Value("${io.terrakube.executor.redis.timeout}") int redisTimeout, StructuredOutputPersistenceQueue structuredOutputPersistenceQueue, ExecutorFlagsProperties executorFlagsProperties, StructuredOutputProperties structuredOutputProperties, MeterRegistry meterRegistry, BinaryCacheRecoveryService binaryCacheRecoveryService, @Autowired(required = false) OpaExecutorService opaExecutorService) {
+    public TerraformExecutorServiceImpl(TerraformClient terraformClient, TerraformState terraformState, ScriptEngineService scriptEngineService, ProcessLogs logsService, PlanStructuredOutputService planStructuredOutputService, ApplyStructuredOutputService applyStructuredOutputService, TerraformOutputsService terraformOutputsService, ObjectMapper objectMapper, @Value("${io.terrakube.terraform.flags.enableColor}") boolean enableColorOutput, @Value("${io.terrakube.executor.redis.timeout}") int redisTimeout, StructuredOutputPersistenceQueue structuredOutputPersistenceQueue, ExecutorFlagsProperties executorFlagsProperties, StructuredOutputProperties structuredOutputProperties, MeterRegistry meterRegistry, BinaryCacheRecoveryService binaryCacheRecoveryService, @Autowired(required = false) OpaExecutorService opaExecutorService) {
         this.terraformClient = terraformClient;
         this.terraformState = terraformState;
         this.scriptEngineService = scriptEngineService;
-        this.redisTemplate = redisTemplate;
         this.logsService = logsService;
         this.planStructuredOutputService = planStructuredOutputService;
         this.applyStructuredOutputService = applyStructuredOutputService;
@@ -137,44 +134,6 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         log.info("Terraform Working Directory: {}", terraformWorkingDir.getCanonicalPath());
         return terraformWorkingDir;
     }
-
-    private void waitForStreamCompletion(String jobId, int maxWaitSeconds) {
-        int pollInterval = 1000; // 1 second
-        int totalWait = 0;
-        long lastMessageCount = -1;
-        int stableCount = 0;
-
-        while (totalWait < maxWaitSeconds * 1000) {
-            try {
-                // Check if there are pending messages in the stream
-                Long streamLength = redisTemplate.opsForStream().size(jobId);
-
-                if (streamLength != null) {
-                    if (streamLength.equals(lastMessageCount)) {
-                        stableCount++;
-                        // If stream size hasn't changed for 3 consecutive checks, consider it complete
-                        if (stableCount >= 3) {
-                            log.info("Stream appears complete for job {}", jobId);
-                            break;
-                        }
-                    } else {
-                        stableCount = 0;
-                        lastMessageCount = streamLength;
-                    }
-                }
-
-                Thread.sleep(pollInterval);
-                totalWait += pollInterval;
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                log.error("Interrupted while waiting for stream completion", e);
-                break;
-            }
-        }
-
-        log.info("Waited {} ms for stream completion", totalWait);
-    }
-
 
     @Override
     public ExecutorJobResult plan(TerraformJob terraformJob, File executorTempDirectory, boolean isDestroy) {
@@ -295,9 +254,9 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                 // classic human-readable diff from the plan file and append it to console, so
                 // anything reading this step's console output (raw-log download,
                 // PrCommentService's PR/MR comment) still gets a real diff, not just those
-                // lines. Must run before waitForStreamCompletion below - that call declares the
-                // console stream "done" once it goes quiet, and anything appended afterwards
-                // arrives too late for whatever reads the stream at that signal.
+                // lines. Must run before logsService.flush() below - the step is reported finished
+                // right after it, and anything appended afterwards arrives too late for whatever
+                // reads the stream at that signal.
                 String humanReadablePlan = planStructuredOutputService.getPlanAsHumanText(terraformJob, terraformWorkingDir);
                 if (humanReadablePlan != null && !humanReadablePlan.isBlank()) {
                     for (String line : humanReadablePlan.split("\n", -1)) {
@@ -353,7 +312,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                 planStructuredOutputService.publishPlanSummary(terraformJob, terraformWorkingDir, terraformJob.getLiveChanges(), terraformJob.getJobDiagnostics());
             }
 
-            waitForStreamCompletion(terraformJob.getJobId(), 300);
+            logsService.flush();
             drainStructuredOutputQueue(terraformJob.getJobId());
 
             result = generateJobResult(scriptAfterSuccessPlan, jobOutput.toString(), jobErrorOutput.toString());
@@ -367,6 +326,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         } catch (IOException | ExecutionException | InterruptedException exception) {
             // A stream-drain failure or late exception must not swallow the plan diagnostics the
             // UI needs - publish what was parsed before it broke, then let it drain.
+            logsService.flush();
             try {
                 publishFinalPlanSnapshotIfStreamed(terraformJob, eventParser, liveChanges, jobDiagnostics);
                 drainStructuredOutputQueue(terraformJob.getJobId());
@@ -460,7 +420,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                     // plus the final change-summary line - unlike plan(), which appends
                     // getPlanAsHumanText's classic rendered diff, apply never appended anything
                     // resembling a `terraform show`/CLI-style closing readout. Mirrors plan()'s
-                    // append (same reasoning: must run before waitForStreamCompletion below), just
+                    // append (same reasoning: must run before logsService.flush() below), just
                     // rendered from the plan file apply already downloaded above instead of one it
                     // computed itself - real `terraform apply <planfile>` reprints this same diff
                     // before executing it, so this restores that content even though Terrakube
@@ -487,10 +447,11 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             log.warn("Terraform apply Executed Successfully: {}", execution);
             scriptAfterSuccess = executePostOperationScripts(terraformJob, terraformWorkingDir, applyOutput, execution || terraformJob.isIgnoreError());
 
-            waitForStreamCompletion(terraformJob.getJobId(), 300);
+            logsService.flush();
             drainStructuredOutputQueue(terraformJob.getJobId());
             result = generateJobResult(scriptAfterSuccess, terraformOutput.toString(), terraformErrorOutput.toString());
         } catch (IOException | ExecutionException | InterruptedException exception) {
+            logsService.flush();
             drainStructuredOutputQueue(terraformJob.getJobId());
             result = setError(exception, terraformOutput.toString());
             result.setExitCode(1);
@@ -738,10 +699,11 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             log.warn("Terraform destroy Executed Successfully: {}", execution);
             scriptAfterSuccess = executePostOperationScripts(terraformJob, terraformWorkingDir, outputDestroy, execution);
 
-            waitForStreamCompletion(terraformJob.getJobId(), 300);
+            logsService.flush();
             drainStructuredOutputQueue(terraformJob.getJobId());
             result = generateJobResult(scriptAfterSuccess, jobOutput.toString(), jobErrorOutput.toString());
         } catch (IOException | ExecutionException | InterruptedException exception) {
+            logsService.flush();
             drainStructuredOutputQueue(terraformJob.getJobId());
             result = setError(exception, jobOutput.toString());
             result.setExitCode(1);
@@ -848,8 +810,6 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                 getStringConsumer(jsonState), getStringConsumer(showError)).get();
         Boolean showRawState = terraformClient.statePull(terraformProcessData,
                 getStringConsumer(rawTfState), getStringConsumer(statePullError)).get();
-
-        Thread.sleep(5000);
 
         log.info("Terraform show returned {} chars, state pull {} chars", jsonState.length(), rawTfState.length());
         // Only stderr is logged on failure: stdout may already hold part of the state.
@@ -1074,7 +1034,6 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         }
 
         log.warn("Terraform init Executed Successfully: {}", initSuccessful);
-        Thread.sleep(5000);
         return initSuccessful;
     }
 
@@ -1229,12 +1188,11 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         return terraformJob.isTofu() ? "Tofu" : "Terraform";
     }
 
-    private void showTerraformMessage(TerraformJob terraformJob, String operation, Consumer<String> output) throws InterruptedException {
+    private void showTerraformMessage(TerraformJob terraformJob, String operation, Consumer<String> output) {
         AnsiFormat colorMessage = enableColorOutput ? new AnsiFormat(GREEN_TEXT(), BLACK_BACK(), BOLD()) : new AnsiFormat(WHITE_TEXT(), BLACK_BACK(), BOLD());
         output.accept(colorize(STEP_SEPARATOR, colorMessage));
         output.accept(colorize(String.format("Running %s ", getIaCType(terraformJob)) + operation, colorMessage));
         output.accept(colorize(STEP_SEPARATOR, colorMessage));
-        Thread.sleep(2000);
     }
 
     private TerraformProcessData getTerraformProcessData(
