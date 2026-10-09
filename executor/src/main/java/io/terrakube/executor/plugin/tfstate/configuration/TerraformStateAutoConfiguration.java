@@ -1,5 +1,6 @@
 package io.terrakube.executor.plugin.tfstate.configuration;
 
+import com.azure.identity.DefaultAzureCredentialBuilder;
 import com.azure.storage.blob.BlobServiceClient;
 import com.azure.storage.blob.BlobServiceClientBuilder;
 import com.google.auth.Credentials;
@@ -57,12 +58,9 @@ public class TerraformStateAutoConfiguration {
         if (terraformStateProperties != null)
             switch (terraformStateProperties.getType()) {
                 case AzureTerraformStateImpl:
-                    BlobServiceClient blobServiceClient = new BlobServiceClientBuilder()
-                            .connectionString(
-                                    String.format("DefaultEndpointsProtocol=https;AccountName=%s;AccountKey=%s;EndpointSuffix=core.windows.net",
-                                            azureTerraformStateProperties.getStorageAccountName(),
-                                            azureTerraformStateProperties.getStorageAccessKey())
-                            ).buildClient();
+                    BlobServiceClient blobServiceClient = azureBlobServiceClient(
+                            azureTerraformStateProperties.getStorageAccountName(),
+                            azureTerraformStateProperties.getStorageAccessKey());
 
                     terraformState = AzureTerraformStateImpl.builder()
                             .resourceGroupName(azureTerraformStateProperties.getResourceGroupName())
@@ -169,6 +167,25 @@ public class TerraformStateAutoConfiguration {
                     .terraformStateMetadataService(terraformStateMetadataService)
                     .build();
         return terraformState;
+    }
+
+    /**
+     * Uses the access key when one is configured; otherwise authenticates with Microsoft Entra ID
+     * through DefaultAzureCredential (workload identity, managed identity, Azure CLI, ...).
+     */
+    static BlobServiceClient azureBlobServiceClient(String accountName, String accessKey) {
+        BlobServiceClientBuilder builder = new BlobServiceClientBuilder();
+        if (accessKey == null || accessKey.isBlank()) {
+            log.info("Azure storage account {} uses Microsoft Entra ID authentication", accountName);
+            return builder
+                    .endpoint(String.format("https://%s.blob.core.windows.net", accountName))
+                    .credential(new DefaultAzureCredentialBuilder().build())
+                    .buildClient();
+        }
+        return builder
+                .connectionString(String.format("DefaultEndpointsProtocol=https;AccountName=%s;AccountKey=%s;EndpointSuffix=core.windows.net",
+                        accountName, accessKey))
+                .buildClient();
     }
 
     static ResponseChecksumValidation responseChecksumValidation(boolean checksumValidationEnabled) {
