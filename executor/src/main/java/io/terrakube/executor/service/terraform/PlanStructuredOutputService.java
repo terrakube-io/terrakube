@@ -33,6 +33,7 @@ public class PlanStructuredOutputService {
     private static final String CONTEXT_UI_KEY = "terrakubeUI";
     private static final String CONTEXT_JOB_DIAGNOSTICS_KEY = "jobDiagnostics";
     static final String CONTEXT_NO_CHANGE_PLAN_KEY = "noChangePlan";
+    static final String CONTEXT_PLAN_RENDERED_TEXT_KEY = "planRenderedText";
     private static final String STRUCTURED_PLAN_MARKER = "<div data-terrakube-structured-plan=\"true\"></div>";
 
     private final JobContextService jobContextService;
@@ -225,6 +226,28 @@ public class PlanStructuredOutputService {
         }
 
         return planOutput.toString();
+    }
+
+    /**
+     * Persists {@link #getPlanAsHumanText}'s text under its own context key, separately from the
+     * console stream it's also written to, so PrCommentService can read just the diff (#3673).
+     * A failure here is logged and swallowed - the console copy is unaffected either way.
+     */
+    void publishRenderedPlanText(String organizationId, String jobId, String stepId, String renderedText) {
+        if (renderedText == null || renderedText.isBlank()) {
+            return;
+        }
+
+        try {
+            Map<String, Object> context = getCurrentContext(organizationId, jobId);
+            Map<String, Object> updatedContext = new HashMap<>(context);
+            Map<String, Object> renderedTextByStep = toMap(updatedContext.get(CONTEXT_PLAN_RENDERED_TEXT_KEY));
+            renderedTextByStep.put(stepId, renderedText);
+            updatedContext.put(CONTEXT_PLAN_RENDERED_TEXT_KEY, renderedTextByStep);
+            saveContext(organizationId, jobId, updatedContext);
+        } catch (Exception e) {
+            log.warn("Unable to persist rendered plan text for job {} step {}: {}", jobId, stepId, e.getMessage());
+        }
     }
 
     List<Map<String, Object>> buildChangesFromPlanJson(String json) throws IOException {
