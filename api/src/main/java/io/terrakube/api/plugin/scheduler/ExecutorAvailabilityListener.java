@@ -29,17 +29,20 @@ public class ExecutorAvailabilityListener implements MessageListener {
     private final JobRepository jobRepository;
     private final ScheduleJobService scheduleJobService;
     private final io.terrakube.api.plugin.scheduler.reconciliation.ReconciliationProperties reconciliationProperties;
+    private final io.terrakube.api.plugin.scheduler.dispatchretry.DispatchRetryProperties dispatchRetryProperties;
     // Initialized to "now" at startup, not zero, so the gauge below doesn't report a huge bogus
     // age before the very first real signal arrives after a fresh deploy.
     private final AtomicLong lastSignalEpochMillis = new AtomicLong(System.currentTimeMillis());
 
     public ExecutorAvailabilityListener(RedisMessageListenerContainer redisMessageListenerContainer,
             JobRepository jobRepository, ScheduleJobService scheduleJobService, MeterRegistry meterRegistry,
-            io.terrakube.api.plugin.scheduler.reconciliation.ReconciliationProperties reconciliationProperties) {
+            io.terrakube.api.plugin.scheduler.reconciliation.ReconciliationProperties reconciliationProperties,
+            io.terrakube.api.plugin.scheduler.dispatchretry.DispatchRetryProperties dispatchRetryProperties) {
         this.redisMessageListenerContainer = redisMessageListenerContainer;
         this.jobRepository = jobRepository;
         this.scheduleJobService = scheduleJobService;
         this.reconciliationProperties = reconciliationProperties;
+        this.dispatchRetryProperties = dispatchRetryProperties;
         Gauge.builder("executor.availability.age.seconds", lastSignalEpochMillis,
                         signal -> (System.currentTimeMillis() - signal.get()) / 1000.0)
                 .description("Seconds since the executor module last signalled it has capacity available")
@@ -55,9 +58,13 @@ public class ExecutorAvailabilityListener implements MessageListener {
     public void onMessage(Message message, byte[] pattern) {
         lastSignalEpochMillis.set(System.currentTimeMillis());
         try {
-            Integer nextJobId = reconciliationProperties.isAdmissionGuardEnabled()
-                    ? jobRepository.findNextDispatchableExecutableJobId()
-                    : jobRepository.findNextDispatchableJobId();
+            boolean admissionGuard = reconciliationProperties.isAdmissionGuardEnabled();
+            boolean deferralGuard = dispatchRetryProperties.isAdmissionDeferralActive(admissionGuard);
+            Integer nextJobId = deferralGuard
+                    ? jobRepository.findNextDispatchableExecutableNotDeferredJobId()
+                    : admissionGuard
+                        ? jobRepository.findNextDispatchableExecutableJobId()
+                        : jobRepository.findNextDispatchableJobId();
             if (nextJobId != null) {
                 scheduleJobService.createJobContextNow(jobRepository.getReferenceById(nextJobId));
             }

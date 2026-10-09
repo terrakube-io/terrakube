@@ -160,6 +160,36 @@ public class Job extends GenericAuditFields {
     @Column(name = "cascade_depth", nullable = false)
     private int cascadeDepth = 0;
 
+    // Bounded dispatch-retry bookkeeping for pre-submission dispatch failures (e.g. VCS
+    // access-token acquisition) - see ScheduleJob.dispatchStepOrDefer / DispatchRetryCalculator.
+    // Persisted (rather than kept in memory) so the backoff/budget survives API restarts and is
+    // consistent across replicas; read-only via the API like the other scheduler-owned fields
+    // above, exposing retry status/failure reason in run details.
+    @CreatePermission(expression = "user is a super service")
+    @UpdatePermission(expression = "user is a super service")
+    @Column(name = "dispatch_failure_count", nullable = false)
+    private int dispatchFailureCount = 0;
+
+    @CreatePermission(expression = "user is a super service")
+    @UpdatePermission(expression = "user is a super service")
+    @Column(name = "dispatch_first_failure_at")
+    private Date dispatchFirstFailureAt;
+
+    @CreatePermission(expression = "user is a super service")
+    @UpdatePermission(expression = "user is a super service")
+    @Column(name = "dispatch_last_attempt_at")
+    private Date dispatchLastAttemptAt;
+
+    @CreatePermission(expression = "user is a super service")
+    @UpdatePermission(expression = "user is a super service")
+    @Column(name = "dispatch_next_retry_at")
+    private Date dispatchNextRetryAt;
+
+    @CreatePermission(expression = "user is a super service")
+    @UpdatePermission(expression = "user is a super service")
+    @Column(name = "dispatch_last_error", length = 1024)
+    private String dispatchLastError;
+
     @ManyToOne
     private Organization organization;
 

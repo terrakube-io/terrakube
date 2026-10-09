@@ -2,6 +2,7 @@ package io.terrakube.api.plugin.scheduler.reconciliation;
 
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
+import io.terrakube.api.plugin.scheduler.dispatchretry.DispatchRetryProperties;
 import io.terrakube.api.repository.JobRepository;
 import io.terrakube.api.rs.job.Job;
 import jakarta.annotation.PostConstruct;
@@ -16,10 +17,13 @@ public class SchedulerQueueMetrics {
 
     private final JobRepository jobRepository;
     private final MeterRegistry meterRegistry;
+    private final DispatchRetryProperties dispatchRetryProperties;
 
-    public SchedulerQueueMetrics(JobRepository jobRepository, MeterRegistry meterRegistry) {
+    public SchedulerQueueMetrics(JobRepository jobRepository, MeterRegistry meterRegistry,
+            DispatchRetryProperties dispatchRetryProperties) {
         this.jobRepository = jobRepository;
         this.meterRegistry = meterRegistry;
+        this.dispatchRetryProperties = dispatchRetryProperties;
     }
 
     @PostConstruct
@@ -35,15 +39,33 @@ public class SchedulerQueueMetrics {
                         SchedulerQueueMetrics::headAgeSeconds)
                 .description("Age in seconds of the eligible FIFO head job, 0 if the queue is empty")
                 .register(meterRegistry);
+        Gauge.builder("terrakube.scheduler.executor.queue.dispatch.deferred", this,
+                        SchedulerQueueMetrics::dispatchDeferredCount)
+                .description("Pending/approved jobs currently excluded from dispatch purely by dispatch-retry backoff")
+                .register(meterRegistry);
+    }
+
+    // These gauges already always use the guarded (step-aware) query regardless of
+    // ReconciliationProperties.admissionGuardEnabled - a pre-existing, deliberate simplification
+    // for an observability-only read. Passing admissionGuardEnabled=true here keeps that same
+    // simplification while reusing the one shared "is deferral active" computation, so once
+    // admissionDeferralEnabled is on, a job merely parked in backoff doesn't read here as a
+    // stuck-queue-head false alarm.
+    private boolean useNotDeferredQuery() {
+        return dispatchRetryProperties.isAdmissionDeferralActive(true);
     }
 
     static double headJobId(SchedulerQueueMetrics self) {
-        Integer id = self.jobRepository.findNextDispatchableExecutableJobId();
+        Integer id = self.useNotDeferredQuery()
+                ? self.jobRepository.findNextDispatchableExecutableNotDeferredJobId()
+                : self.jobRepository.findNextDispatchableExecutableJobId();
         return id == null ? -1 : id;
     }
 
     static double headAgeSeconds(SchedulerQueueMetrics self) {
-        Integer id = self.jobRepository.findNextDispatchableExecutableJobId();
+        Integer id = self.useNotDeferredQuery()
+                ? self.jobRepository.findNextDispatchableExecutableNotDeferredJobId()
+                : self.jobRepository.findNextDispatchableExecutableJobId();
         if (id == null) {
             return 0;
         }
@@ -51,5 +73,10 @@ public class SchedulerQueueMetrics {
                 .map(Job::getCreatedDate)
                 .map(created -> Math.max(0, (System.currentTimeMillis() - created.getTime()) / 1000.0))
                 .orElse(0.0);
+    }
+
+    static double dispatchDeferredCount(SchedulerQueueMetrics self) {
+        return Math.max(0, self.jobRepository.countDispatchEligibleJobs()
+                - self.jobRepository.countDispatchEligibleNotDeferredJobs());
     }
 }

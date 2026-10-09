@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+
+    <!-- Bounded dispatch-retry/backoff bookkeeping for pre-submission dispatch failures (issues
+         #3665/#3666): persisted so the backoff/budget survives API restarts and is consistent
+         across replicas. dispatch_next_retry_at is also read by JobRepository's guarded FIFO
+         admission queries to exclude a currently-deferred job from blocking other workspaces. -->
+    <changeSet id="2-34-0-job-dispatch-retry" author="terrakube">
+        <addColumn tableName="job">
+            <column name="dispatch_failure_count" type="int" defaultValueNumeric="0">
+                <constraints nullable="false"/>
+            </column>
+            <column name="dispatch_first_failure_at" type="timestamp"/>
+            <column name="dispatch_last_attempt_at" type="timestamp"/>
+            <column name="dispatch_next_retry_at" type="timestamp"/>
+            <column name="dispatch_last_error" type="varchar(1024)"/>
+        </addColumn>
+    </changeSet>
+
+    <changeSet id="2-34-0-idx-job-dispatch-next-retry-at" author="terrakube">
+        <preConditions onFail="MARK_RAN">
+            <not><indexExists indexName="idx_job_dispatch_next_retry_at" tableName="job"/></not>
+        </preConditions>
+        <createIndex tableName="job" indexName="idx_job_dispatch_next_retry_at">
+            <column name="dispatch_next_retry_at"/>
+        </createIndex>
+    </changeSet>
+
+</databaseChangeLog>

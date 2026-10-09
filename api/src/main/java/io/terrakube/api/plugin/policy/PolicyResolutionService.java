@@ -139,7 +139,8 @@ public class PolicyResolutionService {
                 try {
                     accessToken = tokenService.getAccessToken(ps.getRepository(), ps.getVcs());
                 } catch (JsonProcessingException | NoSuchAlgorithmException | InvalidKeySpecException
-                         | URISyntaxException e) {
+                         | URISyntaxException
+                         | io.terrakube.api.plugin.vcs.provider.exception.VcsTokenAcquisitionException e) {
                     log.error("Failed to fetch access token for policy set {} ({}) repository {}, error {}",
                             ps.getName(), ps.getId(), ps.getRepository(), e.getMessage());
                 }

@@ -190,4 +190,67 @@ public interface JobRepository extends JpaRepository<Job, Integer> {
             "   AND ( NOT EXISTS (SELECT 1 FROM step s WHERE s.job = j)" +
             "         OR EXISTS (SELECT 1 FROM step s WHERE s.job = j AND s.status = io.terrakube.api.rs.job.JobStatus.pending) )")
     int countDispatchEligibleJobs();
+
+    // --- Dispatch-retry-aware variants (issues #3665/#3666) --------------------------------
+    // Layered on top of the guarded (step-aware) variants above, not a modification of them, so
+    // admissionGuardEnabled and dispatch-retry's admissionDeferralEnabled stay two independently
+    // selectable rollout phases. A job currently deferred by the bounded dispatch-retry backoff
+    // (dispatchNextRetryAt in the future) is excluded from the *global, cross-workspace* "earlier
+    // blocker" set - but only when earlier is in a *different* workspace from the candidate. When
+    // earlier shares the candidate's own workspace, the backoff predicate is skipped (earlier
+    // still counts as blocking) so same-workspace ordering survives regardless of backoff state -
+    // exactly the same invariant the inner per-workspace "blocker" subquery already protects for
+    // the zero-pending-step guard.
+
+    /** Guarded + dispatch-retry-aware variant of {@link #isJobNextInDispatchOrder}. */
+    @Query("SELECT CASE WHEN NOT EXISTS (" +
+            "  SELECT 1 FROM job earlier" +
+            "  WHERE earlier.id < :candidateJobId" +
+            "    AND earlier.status IN (" + ACTIVE_JOB_STATUSES + ")" +
+            "    AND earlier.deleted = false" +
+            "    AND earlier.workspace.deleted = false" +
+            "    AND ( NOT EXISTS (SELECT 1 FROM step s WHERE s.job = earlier)" +
+            "          OR EXISTS (SELECT 1 FROM step s WHERE s.job = earlier AND s.status = io.terrakube.api.rs.job.JobStatus.pending) )" +
+            "    AND ( earlier.workspace = (SELECT c.workspace FROM job c WHERE c.id = :candidateJobId)" +
+            "          OR earlier.dispatchNextRetryAt IS NULL OR earlier.dispatchNextRetryAt <= CURRENT_TIMESTAMP )" +
+            "    AND NOT EXISTS (" +
+            "      SELECT 1 FROM job blocker" +
+            "      WHERE blocker.workspace = earlier.workspace" +
+            "        AND blocker.id < earlier.id" +
+            "        AND blocker.deleted = false" +
+            "        AND blocker.status NOT IN (" + TERMINAL_JOB_STATUSES + ")" +
+            "    )" +
+            ") THEN true ELSE false END")
+    boolean isJobNextInDispatchOrderExecutableNotDeferred(@Param("candidateJobId") int candidateJobId);
+
+    /** Guarded + dispatch-retry-aware variant of {@link #findNextDispatchableJobId}. */
+    @Query("SELECT MIN(j.id) FROM job j" +
+            " WHERE j.status IN (" + ACTIVE_JOB_STATUSES + ")" +
+            "   AND j.deleted = false" +
+            "   AND j.workspace.deleted = false" +
+            "   AND ( NOT EXISTS (SELECT 1 FROM step s WHERE s.job = j)" +
+            "         OR EXISTS (SELECT 1 FROM step s WHERE s.job = j AND s.status = io.terrakube.api.rs.job.JobStatus.pending) )" +
+            "   AND ( j.dispatchNextRetryAt IS NULL OR j.dispatchNextRetryAt <= CURRENT_TIMESTAMP )" +
+            "   AND NOT EXISTS (" +
+            "     SELECT 1 FROM job earlier" +
+            "     WHERE earlier.workspace = j.workspace" +
+            "       AND earlier.id < j.id" +
+            "       AND earlier.deleted = false" +
+            "       AND earlier.status NOT IN (" + TERMINAL_JOB_STATUSES + ")" +
+            "       AND ( earlier.status NOT IN (" + ACTIVE_JOB_STATUSES + ")" +
+            "             OR NOT EXISTS (SELECT 1 FROM step s2 WHERE s2.job = earlier)" +
+            "             OR EXISTS (SELECT 1 FROM step s2 WHERE s2.job = earlier AND s2.status = io.terrakube.api.rs.job.JobStatus.pending) )" +
+            "   )")
+    Integer findNextDispatchableExecutableNotDeferredJobId();
+
+    /** Count for the "dispatch-deferred" gauge: the subset of {@link #countDispatchEligibleJobs}
+     *  that is additionally excluded purely by dispatch-retry backoff. */
+    @Query("SELECT COUNT(j) FROM job j" +
+            " WHERE j.status IN (" + ACTIVE_JOB_STATUSES + ")" +
+            "   AND j.deleted = false" +
+            "   AND j.workspace.deleted = false" +
+            "   AND ( NOT EXISTS (SELECT 1 FROM step s WHERE s.job = j)" +
+            "         OR EXISTS (SELECT 1 FROM step s WHERE s.job = j AND s.status = io.terrakube.api.rs.job.JobStatus.pending) )" +
+            "   AND ( j.dispatchNextRetryAt IS NULL OR j.dispatchNextRetryAt <= CURRENT_TIMESTAMP )")
+    int countDispatchEligibleNotDeferredJobs();
 }

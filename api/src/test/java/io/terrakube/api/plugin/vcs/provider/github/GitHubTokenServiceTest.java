@@ -6,9 +6,12 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Base64;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -23,14 +26,18 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpServer;
 
 import io.terrakube.api.plugin.scheduler.ScheduleGitHubAppTokenService;
+import io.terrakube.api.plugin.vcs.provider.exception.VcsTokenAcquisitionException;
 import io.terrakube.api.repository.GitHubAppTokenRepository;
 import io.terrakube.api.repository.VcsRepository;
 import io.terrakube.api.rs.vcs.GitHubAppToken;
 import io.terrakube.api.rs.vcs.Vcs;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
@@ -113,6 +120,21 @@ public class GitHubTokenServiceTest {
         try (OutputStream os = exchange.getResponseBody()) {
             os.write(bytes);
         }
+    }
+
+    // Reconfigures the installation-lookup endpoint (the exact call site issue #3665 is about)
+    // to return an arbitrary status/headers/body, for the classification tests below.
+    private void stubInstallationLookup(int status, Map<String, List<String>> headers, String body) {
+        httpServer.removeContext("/repos/" + OWNER + "/" + REPO + "/installation");
+        httpServer.createContext("/repos/" + OWNER + "/" + REPO + "/installation", exchange -> {
+            installationHits.incrementAndGet();
+            headers.forEach((name, values) -> values.forEach(value -> exchange.getResponseHeaders().add(name, value)));
+            byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(status, bytes.length == 0 ? -1 : bytes.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(bytes);
+            }
+        });
     }
 
     private Vcs createVcs() {
@@ -243,5 +265,122 @@ public class GitHubTokenServiceTest {
         assertEquals(tokenToReturn, result);
         assertNotNull(existing.getExpiresAt());
         assertEquals(1, accessTokenHits.get());
+    }
+
+    // --- Issue #3665 classification tests: the installation-lookup endpoint is exactly the
+    // call site whose unchecked HttpClientErrorException used to escape uncaught. ---
+
+    @Test
+    public void installationLookup_404_isTerminalAndAmbiguous() {
+        stubInstallationLookup(404, Map.of(), "{\"message\":\"Not Found\"}");
+        Vcs vcs = createVcs();
+
+        VcsTokenAcquisitionException e = assertThrows(VcsTokenAcquisitionException.class,
+                () -> subject.getGitHubAppToken(vcs, new String[] { OWNER, REPO }));
+
+        assertFalse(e.isRetryable());
+        assertTrue(e.getMessage().contains(OWNER));
+        assertTrue(e.getMessage().contains("not installed"));
+        assertTrue(e.getMessage().contains("repository selection does not include"));
+        assertFalse(e.getMessage().contains(privateKeyPem));
+    }
+
+    @Test
+    public void installationLookup_401_isTerminal() {
+        stubInstallationLookup(401, Map.of(), "{\"message\":\"Bad credentials\"}");
+        Vcs vcs = createVcs();
+
+        VcsTokenAcquisitionException e = assertThrows(VcsTokenAcquisitionException.class,
+                () -> subject.getGitHubAppToken(vcs, new String[] { OWNER, REPO }));
+
+        assertFalse(e.isRetryable());
+    }
+
+    @Test
+    public void installationLookup_403WithRetryAfter_isRetryableWithHint() {
+        stubInstallationLookup(403, Map.of("Retry-After", List.of("30")), "{\"message\":\"rate limited\"}");
+        Vcs vcs = createVcs();
+
+        VcsTokenAcquisitionException e = assertThrows(VcsTokenAcquisitionException.class,
+                () -> subject.getGitHubAppToken(vcs, new String[] { OWNER, REPO }));
+
+        assertTrue(e.isRetryable());
+        assertEquals(Duration.ofSeconds(30), e.getRetryAfter());
+    }
+
+    @Test
+    public void installationLookup_403WithRateLimitRemainingZero_isRetryableUsingRateLimitReset() {
+        long resetEpochSeconds = Instant.now().plus(90, ChronoUnit.SECONDS).getEpochSecond();
+        stubInstallationLookup(403,
+                Map.of("X-RateLimit-Remaining", List.of("0"), "X-RateLimit-Reset", List.of(String.valueOf(resetEpochSeconds))),
+                "{\"message\":\"rate limited\"}");
+        Vcs vcs = createVcs();
+
+        VcsTokenAcquisitionException e = assertThrows(VcsTokenAcquisitionException.class,
+                () -> subject.getGitHubAppToken(vcs, new String[] { OWNER, REPO }));
+
+        assertTrue(e.isRetryable());
+        assertNotNull(e.getRetryAfter());
+        assertTrue(e.getRetryAfter().getSeconds() > 0 && e.getRetryAfter().getSeconds() <= 90);
+    }
+
+    @Test
+    public void installationLookup_403WithNoRateLimitSignal_isTerminal() {
+        stubInstallationLookup(403, Map.of(), "{\"message\":\"Resource not accessible by integration\"}");
+        Vcs vcs = createVcs();
+
+        VcsTokenAcquisitionException e = assertThrows(VcsTokenAcquisitionException.class,
+                () -> subject.getGitHubAppToken(vcs, new String[] { OWNER, REPO }));
+
+        assertFalse(e.isRetryable());
+        assertTrue(e.getMessage().contains("permissions"));
+    }
+
+    @Test
+    public void installationLookup_429WithRetryAfter_isRetryableWithHint() {
+        stubInstallationLookup(429, Map.of("Retry-After", List.of("15")), "{\"message\":\"rate limited\"}");
+        Vcs vcs = createVcs();
+
+        VcsTokenAcquisitionException e = assertThrows(VcsTokenAcquisitionException.class,
+                () -> subject.getGitHubAppToken(vcs, new String[] { OWNER, REPO }));
+
+        assertTrue(e.isRetryable());
+        assertEquals(Duration.ofSeconds(15), e.getRetryAfter());
+    }
+
+    @Test
+    public void installationLookup_500_isRetryableWithNoHint() {
+        stubInstallationLookup(500, Map.of(), "{\"message\":\"Internal Server Error\"}");
+        Vcs vcs = createVcs();
+
+        VcsTokenAcquisitionException e = assertThrows(VcsTokenAcquisitionException.class,
+                () -> subject.getGitHubAppToken(vcs, new String[] { OWNER, REPO }));
+
+        assertTrue(e.isRetryable());
+        assertNull(e.getRetryAfter());
+    }
+
+    @Test
+    public void installationLookup_emptyErrorBody_doesNotThrowNpe() {
+        stubInstallationLookup(500, Map.of(), "");
+        Vcs vcs = createVcs();
+
+        VcsTokenAcquisitionException e = assertThrows(VcsTokenAcquisitionException.class,
+                () -> subject.getGitHubAppToken(vcs, new String[] { OWNER, REPO }));
+
+        assertNotNull(e.getMessage());
+    }
+
+    @Test
+    public void installationLookup_networkFailure_isRetryable() {
+        Vcs vcs = createVcs();
+        // Port 1 is a privileged, never-listening port - connection refused every time,
+        // simulating a network-level failure (no HTTP response at all) rather than an HTTP error.
+        vcs.setApiUrl("http://localhost:1");
+
+        VcsTokenAcquisitionException e = assertThrows(VcsTokenAcquisitionException.class,
+                () -> subject.getGitHubAppToken(vcs, new String[] { OWNER, REPO }));
+
+        assertTrue(e.isRetryable());
     }
 }

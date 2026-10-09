@@ -1,6 +1,11 @@
 package io.terrakube.api.plugin.scheduler;
 
+import io.terrakube.api.plugin.scheduler.dispatchretry.DispatchRetryCalculator;
+import io.terrakube.api.plugin.scheduler.dispatchretry.DispatchRetryDecision;
+import io.terrakube.api.plugin.scheduler.dispatchretry.DispatchRetryMetrics;
+import io.terrakube.api.plugin.scheduler.dispatchretry.DispatchRetryProperties;
 import io.terrakube.api.plugin.scheduler.job.tcl.TclService;
+import io.terrakube.api.plugin.scheduler.job.tcl.executor.DispatchRetryableException;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutionException;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutorService;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutorUnavailableException;
@@ -122,6 +127,12 @@ public class ScheduleJob implements org.quartz.Job {
     // queries used by isNextInDispatchOrder / wakeNextDispatchableJob.
     JobReconciliationService jobReconciliationService;
     ReconciliationProperties reconciliationProperties;
+
+    // Bounded dispatch-retry budget for pre-submission dispatch failures (issues #3665/#3666).
+    // See dispatchStepOrDefer.
+    DispatchRetryProperties dispatchRetryProperties;
+    DispatchRetryCalculator dispatchRetryCalculator;
+    DispatchRetryMetrics dispatchRetryMetrics;
 
     @Override
     public void execute(JobExecutionContext jobExecutionContext) throws JobExecutionException {
@@ -396,22 +407,7 @@ public class ScheduleJob implements org.quartz.Job {
                 case terraformDestroy:
                 case customScripts:
                 case policyEvaluation:
-                    if (!isNextInDispatchOrder(job, stepId)) {
-                        return false;
-                    }
-                    try {
-                        executorService.execute(job, stepId, flow.get());
-                        job.setStatus(JobStatus.queue);
-                        jobRepository.save(job);
-                        jobNotificationTrigger.notifyStatusChanged(job);
-                        wakeNextDispatchableJob();
-                    } catch (ExecutorUnavailableException e) {
-                        log.warn("No executor available for Job {} Step {}, will retry: {}", job.getId(), stepId, e.getMessage());
-                        return false;
-                    } catch (ExecutionException e) {
-                        errorJobAtStep(job, stepId, e);
-                    }
-                    break;
+                    return dispatchStepOrDefer(job, stepId, flow.get());
                 case approval:
                     if (!job.isAutoApply()) {
                         job.setStatus(JobStatus.waitingApproval);
@@ -570,13 +566,96 @@ public class ScheduleJob implements org.quartz.Job {
         }
     }
 
+    // Shared by executePendingJob and executeApprovedJobs (which previously duplicated this
+    // dispatch block verbatim). Returns whether the job's Quartz trigger should be descheduled:
+    // true on a dispatch that reached a terminal outcome (queued successfully, or failed for
+    // good - either classified terminal or the dispatch-retry budget exhausted); false to keep
+    // the existing 30s trigger alive so a deferred/retryable condition is retried later.
+    private boolean dispatchStepOrDefer(Job job, String stepId, Flow flow) {
+        if (isDispatchDeferred(job)) {
+            log.info("Job {} Step {} is in dispatch-retry backoff until {}, will retry", job.getId(), stepId,
+                    job.getDispatchNextRetryAt());
+            return false;
+        }
+        if (!isNextInDispatchOrder(job, stepId)) {
+            return false;
+        }
+        try {
+            executorService.execute(job, stepId, flow);
+            onDispatchSucceeded(job);
+            wakeNextDispatchableJob();
+        } catch (ExecutorUnavailableException e) {
+            log.warn("No executor available for Job {} Step {}, will retry: {}", job.getId(), stepId, e.getMessage());
+            return false;
+        } catch (DispatchRetryableException e) {
+            return onDispatchFailedRetryable(job, stepId, e);
+        } catch (ExecutionException e) {
+            errorJobAtStep(job, stepId, e);
+        }
+        return true;
+    }
+
+    private boolean isDispatchDeferred(Job job) {
+        if (!dispatchRetryProperties.isEnabled()) {
+            return false;
+        }
+        Date nextRetryAt = job.getDispatchNextRetryAt();
+        return nextRetryAt != null && nextRetryAt.after(new Date());
+    }
+
+    private void onDispatchSucceeded(Job job) {
+        job.setStatus(JobStatus.queue);
+        // Dispatch finally succeeded - clear stale backoff bookkeeping (attempt count and
+        // first-failure-at are left as a historical record of how many attempts it took) so run
+        // details don't keep showing an old error once the job is actually running.
+        job.setDispatchNextRetryAt(null);
+        job.setDispatchLastError(null);
+        jobRepository.save(job);
+        jobNotificationTrigger.notifyStatusChanged(job);
+    }
+
+    // Returns false (keep the 30s trigger alive) while the retry budget still has room; true
+    // (deschedule, job failed) once it's exhausted. Never shares state with
+    // ExecutorUnavailableException's handling above - plain executor-capacity exhaustion must
+    // stay an unbounded wait, not consume this budget.
+    private boolean onDispatchFailedRetryable(Job job, String stepId, DispatchRetryableException e) {
+        if (!dispatchRetryProperties.isEnabled()) {
+            errorJobAtStep(job, stepId, e);
+            return true;
+        }
+        Date now = new Date();
+        DispatchRetryDecision decision = dispatchRetryCalculator.decide(job, now, e.getRetryAfter());
+        dispatchRetryMetrics.failureClassified("retryable");
+        if (decision.exhausted()) {
+            dispatchRetryMetrics.budgetExhausted();
+            log.warn("Job {} Step {} exhausted its dispatch-retry budget ({} attempts), failing: {}", job.getId(),
+                    stepId, decision.newFailureCount(), e.getMessage());
+            errorJobAtStep(job, stepId, e);
+            return true;
+        }
+        job.setDispatchFailureCount(decision.newFailureCount());
+        job.setDispatchFirstFailureAt(decision.firstFailureAt());
+        job.setDispatchLastAttemptAt(now);
+        job.setDispatchNextRetryAt(decision.nextRetryAt());
+        job.setDispatchLastError(e.getMessage());
+        jobRepository.save(job);
+        dispatchRetryMetrics.retryScheduled();
+        log.warn("Job {} Step {} dispatch failed (attempt {}), will retry at {}: {}", job.getId(), stepId,
+                decision.newFailureCount(), decision.nextRetryAt(), e.getMessage());
+        return false;
+    }
+
     // Fails closed: if we can't determine dispatch order, treat it the same as losing the race
     // rather than risking a newer job jumping ahead of an older one.
     private boolean isNextInDispatchOrder(Job job, String stepId) {
         try {
-            boolean oldest = reconciliationProperties.isAdmissionGuardEnabled()
-                    ? jobRepository.isJobNextInDispatchOrderExecutable(job.getId())
-                    : jobRepository.isJobNextInDispatchOrder(job.getId());
+            boolean admissionGuard = reconciliationProperties.isAdmissionGuardEnabled();
+            boolean deferralGuard = dispatchRetryProperties.isAdmissionDeferralActive(admissionGuard);
+            boolean oldest = deferralGuard
+                    ? jobRepository.isJobNextInDispatchOrderExecutableNotDeferred(job.getId())
+                    : admissionGuard
+                        ? jobRepository.isJobNextInDispatchOrderExecutable(job.getId())
+                        : jobRepository.isJobNextInDispatchOrder(job.getId());
             if (!oldest) {
                 log.info("Job {} Step {} is not yet the oldest job waiting for the executor pool, will retry", job.getId(), stepId);
                 return false;
@@ -592,9 +671,13 @@ public class ScheduleJob implements org.quartz.Job {
     // trigger still covers it.
     private void wakeNextDispatchableJob() {
         try {
-            Integer nextJobId = reconciliationProperties.isAdmissionGuardEnabled()
-                    ? jobRepository.findNextDispatchableExecutableJobId()
-                    : jobRepository.findNextDispatchableJobId();
+            boolean admissionGuard = reconciliationProperties.isAdmissionGuardEnabled();
+            boolean deferralGuard = dispatchRetryProperties.isAdmissionDeferralActive(admissionGuard);
+            Integer nextJobId = deferralGuard
+                    ? jobRepository.findNextDispatchableExecutableNotDeferredJobId()
+                    : admissionGuard
+                        ? jobRepository.findNextDispatchableExecutableJobId()
+                        : jobRepository.findNextDispatchableJobId();
             if (nextJobId != null) {
                 scheduleJobService.createJobContextNow(jobRepository.getReferenceById(nextJobId));
             }
@@ -614,8 +697,9 @@ public class ScheduleJob implements org.quartz.Job {
         jobRepository.save(job);
         jobNotificationTrigger.notifyStatusChanged(job);
         Step step = stepRepository.getReferenceById(UUID.fromString(stepId));
-        String message = String.format("Error sending to executor: %s", e.getMessage())
-                .substring(0, Math.min(e.getMessage().length(), 127));
+        String rawMessage = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+        String formatted = String.format("Error sending to executor: %s", rawMessage);
+        String message = formatted.substring(0, Math.min(formatted.length(), 127));
         step.setName(message);
         stepRepository.save(step);
         updateJobStepsWithStatus(job.getId(), JobStatus.failed);
@@ -651,22 +735,7 @@ public class ScheduleJob implements org.quartz.Job {
             String stepId = tclService.getCurrentStepId(job);
             job.setApprovalTeam("");
             jobRepository.save(job);
-            if (!isNextInDispatchOrder(job, stepId)) {
-                return false;
-            }
-            try {
-                executorService.execute(job, stepId, flow.get());
-                job.setStatus(JobStatus.queue);
-                jobRepository.save(job);
-                jobNotificationTrigger.notifyStatusChanged(job);
-                wakeNextDispatchableJob();
-            } catch (ExecutorUnavailableException e) {
-                log.warn("No executor available for Job {} Step {}, will retry: {}", job.getId(), stepId, e.getMessage());
-                return false;
-            } catch (ExecutionException e) {
-                errorJobAtStep(job, stepId, e);
-            }
-            return true;
+            return dispatchStepOrDefer(job, stepId, flow.get());
         }
         // No next flow: the approved job has consumed every executable step. Historically this
         // path just "return true"-ed, leaving the job stuck in 'approved' forever while the

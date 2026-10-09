@@ -2,6 +2,7 @@ package io.terrakube.api.plugin.scheduler;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.Date;
 import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -252,5 +253,87 @@ class JobDispatchOrderRepositoryIntegrationTest {
         assertThat(jobRepository.isJobNextInDispatchOrder(later.getId())).isTrue();
         assertThat(jobRepository.findNextDispatchableExecutableJobId()).isEqualTo(later.getId());
         assertThat(jobRepository.findNextDispatchableJobId()).isEqualTo(later.getId());
+    }
+
+    // --- Dispatch-retry-aware variants (issues #3665/#3666) ---------------------------------
+
+    @Test
+    void notDeferredQuery_earlierJobInBackoffDoesNotBlockALaterJobInADifferentWorkspace() {
+        Workspace wsA = newWorkspace();
+        Workspace wsB = newWorkspace();
+        Job inBackoff = newJob(wsA, JobStatus.pending);
+        newStep(inBackoff, 100, JobStatus.pending);
+        inBackoff.setDispatchNextRetryAt(new Date(System.currentTimeMillis() + 60_000));
+        jobRepository.save(inBackoff);
+        Job later = newJob(wsB, JobStatus.pending);
+        newStep(later, 100, JobStatus.pending);
+
+        // The plain guarded (step-aware) query still (correctly, for its own purpose) reports
+        // the backoff job as blocking - it has a pending step - proving the new predicate, not
+        // the existing guard, is what makes the later job eligible here.
+        assertThat(jobRepository.isJobNextInDispatchOrderExecutable(later.getId())).isFalse();
+        assertThat(jobRepository.isJobNextInDispatchOrderExecutableNotDeferred(later.getId())).isTrue();
+        assertThat(jobRepository.findNextDispatchableExecutableNotDeferredJobId()).isEqualTo(later.getId());
+    }
+
+    @Test
+    void notDeferredQuery_earlierJobInBackoffStillBlocksALaterJobInTheSameWorkspace() {
+        Workspace workspace = newWorkspace();
+        Job inBackoff = newJob(workspace, JobStatus.pending);
+        newStep(inBackoff, 100, JobStatus.pending);
+        inBackoff.setDispatchNextRetryAt(new Date(System.currentTimeMillis() + 60_000));
+        jobRepository.save(inBackoff);
+        Job later = newJob(workspace, JobStatus.pending);
+        newStep(later, 100, JobStatus.pending);
+
+        // Same-workspace ordering must survive regardless of backoff state - the per-workspace
+        // blocker subquery deliberately never looks at dispatchNextRetryAt.
+        assertThat(jobRepository.isJobNextInDispatchOrderExecutableNotDeferred(later.getId())).isFalse();
+        assertThat(jobRepository.findNextDispatchableExecutableNotDeferredJobId()).isNull();
+    }
+
+    @Test
+    void notDeferredQuery_nullNextRetryAtIsTreatedAsEligible() {
+        Workspace wsA = newWorkspace();
+        Workspace wsB = newWorkspace();
+        Job neverFailed = newJob(wsA, JobStatus.pending); // dispatchNextRetryAt left null
+        newStep(neverFailed, 100, JobStatus.pending);
+        Job later = newJob(wsB, JobStatus.pending);
+        newStep(later, 100, JobStatus.pending);
+
+        assertThat(jobRepository.isJobNextInDispatchOrderExecutableNotDeferred(later.getId())).isFalse();
+        assertThat(jobRepository.findNextDispatchableExecutableNotDeferredJobId()).isEqualTo(neverFailed.getId());
+    }
+
+    @Test
+    void notDeferredQuery_expiredBackoffIsTreatedAsEligibleAgain() {
+        Workspace wsA = newWorkspace();
+        Workspace wsB = newWorkspace();
+        Job backoffExpired = newJob(wsA, JobStatus.pending);
+        newStep(backoffExpired, 100, JobStatus.pending);
+        backoffExpired.setDispatchNextRetryAt(new Date(System.currentTimeMillis() - 60_000));
+        jobRepository.save(backoffExpired);
+        Job later = newJob(wsB, JobStatus.pending);
+        newStep(later, 100, JobStatus.pending);
+
+        // The deadline has passed - the earlier job is a normal eligible candidate again and
+        // blocks the later job in a different workspace, same as the non-deferral-aware query.
+        assertThat(jobRepository.isJobNextInDispatchOrderExecutableNotDeferred(later.getId())).isFalse();
+        assertThat(jobRepository.findNextDispatchableExecutableNotDeferredJobId()).isEqualTo(backoffExpired.getId());
+    }
+
+    @Test
+    void countDispatchEligibleNotDeferredJobsExcludesOnlyJobsCurrentlyInBackoff() {
+        Workspace wsA = newWorkspace();
+        Workspace wsB = newWorkspace();
+        Job eligible = newJob(wsA, JobStatus.pending);
+        newStep(eligible, 100, JobStatus.pending);
+        Job inBackoff = newJob(wsB, JobStatus.pending);
+        newStep(inBackoff, 100, JobStatus.pending);
+        inBackoff.setDispatchNextRetryAt(new Date(System.currentTimeMillis() + 60_000));
+        jobRepository.save(inBackoff);
+
+        assertThat(jobRepository.countDispatchEligibleJobs()).isEqualTo(2);
+        assertThat(jobRepository.countDispatchEligibleNotDeferredJobs()).isEqualTo(1);
     }
 }

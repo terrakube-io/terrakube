@@ -20,12 +20,14 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.reactive.function.client.WebClient;
 import io.terrakube.api.plugin.scheduler.ScheduleGitHubAppTokenService;
 import io.terrakube.api.plugin.http.ReactorNettyWebClientFactory;
 import io.terrakube.api.plugin.vcs.provider.GetAccessToken;
 import io.terrakube.api.plugin.vcs.provider.exception.TokenException;
+import io.terrakube.api.plugin.vcs.provider.exception.VcsTokenAcquisitionException;
 import io.terrakube.api.repository.GitHubAppTokenRepository;
 import io.terrakube.api.repository.VcsRepository;
 import io.terrakube.api.rs.vcs.GitHubAppToken;
@@ -89,14 +91,16 @@ public class GitHubTokenService implements GetAccessToken<GitHubToken> {
     }
 
     public String getAccessToken(Vcs vcs, String[] ownerAndRepo)
-            throws JsonMappingException, JsonProcessingException, NoSuchAlgorithmException, InvalidKeySpecException {
+            throws JsonMappingException, JsonProcessingException, NoSuchAlgorithmException, InvalidKeySpecException,
+            VcsTokenAcquisitionException {
         return getGitHubAppToken(vcs, ownerAndRepo).getToken();
     }
 
     // Refreshes the access token for a specific installation of the app that's
     // already been saved in the GitHubAppToken table
     public String refreshAccessToken(GitHubAppToken gitHubAppToken)
-            throws NoSuchAlgorithmException, InvalidKeySpecException, JsonMappingException, JsonProcessingException {
+            throws NoSuchAlgorithmException, InvalidKeySpecException, JsonMappingException, JsonProcessingException,
+            VcsTokenAcquisitionException {
         Vcs vcs = vcsRepository.findFirstByClientId(gitHubAppToken.getAppId());
         if (vcs == null) {
             log.warn("No Vcs found for GitHub App id {}, removing orphaned GitHubAppToken {} for owner {}",
@@ -118,7 +122,8 @@ public class GitHubTokenService implements GetAccessToken<GitHubToken> {
     }
 
     public GitHubAppToken getGitHubAppToken(Vcs vcs, String[] ownerAndRepo)
-            throws JsonMappingException, JsonProcessingException, NoSuchAlgorithmException, InvalidKeySpecException {
+            throws JsonMappingException, JsonProcessingException, NoSuchAlgorithmException, InvalidKeySpecException,
+            VcsTokenAcquisitionException {
         log.info("Getting access token for user/organization {} and vcs {}", ownerAndRepo[0], vcs.getId());
         GitHubAppToken gitHubAppToken = gitHubAppTokenRepository.findByAppIdAndOwner(vcs.getClientId(), ownerAndRepo[0]);
         if (gitHubAppToken == null) {
@@ -144,14 +149,15 @@ public class GitHubTokenService implements GetAccessToken<GitHubToken> {
     // Generates a new access token for a specific installation of the app that
     // hasn't been saved in the GitHubAppToken table yet
     private GitHubAppToken fetchGitHubAppInstallationToken(Vcs vcs, String[] ownerAndRepo)
-            throws JsonMappingException, JsonProcessingException, NoSuchAlgorithmException, InvalidKeySpecException {
+            throws JsonMappingException, JsonProcessingException, NoSuchAlgorithmException, InvalidKeySpecException,
+            VcsTokenAcquisitionException {
         GitHubAppToken gitHubAppToken = new GitHubAppToken();
 
         String jws = generateJWT(vcs.getClientId(), vcs.getPrivateKey());
         log.info("Generated JWT token for GitHub App");
         String url = vcs.getApiUrl() + "/repos/" + String.join("/", ownerAndRepo) + "/installation";
         log.info("Getting access token for user/organization {} using url {}", ownerAndRepo[0], url);
-        ResponseEntity<String> tokenResponse = callGithubAPI("", url, HttpMethod.GET, jws);
+        ResponseEntity<String> tokenResponse = callGithubAPI("", url, HttpMethod.GET, jws, ownerAndRepo[0]);
         if (tokenResponse.getStatusCode().value() == 200) {
             log.info("Successfully fetched access token for user/organization {} and vcs {}", ownerAndRepo[0], vcs.getId());
             JsonNode rootNode = objectMapper.readTree(tokenResponse.getBody());
@@ -184,12 +190,12 @@ public class GitHubTokenService implements GetAccessToken<GitHubToken> {
     // Gets the access token with app installation ID for a specific installation of
     // the app
     private GitHubAppInstallationToken fetchGitHubAppInstallationToken(String installationId, String vcsApiUrl,
-            String jws, String owner) throws JsonProcessingException {
+            String jws, String owner) throws JsonProcessingException, VcsTokenAcquisitionException {
         String token = null;
         Instant expiresAt = null;
         String url = vcsApiUrl + "/app/installations/" + installationId + "/access_tokens";
         log.debug("Getting access token for installation {} on user/organization {}", installationId, owner);
-        ResponseEntity<String> tokenResponse = callGithubAPI("", url, HttpMethod.POST, jws);
+        ResponseEntity<String> tokenResponse = callGithubAPI("", url, HttpMethod.POST, jws, owner);
         if (tokenResponse.getStatusCode().value() == 201) {
             JsonNode rootNode = objectMapper.readTree(tokenResponse.getBody());
             token = rootNode.path("token").asText();
@@ -233,15 +239,21 @@ public class GitHubTokenService implements GetAccessToken<GitHubToken> {
         return jws;
     }
 
-    // Calls the GitHub API
-    private ResponseEntity<String> callGithubAPI(String body, String apiUrl, HttpMethod method, String jws) {
+    // Calls the GitHub API. owner is used only to produce a safe, non-sensitive classification
+    // message if the call fails (see GitHubHttpErrors) - never logged/returned on success.
+    private ResponseEntity<String> callGithubAPI(String body, String apiUrl, HttpMethod method, String jws,
+            String owner) throws VcsTokenAcquisitionException {
         HttpHeaders headers = new HttpHeaders();
         headers.set("Accept", "application/vnd.github+json");
         headers.set("Authorization", "Bearer " + jws);
         headers.set("X-GitHub-Api-Version", "2022-11-28");
         RestTemplate restTemplate = getRestTemplateWithProxy();
         HttpEntity<String> entity = new HttpEntity<>(body, headers);
-        return restTemplate.exchange(apiUrl, method, entity, String.class);
+        try {
+            return restTemplate.exchange(apiUrl, method, entity, String.class);
+        } catch (RestClientException e) {
+            throw GitHubHttpErrors.classify(e, owner);
+        }
     }
 
     // Generates the app-level JWT used to call GitHub App management endpoints (e.g. listing installations)
@@ -252,13 +264,16 @@ public class GitHubTokenService implements GetAccessToken<GitHubToken> {
     // Exposes the installation access token fetch for callers that already know the installation id
     // (e.g. repository discovery, where the installation is picked from /app/installations)
     public String getInstallationToken(String installationId, String apiUrl, String jws, String owner)
-            throws JsonProcessingException {
+            throws JsonProcessingException, VcsTokenAcquisitionException {
         return fetchGitHubAppInstallationToken(installationId, apiUrl, jws, owner).token();
     }
 
-    // Calls a GitHub API endpoint authenticated with the app JWT (used for /app/installations)
-    public ResponseEntity<String> callGithubAppApi(String apiUrl, HttpMethod method, String jws) {
-        return callGithubAPI("", apiUrl, method, jws);
+    // Calls a GitHub API endpoint authenticated with the app JWT (used for /app/installations).
+    // Unused by any caller today (repository discovery uses its own local callAppApi); kept for
+    // API compatibility.
+    public ResponseEntity<String> callGithubAppApi(String apiUrl, HttpMethod method, String jws)
+            throws VcsTokenAcquisitionException {
+        return callGithubAPI("", apiUrl, method, jws, "unknown");
     }
 
     public RestTemplate getRestTemplateWithProxy() {

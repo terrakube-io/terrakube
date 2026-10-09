@@ -140,6 +140,36 @@ class MSSQLStartupTests {
 
         // Verify queue depth count
         assertThat(jobRepository.countDispatchEligibleJobs()).isEqualTo(2);
+
+        // Dispatch-retry-aware variants (issues #3665/#3666) - CURRENT_TIMESTAMP is a portable
+        // JPQL function, but this proves Hibernate's SQL Server dialect actually translates it
+        // (and the whole query) correctly, not just that it compiles against Postgres.
+        assertThat(jobRepository.isJobNextInDispatchOrderExecutableNotDeferred(older.getId())).isTrue();
+        assertThat(jobRepository.isJobNextInDispatchOrderExecutableNotDeferred(newer.getId())).isFalse();
+        assertThat(jobRepository.findNextDispatchableExecutableNotDeferredJobId()).isEqualTo(older.getId());
+        assertThat(jobRepository.countDispatchEligibleNotDeferredJobs()).isEqualTo(2);
+
+        older.setDispatchNextRetryAt(new java.util.Date(System.currentTimeMillis() + 60_000));
+        jobRepository.save(older);
+
+        // older is now in backoff: it must stop blocking newer (different workspace)...
+        assertThat(jobRepository.isJobNextInDispatchOrderExecutableNotDeferred(newer.getId())).isTrue();
+        assertThat(jobRepository.findNextDispatchableExecutableNotDeferredJobId()).isEqualTo(newer.getId());
+        assertThat(jobRepository.countDispatchEligibleNotDeferredJobs()).isEqualTo(1);
+
+        // ...but must still block a later job in its OWN workspace (same-workspace ordering).
+        Job laterInWorkspaceA = new Job();
+        laterInWorkspaceA.setOrganization(organization);
+        laterInWorkspaceA.setWorkspace(workspaceA);
+        laterInWorkspaceA.setStatus(JobStatus.pending);
+        laterInWorkspaceA = jobRepository.save(laterInWorkspaceA);
+        Step laterStep = new Step();
+        laterStep.setJob(laterInWorkspaceA);
+        laterStep.setStepNumber(100);
+        laterStep.setStatus(JobStatus.pending);
+        stepRepository.save(laterStep);
+
+        assertThat(jobRepository.isJobNextInDispatchOrderExecutableNotDeferred(laterInWorkspaceA.getId())).isFalse();
     }
 }
 
