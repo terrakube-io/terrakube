@@ -949,18 +949,61 @@ describe("StructuredPlanOutput", () => {
     expect(screen.getByRole("button", { name: /random_pet\.created/i })).toBeInTheDocument();
   });
 
-  it("does not render an Outputs section when there are no outputs", () => {
+  // #3674: a warning/error attached to a resource with nothing to change previously had no row
+  // to live in at all once the no-op filter above dropped it.
+  it("keeps a no-op resource's row when it carries a diagnostic", () => {
     render(
       <StructuredPlanOutput
         applyMode
         changes={[
           {
-            address: "random_pet.this",
+            address: "random_pet.deprecated_config",
+            action: "no-op",
+            actions: ["no-op"],
+            status: "applied",
+            diagnostics: [{ severity: "warning", summary: "argument is deprecated" }],
+          },
+        ]}
+      />
+    );
+
+    expect(screen.getByRole("button", { name: /random_pet\.deprecated_config/i })).toBeInTheDocument();
+  });
+
+  // #3674: a resource's diagnostics must stay visible even when its row is hidden by a filter.
+  it("surfaces a resource-level diagnostic in the always-visible panel even when its row is filtered out by search", () => {
+    render(
+      <StructuredPlanOutput
+        applyMode
+        changes={[
+          {
+            address: "aws_instance.foo",
             action: "create",
             actions: ["create"],
-            after: { id: "abc" },
+            after: {},
             status: "applied",
+            diagnostics: [{ severity: "warning", summary: "deprecated argument on foo" }],
           },
+          { address: "aws_instance.bar", action: "create", actions: ["create"], after: {}, status: "applied" },
+        ]}
+      />
+    );
+
+    fireEvent.change(screen.getByPlaceholderText(/filter resources by address/i), { target: { value: "bar" } });
+
+    expect(screen.queryByRole("button", { name: /aws_instance\.foo/i })).not.toBeInTheDocument();
+    expect(
+      screen.getByText("aws_instance.foo", { selector: ".structured-plan-jobDiagnostics code" })
+    ).toBeInTheDocument();
+    expect(screen.getByText(/deprecated argument on foo/)).toBeInTheDocument();
+  });
+
+  it("does not render an Outputs section when there are no outputs", () => {
+    render(
+      <StructuredPlanOutput
+        applyMode
+        changes={[
+          { address: "random_pet.this", action: "create", actions: ["create"], after: { id: "abc" }, status: "applied" },
         ]}
       />
     );

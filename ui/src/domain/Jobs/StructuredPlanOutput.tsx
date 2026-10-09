@@ -1344,13 +1344,15 @@ export const StructuredPlanOutput = ({
   const preparedRows = useMemo<PreparedChangeRow[]>(() => {
     return changes.flatMap((change, index) => {
       const normalizedAction = normalizeActionName(getPlanChangeActionLabel(change.actions, change.action));
+      const applyDiagnostics = "diagnostics" in change ? (change as ApplyChange).diagnostics : undefined;
 
       // No-op resources (nothing to create/update/destroy) are excluded from the structured view
       // entirely - matches `terraform plan`'s own CLI output, which never lists unchanged
       // resources either. Filtering here (rather than upstream) means their live "refreshing"
       // status still flows through the underlying data fine while a run is active; they just
-      // never render as a row.
-      if (normalizedAction === "no-op") {
+      // never render as a row. Exception: a no-op resource with a diagnostic keeps its row, or
+      // that diagnostic would be unreachable anywhere in the view (#3674).
+      if (normalizedAction === "no-op" && !(applyDiagnostics && applyDiagnostics.length)) {
         return [];
       }
 
@@ -1358,10 +1360,11 @@ export const StructuredPlanOutput = ({
       const providerName = getProviderName(change);
       const diff = buildResourceDiff(change, normalizedAction);
       const applyStatus = "status" in change ? (change as ApplyChange).status : undefined;
-      const applyDiagnostics = "diagnostics" in change ? (change as ApplyChange).diagnostics : undefined;
       const applyElapsedSeconds = "elapsedSeconds" in change ? (change as ApplyChange).elapsedSeconds : undefined;
-      const applyCurrentProvisioner = "currentProvisioner" in change ? (change as ApplyChange).currentProvisioner : undefined;
-      const applyProvisionerOutput = "provisionerOutput" in change ? (change as ApplyChange).provisionerOutput : undefined;
+      const applyCurrentProvisioner =
+        "currentProvisioner" in change ? (change as ApplyChange).currentProvisioner : undefined;
+      const applyProvisionerOutput =
+        "provisionerOutput" in change ? (change as ApplyChange).provisionerOutput : undefined;
       const driftAction = change.driftAction;
 
       return [
@@ -1457,6 +1460,22 @@ export const StructuredPlanOutput = ({
       return true;
     });
   }, [addressFilter, operationFilters, preparedRows, showDataSources]);
+
+  // Only rows a filter hid, not ones just collapsed - those already show their own diagnostics
+  // one click away, so mirroring them here too would duplicate them (#3674).
+  const filteredOutRowKeys = useMemo(() => {
+    const visibleKeys = new Set(filteredRows.map((row) => row.key));
+    return preparedRows.filter((row) => !visibleKeys.has(row.key));
+  }, [preparedRows, filteredRows]);
+
+  const resourceDiagnostics = useMemo(() => {
+    return filteredOutRowKeys.flatMap((row) => {
+      if (!row.applyDiagnostics || !row.applyDiagnostics.length) {
+        return [];
+      }
+      return row.applyDiagnostics.map((diagnostic) => ({ address: row.resourceLabel, diagnostic }));
+    });
+  }, [filteredOutRowKeys]);
 
   const hasJobDiagnostics = Boolean(jobDiagnostics && jobDiagnostics.length);
 
@@ -1698,12 +1717,32 @@ export const StructuredPlanOutput = ({
           </div>
         </div>
 
-        {jobDiagnostics != null && jobDiagnostics.length > 0 ? (
+        {hasJobDiagnostics || resourceDiagnostics.length > 0 ? (
           <div className="structured-plan-jobDiagnostics">
-            {jobDiagnostics.map((diagnostic, index) => (
-              <div key={index} className={`structured-plan-jobDiagnostic structured-plan-jobDiagnostic--${diagnostic.severity}`}>
+            {(jobDiagnostics ?? []).map((diagnostic, index) => (
+              <div
+                key={`job-${index}`}
+                className={`structured-plan-jobDiagnostic structured-plan-jobDiagnostic--${diagnostic.severity}`}
+              >
                 <span className="structured-plan-diagnostic-summary">
                   {diagnostic.summary}
+                  {diagnostic.location ? (
+                    <span className="structured-plan-diagnostic-location"> ({diagnostic.location})</span>
+                  ) : null}
+                </span>
+                {diagnostic.detail ? (
+                  <span className="structured-plan-diagnostic-detail">{diagnostic.detail}</span>
+                ) : null}
+              </div>
+            ))}
+            {/* Resource-level diagnostics; address-labelled, unlike job-level ones. */}
+            {resourceDiagnostics.map(({ address, diagnostic }, index) => (
+              <div
+                key={`resource-${index}`}
+                className={`structured-plan-jobDiagnostic structured-plan-jobDiagnostic--${diagnostic.severity}`}
+              >
+                <span className="structured-plan-diagnostic-summary">
+                  <code>{address}</code>: {diagnostic.summary}
                   {diagnostic.location ? (
                     <span className="structured-plan-diagnostic-location"> ({diagnostic.location})</span>
                   ) : null}
