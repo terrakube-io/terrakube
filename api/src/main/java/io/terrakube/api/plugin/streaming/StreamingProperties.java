@@ -6,6 +6,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.PropertySource;
 import org.springframework.stereotype.Component;
 
+import java.time.Duration;
 import java.util.List;
 
 @Component
@@ -24,6 +25,7 @@ public class StreamingProperties {
     private String truststorePassword;
     private Sentinel sentinel;
     private Cluster cluster;
+    private Pool pool = new Pool();
 
     @Getter
     @Setter
@@ -39,5 +41,13 @@ public class StreamingProperties {
     public static class Cluster {
         private List<String> nodes;
         private Integer maxRedirects;
+    }
+
+    @Getter
+    @Setter
+    public static class Pool {
+        private int maxTotal = 64;
+        // Borrowing a connection fails after this instead of blocking the request thread forever.
+        private Duration maxWait = Duration.ofSeconds(5);
     }
 }

@@ -6,6 +6,8 @@ import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -53,6 +55,17 @@ class JobStatusCacheTest {
         when(jobRepository.findById(6)).thenReturn(Optional.of(done));
 
         assertTrue(cacheWithTtl(Duration.ofSeconds(60)).isTerminal("6"));
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = JobStatus.class, names = {"rejected", "noChanges"})
+    void endStatesBesidesCompletedFailedCancelledAreTerminal(JobStatus status) {
+        Job done = new Job();
+        done.setId(8);
+        done.setStatus(status);
+        when(jobRepository.findById(8)).thenReturn(Optional.of(done));
+
+        assertTrue(cacheWithTtl(Duration.ofSeconds(60)).isTerminal("8"));
     }
 
     @Test

@@ -4,7 +4,6 @@ import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import io.terrakube.api.plugin.logs.LogsProperties;
 import io.terrakube.api.repository.JobRepository;
-import io.terrakube.api.rs.job.JobStatus;
 import org.springframework.stereotype.Component;
 
 /**
@@ -32,10 +31,7 @@ public class JobStatusCache {
 
     private boolean loadTerminal(String jobId) {
         return jobRepository.findById(Integer.parseInt(jobId))
-                .map(job -> {
-                    JobStatus s = job.getStatus();
-                    return s == JobStatus.completed || s == JobStatus.failed || s == JobStatus.cancelled;
-                })
+                .map(job -> job.getStatus().isTerminal())
                 .orElse(true);
     }
 }
