@@ -34,6 +34,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -325,5 +326,60 @@ class ModuleServiceImplCacheTest {
         moduleService.evictAvailableVersions("org", "module", "aws");
         moduleService.getAvailableVersions("org", "module", "aws");
         verify(terrakubeClient, times(2)).searchOrganizationModules(any());
+    }
+
+    private static GraphQLResponse<SearchOrganizationModuleResponse> noVersions() {
+        OrganizationConnection organizations = new OrganizationConnection();
+        organizations.setEdges(List.of());
+        SearchOrganizationModuleResponse search = new SearchOrganizationModuleResponse();
+        search.setOrganization(organizations);
+        GraphQLResponse<SearchOrganizationModuleResponse> response = new GraphQLResponse<>();
+        response.setData(search);
+        return response;
+    }
+
+    @Test
+    void namesThatJoinToTheSameStringDoNotShareACacheEntry() {
+        context = new AnnotationConfigApplicationContext(TestConfig.class);
+        TerrakubeClient terrakubeClient = context.getBean(TerrakubeClient.class);
+        ModuleService moduleService = context.getBean(ModuleService.class);
+        when(terrakubeClient.searchOrganizationModules(any())).thenReturn(noVersions());
+
+        moduleService.getAvailableVersions("a-b", "c", "aws");
+        moduleService.getAvailableVersions("a", "b-c", "aws");
+        moduleService.isVersionRemoved("a-b", "c", "aws", "1.0.0");
+        moduleService.isVersionRemoved("a", "b-c", "aws", "1.0.0");
+
+        verify(terrakubeClient, times(4)).searchOrganizationModules(any());
+    }
+
+    @Test
+    void concurrentVersionListMissesQueryTheApiOnce() throws Exception {
+        context = new AnnotationConfigApplicationContext(TestConfig.class);
+        TerrakubeClient terrakubeClient = context.getBean(TerrakubeClient.class);
+        CommonSearchService commonSearchService = context.getBean(CommonSearchService.class);
+        ModuleService moduleService = context.getBean(ModuleService.class);
+        when(terrakubeClient.searchOrganizationModules(any())).thenAnswer(invocation -> {
+            Thread.sleep(300);
+            return noVersions();
+        });
+
+        ExecutorService executorService = Executors.newFixedThreadPool(CONCURRENT_REQUESTS);
+        CountDownLatch startLatch = new CountDownLatch(1);
+        List<java.util.concurrent.Future<List<String>>> results = new java.util.ArrayList<>();
+        for (int i = 0; i < CONCURRENT_REQUESTS; i++) {
+            results.add(executorService.submit(() -> {
+                startLatch.await();
+                return moduleService.getAvailableVersions("org", "module", "aws");
+            }));
+        }
+        startLatch.countDown();
+        for (java.util.concurrent.Future<List<String>> result : results) {
+            result.get(10, TimeUnit.SECONDS);
+        }
+        executorService.shutdown();
+
+        verify(terrakubeClient, times(1)).searchOrganizationModules(any());
+        verify(commonSearchService, never()).getOrganizationId(anyString());
     }
 }
