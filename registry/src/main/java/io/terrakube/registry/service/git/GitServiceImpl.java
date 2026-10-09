@@ -23,6 +23,7 @@ import org.eclipse.jgit.transport.sshd.SshdSessionFactory;
 import org.eclipse.jgit.transport.sshd.SshdSessionFactoryBuilder;
 import org.eclipse.jgit.util.FS;
 import org.springframework.stereotype.Service;
+import org.zeroturnaround.zip.ZipUtil;
 
 import java.io.File;
 import java.io.IOException;
@@ -39,25 +40,22 @@ public class GitServiceImpl implements GitService {
     private static final String SSH_REGISTRY_DIRECTORY = "%s/.terraform-spring-boot/ssh/registry/%s/id_%s";
 
     @Override
-    public File getCloneRepositoryByTag(ModuleVersionDownload download) {
+    public void withModuleZip(ModuleVersionDownload download, ModuleZipHandler handler) throws IOException {
         String repository = download.repository();
         String vcsType = download.vcsType();
         String vcsConnectionType = download.vcsConnectionType();
         String accessToken = download.accessToken();
         String tagPrefix = download.tagPrefix();
         String folder = download.folder();
-        File gitCloneRepository = null;
+        String userHomeDirectory = FileUtils.getUserDirectoryPath();
+        String tempFolder = UUID.randomUUID().toString();
+        String gitRepositoryPath = userHomeDirectory.concat(
+                FilenameUtils.separatorsToSystem(
+                        GIT_DIRECTORY + "/" + tempFolder));
+        File gitCloneRoot = new File(gitRepositoryPath);
+        // Next to the clone rather than inside it, so packing the clone root never includes the zip itself
+        File moduleZip = new File(gitRepositoryPath + ".zip");
         try {
-            String userHomeDirectory = FileUtils.getUserDirectoryPath();
-            String tempFolder = UUID.randomUUID().toString();
-            String gitRepositoryPath = userHomeDirectory.concat(
-                    FilenameUtils.separatorsToSystem(
-                            GIT_DIRECTORY + "/" + tempFolder));
-
-            gitCloneRepository = new File(gitRepositoryPath);
-            FileUtils.forceMkdir(gitCloneRepository);
-            FileUtils.cleanDirectory(gitCloneRepository);
-
             String gitTag = download.gitTag();
             String correctTag = (gitTag != null && !gitTag.isEmpty())
                     ? gitTag
@@ -68,10 +66,14 @@ public class GitServiceImpl implements GitService {
             CredentialsProvider credentialsProvider = setupCredentials(vcsType, vcsConnectionType, accessToken);
             TransportConfigCallback transportConfigCallback = setupTransportConfigCallback(vcsType, accessToken, tempFolder);
 
+            // Only the tag's tree is packaged, so fetch just that ref at depth 1 instead of every branch and tag
             CloneCommand cloneCommand = Git.cloneRepository()
                     .setURI(repository)
-                    .setDirectory(gitCloneRepository)
-                    .setBranch("refs/tags/" + correctTag);
+                    .setDirectory(gitCloneRoot)
+                    .setBranch("refs/tags/" + correctTag)
+                    .setBranchesToClone(List.of("refs/tags/" + correctTag))
+                    .setNoTags()
+                    .setDepth(1);
 
             if (credentialsProvider != null) {
                 cloneCommand.setCredentialsProvider(credentialsProvider);
@@ -81,8 +83,15 @@ public class GitServiceImpl implements GitService {
                 cloneCommand.setTransportConfigCallback(transportConfigCallback);
             }
 
-            cloneCommand.call();
+            try (Git ignored = cloneCommand.call()) {
+                log.info("Clone of {} completed", repository);
+            } catch (GitAPIException ex) {
+                throw new RuntimeException(String.format("Failed to clone tag %s from repository %s", correctTag, repository), ex);
+            }
 
+            deleteGitMetadata(gitCloneRoot);
+
+            File gitCloneRepository = gitCloneRoot;
             if (folder != null && !folder.isEmpty()) {
                 gitRepositoryPath = userHomeDirectory.concat(
                         FilenameUtils.separatorsToSystem(
@@ -90,10 +99,17 @@ public class GitServiceImpl implements GitService {
                 gitCloneRepository = new File(gitRepositoryPath);
             }
 
-        } catch (GitAPIException | IOException ex) {
-            log.error(ex.getMessage());
+            ZipUtil.pack(gitCloneRepository, moduleZip);
+            handler.accept(moduleZip);
+        } finally {
+            FileUtils.deleteQuietly(gitCloneRoot);
+            FileUtils.deleteQuietly(moduleZip);
         }
-        return gitCloneRepository;
+    }
+
+    // Git metadata is never part of the module, and is most of the archive size
+    void deleteGitMetadata(File gitCloneRoot) throws IOException {
+        FileUtils.deleteDirectory(new File(gitCloneRoot, ".git"));
     }
 
     CredentialsProvider setupCredentials(String vcsType, String vcsConnectionType, String accessToken) {

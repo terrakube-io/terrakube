@@ -7,14 +7,12 @@ import com.azure.storage.blob.models.BlobStorageException;
 import io.terrakube.registry.plugin.storage.StorageUnavailableException;
 import io.terrakube.registry.service.git.GitService;
 import io.terrakube.registry.service.git.ModuleVersionDownload;
-import org.apache.commons.io.FileUtils;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.File;
 import java.io.IOException;
 import java.net.URI;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.OffsetDateTime;
 import java.util.Optional;
@@ -186,11 +184,12 @@ class AzureStorageServiceImplPresignedTest {
         when(containerClient.getBlobClient(anyString())).thenReturn(blobClient);
         when(blobClient.exists()).thenReturn(false);
 
-        File gitCloneDir = tempDir.resolve("git-clone").toFile();
-        assertTrue(gitCloneDir.mkdirs());
-        FileUtils.writeStringToFile(new File(gitCloneDir, "main.tf"),
-                "resource \"null_resource\" \"this\" {}", StandardCharsets.UTF_8);
-        when(gitService.getCloneRepositoryByTag(any(ModuleVersionDownload.class))).thenReturn(gitCloneDir);
+        File moduleZip = tempDir.resolve("module.zip").toFile();
+        java.nio.file.Files.writeString(moduleZip.toPath(), "zip");
+        doAnswer(invocation -> {
+            invocation.<GitService.ModuleZipHandler>getArgument(1).accept(moduleZip);
+            return null;
+        }).when(gitService).withModuleZip(any(ModuleVersionDownload.class), any());
 
         AzureStorageServiceImpl service = buildServiceWithRedirect(blobServiceClient, gitService, false);
         ModuleVersionDownload download = new ModuleVersionDownload("source", "1.0.0", "v1.0.0", "vcsType",
