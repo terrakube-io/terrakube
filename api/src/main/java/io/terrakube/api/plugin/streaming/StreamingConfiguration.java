@@ -20,6 +20,7 @@ import org.springframework.data.redis.connection.jedis.JedisConnectionFactory;
 import org.springframework.data.redis.core.RedisTemplate;
 
 import lombok.extern.slf4j.Slf4j;
+import redis.clients.jedis.JedisPoolConfig;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
 
@@ -57,7 +58,11 @@ public class StreamingConfiguration {
     @Bean
     JedisConnectionFactory jedisConnectionFactory(StreamingProperties props, SSLSocketFactory sslSocketFactory) {
         JedisClientConfiguration.JedisClientConfigurationBuilder clientConfigBuilder = JedisClientConfiguration.builder();
-        clientConfigBuilder.usePooling();
+        JedisPoolConfig poolConfig = new JedisPoolConfig();
+        poolConfig.setMaxTotal(props.getPool().getMaxTotal());
+        poolConfig.setMaxIdle(props.getPool().getMaxTotal());
+        poolConfig.setMaxWait(props.getPool().getMaxWait());
+        clientConfigBuilder.usePooling().poolConfig(poolConfig);
 
         if (props.isSsl()) {
             log.info("Setup Redis connection using SSL");

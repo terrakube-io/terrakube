@@ -3,7 +3,6 @@ package io.terrakube.registry.plugin.storage.aws;
 import io.terrakube.registry.plugin.storage.StorageUnavailableException;
 import io.terrakube.registry.service.git.GitService;
 import io.terrakube.registry.service.git.ModuleVersionDownload;
-import org.apache.commons.io.FileUtils;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Mockito;
@@ -20,7 +19,6 @@ import java.util.Optional;
 
 import java.io.File;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -50,14 +48,12 @@ class AwsStorageServiceImplTest {
         when(s3Client.headObject(any(HeadObjectRequest.class)))
                 .thenThrow(S3Exception.builder().statusCode(404).build());
 
-        // Mock gitService
-        File gitCloneDir = tempDir.resolve("git-clone").toFile();
-        assertTrue(gitCloneDir.mkdirs());
-        File dummyFile = new File(gitCloneDir, "main.tf");
-        FileUtils.writeStringToFile(dummyFile, "resource \"null_resource\" \"this\" {}", StandardCharsets.UTF_8);
-
-        when(gitService.getCloneRepositoryByTag(any(ModuleVersionDownload.class)))
-                .thenReturn(gitCloneDir);
+        File moduleZip = tempDir.resolve("module.zip").toFile();
+        java.nio.file.Files.writeString(moduleZip.toPath(), "zip");
+        doAnswer(invocation -> {
+            invocation.<GitService.ModuleZipHandler>getArgument(1).accept(moduleZip);
+            return null;
+        }).when(gitService).withModuleZip(any(ModuleVersionDownload.class), any());
 
         ModuleVersionDownload download = new ModuleVersionDownload("source", "1.0.0", "v1.0.0", "vcsType",
                 "vcsConn", "token", "tag", "folder");
@@ -160,6 +156,31 @@ class AwsStorageServiceImplTest {
         assertThrows(StorageUnavailableException.class,
                 () -> awsStorageService.searchModule("org", "module", "aws", download));
         verifyNoInteractions(gitService);
+    }
+
+    @Test
+    void shouldNotUploadWhenCloneFails() throws IOException {
+        S3Client s3Client = mock(S3Client.class);
+        GitService gitService = mock(GitService.class);
+
+        AwsStorageServiceImpl awsStorageService = AwsStorageServiceImpl.builder()
+                .s3client(s3Client)
+                .bucketName("test-bucket")
+                .gitService(gitService)
+                .registryHostname("https://registry.terrakube.io")
+                .build();
+
+        when(s3Client.headObject(any(HeadObjectRequest.class)))
+                .thenThrow(S3Exception.builder().statusCode(404).build());
+        doThrow(new RuntimeException("clone failed"))
+                .when(gitService).withModuleZip(any(ModuleVersionDownload.class), any());
+
+        ModuleVersionDownload download = new ModuleVersionDownload("source", "1.0.0", "v1.0.0", "vcsType",
+                "vcsConn", "token", "tag", "folder");
+
+        assertThrows(RuntimeException.class,
+                () -> awsStorageService.searchModule("org", "module", "aws", download));
+        verify(s3Client, never()).putObject(any(PutObjectRequest.class), any(RequestBody.class));
     }
 
     @Test
