@@ -14,6 +14,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class StructuredOutputPersistenceQueueTest {
@@ -174,6 +175,29 @@ class StructuredOutputPersistenceQueueTest {
         assertEquals(2, calls[0]);
         assertEquals(1.0, registry.get("terrakube.executor.structured.output.persist")
                 .tag("outcome", "success").counter().count());
+        queue.stop();
+    }
+
+    @Test
+    void awaitDrainDoesNotReportDrainedWhileADequeuedSnapshotIsUnpersisted() throws Exception {
+        List<StructuredSnapshot> persisted = Collections.synchronizedList(new java.util.ArrayList<>());
+        StructuredOutputPersistenceQueue queue = new StructuredOutputPersistenceQueue(
+                props(64), flags(false), new SimpleMeterRegistry(), s -> persisted.add(s));
+        // Probe from inside the window between the worker taking the snapshot and persisting it.
+        java.util.concurrent.atomic.AtomicBoolean drainedInWindow = new java.util.concurrent.atomic.AtomicBoolean();
+        CountDownLatch probed = new CountDownLatch(1);
+        queue.afterDequeue = () -> {
+            drainedInWindow.set(queue.awaitDrain(Duration.ZERO));
+            probed.countDown();
+        };
+        queue.start();
+
+        queue.submit(finalSnap("step-1", 1, "a"));
+
+        assertTrue(probed.await(5, TimeUnit.SECONDS));
+        assertFalse(drainedInWindow.get(), "awaitDrain reported drained while a snapshot was in flight");
+        assertTrue(queue.awaitDrain(Duration.ofSeconds(5)));
+        assertEquals(1, persisted.size());
         queue.stop();
     }
 
