@@ -12,6 +12,7 @@ import lombok.Builder;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import io.terrakube.api.plugin.storage.StorageTypeService;
+import io.terrakube.api.plugin.storage.StorageUnavailableException;
 import io.terrakube.api.plugin.storage.model.ByteRange;
 import io.terrakube.api.plugin.storage.model.StepOutputStream;
 
@@ -35,20 +36,76 @@ public class AzureStorageTypeServiceImpl implements StorageTypeService {
 
     private static final String TERRAFORM_TAR_GZ = "content/%s/terraformContent.tar.gz";
 
+    // Short, bounded retry for a genuine SDK/network failure on the single underlying call -
+    // mirrors the AWS backend's retry window (#3671).
+    private static final int STORAGE_MAX_ATTEMPTS = 3;
+    private static final long[] STORAGE_BACKOFF_MILLIS = {200, 500};
+
     @NonNull
     BlobServiceClient blobServiceClient;
 
+    // A 404 (genuinely not found) returns empty, unchanged from before. Any other failure
+    // (network, auth, throttling) is retried, then thrown as StorageUnavailableException instead
+    // of silently collapsing into the same empty result as a real "not found" (#3671).
+    private byte[] downloadBlob(String containerName, String blobName) {
+        BlobContainerClient containerClient = blobServiceClient.getBlobContainerClient(containerName);
+        BlobClient blobClient = containerClient.getBlobClient(blobName);
+        Exception lastFailure = null;
+        for (int attempt = 1; attempt <= STORAGE_MAX_ATTEMPTS; attempt++) {
+            try {
+                log.info("Searching: /{}/{}", containerName, blobName);
+                return blobClient.downloadContent().toBytes();
+            } catch (Exception e) {
+                if (e instanceof BlobStorageException bse && bse.getStatusCode() == 404) {
+                    return new byte[0];
+                }
+                lastFailure = e;
+                if (attempt < STORAGE_MAX_ATTEMPTS) {
+                    log.warn("Azure read attempt {} failed for {}/{}, retrying: {}", attempt, containerName, blobName, e.getMessage());
+                    sleepBackoff(STORAGE_BACKOFF_MILLIS[attempt - 1]);
+                }
+            }
+        }
+        throw new StorageUnavailableException("Azure read failed for " + containerName + "/" + blobName, lastFailure);
+    }
+
+    // Shared by every write path (state, context, policy evaluation, and the CLI-driven
+    // configuration tarball) - a failed write now fails the caller instead of logging and
+    // returning as if it succeeded (#3671).
+    private void uploadBlob(String containerName, String blobName, byte[] data) {
+        BlobContainerClient containerClient = blobServiceClient.getBlobContainerClient(containerName);
+        Exception lastFailure = null;
+        for (int attempt = 1; attempt <= STORAGE_MAX_ATTEMPTS; attempt++) {
+            try {
+                if (!containerClient.exists()) {
+                    containerClient.create();
+                }
+                BlobClient blobClient = containerClient.getBlobClient(blobName);
+                blobClient.upload(BinaryData.fromBytes(data), true);
+                log.info("Upload Object {} completed", blobName);
+                return;
+            } catch (Exception e) {
+                lastFailure = e;
+                if (attempt < STORAGE_MAX_ATTEMPTS) {
+                    log.warn("Azure write attempt {} failed for {}/{}, retrying: {}", attempt, containerName, blobName, e.getMessage());
+                    sleepBackoff(STORAGE_BACKOFF_MILLIS[attempt - 1]);
+                }
+            }
+        }
+        throw new StorageUnavailableException("Azure write failed for " + containerName + "/" + blobName, lastFailure);
+    }
+
+    private void sleepBackoff(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
     @Override
     public byte[] getStepOutput(String organizationId, String jobId, String stepId) {
-        BlobContainerClient containerClient = blobServiceClient.getBlobContainerClient(CONTAINER_NAME_OUTPUT);
-        log.info("Searching: /tfoutput/{}/{}/{}.tfoutput", organizationId, jobId, stepId);
-        byte[] response = new byte[0];
-        try {
-            response = containerClient.getBlobClient(String.format("%s/%s/%s.tfoutput", organizationId, jobId, stepId)).downloadContent().toBytes();
-        } catch (Exception e) {
-            log.error(e.getMessage());
-        }
-        return response;
+        return downloadBlob(CONTAINER_NAME_OUTPUT, String.format("%s/%s/%s.tfoutput", organizationId, jobId, stepId));
     }
 
     @Override
@@ -83,96 +140,50 @@ public class AzureStorageTypeServiceImpl implements StorageTypeService {
 
     @Override
     public byte[] getTerraformPlan(String organizationId, String workspaceId, String jobId, String stepId) {
-        BlobContainerClient containerClient = blobServiceClient.getBlobContainerClient(CONTAINER_NAME_STATE);
-        log.info("Searching: /tfstate/{}/{}/{}/{}/terraformLibrary.tfPlan", organizationId, workspaceId, jobId, stepId);
-        byte[] response = new byte[0];
-        try {
-            response = containerClient.getBlobClient(String.format("%s/%s/%s/%s/terraformLibrary.tfPlan", organizationId, workspaceId, jobId, stepId)).downloadContent().toBytes();
-        } catch (Exception e) {
-            log.error(e.getMessage());
-        }
-
-        return response;
+        return downloadBlob(CONTAINER_NAME_STATE, String.format("%s/%s/%s/%s/terraformLibrary.tfPlan", organizationId, workspaceId, jobId, stepId));
     }
 
     @Override
     public byte[] getTerraformStateJson(String organizationId, String workspaceId, String stateFileName) {
-        BlobContainerClient containerClient = blobServiceClient.getBlobContainerClient(CONTAINER_NAME_STATE);
-        log.info("Searching: /tfstate/{}/{}/state/{}.json", organizationId, workspaceId, stateFileName);
-        byte[] response = new byte[0];
-        try {
-            response = containerClient.getBlobClient(String.format("%s/%s/state/%s.json", organizationId, workspaceId, stateFileName)).downloadContent().toBytes();
-        } catch (Exception e) {
-            log.error(e.getMessage());
-        }
-        return response;
+        return downloadBlob(CONTAINER_NAME_STATE, String.format("%s/%s/state/%s.json", organizationId, workspaceId, stateFileName));
     }
 
     @Override
     public void uploadTerraformStateJson(String organizationId, String workspaceId, String stateJson, String stateJsonHistoryId) {
-        BlobContainerClient contextContainerClient = blobServiceClient.getBlobContainerClient(CONTAINER_NAME_STATE);
-
         String stateFileName = String.format("%s/%s/state/%s.json", organizationId, workspaceId, stateJsonHistoryId);
         log.info("New State JSON Az Storage: {}", stateFileName);
-        BlobClient blobClient = contextContainerClient.getBlobClient(stateFileName);
-
-        BinaryData binaryData = BinaryData.fromBytes(stateJson.getBytes());
-        blobClient.upload(binaryData, true);
+        uploadBlob(CONTAINER_NAME_STATE, stateFileName, stateJson.getBytes(StandardCharsets.UTF_8));
     }
 
     @Override
     public byte[] getCurrentTerraformState(String organizationId, String workspaceId) {
-        BlobContainerClient containerClient = blobServiceClient.getBlobContainerClient(CONTAINER_NAME_STATE);
-        log.info("Searching: /{}/{}/terraform.tfstate", organizationId, workspaceId);
-        byte[] response = new byte[0];
-        try {
-            response = containerClient.getBlobClient(String.format("%s/%s/terraform.tfstate", organizationId, workspaceId)).downloadContent().toBytes();
-        } catch (Exception e) {
-            log.error(e.getMessage());
-        }
-        return response;
+        return downloadBlob(CONTAINER_NAME_STATE, String.format("%s/%s/terraform.tfstate", organizationId, workspaceId));
     }
 
     @Override
     public void uploadState(String organizationId, String workspaceId, String terraformState, String historyId) {
-        BlobContainerClient contextContainerClient = blobServiceClient.getBlobContainerClient(CONTAINER_NAME_STATE);
-
         String stateFileName = String.format("%s/%s/terraform.tfstate", organizationId, workspaceId);
         String rawStateFileName = String.format("%s/%s/state/%s.raw.json", organizationId, workspaceId, historyId);
         log.info("New State File Az Storage: {}", stateFileName);
         log.info("New State Raw File Az Storage: {}", rawStateFileName);
-        BlobClient blobClient = contextContainerClient.getBlobClient(stateFileName);
-        BlobClient rawBlobClient = contextContainerClient.getBlobClient(rawStateFileName);
-
-        BinaryData binaryData = BinaryData.fromBytes(terraformState.getBytes());
-        BinaryData rawBinaryData = BinaryData.fromBytes(terraformState.getBytes());
-        blobClient.upload(binaryData, true);
-        rawBlobClient.upload(rawBinaryData, true);
+        byte[] data = terraformState.getBytes(StandardCharsets.UTF_8);
+        uploadBlob(CONTAINER_NAME_STATE, stateFileName, data);
+        uploadBlob(CONTAINER_NAME_STATE, rawStateFileName, data);
     }
 
     @Override
     public String saveContext(int jobId, String jobContext) {
-        BlobContainerClient contextContainerClient = blobServiceClient.getBlobContainerClient(CONTAINER_NAME_OUTPUT);
-
-        log.info("contextContainerClient.exists {}", contextContainerClient.exists());
-        if (!contextContainerClient.exists()) {
-            contextContainerClient.create();
-        }
         String blobName = String.format(CONTEXT_FILE, jobId);
         log.info("Context file: {}", blobName);
-        BlobClient blobClient = contextContainerClient.getBlobClient(blobName);
-
-        BinaryData binaryData = BinaryData.fromBytes(jobContext.getBytes());
-        blobClient.upload(binaryData, true);
+        uploadBlob(CONTAINER_NAME_OUTPUT, blobName, jobContext.getBytes(StandardCharsets.UTF_8));
         return jobContext;
     }
 
     @Override
     public String getContext(int jobId) {
-        BlobContainerClient containerClient = blobServiceClient.getBlobContainerClient(CONTAINER_NAME_OUTPUT);
-        log.info("Searching: /tfoutput/context/{}/context.json", jobId);
-        if (containerClient.getBlobClient(String.format(CONTEXT_FILE, jobId)).exists()) {
-            return containerClient.getBlobClient(String.format(CONTEXT_FILE, jobId)).downloadContent().toString();
+        byte[] bytes = downloadBlob(CONTAINER_NAME_OUTPUT, String.format(CONTEXT_FILE, jobId));
+        if (bytes != null && bytes.length > 0) {
+            return new String(bytes, StandardCharsets.UTF_8);
         } else {
             return "{}";
         }
@@ -180,33 +191,26 @@ public class AzureStorageTypeServiceImpl implements StorageTypeService {
 
     @Override
     public void createContentFile(String contentId, InputStream inputStream) {
-        BlobContainerClient contentContainerClient = blobServiceClient.getBlobContainerClient(CONTAINER_TERRAFORM_CONTENT);
-
-        log.info("contentContainerClient.exists {}", contentContainerClient.exists());
-
-        if (!contentContainerClient.exists()) {
-            contentContainerClient.create();
-        }
-
         String blobName = String.format(TERRAFORM_TAR_GZ, contentId);
         log.info("Content file: {}", blobName);
-        BlobClient blobClient = contentContainerClient.getBlobClient(blobName);
 
-        BinaryData binaryData = null;
+        byte[] content;
         try {
-            binaryData = BinaryData.fromBytes(inputStream.readAllBytes());
+            content = inputStream.readAllBytes();
         } catch (IOException e) {
-            log.error(e.getMessage());
+            // Reading the upload's own request body failed - can't be retried (it's a one-shot
+            // stream), so fail the upload instead of silently marking it uploaded (#3671).
+            throw new StorageUnavailableException("Unable to read uploaded content for " + contentId, e);
         }
-        blobClient.upload(binaryData, true);
+
+        uploadBlob(CONTAINER_TERRAFORM_CONTENT, blobName, content);
     }
 
     @Override
     public byte[] getContentFile(String contentId) {
-        BlobContainerClient containerClient = blobServiceClient.getBlobContainerClient(CONTAINER_TERRAFORM_CONTENT);
-        log.info("Searching: /content/{}/terraformContent.tar.gz", contentId);
-        if (containerClient.getBlobClient(String.format(TERRAFORM_TAR_GZ, contentId)).exists()) {
-            return containerClient.getBlobClient(String.format(TERRAFORM_TAR_GZ, contentId)).downloadContent().toBytes();
+        byte[] bytes = downloadBlob(CONTAINER_TERRAFORM_CONTENT, String.format(TERRAFORM_TAR_GZ, contentId));
+        if (bytes != null && bytes.length > 0) {
+            return bytes;
         } else {
             return "".getBytes(StandardCharsets.UTF_8);
         }
@@ -285,26 +289,15 @@ public class AzureStorageTypeServiceImpl implements StorageTypeService {
 
     @Override
     public void uploadPolicyEvaluation(String storageUri, String policyEvaluationJson) {
-        try {
-            BlobContainerClient containerClient = blobServiceClient.getBlobContainerClient(CONTAINER_NAME_OUTPUT);
-            if (!containerClient.exists()) {
-                containerClient.create();
-            }
-            BlobClient blobClient = containerClient.getBlobClient(storageUri);
-            BinaryData binaryData = BinaryData.fromBytes(policyEvaluationJson.getBytes(StandardCharsets.UTF_8));
-            blobClient.upload(binaryData, true);
-            log.info("Uploaded policy evaluation to Azure blob: {}", storageUri);
-        } catch (Exception e) {
-            log.error("Failed to upload policy evaluation to Azure blob {}: {}", storageUri, e.getMessage());
-        }
+        log.info("Uploading policy evaluation to Azure blob: {}", storageUri);
+        uploadBlob(CONTAINER_NAME_OUTPUT, storageUri, policyEvaluationJson.getBytes(StandardCharsets.UTF_8));
     }
 
     @Override
     public String getPolicyEvaluation(String storageUri) {
-        BlobContainerClient containerClient = blobServiceClient.getBlobContainerClient(CONTAINER_NAME_OUTPUT);
-        BlobClient blobClient = containerClient.getBlobClient(storageUri);
-        if (blobClient.exists()) {
-            return blobClient.downloadContent().toString();
+        byte[] bytes = downloadBlob(CONTAINER_NAME_OUTPUT, storageUri);
+        if (bytes != null && bytes.length > 0) {
+            return new String(bytes, StandardCharsets.UTF_8);
         } else {
             return "{}";
         }

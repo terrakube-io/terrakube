@@ -6,8 +6,8 @@ import com.google.cloud.storage.*;
 import lombok.Builder;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.codec.binary.StringUtils;
 import io.terrakube.api.plugin.storage.StorageTypeService;
+import io.terrakube.api.plugin.storage.StorageUnavailableException;
 import io.terrakube.api.plugin.storage.model.ByteRange;
 import io.terrakube.api.plugin.storage.model.StepOutputStream;
 
@@ -16,7 +16,6 @@ import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.channels.Channels;
 import java.nio.channels.WritableByteChannel;
-import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
@@ -34,25 +33,86 @@ public class GcpStorageTypeServiceImpl implements StorageTypeService {
 
     private static final String TERRAFORM_TAR_GZ = "content/%s/terraformContent.tar.gz";
 
+    // Short, bounded retry for a genuine SDK/network failure on the single underlying call -
+    // mirrors the AWS backend's retry window (#3671).
+    private static final int STORAGE_MAX_ATTEMPTS = 3;
+    private static final long[] STORAGE_BACKOFF_MILLIS = {200, 500};
+
     @NonNull
     private String bucketName;
     @NonNull
     private Storage storage;
 
+    // storage.get() returning null is the SDK's own not-found signal, unchanged from before. Any
+    // thrown exception is a genuine failure (network, auth, throttling) - retried, then thrown as
+    // StorageUnavailableException instead of silently collapsing into the same empty result as a
+    // real "not found" (#3671).
+    private byte[] downloadBlob(String blobKey) {
+        BlobId blobId = BlobId.of(bucketName, blobKey);
+        Exception lastFailure = null;
+        for (int attempt = 1; attempt <= STORAGE_MAX_ATTEMPTS; attempt++) {
+            try {
+                log.info("Searching: {}", blobKey);
+                Blob blob = storage.get(blobId);
+                if (blob == null) {
+                    return new byte[0];
+                }
+                return blob.getContent();
+            } catch (Exception e) {
+                lastFailure = e;
+                if (attempt < STORAGE_MAX_ATTEMPTS) {
+                    log.warn("GCP read attempt {} failed for {}, retrying: {}", attempt, blobKey, e.getMessage());
+                    sleepBackoff(STORAGE_BACKOFF_MILLIS[attempt - 1]);
+                }
+            }
+        }
+        throw new StorageUnavailableException("GCP read failed for " + blobKey, lastFailure);
+    }
+
+    // Shared by every write path (state, context, policy evaluation, and the CLI-driven
+    // configuration tarball) - a failed write now fails the caller instead of logging and
+    // returning as if it succeeded (#3671).
+    private void uploadBlob(String blobKey, byte[] data, String contentType) {
+        BlobId blobId = BlobId.of(bucketName, blobKey);
+        Exception lastFailure = null;
+        for (int attempt = 1; attempt <= STORAGE_MAX_ATTEMPTS; attempt++) {
+            try {
+                Blob blob = storage.get(blobId);
+                if (blob != null) {
+                    try (WritableByteChannel channel = blob.writer()) {
+                        channel.write(ByteBuffer.wrap(data));
+                    }
+                } else {
+                    BlobInfo.Builder builder = BlobInfo.newBuilder(blobId);
+                    if (contentType != null) {
+                        builder.setContentType(contentType);
+                    }
+                    storage.create(builder.build(), data);
+                }
+                log.info("Upload Object {} completed", blobKey);
+                return;
+            } catch (Exception e) {
+                lastFailure = e;
+                if (attempt < STORAGE_MAX_ATTEMPTS) {
+                    log.warn("GCP write attempt {} failed for {}, retrying: {}", attempt, blobKey, e.getMessage());
+                    sleepBackoff(STORAGE_BACKOFF_MILLIS[attempt - 1]);
+                }
+            }
+        }
+        throw new StorageUnavailableException("GCP write failed for " + blobKey, lastFailure);
+    }
+
+    private void sleepBackoff(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
     @Override
     public byte[] getStepOutput(String organizationId, String jobId, String stepId) {
-        log.info("getStepOutput {}", String.format(GCP_LOCATION_OUTPUT, organizationId, jobId, stepId));
-        byte[] response = new byte[0];
-        try {
-            response = storage.get(
-                            BlobId.of(
-                                    bucketName,
-                                    String.format(GCP_LOCATION_OUTPUT, organizationId, jobId, stepId)))
-                    .getContent();
-        } catch (Exception e) {
-            log.error(e.getMessage());
-        }
-        return response;
+        return downloadBlob(String.format(GCP_LOCATION_OUTPUT, organizationId, jobId, stepId));
     }
 
     @Override
@@ -86,65 +146,24 @@ public class GcpStorageTypeServiceImpl implements StorageTypeService {
 
     @Override
     public byte[] getTerraformPlan(String organizationId, String workspaceId, String jobId, String stepId) {
-        log.info("getTerraformPlan {}", String.format(GCP_STATE_LOCATION, organizationId, workspaceId, jobId, stepId));
-        byte[] response = new byte[0];
-        try {
-            response = storage.get(
-                            BlobId.of(
-                                    bucketName,
-                                    String.format(GCP_STATE_LOCATION, organizationId, workspaceId, jobId, stepId)))
-                    .getContent();
-        } catch (Exception e) {
-            log.error(e.getMessage());
-        }
-        return response;
+        return downloadBlob(String.format(GCP_STATE_LOCATION, organizationId, workspaceId, jobId, stepId));
     }
 
     @Override
     public byte[] getTerraformStateJson(String organizationId, String workspaceId, String stateFileName) {
-        log.info("getTerraformStateJson {}", String.format(GCP_STATE_JSON, organizationId, workspaceId, stateFileName));
-        byte[] response = new byte[0];
-        try {
-            response = storage.get(
-                            BlobId.of(
-                                    bucketName,
-                                    String.format(GCP_STATE_JSON, organizationId, workspaceId, stateFileName)))
-                    .getContent();
-        } catch (Exception e) {
-            log.error(e.getMessage());
-        }
-        return response;
+        return downloadBlob(String.format(GCP_STATE_JSON, organizationId, workspaceId, stateFileName));
     }
 
     @Override
     public void uploadTerraformStateJson(String organizationId, String workspaceId, String stateJson, String stateJsonHistoryId) {
         String currentStateKey = String.format(GCP_STATE_JSON, organizationId, workspaceId, stateJsonHistoryId);
         log.info("Define new Json State File: {}", currentStateKey);
-
-        BlobId blobJsonId = BlobId.of(bucketName, currentStateKey);
-        try {
-            log.info("creating new json state history...");
-            BlobInfo blobJsonStateHistory = BlobInfo.newBuilder(blobJsonId).build();
-            storage.create(blobJsonStateHistory, stateJson.getBytes(Charset.defaultCharset()));
-        } catch (Exception e) {
-            log.error(e.getMessage());
-        }
+        uploadBlob(currentStateKey, stateJson.getBytes(StandardCharsets.UTF_8), null);
     }
 
     @Override
     public byte[] getCurrentTerraformState(String organizationId, String workspaceId) {
-        log.info("getTerraformStateJson {}", String.format(GCP_CURRENT_STATE, organizationId, workspaceId));
-        byte[] response = new byte[0];
-        try {
-            response =  storage.get(
-                        BlobId.of(
-                                bucketName,
-                                String.format(GCP_CURRENT_STATE, organizationId, workspaceId)))
-                .getContent();
-        } catch (Exception e) {
-            log.error(e.getMessage());
-        }
-        return response;
+        return downloadBlob(String.format(GCP_CURRENT_STATE, organizationId, workspaceId));
     }
 
     @Override
@@ -153,72 +172,27 @@ public class GcpStorageTypeServiceImpl implements StorageTypeService {
         String rawStateKey = String.format(GCP_HISTORY_RAW_STATE, organizationId, workspaceId, historyId);
         log.info("Define new Current State File: {}", currentStateKey);
         log.info("Define new Current Raw History State File: {}", rawStateKey);
-
-        BlobId blobId = BlobId.of(bucketName, currentStateKey);
-        BlobId rawBlobId = BlobId.of(bucketName, rawStateKey);
-        Blob blob = storage.get(blobId);
-        if (blob != null) {
-            log.info("State does exists...");
-            try {
-                WritableByteChannel channel = blob.writer();
-                channel.write(ByteBuffer.wrap(terraformState.getBytes(Charset.defaultCharset())));
-                channel.close();
-            } catch (IOException e) {
-                log.error(e.getMessage());
-            }
-        } else {
-            log.info("Creating new state...");
-            BlobInfo blobInfo = BlobInfo.newBuilder(blobId).build();
-            storage.create(blobInfo, terraformState.getBytes(Charset.defaultCharset()));
-        }
-
-        try {
-            log.info("creating new raw state history...");
-            BlobInfo blobRawStateHistory = BlobInfo.newBuilder(rawBlobId).build();
-            storage.create(blobRawStateHistory, terraformState.getBytes(Charset.defaultCharset()));
-        } catch (Exception e) {
-            log.error(e.getMessage());
-        }
-
+        byte[] data = terraformState.getBytes(StandardCharsets.UTF_8);
+        uploadBlob(currentStateKey, data, null);
+        uploadBlob(rawStateKey, data, null);
     }
 
     @Override
     public String saveContext(int jobId, String jobContext) {
         String blobKey = String.format(CONTEXT_JSON, jobId);
         log.info("context file: {}", blobKey);
-
-        String utf8EncodedString = StringUtils.newStringUtf8(StringUtils.getBytesUtf8(jobContext));
-
-        BlobId blobId = BlobId.of(bucketName, blobKey);
-        Blob blob = storage.get(blobId);
-        if (blob != null) {
-            try {
-                WritableByteChannel channel = blob.writer();
-                channel.write(ByteBuffer.wrap(jobContext.getBytes(Charset.defaultCharset())));
-                channel.close();
-            } catch (IOException e) {
-                log.error(e.getMessage());
-            }
-        } else {
-            BlobInfo blobInfo = BlobInfo.newBuilder(blobId).build();
-            storage.create(blobInfo, utf8EncodedString.getBytes(Charset.defaultCharset()));
-        }
-
+        uploadBlob(blobKey, jobContext.getBytes(StandardCharsets.UTF_8), null);
         return jobContext;
     }
 
     @Override
     public String getContext(int jobId) {
-        log.info("context {}", String.format(CONTEXT_JSON, jobId));
-
-        if (storage.get(BlobId.of(bucketName, String.format(CONTEXT_JSON, jobId))) != null)
-            return new String(storage.get(
-                            BlobId.of(
-                                    bucketName,
-                                    String.format(CONTEXT_JSON, jobId)))
-                    .getContent(), StandardCharsets.UTF_8);
-        else
+        byte[] bytes = downloadBlob(String.format(CONTEXT_JSON, jobId));
+        if (bytes != null && bytes.length > 0) {
+            return new String(bytes, StandardCharsets.UTF_8);
+        } else {
             return "{}";
+        }
     }
 
     @Override
@@ -226,38 +200,26 @@ public class GcpStorageTypeServiceImpl implements StorageTypeService {
         String blobKey = String.format(TERRAFORM_TAR_GZ, contentId);
         log.info("context file: {}", blobKey);
 
-        BlobId blobId = BlobId.of(bucketName, blobKey);
-        Blob blob = storage.get(blobId);
-        if (blob != null) {
-            try {
-                WritableByteChannel channel = blob.writer();
-                channel.write(ByteBuffer.wrap(inputStream.readAllBytes()));
-                channel.close();
-            } catch (IOException e) {
-                log.error(e.getMessage());
-            }
-        } else {
-            BlobInfo blobInfo = BlobInfo.newBuilder(blobId).build();
-            try {
-                storage.create(blobInfo, inputStream.readAllBytes());
-            } catch (IOException e) {
-                log.error(e.getMessage());
-            }
+        byte[] content;
+        try {
+            content = inputStream.readAllBytes();
+        } catch (IOException e) {
+            // Reading the upload's own request body failed - can't be retried (it's a one-shot
+            // stream), so fail the upload instead of silently marking it uploaded (#3671).
+            throw new StorageUnavailableException("Unable to read uploaded content for " + contentId, e);
         }
+
+        uploadBlob(blobKey, content, "application/gzip");
     }
 
     @Override
     public byte[] getContentFile(String contentId) {
-        log.info("context {}", String.format(TERRAFORM_TAR_GZ, contentId));
-
-        if (storage.get(BlobId.of(bucketName, String.format(TERRAFORM_TAR_GZ, contentId))) != null)
-            return storage.get(
-                            BlobId.of(
-                                    bucketName,
-                                    String.format(TERRAFORM_TAR_GZ, contentId)))
-                    .getContent();
-        else
-            return "".getBytes(Charset.defaultCharset());
+        byte[] bytes = downloadBlob(String.format(TERRAFORM_TAR_GZ, contentId));
+        if (bytes != null && bytes.length > 0) {
+            return bytes;
+        } else {
+            return "".getBytes(StandardCharsets.UTF_8);
+        }
     }
 
     @Override
@@ -337,26 +299,14 @@ public class GcpStorageTypeServiceImpl implements StorageTypeService {
     @Override
     public void uploadPolicyEvaluation(String storageUri, String policyEvaluationJson) {
         log.info("Uploading policy evaluation to GCP bucket: {}, key: {}", bucketName, storageUri);
-        BlobId blobId = BlobId.of(bucketName, storageUri);
-        Blob blob = storage.get(blobId);
-        byte[] bytes = policyEvaluationJson.getBytes(StandardCharsets.UTF_8);
-        if (blob != null) {
-            try (WritableByteChannel channel = blob.writer()) {
-                channel.write(ByteBuffer.wrap(bytes));
-            } catch (IOException e) {
-                log.error("Failed to write policy evaluation to GCP storage {}: {}", storageUri, e.getMessage());
-            }
-        } else {
-            BlobInfo blobInfo = BlobInfo.newBuilder(blobId).setContentType("application/json").build();
-            storage.create(blobInfo, bytes);
-        }
+        uploadBlob(storageUri, policyEvaluationJson.getBytes(StandardCharsets.UTF_8), "application/json");
     }
 
     @Override
     public String getPolicyEvaluation(String storageUri) {
-        Blob blob = storage.get(BlobId.of(bucketName, storageUri));
-        if (blob != null && blob.exists()) {
-            return new String(blob.getContent(), StandardCharsets.UTF_8);
+        byte[] bytes = downloadBlob(storageUri);
+        if (bytes != null && bytes.length > 0) {
+            return new String(bytes, StandardCharsets.UTF_8);
         } else {
             return "{}";
         }

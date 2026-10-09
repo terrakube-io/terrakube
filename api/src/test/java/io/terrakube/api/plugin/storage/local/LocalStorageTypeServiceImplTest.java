@@ -10,6 +10,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.Collections;
 
@@ -83,7 +84,7 @@ class LocalStorageTypeServiceImplTest {
 
             localStorageTypeService.uploadTerraformStateJson("org1", "ws1", "{}", "hist1");
 
-            mockedFileUtils.verify(() -> FileUtils.writeStringToFile(any(File.class), eq("{}"), anyString()));
+            mockedFileUtils.verify(() -> FileUtils.writeByteArrayToFile(any(File.class), eq("{}".getBytes(StandardCharsets.UTF_8))));
         }
     }
 
@@ -94,7 +95,7 @@ class LocalStorageTypeServiceImplTest {
 
             localStorageTypeService.uploadState("org1", "ws1", "state", "hist1");
 
-            mockedFileUtils.verify(() -> FileUtils.writeStringToFile(any(File.class), eq("state"), anyString()), times(2));
+            mockedFileUtils.verify(() -> FileUtils.writeByteArrayToFile(any(File.class), eq("state".getBytes(StandardCharsets.UTF_8))), times(2));
         }
     }
 
@@ -105,7 +106,7 @@ class LocalStorageTypeServiceImplTest {
 
             localStorageTypeService.saveContext(123, "context");
 
-            mockedFileUtils.verify(() -> FileUtils.writeStringToFile(any(File.class), eq("context"), eq("UTF-8")));
+            mockedFileUtils.verify(() -> FileUtils.writeByteArrayToFile(any(File.class), eq("context".getBytes(StandardCharsets.UTF_8))));
         }
     }
 
@@ -122,6 +123,46 @@ class LocalStorageTypeServiceImplTest {
             String result = localStorageTypeService.getContext(123);
 
             assertEquals("{\"a\":1}", result);
+        }
+    }
+
+    @Test
+    void getContextReturnsEmptyJsonOnNotFound() {
+        try (MockedStatic<FileUtils> mockedFileUtils = mockStatic(FileUtils.class)) {
+            mockedFileUtils.when(FileUtils::getUserDirectoryPath).thenReturn(tempDir.toString());
+
+            String result = localStorageTypeService.getContext(999);
+
+            assertEquals("{}", result);
+        }
+    }
+
+    @Test
+    void readThrowsStorageUnavailableAfterRetryingAGenuineFailure() {
+        try (MockedStatic<FileUtils> mockedFileUtils = mockStatic(FileUtils.class)) {
+            mockedFileUtils.when(FileUtils::getUserDirectoryPath).thenReturn(tempDir.toString());
+
+            // A directory where a file is expected: File.exists() is true (the not-found signal
+            // stays unchanged), but opening it for reading fails with a genuine IOException.
+            File directoryInsteadOfFile = tempDir.resolve(".terraform-spring-boot/local/output/context/999/context.json").toFile();
+            directoryInsteadOfFile.mkdirs();
+
+            assertThrows(io.terrakube.api.plugin.storage.StorageUnavailableException.class,
+                    () -> localStorageTypeService.getContext(999));
+        }
+    }
+
+    @Test
+    void writeThrowsStorageUnavailableAfterRetryingAGenuineFailure() {
+        try (MockedStatic<FileUtils> mockedFileUtils = mockStatic(FileUtils.class)) {
+            mockedFileUtils.when(FileUtils::getUserDirectoryPath).thenReturn(tempDir.toString());
+            mockedFileUtils.when(() -> FileUtils.writeByteArrayToFile(any(File.class), any(byte[].class)))
+                    .thenThrow(new IOException("disk full"));
+
+            assertThrows(io.terrakube.api.plugin.storage.StorageUnavailableException.class,
+                    () -> localStorageTypeService.saveContext(123, "context"));
+
+            mockedFileUtils.verify(() -> FileUtils.writeByteArrayToFile(any(File.class), any(byte[].class)), times(3));
         }
     }
 

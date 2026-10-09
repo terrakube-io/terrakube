@@ -8,6 +8,7 @@ import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.io.input.BoundedInputStream;
 import io.terrakube.api.plugin.storage.StorageTypeService;
+import io.terrakube.api.plugin.storage.StorageUnavailableException;
 import io.terrakube.api.plugin.storage.model.ByteRange;
 import io.terrakube.api.plugin.storage.model.StepOutputStream;
 
@@ -15,7 +16,6 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
@@ -34,11 +34,70 @@ public class LocalStorageTypeServiceImpl implements StorageTypeService {
     private static final String LOCAL_BACKEND_DIRECTORY = "/.terraform-spring-boot/local/backend/%s/%s/terraform.tfstate";
     private static final String LOCAL_HISTORY_BACKEND_DIRECTORY = "/.terraform-spring-boot/local/state/%s/%s/state/%s.raw.json";
 
+    // Short, bounded retry for a genuine I/O failure on the single underlying call - mirrors the
+    // AWS backend's retry window (#3671).
+    private static final int STORAGE_MAX_ATTEMPTS = 3;
+    private static final long[] STORAGE_BACKOFF_MILLIS = {200, 500};
+
+    // File.exists() returning false is the not-found signal, unchanged from before. An
+    // IOException reading a file that does exist is a genuine failure (disk, permissions) -
+    // retried, then thrown as StorageUnavailableException instead of silently collapsing into
+    // the same empty result as a real "not found" (#3671).
+    private byte[] readFile(String path) {
+        File file = new File(FileUtils.getUserDirectoryPath().concat(path));
+        if (!file.exists()) {
+            return new byte[0];
+        }
+        Exception lastFailure = null;
+        for (int attempt = 1; attempt <= STORAGE_MAX_ATTEMPTS; attempt++) {
+            try {
+                return IOUtils.toByteArray(new FileInputStream(file));
+            } catch (IOException e) {
+                lastFailure = e;
+                if (attempt < STORAGE_MAX_ATTEMPTS) {
+                    log.warn("Local read attempt {} failed for {}, retrying: {}", attempt, path, e.getMessage());
+                    sleepBackoff(STORAGE_BACKOFF_MILLIS[attempt - 1]);
+                }
+            }
+        }
+        throw new StorageUnavailableException("Local read failed for " + path, lastFailure);
+    }
+
+    // Shared by every write path (state, context, policy evaluation, and the CLI-driven
+    // configuration tarball) - a failed write now fails the caller instead of logging and
+    // returning as if it succeeded (#3671).
+    private void writeFile(String path, byte[] data) {
+        File file = new File(FileUtils.getUserDirectoryPath().concat(FilenameUtils.separatorsToSystem(path)));
+        Exception lastFailure = null;
+        for (int attempt = 1; attempt <= STORAGE_MAX_ATTEMPTS; attempt++) {
+            try {
+                FileUtils.forceMkdir(file.getParentFile());
+                FileUtils.writeByteArrayToFile(file, data);
+                log.info("Write file {} completed", path);
+                return;
+            } catch (IOException e) {
+                lastFailure = e;
+                if (attempt < STORAGE_MAX_ATTEMPTS) {
+                    log.warn("Local write attempt {} failed for {}, retrying: {}", attempt, path, e.getMessage());
+                    sleepBackoff(STORAGE_BACKOFF_MILLIS[attempt - 1]);
+                }
+            }
+        }
+        throw new StorageUnavailableException("Local write failed for " + path, lastFailure);
+    }
+
+    private void sleepBackoff(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
     @Override
     public byte[] getStepOutput(String organizationId, String jobId, String stepId) {
         log.info("Searching: /.terraform-spring-boot/local/tfoutput/{}/{}/{}.tfoutput", organizationId, jobId, stepId);
-        String outputFilePath = String.format(OUTPUT_DIRECTORY, organizationId, jobId, stepId);
-        return getOutputBytes(outputFilePath);
+        return readFile(String.format(OUTPUT_DIRECTORY, organizationId, jobId, stepId));
     }
 
     @Override
@@ -74,67 +133,45 @@ public class LocalStorageTypeServiceImpl implements StorageTypeService {
     @Override
     public byte[] getTerraformPlan(String organizationId, String workspaceId, String jobId, String stepId) {
         log.info("Searching: /.terraform-spring-boot/local/state/{}/{}/{}/{}/terraformLibrary.tfPlan", organizationId, workspaceId, jobId, stepId);
-        String outputFilePath = String.format(STATE_DIRECTORY, organizationId, workspaceId, jobId, stepId);
-        return getOutputBytes(outputFilePath);
+        return readFile(String.format(STATE_DIRECTORY, organizationId, workspaceId, jobId, stepId));
     }
 
     @Override
     public byte[] getTerraformStateJson(String organizationId, String workspaceId, String stateFileName) {
         log.info("Searching: /.terraform-spring-boot/local/state/{}/{}/state/{}.json", organizationId, workspaceId, stateFileName);
-        String outputFilePath = String.format(STATE_DIRECTORY_JSON, organizationId, workspaceId, stateFileName);
-        return getOutputBytes(outputFilePath);
+        return readFile(String.format(STATE_DIRECTORY_JSON, organizationId, workspaceId, stateFileName));
     }
 
     @Override
     public void uploadTerraformStateJson(String organizationId, String workspaceId, String stateJson, String stateJsonHistoryId) {
-        try {
-            String newStateFileJson = String.format(STATE_DIRECTORY_JSON, organizationId, workspaceId, stateJsonHistoryId);
-            log.info("newFileJson: {}", newStateFileJson);
-            File stateFile = new File(FileUtils.getUserDirectoryPath().concat(FilenameUtils.separatorsToSystem(newStateFileJson)));
-            FileUtils.forceMkdir(stateFile.getParentFile());
-            FileUtils.writeStringToFile(stateFile, stateJson, Charset.defaultCharset().toString());
-        } catch (IOException e) {
-            log.error(e.getMessage());
-        }
+        String newStateFileJson = String.format(STATE_DIRECTORY_JSON, organizationId, workspaceId, stateJsonHistoryId);
+        log.info("newFileJson: {}", newStateFileJson);
+        writeFile(newStateFileJson, stateJson.getBytes(StandardCharsets.UTF_8));
     }
 
     @Override
     public byte[] getCurrentTerraformState(String organizationId, String workspaceId) {
         String currentStateFile = String.format(LOCAL_BACKEND_DIRECTORY, organizationId, workspaceId);
         log.info("newFilename: {}", currentStateFile);
-        return getOutputBytes(currentStateFile);
+        return readFile(currentStateFile);
     }
 
     @Override
     public void uploadState(String organizationId, String workspaceId, String terraformState, String historyId) {
-        try {
-            String newStateFile = String.format(LOCAL_BACKEND_DIRECTORY, organizationId, workspaceId);
-            String newRawStateFile = String.format(LOCAL_HISTORY_BACKEND_DIRECTORY, organizationId, workspaceId, historyId);
-            log.info("newFilename: {}", newStateFile);
-            log.info("newRawFilename: {}", newRawStateFile);
-            File stateFile = new File(FileUtils.getUserDirectoryPath().concat(FilenameUtils.separatorsToSystem(newStateFile)));
-            File rawStateFile = new File(FileUtils.getUserDirectoryPath().concat(FilenameUtils.separatorsToSystem(newRawStateFile)));
-            FileUtils.forceMkdir(stateFile.getParentFile());
-            FileUtils.forceMkdir(rawStateFile.getParentFile());
-            FileUtils.writeStringToFile(stateFile, terraformState, Charset.defaultCharset().toString());
-            FileUtils.writeStringToFile(rawStateFile, terraformState, Charset.defaultCharset().toString());
-        } catch (IOException e) {
-            log.error(e.getMessage());
-        }
+        String newStateFile = String.format(LOCAL_BACKEND_DIRECTORY, organizationId, workspaceId);
+        String newRawStateFile = String.format(LOCAL_HISTORY_BACKEND_DIRECTORY, organizationId, workspaceId, historyId);
+        log.info("newFilename: {}", newStateFile);
+        log.info("newRawFilename: {}", newRawStateFile);
+        byte[] data = terraformState.getBytes(StandardCharsets.UTF_8);
+        writeFile(newStateFile, data);
+        writeFile(newRawStateFile, data);
     }
 
     @Override
     public String saveContext(int jobId, String jobContext) {
-        try {
-            String contextFilename = String.format(CONTEXT_DIRECTORY, jobId);
-            log.info("contextFile: {}", contextFilename);
-            File context = new File(FileUtils.getUserDirectoryPath().concat(FilenameUtils.separatorsToSystem(contextFilename)));
-            FileUtils.forceMkdir(context.getParentFile());
-            FileUtils.writeStringToFile(context, jobContext, Charset.defaultCharset().toString());
-        } catch (IOException e) {
-            log.error(e.getMessage());
-        }
-
+        String contextFilename = String.format(CONTEXT_DIRECTORY, jobId);
+        log.info("contextFile: {}", contextFilename);
+        writeFile(contextFilename, jobContext.getBytes(StandardCharsets.UTF_8));
         return jobContext;
     }
 
@@ -142,60 +179,38 @@ public class LocalStorageTypeServiceImpl implements StorageTypeService {
     public String getContext(int jobId) {
         String searchContextFile = String.format(CONTEXT_DIRECTORY, jobId);
         log.info("contextFile: {}", searchContextFile);
-        File context = new File(FileUtils.getUserDirectoryPath().concat(FilenameUtils.separatorsToSystem(searchContextFile)));
-        String outputContext = NO_CONTEXT_FOUND;
-        if (context.exists()) {
-            try {
-                outputContext = new String(IOUtils.toByteArray(new FileInputStream(context)));
-            } catch (IOException e) {
-                log.error(e.getMessage());
-            }
-        }
-
-        return outputContext;
-    }
-
-    private byte [] getOutputBytes(String path){
-        File localOutputDirectory = new File(FileUtils.getUserDirectoryPath().concat(path));
-        if (localOutputDirectory.exists()) {
-            try {
-                return IOUtils.toByteArray(new FileInputStream(localOutputDirectory));
-            } catch (IOException e) {
-                log.error(e.getMessage());
-                return new byte[0];
-            }
+        byte[] bytes = readFile(searchContextFile);
+        if (bytes != null && bytes.length > 0) {
+            return new String(bytes, StandardCharsets.UTF_8);
         } else {
-            return new byte[0];
+            return NO_CONTEXT_FOUND;
         }
     }
-
 
     @Override
     public void createContentFile(String contentId, InputStream inputStream){
+        String contentFile = String.format(CONTENT_DIRECTORY, contentId);
+        log.info("contentFile: {}", contentFile);
+
+        byte[] content;
         try {
-            String contentFile = String.format(CONTENT_DIRECTORY, contentId);
-            log.info("contentFile: {}", contentFile);
-            File context = new File(FileUtils.getUserDirectoryPath().concat(FilenameUtils.separatorsToSystem(contentFile)));
-            FileUtils.forceMkdir(context.getParentFile());
-            FileUtils.writeByteArrayToFile(context, inputStream.readAllBytes());
-            log.info("Write File Completed", contentFile);
+            content = inputStream.readAllBytes();
         } catch (IOException e) {
-            log.error(e.getMessage());
+            // Reading the upload's own request body failed - can't be retried (it's a one-shot
+            // stream), so fail the upload instead of silently marking it uploaded (#3671).
+            throw new StorageUnavailableException("Unable to read uploaded content for " + contentId, e);
         }
+
+        writeFile(contentFile, content);
     }
 
     @Override
     public byte[] getContentFile(String contentId) {
         String contentFile = String.format(CONTENT_DIRECTORY, contentId);
         log.info("contentFile: {}", contentFile);
-        File content = new File(FileUtils.getUserDirectoryPath().concat(FilenameUtils.separatorsToSystem(contentFile)));
-        if (content.exists()) {
-            try {
-                return IOUtils.toByteArray(new FileInputStream(content));
-            } catch (IOException e) {
-                log.error(e.getMessage());
-                return NO_DATA_FOUND.getBytes(StandardCharsets.UTF_8);
-            }
+        byte[] bytes = readFile(contentFile);
+        if (bytes != null && bytes.length > 0) {
+            return bytes;
         } else {
             return NO_DATA_FOUND.getBytes(StandardCharsets.UTF_8);
         }
@@ -269,31 +284,22 @@ public class LocalStorageTypeServiceImpl implements StorageTypeService {
 
     @Override
     public void uploadPolicyEvaluation(String storageUri, String policyEvaluationJson) {
-        try {
-            String relativePath = storageUri.startsWith("/") ? storageUri.substring(1) : storageUri;
-            String path = "/.terraform-spring-boot/local/" + relativePath;
-            File file = new File(FileUtils.getUserDirectoryPath().concat(FilenameUtils.separatorsToSystem(path)));
-            FileUtils.forceMkdir(file.getParentFile());
-            FileUtils.writeStringToFile(file, policyEvaluationJson, StandardCharsets.UTF_8);
-            log.info("Policy evaluation saved to local storage: {}", file.getAbsolutePath());
-        } catch (IOException e) {
-            log.error("Failed to save policy evaluation to local storage: {}", e.getMessage(), e);
-        }
+        String relativePath = storageUri.startsWith("/") ? storageUri.substring(1) : storageUri;
+        String path = "/.terraform-spring-boot/local/" + relativePath;
+        writeFile(path, policyEvaluationJson.getBytes(StandardCharsets.UTF_8));
+        log.info("Policy evaluation saved to local storage: {}", path);
     }
 
     @Override
     public String getPolicyEvaluation(String storageUri) {
         String relativePath = storageUri.startsWith("/") ? storageUri.substring(1) : storageUri;
         String path = "/.terraform-spring-boot/local/" + relativePath;
-        File file = new File(FileUtils.getUserDirectoryPath().concat(FilenameUtils.separatorsToSystem(path)));
-        if (file.exists()) {
-            try {
-                return FileUtils.readFileToString(file, StandardCharsets.UTF_8);
-            } catch (IOException e) {
-                log.error("Failed to read policy evaluation from local storage: {}", e.getMessage());
-            }
+        byte[] bytes = readFile(path);
+        if (bytes != null && bytes.length > 0) {
+            return new String(bytes, StandardCharsets.UTF_8);
+        } else {
+            return "{}";
         }
-        return "{}";
     }
 
     @Override

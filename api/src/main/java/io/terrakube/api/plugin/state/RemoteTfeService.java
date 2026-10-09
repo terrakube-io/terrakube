@@ -40,6 +40,7 @@ import io.terrakube.api.plugin.state.model.workspace.tags.TagModel;
 import io.terrakube.api.plugin.state.model.workspace.vcs.VcsRepo;
 import io.terrakube.api.plugin.security.rbac.RbacService;
 import io.terrakube.api.plugin.storage.StorageTypeService;
+import io.terrakube.api.plugin.storage.StorageUnavailableException;
 import io.terrakube.api.plugin.token.team.TeamTokenService;
 import io.terrakube.api.repository.*;
 import io.terrakube.api.rs.Organization;
@@ -1367,6 +1368,11 @@ public class RemoteTfeService {
         try {
             currentState = storageTypeService.getCurrentTerraformState(workspace.getOrganization().getId().toString(),
                     workspaceId);
+        } catch (StorageUnavailableException ex) {
+            // A genuine storage failure must not look like "no state exists yet" to a real
+            // Terraform CLI remote backend talking this TFE API - that would offer to recreate
+            // everything instead of surfacing a retryable error (#3671).
+            throw ex;
         } catch (Exception ex) {
             log.error("Exception searching state in storage");
             log.error(ex.getMessage());
@@ -2059,6 +2065,10 @@ public class RemoteTfeService {
 
                 });
             }
+        } catch (StorageUnavailableException ex) {
+            // Same reasoning as getCurrentWorkspaceState: a transient storage failure must not
+            // look like "this workspace has no outputs" to a real Terraform CLI client (#3671).
+            throw ex;
         } catch (Exception ex) {
             log.error(ex.getMessage());
         }

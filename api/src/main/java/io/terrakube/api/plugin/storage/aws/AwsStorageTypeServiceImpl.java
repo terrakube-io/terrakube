@@ -6,6 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.codec.binary.StringUtils;
 import org.apache.sshd.common.util.io.IoUtils;
 import io.terrakube.api.plugin.storage.StorageTypeService;
+import io.terrakube.api.plugin.storage.StorageUnavailableException;
 import io.terrakube.api.plugin.storage.model.ByteRange;
 import io.terrakube.api.plugin.storage.model.StepOutputStream;
 import software.amazon.awssdk.core.ResponseBytes;
@@ -36,39 +37,81 @@ public class AwsStorageTypeServiceImpl implements StorageTypeService {
 
     private static final String TERRAFORM_TAR_GZ = "content/%s/terraformContent.tar.gz";
 
+    // Short, bounded retry for a genuine SDK/network failure on the single underlying call -
+    // several callers run on a live HTTP request thread, so this stays well under a second in
+    // the worst case rather than matching the longer backoff used for background work elsewhere
+    // in this codebase (e.g. the registry's download-count retry).
+    private static final int STORAGE_MAX_ATTEMPTS = 3;
+    private static final long[] STORAGE_BACKOFF_MILLIS = {200, 500};
+
     @NonNull
     private S3Client s3client;
 
     @NonNull
     private String bucketName;
 
+    // NoSuchKeyException (genuinely not found) returns empty, unchanged from before. Any other
+    // failure (network, auth, throttling) is retried, then thrown as StorageUnavailableException
+    // instead of silently collapsing into the same empty result as a real "not found" (#3671).
     private byte[] downloadObjectFromBucket(String bucketName, String objectKey) {
-        byte[] data;
-        try {
-            log.info("Bucket: {} Searching: {}", bucketName, objectKey);
-
-            GetObjectRequest objectRequest = GetObjectRequest.builder()
-                    .key(objectKey)
-                    .bucket(bucketName)
-                    .build();
-            ResponseBytes<GetObjectResponse> objectBytes = s3client.getObject(objectRequest,
-                    ResponseTransformer.toBytes());
-            data = objectBytes.asByteArray();
-        } catch (Exception e) {
-            log.debug(S3_ERROR_LOG, e.getMessage());
-            data = new byte[0];
+        Exception lastFailure = null;
+        for (int attempt = 1; attempt <= STORAGE_MAX_ATTEMPTS; attempt++) {
+            try {
+                log.info("Bucket: {} Searching: {}", bucketName, objectKey);
+                GetObjectRequest objectRequest = GetObjectRequest.builder()
+                        .key(objectKey)
+                        .bucket(bucketName)
+                        .build();
+                return s3client.getObject(objectRequest, ResponseTransformer.toBytes()).asByteArray();
+            } catch (NoSuchKeyException e) {
+                log.debug(S3_ERROR_LOG, e.getMessage());
+                return new byte[0];
+            } catch (Exception e) {
+                lastFailure = e;
+                if (attempt < STORAGE_MAX_ATTEMPTS) {
+                    log.warn("S3 read attempt {} failed for {}, retrying: {}", attempt, objectKey, e.getMessage());
+                    sleepBackoff(STORAGE_BACKOFF_MILLIS[attempt - 1]);
+                }
+            }
         }
-        return data;
+        throw new StorageUnavailableException("S3 read failed for " + objectKey, lastFailure);
     }
 
-    private void uploadStringToBucket(String bucketName, String blobKey, String data){
-        PutObjectRequest putObjectRequest = PutObjectRequest.builder()
-                .bucket(bucketName)
-                .key(blobKey)
-                .build();
+    private void uploadStringToBucket(String bucketName, String blobKey, String data) {
+        uploadBytesToBucket(bucketName, blobKey, data.getBytes(StandardCharsets.UTF_8), null);
+    }
 
-        s3client.putObject(putObjectRequest, RequestBody.fromString(data));
-        log.info("Upload Object {} completed", blobKey);
+    // Shared by every write path (state, context, policy evaluation, and the CLI-driven
+    // configuration tarball) - a failed write now fails the caller instead of logging and
+    // returning as if it succeeded (#3671).
+    private void uploadBytesToBucket(String bucketName, String blobKey, byte[] data, String contentType) {
+        Exception lastFailure = null;
+        for (int attempt = 1; attempt <= STORAGE_MAX_ATTEMPTS; attempt++) {
+            try {
+                PutObjectRequest.Builder requestBuilder = PutObjectRequest.builder().bucket(bucketName).key(blobKey);
+                if (contentType != null) {
+                    requestBuilder.contentType(contentType);
+                }
+                s3client.putObject(requestBuilder.build(), RequestBody.fromBytes(data));
+                log.info("Upload Object {} completed", blobKey);
+                return;
+            } catch (Exception e) {
+                lastFailure = e;
+                if (attempt < STORAGE_MAX_ATTEMPTS) {
+                    log.warn("S3 write attempt {} failed for {}, retrying: {}", attempt, blobKey, e.getMessage());
+                    sleepBackoff(STORAGE_BACKOFF_MILLIS[attempt - 1]);
+                }
+            }
+        }
+        throw new StorageUnavailableException("S3 write failed for " + blobKey, lastFailure);
+    }
+
+    private void sleepBackoff(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     @Override
@@ -170,20 +213,18 @@ public class AwsStorageTypeServiceImpl implements StorageTypeService {
     @Override
     public void createContentFile(String contentId, InputStream inputStream) {
         String blobKey = String.format(TERRAFORM_TAR_GZ, contentId);
-        log.info("context file: {}", String.format(TERRAFORM_TAR_GZ, contentId));
+        log.info("context file: {}", blobKey);
 
+        byte[] content;
         try {
-            PutObjectRequest putObjectRequest = PutObjectRequest.builder()
-                    .bucket(bucketName)
-                    .key(blobKey)
-                    .contentType("application/gzip")
-                    .build();
-
-            s3client.putObject(putObjectRequest, RequestBody.fromBytes(IoUtils.toByteArray(inputStream)));
+            content = IoUtils.toByteArray(inputStream);
         } catch (IOException e) {
-            log.error(e.getMessage());
+            // Reading the upload's own request body failed - can't be retried (it's a one-shot
+            // stream), so fail the upload instead of silently marking it uploaded (#3671).
+            throw new StorageUnavailableException("Unable to read uploaded content for " + contentId, e);
         }
 
+        uploadBytesToBucket(bucketName, blobKey, content, "application/gzip");
     }
 
     @Override
