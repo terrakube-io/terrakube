@@ -41,7 +41,8 @@ public class QuartzAutoConfiguration {
 
     @Bean
     public SchedulerFactoryBean schedulerFactoryBean(ApplicationContext applicationContext, DataSource dataSource, DataSourceConfigurationProperties dataSourceConfigurationProperties,
-            @Value("${io.terrakube.api.plugin.scheduler.instanceName:schedulerFactoryBean}") String schedulerInstanceName) {
+            @Value("${io.terrakube.api.plugin.scheduler.instanceName:schedulerFactoryBean}") String schedulerInstanceName,
+            @Value("${io.terrakube.scheduler.thread-count:8}") int schedulerThreadCount) {
         SchedulerFactoryBean schedulerFactoryBean = new SchedulerFactoryBean();
         schedulerFactoryBean.setJobFactory(new AutowireCapableBeanJobFactory(applicationContext.getAutowireCapableBeanFactory()));
         schedulerFactoryBean.setDataSource(dataSource);
@@ -50,7 +51,9 @@ public class QuartzAutoConfiguration {
         properties.put("org.quartz.jobStore.isClustered","true");
         properties.put("org.quartz.scheduler.instanceName",schedulerInstanceName);
         properties.put("org.quartz.scheduler.instanceId","AUTO");
-        properties.put("org.quartz.threadPool.threadCount","20");
+        // Same property and default SchedulerThreadPoolValidation checks against the DB pool size;
+        // this bean replaces Spring Boot's, so spring.quartz.properties.* never reaches Quartz.
+        properties.put("org.quartz.threadPool.threadCount",String.valueOf(schedulerThreadCount));
         switch(dataSourceConfigurationProperties.getType()){
             case SQL_AZURE:
                 properties.put("org.quartz.jobStore.driverDelegateClass","org.quartz.impl.jdbcjobstore.MSSQLDelegate");

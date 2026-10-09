@@ -20,6 +20,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -76,6 +77,16 @@ class ModuleServiceImplAsyncDownloadCountTest {
         ModuleServiceImpl moduleService(TerrakubeClient terrakubeClient, StorageService storageService,
                 CommonSearchService commonSearchService) {
             return new ModuleServiceImpl(terrakubeClient, storageService, commonSearchService);
+        }
+    }
+
+    @Configuration
+    static class SaturatedTestConfig extends TestConfig {
+        @Override
+        @Bean("downloadCountExecutor")
+        org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor downloadCountExecutor(
+                DownloadCountExecutorConfig config) {
+            return config.downloadCountExecutor(1, 1, 1);
         }
     }
 
@@ -138,5 +149,29 @@ class ModuleServiceImplAsyncDownloadCountTest {
         moduleService.updateModuleDownloadCount("org", "module", "aws");
 
         assertTrue(thirdAttempt.await(5, TimeUnit.SECONDS), "did not retry through to a successful attempt");
+    }
+
+    @Test
+    void updateModuleDownloadCountDoesNotThrowWhenExecutorSaturated() throws Exception {
+        context = new AnnotationConfigApplicationContext(SaturatedTestConfig.class);
+        TerrakubeClient terrakubeClient = context.getBean(TerrakubeClient.class);
+        CommonSearchService commonSearchService = context.getBean(CommonSearchService.class);
+        ModuleService moduleService = context.getBean(ModuleService.class);
+        stubModuleLookup(terrakubeClient, commonSearchService);
+
+        CountDownLatch release = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            release.await(5, TimeUnit.SECONDS);
+            return null;
+        }).when(terrakubeClient).updateModule(any(ModuleRequest.class), anyString(), anyString());
+
+        try {
+            // First call occupies the only worker, second fills the queue, third would be rejected.
+            for (int i = 0; i < 3; i++) {
+                assertDoesNotThrow(() -> moduleService.updateModuleDownloadCount("org", "module", "aws"));
+            }
+        } finally {
+            release.countDown();
+        }
     }
 }

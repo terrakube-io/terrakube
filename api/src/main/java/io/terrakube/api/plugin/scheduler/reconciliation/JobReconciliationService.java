@@ -2,7 +2,7 @@ package io.terrakube.api.plugin.scheduler.reconciliation;
 
 import io.terrakube.api.plugin.notification.JobNotificationTrigger;
 import io.terrakube.api.plugin.scheduler.ScheduleJobService;
-import io.terrakube.api.plugin.scheduler.trigger.RunTriggerDispatchService;
+import io.terrakube.api.plugin.scheduler.trigger.RunTriggerEventWriter;
 import io.terrakube.api.plugin.scheduler.reconciliation.ReconciliationResult.ReconciliationDisposition;
 import io.terrakube.api.plugin.scheduler.reconciliation.ReconciliationResult.StepEvidence;
 import io.terrakube.api.repository.JobRepository;
@@ -36,12 +36,15 @@ import static io.terrakube.api.plugin.scheduler.ScheduleJobService.PREFIX_JOB_CO
  * flow evaluation finds no next step), the 30s reconciliation sweep, and the admin endpoint.
  *
  * <p>Does exactly what the design doc §3.4 requires: derive, row-lock, status transition, workspace
- * last-run status, one notification event, Quartz trigger removal after commit. VCS commit-status,
- * PR comments and job-history pruning are {@code completeJob}-specific extras the scheduler still
- * runs on its own inline path; the sweep path skips them (a stale zombie needs no fresh VCS push).
+ * last-run status, one notification event, durable run trigger event, Quartz trigger removal after
+ * commit. VCS commit-status, PR comments and job-history pruning are {@code completeJob}-specific
+ * extras the scheduler still runs on its own inline path; the sweep path skips them (a stale
+ * zombie needs no fresh VCS push).
  *
  * <p>Idempotent and safe under two API replicas: {@link JobRepository#lockForUpdate} serialises
- * concurrent callers on the job row, and an already-terminal job short-circuits with no event.
+ * concurrent callers on the job row, and an already-terminal job short-circuits with no event -
+ * including the run trigger event, written here inside this same transaction rather than from a
+ * callback once it commits.
  */
 @Slf4j
 @Service
@@ -56,7 +59,7 @@ public class JobReconciliationService {
     private final ScheduleJobService scheduleJobService;
     private final Scheduler scheduler;
     private final JobReconciliationMetrics metrics;
-    private final RunTriggerDispatchService runTriggerDispatchService;
+    private final RunTriggerEventWriter runTriggerEventWriter;
 
     @Transactional
     public ReconciliationResult reconcile(int jobId, boolean dryRun) {
@@ -106,7 +109,9 @@ public class JobReconciliationService {
 
         deleteTriggerAfterCommit(jobId);
         if (target == JobStatus.completed) {
-            dispatchRunTriggersAfterCommit(jobId);
+            // Synchronous, unlike the Quartz cleanup above: the event row has to commit
+            // atomically with the status transition it's about, not after it.
+            runTriggerEventWriter.enqueueIfQualifying(job);
         }
         return result(jobId, job, outcome, target, ReconciliationDisposition.APPLIED, evidence);
     }
@@ -156,20 +161,6 @@ public class JobReconciliationService {
         workspace.setLastJobStatus(job.getStatus());
         workspace.setLastJobDate(new Date(System.currentTimeMillis()));
         workspaceRepository.save(workspace);
-    }
-
-    /**
-     * Fans out to the workspaces that depend on this one. Deliberately anchored here rather
-     * than in ScheduleJob: this method is the only routine that performs the transition to a
-     * terminal status, it does so under a row lock, and an already-terminal job never reaches
-     * this point - so a completed run dispatches its triggers exactly once even with several
-     * API replicas competing for the same job.
-     *
-     * <p>After commit, like the Quartz cleanup above, so that a dispatch problem can never
-     * roll back the completion of the run that fired it.
-     */
-    private void dispatchRunTriggersAfterCommit(int jobId) {
-        afterCommit(() -> runTriggerDispatchService.dispatchFor(jobId));
     }
 
     private void deleteTriggerAfterCommit(int jobId) {

@@ -53,7 +53,14 @@ public class ApplyStructuredOutputService {
     }
 
     public List<Map<String, Object>> seedFromPlan(String organizationId, String jobId) {
-        Map<String, Object> context = getCurrentContext(organizationId, jobId);
+        Map<String, Object> context;
+        try {
+            context = getCurrentContext(organizationId, jobId);
+        } catch (RuntimeException e) {
+            // Read-only seed: without the plan context the apply view simply starts empty.
+            log.warn("Unable to read plan context for job {}: {}", jobId, e.getMessage());
+            context = new HashMap<>();
+        }
         return seedFromPlan(context);
     }
 

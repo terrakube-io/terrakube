@@ -73,6 +73,16 @@ public interface JobRepository extends JpaRepository<Job, Integer> {
                                                    @Param("cutoff") java.util.Date cutoff);
 
     /**
+     * The run trigger fan-out idempotency key: at most one dependent job per (destination
+     * workspace, upstream job) pair. {@code RunTriggerDispatchService.enqueue} checks this
+     * before persisting a new dependent so a reclaimed or retried {@code RunTriggerEvent} does
+     * not create a duplicate job and a duplicate Quartz schedule. {@code OrderByIdDesc} is
+     * defensive only - it picks the most recent if rows written before this check existed ever
+     * produced more than one.
+     */
+    Optional<Job> findFirstByWorkspaceAndTriggeredByJobIdOrderByIdDesc(Workspace workspace, Integer triggeredByJobId);
+
+    /**
      * Row-locks the job for the rest of the caller's transaction. Two overlapping Quartz
      * firings for the same job (the ad-hoc trigger fired by ScheduleJobService.createJobContext
      * racing the first tick of its own 30s recurring trigger, or a createJobContextNow one-shot

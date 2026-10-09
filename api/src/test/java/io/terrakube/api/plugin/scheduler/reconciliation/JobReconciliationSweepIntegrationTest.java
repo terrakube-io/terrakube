@@ -90,14 +90,15 @@ class JobReconciliationSweepIntegrationTest {
 
         // The sweep now takes a per-job Redis lock before reconciling a zero-pending job; the
         // mocked RedisTemplate must let that lock be acquired and released.
+        // doReturn, not when(mock.call()): the live Quartz scheduler can call redisTemplate between
+        // when(...) and thenReturn(...), and Mockito then stubs that call instead (WrongTypeOfReturnValue).
         org.springframework.data.redis.core.ValueOperations<String, Object> valueOperations =
                 org.mockito.Mockito.mock(org.springframework.data.redis.core.ValueOperations.class);
-        org.mockito.Mockito.lenient().when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        org.mockito.Mockito.lenient().doReturn(valueOperations).when(redisTemplate).opsForValue();
         org.mockito.Mockito.lenient().when(valueOperations.setIfAbsent(
                 org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.any(java.time.Duration.class))).thenReturn(true);
-        org.mockito.Mockito.lenient().when(redisTemplate.delete(org.mockito.ArgumentMatchers.anyString()))
-                .thenReturn(true);
+        org.mockito.Mockito.lenient().doReturn(true).when(redisTemplate).delete(org.mockito.ArgumentMatchers.anyString());
     }
 
     @Test
