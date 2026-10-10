@@ -14,6 +14,7 @@ import io.terrakube.client.TerrakubeClient;
 import io.terrakube.client.model.organization.workspace.history.History;
 import io.terrakube.client.model.organization.workspace.history.HistoryAttributes;
 import io.terrakube.client.model.organization.workspace.history.HistoryRequest;
+import io.terrakube.executor.plugin.tfstate.StorageRetryMetrics;
 import io.terrakube.executor.plugin.tfstate.TerraformOutputPathService;
 import io.terrakube.executor.plugin.tfstate.TerraformState;
 import io.terrakube.executor.plugin.tfstate.TerraformStateMetadata;
@@ -87,6 +88,9 @@ public class AwsTerraformStateImpl implements TerraformState {
 
     @Builder.Default
     private TerraformStateMetadataService terraformStateMetadataService = new TerraformStateMetadataService(null);
+
+    @NonNull
+    StorageRetryMetrics storageRetryMetrics;
 
     // Matches X-Range wildcards: * or major.wildcard (e.g. 1.x, 1.*, 1.X).
     // Bare x/X are intentionally excluded: TerraformDownloader rejects them as invalid.
@@ -277,23 +281,20 @@ public class AwsTerraformStateImpl implements TerraformState {
         }
     }
 
+    // The caller already confirmed a plan URL is recorded before calling this, so there is no
+    // legitimate "not found" case to preserve here - any exception after retries is a genuine
+    // failure and must not collapse into the same empty result a real not-found would (#3671).
     private byte[] downloadObjectFromBucket(String bucketName, String objectKey) {
-        byte[] data;
-        try {
+        return storageRetryMetrics.withRetry("aws", "plan-read", () -> {
             log.info("Bucket: {} Searching: {}", bucketName, objectKey);
-
             GetObjectRequest objectRequest = GetObjectRequest.builder()
                     .key(objectKey)
                     .bucket(bucketName)
                     .build();
             ResponseBytes<GetObjectResponse> objectBytes = s3client.getObject(objectRequest,
                     ResponseTransformer.toBytes());
-            data = objectBytes.asByteArray();
-        } catch (Exception e) {
-            log.debug(e.getMessage());
-            data = new byte[0];
-        }
-        return data;
+            return objectBytes.asByteArray();
+        });
     }
 
     @Override

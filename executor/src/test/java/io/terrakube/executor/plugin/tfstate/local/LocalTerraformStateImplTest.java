@@ -38,6 +38,8 @@ class LocalTerraformStateImplTest {
                 .terrakubeClient(terrakubeClient)
                 .terraformOutputPathService(terraformOutputPathService)
                 .terraformStatePathService(terraformStatePathService)
+                .storageRetryMetrics(new io.terrakube.executor.plugin.tfstate.StorageRetryMetrics(
+                        new io.micrometer.core.instrument.simple.SimpleMeterRegistry()))
                 .build();
     }
 
@@ -113,6 +115,24 @@ class LocalTerraformStateImplTest {
         FileUtils.deleteQuietly(new File(FileUtils.getUserDirectoryPath(), ".terraform-spring-boot"));
     }
 
+    // #3671 follow-up: a genuine copy failure must retry then throw instead of silently leaving
+    // planExists false with no clear signal why.
+    @Test
+    void testDownloadTerraformPlan_ThrowsAfterRetryingAGenuineFailure(@TempDir Path tempDir) {
+        String organizationId = "org1";
+        String workspaceId = "ws1";
+        String jobId = "job1";
+        String stepId = "step1";
+        File workingDirectory = tempDir.toFile();
+
+        File nonexistentSource = new File(tempDir.toFile(), "does-not-exist/terraformLibrary.tfPlan");
+        when(terrakubeClient.getJobById(organizationId, jobId).getData().getAttributes().getTerraformPlan())
+                .thenReturn(nonexistentSource.getAbsolutePath());
+
+        assertThrows(io.terrakube.executor.plugin.tfstate.TerraformStateUnavailableException.class,
+                () -> localTerraformState.downloadTerraformPlan(organizationId, workspaceId, jobId, stepId, workingDirectory));
+    }
+
     @Test
     void testSaveStateJson() throws IOException {
         TerraformJob job = new TerraformJob();
@@ -164,6 +184,30 @@ class LocalTerraformStateImplTest {
         
         // Cleanup
         FileUtils.deleteQuietly(new File(FileUtils.getUserDirectoryPath(), ".terraform-spring-boot"));
+    }
+
+    // #3671 follow-up: a genuine write failure must retry then throw instead of silently
+    // returning a success-looking output path with nothing actually written.
+    @Test
+    void testSaveOutput_ThrowsAfterRetryingAGenuineFailure() throws IOException {
+        String organizationId = "org-save-output-fail-test";
+        String jobId = "job-save-output-fail-test";
+        String stepId = "step-save-output-fail-test";
+
+        // Pre-create a plain file where the implementation needs to create a directory, so
+        // FileUtils.writeStringToFile's own mkdirs() fails reliably with a genuine IOException.
+        File blockingFile = new File(FileUtils.getUserDirectoryPath(),
+                String.format(".terraform-spring-boot/local/output/%s/%s", organizationId, jobId));
+        FileUtils.forceMkdirParent(blockingFile);
+        FileUtils.writeStringToFile(blockingFile, "blocking", Charset.defaultCharset());
+
+        try {
+            assertThrows(io.terrakube.executor.plugin.tfstate.TerraformStateUnavailableException.class,
+                    () -> localTerraformState.saveOutput(organizationId, jobId, stepId, "output", "error"));
+        } finally {
+            FileUtils.deleteQuietly(new File(FileUtils.getUserDirectoryPath(),
+                    String.format(".terraform-spring-boot/local/output/%s", organizationId)));
+        }
     }
 
     @Test

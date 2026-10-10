@@ -52,6 +52,8 @@ class GcpTerraformStateImplTest {
                 .terrakubeClient(terrakubeClient)
                 .terraformOutputPathService(terraformOutputPathService)
                 .terraformStatePathService(terraformStatePathService)
+                .storageRetryMetrics(new io.terrakube.executor.plugin.tfstate.StorageRetryMetrics(
+                        new io.micrometer.core.instrument.simple.SimpleMeterRegistry()))
                 .build();
     }
 
@@ -95,6 +97,27 @@ class GcpTerraformStateImplTest {
         verify(storage).create(any(BlobInfo.class), eq("plan-content".getBytes()));
     }
 
+    // #3671 follow-up: a genuine GCS write failure must retry then throw instead of silently
+    // returning null (indistinguishable from "no plan file to save").
+    @Test
+    void testSaveTerraformPlan_ThrowsAfterRetryingAGenuineFailure(@TempDir Path tempDir) throws IOException {
+        String organizationId = "org1";
+        String workspaceId = "ws1";
+        String jobId = "job1";
+        String stepId = "step1";
+        File workingDirectory = tempDir.toFile();
+        File planFile = new File(workingDirectory, "terraformLibrary.tfPlan");
+        FileUtils.writeStringToFile(planFile, "plan-content", Charset.defaultCharset());
+
+        when(storage.create(any(BlobInfo.class), any(byte[].class)))
+                .thenThrow(new com.google.cloud.storage.StorageException(503, "Service unavailable"));
+
+        assertThrows(io.terrakube.executor.plugin.tfstate.TerraformStateUnavailableException.class,
+                () -> gcpTerraformState.saveTerraformPlan(organizationId, workspaceId, jobId, stepId, workingDirectory));
+
+        verify(storage, times(3)).create(any(BlobInfo.class), any(byte[].class));
+    }
+
     @Test
     void testDownloadTerraformPlan(@TempDir Path tempDir) throws IOException {
         String organizationId = "org1";
@@ -129,6 +152,31 @@ class GcpTerraformStateImplTest {
         // new URL(stateUrl).getPath() = /test-bucket/tfstate/org1/ws1/job1/step1/terraformLibrary.tfPlan
         // replace("/test-bucket/", "") = tfstate/org1/ws1/job1/step1/terraformLibrary.tfPlan
         assertEquals("tfstate/org1/ws1/job1/step1/terraformLibrary.tfPlan", blobInfoCaptor.getValue().getBlobId().getName());
+    }
+
+    // #3671 follow-up: a genuine download failure must retry then throw instead of silently
+    // leaving planGcExist false with no clear signal why.
+    @Test
+    void testDownloadTerraformPlan_ThrowsAfterRetryingAGenuineFailure(@TempDir Path tempDir) throws IOException {
+        String organizationId = "org1";
+        String workspaceId = "ws1";
+        String jobId = "job1";
+        String stepId = "step1";
+        File workingDirectory = tempDir.toFile();
+
+        String planUrl = "https://storage.cloud.google.com/test-bucket/tfstate/org1/ws1/job1/step1/terraformLibrary.tfPlan";
+        when(terrakubeClient.getJobById(organizationId, jobId).getData().getAttributes().getTerraformPlan())
+                .thenReturn(planUrl);
+
+        // A file:// URL to a path that doesn't exist makes copyURLToFile fail reliably without
+        // any real network dependency, same trick the happy-path test above uses in reverse.
+        URL nonexistentUrl = new File(workingDirectory, "does-not-exist.tfPlan").toURI().toURL();
+        when(storage.signUrl(any(BlobInfo.class), anyLong(), any(TimeUnit.class))).thenReturn(nonexistentUrl);
+
+        assertThrows(io.terrakube.executor.plugin.tfstate.TerraformStateUnavailableException.class,
+                () -> gcpTerraformState.downloadTerraformPlan(organizationId, workspaceId, jobId, stepId, workingDirectory));
+
+        verify(storage, times(3)).signUrl(any(BlobInfo.class), anyLong(), any(TimeUnit.class));
     }
 
     @Test

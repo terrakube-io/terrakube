@@ -57,6 +57,8 @@ class AwsTerraformStateImplTest {
                 .terraformOutputPathService(terraformOutputPathService)
                 .terraformStatePathService(terraformStatePathService)
                 .includeBackendKeys(false)
+                .storageRetryMetrics(new io.terrakube.executor.plugin.tfstate.StorageRetryMetrics(
+                        new io.micrometer.core.instrument.simple.SimpleMeterRegistry()))
                 .build();
     }
 
@@ -275,6 +277,27 @@ class AwsTerraformStateImplTest {
         assertTrue(result);
         File downloadedPlan = new File(workingDirectory, "terraformLibrary.tfPlan");
         assertTrue(downloadedPlan.exists());
+    }
+
+    // #3671 follow-up: a genuine S3 failure must retry then throw instead of silently writing
+    // empty bytes and reporting the plan as downloaded.
+    @Test
+    void testDownloadTerraformPlan_ThrowsAfterRetryingAGenuineFailure(@TempDir Path tempDir) {
+        String organizationId = "org1";
+        String workspaceId = "ws1";
+        String jobId = "job1";
+        String stepId = "step1";
+        File workingDirectory = tempDir.toFile();
+
+        when(terrakubeClient.getJobById(organizationId, jobId).getData().getAttributes().getTerraformPlan())
+                .thenReturn("https://s3.amazonaws.com/test-bucket/tfstate/org1/ws1/job1/step1/terraformLibrary.tfPlan");
+        when(s3Client.getObject(any(GetObjectRequest.class), any(ResponseTransformer.class)))
+                .thenThrow(S3Exception.builder().message("Service unavailable").build());
+
+        assertThrows(io.terrakube.executor.plugin.tfstate.TerraformStateUnavailableException.class,
+                () -> awsTerraformState.downloadTerraformPlan(organizationId, workspaceId, jobId, stepId, workingDirectory));
+
+        verify(s3Client, times(3)).getObject(any(GetObjectRequest.class), any(ResponseTransformer.class));
     }
 
     @Test

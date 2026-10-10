@@ -15,11 +15,13 @@ import io.terrakube.client.TerrakubeClient;
 import io.terrakube.client.model.organization.workspace.history.History;
 import io.terrakube.client.model.organization.workspace.history.HistoryAttributes;
 import io.terrakube.client.model.organization.workspace.history.HistoryRequest;
+import io.terrakube.executor.plugin.tfstate.StorageRetryMetrics;
 import io.terrakube.executor.plugin.tfstate.TerraformOutputPathService;
 import io.terrakube.executor.plugin.tfstate.TerraformState;
 import io.terrakube.executor.plugin.tfstate.TerraformStateMetadata;
 import io.terrakube.executor.plugin.tfstate.TerraformStateMetadataService;
 import io.terrakube.executor.plugin.tfstate.TerraformStatePathService;
+import io.terrakube.executor.plugin.tfstate.TerraformStateUnavailableException;
 import io.terrakube.executor.service.mode.TerraformJob;
 
 import java.io.File;
@@ -59,6 +61,9 @@ public class GcpTerraformStateImpl implements TerraformState {
 
     @Builder.Default
     private TerraformStateMetadataService terraformStateMetadataService = new TerraformStateMetadataService(null);
+
+    @NonNull
+    StorageRetryMetrics storageRetryMetrics;
 
     @Override
     public String getBackendStateFile(String organizationId, String workspaceId, File workingDirectory, String terraformVersion) {
@@ -103,18 +108,23 @@ public class GcpTerraformStateImpl implements TerraformState {
         File tfPlanContent = new File(FilenameUtils.concat(workingDirectory.getAbsolutePath(), TERRAFORM_PLAN_FILE));
         log.info("terraformGcpStateFile Path: {} {}", workingDirectory.getAbsolutePath() + "/" + TERRAFORM_PLAN_FILE, tfPlanContent.exists());
         if (tfPlanContent.exists()) {
-            String url = null;
+            byte[] content;
             try {
-                BlobId blobId = BlobId.of(bucketName, blobKey);
-                BlobInfo blobInfo = BlobInfo.newBuilder(blobId).build();
-                storage.create(blobInfo, FileUtils.readFileToByteArray(tfPlanContent));
-                url = String.format("https://storage.cloud.google.com/%s/%s", bucketName, blobKey);
-                log.info("File URL {}", url);
+                content = FileUtils.readFileToByteArray(tfPlanContent);
             } catch (IOException e) {
-                log.error(e.getMessage());
+                // Reading the plan file we just wrote locally failed - can't be retried
+                // meaningfully, so fail the save instead of silently reporting none happened (#3671).
+                throw new TerraformStateUnavailableException("Unable to read local plan file " + tfPlanContent.getAbsolutePath(), e);
             }
 
-            return url;
+            BlobId blobId = BlobId.of(bucketName, blobKey);
+            BlobInfo blobInfo = BlobInfo.newBuilder(blobId).build();
+            return storageRetryMetrics.withRetry("gcp", "plan-write", () -> {
+                storage.create(blobInfo, content);
+                String url = String.format("https://storage.cloud.google.com/%s/%s", bucketName, blobKey);
+                log.info("File URL {}", url);
+                return url;
+            });
         } else {
             return null;
         }
@@ -125,27 +135,24 @@ public class GcpTerraformStateImpl implements TerraformState {
         AtomicBoolean planGcExist = new AtomicBoolean(false);
         Optional.ofNullable(terrakubeClient.getJobById(organizationId, jobId).getData().getAttributes().getTerraformPlan())
                 .ifPresent(stateUrl -> {
-                    try {
-                        log.info("Downloading state from {}:", stateUrl);
-                        String buketNamePath = String.format("/%s/",bucketName);
-                        log.info("Generating pre-signed URL. {}", new URL(stateUrl).getPath().replace(buketNamePath, ""));
+                    log.info("Downloading state from {}:", stateUrl);
 
-                        // Define resource
-                        BlobInfo blobInfo = BlobInfo.newBuilder(BlobId.of(bucketName, new URL(stateUrl).getPath().replace(buketNamePath, ""))).build();
+                    // The caller already confirmed a plan URL is recorded before calling this, so
+                    // there is no legitimate "not found" case to preserve here - any exception
+                    // after retries is a genuine failure (#3671).
+                    storageRetryMetrics.withRetry("gcp", "plan-read", () -> {
+                        String buketNamePath = String.format("/%s/", bucketName);
+                        String blobPath = new URL(stateUrl).getPath().replace(buketNamePath, "");
+                        log.info("Generating pre-signed URL. {}", blobPath);
+                        BlobInfo blobInfo = BlobInfo.newBuilder(BlobId.of(bucketName, blobPath)).build();
+                        File targetFile = new File(FilenameUtils.concat(workingDirectory.getAbsolutePath(), TERRAFORM_PLAN_FILE));
 
                         URL signedUrl = storage.signUrl(blobInfo, 5, TimeUnit.MINUTES);
-
                         log.info("Pre-Signed URL: " + signedUrl.toString());
-
-                        FileUtils.copyURLToFile(
-                                signedUrl,
-                                new File(FilenameUtils.concat(workingDirectory.getAbsolutePath() , TERRAFORM_PLAN_FILE)),
-                                30000,
-                                30000);
-                        planGcExist.set(true);
-                    } catch (IOException e) {
-                        log.error(e.getMessage());
-                    }
+                        FileUtils.copyURLToFile(signedUrl, targetFile, 30000, 30000);
+                        return null;
+                    });
+                    planGcExist.set(true);
                 });
         return planGcExist.get();
     }

@@ -20,6 +20,7 @@ import io.terrakube.client.TerrakubeClient;
 import io.terrakube.client.model.organization.workspace.history.History;
 import io.terrakube.client.model.organization.workspace.history.HistoryAttributes;
 import io.terrakube.client.model.organization.workspace.history.HistoryRequest;
+import io.terrakube.executor.plugin.tfstate.StorageRetryMetrics;
 import io.terrakube.executor.plugin.tfstate.TerraformOutputPathService;
 import io.terrakube.executor.plugin.tfstate.TerraformState;
 import io.terrakube.executor.plugin.tfstate.TerraformStateMetadata;
@@ -47,6 +48,7 @@ public class AzureTerraformStateImpl implements TerraformState {
     private static final String BACKEND_FILE_NAME = "azure_backend_override.tf";
     private static final String CONTAINER_OUTPUT_NAME = "tfoutput";
     private static final String CONTAINER_BINARY_NAME = "tfbinary";
+
     private String resourceGroupName;
     private String storageAccountName;
     private String storageContainerName;
@@ -65,6 +67,9 @@ public class AzureTerraformStateImpl implements TerraformState {
 
     @Builder.Default
     private TerraformStateMetadataService terraformStateMetadataService = new TerraformStateMetadataService(null);
+
+    @NonNull
+    StorageRetryMetrics storageRetryMetrics;
 
     @Override
     public String getBackendStateFile(String organizationId, String workspaceId, File workingDirectory, String terraformVersion) {
@@ -166,30 +171,31 @@ public class AzureTerraformStateImpl implements TerraformState {
         AtomicBoolean planExists = new AtomicBoolean(false);
         Optional.ofNullable(terrakubeClient.getJobById(organizationId, jobId).getData().getAttributes().getTerraformPlan())
                 .ifPresent(stateUrl -> {
-                    try {
-                        log.info("Downloading state from {}:", stateUrl);
+                    log.info("Downloading state from {}:", stateUrl);
 
-                        URL blobURL = new URL(stateUrl);
-                        String blobName = blobURL.getPath().replace("/tfstate/", "").replace("%2F","/");
-
+                    // The caller already confirmed a plan URL is recorded before calling this, so
+                    // there is no legitimate "not found" case to preserve here - any exception
+                    // after retries is a genuine failure (#3671).
+                    storageRetryMetrics.withRetry("azure", "plan-read", () -> {
+                        String blobName = new URL(stateUrl).getPath().replace("/tfstate/", "").replace("%2F", "/");
                         log.info("BlobName: {}", blobName);
 
                         BlobContainerClient blobContainerClient = blobServiceClient.getBlobContainerClient(CONTAINER_NAME);
                         BlobClient blobClient = blobContainerClient.getBlobClient(blobName);
+                        File targetFile = new File(workingDirectory.getAbsolutePath() + "/" + TERRAFORM_PLAN_FILE);
 
                         BlobSasPermission blobSasPermission = new BlobSasPermission().setReadPermission(true);
-                        BlobServiceSasSignatureValues builder = new BlobServiceSasSignatureValues(OffsetDateTime.now().plusMinutes(5), blobSasPermission)
+                        BlobServiceSasSignatureValues sasBuilder = new BlobServiceSasSignatureValues(OffsetDateTime.now().plusMinutes(5), blobSasPermission)
                                 .setProtocol(SasProtocol.HTTPS_ONLY);
 
                         FileUtils.copyURLToFile(
-                                new URL(String.format("%s?%s", blobClient.getBlobUrl(), blobClient.generateSas(builder))),
-                                new File(workingDirectory.getAbsolutePath() + "/" + TERRAFORM_PLAN_FILE),
+                                new URL(String.format("%s?%s", blobClient.getBlobUrl(), blobClient.generateSas(sasBuilder))),
+                                targetFile,
                                 30000,
                                 30000);
-                        planExists.set(true);
-                    } catch (IOException e) {
-                        log.error(e.getMessage());
-                    }
+                        return null;
+                    });
+                    planExists.set(true);
                 });
         return planExists.get();
     }

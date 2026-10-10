@@ -20,6 +20,7 @@ import io.terrakube.client.TerrakubeClient;
 import io.terrakube.client.model.organization.workspace.history.History;
 import io.terrakube.client.model.organization.workspace.history.HistoryAttributes;
 import io.terrakube.client.model.organization.workspace.history.HistoryRequest;
+import io.terrakube.executor.plugin.tfstate.StorageRetryMetrics;
 import io.terrakube.executor.plugin.tfstate.TerraformOutputPathService;
 import io.terrakube.executor.plugin.tfstate.TerraformState;
 import io.terrakube.executor.plugin.tfstate.TerraformStateMetadata;
@@ -51,6 +52,9 @@ public class LocalTerraformStateImpl implements TerraformState {
 
     @NonNull
     TerraformStatePathService terraformStatePathService;
+
+    @NonNull
+    StorageRetryMetrics storageRetryMetrics;
 
     @Builder.Default
     private TerraformStateMetadataService terraformStateMetadataService = new TerraformStateMetadataService(null);
@@ -101,13 +105,12 @@ public class LocalTerraformStateImpl implements TerraformState {
                 tfPlan.exists());
 
         if (tfPlan.exists()) {
-            try {
-                FileUtils.copyFile(tfPlan, new File(stepStateDirectory));
-            } catch (IOException e) {
-                log.error(e.getMessage());
-            }
-            log.info("Local state file saved to {}", stepStateDirectory);
-            return stepStateDirectory;
+            File targetFile = new File(stepStateDirectory);
+            return storageRetryMetrics.withRetry("local", "plan-write", () -> {
+                FileUtils.copyFile(tfPlan, targetFile);
+                log.info("Local state file saved to {}", stepStateDirectory);
+                return stepStateDirectory;
+            });
         } else {
             return null;
         }
@@ -120,19 +123,19 @@ public class LocalTerraformStateImpl implements TerraformState {
         Optional.ofNullable(
                         terrakubeClient.getJobById(organizationId, jobId).getData().getAttributes().getTerraformPlan())
                 .ifPresent(stateFilePath -> {
-                    try {
-                        log.info("Copying state from {}:", stateFilePath);
-                        FileUtils.copyFile(
-                                new File(stateFilePath),
-                                new File(
-                                        String.join(
-                                                File.separator,
-                                                Stream.of(workingDirectory.getAbsolutePath(), TERRAFORM_PLAN_FILE)
-                                                        .toArray(String[]::new))));
-                        planExists.set(true);
-                    } catch (IOException e) {
-                        log.error(e.getMessage());
-                    }
+                    log.info("Copying state from {}:", stateFilePath);
+                    File sourceFile = new File(stateFilePath);
+                    File targetFile = new File(String.join(File.separator,
+                            Stream.of(workingDirectory.getAbsolutePath(), TERRAFORM_PLAN_FILE).toArray(String[]::new)));
+
+                    // The caller already confirmed a plan path is recorded before calling this,
+                    // so there is no legitimate "not found" case to preserve here - any exception
+                    // after retries is a genuine failure (#3671).
+                    storageRetryMetrics.withRetry("local", "plan-read", () -> {
+                        FileUtils.copyFile(sourceFile, targetFile);
+                        return null;
+                    });
+                    planExists.set(true);
                 });
         return planExists.get();
     }
@@ -155,10 +158,13 @@ public class LocalTerraformStateImpl implements TerraformState {
                             FilenameUtils.separatorsToSystem(
                                     stateFileName.replace(".json", ".raw.json"))));
 
-            try {
+            storageRetryMetrics.withRetry("local", "state-write", () -> {
                 FileUtils.writeStringToFile(localStateFile, applyJSON, Charset.defaultCharset());
                 FileUtils.writeStringToFile(localRawStateFile, rawState, Charset.defaultCharset());
+                return null;
+            });
 
+            {
                 String stateURL = terraformStatePathService.getStateJsonPath(terraformJob.getOrganizationId(),
                         terraformJob.getWorkspaceId(), stateFilenameUUID);
 
@@ -177,8 +183,6 @@ public class LocalTerraformStateImpl implements TerraformState {
 
                 terrakubeClient.createHistory(historyRequest, terraformJob.getOrganizationId(),
                         terraformJob.getWorkspaceId());
-            } catch (IOException e) {
-                log.error(e.getMessage());
             }
         }
     }
@@ -194,14 +198,10 @@ public class LocalTerraformStateImpl implements TerraformState {
                 )));
 
         log.info("Creating Output File: {}", localOutputDirectory.getAbsolutePath());
-        try {
+        return storageRetryMetrics.withRetry("local", "output-write", () -> {
             FileUtils.writeStringToFile(localOutputDirectory, output + outputError, Charset.defaultCharset());
-        } catch (IOException e) {
-            log.error(e.getMessage());
-        }
-
-        return terraformOutputPathService.getOutputPath(organizationId, jobId, stepId);
-
+            return terraformOutputPathService.getOutputPath(organizationId, jobId, stepId);
+        });
     }
 
     @Override
