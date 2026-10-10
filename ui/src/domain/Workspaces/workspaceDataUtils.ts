@@ -1,4 +1,5 @@
 import { AxiosInstance } from "axios";
+import { axiosAuxiliary } from "../../config/axiosConfig";
 import { ORGANIZATION_ARCHIVE, WORKSPACE_ARCHIVE } from "../../config/actionTypes";
 import {
   FlatJob,
@@ -278,17 +279,22 @@ export function loadState(
   let currentState;
   const organizationId = sessionStorage.getItem(ORGANIZATION_ARCHIVE);
 
-  axiosInstance
-    .get(state.output)
+  // These two reads go straight to object storage (the current state's outputs/resources
+  // preview). A transient storage outage must stay local to this preview widget, never trip
+  // the application-wide backend-error screen - same reasoning as archived step logs in
+  // fetchStepLog.ts. Routed through axiosAuxiliary instead of the caller's axiosInstance.
+  axiosAuxiliary
+    .get(state.output, { auxClass: "workspace-state-preview" })
     .then((resp) => {
       let result = parseState(resp.data);
       setContextState(resp.data);
       if (result.outputs.length < 1 && result.resources.length < 1) {
-        axiosInstance
+        axiosAuxiliary
           .get(
             `${
               new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin
-            }/tfstate/v1/organization/${organizationId}/workspace/${workspaceId}/state/terraform.tfstate`
+            }/tfstate/v1/organization/${organizationId}/workspace/${workspaceId}/state/terraform.tfstate`,
+            { auxClass: "workspace-state-preview" }
           )
           .then((currentStateData) => {
             currentState = currentStateData.data;
