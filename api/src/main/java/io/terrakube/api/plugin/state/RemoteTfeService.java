@@ -1391,7 +1391,11 @@ public class RemoteTfeService {
             String stateString = new String(currentState, StandardCharsets.UTF_8);
             Map<String, Object> result = new ObjectMapper().readValue(stateString, HashMap.class);
             responseAttributes.put("serial", Integer.valueOf(result.get("serial").toString()));
-            responseAttributes.put("terraform-version", result.get("terraform_version").toString());
+            // OpenTofu client-side encrypted state only exposes serial/lineage/meta/encrypted_data
+            // at the top level, so fall back to the workspace version when terraform_version is absent.
+            Object terraformVersion = result.get("terraform_version");
+            responseAttributes.put("terraform-version",
+                    terraformVersion != null ? terraformVersion.toString() : workspace.getTerraformVersion());
             responseAttributes.put("status", "finalized");
             currentStateData.getData().setAttributes(responseAttributes);
 

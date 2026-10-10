@@ -13,6 +13,7 @@ import io.terrakube.api.plugin.notification.JobNotificationTrigger;
 import io.terrakube.api.plugin.scheduler.ScheduleJobService;
 import io.terrakube.api.plugin.security.encryption.EncryptionService;
 import io.terrakube.api.plugin.security.rbac.RbacService;
+import io.terrakube.api.plugin.state.model.state.StateData;
 import io.terrakube.api.plugin.state.model.workspace.WorkspaceData;
 import io.terrakube.api.plugin.state.model.workspace.WorkspaceList;
 import io.terrakube.api.plugin.state.model.workspace.WorkspaceModel;
@@ -891,6 +892,40 @@ class RemoteTfeServiceTest {
     @SuppressWarnings("unchecked")
     private static Map<String, Object> pagination(WorkspaceList workspaceList) {
         return (Map<String, Object>) workspaceList.getMeta().get("pagination");
+    }
+
+    @Test
+    void getCurrentWorkspaceStateReadsTerraformVersionFromPlainState() throws Exception {
+        RemoteTfeService service = remoteTfeService();
+        Workspace workspace = workspace("plain", organization("sample-org"));
+        when(workspaceRepository.getReferenceById(workspace.getId())).thenReturn(workspace);
+        when(storageTypeService.getCurrentTerraformState(workspace.getOrganization().getId().toString(),
+                workspace.getId().toString()))
+                .thenReturn("{\"version\":4,\"terraform_version\":\"1.12.5\",\"serial\":7,\"lineage\":\"abc\"}"
+                        .getBytes(StandardCharsets.UTF_8));
+
+        StateData result = service.getCurrentWorkspaceState(workspace.getId().toString());
+
+        assertEquals(7, result.getData().getAttributes().get("serial"));
+        assertEquals("1.12.5", result.getData().getAttributes().get("terraform-version"));
+    }
+
+    @Test
+    void getCurrentWorkspaceStateHandlesOpenTofuEncryptedState() throws Exception {
+        RemoteTfeService service = remoteTfeService();
+        Workspace workspace = workspace("encrypted", organization("sample-org"));
+        when(workspaceRepository.getReferenceById(workspace.getId())).thenReturn(workspace);
+        when(storageTypeService.getCurrentTerraformState(workspace.getOrganization().getId().toString(),
+                workspace.getId().toString()))
+                .thenReturn(("{\"serial\":22,\"lineage\":\"abc\",\"meta\":{\"key_provider.pbkdf2.state\":\"e30=\"},"
+                        + "\"encrypted_data\":\"Y2lwaGVydGV4dA==\",\"encryption_version\":\"v0\"}")
+                        .getBytes(StandardCharsets.UTF_8));
+
+        StateData result = service.getCurrentWorkspaceState(workspace.getId().toString());
+
+        assertEquals(22, result.getData().getAttributes().get("serial"));
+        assertEquals("1.6.0", result.getData().getAttributes().get("terraform-version"));
+        assertEquals("finalized", result.getData().getAttributes().get("status"));
     }
 
     private RemoteTfeService remoteTfeService() {
