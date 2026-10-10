@@ -16,6 +16,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.text.TextStringBuilder;
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import io.terrakube.executor.service.workspace.security.WorkspaceSecurity;
 import io.terrakube.client.TerrakubeClient;
 import io.terrakube.client.model.organization.workspace.history.History;
 import io.terrakube.client.model.organization.workspace.history.HistoryAttributes;
@@ -51,6 +55,9 @@ public class LocalTerraformStateImpl implements TerraformState {
 
     @NonNull
     TerraformStatePathService terraformStatePathService;
+
+    @Builder.Default
+    WorkspaceSecurity workspaceSecurity = null;
 
     @Builder.Default
     private TerraformStateMetadataService terraformStateMetadataService = new TerraformStateMetadataService(null);
@@ -122,13 +129,26 @@ public class LocalTerraformStateImpl implements TerraformState {
                 .ifPresent(stateFilePath -> {
                     try {
                         log.info("Copying state from {}:", stateFilePath);
-                        FileUtils.copyFile(
-                                new File(stateFilePath),
-                                new File(
-                                        String.join(
-                                                File.separator,
-                                                Stream.of(workingDirectory.getAbsolutePath(), TERRAFORM_PLAN_FILE)
-                                                        .toArray(String[]::new))));
+                        File targetFile = new File(
+                                String.join(
+                                        File.separator,
+                                        Stream.of(workingDirectory.getAbsolutePath(), TERRAFORM_PLAN_FILE)
+                                                .toArray(String[]::new)));
+
+                        if (stateFilePath.startsWith("http://") || stateFilePath.startsWith("https://")) {
+                            HttpURLConnection connection = (HttpURLConnection) new URL(stateFilePath).openConnection();
+                            connection.setRequestMethod("GET");
+                            if (workspaceSecurity != null) {
+                                connection.setRequestProperty("Authorization", "Bearer " + workspaceSecurity.generateAccessToken(workspaceId));
+                            }
+                            try (InputStream in = connection.getInputStream()) {
+                                FileUtils.copyInputStreamToFile(in, targetFile);
+                            } finally {
+                                connection.disconnect();
+                            }
+                        } else {
+                            FileUtils.copyFile(new File(stateFilePath), targetFile);
+                        }
                         planExists.set(true);
                     } catch (IOException e) {
                         log.error(e.getMessage());

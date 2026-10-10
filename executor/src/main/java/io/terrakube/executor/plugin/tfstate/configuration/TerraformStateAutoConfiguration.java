@@ -51,7 +51,16 @@ import java.net.URI;
 public class TerraformStateAutoConfiguration {
 
     @Bean
-    public TerraformState terraformState(TerrakubeClient terrakubeClient, TerraformStateProperties terraformStateProperties, AzureTerraformStateProperties azureTerraformStateProperties, AwsTerraformStateProperties awsTerraformStateProperties, GcpTerraformStateProperties gcpTerraformStateProperties, TerraformStatePathService terraformStatePathService, TerraformOutputPathService terraformOutputPathService, TerraformStateMetadataService terraformStateMetadataService) {
+    public TerraformState terraformState(
+            TerrakubeClient terrakubeClient,
+            TerraformStateProperties terraformStateProperties,
+            AzureTerraformStateProperties azureTerraformStateProperties,
+            AwsTerraformStateProperties awsTerraformStateProperties,
+            GcpTerraformStateProperties gcpTerraformStateProperties,
+            TerraformStatePathService terraformStatePathService,
+            TerraformOutputPathService terraformOutputPathService,
+            TerraformStateMetadataService terraformStateMetadataService,
+            @org.springframework.beans.factory.annotation.Autowired(required = false) io.terrakube.executor.service.workspace.security.WorkspaceSecurity workspaceSecurity) {
         TerraformState terraformState = null;
 
         if (terraformStateProperties != null)
@@ -160,6 +169,7 @@ public class TerraformStateAutoConfiguration {
                             .terraformStatePathService(terraformStatePathService)
                             .terraformOutputPathService(terraformOutputPathService)
                             .terraformStateMetadataService(terraformStateMetadataService)
+                            .workspaceSecurity(workspaceSecurity)
                             .build();
             }
         else
@@ -167,6 +177,7 @@ public class TerraformStateAutoConfiguration {
                     .terrakubeClient(terrakubeClient)
                     .terraformStatePathService(terraformStatePathService)
                     .terraformStateMetadataService(terraformStateMetadataService)
+                    .workspaceSecurity(workspaceSecurity)
                     .build();
         return terraformState;
     }

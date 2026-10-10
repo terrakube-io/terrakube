@@ -13,6 +13,7 @@ import io.terrakube.executor.service.workspace.WorkspaceException;
 import io.terrakube.executor.service.shutdown.ShutdownServiceImpl;
 import io.terrakube.executor.service.status.UpdateJobStatus;
 import io.terrakube.executor.service.terraform.TerraformExecutor;
+import io.terrakube.executor.service.workspace.security.JobContextHolder;
 import org.springframework.boot.availability.AvailabilityChangeEvent;
 import org.springframework.boot.availability.ReadinessState;
 import org.springframework.context.ApplicationEventPublisher;
@@ -25,8 +26,12 @@ import java.io.*;
 import java.nio.charset.Charset;
 import java.util.function.Consumer;
 
+import io.terrakube.executor.service.logs.LogsConsumer;
+import io.terrakube.executor.service.logs.ProcessLogs;
 import io.terrakube.executor.service.opa.OpaExecutorService;
 import org.springframework.beans.factory.annotation.Autowired;
+
+import java.util.concurrent.atomic.AtomicInteger;
 
 @Slf4j
 @Service
@@ -43,6 +48,7 @@ public class ExecutorJobImpl implements ExecutorJob {
     ExecutorCapacityGate executorCapacityGate;
     RedisTemplate<String, Object> redisTemplate;
     OpaExecutorService opaExecutorService;
+    ProcessLogs logsService;
 
     public ExecutorJobImpl(
             SetupWorkspace setupWorkspace,
@@ -57,7 +63,24 @@ public class ExecutorJobImpl implements ExecutorJob {
             RedisTemplate<String, Object> redisTemplate) {
         this(setupWorkspace, terraformExecutor, updateJobStatus, executorFlagsProperties,
                 shutdownService, scriptEngineService, eventPublisher, jobExecutionWatchdog,
-                executorCapacityGate, redisTemplate, null);
+                executorCapacityGate, redisTemplate, null, null);
+    }
+
+    public ExecutorJobImpl(
+            SetupWorkspace setupWorkspace,
+            TerraformExecutor terraformExecutor,
+            UpdateJobStatus updateJobStatus,
+            ExecutorFlagsProperties executorFlagsProperties,
+            ShutdownServiceImpl shutdownService,
+            ScriptEngineService scriptEngineService,
+            ApplicationEventPublisher eventPublisher,
+            JobExecutionWatchdog jobExecutionWatchdog,
+            ExecutorCapacityGate executorCapacityGate,
+            RedisTemplate<String, Object> redisTemplate,
+            @Autowired(required = false) OpaExecutorService opaExecutorService) {
+        this(setupWorkspace, terraformExecutor, updateJobStatus, executorFlagsProperties,
+                shutdownService, scriptEngineService, eventPublisher, jobExecutionWatchdog,
+                executorCapacityGate, redisTemplate, opaExecutorService, null);
     }
 
     @Autowired
@@ -72,7 +95,8 @@ public class ExecutorJobImpl implements ExecutorJob {
             JobExecutionWatchdog jobExecutionWatchdog,
             ExecutorCapacityGate executorCapacityGate,
             RedisTemplate<String, Object> redisTemplate,
-            @Autowired(required = false) OpaExecutorService opaExecutorService) {
+            @Autowired(required = false) OpaExecutorService opaExecutorService,
+            @Autowired(required = false) ProcessLogs logsService) {
         this.setupWorkspace = setupWorkspace;
         this.terraformExecutor = terraformExecutor;
         this.updateJobStatus = updateJobStatus;
@@ -84,6 +108,7 @@ public class ExecutorJobImpl implements ExecutorJob {
         this.executorCapacityGate = executorCapacityGate;
         this.redisTemplate = redisTemplate;
         this.opaExecutorService = opaExecutorService;
+        this.logsService = logsService;
     }
 
     @Async
@@ -94,6 +119,7 @@ public class ExecutorJobImpl implements ExecutorJob {
         jobExecutionWatchdog.markBusy(terraformJob);
         File terraformWorkingDir = null;
         try {
+            JobContextHolder.set(terraformJob);
             try {
                 terraformWorkingDir = setupWorkspace.prepareWorkspace(terraformJob);
             } catch (WorkspaceException e) {
@@ -115,6 +141,7 @@ public class ExecutorJobImpl implements ExecutorJob {
                 updateJobStatus.setCompletedStatus(false, false, -1, terraformJob, "Unexpected error executing job\n", e.getMessage(), null, "");
             }
         } finally {
+            JobContextHolder.clear();
             try {
                 if (terraformWorkingDir != null) {
                     FileUtils.cleanDirectory(terraformWorkingDir);
@@ -196,7 +223,21 @@ public class ExecutorJobImpl implements ExecutorJob {
                 log.info("Execute Groovy Script for Organization {} Workspace {} ", terraformJob.getOrganizationId(), terraformJob.getWorkspaceId());
                 TextStringBuilder scriptOutput = new TextStringBuilder();
                 TextStringBuilder scriptErrorOutput = new TextStringBuilder();
-                Consumer<String> output = outputScripts -> scriptOutput.appendln(outputScripts);
+                Consumer<String> output;
+                if (logsService != null) {
+                    output = LogsConsumer.builder()
+                            .jobId(Integer.valueOf(terraformJob.getJobId()))
+                            .terraformOutput(scriptOutput)
+                            .stepId(terraformJob.getStepId())
+                            .processLogs(logsService)
+                            .lineNumber(new AtomicInteger(0))
+                            .build();
+                } else {
+                    output = outputScripts -> {
+                        log.info(outputScripts);
+                        scriptOutput.appendln(outputScripts);
+                    };
+                }
                 boolean executionSuccess = scriptEngineService.execute(terraformJob, terraformJob.getCommandList(), terraformWorkingDir, output);
                 terraformResult.setOutputLog(scriptOutput.toString());
                 terraformResult.setOutputErrorLog(scriptErrorOutput.toString());

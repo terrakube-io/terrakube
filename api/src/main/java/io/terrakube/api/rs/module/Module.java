@@ -17,9 +17,9 @@ import java.sql.Types;
 import java.util.List;
 import java.util.UUID;
 
-@ReadPermission(expression = "team view module")
+@ReadPermission(expression = "team view module OR user is a registry service")
 @CreatePermission(expression = "team manage module")
-@UpdatePermission(expression = "team manage module OR user is a super service")
+@UpdatePermission(expression = "team manage module OR user is a super service OR user is a registry service")
 @DeletePermission(expression = "team manage module")
 @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.DELETE, hook = ModuleManageHook.class)
 @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.CREATE, phase = LifeCycleHookBinding.TransactionPhase.POSTCOMMIT, hook = ModuleManageHook.class)

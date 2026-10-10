@@ -10,6 +10,10 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.stereotype.Service;
 import io.terrakube.api.repository.PatRepository;
 import io.terrakube.api.rs.token.pat.Pat;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.web.server.ResponseStatusException;
 
 import javax.crypto.SecretKey;
 import java.security.Principal;
@@ -24,6 +28,9 @@ public class PatService {
     @Value("${io.terrakube.token.pat}")
     private String base64Key;
     private static final String ISSUER = "Terrakube";
+
+    @Value("${io.terrakube.owner:}")
+    private String instanceOwner;
 
     @Autowired
     private PatRepository patRepository;
@@ -104,16 +111,68 @@ public class PatService {
         return new IssuedToken(pat.getId(), jws);
     }
 
-    public boolean deleteToken(String tokenId){
-        Optional<Pat> searchPat = patRepository.findById(UUID.fromString(tokenId));
-        if(searchPat.isPresent()){
-            Pat pat = searchPat.get();
-            pat.setDeleted(true);
-            patRepository.save(pat);
-            return true;
-        }else{
+
+    public boolean deleteToken(String tokenId) {
+        return deleteToken(tokenId, SecurityContextHolder.getContext().getAuthentication());
+    }
+
+    public boolean deleteToken(String tokenId, Authentication authentication) {
+        UUID patUuid;
+        try {
+            patUuid = UUID.fromString(tokenId);
+        } catch (IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Personal access token not found");
+        }
+
+        Optional<Pat> searchPat = patRepository.findById(patUuid);
+        if (searchPat.isEmpty() || searchPat.get().isDeleted()) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Personal access token not found");
+        }
+
+        Pat pat = searchPat.get();
+        String callerEmail = extractEmail(authentication);
+        boolean isOwner = callerEmail != null && callerEmail.equalsIgnoreCase(pat.getCreatedBy());
+        boolean isSuperUser = isInstanceOwner(authentication);
+
+        if (!isOwner && !isSuperUser) {
+            log.warn("User {} is not authorized to delete PAT {} owned by {}", callerEmail, tokenId, pat.getCreatedBy());
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "User is not authorized to delete this token");
+        }
+
+        pat.setDeleted(true);
+        patRepository.save(pat);
+        log.info("PAT {} revoked by {}", tokenId, callerEmail);
+        return true;
+    }
+
+    private String extractEmail(Authentication authentication) {
+        if (authentication instanceof JwtAuthenticationToken jwt) {
+            Object email = jwt.getTokenAttributes().get("email");
+            if (email != null) {
+                return email.toString();
+            }
+        }
+        if (authentication != null && authentication.getName() != null) {
+            return authentication.getName();
+        }
+        return null;
+    }
+
+    private boolean isInstanceOwner(Authentication authentication) {
+        if (instanceOwner == null || instanceOwner.isBlank() || authentication == null) {
             return false;
         }
+        if (authentication instanceof JwtAuthenticationToken jwt) {
+            Object email = jwt.getTokenAttributes().get("email");
+            if (instanceOwner.equals(email)) {
+                return true;
+            }
+            Object groups = jwt.getTokenAttributes().get("groups");
+            if (groups instanceof Collection<?> groupList) {
+                return groupList.contains(instanceOwner);
+            }
+        }
+        return false;
     }
 
     public List<Pat> searchToken(Principal principal) {

@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import io.terrakube.client.TerrakubeClient;
 import io.terrakube.client.model.organization.job.Job;
+import io.terrakube.client.model.organization.job.JobAttributes;
 import io.terrakube.client.model.organization.job.JobRequest;
 import io.terrakube.client.model.organization.job.step.Step;
 import io.terrakube.client.model.organization.job.step.StepAttributes;
@@ -49,8 +50,17 @@ public class UpdateJobStatusImpl implements UpdateJobStatus {
                 job.getAttributes().setStatus("running");
                 job.getAttributes().setCommitId(commitId);
 
+                Job updateJob = new Job();
+                updateJob.setId(job.getId());
+                updateJob.setType("job");
+
+                JobAttributes updateAttributes = new JobAttributes();
+                updateAttributes.setStatus("running");
+                updateAttributes.setCommitId(commitId);
+                updateJob.setAttributes(updateAttributes);
+
                 JobRequest jobRequest = new JobRequest();
-                jobRequest.setData(job);
+                jobRequest.setData(updateJob);
 
                 terrakubeClient.updateJob(jobRequest, job.getRelationships().getOrganization().getData().getId(), job.getId());
             }
@@ -125,12 +135,28 @@ public class UpdateJobStatusImpl implements UpdateJobStatus {
         // it must not also swallow the marker itself - the parenthesised ternary is the base
         // string, the marker is always appended.
         String existingOutput = job.getAttributes().getOutput() == null ? "" : job.getAttributes().getOutput();
-        job.getAttributes().setOutput(existingOutput + " Step " + stepId + " completed\n");
+        String stepOutput = existingOutput + " Step " + stepId + " completed\n";
+        job.getAttributes().setOutput(stepOutput);
         job.getAttributes().setTerraformPlan(jobPlan);
         job.getAttributes().setCommitId(commitId);
 
+        Job updateJob = new Job();
+        updateJob.setId(job.getId());
+        updateJob.setType("job");
+
+        JobAttributes updateAttributes = new JobAttributes();
+        updateAttributes.setStatus(status);
+        updateAttributes.setPlanChanges(planChanges);
+        updateAttributes.setOutput(stepOutput);
+        updateAttributes.setTerraformPlan(jobPlan);
+        updateAttributes.setCommitId(commitId);
+        if (hasSoftMandatoryViolations && exitCode != 1 && approvalTeam != null && !approvalTeam.isBlank()) {
+            updateAttributes.setApprovalTeam(approvalTeam);
+        }
+        updateJob.setAttributes(updateAttributes);
+
         JobRequest jobRequest = new JobRequest();
-        jobRequest.setData(job);
+        jobRequest.setData(updateJob);
 
         terrakubeClient.updateJob(jobRequest, job.getRelationships().getOrganization().getData().getId(), job.getId());
     }

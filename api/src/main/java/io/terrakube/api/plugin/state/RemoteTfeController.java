@@ -299,9 +299,10 @@ public class RemoteTfeController {
     @Transactional
     @PutMapping(path = "/configuration-versions/{configurationid}")
     public ResponseEntity<String> uploadConfiguration(HttpServletRequest httpServletRequest,
-            @PathVariable("configurationid") String configurationId) throws IOException {
+            @PathVariable("configurationid") String configurationId,
+            @RequestParam(value = "ticket", required = false) String ticket) throws IOException {
         log.info("Uploading Id {} file", configurationId);
-        remoteTfeService.uploadFile(configurationId, httpServletRequest.getInputStream());
+        remoteTfeService.uploadFile(configurationId, ticket, httpServletRequest.getInputStream());
         log.info("File created");
         return ResponseEntity.ok().body("");
     }

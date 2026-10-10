@@ -21,6 +21,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Collection;
+import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -36,6 +37,10 @@ public class BashEngine implements CommandExecution {
     private static final String USER_BASH_SCRIPT = "/userScript.sh";
     private static final String TERRAFORM_DIRECTORY="/.terraform-spring-boot/terraform/";
     private static final String TOFU_DIRECTORY="/.terraform-spring-boot/tofu/v";
+
+    private static final Set<String> SAFE_SYSTEM_ENV = Set.of(
+            "PATH", "HOME", "USER", "SHELL", "TMPDIR", "LANG", "LC_ALL", "TERM"
+    );
 
     private final ExecutorService executor = Executors.newWorkStealingPool();
 
@@ -88,6 +93,15 @@ public class BashEngine implements CommandExecution {
         ProcessLauncher processLauncher = new ProcessLauncher(this.executor, "bash", bashScript.getAbsolutePath());
         processLauncher.setDirectory(workingDirectory);
 
+        // Sanitize child process environment to prevent ambient executor secrets leakage (TK-01)
+        processLauncher.clearEnvironment();
+        for (String safeKey : SAFE_SYSTEM_ENV) {
+            String val = System.getenv(safeKey);
+            if (val != null && !val.isBlank()) {
+                processLauncher.setEnvironmentVariable(safeKey, val);
+            }
+        }
+
         String tempEnv = workingDirectory.getAbsolutePath() + "/.terrakube_temp_env";
         Path path = Paths.get(tempEnv);
         if (Files.exists(path)) {
@@ -95,9 +109,13 @@ public class BashEngine implements CommandExecution {
             try (BufferedReader reader = Files.newBufferedReader(path)) {
                 String line;
                 while ((line = reader.readLine()) != null) {
-                    String[] split = line.split("=");
-                    log.info("Loading {}", split[0]);
-                    processLauncher.setEnvironmentVariable(split[0], split[1]);
+                    int eqIdx = line.indexOf('=');
+                    if (eqIdx > 0) {
+                        String key = line.substring(0, eqIdx);
+                        String val = line.substring(eqIdx + 1);
+                        log.info("Loading {}", key);
+                        processLauncher.setEnvironmentVariable(key, val);
+                    }
                 }
             } catch (IOException e) {
                 log.error("Error reading file: {}", e.getMessage());
@@ -121,7 +139,11 @@ public class BashEngine implements CommandExecution {
         processLauncher.setEnvironmentVariable("accessToken", terraformJob.getAccessToken() != null ? terraformJob.getAccessToken() : "");
         processLauncher.setEnvironmentVariable("terraformOutput", terraformJob.getTerraformOutput() != null ? terraformJob.getTerraformOutput() : "");
         processLauncher.setEnvironmentVariable("terrakubeApi", this.terrakubeApi);
-        processLauncher.setEnvironmentVariable("terrakubeToken", workspaceSecurity.generateAccessToken(5));
+        processLauncher.setEnvironmentVariable("terrakubeToken", workspaceSecurity.generateAccessToken(5,
+                terraformJob.getOrganizationId(),
+                terraformJob.getWorkspaceId(),
+                terraformJob.getJobId(),
+                terraformJob.getStepId()));
         terraformJob.getEnvironmentVariables().forEach((key, value) -> processLauncher.setEnvironmentVariable(key, value));
         terraformJob.getVariables().forEach((key, value) -> processLauncher.setEnvironmentVariable(key, value));
         processLauncher.setOrAppendEnvironmentVariable("PATH", workingDirectory.getAbsolutePath() + ScriptEngineService.TOOLS, ":");

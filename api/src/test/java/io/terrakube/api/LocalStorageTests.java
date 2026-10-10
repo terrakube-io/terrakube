@@ -1,5 +1,9 @@
 package io.terrakube.api;
 
+import io.terrakube.api.rs.Organization;
+import io.terrakube.api.rs.job.Job;
+import io.terrakube.api.rs.job.step.Step;
+import io.terrakube.api.rs.workspace.Workspace;
 import org.apache.commons.io.FileUtils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -9,6 +13,7 @@ import org.springframework.http.HttpStatus;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.Charset;
+import java.util.UUID;
 
 import static io.restassured.RestAssured.given;
 import static org.mockito.Mockito.when;
@@ -110,7 +115,7 @@ public class LocalStorageTests extends ServerApplicationTests {
     void testLocalStorageBinaryState() throws IOException {
         FileUtils.writeStringToFile(
                 new File(
-                        String.format(STATE_DIRECTORY, FileUtils.getUserDirectoryPath(), "2", "2", "2", "2")),
+                        String.format(STATE_DIRECTORY, FileUtils.getUserDirectoryPath(), "d9b58bd3-f3fc-4056-a026-1163297e80a8", "5ed411ca-7ab8-4d2f-b591-02d0d5788afc", "2", "2")),
                 "SAMPLE",
                 Charset.defaultCharset().toString()
         );
@@ -118,20 +123,74 @@ public class LocalStorageTests extends ServerApplicationTests {
         given()
                 .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
                 .when()
-                .get("/tfstate/v1/organization/2/workspace/2/jobId/2/step/2/terraform.tfstate")
+                .get("/tfstate/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/workspace/5ed411ca-7ab8-4d2f-b591-02d0d5788afc/jobId/2/step/2/terraform.tfstate")
                 .then()
                 .assertThat()
                 .log()
                 .all()
                 .statusCode(HttpStatus.OK.value());
 
+    }
+
+    @Test
+    void testLocalStorageBinaryStateWithoutManageStatePermission() throws IOException {
+        FileUtils.writeStringToFile(
+                new File(
+                        String.format(STATE_DIRECTORY, FileUtils.getUserDirectoryPath(), "d9b58bd3-f3fc-4056-a026-1163297e80a8", "5ed411ca-7ab8-4d2f-b591-02d0d5788afc", "2", "2")),
+                "SAMPLE",
+                Charset.defaultCharset().toString()
+        );
+
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("OTHER_TEAM"))
+                .when()
+                .get("/tfstate/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/workspace/5ed411ca-7ab8-4d2f-b591-02d0d5788afc/jobId/2/step/2/terraform.tfstate")
+                .then()
+                .assertThat()
+                .log()
+                .all()
+                .statusCode(HttpStatus.FORBIDDEN.value());
+    }
+
+    @Test
+    void testLocalStorageBinaryStateWithInternalToken() throws IOException {
+        FileUtils.writeStringToFile(
+                new File(
+                        String.format(STATE_DIRECTORY, FileUtils.getUserDirectoryPath(), "d9b58bd3-f3fc-4056-a026-1163297e80a8", "5ed411ca-7ab8-4d2f-b591-02d0d5788afc", "2", "2")),
+                "SAMPLE",
+                Charset.defaultCharset().toString()
+        );
+
+        given()
+                .headers("Authorization", "Bearer " + generateSystemToken())
+                .when()
+                .get("/tfstate/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/workspace/5ed411ca-7ab8-4d2f-b591-02d0d5788afc/jobId/2/step/2/terraform.tfstate")
+                .then()
+                .assertThat()
+                .log()
+                .all()
+                .statusCode(HttpStatus.OK.value());
     }
 
     @Test
     void testLocalStorageOutputJob() throws IOException {
+        Organization org = organizationRepository.findById(UUID.fromString("d9b58bd3-f3fc-4056-a026-1163297e80a8")).orElseThrow();
+        Workspace ws = workspaceRepository.findById(UUID.fromString("5ed411ca-7ab8-4d2f-b591-02d0d5788afc")).orElseThrow();
+        Job job = new Job();
+        job.setOrganization(org);
+        job.setWorkspace(ws);
+        job.setStatus(io.terrakube.api.rs.job.JobStatus.completed);
+        job = jobRepository.save(job);
+
+        Step step = new Step();
+        step.setJob(job);
+        step.setStepNumber(100);
+        step.setStatus(io.terrakube.api.rs.job.JobStatus.completed);
+        step = stepRepository.save(step);
+
         FileUtils.writeStringToFile(
                 new File(
-                        String.format(OUTPUT_DIRECTORY, FileUtils.getUserDirectoryPath(), "3", "3", "3")),
+                        String.format(OUTPUT_DIRECTORY, FileUtils.getUserDirectoryPath(), org.getId().toString(), String.valueOf(job.getId()), step.getId().toString())),
                 "SAMPLE",
                 Charset.defaultCharset().toString()
         );
@@ -139,7 +198,7 @@ public class LocalStorageTests extends ServerApplicationTests {
         given()
                 .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
                 .when()
-                .get("/tfoutput/v1/organization/3/job/3/step/3")
+                .get("/tfoutput/v1/organization/" + org.getId() + "/job/" + job.getId() + "/step/" + step.getId())
                 .then()
                 .assertThat()
                 .log()
@@ -149,14 +208,25 @@ public class LocalStorageTests extends ServerApplicationTests {
     }
 
     @Test
-    void streamEndpointConnectsAndClosesCleanlyForUnknownStep() {
-        // Unknown job/step -> JobStatusCache treats a missing job as terminal, so the broadcaster
-        // completes the emitter immediately: the SSE connection opens and closes cleanly (200,
-        // empty stream) instead of hanging or 500-ing.
+    void streamEndpointConnectsAndClosesCleanlyForValidStep() {
+        Organization org = organizationRepository.findById(UUID.fromString("d9b58bd3-f3fc-4056-a026-1163297e80a8")).orElseThrow();
+        Workspace ws = workspaceRepository.findById(UUID.fromString("5ed411ca-7ab8-4d2f-b591-02d0d5788afc")).orElseThrow();
+        Job job = new Job();
+        job.setOrganization(org);
+        job.setWorkspace(ws);
+        job.setStatus(io.terrakube.api.rs.job.JobStatus.completed);
+        job = jobRepository.save(job);
+
+        Step step = new Step();
+        step.setJob(job);
+        step.setStepNumber(101);
+        step.setStatus(io.terrakube.api.rs.job.JobStatus.completed);
+        step = stepRepository.save(step);
+
         given()
                 .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
                 .when()
-                .get("/tfoutput/v1/organization/3/job/3/step/11111111-1111-1111-1111-111111111111/stream")
+                .get("/tfoutput/v1/organization/" + org.getId() + "/job/" + job.getId() + "/step/" + step.getId() + "/stream")
                 .then()
                 .assertThat()
                 .log()
@@ -166,17 +236,87 @@ public class LocalStorageTests extends ServerApplicationTests {
 
     @Test
     void streamEndpointAcceptsLastEventIdHeader() {
-        // Same unknown-step path as streamEndpointConnectsAndClosesCleanlyForUnknownStep, confirming
-        // the endpoint still accepts a Last-Event-ID header without erroring on the header parsing.
+        Organization org = organizationRepository.findById(UUID.fromString("d9b58bd3-f3fc-4056-a026-1163297e80a8")).orElseThrow();
+        Workspace ws = workspaceRepository.findById(UUID.fromString("5ed411ca-7ab8-4d2f-b591-02d0d5788afc")).orElseThrow();
+        Job job = new Job();
+        job.setOrganization(org);
+        job.setWorkspace(ws);
+        job.setStatus(io.terrakube.api.rs.job.JobStatus.completed);
+        job = jobRepository.save(job);
+
+        Step step = new Step();
+        step.setJob(job);
+        step.setStepNumber(102);
+        step.setStatus(io.terrakube.api.rs.job.JobStatus.completed);
+        step = stepRepository.save(step);
+
         given()
                 .headers(
                         "Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"),
                         "Last-Event-ID", "100-0")
                 .when()
-                .get("/tfoutput/v1/organization/3/job/3/step/11111111-1111-1111-1111-111111111111/stream")
+                .get("/tfoutput/v1/organization/" + org.getId() + "/job/" + job.getId() + "/step/" + step.getId() + "/stream")
                 .then()
                 .assertThat()
                 .statusCode(HttpStatus.OK.value());
     }
 
+    @Test
+    void testOutputDeniedForUnauthorizedUser() throws IOException {
+        Organization org = organizationRepository.findById(UUID.fromString("d9b58bd3-f3fc-4056-a026-1163297e80a8")).orElseThrow();
+        Workspace ws = workspaceRepository.findById(UUID.fromString("5ed411ca-7ab8-4d2f-b591-02d0d5788afc")).orElseThrow();
+        Job job = new Job();
+        job.setOrganization(org);
+        job.setWorkspace(ws);
+        job.setStatus(io.terrakube.api.rs.job.JobStatus.completed);
+        job = jobRepository.save(job);
+
+        Step step = new Step();
+        step.setJob(job);
+        step.setStepNumber(103);
+        step.setStatus(io.terrakube.api.rs.job.JobStatus.completed);
+        step = stepRepository.save(step);
+
+        FileUtils.writeStringToFile(
+                new File(
+                        String.format(OUTPUT_DIRECTORY, FileUtils.getUserDirectoryPath(), org.getId().toString(), String.valueOf(job.getId()), step.getId().toString())),
+                "SAMPLE",
+                Charset.defaultCharset().toString()
+        );
+
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("OTHER_TEAM"))
+                .when()
+                .get("/tfoutput/v1/organization/" + org.getId() + "/job/" + job.getId() + "/step/" + step.getId())
+                .then()
+                .assertThat()
+                .statusCode(HttpStatus.FORBIDDEN.value());
+    }
+
+    @Test
+    void testOutputNotFoundForMismatchedOrganization() throws IOException {
+        Organization org = organizationRepository.findById(UUID.fromString("d9b58bd3-f3fc-4056-a026-1163297e80a8")).orElseThrow();
+        Workspace ws = workspaceRepository.findById(UUID.fromString("5ed411ca-7ab8-4d2f-b591-02d0d5788afc")).orElseThrow();
+        Job job = new Job();
+        job.setOrganization(org);
+        job.setWorkspace(ws);
+        job.setStatus(io.terrakube.api.rs.job.JobStatus.completed);
+        job = jobRepository.save(job);
+
+        Step step = new Step();
+        step.setJob(job);
+        step.setStepNumber(104);
+        step.setStatus(io.terrakube.api.rs.job.JobStatus.completed);
+        step = stepRepository.save(step);
+
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+                .when()
+                .get("/tfoutput/v1/organization/" + UUID.randomUUID() + "/job/" + job.getId() + "/step/" + step.getId())
+                .then()
+                .assertThat()
+                .statusCode(HttpStatus.NOT_FOUND.value());
+    }
+
 }
+

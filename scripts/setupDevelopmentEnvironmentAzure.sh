@@ -48,6 +48,7 @@ function generateApiVars(){
 
   echo "TerrakubeUiURL=$TerrakubeUiURL" >> .envApi
   echo "spring_profiles_active=demo" >> .envApi
+  echo "AgentSsrfBlockPrivateNetworks=false" >> .envApi
   echo "DexClientId=$DexClientId" >> .envApi
   echo "TerrakubeToolsRepository=$TerrakubeToolsRepository" >> .envApi
   echo "TerrakubeToolsBranch=$TerrakubeToolsBranch" >> .envApi

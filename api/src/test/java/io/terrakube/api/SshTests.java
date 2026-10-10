@@ -145,7 +145,7 @@ public class SshTests extends ServerApplicationTests {
 
         //Read the vcs connection as the registry include the access token
         given()
-                .headers("Authorization", "Bearer " + generateSystemToken())
+                .headers("Authorization", "Bearer " + generateRegistryToken())
                 .when()
                 .get("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/ssh/"+sshId)
                 .then()

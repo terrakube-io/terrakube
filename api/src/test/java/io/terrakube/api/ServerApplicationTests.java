@@ -37,6 +37,7 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -161,12 +162,25 @@ class ServerApplicationTests {
         return generateSystemToken(new HashMap<>());
     }
 
+    public String generateExecutorToken() {
+        return generateSystemToken("TerrakubeInternal (EXECUTOR)", new HashMap<>());
+    }
+
+    public String generateRegistryToken() {
+        return generateSystemToken("TerrakubeInternal (REGISTRY)", new HashMap<>());
+    }
+
     public String generateSystemToken(Map<String, Object> extraClaims) {
+        String subject = (String) extraClaims.getOrDefault("sub", "TerrakubeInternal (EXECUTOR)");
+        return generateSystemToken(subject, extraClaims);
+    }
+
+    public String generateSystemToken(String subject, Map<String, Object> extraClaims) {
         SecretKey key = Keys.hmacShaKeyFor(Decoders.BASE64URL.decode(this.base64KeyInternal));
 
         var builder = Jwts.builder()
                 .setIssuer(ISSUER_INTERNAL)
-                .setSubject(String.format("%s (Token)", "Terrakube Test"))
+                .setSubject(subject)
                 .setAudience(ISSUER_INTERNAL)
                 .setId(UUID.randomUUID().toString())
                 .claim("email", "test@terrakube.io")

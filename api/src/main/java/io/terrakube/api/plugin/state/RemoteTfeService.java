@@ -82,6 +82,8 @@ import org.springframework.data.redis.connection.stream.StreamOffset;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.stereotype.Service;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -149,6 +151,13 @@ public class RemoteTfeService {
 
     @Autowired(required = false)
     private PolicySetRepository policySetRepository;
+
+    @Autowired(required = false)
+    private ConfigurationUploadTicketService uploadTicketService;
+
+    public void setUploadTicketService(ConfigurationUploadTicketService uploadTicketService) {
+        this.uploadTicketService = uploadTicketService;
+    }
 
     public void setPolicyEvaluationRepository(PolicyEvaluationRepository policyEvaluationRepository) {
         this.policyEvaluationRepository = policyEvaluationRepository;
@@ -1427,18 +1436,63 @@ public class RemoteTfeService {
         configurationData.getData().getAttributes().put("error", null);
         configurationData.getData().getAttributes().put("error-message", null);
         configurationData.getData().getAttributes().put("status", "pending");
-        configurationData.getData().getAttributes().put("upload-url", String
-                .format("https://%s/remote/tfe/v2/configuration-versions/%s", hostname, content.getId().toString()));
-        log.info("upload-url {}", String.format("https://%s/remote/tfe/v2/configuration-versions/%s", hostname,
-                content.getId().toString()));
+        if (this.uploadTicketService == null) {
+            this.uploadTicketService = new ConfigurationUploadTicketService(null, 3600);
+        }
+        String ticket = uploadTicketService.generateTicket(content.getId().toString());
+        String uploadUrl = String.format("https://%s/remote/tfe/v2/configuration-versions/%s?ticket=%s",
+                hostname, content.getId().toString(), ticket);
+        configurationData.getData().getAttributes().put("upload-url", uploadUrl);
+        log.debug("upload-url generated for content {}", content.getId());
         return configurationData;
     }
 
     ConfigurationData uploadFile(String contentId, InputStream inputStream) {
-        storageTypeService.createContentFile(contentId, inputStream);
-        log.info("Searching Content Id {}", contentId);
+        return uploadFile(contentId, null, inputStream);
+    }
 
-        Content content = contentRepository.getReferenceById(UUID.fromString(contentId));
+    ConfigurationData uploadFile(String contentId, String ticket, InputStream inputStream) {
+        if (ticket == null || ticket.isBlank()) {
+            log.warn("Missing upload ticket for content {}", contentId);
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Configuration version upload ticket is required");
+        }
+
+        if (this.uploadTicketService == null) {
+            this.uploadTicketService = new ConfigurationUploadTicketService(null, 3600);
+        }
+        ConfigurationUploadTicketService.TicketValidationResult result = uploadTicketService.validateTicket(ticket, contentId);
+        if (result == ConfigurationUploadTicketService.TicketValidationResult.EXPIRED) {
+            log.warn("Upload ticket for content {} has expired", contentId);
+            throw new ResponseStatusException(HttpStatus.GONE, "Configuration version upload ticket has expired");
+        } else if (result == ConfigurationUploadTicketService.TicketValidationResult.INVALID) {
+            log.warn("Invalid upload ticket for content {}", contentId);
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Invalid configuration version upload ticket");
+        }
+
+        UUID contentUuid;
+        try {
+            contentUuid = UUID.fromString(contentId);
+        } catch (IllegalArgumentException e) {
+            log.warn("Invalid contentId format: {}", contentId);
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Configuration version not found");
+        }
+
+        Optional<Content> contentOptional = contentRepository.findById(contentUuid);
+        if (contentOptional.isEmpty()) {
+            log.warn("Content with id {} not found", contentId);
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Configuration version not found");
+        }
+
+        Content content = contentOptional.get();
+
+        if (!"pending".equals(content.getStatus())) {
+            log.warn("Content {} has status '{}', rejecting duplicate or invalid upload", contentId, content.getStatus());
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Configuration version has already been uploaded or is not pending");
+        }
+
+        storageTypeService.createContentFile(contentId, inputStream);
+        log.info("Content file created in storage for contentId {}", contentId);
+
         content.setStatus("uploaded");
         contentRepository.save(content);
         return searchConfiguration(contentId);

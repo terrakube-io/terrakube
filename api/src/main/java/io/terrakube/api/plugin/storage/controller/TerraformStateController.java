@@ -54,6 +54,7 @@ public class TerraformStateController {
         this.hostname = hostname;  
     }
     @GetMapping(value = "/organization/{organizationId}/workspace/{workspaceId}/jobId/{jobId}/step/{stepId}/terraform.tfstate", produces = MediaType.APPLICATION_OCTET_STREAM_VALUE)
+    @PreAuthorize("@stateService.hasManageStatePermission(authentication, #organizationId, #workspaceId)")
     public @ResponseBody byte[] getTerraformPlanBinary(@PathVariable("organizationId") String organizationId,
             @PathVariable("workspaceId") String workspaceId, @PathVariable("jobId") String jobId,
             @PathVariable("stepId") String stepId) {

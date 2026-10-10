@@ -19,6 +19,10 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import io.terrakube.api.plugin.security.job.JobLogAccessService;
+import org.springframework.security.core.Authentication;
+import org.springframework.web.server.ResponseStatusException;
+
 import java.io.IOException;
 
 @AllArgsConstructor
@@ -33,7 +37,13 @@ public class TerraformOutputController {
 
     private final JobLogBroadcasterRegistry broadcasterRegistry;
 
+    private final JobLogAccessService jobLogAccessService;
+
     @SuppressWarnings("java:S2095") // Stream lifecycle is handed off to Spring's InputStreamResource in StepLogResponses.streamed
+    public ResponseEntity<?> getFile(String organizationId, String jobId, String stepId, String rangeHeader) {
+        return getFile(organizationId, jobId, stepId, rangeHeader, null);
+    }
+
     @GetMapping(
             value = "/organization/{organizationId}/job/{jobId}/step/{stepId}",
             produces = MediaType.APPLICATION_OCTET_STREAM_VALUE
@@ -42,7 +52,16 @@ public class TerraformOutputController {
             @PathVariable("organizationId") String organizationId,
             @PathVariable("jobId") String jobId,
             @PathVariable("stepId") String stepId,
-            @RequestHeader(value = HttpHeaders.RANGE, required = false) String rangeHeader) {
+            @RequestHeader(value = HttpHeaders.RANGE, required = false) String rangeHeader,
+            Authentication authentication) {
+
+        JobLogAccessService.LogAccessResult access = jobLogAccessService.checkAccess(authentication, organizationId, jobId, stepId);
+        if (access == JobLogAccessService.LogAccessResult.NOT_FOUND) {
+            return StepLogResponses.notFound();
+        }
+        if (access == JobLogAccessService.LogAccessResult.FORBIDDEN) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
 
         String liveLogs = streamingService.getCurrentLogs(stepId, "");
         if (!liveLogs.isEmpty()) {
@@ -80,7 +99,17 @@ public class TerraformOutputController {
             @PathVariable("organizationId") String organizationId,
             @PathVariable("jobId") String jobId,
             @PathVariable("stepId") String stepId,
-            @RequestHeader(value = "Last-Event-ID", required = false) String lastEventId) {
+            @RequestHeader(value = "Last-Event-ID", required = false) String lastEventId,
+            Authentication authentication) {
+
+        JobLogAccessService.LogAccessResult access = jobLogAccessService.checkAccess(authentication, organizationId, jobId, stepId);
+        if (access == JobLogAccessService.LogAccessResult.NOT_FOUND) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Job or step not found");
+        }
+        if (access == JobLogAccessService.LogAccessResult.FORBIDDEN) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied to job logs");
+        }
+
         return broadcasterRegistry.subscribe(jobId, stepId, parseResumeId(lastEventId));
     }
 

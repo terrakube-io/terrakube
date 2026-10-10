@@ -696,12 +696,19 @@ public class ScheduleJob implements org.quartz.Job {
         job.setStatus(JobStatus.failed);
         jobRepository.save(job);
         jobNotificationTrigger.notifyStatusChanged(job);
-        Step step = stepRepository.getReferenceById(UUID.fromString(stepId));
-        String rawMessage = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
-        String formatted = String.format("Error sending to executor: %s", rawMessage);
-        String message = formatted.substring(0, Math.min(formatted.length(), 127));
-        step.setName(message);
-        stepRepository.save(step);
+        Step step = null;
+        try {
+            step = stepRepository.findById(UUID.fromString(stepId)).orElse(null);
+        } catch (UnsupportedOperationException | NoSuchMethodError ex) {
+            step = stepRepository.getReferenceById(UUID.fromString(stepId));
+        }
+        if (step != null) {
+            String rawMessage = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+            String formatted = String.format("Error sending to executor: %s", rawMessage);
+            String message = formatted.substring(0, Math.min(formatted.length(), 127));
+            step.setName(message);
+            stepRepository.save(step);
+        }
         updateJobStepsWithStatus(job.getId(), JobStatus.failed);
         updateJobStatusOnVcs(job, JobStatus.unknown);
     }

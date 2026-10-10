@@ -2,9 +2,9 @@ package io.terrakube.api.rs.checks.vcs;
 
 import java.util.Optional;
 
-import org.springframework.beans.factory.annotation.Autowired;
-import io.terrakube.api.plugin.security.user.AuthenticatedUser;
+import io.terrakube.api.rs.checks.user.IsRegistryService;
 import io.terrakube.api.rs.vcs.GitHubAppToken;
+import org.springframework.beans.factory.annotation.Autowired;
 
 import com.yahoo.elide.annotation.SecurityCheck;
 import com.yahoo.elide.core.security.ChangeSpec;
@@ -15,12 +15,11 @@ import com.yahoo.elide.core.security.checks.OperationCheck;
 public class ReadGitHubAppInstallationToken extends OperationCheck<GitHubAppToken> {
     public static final String RULE = "read github app installation token";
 
-    @Autowired
-    AuthenticatedUser authenticatedUser;
+    private final IsRegistryService isRegistryService = new IsRegistryService();
 
     @Override
     public boolean ok(GitHubAppToken object, RequestScope requestScope, Optional<ChangeSpec> changeSpec) {
-        if(authenticatedUser.isServiceAccountInternal(requestScope.getUser()) && authenticatedUser.isSuperUser(requestScope.getUser())){
+        if (requestScope.getUser() != null && isRegistryService.ok(requestScope.getUser())) {
             return true;
         }
         return false;

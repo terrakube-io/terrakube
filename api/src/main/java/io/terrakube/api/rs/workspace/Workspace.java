@@ -33,7 +33,7 @@ import java.util.Date;
 import java.util.List;
 import java.util.UUID;
 
-@ReadPermission(expression = "user is a superuser OR workspace read filter")
+@ReadPermission(expression = "user is a superuser OR workspace read filter OR user is an executor service")
 @CreatePermission(expression = "team manage workspace OR team project limited create workspace")
 @UpdatePermission(expression = "team manage workspace OR team project limited manage workspace OR team limited manage workspace")
 @DeletePermission(expression = "team manage workspace")
@@ -121,7 +121,7 @@ public class Workspace extends GenericAuditFields {
     @OneToMany(mappedBy = "workspace")
     private List<Variable> variable;
 
-    @UpdatePermission(expression = "user is a super service")
+    @UpdatePermission(expression = "user is a super service OR executor manage workspace history OR user is an executor service")
     @OneToMany(mappedBy = "workspace")
     private List<History> history;
 

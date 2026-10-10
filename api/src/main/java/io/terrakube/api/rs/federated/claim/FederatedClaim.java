@@ -11,7 +11,7 @@ import org.hibernate.annotations.JdbcTypeCode;
 import java.sql.Types;
 import java.util.UUID;
 
-@ReadPermission(expression = "user is a superuser")
+@ReadPermission(expression = "user is a superuser OR user is a registry service")
 @CreatePermission(expression = "user is a superuser")
 @UpdatePermission(expression = "user is a superuser")
 @DeletePermission(expression = "user is a superuser")

@@ -114,6 +114,49 @@ class LocalTerraformStateImplTest {
     }
 
     @Test
+    void testDownloadTerraformPlanHttpWithAuth(@TempDir Path tempDir) throws IOException {
+        String organizationId = "org1";
+        String workspaceId = "ws1";
+        String jobId = "job1";
+        String stepId = "step1";
+        File workingDirectory = tempDir.toFile();
+
+        com.sun.net.httpserver.HttpServer server = com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress(0), 0);
+        java.util.concurrent.atomic.AtomicReference<String> authHeader = new java.util.concurrent.atomic.AtomicReference<>();
+        server.createContext("/plan.tfstate", exchange -> {
+            authHeader.set(exchange.getRequestHeaders().getFirst("Authorization"));
+            byte[] response = "http-plan-content".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, response.length);
+            exchange.getResponseBody().write(response);
+            exchange.close();
+        });
+        server.start();
+
+        try {
+            int port = server.getAddress().getPort();
+            String httpPlanUrl = "http://localhost:" + port + "/plan.tfstate";
+
+            io.terrakube.executor.service.workspace.security.WorkspaceSecurity workspaceSecurity = mock(io.terrakube.executor.service.workspace.security.WorkspaceSecurity.class);
+            when(workspaceSecurity.generateAccessToken(workspaceId)).thenReturn("mock-token-xyz");
+
+            localTerraformState.setWorkspaceSecurity(workspaceSecurity);
+
+            when(terrakubeClient.getJobById(organizationId, jobId).getData().getAttributes().getTerraformPlan())
+                    .thenReturn(httpPlanUrl);
+
+            boolean result = localTerraformState.downloadTerraformPlan(organizationId, workspaceId, jobId, stepId, workingDirectory);
+
+            assertTrue(result);
+            assertEquals("Bearer mock-token-xyz", authHeader.get());
+            File downloadedPlan = new File(workingDirectory, "terraformLibrary.tfPlan");
+            assertTrue(downloadedPlan.exists());
+            assertEquals("http-plan-content", FileUtils.readFileToString(downloadedPlan, Charset.defaultCharset()));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
     void testSaveStateJson() throws IOException {
         TerraformJob job = new TerraformJob();
         job.setOrganizationId("org1");

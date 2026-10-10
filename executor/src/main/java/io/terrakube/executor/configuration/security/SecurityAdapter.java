@@ -21,7 +21,10 @@ public class SecurityAdapter {
 
     @Bean
     @Order(1)
-    public SecurityFilterChain filterChain(HttpSecurity http, @Value("${io.terrakube.client.secretKey}") String internalJwtSecret) throws Exception {
+    public SecurityFilterChain filterChain(
+            HttpSecurity http,
+            InternalSecretLoader secretLoader) throws Exception {
+        final String effectiveSecret = secretLoader.getInternalSecret();
         http.cors(Customizer.withDefaults())
                 .authorizeHttpRequests(authz -> {
                     authz.requestMatchers("/actuator/**").permitAll()
@@ -30,7 +33,7 @@ public class SecurityAdapter {
                 .oauth2ResourceServer(oauth2 -> {
                     AuthenticationManagerResolver<HttpServletRequest> authenticationManagerResolver = ExecutorManagerResolver
                             .builder()
-                            .internalJwtSecret(internalJwtSecret)
+                            .internalJwtSecret(effectiveSecret)
                             .build();
                     oauth2.authenticationManagerResolver(authenticationManagerResolver);
                 });

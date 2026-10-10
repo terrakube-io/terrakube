@@ -6,6 +6,7 @@ import io.terrakube.client.model.response.Response;
 import io.terrakube.executor.service.executor.ExecutorCapacityGate;
 import io.terrakube.executor.service.executor.ExecutorJob;
 import io.terrakube.executor.service.mode.TerraformJob;
+import io.terrakube.executor.service.workspace.security.JobContextHolder;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.availability.AvailabilityChangeEvent;
@@ -40,7 +41,12 @@ public class OnlineModeServiceImpl {
 
         publishReadiness(ReadinessState.REFUSING_TRAFFIC);
         try {
-            updateWorkspaceFolder(terraformJob);
+            JobContextHolder.set(terraformJob);
+            try {
+                updateWorkspaceFolder(terraformJob);
+            } finally {
+                JobContextHolder.clear();
+            }
             executorJob.createJob(terraformJob);
         } catch (TaskRejectedException e) {
             // The gate was free, but the single-thread async pool (see SpringAsyncAutoConfiguration)

@@ -18,7 +18,11 @@ import io.terrakube.api.plugin.security.rbac.RbacService;
 import io.terrakube.api.rs.workspace.Workspace;
 import lombok.AllArgsConstructor;
 
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
+
+import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 
 @SecurityCheck(WorkspaceReadFilter.RULE)
 @AllArgsConstructor
@@ -31,6 +35,18 @@ public class WorkspaceReadFilter extends FilterExpressionCheck<Workspace> {
 
     @Override
     public FilterExpression getFilterExpression(Type<?> entityClass, RequestScope requestScope) {
+        if (requestScope.getUser() != null && requestScope.getUser().getPrincipal() instanceof JwtAuthenticationToken jwt) {
+            Map<String, Object> claims = jwt.getTokenAttributes();
+            if ("TerrakubeInternal".equals(claims.get("iss")) && claims.get("workspaceId") != null) {
+                try {
+                    UUID wsId = UUID.fromString(claims.get("workspaceId").toString());
+                    return new InPredicate(path(entityClass, requestScope, "id"), wsId);
+                } catch (IllegalArgumentException e) {
+                    return new FalsePredicate(path(entityClass, requestScope, "id"));
+                }
+            }
+        }
+
         Object[] groups = groupService.getEffectiveGroups(requestScope.getUser()).toArray();
         if (groups.length == 0) {
             return new FalsePredicate(path(entityClass, requestScope, "id"));
@@ -52,6 +68,18 @@ public class WorkspaceReadFilter extends FilterExpressionCheck<Workspace> {
     @Override
     public boolean applyPredicateToObject(
             Workspace workspace, FilterPredicate predicate, RequestScope requestScope) {
+        if (requestScope.getUser() != null && requestScope.getUser().getPrincipal() instanceof JwtAuthenticationToken jwt) {
+            Map<String, Object> claims = jwt.getTokenAttributes();
+            if ("TerrakubeInternal".equals(claims.get("iss")) && claims.get("workspaceId") != null) {
+                try {
+                    UUID wsId = UUID.fromString(claims.get("workspaceId").toString());
+                    return workspace.getId() != null && workspace.getId().equals(wsId);
+                } catch (IllegalArgumentException e) {
+                    return false;
+                }
+            }
+        }
+
         // Single-resource checks cannot traverse relations hidden by Elide security.
         Set<String> groups = groupService.getEffectiveGroups(requestScope.getUser());
         if (groups.isEmpty()) {

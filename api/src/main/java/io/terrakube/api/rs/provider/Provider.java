@@ -14,7 +14,7 @@ import java.sql.Types;
 import java.util.List;
 import java.util.UUID;
 
-@ReadPermission(expression = "team view provider")
+@ReadPermission(expression = "team view provider OR user is a registry service")
 @CreatePermission(expression = "team manage provider")
 @UpdatePermission(expression = "team manage provider")
 @DeletePermission(expression = "team manage provider")

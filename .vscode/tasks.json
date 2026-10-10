@@ -45,6 +45,11 @@
       "label": "yarn-install",
       "type": "shell",
       "command": "if [ \"$USER\" = \"vscode\" ]; then echo \"Installing UI dependencies...\"; cd ui && export COREPACK_ENABLE_DOWNLOAD_PROMPT=0 NODE_EXTRA_CA_CERTS=/usr/local/share/ca-certificates/terrakube-extra-ca-bundle.pem && corepack enable && yarn install && cd ..; fi"
+    },
+    {
+      "label": "setup-secret",
+      "type": "shell",
+      "command": "echo -n 'S2JeOGNNZXJQTlpWNmhTITkha2NEKkt1VVBVQmFeQjM=' > /workspaces/terrakube/internal-secret.txt 2>/dev/null || true; chmod 600 /workspaces/terrakube/internal-secret.txt 2>/dev/null || true; echo -n 'S2JeOGNNZXJQTlpWNmhTITkha2NEKkt1VVBVQmFeQjM=' > internal-secret.txt 2>/dev/null || true; chmod 600 internal-secret.txt 2>/dev/null || true"
     }
   ]
 }

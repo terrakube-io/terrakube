@@ -1,7 +1,11 @@
 package io.terrakube.api.rs.job.step;
 
+import com.yahoo.elide.annotation.CreatePermission;
+import com.yahoo.elide.annotation.DeletePermission;
 import com.yahoo.elide.annotation.Exclude;
 import com.yahoo.elide.annotation.Include;
+import com.yahoo.elide.annotation.ReadPermission;
+import com.yahoo.elide.annotation.UpdatePermission;
 import lombok.Getter;
 import lombok.Setter;
 import org.hibernate.annotations.JdbcTypeCode;
@@ -14,7 +18,11 @@ import jakarta.persistence.*;
 import java.sql.Types;
 import java.util.UUID;
 
-@Include
+@ReadPermission(expression = "team view job step OR team project limited view job step OR team limited view job step OR executor read job step OR user is an executor service")
+@CreatePermission(expression = "user is a super service")
+@UpdatePermission(expression = "user is a super service OR executor manage job step OR user is an executor service")
+@DeletePermission(expression = "user is a super service")
+@Include(rootLevel = false)
 @Getter
 @Setter
 @Entity(name = "step")

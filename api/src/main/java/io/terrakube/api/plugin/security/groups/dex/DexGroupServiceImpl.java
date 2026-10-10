@@ -3,8 +3,9 @@ package io.terrakube.api.plugin.security.groups.dex;
 import com.yahoo.elide.core.security.User;
 import io.terrakube.api.plugin.security.federated.FederatedLookupService;
 import io.terrakube.api.plugin.security.request.RequestScopedMemo;
-import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
@@ -18,6 +19,8 @@ import io.terrakube.api.rs.workspace.Workspace;
 import io.terrakube.api.rs.workspace.access.Access;
 
 import io.terrakube.api.rs.federated.Federated;
+import io.terrakube.api.plugin.security.token.InternalTokenClassifier;
+import io.terrakube.api.plugin.security.token.InternalTokenType;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -30,7 +33,6 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
-@AllArgsConstructor
 @Slf4j
 @Service
 @ConditionalOnProperty(prefix = "io.terrakube.api.groups", name = "type", havingValue = "DEX")
@@ -43,6 +45,30 @@ public class DexGroupServiceImpl implements GroupService {
     ProjectAccessRepository projectAccessRepository;
 
     FederatedLookupService federatedLookupService;
+
+    private String instanceOwner;
+
+    public DexGroupServiceImpl(
+            RedisTemplate redisTemplate,
+            AccessRepository accessRepository,
+            ProjectAccessRepository projectAccessRepository,
+            FederatedLookupService federatedLookupService) {
+        this(redisTemplate, accessRepository, projectAccessRepository, federatedLookupService, null);
+    }
+
+    @Autowired
+    public DexGroupServiceImpl(
+            RedisTemplate redisTemplate,
+            AccessRepository accessRepository,
+            ProjectAccessRepository projectAccessRepository,
+            FederatedLookupService federatedLookupService,
+            @Value("${io.terrakube.owner:}") String instanceOwner) {
+        this.redisTemplate = redisTemplate;
+        this.accessRepository = accessRepository;
+        this.projectAccessRepository = projectAccessRepository;
+        this.federatedLookupService = federatedLookupService;
+        this.instanceOwner = instanceOwner;
+    }
 
     private static final String REDIS_ORG_LIMITED = "org_%s_%s";
 
@@ -60,9 +86,11 @@ public class DexGroupServiceImpl implements GroupService {
     @Override
     public boolean isServiceMember(User user, String group) {
         JwtAuthenticationToken principal = ((JwtAuthenticationToken) user.getPrincipal());
-        if ("TerrakubeInternal".equals(principal.getTokenAttributes().get("iss"))) {
-            log.debug("TerrakubeInternal Client Service Group Membership");
-            return true;
+        Map<String, Object> tokenAttributes = principal.getTokenAttributes();
+        if (InternalTokenClassifier.classify(tokenAttributes) != InternalTokenType.NOT_INTERNAL) {
+            log.debug("Internal machine token ({}) cannot have user service group membership for group {}",
+                    tokenAttributes.get("sub"), group);
+            return false;
         }
         // Federated tokens usually carry no "groups" claim; getEffectiveGroups merges the federated names in.
         return isMember(user, group);
@@ -80,6 +108,11 @@ public class DexGroupServiceImpl implements GroupService {
         JwtAuthenticationToken principal = (JwtAuthenticationToken) user.getPrincipal();
         Map<String, Object> tokenAttributes = principal.getTokenAttributes();
         Set<String> groups = new LinkedHashSet<>();
+
+        if (InternalTokenClassifier.classify(tokenAttributes) != InternalTokenType.NOT_INTERNAL) {
+            log.debug("Internal machine token: returning empty effective groups");
+            return groups;
+        }
 
         Object tokenGroups = tokenAttributes.get("groups");
         if (tokenGroups instanceof Object[] values) {

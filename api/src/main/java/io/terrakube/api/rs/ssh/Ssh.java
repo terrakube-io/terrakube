@@ -12,7 +12,7 @@ import jakarta.persistence.*;
 import java.sql.Types;
 import java.util.UUID;
 
-@ReadPermission(expression = "team view ssh")
+@ReadPermission(expression = "team view ssh OR user is a registry service")
 @CreatePermission(expression = "team manage ssh")
 @UpdatePermission(expression = "team manage ssh")
 @DeletePermission(expression = "team manage ssh")
