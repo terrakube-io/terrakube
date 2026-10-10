@@ -431,6 +431,43 @@ class PlanStructuredOutputServiceTest {
         Mockito.verify(jobContextService).saveContext(Mockito.eq("o"), Mockito.eq("1"), Mockito.any());
     }
 
+    @Test
+    @SuppressWarnings("unchecked")
+    void publishRenderedPlanTextSavesItUnderItsOwnContextKeyByStep() {
+        JobContextService jobContextService = Mockito.mock(JobContextService.class);
+        Mockito.when(jobContextService.getCurrentContext("o", "1")).thenReturn(new HashMap<>());
+        PlanStructuredOutputService service = new PlanStructuredOutputService(jobContextService, new ObjectMapper(), new TerraformClient());
+
+        service.publishRenderedPlanText("o", "1", "step-1", "  # aws_instance.foo will be created\n\nPlan: 1 to add, 0 to change, 0 to destroy.");
+
+        ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
+        Mockito.verify(jobContextService).saveContext(Mockito.eq("o"), Mockito.eq("1"), captor.capture());
+        Map<String, Object> byStep = (Map<String, Object>) captor.getValue().get(PlanStructuredOutputService.CONTEXT_PLAN_RENDERED_TEXT_KEY);
+        assertTrue(((String) byStep.get("step-1")).contains("Plan: 1 to add, 0 to change, 0 to destroy."));
+    }
+
+    @Test
+    void publishRenderedPlanTextDoesNothingForBlankText() {
+        JobContextService jobContextService = Mockito.mock(JobContextService.class);
+        PlanStructuredOutputService service = new PlanStructuredOutputService(jobContextService, new ObjectMapper(), new TerraformClient());
+
+        service.publishRenderedPlanText("o", "1", "step-1", "   ");
+        service.publishRenderedPlanText("o", "1", "step-1", null);
+
+        Mockito.verify(jobContextService, Mockito.never()).getCurrentContext(Mockito.any(), Mockito.any());
+        Mockito.verify(jobContextService, Mockito.never()).saveContext(Mockito.any(), Mockito.any(), Mockito.any());
+    }
+
+    @Test
+    void publishRenderedPlanTextSwallowsAContextFailure() {
+        JobContextService jobContextService = Mockito.mock(JobContextService.class);
+        Mockito.when(jobContextService.getCurrentContext("o", "1")).thenThrow(new RuntimeException("boom"));
+        PlanStructuredOutputService service = new PlanStructuredOutputService(jobContextService, new ObjectMapper(), new TerraformClient());
+
+        org.junit.jupiter.api.Assertions.assertDoesNotThrow(
+                () -> service.publishRenderedPlanText("o", "1", "step-1", "some diff"));
+    }
+
     // #3602: the show -json summary used to be a single synchronous POST after the queue drain, so
     // one transient 503 left the stale live snapshot (often empty + noChangePlan) as the result.
     @Test

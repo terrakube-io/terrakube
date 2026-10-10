@@ -90,7 +90,7 @@ public class PrCommentService {
     public void postPlanResult(Job job) {
         if (job.getPrNumber() == null || job.getPrNumber() == 0) return;
 
-        String planOutput = fetchStepOutputText(job);
+        String planOutput = fetchPlanDiffText(job);
         String markdownComment = formatPlanComment(job, planOutput);
 
         String existingThreadCommentId = findReusablePlanCommentId(job);
@@ -217,6 +217,33 @@ public class PrCommentService {
         }
 
         return lastStepOutput;
+    }
+
+    /**
+     * Prefers the plan's rendered diff persisted separately from the step's console output (see
+     * {@code PlanStructuredOutputService.publishRenderedPlanText}, #3673). Falls back to the raw
+     * step output when that field isn't present (older jobs, or a plan step-less TCL flow).
+     */
+    private String fetchPlanDiffText(Job job) {
+        try {
+            String contextJson = storageTypeService.getContext(job.getId());
+            if (contextJson != null && !contextJson.isBlank()) {
+                Map<String, Object> context = objectMapper.readValue(contextJson, new TypeReference<Map<String, Object>>() {
+                });
+                // Key must match PlanStructuredOutputService.CONTEXT_PLAN_RENDERED_TEXT_KEY.
+                if (context.get("planRenderedText") instanceof Map<?, ?> byStep) {
+                    for (Object value : byStep.values()) {
+                        if (value instanceof String text && !text.isBlank()) {
+                            return text;
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.debug("No rendered plan text in context for job {}: {}", job.getId(), e.getMessage());
+        }
+
+        return fetchStepOutputText(job);
     }
 
     private String matchRunSummary(String output) {
