@@ -1461,21 +1461,30 @@ export const StructuredPlanOutput = ({
     });
   }, [addressFilter, operationFilters, preparedRows, showDataSources]);
 
+  // A no-op row only exists in preparedRows/filteredRows to keep its diagnostic reachable - it
+  // isn't a change, so it shouldn't inflate the "Showing X of Y changes" count below (#3674 PR
+  // feedback).
+  const changedRowCount = useMemo(() => preparedRows.filter((row) => row.action !== "no-op").length, [preparedRows]);
+  const changedFilteredRowCount = useMemo(
+    () => filteredRows.filter((row) => row.action !== "no-op").length,
+    [filteredRows]
+  );
+
   // Only rows a filter hid, not ones just collapsed - those already show their own diagnostics
   // one click away, so mirroring them here too would duplicate them (#3674).
-  const filteredOutRowKeys = useMemo(() => {
+  const filteredOutRows = useMemo(() => {
     const visibleKeys = new Set(filteredRows.map((row) => row.key));
     return preparedRows.filter((row) => !visibleKeys.has(row.key));
   }, [preparedRows, filteredRows]);
 
   const resourceDiagnostics = useMemo(() => {
-    return filteredOutRowKeys.flatMap((row) => {
+    return filteredOutRows.flatMap((row) => {
       if (!row.applyDiagnostics || !row.applyDiagnostics.length) {
         return [];
       }
       return row.applyDiagnostics.map((diagnostic) => ({ address: row.resourceLabel, diagnostic }));
     });
-  }, [filteredOutRowKeys]);
+  }, [filteredOutRows]);
 
   const hasJobDiagnostics = Boolean(jobDiagnostics && jobDiagnostics.length);
 
@@ -1704,7 +1713,7 @@ export const StructuredPlanOutput = ({
           <div className="structured-plan-toolbarMeta">
             {isFilteredView ? (
               <span>
-                Showing {filteredRows.length} of {preparedRows.length} change{getPluralSuffix(preparedRows.length)}
+                Showing {changedFilteredRowCount} of {changedRowCount} change{getPluralSuffix(changedRowCount)}
               </span>
             ) : null}
             {terraformVersion ? <span>{terraformVersion}</span> : null}

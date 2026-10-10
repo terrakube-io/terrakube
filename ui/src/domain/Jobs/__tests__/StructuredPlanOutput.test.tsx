@@ -998,6 +998,57 @@ describe("StructuredPlanOutput", () => {
     expect(screen.getByText(/deprecated argument on foo/)).toBeInTheDocument();
   });
 
+  // #3674 PR feedback: a no-op row kept around only for its diagnostic isn't a change, so it
+  // shouldn't inflate the "Showing X of Y changes" count.
+  it("excludes a no-op resource kept for its diagnostic from the 'Showing X of Y changes' count", () => {
+    render(
+      <StructuredPlanOutput
+        applyMode
+        changes={[
+          { address: "aws_instance.example", action: "create", actions: ["create"], after: {}, status: "applied" },
+          {
+            address: "random_pet.example_noop",
+            action: "no-op",
+            actions: ["no-op"],
+            status: "applied",
+            diagnostics: [{ severity: "warning", summary: "argument is deprecated" }],
+          },
+        ]}
+      />
+    );
+
+    // Filter text that matches both addresses - isFilteredView becomes true without hiding
+    // either row, isolating the count itself from the filtered-out-diagnostics behavior.
+    fireEvent.change(screen.getByPlaceholderText(/filter resources by address/i), { target: { value: "example" } });
+
+    expect(screen.getByRole("button", { name: /aws_instance\.example/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /random_pet\.example_noop/i })).toBeInTheDocument();
+    expect(screen.getByText("Showing 1 of 1 change")).toBeInTheDocument();
+  });
+
+  // #3674: a visible row already shows its own diagnostic one click away - mirroring it into the
+  // always-visible panel too would duplicate it.
+  it("does not mirror a visible (non-filtered-out) row's diagnostic into the always-visible panel", () => {
+    render(
+      <StructuredPlanOutput
+        applyMode
+        changes={[
+          {
+            address: "aws_instance.foo",
+            action: "create",
+            actions: ["create"],
+            after: {},
+            status: "applied",
+            diagnostics: [{ severity: "warning", summary: "deprecated argument on foo" }],
+          },
+        ]}
+      />
+    );
+
+    expect(screen.getByRole("button", { name: /aws_instance\.foo/i })).toBeInTheDocument();
+    expect(document.querySelector(".structured-plan-jobDiagnostics")).not.toBeInTheDocument();
+  });
+
   it("does not render an Outputs section when there are no outputs", () => {
     render(
       <StructuredPlanOutput
