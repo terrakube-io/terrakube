@@ -216,7 +216,7 @@ export const DependencyGraph = () => {
           showIcon
           style={{ marginBottom: 12 }}
           message={`${scopedData.workspaces.length} workspaces in this view - that's a lot to scan at once.`}
-          description="Search for a workspace above, or open its own scoped dependency graph from its Run Triggers page, for a much smaller, more readable view."
+          description="Search for a workspace above, or open its own scoped dependency graph from its Run triggers page, for a much smaller, more readable view."
         />
       )}
       <Typography.Paragraph type="secondary" style={{ marginTop: -8, marginBottom: 12 }}>

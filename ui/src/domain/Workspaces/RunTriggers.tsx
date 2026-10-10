@@ -12,6 +12,7 @@ import {
   Switch,
   Table,
   Tag,
+  Tooltip,
   Typography,
 } from "antd";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -62,11 +63,28 @@ const SYNC_MODE_TAG_COLOR: Record<RunTriggerSynchronizationMode, string> = {
   [RunTriggerSynchronizationMode.All]: "purple",
 };
 
+// Reuses the same plain-English text the add/edit form already shows for these values, so the
+// table doesn't make a user open Edit just to find out what an enum they're scanning means.
+const descriptionOf = (options: { label: string; value: string }[], value: string) =>
+  options.find((option) => option.value === value)?.label.split(" - ").slice(1).join(" - ");
+
 const SYNC_MODE_COLUMN = {
   title: "Sync mode",
   key: "synchronizationMode",
   render: (_: string, record: RunTriggerRow) => (
-    <Tag color={SYNC_MODE_TAG_COLOR[record.synchronizationMode]}>{record.synchronizationMode}</Tag>
+    <Tooltip title={descriptionOf(SYNCHRONIZATION_MODE_OPTIONS, record.synchronizationMode)}>
+      <Tag color={SYNC_MODE_TAG_COLOR[record.synchronizationMode]}>{record.synchronizationMode}</Tag>
+    </Tooltip>
+  ),
+};
+
+const ON_DESTROY_COLUMN = {
+  title: "On destroy",
+  key: "onDestroy",
+  render: (_: string, record: RunTriggerRow) => (
+    <Tooltip title={descriptionOf(ON_DESTROY_OPTIONS, record.onDestroy)}>
+      <Tag>{record.onDestroy}</Tag>
+    </Tooltip>
   ),
 };
 
@@ -297,6 +315,7 @@ export const RunTriggers = ({ organizationId, workspaceId, workspaceName, manage
           ),
       },
       SYNC_MODE_COLUMN,
+      ON_DESTROY_COLUMN,
       {
         title: "Enabled",
         key: "enabled",
@@ -358,6 +377,7 @@ export const RunTriggers = ({ organizationId, workspaceId, workspaceName, manage
           ),
       },
       SYNC_MODE_COLUMN,
+      ON_DESTROY_COLUMN,
       {
         title: "Enabled",
         key: "enabled",
@@ -488,7 +508,7 @@ export const RunTriggers = ({ organizationId, workspaceId, workspaceName, manage
             <Form.Item
               name="onDestroyPlanTemplateId"
               label="Plan-only template"
-              rules={[{ required: true, message: "A plan-only template is required for the PLAN_ONLY policy!" }]}
+              rules={[{ required: true, message: "A plan-only template is required when a destroy only plans here!" }]}
               extra="Dispatched instead of the normal template on a destroy, so the drift is only ever planned."
             >
               <Select
