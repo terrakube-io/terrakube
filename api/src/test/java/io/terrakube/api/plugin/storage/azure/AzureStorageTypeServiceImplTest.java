@@ -42,6 +42,8 @@ class AzureStorageTypeServiceImplTest {
     void setUp() {
         azureStorageTypeService = AzureStorageTypeServiceImpl.builder()
                 .blobServiceClient(blobServiceClient)
+                .storageRetryMetrics(new io.terrakube.api.plugin.storage.StorageRetryMetrics(
+                        new io.micrometer.core.instrument.simple.SimpleMeterRegistry()))
                 .build();
     }
 

@@ -2,11 +2,13 @@ package io.terrakube.api.plugin.storage.local;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
+import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.io.input.BoundedInputStream;
+import io.terrakube.api.plugin.storage.StorageRetryMetrics;
 import io.terrakube.api.plugin.storage.StorageTypeService;
 import io.terrakube.api.plugin.storage.StorageUnavailableException;
 import io.terrakube.api.plugin.storage.model.ByteRange;
@@ -34,10 +36,8 @@ public class LocalStorageTypeServiceImpl implements StorageTypeService {
     private static final String LOCAL_BACKEND_DIRECTORY = "/.terraform-spring-boot/local/backend/%s/%s/terraform.tfstate";
     private static final String LOCAL_HISTORY_BACKEND_DIRECTORY = "/.terraform-spring-boot/local/state/%s/%s/state/%s.raw.json";
 
-    // Short, bounded retry for a genuine I/O failure on the single underlying call - mirrors the
-    // AWS backend's retry window (#3671).
-    private static final int STORAGE_MAX_ATTEMPTS = 3;
-    private static final long[] STORAGE_BACKOFF_MILLIS = {200, 500};
+    @NonNull
+    private StorageRetryMetrics storageRetryMetrics;
 
     // File.exists() returning false is the not-found signal, unchanged from before. An
     // IOException reading a file that does exist is a genuine failure (disk, permissions) -
@@ -48,50 +48,20 @@ public class LocalStorageTypeServiceImpl implements StorageTypeService {
         if (!file.exists()) {
             return new byte[0];
         }
-        Exception lastFailure = null;
-        for (int attempt = 1; attempt <= STORAGE_MAX_ATTEMPTS; attempt++) {
-            try {
-                return IOUtils.toByteArray(new FileInputStream(file));
-            } catch (IOException e) {
-                lastFailure = e;
-                if (attempt < STORAGE_MAX_ATTEMPTS) {
-                    log.warn("Local read attempt {} failed for {}, retrying: {}", attempt, path, e.getMessage());
-                    sleepBackoff(STORAGE_BACKOFF_MILLIS[attempt - 1]);
-                }
-            }
-        }
-        throw new StorageUnavailableException("Local read failed for " + path, lastFailure);
+        return storageRetryMetrics.withRetry("local", "read", () -> IOUtils.toByteArray(new FileInputStream(file)));
     }
 
     // Shared by every write path (state, context, policy evaluation, and the CLI-driven
     // configuration tarball) - a failed write now fails the caller instead of logging and
     // returning as if it succeeded (#3671).
     private void writeFile(String path, byte[] data) {
-        File file = new File(FileUtils.getUserDirectoryPath().concat(FilenameUtils.separatorsToSystem(path)));
-        Exception lastFailure = null;
-        for (int attempt = 1; attempt <= STORAGE_MAX_ATTEMPTS; attempt++) {
-            try {
-                FileUtils.forceMkdir(file.getParentFile());
-                FileUtils.writeByteArrayToFile(file, data);
-                log.info("Write file {} completed", path);
-                return;
-            } catch (IOException e) {
-                lastFailure = e;
-                if (attempt < STORAGE_MAX_ATTEMPTS) {
-                    log.warn("Local write attempt {} failed for {}, retrying: {}", attempt, path, e.getMessage());
-                    sleepBackoff(STORAGE_BACKOFF_MILLIS[attempt - 1]);
-                }
-            }
-        }
-        throw new StorageUnavailableException("Local write failed for " + path, lastFailure);
-    }
-
-    private void sleepBackoff(long millis) {
-        try {
-            Thread.sleep(millis);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
+        storageRetryMetrics.withRetry("local", "write", () -> {
+            File file = new File(FileUtils.getUserDirectoryPath().concat(FilenameUtils.separatorsToSystem(path)));
+            FileUtils.forceMkdir(file.getParentFile());
+            FileUtils.writeByteArrayToFile(file, data);
+            log.info("Write file {} completed", path);
+            return null;
+        });
     }
 
     @Override

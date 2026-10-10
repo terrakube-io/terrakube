@@ -26,7 +26,8 @@ class LocalStorageTypeServiceImplTest {
     @TempDir
     Path tempDir;
 
-    private LocalStorageTypeServiceImpl localStorageTypeService = new LocalStorageTypeServiceImpl();
+    private LocalStorageTypeServiceImpl localStorageTypeService = new LocalStorageTypeServiceImpl(
+            new io.terrakube.api.plugin.storage.StorageRetryMetrics(new io.micrometer.core.instrument.simple.SimpleMeterRegistry()));
 
     private File writeStepOutput(String content) throws IOException {
         File file = tempDir.resolve(".terraform-spring-boot/local/output/o/j/s.tfoutput").toFile();

@@ -37,6 +37,8 @@ class GcpStorageTypeServiceImplTest {
         gcpStorageTypeService = GcpStorageTypeServiceImpl.builder()
                 .storage(storage)
                 .bucketName(bucketName)
+                .storageRetryMetrics(new io.terrakube.api.plugin.storage.StorageRetryMetrics(
+                        new io.micrometer.core.instrument.simple.SimpleMeterRegistry()))
                 .build();
     }
 

@@ -6,6 +6,7 @@ import com.google.cloud.storage.*;
 import lombok.Builder;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
+import io.terrakube.api.plugin.storage.StorageRetryMetrics;
 import io.terrakube.api.plugin.storage.StorageTypeService;
 import io.terrakube.api.plugin.storage.StorageUnavailableException;
 import io.terrakube.api.plugin.storage.model.ByteRange;
@@ -33,81 +34,49 @@ public class GcpStorageTypeServiceImpl implements StorageTypeService {
 
     private static final String TERRAFORM_TAR_GZ = "content/%s/terraformContent.tar.gz";
 
-    // Short, bounded retry for a genuine SDK/network failure on the single underlying call -
-    // mirrors the AWS backend's retry window (#3671).
-    private static final int STORAGE_MAX_ATTEMPTS = 3;
-    private static final long[] STORAGE_BACKOFF_MILLIS = {200, 500};
-
     @NonNull
     private String bucketName;
     @NonNull
     private Storage storage;
+    @NonNull
+    private StorageRetryMetrics storageRetryMetrics;
 
     // storage.get() returning null is the SDK's own not-found signal, unchanged from before. Any
     // thrown exception is a genuine failure (network, auth, throttling) - retried, then thrown as
     // StorageUnavailableException instead of silently collapsing into the same empty result as a
     // real "not found" (#3671).
     private byte[] downloadBlob(String blobKey) {
-        BlobId blobId = BlobId.of(bucketName, blobKey);
-        Exception lastFailure = null;
-        for (int attempt = 1; attempt <= STORAGE_MAX_ATTEMPTS; attempt++) {
-            try {
-                log.info("Searching: {}", blobKey);
-                Blob blob = storage.get(blobId);
-                if (blob == null) {
-                    return new byte[0];
-                }
-                return blob.getContent();
-            } catch (Exception e) {
-                lastFailure = e;
-                if (attempt < STORAGE_MAX_ATTEMPTS) {
-                    log.warn("GCP read attempt {} failed for {}, retrying: {}", attempt, blobKey, e.getMessage());
-                    sleepBackoff(STORAGE_BACKOFF_MILLIS[attempt - 1]);
-                }
+        return storageRetryMetrics.withRetry("gcp", "read", () -> {
+            log.info("Searching: {}", blobKey);
+            Blob blob = storage.get(BlobId.of(bucketName, blobKey));
+            if (blob == null) {
+                return new byte[0];
             }
-        }
-        throw new StorageUnavailableException("GCP read failed for " + blobKey, lastFailure);
+            return blob.getContent();
+        });
     }
 
     // Shared by every write path (state, context, policy evaluation, and the CLI-driven
     // configuration tarball) - a failed write now fails the caller instead of logging and
     // returning as if it succeeded (#3671).
     private void uploadBlob(String blobKey, byte[] data, String contentType) {
-        BlobId blobId = BlobId.of(bucketName, blobKey);
-        Exception lastFailure = null;
-        for (int attempt = 1; attempt <= STORAGE_MAX_ATTEMPTS; attempt++) {
-            try {
-                Blob blob = storage.get(blobId);
-                if (blob != null) {
-                    try (WritableByteChannel channel = blob.writer()) {
-                        channel.write(ByteBuffer.wrap(data));
-                    }
-                } else {
-                    BlobInfo.Builder builder = BlobInfo.newBuilder(blobId);
-                    if (contentType != null) {
-                        builder.setContentType(contentType);
-                    }
-                    storage.create(builder.build(), data);
+        storageRetryMetrics.withRetry("gcp", "write", () -> {
+            BlobId blobId = BlobId.of(bucketName, blobKey);
+            Blob blob = storage.get(blobId);
+            if (blob != null) {
+                try (WritableByteChannel channel = blob.writer()) {
+                    channel.write(ByteBuffer.wrap(data));
                 }
-                log.info("Upload Object {} completed", blobKey);
-                return;
-            } catch (Exception e) {
-                lastFailure = e;
-                if (attempt < STORAGE_MAX_ATTEMPTS) {
-                    log.warn("GCP write attempt {} failed for {}, retrying: {}", attempt, blobKey, e.getMessage());
-                    sleepBackoff(STORAGE_BACKOFF_MILLIS[attempt - 1]);
+            } else {
+                BlobInfo.Builder builder = BlobInfo.newBuilder(blobId);
+                if (contentType != null) {
+                    builder.setContentType(contentType);
                 }
+                storage.create(builder.build(), data);
             }
-        }
-        throw new StorageUnavailableException("GCP write failed for " + blobKey, lastFailure);
-    }
-
-    private void sleepBackoff(long millis) {
-        try {
-            Thread.sleep(millis);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
+            log.info("Upload Object {} completed", blobKey);
+            return null;
+        });
     }
 
     @Override

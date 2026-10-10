@@ -11,6 +11,7 @@ import com.azure.storage.blob.models.ListBlobsOptions;
 import lombok.Builder;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
+import io.terrakube.api.plugin.storage.StorageRetryMetrics;
 import io.terrakube.api.plugin.storage.StorageTypeService;
 import io.terrakube.api.plugin.storage.StorageUnavailableException;
 import io.terrakube.api.plugin.storage.model.ByteRange;
@@ -36,71 +37,45 @@ public class AzureStorageTypeServiceImpl implements StorageTypeService {
 
     private static final String TERRAFORM_TAR_GZ = "content/%s/terraformContent.tar.gz";
 
-    // Short, bounded retry for a genuine SDK/network failure on the single underlying call -
-    // mirrors the AWS backend's retry window (#3671).
-    private static final int STORAGE_MAX_ATTEMPTS = 3;
-    private static final long[] STORAGE_BACKOFF_MILLIS = {200, 500};
-
     @NonNull
     BlobServiceClient blobServiceClient;
+
+    @NonNull
+    StorageRetryMetrics storageRetryMetrics;
 
     // A 404 (genuinely not found) returns empty, unchanged from before. Any other failure
     // (network, auth, throttling) is retried, then thrown as StorageUnavailableException instead
     // of silently collapsing into the same empty result as a real "not found" (#3671).
     private byte[] downloadBlob(String containerName, String blobName) {
-        BlobContainerClient containerClient = blobServiceClient.getBlobContainerClient(containerName);
-        BlobClient blobClient = containerClient.getBlobClient(blobName);
-        Exception lastFailure = null;
-        for (int attempt = 1; attempt <= STORAGE_MAX_ATTEMPTS; attempt++) {
+        return storageRetryMetrics.withRetry("azure", "read", () -> {
+            BlobContainerClient containerClient = blobServiceClient.getBlobContainerClient(containerName);
+            BlobClient blobClient = containerClient.getBlobClient(blobName);
             try {
                 log.info("Searching: /{}/{}", containerName, blobName);
                 return blobClient.downloadContent().toBytes();
-            } catch (Exception e) {
-                if (e instanceof BlobStorageException bse && bse.getStatusCode() == 404) {
+            } catch (BlobStorageException e) {
+                if (e.getStatusCode() == 404) {
                     return new byte[0];
                 }
-                lastFailure = e;
-                if (attempt < STORAGE_MAX_ATTEMPTS) {
-                    log.warn("Azure read attempt {} failed for {}/{}, retrying: {}", attempt, containerName, blobName, e.getMessage());
-                    sleepBackoff(STORAGE_BACKOFF_MILLIS[attempt - 1]);
-                }
+                throw e;
             }
-        }
-        throw new StorageUnavailableException("Azure read failed for " + containerName + "/" + blobName, lastFailure);
+        });
     }
 
     // Shared by every write path (state, context, policy evaluation, and the CLI-driven
     // configuration tarball) - a failed write now fails the caller instead of logging and
     // returning as if it succeeded (#3671).
     private void uploadBlob(String containerName, String blobName, byte[] data) {
-        BlobContainerClient containerClient = blobServiceClient.getBlobContainerClient(containerName);
-        Exception lastFailure = null;
-        for (int attempt = 1; attempt <= STORAGE_MAX_ATTEMPTS; attempt++) {
-            try {
-                if (!containerClient.exists()) {
-                    containerClient.create();
-                }
-                BlobClient blobClient = containerClient.getBlobClient(blobName);
-                blobClient.upload(BinaryData.fromBytes(data), true);
-                log.info("Upload Object {} completed", blobName);
-                return;
-            } catch (Exception e) {
-                lastFailure = e;
-                if (attempt < STORAGE_MAX_ATTEMPTS) {
-                    log.warn("Azure write attempt {} failed for {}/{}, retrying: {}", attempt, containerName, blobName, e.getMessage());
-                    sleepBackoff(STORAGE_BACKOFF_MILLIS[attempt - 1]);
-                }
+        storageRetryMetrics.withRetry("azure", "write", () -> {
+            BlobContainerClient containerClient = blobServiceClient.getBlobContainerClient(containerName);
+            if (!containerClient.exists()) {
+                containerClient.create();
             }
-        }
-        throw new StorageUnavailableException("Azure write failed for " + containerName + "/" + blobName, lastFailure);
-    }
-
-    private void sleepBackoff(long millis) {
-        try {
-            Thread.sleep(millis);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
+            BlobClient blobClient = containerClient.getBlobClient(blobName);
+            blobClient.upload(BinaryData.fromBytes(data), true);
+            log.info("Upload Object {} completed", blobName);
+            return null;
+        });
     }
 
     @Override

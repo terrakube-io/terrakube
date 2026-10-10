@@ -41,6 +41,8 @@ class AwsStorageTypeServiceImplTest {
         awsStorageTypeService = AwsStorageTypeServiceImpl.builder()
                 .s3client(s3Client)
                 .bucketName(bucketName)
+                .storageRetryMetrics(new io.terrakube.api.plugin.storage.StorageRetryMetrics(
+                        new io.micrometer.core.instrument.simple.SimpleMeterRegistry()))
                 .build();
     }
 
