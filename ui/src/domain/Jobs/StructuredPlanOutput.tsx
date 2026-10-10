@@ -124,6 +124,13 @@ type PreparedChangeRow = {
   driftAction?: PlanChange["driftAction"];
 };
 
+type PreparedOutputChangeRow = {
+  key: string;
+  outputName: string;
+  action: ActionName;
+  diff: DiffResult;
+};
+
 type SummarySegment = {
   key: "create" | "update" | "delete" | "import";
   label: string;
@@ -1169,6 +1176,29 @@ const buildResourceDiff = (change: PlanChange, action: ActionName, includeUnchan
   );
 };
 
+// Mirrors buildResourceDiff, but labels a wholly-sensitive or wholly-unknown output "output"
+// instead of "resource" - only matters for a scalar output whose entire value is redacted or
+// unknown, where buildDiffRows renders a single row using this label directly (#3675).
+const buildOutputDiff = (change: PlanChange, action: ActionName) => {
+  if (action === "create") {
+    return buildDiffRows(undefined, change.after, change.afterUnknown, undefined, change.afterSensitive, change.changedSensitive, "output");
+  }
+
+  if (action === "delete") {
+    return buildDiffRows(change.before, undefined, undefined, change.beforeSensitive, undefined, change.changedSensitive, "output");
+  }
+
+  return buildDiffRows(
+    change.before,
+    change.after,
+    change.afterUnknown,
+    change.beforeSensitive,
+    change.afterSensitive,
+    change.changedSensitive,
+    "output"
+  );
+};
+
 const buildSummary = (rows: PreparedChangeRow[]): SummaryCounts => {
   return rows.reduce<SummaryCounts>(
     (summary, row) => {
@@ -1340,6 +1370,9 @@ export const StructuredPlanOutput = ({
   // with several jsonencode()'d or object outputs would otherwise dump every one of them open at
   // once.
   const [expandedOutputNames, setExpandedOutputNames] = useState<string[]>([]);
+  // Same reasoning as areOutputsExpanded above - expanded by default, this is the thing a
+  // reviewer needs to notice precisely because there may be nothing else on the page (#3675).
+  const [areOutputChangesExpanded, setAreOutputChangesExpanded] = useState(true);
 
   const preparedRows = useMemo<PreparedChangeRow[]>(() => {
     return changes.flatMap((change, index) => {
@@ -1351,6 +1384,12 @@ export const StructuredPlanOutput = ({
       // status still flows through the underlying data fine while a run is active; they just
       // never render as a row.
       if (normalizedAction === "no-op") {
+        return [];
+      }
+
+      // Output changes render in their own panel (see outputChangeRows below), not as a
+      // resource row - provider icons, data-source badges, etc. don't apply to them (#3675).
+      if (change.isOutputChange) {
         return [];
       }
 
@@ -1382,6 +1421,32 @@ export const StructuredPlanOutput = ({
           applyCurrentProvisioner,
           applyProvisionerOutput,
           driftAction,
+        },
+      ];
+    });
+  }, [changes]);
+
+  // A separate panel from preparedRows (see the skip above) - distinct from a genuine no-op plan,
+  // which has neither resource rows nor output change rows (#3675).
+  const outputChangeRows = useMemo<PreparedOutputChangeRow[]>(() => {
+    return changes.flatMap((change, index) => {
+      if (!change.isOutputChange) {
+        return [];
+      }
+
+      const normalizedAction = normalizeActionName(getPlanChangeActionLabel(change.actions, change.action));
+      if (normalizedAction === "no-op") {
+        return [];
+      }
+
+      const outputName = getResourceAddress(change);
+
+      return [
+        {
+          key: `${outputName}-${normalizedAction}-${index}`,
+          outputName,
+          action: normalizedAction,
+          diff: buildOutputDiff(change, normalizedAction),
         },
       ];
     });
@@ -1492,6 +1557,11 @@ export const StructuredPlanOutput = ({
     emptyDescription = "No changes were computed — see diagnostics above.";
   } else if (!showDataSources && hasDataSourceChanges) {
     emptyDescription = "No resources match the current filters. Enable Show data sources to include read operations.";
+  } else if (!preparedRows.length && !isFilteredView && outputChangeRows.length > 0) {
+    // Not a filter problem - there are genuinely zero resource changes, just one or more output
+    // changes below, which the default "no resources match the current filters" text doesn't
+    // say and isn't true of anyway (#3675).
+    emptyDescription = "No managed resource changes — see output changes below.";
   }
 
   const toggleRow = (rowKey: string) => {
@@ -1516,6 +1586,10 @@ export const StructuredPlanOutput = ({
 
   const toggleOutputsExpanded = () => {
     setAreOutputsExpanded((current) => !current);
+  };
+
+  const toggleOutputChangesExpanded = () => {
+    setAreOutputChangesExpanded((current) => !current);
   };
 
   const toggleOutputExpanded = (outputName: string) => {
@@ -1611,6 +1685,11 @@ export const StructuredPlanOutput = ({
               <>
                 <span>Resources: {formatResourceSummary(summary)}</span>
                 <span>Actions: {summary.read} to invoke</span>
+                {outputChangeRows.length > 0 ? (
+                  <span className="structured-plan-outputChangesNotice">
+                    Outputs: {outputChangeRows.length} will change
+                  </span>
+                ) : null}
               </>
             )}
           </div>
@@ -1960,6 +2039,65 @@ export const StructuredPlanOutput = ({
             </div>
           )}
         </div>
+
+        {!applyMode && outputChangeRows.length > 0 ? (
+          <div className="structured-plan-outputChanges">
+            <button
+              aria-controls="structured-plan-outputChangesPanel"
+              aria-expanded={areOutputChangesExpanded}
+              className="structured-plan-outputsToggle"
+              onClick={toggleOutputChangesExpanded}
+              type="button"
+            >
+              <span
+                className={`structured-plan-chevron${areOutputChangesExpanded ? " structured-plan-chevron--expanded" : ""}`}
+              >
+                <RightOutlined />
+              </span>
+              <span className="structured-plan-outputsHeader">Output changes</span>
+              <span className="structured-plan-outputsCount">{outputChangeRows.length}</span>
+            </button>
+            {areOutputChangesExpanded ? (
+              <div className="structured-plan-outputChangesList" id="structured-plan-outputChangesPanel">
+                {outputChangeRows.map((row) => {
+                  const isExpanded = expandedRowKeys.includes(row.key);
+                  const rowActionMeta = actionMeta[row.action];
+
+                  return (
+                    <div key={row.key} className="structured-plan-outputChangeRow">
+                      <button
+                        aria-controls={`structured-plan-outputChange-${row.key}`}
+                        aria-expanded={isExpanded}
+                        className="structured-plan-rowToggle"
+                        onClick={() => toggleRow(row.key)}
+                        type="button"
+                      >
+                        <span
+                          className={`structured-plan-chevron${isExpanded ? " structured-plan-chevron--expanded" : ""}`}
+                        >
+                          <RightOutlined />
+                        </span>
+                        <span
+                          aria-hidden="true"
+                          className={`structured-plan-actionIcon structured-plan-actionIcon--${rowActionMeta.className}`}
+                          title={rowActionMeta.displayLabel}
+                        >
+                          {rowActionMeta.symbol}
+                        </span>
+                        <span className="structured-plan-outputName">{row.outputName}</span>
+                      </button>
+                      {isExpanded ? (
+                        <div className="structured-plan-diffList" id={`structured-plan-outputChange-${row.key}`}>
+                          {renderDiffRows(row.diff.rows)}
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
 
         {applyMode && outputs?.length ? (
           <div className="structured-plan-outputs">

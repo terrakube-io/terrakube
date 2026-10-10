@@ -71,6 +71,11 @@
   font-weight: 600;
 }
 
+.structured-plan-outputChangesNotice {
+  color: var(--run-update-solid);
+  font-weight: 600;
+}
+
 .structured-plan-summaryMeta {
   color: var(--tk-text-secondary);
   display: flex;
@@ -1005,6 +1010,26 @@
 .structured-plan-outputGroup {
   border-bottom: 1px solid var(--run-divider);
   padding: 4px 0;
+}
+
+.structured-plan-outputChanges {
+  border-top: 1px solid var(--run-divider);
+  padding: 12px;
+}
+
+.structured-plan-outputChangesList {
+  display: flex;
+  flex-direction: column;
+  margin-top: 8px;
+}
+
+.structured-plan-outputChangeRow {
+  border-bottom: 1px solid var(--run-divider);
+  padding: 4px 0;
+}
+
+.structured-plan-outputChangesList > .structured-plan-outputChangeRow:last-child {
+  border-bottom: none;
 }
 
 .structured-plan-outputsList > .structured-plan-outputGroup:last-child {

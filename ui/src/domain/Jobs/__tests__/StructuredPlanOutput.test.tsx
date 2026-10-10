@@ -968,6 +968,73 @@ describe("StructuredPlanOutput", () => {
     expect(screen.queryByText("Outputs")).not.toBeInTheDocument();
   });
 
+  it("distinguishes an output-only plan change from a genuine no-op plan", () => {
+    render(
+      <StructuredPlanOutput
+        changes={[
+          {
+            address: "derived_value",
+            resourceType: "output",
+            action: "update",
+            actions: ["update"],
+            before: "old-value",
+            after: "new-value",
+            isOutputChange: true,
+          },
+        ]}
+      />
+    );
+
+    // Not the "no changes needed" success state - a real change is about to happen.
+    expect(
+      screen.queryByText("Your infrastructure matches the configuration — no changes needed.")
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("Outputs: 1 will change")).toBeInTheDocument();
+    expect(screen.getByText("Output changes")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /derived_value/i })).toBeInTheDocument();
+    // Not rendered as a resource row - no provider badge, no resource-row diff table for it.
+    expect(screen.queryByText("No resources match the current filters.")).not.toBeInTheDocument();
+    expect(screen.getByText("No managed resource changes — see output changes below.")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /derived_value/i }));
+    expect(screen.getByText('"old-value"')).toBeInTheDocument();
+    expect(screen.getByText('"new-value"')).toBeInTheDocument();
+  });
+
+  it("redacts a sensitive output change the same way a sensitive resource attribute is redacted", () => {
+    render(
+      <StructuredPlanOutput
+        changes={[
+          {
+            address: "api_key",
+            resourceType: "output",
+            action: "update",
+            actions: ["update"],
+            before: null,
+            beforeSensitive: true,
+            after: null,
+            afterSensitive: true,
+            changedSensitive: true,
+            isOutputChange: true,
+          },
+        ]}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /api_key/i }));
+    expect(screen.getAllByText("sensitive value")).toHaveLength(2);
+  });
+
+  it("does not render the output changes panel or notice when nothing changed at all", () => {
+    render(<StructuredPlanOutput changes={[]} />);
+
+    expect(
+      screen.getByText("Your infrastructure matches the configuration — no changes needed.")
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Output changes")).not.toBeInTheDocument();
+    expect(screen.queryByText(/will change/i)).not.toBeInTheDocument();
+  });
+
   it("renders a diagnostics list with severity styling instead of a single tooltip", () => {
     render(
       <StructuredPlanOutput

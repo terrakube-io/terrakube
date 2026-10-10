@@ -285,6 +285,59 @@ public class PlanStructuredOutputService {
             entry.put("afterUnknown", changeBlock.get("after_unknown"));
             result.add(entry);
         }
+        result.addAll(buildOutputChangeEntries(plan));
+        return result;
+    }
+
+    // output_changes is a map keyed by output name, unlike resource_changes - each value is the
+    // change representation directly (no nested "change" wrapper). A plan with zero resource
+    // changes can still change an output (e.g. one derived from a data source), which otherwise
+    // renders identically to a genuine no-op plan with no way to tell the difference (#3675).
+    private List<Map<String, Object>> buildOutputChangeEntries(Map<String, Object> plan) {
+        Object outputChangesRaw = plan.get("output_changes");
+        if (!(outputChangesRaw instanceof Map<?, ?> outputChanges)) {
+            return List.of();
+        }
+
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (Map.Entry<?, ?> outputChange : outputChanges.entrySet()) {
+            String outputName = String.valueOf(outputChange.getKey());
+            if (!(outputChange.getValue() instanceof Map<?, ?> changeBlockRaw)) {
+                continue;
+            }
+            Map<String, Object> changeBlock = new HashMap<>();
+            changeBlockRaw.forEach((k, v) -> changeBlock.put(String.valueOf(k), v));
+
+            List<String> actions = (List<String>) changeBlock.getOrDefault("actions", List.of());
+            String action = normalizeAction(actions);
+            if ("no-op".equals(action)) {
+                continue;
+            }
+
+            Map<String, Object> entry = new HashMap<>();
+            entry.put("address", outputName);
+            entry.put("moduleAddress", null);
+            entry.put("resourceType", "output");
+            entry.put("resourceName", outputName);
+            entry.put("actions", actions);
+            entry.put("action", action);
+            entry.put("isOutputChange", true);
+
+            Object beforeValue = changeBlock.get("before");
+            Object afterValue = changeBlock.get("after");
+            Object beforeSensitive = changeBlock.get("before_sensitive");
+            Object afterSensitive = changeBlock.get("after_sensitive");
+            Object changedSensitive = collectChangedSensitivePaths(beforeValue, afterValue, beforeSensitive, afterSensitive);
+            entry.put("before", sanitizeSensitiveValues(beforeValue, beforeSensitive));
+            entry.put("beforeSensitive", beforeSensitive);
+            entry.put("after", sanitizeSensitiveValues(afterValue, afterSensitive));
+            entry.put("afterSensitive", afterSensitive);
+            if (changedSensitive != null) {
+                entry.put("changedSensitive", changedSensitive);
+            }
+            entry.put("afterUnknown", changeBlock.get("after_unknown"));
+            result.add(entry);
+        }
         return result;
     }
 

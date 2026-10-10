@@ -286,6 +286,103 @@ class PlanStructuredOutputServiceTest {
     }
 
     @Test
+    void surfacesOutputOnlyChangesWhenNoResourceChangesExist() throws Exception {
+        String json = """
+                {
+                  "resource_changes": [],
+                  "output_changes": {
+                    "derived_value": {
+                      "actions": ["update"],
+                      "before": "old-value",
+                      "after": "new-value",
+                      "after_unknown": false,
+                      "before_sensitive": false,
+                      "after_sensitive": false
+                    }
+                  }
+                }
+                """;
+
+        List<Map<String, Object>> changes = subject().buildChangesFromPlanJson(json);
+
+        assertEquals(1, changes.size());
+        assertEquals("derived_value", changes.get(0).get("address"));
+        assertEquals("output", changes.get(0).get("resourceType"));
+        assertEquals("update", changes.get(0).get("action"));
+        assertEquals("old-value", changes.get(0).get("before"));
+        assertEquals("new-value", changes.get(0).get("after"));
+        assertEquals(true, changes.get(0).get("isOutputChange"));
+    }
+
+    @Test
+    void redactsSensitiveOutputValuesTheSameWayAsResourceAttributes() throws Exception {
+        String json = """
+                {
+                  "resource_changes": [],
+                  "output_changes": {
+                    "api_key": {
+                      "actions": ["update"],
+                      "before": "old-secret",
+                      "after": "new-secret",
+                      "after_unknown": false,
+                      "before_sensitive": true,
+                      "after_sensitive": true
+                    }
+                  }
+                }
+                """;
+
+        List<Map<String, Object>> changes = subject().buildChangesFromPlanJson(json);
+
+        assertEquals(1, changes.size());
+        assertNull(changes.get(0).get("before"));
+        assertNull(changes.get(0).get("after"));
+        assertEquals(true, changes.get(0).get("beforeSensitive"));
+        assertEquals(true, changes.get(0).get("afterSensitive"));
+    }
+
+    @Test
+    void skipsNoOpOutputChanges() throws Exception {
+        String json = """
+                {
+                  "resource_changes": [],
+                  "output_changes": {
+                    "unchanged_output": {
+                      "actions": ["no-op"],
+                      "before": "same",
+                      "after": "same",
+                      "after_unknown": false,
+                      "before_sensitive": false,
+                      "after_sensitive": false
+                    }
+                  }
+                }
+                """;
+
+        List<Map<String, Object>> changes = subject().buildChangesFromPlanJson(json);
+
+        assertTrue(changes.isEmpty());
+    }
+
+    @Test
+    void returnsEmptyChangesWhenNeitherResourceNorOutputChangesExist() throws Exception {
+        String json = """
+                {
+                  "resource_changes": [],
+                  "output_changes": {}
+                }
+                """;
+
+        List<Map<String, Object>> changes = subject().buildChangesFromPlanJson(json);
+
+        assertTrue(changes.isEmpty());
+
+        Map<String, Object> context = new HashMap<>();
+        PlanStructuredOutputService.applyNoChangePlanMarker(context, "step-1", changes);
+        assertEquals(Map.of("planStepId", "step-1"), context.get(PlanStructuredOutputService.CONTEXT_NO_CHANGE_PLAN_KEY));
+    }
+
+    @Test
     void mergesStructuredPlanDataWithoutDroppingExistingContext() {
         Map<String, Object> context = new HashMap<>();
         context.put("custom", "value");

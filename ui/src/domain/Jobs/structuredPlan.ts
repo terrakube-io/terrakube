@@ -18,6 +18,10 @@ export type PlanChange = {
   status?: ChangeStatus;
   diagnostics?: Diagnostic[];
   driftAction?: string;
+  // True for an entry derived from the plan's output_changes rather than resource_changes - a
+  // root module output (e.g. one derived from a data source) that's about to change with no
+  // managed resource touched. Rendered in its own panel, not as a resource row (#3675).
+  isOutputChange?: boolean;
 };
 
 export type StructuredPlanOutputByStep = Record<string, PlanChange[]>;
@@ -155,6 +159,7 @@ const normalizePlanChange = (value: unknown): PlanChange | null => {
     status: toChangeStatus(value.status),
     diagnostics: toDiagnostics(value.diagnostics),
     driftAction: toOptionalString(value.driftAction),
+    isOutputChange: value.isOutputChange === true,
   };
 };
 
