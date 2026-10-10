@@ -453,7 +453,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
 
                     execution = runJsonApply(terraformJob, terraformProcessData, applyOutput);
 
-                    handleTerraformStateChange(terraformJob, terraformWorkingDir, executorTempDirectory);
+                    handleTerraformStateChange(terraformJob, terraformWorkingDir, executorTempDirectory, applyOutput);
 
                     // apply -json's event stream only ever carries terse per-resource one-liners
                     // ("aws_instance.foo: Creating...", "...Creation complete after 3s [id=...]")
@@ -727,7 +727,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                             getTerraformProcessData(terraformJob, terraformWorkingDir, executorTempDirectory),
                             outputDestroy);
 
-                    handleTerraformStateChange(terraformJob, terraformWorkingDir, executorTempDirectory);
+                    handleTerraformStateChange(terraformJob, terraformWorkingDir, executorTempDirectory, outputDestroy);
                 }
             }
 
@@ -834,7 +834,8 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         log.warn("Terraform operation failed, running onFailure scripts completed");
     }
 
-    private void handleTerraformStateChange(TerraformJob terraformJob, File terraformWorkingDirectory, File executorTempDirectory)
+    private void handleTerraformStateChange(TerraformJob terraformJob, File terraformWorkingDirectory, File executorTempDirectory,
+                                            Consumer<String> outputConsumer)
             throws IOException, ExecutionException, InterruptedException {
         log.info("Running Terraform show");
         TextStringBuilder jsonState = new TextStringBuilder();
@@ -862,7 +863,19 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
 
         if (Boolean.TRUE.equals(showJsonState)) {
             log.info("Uploading terraform state json");
-            terraformState.saveStateJson(terraformJob, jsonState.toString(), rawTfState.toString());
+            try {
+                terraformState.saveStateJson(terraformJob, jsonState.toString(), rawTfState.toString());
+            } catch (RuntimeException e) {
+                // The live Terraform state was already durably written by Terraform/OpenTofu's
+                // own native backend as part of the apply/destroy that just ran above - this call
+                // only persists a secondary history/audit copy (what the UI's state history and
+                // rollback list reads from). A storage hiccup here must not make a successful
+                // apply/destroy look like it failed, which would risk an unnecessary re-run (#3671).
+                log.error("Unable to save terraform state history for job {}: {}", terraformJob.getJobId(), e.getMessage(), e);
+                outputConsumer.accept("WARNING: the operation succeeded, but Terrakube could not save a state "
+                        + "history snapshot (storage unavailable). The live Terraform state itself is unaffected - "
+                        + "this only affects the state history/rollback list in the UI.\n");
+            }
 
             TextStringBuilder jsonOutput = new TextStringBuilder();
             TextStringBuilder outputError = new TextStringBuilder();
