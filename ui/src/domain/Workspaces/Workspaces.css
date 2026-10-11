@@ -621,6 +621,10 @@
   overflow: auto;
 }
 
+.workspace-variables-table .ant-table-tbody .ant-table-cell {
+  overflow-wrap: anywhere;
+}
+
 .workspace-variable-value--editable {
   cursor: pointer;
 }
