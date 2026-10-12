@@ -7,6 +7,12 @@ import org.springframework.http.HttpStatus;
 
 import java.io.File;
 
+import io.terrakube.api.plugin.json.TerraformJsonProperties;
+import io.terrakube.api.plugin.json.TofuJsonProperties;
+import org.springframework.beans.factory.annotation.Autowired;
+
+import java.io.IOException;
+
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.equalTo;
 import static org.mockito.ArgumentMatchers.any;
@@ -15,6 +21,12 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
 
 public class IndexTests extends ServerApplicationTests {
+
+    @Autowired
+    TofuJsonProperties tofuJsonProperties;
+
+    @Autowired
+    TerraformJsonProperties terraformJsonProperties;
 
     @BeforeEach
     public void setup() {
@@ -113,5 +125,61 @@ public class IndexTests extends ServerApplicationTests {
                 .then()
                 .assertThat()
                 .statusCode(HttpStatus.SERVICE_UNAVAILABLE.value());
+    }
+
+    @Test
+    void tofuIndexReturnsLocalFallbackWhenDownloadFailsAndNoCacheExists() throws IOException {
+        File tempFallback = File.createTempFile("tofu-fallback-test", ".json");
+        tempFallback.deleteOnExit();
+        org.apache.commons.io.FileUtils.writeStringToFile(tempFallback, "[{\"name\":\"v1.8.0\"}]", java.nio.charset.StandardCharsets.UTF_8);
+
+        String originalFallback = tofuJsonProperties.getFallbackPath();
+        try {
+            tofuJsonProperties.setFallbackPath(tempFallback.getAbsolutePath());
+            when(redisTemplate.hasKey("tofuReleasesResponse")).thenReturn(false);
+            when(valueOperations.get(anyString())).thenReturn(null);
+            doThrow(new IllegalStateException("release download timed out"))
+                    .when(downloadReleasesService).downloadReleasesToFile(anyString(), any(File.class));
+
+            given()
+                    .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+                    .when()
+                    .get("/tofu/index.json")
+                    .then()
+                    .assertThat()
+                    .statusCode(HttpStatus.OK.value())
+                    .body(equalTo("[{\"name\":\"v1.8.0\"}]"));
+        } finally {
+            tofuJsonProperties.setFallbackPath(originalFallback);
+            tempFallback.delete();
+        }
+    }
+
+    @Test
+    void terraformIndexReturnsLocalFallbackWhenEndpointFailsAndNoCacheExists() throws IOException {
+        File tempFallback = File.createTempFile("terraform-fallback-test", ".json");
+        tempFallback.deleteOnExit();
+        org.apache.commons.io.FileUtils.writeStringToFile(tempFallback, "{\"versions\":{\"1.9.0\":{}}}", java.nio.charset.StandardCharsets.UTF_8);
+
+        String originalFallback = terraformJsonProperties.getFallbackPath();
+        try {
+            terraformJsonProperties.setFallbackPath(tempFallback.getAbsolutePath());
+            when(redisTemplate.hasKey("terraformReleasesResponse")).thenReturn(false);
+            when(valueOperations.get(anyString())).thenReturn(null);
+            doThrow(new IllegalStateException("terraform download failed"))
+                    .when(downloadReleasesService).downloadReleasesToFile(anyString(), any(File.class));
+
+            given()
+                    .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+                    .when()
+                    .get("/terraform/index.json")
+                    .then()
+                    .assertThat()
+                    .statusCode(HttpStatus.OK.value())
+                    .body(equalTo("{\"versions\":{\"1.9.0\":{}}}"));
+        } finally {
+            terraformJsonProperties.setFallbackPath(originalFallback);
+            tempFallback.delete();
+        }
     }
 }

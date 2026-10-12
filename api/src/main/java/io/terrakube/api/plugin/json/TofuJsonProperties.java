@@ -16,4 +16,5 @@ public class TofuJsonProperties {
     private String releasesUrl;
     private Long cacheExpirationMinutes;
     private String githubToken;
+    private String fallbackPath;
 }

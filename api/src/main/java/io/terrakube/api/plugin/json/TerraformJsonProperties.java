@@ -15,4 +15,5 @@ import org.springframework.stereotype.Component;
 public class TerraformJsonProperties {
     private String releasesUrl;
     private Long cacheExpirationMinutes = 30L;
+    private String fallbackPath;
 }

@@ -64,6 +64,9 @@ public class TerraformJsonController {
                 redisTemplate.opsForValue().set(TERRAFORM_REDIS_KEY, terraformIndex);
                 redisTemplate.expire(TERRAFORM_REDIS_KEY, terraformJsonProperties.getCacheExpirationMinutes(), TimeUnit.MINUTES);
                 redisTemplate.opsForValue().set(TERRAFORM_STALE_REDIS_KEY, terraformIndex);
+
+                updateFallbackFileIfConfigured(terraformJsonProperties.getFallbackPath(), terraformIndex);
+
                 return new ResponseEntity<>(terraformIndex, HttpStatus.OK);
             } catch (Exception e) {
                 log.error("Failed to fetch Terraform releases endpoint: {}", e.getMessage());
@@ -72,9 +75,71 @@ public class TerraformJsonController {
                     log.warn("Terraform releases endpoint unavailable - serving stale cached Terraform releases");
                     return new ResponseEntity<>(staleData, HttpStatus.OK);
                 }
+
+                String fallbackData = readFallbackFileIfAvailable(terraformJsonProperties.getFallbackPath());
+                if (fallbackData != null && !fallbackData.isEmpty()) {
+                    log.warn("Terraform endpoint unavailable and no Redis cache - serving local fallback Terraform releases from {}",
+                            terraformJsonProperties.getFallbackPath());
+                    redisTemplate.opsForValue().set(TERRAFORM_REDIS_KEY, fallbackData);
+                    long expiration = terraformJsonProperties.getCacheExpirationMinutes() != null ? terraformJsonProperties.getCacheExpirationMinutes() : 30L;
+                    redisTemplate.expire(TERRAFORM_REDIS_KEY, expiration, TimeUnit.MINUTES);
+                    redisTemplate.opsForValue().set(TERRAFORM_STALE_REDIS_KEY, fallbackData);
+                    return new ResponseEntity<>(fallbackData, HttpStatus.OK);
+                }
+
                 log.error("Terraform releases endpoint unavailable and no stale cache available - returning 503");
                 return new ResponseEntity<>("{\"error\":\"Terraform releases temporarily unavailable\"}", HttpStatus.SERVICE_UNAVAILABLE);
             }
+        }
+    }
+
+    private File resolveFallbackFile(String fallbackPath) {
+        if (fallbackPath == null || fallbackPath.isBlank()) {
+            return null;
+        }
+        File file = new File(fallbackPath);
+        if (file.exists()) {
+            return file;
+        }
+        if (fallbackPath.startsWith("/workspaces/terrakube")) {
+            File alt = new File(fallbackPath.replace("/workspaces/terrakube", System.getProperty("user.dir")));
+            if (alt.exists()) {
+                return alt;
+            }
+        }
+        return file;
+    }
+
+    private String readFallbackFileIfAvailable(String fallbackPath) {
+        File fallbackFile = resolveFallbackFile(fallbackPath);
+        if (fallbackFile == null) {
+            return null;
+        }
+        try {
+            if (fallbackFile.exists() && fallbackFile.isFile() && fallbackFile.length() > 0) {
+                log.info("Reading local fallback Terraform releases from {}", fallbackFile.getAbsolutePath());
+                return FileUtils.readFileToString(fallbackFile, java.nio.charset.StandardCharsets.UTF_8);
+            }
+        } catch (Exception e) {
+            log.warn("Failed to read local fallback Terraform releases file from {}: {}", fallbackFile.getAbsolutePath(), e.getMessage());
+        }
+        return null;
+    }
+
+    private void updateFallbackFileIfConfigured(String fallbackPath, String content) {
+        File fallbackFile = resolveFallbackFile(fallbackPath);
+        if (fallbackFile == null) {
+            return;
+        }
+        try {
+            File parentDir = fallbackFile.getParentFile();
+            if (parentDir != null && !parentDir.exists()) {
+                FileUtils.forceMkdir(parentDir);
+            }
+            FileUtils.writeStringToFile(fallbackFile, content, java.nio.charset.StandardCharsets.UTF_8);
+            log.info("Updated local fallback Terraform releases file at {}", fallbackFile.getAbsolutePath());
+        } catch (Exception e) {
+            log.warn("Failed to update local fallback Terraform releases file at {}: {}", fallbackFile.getAbsolutePath(), e.getMessage());
         }
     }
 }

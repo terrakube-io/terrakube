@@ -17,6 +17,70 @@ while getopts 'd:s:' OPTION; do
 		;;
 	esac
 done
+function downloadReleasesCache() {
+	WORKSPACE_DIR="$(pwd)"
+	if [ -d "/workspaces/terrakube" ]; then
+		WORKSPACE_DIR="/workspaces/terrakube"
+	fi
+	CACHE_DIR="$WORKSPACE_DIR/.cache/releases"
+	mkdir -p "$CACHE_DIR"
+
+	TOFU_CACHE_FILE="$CACHE_DIR/tofu-releases.json"
+	TERRAFORM_CACHE_FILE="$CACHE_DIR/terraform-releases.json"
+
+	AUTH_HEADER=()
+	if [ -n "$GITHUB_TOKEN" ]; then
+		AUTH_HEADER=(-H "Authorization: Bearer $GITHUB_TOKEN")
+	fi
+
+	if [ ! -s "$TOFU_CACHE_FILE" ]; then
+		echo "Fetching OpenTofu releases snapshot for local cache..."
+		if curl -s -f -L "${AUTH_HEADER[@]}" -H "User-Agent: curl/7.68.0" https://api.github.com/repos/opentofu/opentofu/releases -o "$TOFU_CACHE_FILE.tmp"; then
+			if [ -s "$TOFU_CACHE_FILE.tmp" ]; then
+				mv "$TOFU_CACHE_FILE.tmp" "$TOFU_CACHE_FILE"
+				echo "Saved OpenTofu releases cache to $TOFU_CACHE_FILE"
+			else
+				rm -f "$TOFU_CACHE_FILE.tmp"
+			fi
+		elif curl -s -k -f https://terrakube-api.localhost/tofu/index.json -o "$TOFU_CACHE_FILE.tmp" 2>/dev/null || curl -s -f http://localhost:8080/tofu/index.json -o "$TOFU_CACHE_FILE.tmp" 2>/dev/null; then
+			if [ -s "$TOFU_CACHE_FILE.tmp" ]; then
+				mv "$TOFU_CACHE_FILE.tmp" "$TOFU_CACHE_FILE"
+				echo "Saved OpenTofu releases cache from local Terrakube API to $TOFU_CACHE_FILE"
+			else
+				rm -f "$TOFU_CACHE_FILE.tmp"
+			fi
+		else
+			rm -f "$TOFU_CACHE_FILE.tmp"
+			echo "WARNING: Could not download OpenTofu releases from GitHub. If rate limited, set GITHUB_TOKEN or populate $TOFU_CACHE_FILE manually."
+		fi
+	else
+		echo "Existing OpenTofu releases cache found at $TOFU_CACHE_FILE"
+	fi
+
+	if [ ! -s "$TERRAFORM_CACHE_FILE" ]; then
+		echo "Fetching Terraform releases snapshot for local cache..."
+		if curl -s -f -L https://releases.hashicorp.com/terraform/index.json -o "$TERRAFORM_CACHE_FILE.tmp"; then
+			if [ -s "$TERRAFORM_CACHE_FILE.tmp" ]; then
+				mv "$TERRAFORM_CACHE_FILE.tmp" "$TERRAFORM_CACHE_FILE"
+				echo "Saved Terraform releases cache to $TERRAFORM_CACHE_FILE"
+			else
+				rm -f "$TERRAFORM_CACHE_FILE.tmp"
+			fi
+		elif curl -s -k -f https://terrakube-api.localhost/terraform/index.json -o "$TERRAFORM_CACHE_FILE.tmp" 2>/dev/null || curl -s -f http://localhost:8080/terraform/index.json -o "$TERRAFORM_CACHE_FILE.tmp" 2>/dev/null; then
+			if [ -s "$TERRAFORM_CACHE_FILE.tmp" ]; then
+				mv "$TERRAFORM_CACHE_FILE.tmp" "$TERRAFORM_CACHE_FILE"
+				echo "Saved Terraform releases cache from local Terrakube API to $TERRAFORM_CACHE_FILE"
+			else
+				rm -f "$TERRAFORM_CACHE_FILE.tmp"
+			fi
+		else
+			rm -f "$TERRAFORM_CACHE_FILE.tmp"
+			echo "WARNING: Could not download Terraform releases from HashiCorp. Populate $TERRAFORM_CACHE_FILE manually if needed."
+		fi
+	else
+		echo "Existing Terraform releases cache found at $TERRAFORM_CACHE_FILE"
+	fi
+}
 
 function generateApiVars() {
 	USER=$(whoami)
@@ -130,6 +194,12 @@ function generateApiVars() {
 	echo "TerrakubeToolsBranch=$TerrakubeToolsBranch" >>.envApi
 	echo "CustomTerraformReleasesUrl=\"https://releases.hashicorp.com/terraform/index.json\"" >>.envApi
 	echo "CustomTofuReleasesUrl=\"https://api.github.com/repos/opentofu/opentofu/releases\"" >>.envApi
+	WORKSPACE_DIR="$(pwd)"
+	if [ -d "/workspaces/terrakube" ]; then
+		WORKSPACE_DIR="/workspaces/terrakube"
+	fi
+	echo "TerraformReleasesFallbackPath=\"$WORKSPACE_DIR/.cache/releases/terraform-releases.json\"" >>.envApi
+	echo "TofuReleasesFallbackPath=\"$WORKSPACE_DIR/.cache/releases/tofu-releases.json\"" >>.envApi
 	echo "TerrakubeRedisHostname=$TerrakubeRedisHostname" >>.envApi
 	echo "TerrakubeRedisPort=6379" >>.envApi
 	echo "TerrakubeRedisSSL=false" >>.envApi
@@ -232,8 +302,8 @@ function generateExecutorVars() {
 	echo "TerrakubeToolsBranch=$TerrakubeToolsBranch" >>.envExecutor
 	echo "TerrakubeRegistryDomain=$TerrakubeRegistryDomain" >>.envExecutor
 	echo "TerrakubeApiUrl=$TerrakubeApiUrl" >>.envExecutor
-	echo "CustomTerraformReleasesUrl=\"https://releases.hashicorp.com/terraform/index.json\"" >>.envExecutor
-	echo "CustomTofuReleasesUrl=\"https://api.github.com/repos/opentofu/opentofu/releases\"" >>.envExecutor
+	echo "CustomTerraformReleasesUrl=\"$AzBuilderApiUrl/terraform/index.json\"" >>.envExecutor
+	echo "CustomTofuReleasesUrl=\"$AzBuilderApiUrl/tofu/index.json\"" >>.envExecutor
 	echo "TerrakubeRedisHostname=$TerrakubeRedisHostname" >>.envExecutor
 	echo "TerrakubeRedisPort=6379" >>.envExecutor
 	echo "TerrakubeRedisSSL=false" >>.envExecutor
@@ -476,6 +546,7 @@ function importCACertificateDevContainer() {
 #	done
 #fi
 
+downloadReleasesCache
 generateApiVars
 generateRegistryVars
 generateExecutorVars

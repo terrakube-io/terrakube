@@ -73,6 +73,9 @@ public class TofuJsonController {
                 redisTemplate.opsForValue().set(TOFU_REDIS_KEY, tofuIndex);
                 redisTemplate.expire(TOFU_REDIS_KEY, tofuJsonProperties.getCacheExpirationMinutes(), TimeUnit.MINUTES);
                 redisTemplate.opsForValue().set(TOFU_STALE_REDIS_KEY, tofuIndex);
+
+                updateFallbackFileIfConfigured(tofuJsonProperties.getFallbackPath(), tofuIndex);
+
                 return new ResponseEntity<>(tofuIndex, HttpStatus.OK);
             } catch (Exception e) {
                 log.error("Failed to fetch OpenTofu releases from GitHub API: {}", e.getMessage());
@@ -81,9 +84,71 @@ public class TofuJsonController {
                     log.warn("GitHub API unavailable - serving stale cached OpenTofu releases");
                     return new ResponseEntity<>(staleData, HttpStatus.OK);
                 }
-                log.error("GitHub API unavailable and no stale cache available - returning 503");
+
+                String fallbackData = readFallbackFileIfAvailable(tofuJsonProperties.getFallbackPath());
+                if (fallbackData != null && !fallbackData.isEmpty()) {
+                    log.warn("GitHub API unavailable and no Redis cache - serving local fallback OpenTofu releases from {}",
+                            tofuJsonProperties.getFallbackPath());
+                    redisTemplate.opsForValue().set(TOFU_REDIS_KEY, fallbackData);
+                    long expiration = tofuJsonProperties.getCacheExpirationMinutes() != null ? tofuJsonProperties.getCacheExpirationMinutes() : 30L;
+                    redisTemplate.expire(TOFU_REDIS_KEY, expiration, TimeUnit.MINUTES);
+                    redisTemplate.opsForValue().set(TOFU_STALE_REDIS_KEY, fallbackData);
+                    return new ResponseEntity<>(fallbackData, HttpStatus.OK);
+                }
+
+                log.error("GitHub API unavailable and no stale cache or local fallback file available - returning 503");
                 return new ResponseEntity<>("{\"error\":\"OpenTofu releases temporarily unavailable\"}", HttpStatus.SERVICE_UNAVAILABLE);
             }
+        }
+    }
+
+    private File resolveFallbackFile(String fallbackPath) {
+        if (fallbackPath == null || fallbackPath.isBlank()) {
+            return null;
+        }
+        File file = new File(fallbackPath);
+        if (file.exists()) {
+            return file;
+        }
+        if (fallbackPath.startsWith("/workspaces/terrakube")) {
+            File alt = new File(fallbackPath.replace("/workspaces/terrakube", System.getProperty("user.dir")));
+            if (alt.exists()) {
+                return alt;
+            }
+        }
+        return file;
+    }
+
+    private String readFallbackFileIfAvailable(String fallbackPath) {
+        File fallbackFile = resolveFallbackFile(fallbackPath);
+        if (fallbackFile == null) {
+            return null;
+        }
+        try {
+            if (fallbackFile.exists() && fallbackFile.isFile() && fallbackFile.length() > 0) {
+                log.info("Reading local fallback OpenTofu releases from {}", fallbackFile.getAbsolutePath());
+                return FileUtils.readFileToString(fallbackFile, java.nio.charset.StandardCharsets.UTF_8);
+            }
+        } catch (Exception e) {
+            log.warn("Failed to read local fallback OpenTofu releases file from {}: {}", fallbackFile.getAbsolutePath(), e.getMessage());
+        }
+        return null;
+    }
+
+    private void updateFallbackFileIfConfigured(String fallbackPath, String content) {
+        File fallbackFile = resolveFallbackFile(fallbackPath);
+        if (fallbackFile == null) {
+            return;
+        }
+        try {
+            File parentDir = fallbackFile.getParentFile();
+            if (parentDir != null && !parentDir.exists()) {
+                FileUtils.forceMkdir(parentDir);
+            }
+            FileUtils.writeStringToFile(fallbackFile, content, java.nio.charset.StandardCharsets.UTF_8);
+            log.info("Updated local fallback OpenTofu releases file at {}", fallbackFile.getAbsolutePath());
+        } catch (Exception e) {
+            log.warn("Failed to update local fallback OpenTofu releases file at {}: {}", fallbackFile.getAbsolutePath(), e.getMessage());
         }
     }
 }
