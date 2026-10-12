@@ -14,6 +14,7 @@ import io.terrakube.client.TerrakubeClient;
 import io.terrakube.client.model.organization.workspace.history.History;
 import io.terrakube.client.model.organization.workspace.history.HistoryAttributes;
 import io.terrakube.client.model.organization.workspace.history.HistoryRequest;
+import io.terrakube.executor.plugin.tfstate.StorageRetryMetrics;
 import io.terrakube.executor.plugin.tfstate.TerraformOutputPathService;
 import io.terrakube.executor.plugin.tfstate.TerraformState;
 import io.terrakube.executor.plugin.tfstate.TerraformStateMetadata;
@@ -87,6 +88,9 @@ public class AwsTerraformStateImpl implements TerraformState {
 
     @Builder.Default
     private TerraformStateMetadataService terraformStateMetadataService = new TerraformStateMetadataService(null);
+
+    @NonNull
+    StorageRetryMetrics storageRetryMetrics;
 
     // Matches X-Range wildcards: * or major.wildcard (e.g. 1.x, 1.*, 1.X).
     // Bare x/X are intentionally excluded: TerraformDownloader rejects them as invalid.
@@ -193,7 +197,7 @@ public class AwsTerraformStateImpl implements TerraformState {
                     .key(blobKey)
                     .build();
 
-            s3client.putObject(putObjectRequest, RequestBody.fromFile(tfPlanContent));
+            storageRetryMetrics.withRetry("aws", "plan-write", () -> s3client.putObject(putObjectRequest, RequestBody.fromFile(tfPlanContent)));
 
             GetUrlRequest getUrlRequest = GetUrlRequest.builder()
                     .bucket(bucketName)
@@ -219,9 +223,12 @@ public class AwsTerraformStateImpl implements TerraformState {
 
                         byte[] data = downloadObjectFromBucket(bucketName, "tfstate/" + new URL(stateUrl).getPath().split("/tfstate/")[1]);
 
-                        FileUtils.copyToFile(
-                                new ByteArrayInputStream(data),
-                                new File(workingDirectory.getAbsolutePath() + "/" + TERRAFORM_PLAN_FILE));
+                        storageRetryMetrics.withRetry("aws", "plan-disk-write", () -> {
+                            FileUtils.copyToFile(
+                                    new ByteArrayInputStream(data),
+                                    new File(workingDirectory.getAbsolutePath() + "/" + TERRAFORM_PLAN_FILE));
+                            return null;
+                        });
                         planExists.set(true);
                     } catch (IOException e) {
                         log.error(e.getMessage());
@@ -249,14 +256,14 @@ public class AwsTerraformStateImpl implements TerraformState {
                     .key(blobKey)
                     .build();
 
-            s3client.putObject(putObjectRequest, RequestBody.fromString(utf8EncodedString));
+            storageRetryMetrics.withRetry("aws", "state-write", () -> s3client.putObject(putObjectRequest, RequestBody.fromString(utf8EncodedString)));
 
-            putObjectRequest = PutObjectRequest.builder()
+            PutObjectRequest putRawObjectRequest = PutObjectRequest.builder()
                     .bucket(bucketName)
                     .key(blobKeyRaw)
                     .build();
 
-            s3client.putObject(putObjectRequest, RequestBody.fromString(rawUtf8EncodedString));
+            storageRetryMetrics.withRetry("aws", "state-write", () -> s3client.putObject(putRawObjectRequest, RequestBody.fromString(rawUtf8EncodedString)));
 
             String stateURL = terraformStatePathService.getStateJsonPath(terraformJob.getOrganizationId(), terraformJob.getWorkspaceId(), stateFilename);
 
@@ -277,23 +284,20 @@ public class AwsTerraformStateImpl implements TerraformState {
         }
     }
 
+    // The caller already confirmed a plan URL is recorded before calling this, so there is no
+    // legitimate "not found" case to preserve here - any exception after retries is a genuine
+    // failure and must not collapse into the same empty result a real not-found would (#3671).
     private byte[] downloadObjectFromBucket(String bucketName, String objectKey) {
-        byte[] data;
-        try {
+        return storageRetryMetrics.withRetry("aws", "plan-read", () -> {
             log.info("Bucket: {} Searching: {}", bucketName, objectKey);
-
             GetObjectRequest objectRequest = GetObjectRequest.builder()
                     .key(objectKey)
                     .bucket(bucketName)
                     .build();
             ResponseBytes<GetObjectResponse> objectBytes = s3client.getObject(objectRequest,
                     ResponseTransformer.toBytes());
-            data = objectBytes.asByteArray();
-        } catch (Exception e) {
-            log.debug(e.getMessage());
-            data = new byte[0];
-        }
-        return data;
+            return objectBytes.asByteArray();
+        });
     }
 
     @Override
@@ -309,7 +313,7 @@ public class AwsTerraformStateImpl implements TerraformState {
                 .key(blobKey)
                 .build();
 
-        s3client.putObject(putObjectRequest, RequestBody.fromString(utf8EncodedString));
+        storageRetryMetrics.withRetry("aws", "output-write", () -> s3client.putObject(putObjectRequest, RequestBody.fromString(utf8EncodedString)));
         log.info("Upload Object {} completed", blobKey);
 
         return terraformOutputPathService.getOutputPath(organizationId, jobId, stepId);

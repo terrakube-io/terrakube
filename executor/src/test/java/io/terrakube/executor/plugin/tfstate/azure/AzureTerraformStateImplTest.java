@@ -62,6 +62,8 @@ class AzureTerraformStateImplTest {
                 .terrakubeClient(terrakubeClient)
                 .terraformOutputPathService(terraformOutputPathService)
                 .terraformStatePathService(terraformStatePathService)
+                .storageRetryMetrics(new io.terrakube.executor.plugin.tfstate.StorageRetryMetrics(
+                        new io.micrometer.core.instrument.simple.SimpleMeterRegistry()))
                 .build();
     }
 
@@ -101,7 +103,7 @@ class AzureTerraformStateImplTest {
         String result = azureTerraformState.saveTerraformPlan(organizationId, workspaceId, jobId, stepId, workingDirectory);
 
         assertEquals("https://storage.azure.com/plan", result);
-        verify(blobClient).uploadFromFile(planFile.getAbsolutePath());
+        verify(blobClient).uploadFromFile(planFile.getAbsolutePath(), true);
     }
 
     @Test
@@ -120,7 +122,7 @@ class AzureTerraformStateImplTest {
         azureTerraformState.saveTerraformPlan(organizationId, workspaceId, jobId, stepId, workingDirectory);
 
         verify(blobContainerClient).create();
-        verify(blobClient).uploadFromFile(planFile.getAbsolutePath());
+        verify(blobClient).uploadFromFile(planFile.getAbsolutePath(), true);
     }
 
     @Test
@@ -138,7 +140,7 @@ class AzureTerraformStateImplTest {
 
         azureTerraformState.saveStateJson(job, applyJSON, rawState);
 
-        verify(blobClient, times(2)).upload(any(BinaryData.class));
+        verify(blobClient, times(2)).upload(any(BinaryData.class), eq(true));
         verify(terrakubeClient).createHistory(any(HistoryRequest.class), eq("org1"), eq("ws1"));
     }
 
@@ -189,6 +191,31 @@ class AzureTerraformStateImplTest {
         assertEquals("source-content", FileUtils.readFileToString(downloadedPlan, Charset.defaultCharset()));
     }
 
+    // #3671 follow-up: a genuine download failure must retry then throw instead of silently
+    // leaving planExists false with no clear signal why.
+    @Test
+    void testDownloadTerraformPlan_ThrowsAfterRetryingAGenuineFailure(@TempDir Path tempDir) {
+        String organizationId = "org1";
+        String workspaceId = "ws1";
+        String jobId = "job1";
+        String stepId = "step1";
+        File workingDirectory = tempDir.toFile();
+
+        String planUrl = "https://storage.azure.com/tfstate/org1/ws1/job1/step1/terraformLibrary.tfPlan";
+        when(terrakubeClient.getJobById(organizationId, jobId).getData().getAttributes().getTerraformPlan())
+                .thenReturn(planUrl);
+
+        // A file:// URL to a path that doesn't exist makes copyURLToFile fail reliably without
+        // any real network dependency, same trick the happy-path test above uses in reverse.
+        when(blobClient.getBlobUrl()).thenReturn("file:///nonexistent/path/does-not-exist.tfPlan");
+        when(blobClient.generateSas(any())).thenReturn("");
+
+        assertThrows(io.terrakube.executor.plugin.tfstate.TerraformStateUnavailableException.class,
+                () -> azureTerraformState.downloadTerraformPlan(organizationId, workspaceId, jobId, stepId, workingDirectory));
+
+        verify(blobClient, times(3)).generateSas(any());
+    }
+
     @Test
     void testSaveOutput() {
         String organizationId = "org1";
@@ -203,6 +230,6 @@ class AzureTerraformStateImplTest {
         String result = azureTerraformState.saveOutput(organizationId, jobId, stepId, output, outputError);
 
         assertEquals("https://api/output", result);
-        verify(blobClient).upload(any(BinaryData.class));
+        verify(blobClient).upload(any(BinaryData.class), eq(true));
     }
 }

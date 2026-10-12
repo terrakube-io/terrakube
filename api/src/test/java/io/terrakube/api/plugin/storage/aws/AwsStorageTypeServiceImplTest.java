@@ -41,6 +41,8 @@ class AwsStorageTypeServiceImplTest {
         awsStorageTypeService = AwsStorageTypeServiceImpl.builder()
                 .s3client(s3Client)
                 .bucketName(bucketName)
+                .storageRetryMetrics(new io.terrakube.api.plugin.storage.StorageRetryMetrics(
+                        new io.micrometer.core.instrument.simple.SimpleMeterRegistry()))
                 .build();
     }
 
@@ -170,11 +172,33 @@ class AwsStorageTypeServiceImplTest {
 
     @Test
     void testGetContextEmpty() {
-        when(s3Client.getObject(any(GetObjectRequest.class), any(ResponseTransformer.class))).thenThrow(S3Exception.builder().message("Not found").build());
+        when(s3Client.getObject(any(GetObjectRequest.class), any(ResponseTransformer.class))).thenThrow(NoSuchKeyException.builder().build());
 
         String result = awsStorageTypeService.getContext(123);
 
         assertEquals("{}", result);
+    }
+
+    @Test
+    void readThrowsStorageUnavailableAfterRetryingAGenuineFailure() {
+        when(s3Client.getObject(any(GetObjectRequest.class), any(ResponseTransformer.class)))
+                .thenThrow(S3Exception.builder().message("Service unavailable").build());
+
+        assertThrows(io.terrakube.api.plugin.storage.StorageUnavailableException.class,
+                () -> awsStorageTypeService.getContext(123));
+
+        verify(s3Client, times(3)).getObject(any(GetObjectRequest.class), any(ResponseTransformer.class));
+    }
+
+    @Test
+    void writeThrowsStorageUnavailableAfterRetryingAGenuineFailure() {
+        when(s3Client.putObject(any(PutObjectRequest.class), any(RequestBody.class)))
+                .thenThrow(S3Exception.builder().message("Service unavailable").build());
+
+        assertThrows(io.terrakube.api.plugin.storage.StorageUnavailableException.class,
+                () -> awsStorageTypeService.saveContext(123, "{}"));
+
+        verify(s3Client, times(3)).putObject(any(PutObjectRequest.class), any(RequestBody.class));
     }
 
     @Test

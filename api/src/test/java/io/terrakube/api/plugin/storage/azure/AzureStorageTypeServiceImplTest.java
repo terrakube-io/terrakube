@@ -42,6 +42,8 @@ class AzureStorageTypeServiceImplTest {
     void setUp() {
         azureStorageTypeService = AzureStorageTypeServiceImpl.builder()
                 .blobServiceClient(blobServiceClient)
+                .storageRetryMetrics(new io.terrakube.api.plugin.storage.StorageRetryMetrics(
+                        new io.micrometer.core.instrument.simple.SimpleMeterRegistry()))
                 .build();
     }
 
@@ -80,7 +82,6 @@ class AzureStorageTypeServiceImplTest {
     @Test
     void testSaveContext() {
         when(blobServiceClient.getBlobContainerClient("tfoutput")).thenReturn(containerClient);
-        when(containerClient.exists()).thenReturn(true);
         when(containerClient.getBlobClient("context/123/context.json")).thenReturn(blobClient);
 
         azureStorageTypeService.saveContext(123, "{}");
@@ -92,7 +93,6 @@ class AzureStorageTypeServiceImplTest {
     void testGetContext() {
         when(blobServiceClient.getBlobContainerClient("tfoutput")).thenReturn(containerClient);
         when(containerClient.getBlobClient(anyString())).thenReturn(blobClient);
-        when(blobClient.exists()).thenReturn(true);
         when(blobClient.downloadContent()).thenReturn(BinaryData.fromString("{\"a\":1}"));
 
         String result = azureStorageTypeService.getContext(123);
@@ -101,15 +101,51 @@ class AzureStorageTypeServiceImplTest {
     }
 
     @Test
+    void getContextReturnsEmptyJsonOnNotFound() {
+        when(blobServiceClient.getBlobContainerClient("tfoutput")).thenReturn(containerClient);
+        when(containerClient.getBlobClient(anyString())).thenReturn(blobClient);
+        com.azure.storage.blob.models.BlobStorageException notFound = mock(com.azure.storage.blob.models.BlobStorageException.class);
+        when(notFound.getStatusCode()).thenReturn(404);
+        when(blobClient.downloadContent()).thenThrow(notFound);
+
+        String result = azureStorageTypeService.getContext(123);
+
+        assertEquals("{}", result);
+    }
+
+    @Test
+    void readThrowsStorageUnavailableAfterRetryingAGenuineFailure() {
+        when(blobServiceClient.getBlobContainerClient("tfoutput")).thenReturn(containerClient);
+        when(containerClient.getBlobClient(anyString())).thenReturn(blobClient);
+        when(blobClient.downloadContent()).thenThrow(new RuntimeException("connection reset"));
+
+        assertThrows(io.terrakube.api.plugin.storage.StorageUnavailableException.class,
+                () -> azureStorageTypeService.getContext(123));
+
+        verify(blobClient, times(3)).downloadContent();
+    }
+
+    @Test
+    void writeThrowsStorageUnavailableAfterRetryingAGenuineFailure() {
+        when(blobServiceClient.getBlobContainerClient("tfoutput")).thenReturn(containerClient);
+        when(containerClient.getBlobClient(anyString())).thenReturn(blobClient);
+        doThrow(new RuntimeException("connection reset")).when(blobClient).upload(any(BinaryData.class), eq(true));
+
+        assertThrows(io.terrakube.api.plugin.storage.StorageUnavailableException.class,
+                () -> azureStorageTypeService.saveContext(123, "{}"));
+
+        verify(blobClient, times(3)).upload(any(BinaryData.class), eq(true));
+    }
+
+    @Test
     void testCreateContentFile() throws IOException {
         when(blobServiceClient.getBlobContainerClient("content")).thenReturn(containerClient);
-        when(containerClient.exists()).thenReturn(false);
         when(containerClient.getBlobClient(anyString())).thenReturn(blobClient);
         InputStream is = new ByteArrayInputStream("data".getBytes());
 
         azureStorageTypeService.createContentFile("id1", is);
 
-        verify(containerClient).create();
+        verify(containerClient).createIfNotExists();
         verify(blobClient).upload(any(BinaryData.class), eq(true));
     }
 

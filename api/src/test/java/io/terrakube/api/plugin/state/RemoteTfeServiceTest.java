@@ -739,6 +739,32 @@ class RemoteTfeServiceTest {
         assertEquals(1, workspace.getWorkspaceTag().size());
     }
 
+    @Test
+    void getCurrentWorkspaceStatePropagatesAGenuineStorageFailureInsteadOfReportingNoState() {
+        RemoteTfeService service = remoteTfeService();
+        Organization organization = organization("sample-org");
+        Workspace workspace = workspace("app", organization);
+        when(workspaceRepository.getReferenceById(workspace.getId())).thenReturn(workspace);
+        when(storageTypeService.getCurrentTerraformState(organization.getId().toString(), workspace.getId().toString()))
+                .thenThrow(new io.terrakube.api.plugin.storage.StorageUnavailableException("S3 read failed", new RuntimeException("cause")));
+
+        assertThrows(io.terrakube.api.plugin.storage.StorageUnavailableException.class,
+                () -> service.getCurrentWorkspaceState(workspace.getId().toString()));
+    }
+
+    @Test
+    void getCurrentOutputsPropagatesAGenuineStorageFailureInsteadOfReportingNoOutputs() {
+        RemoteTfeService service = remoteTfeService();
+        Organization organization = organization("sample-org");
+        Workspace workspace = workspace("app", organization);
+        when(workspaceRepository.findById(workspace.getId())).thenReturn(java.util.Optional.of(workspace));
+        when(storageTypeService.getCurrentTerraformState(organization.getId().toString(), workspace.getId().toString()))
+                .thenThrow(new io.terrakube.api.plugin.storage.StorageUnavailableException("S3 read failed", new RuntimeException("cause")));
+
+        assertThrows(io.terrakube.api.plugin.storage.StorageUnavailableException.class,
+                () -> service.getCurrentOutputs(workspace.getId().toString()));
+    }
+
     /**
      * An organization whose single team manages workspaces; tags and workspace tags are kept in memory
      * behind the repository mocks.

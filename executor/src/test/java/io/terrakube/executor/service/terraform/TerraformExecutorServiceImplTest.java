@@ -9,6 +9,7 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import io.terrakube.executor.configuration.ExecutorFlagsProperties;
 import io.terrakube.executor.configuration.StructuredOutputProperties;
 import io.terrakube.executor.plugin.tfstate.TerraformState;
+import io.terrakube.executor.plugin.tfstate.TerraformStateUnavailableException;
 import io.terrakube.executor.service.executor.ExecutorJobResult;
 import io.terrakube.executor.service.logs.ProcessLogs;
 import io.terrakube.executor.service.mode.TerraformJob;
@@ -53,6 +54,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
@@ -395,6 +397,32 @@ class TerraformExecutorServiceImplTest {
         assertTrue(result.isSuccessfulExecution());
         assertTrue(result.getOutputLog().contains("Outputs:"));
         assertTrue(result.getOutputLog().contains("foo = \"bar\""));
+    }
+
+    // #3671 follow-up: the live Terraform state is already durably written by Terraform/OpenTofu's
+    // own native backend as part of the apply that just ran - saveStateJson only persists a
+    // secondary history/audit copy. A storage hiccup on that copy must not make a successful
+    // apply look like it failed, which would risk an unnecessary re-apply.
+    @Test
+    void reportsSuccessWithAWarningWhenTheStateHistorySnapshotFailsToSaveAfterASuccessfulApply() throws Exception {
+        TerraformExecutorServiceImpl subject = subject();
+        TerraformJob terraformJob = createJob();
+
+        stubSuccessfulApply();
+        when(terraformClient.show(any(TerraformProcessData.class), any(Consumer.class), any(Consumer.class)))
+                .thenReturn(CompletableFuture.completedFuture(true));
+        when(terraformClient.statePull(any(TerraformProcessData.class), any(Consumer.class), any(Consumer.class)))
+                .thenReturn(CompletableFuture.completedFuture(false));
+        when(terraformClient.output(any(TerraformProcessData.class), any(Consumer.class), any(Consumer.class)))
+                .thenReturn(CompletableFuture.completedFuture(false));
+        doThrow(new TerraformStateUnavailableException("S3 write failed", new RuntimeException("boom")))
+                .when(terraformState).saveStateJson(eq(terraformJob), anyString(), anyString());
+
+        ExecutorJobResult result = subject.apply(terraformJob, tempDir.toFile());
+
+        assertTrue(result.isSuccessfulExecution(), "a storage hiccup on the audit copy must not fail an apply that already succeeded");
+        assertTrue(result.getOutputLog().contains("WARNING"), "the degraded history snapshot must be visible in the job's own output");
+        assertTrue(result.getOutputLog().contains("storage unavailable"));
     }
 
     @Test

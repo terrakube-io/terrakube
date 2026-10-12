@@ -6,6 +6,7 @@ import com.google.auth.Credentials;
 import com.google.auth.oauth2.GoogleCredentials;
 import com.google.cloud.storage.Storage;
 import com.google.cloud.storage.StorageOptions;
+import io.terrakube.api.plugin.storage.StorageRetryMetrics;
 import io.terrakube.api.plugin.storage.StorageTypeService;
 import io.terrakube.api.plugin.storage.aws.AwsStorageTypeProperties;
 import io.terrakube.api.plugin.storage.aws.AwsStorageTypeServiceImpl;
@@ -82,7 +83,7 @@ public class StorageTypeAutoConfiguration {
     }
 
     @Bean
-    public StorageTypeService terraformOutput(StreamingService streamingService, StorageTypeProperties storageTypeProperties, AzureStorageTypeProperties azureStorageTypeProperties, AwsStorageTypeProperties awsStorageTypeProperties, GcpStorageTypeProperties gcpStorageTypeProperties) {
+    public StorageTypeService terraformOutput(StreamingService streamingService, StorageTypeProperties storageTypeProperties, AzureStorageTypeProperties azureStorageTypeProperties, AwsStorageTypeProperties awsStorageTypeProperties, GcpStorageTypeProperties gcpStorageTypeProperties, StorageRetryMetrics storageRetryMetrics) {
         StorageTypeService storageTypeService = null;
         log.info("StorageType={}", storageTypeProperties.getType());
         switch (storageTypeProperties.getType()) {
@@ -96,6 +97,7 @@ public class StorageTypeAutoConfiguration {
 
                 storageTypeService = AzureStorageTypeServiceImpl.builder()
                         .blobServiceClient(blobServiceClient)
+                        .storageRetryMetrics(storageRetryMetrics)
                         .build();
                 break;
             case AWS:
@@ -123,6 +125,7 @@ public class StorageTypeAutoConfiguration {
                 storageTypeService = AwsStorageTypeServiceImpl.builder()
                         .s3client(s3client)
                         .bucketName(awsStorageTypeProperties.getBucketName())
+                        .storageRetryMetrics(storageRetryMetrics)
                         .build();
                 break;
             case GCP:
@@ -143,6 +146,7 @@ public class StorageTypeAutoConfiguration {
                     storageTypeService = GcpStorageTypeServiceImpl.builder()
                             .storage(gcpStorage)
                             .bucketName(gcpStorageTypeProperties.getBucketName())
+                            .storageRetryMetrics(storageRetryMetrics)
                             .build();
                 } catch (IOException e) {
                     log.error(e.getMessage());
@@ -150,7 +154,9 @@ public class StorageTypeAutoConfiguration {
 
                 break;
             default:
-                storageTypeService = LocalStorageTypeServiceImpl.builder().build();
+                storageTypeService = LocalStorageTypeServiceImpl.builder()
+                        .storageRetryMetrics(storageRetryMetrics)
+                        .build();
         }
         return storageTypeService;
     }

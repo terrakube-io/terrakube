@@ -626,6 +626,24 @@ public class SetupWorkspaceTest {
         Assertions.assertEquals(FileNotFoundException.class, e.getCause().getClass());
     }
 
+    // Defense in depth for #3671: a storage read failure upstream should surface as a 503 from
+    // the api module, but if one still slips through as empty bytes, this must fail clearly
+    // instead of letting gzip parsing produce the confusing "Input is not in the .gz format".
+    @Test
+    public void reportsFailureWhenDownloadedTarGzIsEmpty() throws Exception {
+        TerraformJob job = successfulTarGzJob();
+        File emptyTarGz = File.createTempFile("emptyTarGzJob", ".tar.gz");
+        job.setSource(emptyTarGz.toURI().toString());
+        job.setJobId("9042");
+        SetupWorkspace setup = standardSetupWorkspaceImpl(job);
+
+        WorkspaceException e = Assertions.assertThrows(WorkspaceException.class, () -> setup.prepareWorkspace(job));
+
+        Assertions.assertEquals(IOException.class, e.getCause().getClass());
+        Assertions.assertTrue(e.getCause().getMessage().contains("empty"));
+        Assertions.assertTrue(e.getCause().getMessage().contains("9042"));
+    }
+
     // Reproduces the "Run now" gap: a UI-created job on a remote-content workspace whose
     // job.overrideSource was never populated (see ExecutorService.persistJobOverrideSource on the
     // api side, which now prevents this from happening in practice). terrakubeClient(null) mirrors
