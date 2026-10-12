@@ -28,8 +28,12 @@ public class ScheduleManageHook implements LifeCycleHook<Schedule> {
                     scheduleJobService.createJobTrigger(schedule.getCron(), schedule.getId().toString());
                     break;
                 case UPDATE:
-                    if (!schedule.isEnabled()) {
-                        scheduleJobService.deleteJobTrigger(schedule.getId().toString());
+                    // The Quartz trigger holds its own copy of the cron expression, so it is
+                    // rebuilt on every update: a changed cron would otherwise keep firing on the
+                    // old one, and a re-enabled schedule would never fire again.
+                    scheduleJobService.deleteJobTrigger(schedule.getId().toString());
+                    if (schedule.isEnabled()) {
+                        scheduleJobService.createJobTrigger(schedule.getCron(), schedule.getId().toString());
                     }
                     break;
                 case DELETE:
