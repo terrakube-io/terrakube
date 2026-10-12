@@ -45,11 +45,11 @@ export function getCascadeStatusText(status?: string): string | undefined {
     case RunCascadeStatus.Completed:
       return "Completed";
     case RunCascadeStatus.Degraded:
-      return "Degraded";
+      return "Completed with failures";
     case RunCascadeStatus.Blocked:
-      return "Blocked";
+      return "Paused";
     case RunCascadeStatus.Cancelled:
-      return "Cancelled";
+      return "Stopped";
     case RunCascadeStatus.Failed:
       return "Failed";
     default:

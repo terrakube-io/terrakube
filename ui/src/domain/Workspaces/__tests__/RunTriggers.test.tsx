@@ -190,8 +190,8 @@ describe("RunTriggers", () => {
     await userEvent.click(screen.getByRole("button", { name: /edit/i }));
 
     expect(await screen.findByRole("dialog")).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("combobox", { name: /sync mode/i }));
-    await userEvent.click(await screen.findByTitle("ANY - run once, on the first parent to succeed"));
+    await userEvent.click(screen.getByRole("combobox", { name: /start condition/i }));
+    await userEvent.click(await screen.findByTitle("After the first eligible upstream change"));
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(patchMock).toHaveBeenCalled());
@@ -215,8 +215,8 @@ describe("RunTriggers", () => {
     await screen.findByRole("link", { name: "network" });
 
     await userEvent.click(screen.getByRole("button", { name: /add source workspace/i }));
-    await userEvent.click(await screen.findByRole("combobox", { name: /on a destroy upstream/i }));
-    await userEvent.click(await screen.findByTitle("PLAN_ONLY - plan the drift on a destroy, never apply it"));
+    await userEvent.click(await screen.findByRole("combobox", { name: /when upstream infrastructure is destroyed/i }));
+    await userEvent.click(await screen.findByTitle("Plan only"));
 
     expect(await screen.findByRole("combobox", { name: /plan-only template/i })).toBeInTheDocument();
   });

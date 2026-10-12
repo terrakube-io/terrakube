@@ -586,10 +586,12 @@ export type RunCascadeNode = {
   relationships: {
     cascade: RelationshipItem;
     workspace: RelationshipItem;
+    runCascadeNodeAttempt?: { data: { id: string; type: string }[] };
   };
 };
 
 export type RunCascadeNodeAttributes = {
+  reason?: string;
   depth: number;
   status: RunCascadeNodeStatus;
 } & AuditFieldBase;
@@ -606,6 +608,7 @@ export type RunCascadeEdge = {
 };
 
 export type RunCascadeEdgeAttributes = {
+  status?: "PENDING" | "SATISFIED" | "SKIPPED" | "BLOCKED";
   synchronizationMode: string;
   onDestroy: string;
 } & AuditFieldBase;

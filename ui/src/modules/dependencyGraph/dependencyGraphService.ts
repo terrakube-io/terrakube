@@ -11,12 +11,28 @@ export type DependencyGraphEdge = {
   sourceWorkspaceId: string;
   destinationWorkspaceId: string;
   synchronizationMode: RunTriggerSynchronizationMode;
+  enabled?: boolean;
+  onDestroy?: string;
 };
 
 export type DependencyGraphData = {
   workspaces: DependencyGraphWorkspace[];
   edges: DependencyGraphEdge[];
 };
+
+async function collection<T>(path: string, config?: Parameters<typeof axiosInstance.get>[1]): Promise<T[]> {
+  let response = config ? await axiosInstance.get(path, config) : await axiosInstance.get(path);
+  const items: T[] = [];
+  const seen = new Set<string>();
+  while (true) {
+    items.push(...(response.data.data ?? []));
+    const next = response.data.links?.next;
+    if (!next) return items;
+    if (typeof next !== "string" || seen.has(next)) throw new Error("Invalid dependency graph pagination");
+    seen.add(next);
+    response = await axiosInstance.get(next);
+  }
+}
 
 /**
  * The static dependency topology for a whole organization - every workspace and every run
@@ -29,20 +45,20 @@ export type DependencyGraphData = {
  */
 export async function getOrganizationDependencyGraph(organizationId: string): Promise<DependencyGraphData> {
   const [workspacesResponse, triggersResponse] = await Promise.all([
-    axiosInstance.get(`organization/${organizationId}/workspace`),
-    axiosInstance.get("runTrigger", {
+    collection<Workspace>(`organization/${organizationId}/workspace`),
+    collection<RunTrigger>("runTrigger", {
       params: {
         "filter[runTrigger]": `sourceWorkspace.organization.id==${organizationId}`,
       },
     }),
   ]);
 
-  const workspaces: DependencyGraphWorkspace[] = (workspacesResponse.data.data ?? []).map((item: Workspace) => ({
+  const workspaces: DependencyGraphWorkspace[] = workspacesResponse.map((item: Workspace) => ({
     id: item.id,
     name: item.attributes.name,
   }));
 
-  const edges: DependencyGraphEdge[] = (triggersResponse.data.data ?? [])
+  const edges: DependencyGraphEdge[] = triggersResponse
     .map((trigger: RunTrigger): DependencyGraphEdge | null => {
       const sourceWorkspaceId = trigger.relationships.sourceWorkspace?.data?.id;
       const destinationWorkspaceId = trigger.relationships.destinationWorkspace?.data?.id;
@@ -54,6 +70,8 @@ export async function getOrganizationDependencyGraph(organizationId: string): Pr
         sourceWorkspaceId,
         destinationWorkspaceId,
         synchronizationMode: trigger.attributes.synchronizationMode,
+        enabled: trigger.attributes.enabled ?? true,
+        onDestroy: trigger.attributes.onDestroy,
       };
     })
     .filter((edge: DependencyGraphEdge | null): edge is DependencyGraphEdge => edge !== null);

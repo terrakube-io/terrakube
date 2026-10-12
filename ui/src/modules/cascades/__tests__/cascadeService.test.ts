@@ -41,7 +41,10 @@ describe("listCascadesForWorkspace", () => {
     const result = await listCascadesForWorkspace("ws-1");
 
     expect(mockGet).toHaveBeenCalledWith("runCascade", {
-      params: { "filter[runCascade]": "originJob.workspace.id==ws-1", sort: "-createdDate" },
+      params: {
+        "filter[runCascade]": "originJob.workspace.id==ws-1,runCascadeNode.workspace.id==ws-1",
+        sort: "-createdDate",
+      },
     });
     expect(result).toEqual([
       { id: "cascade-1", status: "DEGRADED", originJobId: "900", createdDate: "2026-01-02T00:00:00Z" },
@@ -68,7 +71,9 @@ describe("getCascadeNodes", () => {
 
     const result = await getCascadeNodes("cascade-1");
 
-    expect(mockGet).toHaveBeenCalledWith("runCascade/cascade-1/runCascadeNode", { params: { include: "workspace" } });
+    expect(mockGet).toHaveBeenCalledWith("runCascade/cascade-1/runCascadeNode", {
+      params: { include: "workspace,runCascadeNodeAttempt" },
+    });
     expect(result.nodes).toHaveLength(1);
     expect(result.included).toEqual([{ type: "workspace", id: "ws-1", attributes: { name: "network" } }]);
   });
@@ -99,7 +104,7 @@ describe("admin actions", () => {
 
     const result = await retryNode("node-1");
 
-    expect(mockAdminPost).toHaveBeenCalledWith("/admin/v1/cascades/nodes/node-1/retry", {});
+    expect(mockAdminPost).toHaveBeenCalledWith("/admin/v1/cascades/runCascadeNode/node-1/retry", {});
     expect(result).toEqual({ status: "RUNNING", jobId: 42 });
   });
 
@@ -108,7 +113,7 @@ describe("admin actions", () => {
 
     const result = await resumeNode("node-1");
 
-    expect(mockAdminPost).toHaveBeenCalledWith("/admin/v1/cascades/nodes/node-1/resume", {});
+    expect(mockAdminPost).toHaveBeenCalledWith("/admin/v1/cascades/runCascadeNode/node-1/resume", {});
     expect(result).toEqual({ status: "PENDING" });
   });
 });
@@ -137,5 +142,14 @@ describe("getAdminErrorMessage", () => {
 
   it("falls back to the shared error helper for a non-axios error", () => {
     expect(getAdminErrorMessage(new Error("boom"))).toBe("fallback error");
+  });
+});
+
+describe("cascade pagination", () => {
+  it("includes later pages instead of truncating a dependency graph", async () => {
+    mockGet.mockResolvedValueOnce({ data: { data: [{ id: "first" }], links: { next: "next-page" } } });
+    mockGet.mockResolvedValueOnce({ data: { data: [{ id: "second" }] } });
+    expect(await getCascadeEdges("cascade-1")).toEqual([{ id: "first" }, { id: "second" }]);
+    expect(mockGet).toHaveBeenLastCalledWith("next-page");
   });
 });

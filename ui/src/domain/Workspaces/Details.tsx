@@ -75,7 +75,7 @@ const WORKSPACE_SECTION_LABELS: Record<string, string> = {
   "5": "Schedules",
   "6": "Settings",
   "7": "Run triggers",
-  "8": "Cascades",
+  "8": "Run cascades",
 };
 
 const WORKSPACE_SETTINGS_SECTION_LABELS: Record<string, string> = {

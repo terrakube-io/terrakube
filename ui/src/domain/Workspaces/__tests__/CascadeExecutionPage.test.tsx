@@ -36,7 +36,7 @@ describe("CascadeExecutionPage", () => {
     sessionStorage.setItem(ORGANIZATION_ARCHIVE, "org-1");
     renderPage();
 
-    const backLink = await screen.findByRole("link", { name: /back to cascades/i });
+    const backLink = await screen.findByRole("link", { name: /back to run cascades/i });
     expect(backLink).toHaveAttribute("href", "/organizations/org-1/workspaces/ws-1/cascades");
   });
 });

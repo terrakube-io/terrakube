@@ -45,16 +45,16 @@ type TriggerForm = {
 };
 
 const SYNCHRONIZATION_MODE_OPTIONS = [
-  { label: "EACH - run every time a parent succeeds", value: RunTriggerSynchronizationMode.Each },
-  { label: "ANY - run once, on the first parent to succeed", value: RunTriggerSynchronizationMode.Any },
-  { label: "ALL - run once, only after every parent has succeeded", value: RunTriggerSynchronizationMode.All },
+  { label: "After each upstream change", value: RunTriggerSynchronizationMode.Each },
+  { label: "After the first eligible upstream change", value: RunTriggerSynchronizationMode.Any },
+  { label: "After all required upstreams resolve", value: RunTriggerSynchronizationMode.All },
 ];
 
 const ON_DESTROY_OPTIONS = [
-  { label: "TRIGGER - a destroy fires this edge like any other run", value: RunTriggerOnDestroyPolicy.Trigger },
-  { label: "PLAN_ONLY - plan the drift on a destroy, never apply it", value: RunTriggerOnDestroyPolicy.PlanOnly },
-  { label: "BLOCK - block this destination instead of running it", value: RunTriggerOnDestroyPolicy.Block },
-  { label: "IGNORE - a destroy does not fire this edge at all", value: RunTriggerOnDestroyPolicy.Ignore },
+  { label: "Run configured workflow", value: RunTriggerOnDestroyPolicy.Trigger },
+  { label: "Plan only", value: RunTriggerOnDestroyPolicy.PlanOnly },
+  { label: "Pause dependent run", value: RunTriggerOnDestroyPolicy.Block },
+  { label: "Do not start a dependent run", value: RunTriggerOnDestroyPolicy.Ignore },
 ];
 
 const SYNC_MODE_TAG_COLOR: Record<RunTriggerSynchronizationMode, string> = {
@@ -66,10 +66,10 @@ const SYNC_MODE_TAG_COLOR: Record<RunTriggerSynchronizationMode, string> = {
 // Reuses the same plain-English text the add/edit form already shows for these values, so the
 // table doesn't make a user open Edit just to find out what an enum they're scanning means.
 const descriptionOf = (options: { label: string; value: string }[], value: string) =>
-  options.find((option) => option.value === value)?.label.split(" - ").slice(1).join(" - ");
+  options.find((option) => option.value === value)?.label;
 
 const SYNC_MODE_COLUMN = {
-  title: "Sync mode",
+  title: "Start condition",
   key: "synchronizationMode",
   render: (_: string, record: RunTriggerRow) => (
     <Tooltip title={descriptionOf(SYNCHRONIZATION_MODE_OPTIONS, record.synchronizationMode)}>
@@ -396,8 +396,8 @@ export const RunTriggers = ({ organizationId, workspaceId, workspaceName, manage
             Run triggers
           </Typography.Title>
           <Typography.Paragraph type="secondary" className="run-triggers-intro">
-            A run trigger starts a run on one workspace after another one changes state. Only runs that apply,
-            destroy or execute custom scripts fire them - a plan on its own does not.
+            A run trigger starts a run on one workspace after another one changes state. Only runs that apply, destroy
+            or execute custom scripts fire them - a plan on its own does not.
           </Typography.Paragraph>
         </div>
         <LinkButton to={`/organizations/${organizationId}/dependency-graph/${workspaceId}`} icon={<ClusterOutlined />}>
@@ -496,12 +496,16 @@ export const RunTriggers = ({ organizationId, workspaceId, workspaceName, manage
           </Form.Item>
           <Form.Item
             name="synchronizationMode"
-            label="Sync mode"
-            extra="How this workspace waits when it has more than one enabled upstream edge."
+            label="Start condition"
+            extra="Use the same condition on all incoming dependencies. ALL applies only to parents in this run cascade. No-change parents satisfy the wait; the workflow runs only if an upstream change requires it."
           >
             <Select options={SYNCHRONIZATION_MODE_OPTIONS} />
           </Form.Item>
-          <Form.Item name="onDestroy" label="On a destroy upstream" extra="What a destroy on the source does here.">
+          <Form.Item
+            name="onDestroy"
+            label="When upstream infrastructure is destroyed"
+            extra="What a destroy on the source does here."
+          >
             <Select options={ON_DESTROY_OPTIONS} />
           </Form.Item>
           {onDestroy === RunTriggerOnDestroyPolicy.PlanOnly && (

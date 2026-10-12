@@ -3,7 +3,12 @@ import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import CascadeStatusTag from "@/components/display/CascadeStatusTag/CascadeStatusTag";
 import { RunCascadeRow, RunCascadeStatus } from "@/domain/types";
-import { cancelCascade, getAdminErrorMessage, listCascadesForWorkspace } from "@/modules/cascades/cascadeService";
+import {
+  cancelCascade,
+  getCascadeCapabilities,
+  getAdminErrorMessage,
+  listCascadesForWorkspace,
+} from "@/modules/cascades/cascadeService";
 
 type Props = {
   organizationId: string;
@@ -18,18 +23,38 @@ const CANCELLABLE_STATUSES = [RunCascadeStatus.Running, RunCascadeStatus.Degrade
 export const Cascades = ({ organizationId, workspaceId, workspaceName }: Props) => {
   const [cascades, setCascades] = useState<RunCascadeRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [canOperate, setCanOperate] = useState(false);
 
-  const loadCascades = useCallback(() => {
-    setLoading(true);
-    listCascadesForWorkspace(workspaceId)
-      .then(setCascades)
-      .catch((err) => message.error(getAdminErrorMessage(err)))
-      .finally(() => setLoading(false));
-  }, [workspaceId]);
+  const loadCascades = useCallback(
+    (showLoading = true) => {
+      if (showLoading) setLoading(true);
+      listCascadesForWorkspace(workspaceId)
+        .then(setCascades)
+        .catch((err) => message.error(getAdminErrorMessage(err)))
+        .finally(() => setLoading(false));
+    },
+    [workspaceId]
+  );
 
   useEffect(() => {
     loadCascades();
+    const timer = window.setInterval(() => loadCascades(false), 5000);
+    return () => window.clearInterval(timer);
   }, [loadCascades]);
+
+  useEffect(() => {
+    let active = true;
+    getCascadeCapabilities()
+      .then((operate) => {
+        if (active) setCanOperate(operate);
+      })
+      .catch(() => {
+        if (active) setCanOperate(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const onCancel = (cascadeId: string) => {
     cancelCascade(cascadeId)
@@ -65,7 +90,7 @@ export const Cascades = ({ organizationId, workspaceId, workspaceName }: Props) 
           <Link to={`/organizations/${organizationId}/workspaces/${workspaceId}/cascades/${record.id}`}>
             <Button type="link">View</Button>
           </Link>
-          {CANCELLABLE_STATUSES.includes(record.status) && (
+          {canOperate && CANCELLABLE_STATUSES.includes(record.status) && (
             <Popconfirm
               okButtonProps={{ danger: true }}
               title="This stops the cascade from dispatching any further workspace. Are you sure?"
@@ -74,7 +99,7 @@ export const Cascades = ({ organizationId, workspaceId, workspaceName }: Props) 
               onConfirm={() => onCancel(record.id)}
             >
               <Button type="link" danger>
-                Cancel
+                Stop future runs
               </Button>
             </Popconfirm>
           )}
@@ -86,11 +111,10 @@ export const Cascades = ({ organizationId, workspaceId, workspaceName }: Props) 
   return (
     <div>
       <Typography.Title level={2} style={{ margin: 0 }}>
-        Cascades
+        Run cascades
       </Typography.Title>
       <Typography.Paragraph type="secondary" style={{ marginTop: 8 }}>
-        Every run that started from a job on <b>{workspaceName}</b> and propagated to dependent workspaces through a run
-        trigger.
+        Executions in which <b>{workspaceName}</b> participates, including changes started by an upstream workspace.
       </Typography.Paragraph>
       <Table
         dataSource={cascades}
@@ -98,7 +122,7 @@ export const Cascades = ({ organizationId, workspaceId, workspaceName }: Props) 
         rowKey="id"
         loading={loading}
         pagination={false}
-        locale={{ emptyText: "No cascade has started from this workspace yet." }}
+        locale={{ emptyText: "This workspace has not participated in a run cascade yet." }}
       />
     </div>
   );

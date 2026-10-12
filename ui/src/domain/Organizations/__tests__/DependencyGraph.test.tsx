@@ -92,7 +92,7 @@ describe("DependencyGraph", () => {
     renderPage();
 
     await waitFor(() => expect(getOrganizationDependencyGraphMock).toHaveBeenCalled());
-    expect(screen.getByPlaceholderText("Find a workspace...")).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Find a workspace" })).toBeInTheDocument();
     expect(screen.queryByText("Expand to full organization")).toBeNull();
   });
 
@@ -131,13 +131,13 @@ describe("DependencyGraph", () => {
       expect(await screen.findByRole("heading", { name: /network/ })).toBeInTheDocument();
     });
 
-    it("offers an expand-to-full-organization link instead of the search box", async () => {
+    it("keeps search available alongside expand-to-full-organization", async () => {
       getOrganizationDependencyGraphMock.mockResolvedValue(CHAIN);
       renderScopedPage("org-1", "ws-network");
 
       const expandLink = (await screen.findByText("Expand to full organization")).closest("a");
       expect(expandLink).toHaveAttribute("href", "/organizations/org-1/dependency-graph");
-      expect(screen.queryByPlaceholderText("Find a workspace...")).toBeNull();
+      expect(screen.getByRole("combobox", { name: "Find a workspace" })).toBeInTheDocument();
     });
   });
 });

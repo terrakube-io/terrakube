@@ -11,12 +11,19 @@ const NODE_HEIGHT = 80;
  * denser fan-out, so a real layout algorithm earns its keep here - dagre lays out every
  * connected component independently and packs them without overlap.
  */
-export function layoutWithDagre(nodes: Node[], edges: Edge[]): Node[] {
+export function layoutWithDagre<T>(
+  nodes: Node<T>[],
+  edges: Edge[],
+  options: { width?: number; height?: number } = {}
+): Node<T>[] {
+  if (!nodes.length) return nodes;
+  const width = options.width ?? NODE_WIDTH;
+  const height = options.height ?? NODE_HEIGHT;
   const graph = new dagre.graphlib.Graph();
   graph.setGraph({ rankdir: "LR", nodesep: 40, ranksep: 120 });
   graph.setDefaultEdgeLabel(() => ({}));
 
-  nodes.forEach((node) => graph.setNode(node.id, { width: NODE_WIDTH, height: NODE_HEIGHT }));
+  nodes.forEach((node) => graph.setNode(node.id, { width, height }));
   edges.forEach((edge) => graph.setEdge(edge.source, edge.target));
 
   dagre.layout(graph);
@@ -26,7 +33,7 @@ export function layoutWithDagre(nodes: Node[], edges: Edge[]): Node[] {
     return {
       ...node,
       // dagre centers on the node; reactflow positions by top-left corner.
-      position: { x: position.x - NODE_WIDTH / 2, y: position.y - NODE_HEIGHT / 2 },
+      position: { x: position.x - width / 2, y: position.y - height / 2 },
     };
   });
 }

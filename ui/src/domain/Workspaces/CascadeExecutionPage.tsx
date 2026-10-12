@@ -20,10 +20,12 @@ export const CascadeExecutionPage = () => {
   return (
     <div>
       <Typography.Paragraph>
-        <Link to={`/organizations/${organizationId}/workspaces/${workspaceId}/cascades`}>&larr; Back to cascades</Link>
+        <Link to={`/organizations/${organizationId}/workspaces/${workspaceId}/cascades`}>
+          &larr; Back to run cascades
+        </Link>
       </Typography.Paragraph>
       <Typography.Title level={2} style={{ margin: 0 }}>
-        Cascade
+        Run cascade
       </Typography.Title>
       <div style={{ marginTop: 16 }}>
         <CascadeGraph cascadeId={cascadeId} organizationId={organizationId} />

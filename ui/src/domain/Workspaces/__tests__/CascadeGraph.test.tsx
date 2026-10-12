@@ -1,13 +1,17 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { CascadeGraph } from "../CascadeGraph";
+import * as graphLayout from "@/modules/dependencyGraph/utils/dagreLayout";
 
 const getCascadeNodesMock = jest.fn();
 const getCascadeEdgesMock = jest.fn();
 const retryNodeMock = jest.fn();
 const resumeNodeMock = jest.fn();
+const capabilitiesMock = jest.fn();
 
 jest.mock("@/modules/cascades/cascadeService", () => ({
+  getCascadeCapabilities: () => capabilitiesMock(),
+  getCascade: () => Promise.resolve({ attributes: { status: "RUNNING" } }),
   getCascadeNodes: (...args: unknown[]) => getCascadeNodesMock(...args),
   getCascadeEdges: (...args: unknown[]) => getCascadeEdgesMock(...args),
   retryNode: (...args: unknown[]) => retryNodeMock(...args),
@@ -39,6 +43,8 @@ const findButtonByText = async (text: string | RegExp) => (await screen.findByTe
 
 describe("CascadeGraph", () => {
   beforeEach(() => {
+    jest.restoreAllMocks();
+    capabilitiesMock.mockResolvedValue(true);
     getCascadeNodesMock.mockReset();
     getCascadeEdgesMock.mockReset();
     retryNodeMock.mockReset();
@@ -57,7 +63,15 @@ describe("CascadeGraph", () => {
     expect(screen.getByText("Succeeded")).toBeInTheDocument();
   });
 
-  it("offers Retry only for a failed or skipped node", async () => {
+  it("hides recovery controls from viewers without operation permission", async () => {
+    capabilitiesMock.mockResolvedValue(false);
+    getCascadeNodesMock.mockResolvedValue({ nodes: [nodeResponse({ status: "FAILED" })], included: [] });
+    renderGraph();
+    expect(await screen.findByText("Failed")).toBeInTheDocument();
+    expect(screen.queryByText("Retry")).toBeNull();
+  });
+
+  it("offers Retry for a failed node", async () => {
     getCascadeNodesMock.mockResolvedValue({
       nodes: [nodeResponse({ id: "node-1", status: "FAILED" })],
       included: [{ type: "workspace", id: "ws-1", attributes: { name: "network" } }],
@@ -65,7 +79,7 @@ describe("CascadeGraph", () => {
     renderGraph();
 
     expect(await findButtonByText("Retry")).toBeInTheDocument();
-    expect(screen.queryByText("Resume")).toBeNull();
+    expect(screen.queryByText("Recheck dependencies")).toBeNull();
   });
 
   it("offers Resume only for a blocked node", async () => {
@@ -75,11 +89,12 @@ describe("CascadeGraph", () => {
     });
     renderGraph();
 
-    expect(await findButtonByText("Resume")).toBeInTheDocument();
+    expect(await findButtonByText("Recheck dependencies")).toBeInTheDocument();
     expect(screen.queryByText("Retry")).toBeNull();
   });
 
   it("retries a node and reloads once dispatched", async () => {
+    const layout = jest.spyOn(graphLayout, "layoutWithDagre");
     getCascadeNodesMock.mockResolvedValueOnce({
       nodes: [nodeResponse({ id: "node-1", status: "FAILED" })],
       included: [{ type: "workspace", id: "ws-1", attributes: { name: "network" } }],
@@ -97,7 +112,25 @@ describe("CascadeGraph", () => {
     fireEvent.click(await findButtonByText("Retry"));
 
     await waitFor(() => expect(retryNodeMock).toHaveBeenCalledWith("node-1"));
-    expect(await screen.findByText("Running")).toBeInTheDocument();
+    expect((await screen.findAllByText("Running")).length).toBeGreaterThan(0);
+    await waitFor(() => expect(getCascadeNodesMock).toHaveBeenCalledTimes(2));
+    // Empty loading state aside, an unchanged topology is laid out only once.
+    expect(layout.mock.calls.filter(([nodes]) => nodes.length > 0)).toHaveLength(1);
+  });
+
+  it("opens workspace details without putting its explanation on the compact card", async () => {
+    const node = nodeResponse({ status: "BLOCKED" });
+    getCascadeNodesMock.mockResolvedValue({
+      nodes: [{ ...node, attributes: { ...node.attributes, reason: "Waiting for network recovery" } }],
+      included: [{ type: "workspace", id: "ws-1", attributes: { name: "network" } }],
+    });
+    renderGraph();
+    const details = await findButtonByText("Details");
+    expect(screen.queryByText("Waiting for network recovery")).toBeNull();
+    fireEvent.click(details);
+    expect(await screen.findByText("Waiting for network recovery")).toBeInTheDocument();
+    expect(screen.getByText("Run attempts")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Focus dependencies/ })).toBeInTheDocument();
   });
 
   it("connects an edge between the right two cascade nodes, not raw workspace ids", async () => {
@@ -130,4 +163,30 @@ describe("CascadeGraph", () => {
     expect(screen.getByText("child")).toBeInTheDocument();
     await waitFor(() => expect(getCascadeEdgesMock).toHaveBeenCalledWith("cascade-1"));
   });
+});
+
+it("opens a 1,000-workspace cascade around a failure instead of laying out everything", async () => {
+  getCascadeNodesMock.mockResolvedValue({
+    nodes: Array.from({ length: 1000 }, (_, i) =>
+      nodeResponse({ id: `node-${i}`, workspaceId: `ws-${i}`, depth: i, status: i === 500 ? "FAILED" : "SUCCEEDED" })
+    ),
+    included: Array.from({ length: 1000 }, (_, i) => ({
+      id: `ws-${i}`,
+      type: "workspace",
+      attributes: { name: `workspace-${i}` },
+    })),
+  });
+  getCascadeEdgesMock.mockResolvedValue(
+    Array.from({ length: 999 }, (_, i) => ({
+      id: `edge-${i}`,
+      attributes: { synchronizationMode: "ALL", status: "SATISFIED" },
+      relationships: {
+        sourceWorkspace: { data: { id: `ws-${i}` } },
+        destinationWorkspace: { data: { id: `ws-${i + 1}` } },
+      },
+    }))
+  );
+  renderGraph();
+  expect(await screen.findByText("Showing 3 of 1000 workspaces · 2 dependencies")).toBeInTheDocument();
+  expect(screen.getByRole("combobox", { name: "Dependency direction" })).toBeInTheDocument();
 });

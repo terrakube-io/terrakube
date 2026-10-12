@@ -35,7 +35,7 @@ describe("getOrganizationDependencyGraph", () => {
         data: [
           {
             id: "edge-1",
-            attributes: { synchronizationMode: "ALL" },
+            attributes: { synchronizationMode: "ALL", enabled: true, onDestroy: undefined },
             relationships: {
               sourceWorkspace: { data: { type: "workspace", id: "ws-1" } },
               destinationWorkspace: { data: { type: "workspace", id: "ws-2" } },
@@ -49,7 +49,14 @@ describe("getOrganizationDependencyGraph", () => {
 
     expect(result.workspaces).toEqual([{ id: "ws-1", name: "network" }]);
     expect(result.edges).toEqual([
-      { id: "edge-1", sourceWorkspaceId: "ws-1", destinationWorkspaceId: "ws-2", synchronizationMode: "ALL" },
+      {
+        id: "edge-1",
+        sourceWorkspaceId: "ws-1",
+        destinationWorkspaceId: "ws-2",
+        synchronizationMode: "ALL",
+        enabled: true,
+        onDestroy: undefined,
+      },
     ]);
   });
 
@@ -72,4 +79,20 @@ describe("getOrganizationDependencyGraph", () => {
 
     expect(result.edges).toEqual([]);
   });
+});
+
+it("fetches later workspace pages so large organizations never lose topology", async () => {
+  mockGet.mockImplementation((url: string) =>
+    Promise.resolve(
+      url === "organization/org-1/workspace"
+        ? { data: { data: [{ id: "one", attributes: { name: "first" } }], links: { next: "next-workspaces" } } }
+        : url === "next-workspaces"
+          ? { data: { data: [{ id: "two", attributes: { name: "second" } }] } }
+          : { data: { data: [] } }
+    )
+  );
+  expect((await getOrganizationDependencyGraph("org-1")).workspaces.map((workspace) => workspace.id)).toEqual([
+    "one",
+    "two",
+  ]);
 });

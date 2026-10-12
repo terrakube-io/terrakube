@@ -7,6 +7,8 @@ const listMock = jest.fn();
 const cancelMock = jest.fn();
 
 jest.mock("@/modules/cascades/cascadeService", () => ({
+  getCascadeCapabilities: () => Promise.resolve(true),
+  getCascade: () => Promise.resolve({ attributes: { status: "RUNNING" } }),
   listCascadesForWorkspace: (...args: unknown[]) => listMock(...args),
   cancelCascade: (...args: unknown[]) => cancelMock(...args),
   getAdminErrorMessage: () => "error",
@@ -38,7 +40,7 @@ describe("Cascades", () => {
     ]);
     renderPage();
 
-    expect(await screen.findByText("Degraded")).toBeInTheDocument();
+    expect(await screen.findByText("Completed with failures")).toBeInTheDocument();
     expect(screen.getByText("#900")).toBeInTheDocument();
   });
 
@@ -46,7 +48,7 @@ describe("Cascades", () => {
     listMock.mockResolvedValue([]);
     renderPage();
 
-    expect(await screen.findByText("No cascade has started from this workspace yet.")).toBeInTheDocument();
+    expect(await screen.findByText("This workspace has not participated in a run cascade yet.")).toBeInTheDocument();
   });
 
   it("offers Cancel only for a cascade that can still dispatch", async () => {
@@ -57,7 +59,7 @@ describe("Cascades", () => {
     renderPage();
 
     await screen.findByText("Running");
-    const cancelButtons = screen.getAllByRole("button", { name: /cancel/i });
+    const cancelButtons = screen.getAllByRole("button", { name: /stop future runs/i });
     expect(cancelButtons).toHaveLength(1);
   });
 
@@ -68,11 +70,11 @@ describe("Cascades", () => {
     renderPage();
 
     await screen.findByText("Running");
-    await userEvent.click(screen.getByRole("button", { name: /cancel/i }));
+    await userEvent.click(screen.getByRole("button", { name: /stop future runs/i }));
     await userEvent.click(screen.getByRole("button", { name: /yes/i }));
 
     await waitFor(() => expect(cancelMock).toHaveBeenCalledWith("cascade-1"));
-    expect(await screen.findByText("Cancelled")).toBeInTheDocument();
+    expect(await screen.findByText("Stopped")).toBeInTheDocument();
   });
 
   it("links View to the cascade's own page, not a drawer", async () => {

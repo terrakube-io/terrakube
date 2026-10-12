@@ -444,7 +444,7 @@ export default function AppSidebar({
                 key: "cascades",
                 label: (
                   <Link to={`${workspaceBasePath}/cascades`} onClick={() => handleOrgMenuClick("cascades")}>
-                    Cascades
+                    Run cascades
                   </Link>
                 ),
                 icon: <ApartmentOutlined />,
@@ -463,7 +463,7 @@ export default function AppSidebar({
             ? [
                 { key: "projects", name: "Projects", icon: <ProjectOutlined /> },
                 { key: "workspaces", name: "Workspaces", icon: <AppstoreOutlined /> },
-                { key: "dependency-graph", name: "Dependency Graph", icon: <ClusterOutlined /> },
+                { key: "dependency-graph", name: "Workspace dependencies", icon: <ClusterOutlined /> },
                 { key: "registry", name: "Registry", icon: <CloudOutlined /> },
                 { key: "settings", name: "Settings", icon: <SettingOutlined /> },
               ].map((item) => ({

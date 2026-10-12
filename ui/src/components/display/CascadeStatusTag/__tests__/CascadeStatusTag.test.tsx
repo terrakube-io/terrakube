@@ -11,6 +11,6 @@ describe("CascadeStatusTag", () => {
     expect(tag).toHaveClass("tk-status-tag");
     expect(tag.style.backgroundColor).toBe("");
     expect(tag.style.getPropertyValue("--status-color")).toBe(cascadeStatusColors[RunCascadeStatus.Degraded]);
-    expect(screen.getByText("Degraded")).toBeInTheDocument();
+    expect(screen.getByText("Completed with failures")).toBeInTheDocument();
   });
 });
