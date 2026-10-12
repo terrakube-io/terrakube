@@ -43,6 +43,7 @@ import io.terrakube.api.plugin.storage.StorageTypeService;
 import io.terrakube.api.plugin.storage.StorageUnavailableException;
 import io.terrakube.api.plugin.token.team.TeamTokenService;
 import io.terrakube.api.repository.*;
+import io.terrakube.api.rs.ExecutionMode;
 import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.globalvar.Globalvar;
 import io.terrakube.api.rs.job.Job;
@@ -1061,6 +1062,22 @@ public class RemoteTfeService {
             newWorkspace.setSource("empty");
             newWorkspace.setBranch("remote-content");
             newWorkspace.setOrganization(organization);
+
+            ExecutionMode fallbackMode = organization.getExecutionMode() != null
+                    ? organization.getExecutionMode()
+                    : ExecutionMode.remote;
+            ExecutionMode executionMode = fallbackMode;
+            Object execModeAttr = workspaceData.getData().getAttributes().get("execution-mode");
+            if (execModeAttr != null) {
+                try {
+                    executionMode = ExecutionMode.valueOf(execModeAttr.toString().toLowerCase(Locale.ROOT));
+                } catch (IllegalArgumentException e) {
+                    log.warn("Unknown execution-mode '{}' requested for workspace {}, falling back to organization default: {}",
+                            execModeAttr, newWorkspace.getName(), fallbackMode);
+                    executionMode = fallbackMode;
+                }
+            }
+            newWorkspace.setExecutionMode(executionMode);
 
             if (workspaceData.getData().getRelationships() != null && workspaceData.getData().getRelationships().getProject() != null) {
                 log.info("Setting project for workspace {}", newWorkspace.getName());

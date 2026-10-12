@@ -495,7 +495,7 @@ export const WorkspaceDetails = ({
             }
             setOrganizationNameLocal(sessionStorage.getItem(ORGANIZATION_NAME)!);
             setWorkspaceName(response.data.data.attributes.name);
-            setExecutionMode(response.data.data.attributes.executionMode);
+            setExecutionMode(response.data.data.attributes.executionMode ?? "remote");
             if (runid && _loadVersions) changeJob(runid); // if runid is provided, show the job details
             if (_loadVersions) fetchActions();
             setLoadError(null);
@@ -721,7 +721,9 @@ export const WorkspaceDetails = ({
                     <ThunderboltOutlined aria-hidden />
                     <span className="workspace-rail-label">Execution mode:</span>
                     <Link to={`/organizations/${organizationId}/workspaces/${id}/settings/general`}>
-                      {executionMode.charAt(0).toUpperCase() + executionMode.slice(1)}
+                      {executionMode === "..."
+                        ? "..."
+                        : executionMode.charAt(0).toUpperCase() + executionMode.slice(1)}
                     </Link>
                   </li>
                   {workspace.attributes.folder && (
