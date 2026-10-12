@@ -4,9 +4,6 @@ import com.azure.core.util.BinaryData;
 import com.azure.storage.blob.BlobClient;
 import com.azure.storage.blob.BlobContainerClient;
 import com.azure.storage.blob.BlobServiceClient;
-import com.azure.storage.blob.sas.BlobSasPermission;
-import com.azure.storage.blob.sas.BlobServiceSasSignatureValues;
-import com.azure.storage.common.sas.SasProtocol;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NonNull;
@@ -31,7 +28,6 @@ import java.io.File;
 import java.io.IOException;
 import java.net.URL;
 import java.nio.charset.Charset;
-import java.time.OffsetDateTime;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -78,7 +74,12 @@ public class AzureTerraformStateImpl implements TerraformState {
             azureBackendHcl.appendln("      storage_account_name = \"" + storageAccountName + "\"");
             azureBackendHcl.appendln("      container_name       = \"" + storageContainerName + "\"");
             azureBackendHcl.appendln("      key                  = \"" + organizationId + "/" + workspaceId + "/terraform.tfstate" + "\"");
-            azureBackendHcl.appendln("      access_key           = \"" + storageAccessKey + "\"");
+            if (storageAccessKey == null || storageAccessKey.isBlank()) {
+                // Credentials come from the ARM_* environment (ARM_USE_OIDC, ARM_CLIENT_ID, ...).
+                azureBackendHcl.appendln("      use_azuread_auth     = true");
+            } else {
+                azureBackendHcl.appendln("      access_key           = \"" + storageAccessKey + "\"");
+            }
             azureBackendHcl.appendln("  }");
             azureBackendHcl.appendln("}");
 
@@ -177,17 +178,10 @@ public class AzureTerraformStateImpl implements TerraformState {
                         BlobContainerClient blobContainerClient = blobServiceClient.getBlobContainerClient(CONTAINER_NAME);
                         BlobClient blobClient = blobContainerClient.getBlobClient(blobName);
 
-                        BlobSasPermission blobSasPermission = new BlobSasPermission().setReadPermission(true);
-                        BlobServiceSasSignatureValues builder = new BlobServiceSasSignatureValues(OffsetDateTime.now().plusMinutes(5), blobSasPermission)
-                                .setProtocol(SasProtocol.HTTPS_ONLY);
-
-                        FileUtils.copyURLToFile(
-                                new URL(String.format("%s?%s", blobClient.getBlobUrl(), blobClient.generateSas(builder))),
-                                new File(workingDirectory.getAbsolutePath() + "/" + TERRAFORM_PLAN_FILE),
-                                30000,
-                                30000);
+                        // Download through the authenticated client; a shared-key SAS is unavailable with Entra ID auth.
+                        blobClient.downloadToFile(workingDirectory.getAbsolutePath() + "/" + TERRAFORM_PLAN_FILE, true);
                         planExists.set(true);
-                    } catch (IOException e) {
+                    } catch (IOException | RuntimeException e) {
                         log.error(e.getMessage());
                     }
                 });

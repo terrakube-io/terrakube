@@ -4,6 +4,7 @@ import com.azure.storage.blob.BlobClient;
 import com.azure.storage.blob.BlobContainerClient;
 import com.azure.storage.blob.BlobServiceClient;
 import com.azure.storage.blob.models.BlobStorageException;
+import com.azure.storage.blob.models.UserDelegationKey;
 import io.terrakube.registry.plugin.storage.StorageUnavailableException;
 import io.terrakube.registry.service.git.GitService;
 import io.terrakube.registry.service.git.ModuleVersionDownload;
@@ -102,6 +103,38 @@ class AzureStorageServiceImplPresignedTest {
 
         assertThrows(StorageUnavailableException.class,
                 () -> service.getPresignedDownloadUrl("org", "module", "azure", "1.0.0"));
+    }
+
+    // ---- getPresignedDownloadUrl: Entra ID client signs with a user delegation key ----
+
+    @Test
+    void getPresignedDownloadUrl_withUserDelegationSas_signsWithDelegationKey() {
+        BlobServiceClient blobServiceClient = mock(BlobServiceClient.class);
+        BlobContainerClient containerClient = mock(BlobContainerClient.class);
+        BlobClient blobClient = mock(BlobClient.class);
+        UserDelegationKey delegationKey = new UserDelegationKey();
+
+        when(blobServiceClient.getBlobContainerClient("registry")).thenReturn(containerClient);
+        when(containerClient.getBlobClient(anyString())).thenReturn(blobClient);
+        when(blobClient.getBlobUrl())
+                .thenReturn("https://myaccount.blob.core.windows.net/registry/org/module/azure/1.0.0/module.zip");
+        when(blobServiceClient.getUserDelegationKey(any(OffsetDateTime.class), any(OffsetDateTime.class)))
+                .thenReturn(delegationKey);
+        when(blobClient.generateUserDelegationSas(any(BlobServiceSasSignatureValues.class), eq(delegationKey)))
+                .thenReturn("sv=2021-06-08&sr=b&sp=r&skoid=x&sig=REDACTED");
+
+        AzureStorageServiceImpl service = AzureStorageServiceImpl.builder()
+                .blobServiceClient(blobServiceClient)
+                .gitService(mock(GitService.class))
+                .registryHostname("https://registry.terrakube.io")
+                .presignedRedirectEnabled(true)
+                .userDelegationSas(true)
+                .build();
+        Optional<URI> result = service.getPresignedDownloadUrl("org", "module", "azure", "1.0.0");
+
+        assertTrue(result.isPresent());
+        assertTrue(result.get().toString().contains("skoid=x"));
+        verify(blobClient, never()).generateSas(any());
     }
 
     // ---- downloadModule: success ----

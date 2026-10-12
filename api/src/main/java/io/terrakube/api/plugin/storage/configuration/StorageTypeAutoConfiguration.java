@@ -1,5 +1,6 @@
 package io.terrakube.api.plugin.storage.configuration;
 
+import com.azure.identity.DefaultAzureCredentialBuilder;
 import com.azure.storage.blob.BlobServiceClient;
 import com.azure.storage.blob.BlobServiceClientBuilder;
 import com.google.auth.Credentials;
@@ -87,12 +88,9 @@ public class StorageTypeAutoConfiguration {
         log.info("StorageType={}", storageTypeProperties.getType());
         switch (storageTypeProperties.getType()) {
             case AZURE:
-                BlobServiceClient blobServiceClient = new BlobServiceClientBuilder()
-                        .connectionString(
-                                String.format("DefaultEndpointsProtocol=https;AccountName=%s;AccountKey=%s;EndpointSuffix=core.windows.net",
-                                        azureStorageTypeProperties.getAccountName(),
-                                        azureStorageTypeProperties.getAccountKey())
-                        ).buildClient();
+                BlobServiceClient blobServiceClient = azureBlobServiceClient(
+                        azureStorageTypeProperties.getAccountName(),
+                        azureStorageTypeProperties.getAccountKey());
 
                 storageTypeService = AzureStorageTypeServiceImpl.builder()
                         .blobServiceClient(blobServiceClient)
@@ -153,6 +151,25 @@ public class StorageTypeAutoConfiguration {
                 storageTypeService = LocalStorageTypeServiceImpl.builder().build();
         }
         return storageTypeService;
+    }
+
+    /**
+     * Uses the account key when one is configured; otherwise authenticates with Microsoft Entra ID
+     * through DefaultAzureCredential (workload identity, managed identity, Azure CLI, ...).
+     */
+    static BlobServiceClient azureBlobServiceClient(String accountName, String accountKey) {
+        BlobServiceClientBuilder builder = new BlobServiceClientBuilder();
+        if (accountKey == null || accountKey.isBlank()) {
+            log.info("Azure storage account {} uses Microsoft Entra ID authentication", accountName);
+            return builder
+                    .endpoint(String.format("https://%s.blob.core.windows.net", accountName))
+                    .credential(new DefaultAzureCredentialBuilder().build())
+                    .buildClient();
+        }
+        return builder
+                .connectionString(String.format("DefaultEndpointsProtocol=https;AccountName=%s;AccountKey=%s;EndpointSuffix=core.windows.net",
+                        accountName, accountKey))
+                .buildClient();
     }
 
     private static AwsBasicCredentials getAwsBasicCredentials(AwsStorageTypeProperties awsStorageTypeProperties) {

@@ -4,7 +4,6 @@ import com.azure.core.util.BinaryData;
 import com.azure.storage.blob.BlobClient;
 import com.azure.storage.blob.BlobContainerClient;
 import com.azure.storage.blob.BlobServiceClient;
-import com.azure.storage.blob.sas.BlobServiceSasSignatureValues;
 import io.terrakube.client.TerrakubeClient;
 import io.terrakube.client.model.organization.workspace.history.HistoryRequest;
 import io.terrakube.executor.plugin.tfstate.TerraformOutputPathService;
@@ -83,6 +82,19 @@ class AzureTerraformStateImplTest {
         assertTrue(content.contains("container_name       = \"test-container\""));
         assertTrue(content.contains("key                  = \"org1/ws1/terraform.tfstate\""));
         assertTrue(content.contains("access_key           = \"test-key\""));
+        assertFalse(content.contains("use_azuread_auth"));
+    }
+
+    @Test
+    void testGetBackendStateFileWithoutAccessKeyUsesEntraId(@TempDir Path tempDir) throws IOException {
+        azureTerraformState.setStorageAccessKey("");
+        File workingDirectory = tempDir.toFile();
+
+        azureTerraformState.getBackendStateFile("org1", "ws1", workingDirectory, "1.5.0");
+
+        String content = FileUtils.readFileToString(new File(workingDirectory, "azure_backend_override.tf"), Charset.defaultCharset());
+        assertTrue(content.contains("use_azuread_auth     = true"));
+        assertFalse(content.contains("access_key"));
     }
 
     @Test
@@ -156,34 +168,17 @@ class AzureTerraformStateImplTest {
         String planUrl = "https://storage.azure.com/tfstate/org1/ws1/job1/step1/terraformLibrary.tfPlan";
         when(terrakubeClient.getJobById(organizationId, jobId).getData().getAttributes().getTerraformPlan())
                 .thenReturn(planUrl);
-        
-        when(blobClient.getBlobUrl()).thenReturn("https://storage.azure.com/blob");
-        when(blobClient.generateSas(any(BlobServiceSasSignatureValues.class))).thenReturn("sas-token");
-
-        // The implementation uses FileUtils.copyURLToFile which is hard to mock directly as it's static.
-        // However, we can try to mock the behavior by catching the call if it's possible or just verify up to the point of failure if it tries to connect.
-        // Since I cannot mock static methods easily with standard Mockito without mockito-inline,
-        // and I don't know if mockito-inline is available, I will assume it is NOT.
-        // But wait, Azure SDK might be using its own mechanisms? No, the code uses FileUtils.copyURLToFile.
-        
-        // Let's see if I can use a local file URL to make it pass or at least not throw exception.
-        // String expectedBlobUrlWithSas = "https://storage.azure.com/blob?sas-token";
-        
-        // Actually, FileUtils.copyURLToFile(new URL(...), file, ...) will try to connect.
-        // To test this properly without real network, we might need to mock FileUtils or use a local server.
-        // But here I'll just check if the logic before the call is sound.
-        
-        // I'll use a local file URL for testing to avoid network issues if I can.
-        File sourceFile = new File(workingDirectory, "source.tfPlan");
-        FileUtils.writeStringToFile(sourceFile, "source-content", Charset.defaultCharset());
-        String localUrl = sourceFile.toURI().toURL().toString();
-        
-        when(blobClient.getBlobUrl()).thenReturn(localUrl.split("\\?")[0]);
-        when(blobClient.generateSas(any())).thenReturn("");
+        String planPath = workingDirectory.getAbsolutePath() + "/terraformLibrary.tfPlan";
+        doAnswer(invocation -> {
+            FileUtils.writeStringToFile(new File(planPath), "source-content", Charset.defaultCharset());
+            return null;
+        }).when(blobClient).downloadToFile(planPath, true);
 
         boolean result = azureTerraformState.downloadTerraformPlan(organizationId, workspaceId, jobId, stepId, workingDirectory);
 
         assertTrue(result);
+        verify(blobContainerClient).getBlobClient("org1/ws1/job1/step1/terraformLibrary.tfPlan");
+        verify(blobClient, never()).generateSas(any());
         File downloadedPlan = new File(workingDirectory, "terraformLibrary.tfPlan");
         assertTrue(downloadedPlan.exists());
         assertEquals("source-content", FileUtils.readFileToString(downloadedPlan, Charset.defaultCharset()));

@@ -1,7 +1,7 @@
 package io.terrakube.registry.plugin.storage.configuration;
 
 
-import com.azure.storage.blob.BlobServiceClient;
+import com.azure.identity.DefaultAzureCredentialBuilder;
 import com.azure.storage.blob.BlobServiceClientBuilder;
 import com.google.auth.Credentials;
 import com.google.auth.oauth2.GoogleCredentials;
@@ -62,15 +62,23 @@ public class StorageAutoConfiguration {
         log.info("StorageType={}", storageProperties.getType());
         switch (storageProperties.getType()) {
             case AzureStorageImpl:
-                BlobServiceClient blobServiceClient = new BlobServiceClientBuilder()
-                        .connectionString(
-                                String.format("DefaultEndpointsProtocol=https;AccountName=%s;AccountKey=%s;EndpointSuffix=core.windows.net",
-                                        azureStorageServiceProperties.getAccountName(),
-                                        azureStorageServiceProperties.getAccountKey())
-                        ).buildClient();
+                String azureAccountKey = azureStorageServiceProperties.getAccountKey();
+                boolean useEntraId = azureAccountKey == null || azureAccountKey.isBlank();
+                BlobServiceClientBuilder blobServiceClientBuilder = new BlobServiceClientBuilder();
+                if (useEntraId) {
+                    log.info("Azure storage account {} uses Microsoft Entra ID authentication", azureStorageServiceProperties.getAccountName());
+                    blobServiceClientBuilder
+                            .endpoint(String.format("https://%s.blob.core.windows.net", azureStorageServiceProperties.getAccountName()))
+                            .credential(new DefaultAzureCredentialBuilder().build());
+                } else {
+                    blobServiceClientBuilder.connectionString(
+                            String.format("DefaultEndpointsProtocol=https;AccountName=%s;AccountKey=%s;EndpointSuffix=core.windows.net",
+                                    azureStorageServiceProperties.getAccountName(), azureAccountKey));
+                }
 
                 storageService = AzureStorageServiceImpl.builder()
-                        .blobServiceClient(blobServiceClient)
+                        .blobServiceClient(blobServiceClientBuilder.buildClient())
+                        .userDelegationSas(useEntraId)
                         .gitService(new GitServiceImpl())
                         .registryHostname(openRegistryProperties.getHostname())
                         .presignedUrlExpirySeconds(azureStorageServiceProperties.getPresignedUrlExpirySeconds())
