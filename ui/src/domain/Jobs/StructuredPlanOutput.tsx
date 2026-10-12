@@ -1500,10 +1500,10 @@ export const StructuredPlanOutput = ({
 
   useEffect(() => {
     setExpandedRowKeys((currentKeys) => {
-      const validKeys = new Set(preparedRows.map((row) => row.key));
+      const validKeys = new Set([...preparedRows.map((row) => row.key), ...outputChangeRows.map((row) => row.key)]);
       return currentKeys.filter((key) => validKeys.has(key));
     });
-  }, [preparedRows]);
+  }, [preparedRows, outputChangeRows]);
 
   const filteredRows = useMemo(() => {
     return preparedRows.filter((row) => {
@@ -1557,9 +1557,9 @@ export const StructuredPlanOutput = ({
     emptyDescription = "No changes were computed — see diagnostics above.";
   } else if (!showDataSources && hasDataSourceChanges) {
     emptyDescription = "No resources match the current filters. Enable Show data sources to include read operations.";
-  } else if (!preparedRows.length && !isFilteredView && outputChangeRows.length > 0) {
+  } else if (!applyMode && !preparedRows.length && !isFilteredView && outputChangeRows.length > 0) {
     // Not a filter problem - there are genuinely zero resource changes, just one or more output
-    // changes below, which the default "no resources match the current filters" text doesn't
+    // changes below (the panel is hidden in apply mode, so only say so outside it), which the default "no resources match the current filters" text doesn't
     // say and isn't true of anyway (#3675).
     emptyDescription = "No managed resource changes — see output changes below.";
   }

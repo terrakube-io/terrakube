@@ -88,6 +88,12 @@ public class ApplyStructuredOutputService {
                 continue;
             }
 
+            // Output changes are plan-only: apply -json emits no per-output events, so seeding one
+            // as "pending" would leave it stuck in that state after a successful apply (#3675).
+            if (Boolean.TRUE.equals(change.get("isOutputChange"))) {
+                continue;
+            }
+
             Map<String, Object> seededChange = new HashMap<>((Map<String, Object>) change);
             // Ephemeral resources have no apply-time lifecycle to reset here when they're never
             // referenced elsewhere in the config: confirmed against a real run that apply -json

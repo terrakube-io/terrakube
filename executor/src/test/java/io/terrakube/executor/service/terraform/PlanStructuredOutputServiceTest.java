@@ -342,6 +342,25 @@ class PlanStructuredOutputServiceTest {
     }
 
     @Test
+    void toleratesAnOutputChangeWithNullActions() throws Exception {
+        String json = """
+                {
+                  "resource_changes": [],
+                  "output_changes": {
+                    "odd_output": {
+                      "actions": null,
+                      "before": "a",
+                      "after": "b"
+                    }
+                  }
+                }
+                """;
+
+        // Must not throw a NullPointerException; a null actions array is treated as empty.
+        subject().buildChangesFromPlanJson(json);
+    }
+
+    @Test
     void skipsNoOpOutputChanges() throws Exception {
         String json = """
                 {

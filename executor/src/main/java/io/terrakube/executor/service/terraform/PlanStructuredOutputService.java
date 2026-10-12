@@ -308,7 +308,10 @@ public class PlanStructuredOutputService {
             Map<String, Object> changeBlock = new HashMap<>();
             changeBlockRaw.forEach((k, v) -> changeBlock.put(String.valueOf(k), v));
 
-            List<String> actions = (List<String>) changeBlock.getOrDefault("actions", List.of());
+            Object actionsRaw = changeBlock.get("actions");
+            List<String> actions = actionsRaw instanceof List<?> actionList
+                    ? actionList.stream().map(String::valueOf).toList()
+                    : List.of();
             String action = normalizeAction(actions);
             if ("no-op".equals(action)) {
                 continue;

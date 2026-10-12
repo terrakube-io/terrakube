@@ -57,6 +57,20 @@ class ApplyStructuredOutputServiceTest {
     }
 
     @Test
+    void doesNotSeedOutputChangesBecauseApplyNeverUpdatesThem() {
+        Map<String, Object> context = new HashMap<>();
+        context.put("planStructuredOutput", Map.of(
+                "plan-step-1", List.of(
+                        Map.of("address", "aws_instance.example", "action", "create"),
+                        Map.of("address", "derived_value", "action", "update", "isOutputChange", true))));
+
+        List<Map<String, Object>> seeded = subject().seedFromPlan(context);
+
+        assertEquals(1, seeded.size());
+        assertEquals("aws_instance.example", seeded.get(0).get("address"));
+    }
+
+    @Test
     void skipsSeedingWhenThereIsNoPlanStructuredOutput() {
         List<Map<String, Object>> seeded = subject().seedFromPlan(new HashMap<>());
 
