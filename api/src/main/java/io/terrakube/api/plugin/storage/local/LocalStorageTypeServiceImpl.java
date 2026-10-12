@@ -48,7 +48,7 @@ public class LocalStorageTypeServiceImpl implements StorageTypeService {
         if (!file.exists()) {
             return new byte[0];
         }
-        return storageRetryMetrics.withRetry("local", "read", () -> FileUtils.readFileToByteArray(file));
+        return storageRetryMetrics.withRetry("local", "read", () -> java.nio.file.Files.readAllBytes(file.toPath()));
     }
 
     // Shared by every write path (state, context, policy evaluation, and the CLI-driven

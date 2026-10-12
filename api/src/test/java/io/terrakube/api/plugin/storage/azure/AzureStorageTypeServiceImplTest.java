@@ -82,7 +82,6 @@ class AzureStorageTypeServiceImplTest {
     @Test
     void testSaveContext() {
         when(blobServiceClient.getBlobContainerClient("tfoutput")).thenReturn(containerClient);
-        when(containerClient.exists()).thenReturn(true);
         when(containerClient.getBlobClient("context/123/context.json")).thenReturn(blobClient);
 
         azureStorageTypeService.saveContext(123, "{}");
@@ -129,7 +128,6 @@ class AzureStorageTypeServiceImplTest {
     @Test
     void writeThrowsStorageUnavailableAfterRetryingAGenuineFailure() {
         when(blobServiceClient.getBlobContainerClient("tfoutput")).thenReturn(containerClient);
-        when(containerClient.exists()).thenReturn(true);
         when(containerClient.getBlobClient(anyString())).thenReturn(blobClient);
         doThrow(new RuntimeException("connection reset")).when(blobClient).upload(any(BinaryData.class), eq(true));
 
@@ -142,13 +140,12 @@ class AzureStorageTypeServiceImplTest {
     @Test
     void testCreateContentFile() throws IOException {
         when(blobServiceClient.getBlobContainerClient("content")).thenReturn(containerClient);
-        when(containerClient.exists()).thenReturn(false);
         when(containerClient.getBlobClient(anyString())).thenReturn(blobClient);
         InputStream is = new ByteArrayInputStream("data".getBytes());
 
         azureStorageTypeService.createContentFile("id1", is);
 
-        verify(containerClient).create();
+        verify(containerClient).createIfNotExists();
         verify(blobClient).upload(any(BinaryData.class), eq(true));
     }
 
