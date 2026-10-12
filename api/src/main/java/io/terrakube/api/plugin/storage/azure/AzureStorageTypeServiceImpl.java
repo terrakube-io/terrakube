@@ -68,9 +68,7 @@ public class AzureStorageTypeServiceImpl implements StorageTypeService {
     private void uploadBlob(String containerName, String blobName, byte[] data) {
         storageRetryMetrics.withRetry("azure", "write", () -> {
             BlobContainerClient containerClient = blobServiceClient.getBlobContainerClient(containerName);
-            if (!containerClient.exists()) {
-                containerClient.create();
-            }
+            containerClient.createIfNotExists();
             BlobClient blobClient = containerClient.getBlobClient(blobName);
             blobClient.upload(BinaryData.fromBytes(data), true);
             log.info("Upload Object {} completed", blobName);
