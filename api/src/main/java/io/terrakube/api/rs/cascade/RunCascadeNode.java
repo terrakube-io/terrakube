@@ -44,6 +44,7 @@ public class RunCascadeNode extends GenericAuditFields {
     private UUID id;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @com.yahoo.elide.annotation.Exclude
     private RunCascade cascade;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
@@ -55,4 +56,10 @@ public class RunCascadeNode extends GenericAuditFields {
 
     @Enumerated(EnumType.STRING)
     private RunCascadeNodeStatus status = RunCascadeNodeStatus.PENDING;
+
+    @jakarta.persistence.OneToMany(mappedBy = "node")
+    @jakarta.persistence.OrderBy("attemptNumber ASC")
+    private java.util.List<RunCascadeNodeAttempt> runCascadeNodeAttempt = new java.util.ArrayList<>();
+
+    private String reason;
 }

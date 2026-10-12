@@ -28,6 +28,9 @@ public class RunTriggerProperties {
      */
     private int maxCascadeDepth = 10;
 
+    /** Maximum number of workspaces in one execution snapshot. */
+    private int maxCascadeNodes = 1000;
+
     /**
      * How many enabled outbound edges a single workspace may have, enforced by
      * {@link WorkspaceGraphValidationService#validateFanOutLimit} at edge creation. Renamed

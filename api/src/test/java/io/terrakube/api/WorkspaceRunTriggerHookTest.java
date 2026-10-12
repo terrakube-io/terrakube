@@ -33,7 +33,9 @@ class WorkspaceRunTriggerHookTest {
     @BeforeEach
     void setUp() {
         graphValidationService = mock(WorkspaceGraphValidationService.class);
-        hook = new WorkspaceRunTriggerHook(graphValidationService);
+        var tcl = mock(io.terrakube.api.plugin.scheduler.job.tcl.TclService.class);
+        org.mockito.Mockito.lenient().when(tcl.isTclPlanOnly(any())).thenReturn(true);
+        hook = new WorkspaceRunTriggerHook(graphValidationService, tcl);
     }
 
     private WorkspaceRunTrigger trigger(boolean enabled) {

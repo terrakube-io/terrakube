@@ -22,9 +22,9 @@ import lombok.Getter;
 import lombok.Setter;
 
 /**
- * One dispatched attempt at running a {@link RunCascadeNode}. The node's own status is terminal
- * once an attempt succeeds or attempts are exhausted; outcome is read from {@link #job}'s status
- * rather than duplicated here. Read-only from the API, same write lock as {@link RunCascade}.
+ * One job attempt within a workspace run. Its completion outcome remains independent of later
+ * attempts; an operator retry supersedes the particular failed attempt it replaces. Job ownership
+ * and attempt numbering are unique in the database. Ordinary API readers cannot mutate attempts.
  */
 @Include(name = "runCascadeNodeAttempt", rootLevel = false)
 @ReadPermission(expression = "team view run cascade node attempt")
@@ -41,6 +41,7 @@ public class RunCascadeNodeAttempt extends GenericAuditFields {
     private UUID id;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @com.yahoo.elide.annotation.Exclude
     private RunCascadeNode node;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
@@ -48,4 +49,12 @@ public class RunCascadeNodeAttempt extends GenericAuditFields {
 
     @Column(name = "attempt_number", nullable = false)
     private int attemptNumber;
+
+    @jakarta.persistence.Enumerated(jakarta.persistence.EnumType.STRING)
+    private RunCascadeNodeStatus outcome = RunCascadeNodeStatus.RUNNING;
+
+    private boolean superseded;
+
+    @Column(name = "state_changed")
+    private Boolean stateChanged;
 }

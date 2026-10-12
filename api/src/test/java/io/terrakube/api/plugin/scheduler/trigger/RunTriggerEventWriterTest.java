@@ -38,7 +38,7 @@ class RunTriggerEventWriterTest {
         lenient().doReturn(true).when(workspaceRunTriggerRepository)
                 .existsBySourceWorkspaceIdAndEnabledTrueAndDestinationWorkspace_DeletedFalse(SOURCE_ID);
         lenient().doReturn(false).when(runTriggerEventRepository).existsByJob_Id(any(Integer.class));
-        subject = new RunTriggerEventWriter(runTriggerEventRepository, workspaceRunTriggerRepository, properties);
+        subject = new RunTriggerEventWriter(runTriggerEventRepository, workspaceRunTriggerRepository, properties, mock(io.terrakube.api.repository.RunCascadeNodeAttemptRepository.class));
     }
 
     private Job completedJob(int id) {

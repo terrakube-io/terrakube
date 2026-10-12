@@ -29,6 +29,7 @@ import java.util.Optional;
 public class WorkspaceRunTriggerHook implements LifeCycleHook<WorkspaceRunTrigger> {
 
     private final WorkspaceGraphValidationService graphValidationService;
+    private final io.terrakube.api.plugin.scheduler.job.tcl.TclService tclService;
 
     @Override
     public void execute(LifeCycleHookBinding.Operation operation,
@@ -42,6 +43,11 @@ public class WorkspaceRunTriggerHook implements LifeCycleHook<WorkspaceRunTrigge
             return;
         }
 
+        if (operation == LifeCycleHookBinding.Operation.CREATE || changes.filter(c ->
+                java.util.Set.of("enabled", "synchronizationMode", "template", "onDestroy", "onDestroyPlanTemplate")
+                    .contains(c.getFieldName())).isPresent()) {
+            graphValidationService.validateJoinConfiguration(trigger);
+        }
         if (topologyChangeApplies(operation, changes)) {
             graphValidationService.validateAcyclic(
                     trigger.getOrganization().getId(),
@@ -61,6 +67,10 @@ public class WorkspaceRunTriggerHook implements LifeCycleHook<WorkspaceRunTrigge
                 && trigger.getOnDestroyPlanTemplate() == null) {
             throw new MissingPlanOnlyTemplateException(
                     "Run trigger " + trigger.getId() + " has onDestroy=PLAN_ONLY but no onDestroyPlanTemplate set");
+        }
+        if (planOnlyTemplateApplies(operation, changes) && trigger.getOnDestroy() == RunTriggerOnDestroyPolicy.PLAN_ONLY
+                && !tclService.isTclPlanOnly(trigger.getOnDestroyPlanTemplate().getTcl())) {
+            throw new MissingPlanOnlyTemplateException("A plan-only destroy response requires a workflow containing only plan steps");
         }
     }
 

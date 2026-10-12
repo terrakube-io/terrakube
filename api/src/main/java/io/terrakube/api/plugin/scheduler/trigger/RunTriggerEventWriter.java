@@ -31,6 +31,7 @@ public class RunTriggerEventWriter {
     private final RunTriggerEventRepository runTriggerEventRepository;
     private final WorkspaceRunTriggerRepository workspaceRunTriggerRepository;
     private final RunTriggerProperties properties;
+    private final io.terrakube.api.repository.RunCascadeNodeAttemptRepository cascadeAttempts;
 
     public void enqueueIfQualifying(Job completedJob) {
         if (!properties.isEnabled()) {
@@ -44,7 +45,7 @@ public class RunTriggerEventWriter {
         boolean hasOutboundEdges = workspaceRunTriggerRepository
                 .existsBySourceWorkspaceIdAndEnabledTrueAndDestinationWorkspace_DeletedFalse(
                         completedJob.getWorkspace().getId());
-        if (!hasOutboundEdges) {
+        if (!hasOutboundEdges && cascadeAttempts.findByJob_Id(completedJob.getId()).isEmpty()) {
             return;
         }
 

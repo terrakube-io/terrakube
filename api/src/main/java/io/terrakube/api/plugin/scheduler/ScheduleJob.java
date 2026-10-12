@@ -250,7 +250,11 @@ public class ScheduleJob implements org.quartz.Job {
         log.info("Checking previous jobs....");
 
         boolean canProceed;
-        if (tclService.isTemplatePlanOnly(job.getTemplateReference()) && !tclService.isCliTemplate(job.getTemplateReference())) {
+        boolean frozenCascadeWorkflow = io.terrakube.api.rs.job.JobVia.RUN_TRIGGER.getValue().equals(job.getVia())
+                && job.getTcl() != null && !job.getTcl().isBlank();
+        boolean planOnly = frozenCascadeWorkflow ? tclService.isTclPlanOnly(job.getTcl())
+                : tclService.isTemplatePlanOnly(job.getTemplateReference());
+        if (planOnly && !tclService.isCliTemplate(job.getTemplateReference())) {
             log.info("Job {} is plan-only (bypassQueue), checking for active apply/destroy", jobId);
             canProceed = !isActiveApplyOrDestroyRunning(job.getWorkspace(), job.getId());
             if (!canProceed) {

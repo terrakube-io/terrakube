@@ -2,50 +2,33 @@ package io.terrakube.api.plugin.scheduler.trigger;
 
 import io.terrakube.api.plugin.notification.JobNotificationTrigger;
 import io.terrakube.api.plugin.scheduler.ScheduleJobService;
-import io.terrakube.api.repository.RunCascadeEdgeRepository;
-import io.terrakube.api.repository.RunCascadeNodeAttemptRepository;
-import io.terrakube.api.repository.RunCascadeNodeRepository;
-import io.terrakube.api.repository.RunCascadeRepository;
-import io.terrakube.api.repository.WorkspaceRunTriggerRepository;
-import io.terrakube.api.rs.cascade.RunCascade;
-import io.terrakube.api.rs.cascade.RunCascadeEdge;
-import io.terrakube.api.rs.cascade.RunCascadeNode;
-import io.terrakube.api.rs.cascade.RunCascadeNodeAttempt;
-import io.terrakube.api.rs.cascade.RunCascadeNodeStatus;
-import io.terrakube.api.rs.cascade.RunCascadeStatus;
+import io.terrakube.api.plugin.scheduler.job.tcl.TclService;
+import io.terrakube.api.repository.*;
+import io.terrakube.api.rs.cascade.*;
 import io.terrakube.api.rs.job.Job;
+import io.terrakube.api.rs.job.JobStatus;
+import io.terrakube.api.rs.template.Template;
 import io.terrakube.api.rs.workspace.Workspace;
-import io.terrakube.api.rs.workspace.trigger.RunTriggerSynchronizationMode;
-import io.terrakube.api.rs.workspace.trigger.WorkspaceRunTrigger;
-import lombok.AllArgsConstructor;
+import io.terrakube.api.rs.workspace.trigger.*;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.quartz.ObjectAlreadyExistsException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
-import java.util.ArrayDeque;
-import java.util.Deque;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 
 /**
- * Ties a propagation across workspaces into one {@link RunCascade}, and decides whether an
- * {@code ANY}/{@code ALL} edge is actually ready to dispatch. {@link RunTriggerDispatchService}
- * still owns the hot-path fan-out loop and job creation; this is consulted inline per edge
- * rather than taking it over, so {@code EACH} (the only mode that existed before this) stays
- * byte-for-byte what it was - it is never gated here at all. Operator actions
- * ({@link #retryNode}, {@link #resumeNode}, {@link #cancelCascade}) are this service's own
- * concern, since nothing about them is on the hot path.
+ * Serializes execution transitions on the cascade row. A job and its attempt are one durable
+ * dispatch intent: both commit before Quartz is called. Event replay and the existing job
+ * reconciliation sweep recover scheduling failures without losing or duplicating that intent.
  */
 @Slf4j
 @Service
-@AllArgsConstructor
+@RequiredArgsConstructor
 public class RunCascadeCoordinatorService {
-
     private final RunCascadeRepository runCascadeRepository;
     private final RunCascadeNodeRepository runCascadeNodeRepository;
     private final RunCascadeEdgeRepository runCascadeEdgeRepository;
@@ -57,442 +40,439 @@ public class RunCascadeCoordinatorService {
     private final ScheduleJobService scheduleJobService;
     private final RunCascadeMetrics metrics;
     private final RunCascadeNotificationTrigger cascadeNotificationTrigger;
+    private final JobRepository jobRepository;
+    private final TemplateRepository templateRepository;
+    private final TclService tclService;
 
-    /**
-     * Marks this job's own node resolved, if it has one - a job outside any cascade (the common
-     * case today, while most edges are still {@code EACH}) is a no-op. Called for every job
-     * reaching {@link RunTriggerDispatchService#dispatchInternal}, before the state-identity
-     * check: a node that produced no further change still succeeded and must not stay
-     * {@code RUNNING} forever waiting for a fan-out that was never going to happen.
-     */
-    @Transactional
-    public void resolveNode(Job completedJob) {
-        runCascadeNodeAttemptRepository.findByJob_Id(completedJob.getId()).ifPresent(attempt -> {
-            RunCascadeNode node = attempt.getNode();
-            if (node.getStatus() != RunCascadeNodeStatus.SUCCEEDED) {
-                node.setStatus(RunCascadeNodeStatus.SUCCEEDED);
-                runCascadeNodeRepository.save(node);
-            }
-            recomputeStatus(node.getCascade().getId());
-        });
+    @jakarta.persistence.PersistenceContext
+    private jakarta.persistence.EntityManager entityManager;
+
+    @Transactional(readOnly = true)
+    public Optional<RunCascade> findCascade(int jobId) {
+        return runCascadeNodeAttemptRepository.findByJob_Id(jobId).map(a -> a.getNode().getCascade());
     }
 
-    /**
-     * Marks this job's own node {@code outcome} (FAILED if it actually ran and failed, SKIPPED
-     * if it was cancelled or rejected before running), if it has one, and blocks every PENDING
-     * descendant that can now never become ready - an ALL join missing this parent for good, or
-     * an ANY join whose every parent has now resolved unsuccessfully. Without this, such a node
-     * would stay PENDING forever and the cascade would never leave RUNNING.
-     */
-    @Transactional
-    public void resolveNodeAsUnsuccessful(Job completedJob, RunCascadeNodeStatus outcome) {
-        runCascadeNodeAttemptRepository.findByJob_Id(completedJob.getId()).ifPresent(attempt -> {
-            RunCascadeNode node = attempt.getNode();
-            node.setStatus(outcome);
-            runCascadeNodeRepository.save(node);
-            propagateBlocking(node.getCascade(), node.getWorkspace());
-            recomputeStatus(node.getCascade().getId());
-        });
-    }
-
-    /**
-     * BFS forward from a node that just resolved unsuccessfully, blocking every PENDING
-     * descendant whose readiness condition can no longer be satisfied, and propagating from
-     * each of those in turn - a BLOCKED node can itself strand further descendants. Each
-     * descendant is read through the same row lock {@link #shouldDispatch} and {@link
-     * #blockNode} take: without it, a concurrent transaction could dispatch that same node to
-     * {@code RUNNING} and commit between this method's read and its write, and the stale
-     * in-memory copy would then overwrite that commit back to {@code BLOCKED}.
-     */
-    private void propagateBlocking(RunCascade cascade, Workspace unsuccessfulWorkspace) {
-        Deque<UUID> frontier = new ArrayDeque<>();
-        frontier.push(unsuccessfulWorkspace.getId());
-
-        while (!frontier.isEmpty()) {
-            UUID sourceId = frontier.pop();
-            for (RunCascadeEdge edge : runCascadeEdgeRepository
-                    .findByCascade_IdAndSourceWorkspace_Id(cascade.getId(), sourceId)) {
-                Workspace destination = edge.getDestinationWorkspace();
-                RunCascadeNode destinationNode = runCascadeNodeRepository
-                        .lockByCascade_IdAndWorkspace_IdForUpdate(cascade.getId(), destination.getId())
-                        .orElse(null);
-                if (destinationNode == null || destinationNode.getStatus() != RunCascadeNodeStatus.PENDING) {
-                    continue;
-                }
-                if (isStranded(cascade, destination)) {
-                    destinationNode.setStatus(RunCascadeNodeStatus.BLOCKED);
-                    runCascadeNodeRepository.save(destinationNode);
-                    frontier.push(destination.getId());
-                }
-            }
-        }
-    }
-
-    /** True once this destination's ALL/ANY requirement can never be satisfied by what's left. */
-    private boolean isStranded(RunCascade cascade, Workspace destination) {
-        List<RunCascadeEdge> inbound = runCascadeEdgeRepository
-                .findByCascade_IdAndDestinationWorkspace_Id(cascade.getId(), destination.getId());
-
-        List<RunCascadeEdge> allEdges = inbound.stream()
-                .filter(e -> e.getSynchronizationMode() == RunTriggerSynchronizationMode.ALL)
-                .toList();
-        if (!allEdges.isEmpty()) {
-            // One required parent gone for good is enough - ALL can never be satisfied again.
-            return allEdges.stream().anyMatch(e -> isUnsuccessful(cascade.getId(), e.getSourceWorkspace().getId()));
-        }
-
-        List<RunCascadeEdge> anyEdges = inbound.stream()
-                .filter(e -> e.getSynchronizationMode() == RunTriggerSynchronizationMode.ANY)
-                .toList();
-        if (!anyEdges.isEmpty()) {
-            // Stranded only once every candidate has resolved unsuccessfully - one still-PENDING
-            // or still-RUNNING ANY parent could yet satisfy it.
-            return anyEdges.stream().allMatch(e -> isUnsuccessful(cascade.getId(), e.getSourceWorkspace().getId()));
-        }
-        return false;
-    }
-
-    /**
-     * Finds the cascade this job already belongs to (a chained completion continuing one a
-     * prior hop started), or starts a new one with a full snapshot of what is reachable from
-     * here right now. The snapshot is taken once, up front: {@code ALL} can only ever evaluate
-     * correctly if every parent a join node might wait on is already known, not discovered one
-     * dispatch at a time.
-     */
     @Transactional
     public RunCascade ensureCascade(Job completedJob) {
+        // Lock before the existence check: overlapping event leases must share one snapshot.
+        jobRepository.lockForUpdate(completedJob.getId());
         Optional<RunCascadeNodeAttempt> existing = runCascadeNodeAttemptRepository.findByJob_Id(completedJob.getId());
-        if (existing.isPresent()) {
-            return existing.get().getNode().getCascade();
-        }
-
+        if (existing.isPresent()) return existing.get().getNode().getCascade();
+        Optional<RunCascade> origin = runCascadeRepository.findByOriginJob_Id(completedJob.getId());
+        if (origin.isPresent()) return origin.get();
         RunCascade cascade = new RunCascade();
         cascade.setId(UUID.randomUUID());
         cascade.setOriginJob(completedJob);
         cascade.setOrganization(completedJob.getOrganization());
-        cascade.setStatus(RunCascadeStatus.RUNNING);
         cascade = runCascadeRepository.save(cascade);
-
-        RunCascadeNode originNode = createNode(cascade, completedJob.getWorkspace(), completedJob.getCascadeDepth());
-        originNode.setStatus(RunCascadeNodeStatus.SUCCEEDED);
-        runCascadeNodeRepository.save(originNode);
-        recordAttempt(originNode, completedJob);
-
+        RunCascadeNode root = createNode(cascade, completedJob.getWorkspace(), completedJob.getCascadeDepth());
+        root.setStatus(RunCascadeNodeStatus.SUCCEEDED);
+        recordAttempt(root, completedJob, RunCascadeNodeStatus.SUCCEEDED);
         snapshotReachableGraph(cascade, completedJob.getWorkspace(), completedJob.getCascadeDepth());
         metrics.cascadeStarted();
         return cascade;
     }
 
-    /**
-     * {@code EACH} dispatches every time, unconditionally - today's behavior, preserved exactly.
-     * {@code ANY}/{@code ALL} dispatch their destination node at most once per cascade: {@code ANY}
-     * on the first parent to succeed, {@code ALL} only once every parent connected by an
-     * {@code ALL} edge into that node has.
-     */
-    @Transactional
-    public boolean shouldDispatch(RunCascade cascade, WorkspaceRunTrigger trigger) {
-        if (trigger.getSynchronizationMode() == RunTriggerSynchronizationMode.EACH) {
-            return true;
-        }
+    /** Materialize frozen configuration while the Hibernate session is open. */
+    @Transactional(readOnly = true)
+    public List<WorkspaceRunTrigger> snapshotTriggers(UUID cascadeId, UUID sourceId) {
+        return runCascadeEdgeRepository.findByCascade_IdAndSourceWorkspace_Id(cascadeId, sourceId).stream()
+                .map(edge -> {
+                    WorkspaceRunTrigger trigger = new WorkspaceRunTrigger();
+                    trigger.setId(edge.getId()); // Snapshot identity, never a live trigger lookup.
+                    trigger.setSourceWorkspace(edge.getSourceWorkspace());
+                    trigger.setDestinationWorkspace(edge.getDestinationWorkspace());
+                    trigger.getDestinationWorkspace().getOrganization().getId();
+                    trigger.setSynchronizationMode(edge.getSynchronizationMode());
+                    trigger.setOnDestroy(edge.getOnDestroy());
+                    trigger.setTemplate(frozenTemplate(edge.getTemplateReference(), edge.getTemplateTcl()));
+                    trigger.setOnDestroyPlanTemplate(frozenTemplate(edge.getPlanTemplateReference(), edge.getPlanTemplateTcl()));
+                    return trigger;
+                }).toList();
+    }
 
-        Workspace destination = trigger.getDestinationWorkspace();
-        // Locked, not a plain read: this is reached from concurrent transactions - the event
-        // worker's claim only dedupes one event row, not the destination node shared by two
-        // different parents of the same ANY/ALL join. Without the lock, two parents completing
-        // at nearly the same time could both read PENDING before either commits RUNNING and
-        // both dispatch. The second transaction blocks here until the first commits, then
-        // re-reads and correctly sees the node already RUNNING.
-        RunCascadeNode node = runCascadeNodeRepository
-                .lockByCascade_IdAndWorkspace_IdForUpdate(cascade.getId(), destination.getId())
-                .orElse(null);
-        // Missing would mean the destination isn't part of this cascade's snapshot at all,
-        // which should never happen for an edge the snapshot itself was built from.
-        if (node == null || node.getStatus() != RunCascadeNodeStatus.PENDING) {
-            return false;
-        }
-
-        if (trigger.getSynchronizationMode() == RunTriggerSynchronizationMode.ANY) {
-            markRunning(node);
-            return true;
-        }
-
-        List<RunCascadeEdge> inbound = runCascadeEdgeRepository
-                .findByCascade_IdAndDestinationWorkspace_Id(cascade.getId(), destination.getId());
-        boolean everyAllParentSucceeded = inbound.stream()
-                .filter(e -> e.getSynchronizationMode() == RunTriggerSynchronizationMode.ALL)
-                .allMatch(e -> isSucceeded(cascade.getId(), e.getSourceWorkspace().getId()));
-        if (everyAllParentSucceeded) {
-            markRunning(node);
-            return true;
-        }
-        return false;
+    private Template frozenTemplate(String reference, String tcl) {
+        if (reference == null || tcl == null) return null;
+        Template template = new Template();
+        template.setId(UUID.fromString(reference));
+        template.setTcl(tcl);
+        return template;
     }
 
     /**
-     * Blocks this edge's destination instead of dispatching it - the {@code BLOCK} branch of
-     * {@code onDestroy}, called in place of {@link #shouldDispatch} for a destroy-originated
-     * event. Locked the same way {@code shouldDispatch} is: another parent of the same join
-     * could be dispatching or blocking concurrently, and whichever gets there first should win
-     * rather than both racing to set a different status on the same row. A no-op once the node
-     * has already left {@code PENDING} - including a second BLOCK edge into the same join.
+     * Resolve one dependency and, when ready, atomically create its job and attempt. A no-change
+     * or ignored dependency is resolved without dispatching. ALL waits for every parent to
+     * resolve successfully and runs when at least one contributes an eligible change.
      */
     @Transactional
-    public void blockNode(RunCascade cascade, WorkspaceRunTrigger trigger) {
-        Workspace destination = trigger.getDestinationWorkspace();
-        RunCascadeNode node = runCascadeNodeRepository
-                .lockByCascade_IdAndWorkspace_IdForUpdate(cascade.getId(), destination.getId())
-                .orElse(null);
-        if (node == null || node.getStatus() != RunCascadeNodeStatus.PENDING) {
-            return;
-        }
-        node.setStatus(RunCascadeNodeStatus.BLOCKED);
-        runCascadeNodeRepository.save(node);
-        propagateBlocking(cascade, destination);
-        metrics.nodeBlocked();
-    }
+    public Job enqueue(RunCascade detached, WorkspaceRunTrigger snapshot, Job parent, int depth,
+                       boolean wasDestroy, boolean changedState) {
+        RunCascade cascade = lockCascade(detached.getId());
+        if (cascade.getStatus() == RunCascadeStatus.CANCELLED) return null;
+        RunCascadeEdge edge = runCascadeEdgeRepository.findById(snapshot.getId()).orElseThrow();
+        RunCascadeNode node = node(cascade, edge.getDestinationWorkspace());
+        // Replay may arrive after downstream completion. Return the committed job so the caller
+        // can repair missing Quartz scheduling; do not append a second attempt or change outcome.
+        Optional<Job> prior = attempts(node).stream().map(RunCascadeNodeAttempt::getJob)
+                .filter(job -> Objects.equals(job.getTriggeredByJobId(), parent.getId())).findFirst();
+        if (prior.isPresent()) return prior.get();
 
-    /** Records the attempt just dispatched for this edge's destination, within the snapshot. */
-    @Transactional
-    public void recordDispatch(RunCascade cascade, WorkspaceRunTrigger trigger, Job createdJob) {
-        runCascadeNodeRepository
-                .findByCascade_IdAndWorkspace_Id(cascade.getId(), trigger.getDestinationWorkspace().getId())
-                .ifPresent(node -> recordAttempt(node, createdJob));
-    }
-
-    /**
-     * Reduces the cascade's status from its nodes': RUNNING while any is still pending or in
-     * flight; once none are, BLOCKED if anything needs an operator, else DEGRADED if something
-     * failed or was skipped without blocking anything further, else COMPLETED.
-     *
-     * <p>Leaves a CANCELLED cascade alone - an operator's decision is terminal, and a job that
-     * was already in flight when it was cancelled must not resurrect the cascade by completing
-     * afterwards.
-     */
-    @Transactional
-    public void recomputeStatus(UUID cascadeId) {
-        RunCascade cascade = runCascadeRepository.findById(cascadeId).orElse(null);
-        if (cascade == null || cascade.getStatus() == RunCascadeStatus.CANCELLED) {
-            return;
-        }
-        List<RunCascadeNode> nodes = runCascadeNodeRepository.findByCascade_Id(cascadeId);
-        boolean anyUnresolved = nodes.stream().anyMatch(n -> n.getStatus() == RunCascadeNodeStatus.PENDING
-                || n.getStatus() == RunCascadeNodeStatus.RUNNING);
-        boolean anyBlocked = nodes.stream().anyMatch(n -> n.getStatus() == RunCascadeNodeStatus.BLOCKED);
-        boolean anyUnsuccessful = nodes.stream().anyMatch(n -> n.getStatus() == RunCascadeNodeStatus.FAILED
-                || n.getStatus() == RunCascadeNodeStatus.SKIPPED);
-
-        RunCascadeStatus newStatus;
-        if (anyUnresolved) {
-            newStatus = RunCascadeStatus.RUNNING;
-        } else if (anyBlocked) {
-            newStatus = RunCascadeStatus.BLOCKED;
-        } else if (anyUnsuccessful) {
-            newStatus = RunCascadeStatus.DEGRADED;
-        } else {
-            newStatus = RunCascadeStatus.COMPLETED;
-        }
-
-        if (cascade.getStatus() != newStatus) {
-            cascade.setStatus(newStatus);
-            runCascadeRepository.save(cascade);
-            metrics.cascadeStatusChanged(newStatus);
-            if (newStatus != RunCascadeStatus.RUNNING) {
-                cascadeNotificationTrigger.notifyCascadeStatusChanged(cascade);
+        boolean eligible = changedState && !(wasDestroy && edge.getOnDestroy() == RunTriggerOnDestroyPolicy.IGNORE);
+        if (!eligible) {
+            edge.setSkipRequested(true);
+            RunCascadeNode source = node(cascade, edge.getSourceWorkspace());
+            if (hasFutureInputs(cascade, source)) return null;
+            if (edge.getStatus() == RunCascadeEdgeStatus.PENDING) edge.setStatus(RunCascadeEdgeStatus.SKIPPED);
+            settleWaiting(cascade);
+            if (edge.getSynchronizationMode() != RunTriggerSynchronizationMode.ALL) {
+                recomputeLocked(cascade);
+                return null;
             }
         }
-    }
-
-    // ---------------------------------------------------------------- operator actions
-
-    /**
-     * Re-dispatches a failed or skipped node, with a fresh attempt against the same template as
-     * its last one - read directly off that attempt's job, not re-derived from the inbound
-     * edges. A node can have several inbound edges with different policies (an everyday
-     * {@code TRIGGER} edge alongside an unrelated {@code PLAN_ONLY} one into the same join);
-     * re-deriving from scratch would have no way to know which edge actually produced the
-     * attempt being retried and could silently substitute a different template than the one
-     * that just failed.
-     */
-    @Transactional
-    public Job retryNode(UUID nodeId) {
-        RunCascadeNode node = runCascadeNodeRepository.findById(nodeId)
-                .orElseThrow(() -> new IllegalArgumentException("No such cascade node: " + nodeId));
-        if (node.getStatus() != RunCascadeNodeStatus.FAILED && node.getStatus() != RunCascadeNodeStatus.SKIPPED) {
-            throw new IllegalStateException(
-                    "Only a failed or skipped node can be retried, not " + node.getStatus());
-        }
-
-        RunCascade cascade = node.getCascade();
-        String templateReference = lastAttemptTemplate(node);
-        Job createdJob = dispatchNode(cascade, node, templateReference);
-        recomputeStatus(cascade.getId());
-        metrics.nodeRetried();
-        return createdJob;
-    }
-
-    /** The template actually dispatched last time, so a retry really is "the same template". */
-    private String lastAttemptTemplate(RunCascadeNode node) {
-        return runCascadeNodeAttemptRepository.findTopByNode_IdOrderByAttemptNumberDesc(node.getId())
-                .map(RunCascadeNodeAttempt::getJob)
-                .map(Job::getTemplateReference)
-                .orElse(null);
-    }
-
-    /**
-     * Un-blocks a node and re-evaluates it against the current state of its parents - an
-     * operator calls this after retrying whatever stranded it. A still-unsatisfied requirement
-     * (another parent the operator hasn't dealt with yet) leaves it PENDING rather than failing.
-     */
-    @Transactional
-    public Optional<Job> resumeNode(UUID nodeId) {
-        RunCascadeNode node = runCascadeNodeRepository.findById(nodeId)
-                .orElseThrow(() -> new IllegalArgumentException("No such cascade node: " + nodeId));
-        if (node.getStatus() != RunCascadeNodeStatus.BLOCKED) {
-            throw new IllegalStateException("Only a blocked node can be resumed, not " + node.getStatus());
-        }
-
-        RunCascade cascade = node.getCascade();
-        node.setStatus(RunCascadeNodeStatus.PENDING);
-        runCascadeNodeRepository.save(node);
-
-        if (!isReadyNow(cascade, node.getWorkspace())) {
-            recomputeStatus(cascade.getId());
-            metrics.nodeResumed(false);
-            return Optional.empty();
-        }
-
-        Job createdJob = dispatchNode(cascade, node, resolveTemplateForNode(cascade, node.getWorkspace()));
-        recomputeStatus(cascade.getId());
-        metrics.nodeResumed(true);
-        return Optional.ofNullable(createdJob);
-    }
-
-    /**
-     * Stops a cascade's future dispatch - every PENDING and BLOCKED node becomes CANCELLED.
-     * Does not touch a RUNNING node's in-flight job; that is cancelled independently, the same
-     * way any other job is. Returns the cascade so a caller (the admin endpoint) can report its
-     * new status without a second lookup - {@code id}/{@code status} only, never a lazy
-     * association.
-     */
-    @Transactional
-    public RunCascade cancelCascade(UUID cascadeId) {
-        RunCascade cascade = runCascadeRepository.findById(cascadeId)
-                .orElseThrow(() -> new IllegalArgumentException("No such cascade: " + cascadeId));
-
-        for (RunCascadeNode node : runCascadeNodeRepository.findByCascade_Id(cascadeId)) {
-            if (node.getStatus() == RunCascadeNodeStatus.PENDING || node.getStatus() == RunCascadeNodeStatus.BLOCKED) {
-                node.setStatus(RunCascadeNodeStatus.CANCELLED);
+        if (eligible && wasDestroy && edge.getOnDestroy() == RunTriggerOnDestroyPolicy.BLOCK) {
+            edge.setStatus(RunCascadeEdgeStatus.BLOCKED);
+            if (attempts(node).isEmpty()) {
+                node.setStatus(RunCascadeNodeStatus.BLOCKED);
+                node.setReason("Upstream infrastructure was destroyed; dependent run is paused");
                 runCascadeNodeRepository.save(node);
             }
+            settleWaiting(cascade);
+            recomputeLocked(cascade);
+            metrics.nodeBlocked();
+            return null;
         }
-
-        cascade.setStatus(RunCascadeStatus.CANCELLED);
-        RunCascade saved = runCascadeRepository.save(cascade);
-        metrics.cascadeCancelled();
-        cascadeNotificationTrigger.notifyCascadeStatusChanged(saved);
-        return saved;
+        if (eligible) {
+            edge.setSkipRequested(false);
+            edge.setStatus(RunCascadeEdgeStatus.SATISFIED);
+            edge.setPlanOnly(wasDestroy && edge.getOnDestroy() == RunTriggerOnDestroyPolicy.PLAN_ONLY);
+            runCascadeEdgeRepository.save(edge);
+        }
+        if (node.getStatus() == RunCascadeNodeStatus.BLOCKED || node.getStatus() == RunCascadeNodeStatus.CANCELLED
+                || !isReadyNow(cascade, node.getWorkspace())) {
+            recomputeLocked(cascade);
+            return null;
+        }
+        if (edge.getSynchronizationMode() != RunTriggerSynchronizationMode.EACH && !attempts(node).isEmpty()) return null;
+        boolean planOnly = edge.getSynchronizationMode() == RunTriggerSynchronizationMode.ALL
+                ? incoming(cascade, node.getWorkspace()).stream().anyMatch(RunCascadeEdge::isPlanOnly) : edge.isPlanOnly();
+        String reference = planOnly ? edge.getPlanTemplateReference() : edge.getTemplateReference();
+        String tcl = planOnly ? edge.getPlanTemplateTcl() : edge.getTemplateTcl();
+        if (reference == null || tcl == null) {
+            node.setStatus(RunCascadeNodeStatus.BLOCKED);
+            node.setReason("No workflow was configured when this cascade started");
+            runCascadeNodeRepository.save(node);
+            settleWaiting(cascade);
+            recomputeLocked(cascade);
+            return null;
+        }
+        if (planOnly && !tclService.isTclPlanOnly(tcl)) {
+            node.setStatus(RunCascadeNodeStatus.BLOCKED);
+            node.setReason("The destroy response requires a workflow containing only plan steps");
+            runCascadeNodeRepository.save(node);
+            settleWaiting(cascade);
+            recomputeLocked(cascade);
+            return null;
+        }
+        Job created = persistDispatch(cascade, node, reference, tcl, parent, depth);
+        recomputeLocked(cascade);
+        return created;
     }
 
-    /** Whether every edge this destination actually depends on would currently let it through. */
-    private boolean isReadyNow(RunCascade cascade, Workspace destination) {
-        List<RunCascadeEdge> inbound = runCascadeEdgeRepository
-                .findByCascade_IdAndDestinationWorkspace_Id(cascade.getId(), destination.getId());
-
-        List<RunCascadeEdge> allEdges = inbound.stream()
-                .filter(e -> e.getSynchronizationMode() == RunTriggerSynchronizationMode.ALL)
-                .toList();
-        if (!allEdges.isEmpty()) {
-            return allEdges.stream().allMatch(e -> isSucceeded(cascade.getId(), e.getSourceWorkspace().getId()));
-        }
-        return inbound.stream()
-                .filter(e -> e.getSynchronizationMode() == RunTriggerSynchronizationMode.ANY)
-                .anyMatch(e -> isSucceeded(cascade.getId(), e.getSourceWorkspace().getId()));
+    @Transactional
+    public void resolveNode(Job completedJob) {
+        resolveAttempt(completedJob, RunCascadeNodeStatus.SUCCEEDED, true);
     }
 
-    /**
-     * Dispatches a fresh attempt for {@code node} against {@code templateReference}. Operator-
-     * triggered, not on the hot fan-out loop's own per-dependent try/catch, so a scheduling
-     * failure here is reported as an unchecked exception rather than silently logged.
-     */
-    private Job dispatchNode(RunCascade cascade, RunCascadeNode node, String templateReference) {
-        Workspace destination = node.getWorkspace();
-        if (templateReference == null || templateReference.isBlank()) {
-            throw new IllegalStateException(
-                    "Workspace " + destination.getName() + " has no template to dispatch with");
-        }
+    @Transactional
+    public void resolveNode(Job completedJob, boolean changedState) {
+        resolveAttempt(completedJob, RunCascadeNodeStatus.SUCCEEDED, changedState);
+    }
 
-        Job createdJob = jobWriter.persist(destination, templateReference, cascade.getOriginJob(), node.getDepth());
-        jobNotificationTrigger.notifyStatusChanged(createdJob);
-        try {
-            scheduleJobService.createJobContext(createdJob);
-        } catch (Exception e) {
-            throw new IllegalStateException(
-                    "Job " + createdJob.getId() + " was created but could not be scheduled: " + e.getMessage(), e);
-        }
+    @Transactional
+    public void resolveNodeAsUnsuccessful(Job completedJob, RunCascadeNodeStatus outcome) {
+        resolveAttempt(completedJob, outcome, false);
+    }
 
-        node.setStatus(RunCascadeNodeStatus.RUNNING);
+    private void resolveAttempt(Job job, RunCascadeNodeStatus outcome, boolean changedState) {
+        var found = runCascadeNodeAttemptRepository.findByJob_Id(job.getId());
+        if (found.isEmpty()) return;
+        RunCascade cascade = lockCascade(found.get().getNode().getCascade().getId());
+        RunCascadeNodeAttempt attempt = runCascadeNodeAttemptRepository.findByJob_Id(job.getId()).orElseThrow();
+        entityManager.refresh(attempt);
+        entityManager.refresh(attempt.getNode());
+        if (attempt.getOutcome() != RunCascadeNodeStatus.RUNNING) return; // Terminal attempt events are immutable.
+        attempt.setOutcome(outcome);
+        attempt.setStateChanged(changedState);
+        runCascadeNodeAttemptRepository.save(attempt);
+        RunCascadeNode node = attempt.getNode();
+        List<RunCascadeNodeAttempt> all = attempts(node);
+        if (all.stream().anyMatch(a -> a.getOutcome() == RunCascadeNodeStatus.RUNNING)) {
+            node.setStatus(RunCascadeNodeStatus.RUNNING);
+        } else {
+            // Operator retries supersede earlier failed attempts; EACH has multiple independent
+            // upstream events, whose failures remain visible unless a later retry succeeds.
+            node.setStatus(all.stream().anyMatch(a -> !a.isSuperseded() && a.getOutcome() == RunCascadeNodeStatus.FAILED)
+                    ? RunCascadeNodeStatus.FAILED : all.getLast().getOutcome());
+        }
         runCascadeNodeRepository.save(node);
-        recordAttempt(node, createdJob);
-        return createdJob;
-    }
-
-    /**
-     * The inbound edge's own trigger wins (an operator-visible, explicitly-configured choice),
-     * then the destination's default - same precedence {@code RunTriggerDispatchService} uses
-     * for a first attempt. The live trigger can be gone (the FK is {@code SET NULL}) if it was
-     * deleted since the snapshot was taken, in which case this falls through to the default.
-     *
-     * <p>Only used by {@link #resumeNode} - a previously-{@code BLOCKED} node's first real
-     * dispatch, not itself a destroy propagation, so {@code onDestroy}'s {@code PLAN_ONLY}
-     * template never applies here. {@link #retryNode} does not call this: it reuses the exact
-     * template its last attempt already dispatched with.
-     */
-    private String resolveTemplateForNode(RunCascade cascade, Workspace destination) {
-        List<RunCascadeEdge> inbound = runCascadeEdgeRepository
-                .findByCascade_IdAndDestinationWorkspace_Id(cascade.getId(), destination.getId());
-
-        return inbound.stream()
-                .map(RunCascadeEdge::getSourceTrigger)
-                .filter(java.util.Objects::nonNull)
-                .map(WorkspaceRunTrigger::getTemplate)
-                .filter(java.util.Objects::nonNull)
-                .map(template -> template.getId().toString())
-                .findFirst()
-                .orElseGet(destination::getDefaultTemplate);
-    }
-
-    /**
-     * BFS from {@code origin}, recording every reachable enabled edge and creating a
-     * {@code PENDING} node for every workspace it reaches - including a diamond's join
-     * workspace exactly once, which is what lets {@code ANY}/{@code ALL} evaluate it as a
-     * single node rather than once per incoming edge. Never expands past the configured cascade
-     * depth, matching the limit dispatch itself already enforces.
-     */
-    private void snapshotReachableGraph(RunCascade cascade, Workspace origin, int originDepth) {
-        Set<UUID> visited = new HashSet<>();
-        visited.add(origin.getId());
-        Map<UUID, Integer> depthOf = new HashMap<>();
-        depthOf.put(origin.getId(), originDepth);
-        Deque<Workspace> frontier = new ArrayDeque<>();
-        frontier.push(origin);
-
-        while (!frontier.isEmpty()) {
-            Workspace current = frontier.pop();
-            int currentDepth = depthOf.get(current.getId());
-            if (currentDepth >= properties.getMaxCascadeDepth()) {
-                continue;
+        if (outcome != RunCascadeNodeStatus.SUCCEEDED && node.getStatus() != RunCascadeNodeStatus.RUNNING) {
+            for (RunCascadeEdge edge : outgoing(cascade, node.getWorkspace())) {
+                if (edge.getStatus() == RunCascadeEdgeStatus.PENDING) edge.setStatus(RunCascadeEdgeStatus.BLOCKED);
             }
-            for (WorkspaceRunTrigger trigger : workspaceRunTriggerRepository.findEnabledBySourceWorkspaceId(current.getId())) {
-                Workspace destination = trigger.getDestinationWorkspace();
-                saveEdgeSnapshot(cascade, trigger);
-                if (visited.add(destination.getId())) {
-                    int childDepth = currentDepth + 1;
-                    depthOf.put(destination.getId(), childDepth);
-                    createNode(cascade, destination, childDepth);
-                    frontier.push(destination);
+        }
+        settleWaiting(cascade);
+        recomputeLocked(cascade);
+    }
+
+    /** Terminal dependency resolutions propagate until no untouched workspace can be stranded. */
+    private void settleWaiting(RunCascade cascade) {
+        boolean changed;
+        do {
+            changed = false;
+            for (RunCascadeNode node : runCascadeNodeRepository.findByCascade_Id(cascade.getId())) {
+                List<RunCascadeNodeAttempt> nodeAttempts = attempts(node);
+                if (!hasFutureInputs(cascade, node)) {
+                    for (RunCascadeEdge edge : outgoing(cascade, node.getWorkspace())) {
+                        if (edge.getStatus() == RunCascadeEdgeStatus.PENDING && edge.isSkipRequested()) {
+                            edge.setStatus(RunCascadeEdgeStatus.SKIPPED);
+                            runCascadeEdgeRepository.save(edge);
+                            changed = true;
+                        }
+                    }
+                }
+                if (node.getStatus() == RunCascadeNodeStatus.SUCCEEDED && !hasFutureInputs(cascade, node)
+                        && !nodeAttempts.isEmpty() && nodeAttempts.stream().allMatch(a -> Boolean.FALSE.equals(a.getStateChanged()))) {
+                    for (RunCascadeEdge edge : outgoing(cascade, node.getWorkspace())) {
+                        if (edge.getStatus() == RunCascadeEdgeStatus.PENDING) {
+                            edge.setStatus(RunCascadeEdgeStatus.SKIPPED);
+                            runCascadeEdgeRepository.save(edge);
+                            changed = true;
+                        }
+                    }
+                }
+                if (node.getStatus() == RunCascadeNodeStatus.BLOCKED || node.getStatus() == RunCascadeNodeStatus.SKIPPED) {
+                    for (RunCascadeEdge edge : outgoing(cascade, node.getWorkspace())) {
+                        if (edge.getStatus() == RunCascadeEdgeStatus.PENDING) {
+                            edge.setStatus(node.getStatus() == RunCascadeNodeStatus.BLOCKED ? RunCascadeEdgeStatus.BLOCKED : RunCascadeEdgeStatus.SKIPPED);
+                            runCascadeEdgeRepository.save(edge);
+                            changed = true;
+                        }
+                    }
+                }
+                if (node.getStatus() != RunCascadeNodeStatus.PENDING || !attempts(node).isEmpty()) continue;
+                List<RunCascadeEdge> inbound = incoming(cascade, node.getWorkspace());
+                if (inbound.isEmpty()) continue;
+                boolean all = inbound.getFirst().getSynchronizationMode() == RunTriggerSynchronizationMode.ALL;
+                boolean blocked = all
+                        ? inbound.stream().anyMatch(e -> e.getStatus() == RunCascadeEdgeStatus.BLOCKED)
+                        : inbound.stream().noneMatch(e -> e.getStatus() == RunCascadeEdgeStatus.PENDING
+                                || e.getStatus() == RunCascadeEdgeStatus.SATISFIED)
+                            && inbound.stream().anyMatch(e -> e.getStatus() == RunCascadeEdgeStatus.BLOCKED);
+                boolean skipped = inbound.stream().allMatch(e -> e.getStatus() == RunCascadeEdgeStatus.SKIPPED);
+                if (!blocked && !skipped) continue;
+                node.setStatus(blocked ? RunCascadeNodeStatus.BLOCKED : RunCascadeNodeStatus.SKIPPED);
+                node.setReason(blocked ? "A required upstream run failed or was paused" : "No eligible upstream change");
+                runCascadeNodeRepository.save(node);
+                for (RunCascadeEdge edge : outgoing(cascade, node.getWorkspace())) {
+                    if (edge.getStatus() == RunCascadeEdgeStatus.PENDING) {
+                        edge.setStatus(blocked ? RunCascadeEdgeStatus.BLOCKED : RunCascadeEdgeStatus.SKIPPED);
+                        runCascadeEdgeRepository.save(edge);
+                    }
+                }
+                changed = true;
+            }
+        } while (changed);
+    }
+
+    @Transactional
+    public void recomputeStatus(UUID cascadeId) {
+        recomputeLocked(lockCascade(cascadeId));
+    }
+
+    private void recomputeLocked(RunCascade cascade) {
+        if (cascade.getStatus() == RunCascadeStatus.CANCELLED) return;
+        List<RunCascadeNode> nodes = runCascadeNodeRepository.findByCascade_Id(cascade.getId());
+        boolean unresolved = nodes.stream().anyMatch(n -> n.getStatus() == RunCascadeNodeStatus.PENDING
+                || n.getStatus() == RunCascadeNodeStatus.RUNNING);
+        // A successful workspace's event may not yet have evaluated its outgoing dependencies.
+        unresolved |= runCascadeEdgeRepository.findByCascade_Id(cascade.getId()).stream()
+                .anyMatch(e -> e.getStatus() == RunCascadeEdgeStatus.PENDING);
+        RunCascadeStatus status = unresolved ? RunCascadeStatus.RUNNING
+                : nodes.stream().anyMatch(n -> n.getStatus() == RunCascadeNodeStatus.BLOCKED) ? RunCascadeStatus.BLOCKED
+                : nodes.stream().anyMatch(n -> n.getStatus() == RunCascadeNodeStatus.FAILED) ? RunCascadeStatus.DEGRADED
+                : RunCascadeStatus.COMPLETED;
+        if (cascade.getStatus() != status) {
+            cascade.setStatus(status);
+            runCascadeRepository.save(cascade);
+            metrics.cascadeStatusChanged(status);
+            if (status != RunCascadeStatus.RUNNING) cascadeNotificationTrigger.notifyCascadeStatusChanged(cascade);
+        }
+    }
+
+    @Transactional
+    public Job retryNode(UUID nodeId) {
+        RunCascadeNode node = lockNodeCascade(nodeId);
+        assertActive(node.getCascade());
+        if (node.getStatus() != RunCascadeNodeStatus.FAILED) {
+            throw new IllegalStateException("Only a failed workspace run can be retried, not " + node.getStatus());
+        }
+        RunCascadeNodeAttempt last = attempts(node).stream()
+                .filter(a -> !a.isSuperseded() && a.getOutcome() == RunCascadeNodeStatus.FAILED)
+                .reduce((a, b) -> b).orElseThrow();
+        Job prior = last.getJob();
+        last.setSuperseded(true);
+        runCascadeNodeAttemptRepository.save(last);
+        Job created = persistDispatch(node.getCascade(), node, prior.getTemplateReference(), prior.getTcl(),
+                node.getCascade().getOriginJob(), node.getDepth());
+        scheduleAfterCommit(created);
+        recomputeLocked(node.getCascade());
+        metrics.nodeRetried();
+        return created;
+    }
+
+    @Transactional
+    public Optional<Job> resumeNode(UUID nodeId) {
+        RunCascadeNode node = lockNodeCascade(nodeId);
+        RunCascade cascade = node.getCascade();
+        assertActive(cascade);
+        if (node.getStatus() != RunCascadeNodeStatus.BLOCKED) {
+            throw new IllegalStateException("Only a paused workspace run can be rechecked, not " + node.getStatus());
+        }
+        // A recovered parent can satisfy the dependency that originally blocked this workspace.
+        for (RunCascadeEdge edge : incoming(cascade, node.getWorkspace())) {
+            if (edge.getStatus() == RunCascadeEdgeStatus.BLOCKED) {
+                RunCascadeNode source = node(cascade, edge.getSourceWorkspace());
+                if (source.getStatus() == RunCascadeNodeStatus.SUCCEEDED && edge.getOnDestroy() != RunTriggerOnDestroyPolicy.BLOCK) {
+                    edge.setStatus(RunCascadeEdgeStatus.SATISFIED);
                 }
             }
         }
+        if (!isReadyNow(cascade, node.getWorkspace())) {
+            node.setReason("Required dependencies are still unresolved; recheck after recovery");
+            metrics.nodeResumed(false);
+            return Optional.empty();
+        }
+        RunCascadeEdge edge = incoming(cascade, node.getWorkspace()).stream()
+                .filter(e -> e.getStatus() == RunCascadeEdgeStatus.SATISFIED)
+                .sorted(Comparator.comparing(e -> e.getId().toString())).findFirst().orElseThrow();
+        boolean planOnly = incoming(cascade, node.getWorkspace()).stream().anyMatch(RunCascadeEdge::isPlanOnly);
+        String reference = planOnly ? edge.getPlanTemplateReference() : edge.getTemplateReference();
+        String tcl = planOnly ? edge.getPlanTemplateTcl() : edge.getTemplateTcl();
+        if (planOnly && !tclService.isTclPlanOnly(tcl)) {
+            throw new IllegalStateException("This frozen workflow does not satisfy its plan-only destroy response");
+        }
+        Job created = persistDispatch(cascade, node, reference, tcl, cascade.getOriginJob(), node.getDepth());
+        scheduleAfterCommit(created);
+        recomputeLocked(cascade);
+        metrics.nodeResumed(true);
+        return Optional.of(created);
+    }
+
+    @Transactional
+    public RunCascade cancelCascade(UUID cascadeId) {
+        RunCascade cascade = lockCascade(cascadeId);
+        if (cascade.getStatus() == RunCascadeStatus.CANCELLED) return cascade;
+        for (RunCascadeNode node : runCascadeNodeRepository.findByCascade_Id(cascadeId)) {
+            if (node.getStatus() == RunCascadeNodeStatus.PENDING || node.getStatus() == RunCascadeNodeStatus.BLOCKED) {
+                node.setStatus(RunCascadeNodeStatus.CANCELLED);
+                node.setReason("Future runs stopped by an operator");
+            }
+        }
+        cascade.setStatus(RunCascadeStatus.CANCELLED);
+        runCascadeRepository.save(cascade);
+        metrics.cascadeCancelled();
+        cascadeNotificationTrigger.notifyCascadeStatusChanged(cascade);
+        return cascade;
+    }
+
+    private void assertActive(RunCascade cascade) {
+        if (cascade.getStatus() == RunCascadeStatus.CANCELLED) throw new IllegalStateException("This run cascade was stopped");
+    }
+
+    private RunCascade lockCascade(UUID id) {
+        RunCascade cascade = runCascadeRepository.lockForUpdate(id)
+                .orElseThrow(() -> new IllegalArgumentException("No such run cascade: " + id));
+        entityManager.refresh(cascade);
+        return cascade;
+    }
+
+    private RunCascadeNode lockNodeCascade(UUID nodeId) {
+        RunCascadeNode found = runCascadeNodeRepository.findById(nodeId)
+                .orElseThrow(() -> new IllegalArgumentException("No such workspace run: " + nodeId));
+        lockCascade(found.getCascade().getId());
+        // Refresh the entity after acquiring the lock: an operator may have changed it meanwhile.
+        RunCascadeNode locked = runCascadeNodeRepository.lockByCascade_IdAndWorkspace_IdForUpdate(found.getCascade().getId(), found.getWorkspace().getId())
+                .orElseThrow();
+        entityManager.refresh(locked);
+        return locked;
+    }
+
+    private boolean hasFutureInputs(RunCascade cascade, RunCascadeNode node) {
+        return attempts(node).stream().anyMatch(a -> a.getOutcome() == RunCascadeNodeStatus.RUNNING)
+                || incoming(cascade, node.getWorkspace()).stream().anyMatch(e -> e.getStatus() == RunCascadeEdgeStatus.PENDING);
+    }
+
+    private boolean isReadyNow(RunCascade cascade, Workspace destination) {
+        List<RunCascadeEdge> edges = incoming(cascade, destination);
+        if (edges.isEmpty()) return false;
+        if (edges.getFirst().getSynchronizationMode() == RunTriggerSynchronizationMode.ALL) {
+            return edges.stream().allMatch(e -> e.getStatus() == RunCascadeEdgeStatus.SATISFIED || e.getStatus() == RunCascadeEdgeStatus.SKIPPED)
+                    && edges.stream().anyMatch(e -> e.getStatus() == RunCascadeEdgeStatus.SATISFIED);
+        }
+        return edges.stream().anyMatch(e -> e.getStatus() == RunCascadeEdgeStatus.SATISFIED);
+    }
+
+    private Job persistDispatch(RunCascade cascade, RunCascadeNode node, String reference, String tcl, Job parent, int depth) {
+        if (reference == null || tcl == null) throw new IllegalStateException("No frozen workflow exists for this workspace run");
+        Job job = jobWriter.persistInCascade(node.getWorkspace(), reference, parent, depth, tcl);
+        recordAttempt(node, job, RunCascadeNodeStatus.RUNNING);
+        node.setStatus(RunCascadeNodeStatus.RUNNING);
+        node.setReason(null);
+        runCascadeNodeRepository.save(node);
+        return job;
+    }
+
+    private void scheduleAfterCommit(Job job) {
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override public void afterCommit() {
+                try {
+                    jobNotificationTrigger.notifyStatusChanged(job);
+                    scheduleJobService.createJobContext(job);
+                } catch (ObjectAlreadyExistsException ignored) {
+                    // Another scheduler/reconciliation worker already recovered this durable job.
+                } catch (Exception e) {
+                    log.error("Committed cascade job {} awaits scheduler reconciliation: {}", job.getId(), e.getMessage(), e);
+                }
+            }
+        });
+    }
+
+    private List<RunCascadeNodeAttempt> attempts(RunCascadeNode node) {
+        return runCascadeNodeAttemptRepository.findByNode_IdOrderByAttemptNumberAsc(node.getId());
+    }
+
+    private void recordAttempt(RunCascadeNode node, Job job, RunCascadeNodeStatus outcome) {
+        if (runCascadeNodeAttemptRepository.findByJob_Id(job.getId()).isPresent()) return;
+        RunCascadeNodeAttempt attempt = new RunCascadeNodeAttempt();
+        attempt.setId(UUID.randomUUID());
+        attempt.setNode(node);
+        attempt.setJob(job);
+        attempt.setAttemptNumber(attempts(node).stream().mapToInt(RunCascadeNodeAttempt::getAttemptNumber).max().orElse(0) + 1);
+        attempt.setOutcome(outcome);
+        attempt.setStateChanged(outcome == RunCascadeNodeStatus.SUCCEEDED ? Boolean.TRUE : null);
+        runCascadeNodeAttemptRepository.save(attempt);
+    }
+
+    private List<RunCascadeEdge> incoming(RunCascade cascade, Workspace workspace) {
+        return runCascadeEdgeRepository.findByCascade_IdAndDestinationWorkspace_Id(cascade.getId(), workspace.getId());
+    }
+
+    private List<RunCascadeEdge> outgoing(RunCascade cascade, Workspace workspace) {
+        return runCascadeEdgeRepository.findByCascade_IdAndSourceWorkspace_Id(cascade.getId(), workspace.getId());
+    }
+
+    private RunCascadeNode node(RunCascade cascade, Workspace workspace) {
+        return runCascadeNodeRepository.findByCascade_IdAndWorkspace_Id(cascade.getId(), workspace.getId()).orElseThrow();
     }
 
     private RunCascadeNode createNode(RunCascade cascade, Workspace workspace, int depth) {
@@ -501,51 +481,67 @@ public class RunCascadeCoordinatorService {
         node.setCascade(cascade);
         node.setWorkspace(workspace);
         node.setDepth(depth);
-        node.setStatus(RunCascadeNodeStatus.PENDING);
         return runCascadeNodeRepository.save(node);
     }
 
-    private void saveEdgeSnapshot(RunCascade cascade, WorkspaceRunTrigger trigger) {
-        RunCascadeEdge edge = new RunCascadeEdge();
-        edge.setId(UUID.randomUUID());
-        edge.setCascade(cascade);
-        edge.setSourceWorkspace(trigger.getSourceWorkspace());
-        edge.setDestinationWorkspace(trigger.getDestinationWorkspace());
-        edge.setSynchronizationMode(trigger.getSynchronizationMode());
-        edge.setOnDestroy(trigger.getOnDestroy());
-        edge.setPlanTemplate(trigger.getOnDestroyPlanTemplate());
-        edge.setSourceTrigger(trigger);
-        runCascadeEdgeRepository.save(edge);
-    }
-
-    private void recordAttempt(RunCascadeNode node, Job job) {
-        int attemptNumber = runCascadeNodeAttemptRepository.findByNode_IdOrderByAttemptNumberAsc(node.getId()).size() + 1;
-        RunCascadeNodeAttempt attempt = new RunCascadeNodeAttempt();
-        attempt.setId(UUID.randomUUID());
-        attempt.setNode(node);
-        attempt.setJob(job);
-        attempt.setAttemptNumber(attemptNumber);
-        runCascadeNodeAttemptRepository.save(attempt);
-    }
-
-    private boolean isSucceeded(UUID cascadeId, UUID workspaceId) {
-        return runCascadeNodeRepository.findByCascade_IdAndWorkspace_Id(cascadeId, workspaceId)
-                .map(n -> n.getStatus() == RunCascadeNodeStatus.SUCCEEDED)
-                .orElse(false);
-    }
-
-    /** Resolved, but not successfully - gone for good unless an operator retries it. */
-    private boolean isUnsuccessful(UUID cascadeId, UUID workspaceId) {
-        return runCascadeNodeRepository.findByCascade_IdAndWorkspace_Id(cascadeId, workspaceId)
-                .map(n -> n.getStatus() == RunCascadeNodeStatus.FAILED
-                        || n.getStatus() == RunCascadeNodeStatus.SKIPPED
-                        || n.getStatus() == RunCascadeNodeStatus.BLOCKED
-                        || n.getStatus() == RunCascadeNodeStatus.CANCELLED)
-                .orElse(false);
-    }
-
-    private void markRunning(RunCascadeNode node) {
-        node.setStatus(RunCascadeNodeStatus.RUNNING);
-        runCascadeNodeRepository.save(node);
+    /** Real BFS; depth is the shortest reachable path and total graph size is bounded. */
+    private void snapshotReachableGraph(RunCascade cascade, Workspace origin, int originDepth) {
+        Set<UUID> visited = new HashSet<>();
+        visited.add(origin.getId());
+        Map<UUID, Integer> depths = new HashMap<>();
+        depths.put(origin.getId(), originDepth);
+        Deque<Workspace> queue = new ArrayDeque<>();
+        queue.addLast(origin);
+        while (!queue.isEmpty()) {
+            Workspace source = queue.removeFirst();
+            int depth = depths.get(source.getId());
+            if (depth >= properties.getMaxCascadeDepth()) continue;
+            for (WorkspaceRunTrigger trigger : workspaceRunTriggerRepository.findEnabledBySourceWorkspaceId(source.getId())) {
+                Workspace destination = trigger.getDestinationWorkspace();
+                RunCascadeEdge edge = new RunCascadeEdge();
+                edge.setId(UUID.randomUUID());
+                edge.setCascade(cascade);
+                edge.setSourceWorkspace(source);
+                edge.setDestinationWorkspace(destination);
+                edge.setSynchronizationMode(trigger.getSynchronizationMode());
+                edge.setOnDestroy(trigger.getOnDestroy());
+                edge.setSourceTrigger(trigger);
+                Template template = trigger.getTemplate();
+                if (template == null && destination.getDefaultTemplate() != null) {
+                    template = templateRepository.findById(UUID.fromString(destination.getDefaultTemplate())).orElse(null);
+                }
+                if (template != null) {
+                    edge.setTemplateReference(template.getId().toString());
+                    edge.setTemplateTcl(template.getTcl());
+                }
+                Template plan = trigger.getOnDestroyPlanTemplate();
+                if (plan != null) {
+                    edge.setPlanTemplateReference(plan.getId().toString());
+                    edge.setPlanTemplateTcl(plan.getTcl());
+                }
+                runCascadeEdgeRepository.save(edge);
+                if (visited.add(destination.getId())) {
+                    if (visited.size() > Math.max(1, properties.getMaxCascadeNodes())) {
+                        throw new IllegalStateException("Workspace dependency graph exceeds the configured cascade node limit");
+                    }
+                    depths.put(destination.getId(), depth + 1);
+                    createNode(cascade, destination, depth + 1);
+                    queue.addLast(destination);
+                }
+            }
+        }
+        // Fail closed for older configurations with conflicting join/action settings.
+        for (RunCascadeNode node : runCascadeNodeRepository.findByCascade_Id(cascade.getId())) {
+            List<RunCascadeEdge> inbound = incoming(cascade, node.getWorkspace());
+            if (inbound.stream().map(RunCascadeEdge::getSynchronizationMode).distinct().count() > 1) {
+                throw new IllegalStateException("All incoming dependencies for a workspace must use the same start condition");
+            }
+            if (!inbound.isEmpty() && inbound.getFirst().getSynchronizationMode() != RunTriggerSynchronizationMode.EACH
+                    && (inbound.stream().map(RunCascadeEdge::getTemplateReference).distinct().count() > 1
+                        || inbound.stream().map(RunCascadeEdge::getOnDestroy).distinct().count() > 1
+                        || inbound.stream().map(RunCascadeEdge::getPlanTemplateReference).distinct().count() > 1)) {
+                throw new IllegalStateException("Joined dependencies must use the same workflow and destroy response");
+            }
+        }
     }
 }

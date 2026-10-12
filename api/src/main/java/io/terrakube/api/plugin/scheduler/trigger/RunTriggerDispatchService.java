@@ -10,12 +10,10 @@ import io.terrakube.api.repository.StepRepository;
 import io.terrakube.api.repository.WorkspaceRunTriggerRepository;
 import io.terrakube.api.rs.cascade.RunCascade;
 import io.terrakube.api.rs.job.Job;
+import io.terrakube.api.rs.workspace.Workspace;
 import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.job.step.Step;
-import io.terrakube.api.rs.template.Template;
-import io.terrakube.api.rs.workspace.Workspace;
 import io.terrakube.api.rs.workspace.history.History;
-import io.terrakube.api.rs.workspace.trigger.RunTriggerOnDestroyPolicy;
 import io.terrakube.api.rs.workspace.trigger.WorkspaceRunTrigger;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -28,29 +26,11 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * Enqueues the downstream runs of a workspace whose run just changed state.
- *
- * <p>Called by {@link io.terrakube.api.plugin.scheduler.reconciliation.JobReconciliationService}
- * after it commits a job's transition to {@code completed}, which is the one routine in the
- * system that performs that transition. That placement is what gives dispatch its
- * exactly-once property: the transition is taken under a row lock and an already-terminal job
- * short-circuits, so only the caller that actually moved the job reaches this service, even
- * with several API replicas racing on the same job.
- *
- * <p>Deliberately not transactional. Each dependent is committed on its own by
- * {@link RunTriggerJobWriter}, and the Quartz trigger for it is created only afterwards: while
- * an insert is still open its row is invisible to the Quartz worker, which reads on another
- * connection and treats a job it cannot find as deleted. Holding one transaction across the
- * fan-out would also let a single failed insert roll back every job created beside it, since
- * catching the exception does not clear the rollback-only mark.
- *
- * <p>The reads it does need no outer transaction: the completed job materialises its workspace
- * and organization eagerly, and the dispatch query fetches destination, organization and
- * template through its entity graph.
- *
- * <p>{@link RunCascadeCoordinatorService} is consulted per edge for {@code ANY}/{@code ALL}
- * readiness and cascade bookkeeping, but owns none of the enqueue mechanics above - {@code EACH}
- * is never gated by it at all, which is what keeps this unchanged for every edge that predates it.
+ * Processes a durable successful-job event. Flow and state identity decide whether the event
+ * contributes an eligible change; the coordinator resolves every snapshotted dependency,
+ * including no-change and leaf completions. Each destination's job and attempt commit before
+ * this non-transactional service schedules it. Event replay and scheduler reconciliation repair
+ * scheduling failures without appending another attempt.
  */
 @Slf4j
 @Service
@@ -76,7 +56,6 @@ public class RunTriggerDispatchService {
     private final WorkspaceRunTriggerRepository workspaceRunTriggerRepository;
     private final HistoryRepository historyRepository;
     private final TclService tclService;
-    private final RunTriggerJobWriter jobWriter;
     private final JobNotificationTrigger jobNotificationTrigger;
     private final ScheduleJobService scheduleJobService;
     private final RunTriggerProperties properties;
@@ -115,77 +94,44 @@ public class RunTriggerDispatchService {
             return;
         }
 
-        // Always, regardless of what follows: a node that produced no further change still
-        // succeeded, and must not stay RUNNING forever waiting for a fan-out that was never
-        // coming. A no-op for a job outside any cascade, which is still most of them today.
-        cascadeCoordinatorService.resolveNode(completedJob);
-
         // Fetched once and classified once: every completed step's flow type is read from its
         // job's TCL (a full YAML parse, no caching) exactly one time each, shared by both the
         // state-changed check and the onDestroy check below, instead of two separate per-step
         // loops each paying that parse again.
         List<Step> steps = stepRepository.findByJobId(completedJobId);
         StepFlowClassification classification = classifyCompletedSteps(completedJob, steps);
-        if (!changedState(completedJob, classification)) {
-            log.debug("Job {} changed no state, no run trigger dispatched", completedJobId);
-            return;
-        }
-        // Only matters per-edge below, via each trigger's own onDestroy - EACH/TRIGGER (the
-        // only behavior before this) ignores it entirely, so this costs nothing for them.
+        boolean stateChanged = changedState(completedJob, classification);
+        cascadeCoordinatorService.resolveNode(completedJob, stateChanged);
         boolean wasDestroy = classification.wasDestroy();
-
-        // Checked before loading the edges: at the limit the answer is the same for every
-        // dependent, and saying so once is more useful than repeating it per edge.
         int nextDepth = completedJob.getCascadeDepth() + 1;
-        if (nextDepth > properties.getMaxCascadeDepth()) {
-            log.warn("Job {} reached the run trigger cascade limit of {}, not dispatching further",
-                    completedJobId, properties.getMaxCascadeDepth());
-            return;
+        // Leaf and no-change jobs still resolve their existing snapshot. Only independent
+        // runs without dependencies can return before creating an execution.
+        RunCascade cascade = cascadeCoordinatorService.findCascade(completedJob.getId()).orElse(null);
+        if (cascade == null) {
+            if (!stateChanged || nextDepth > properties.getMaxCascadeDepth()
+                    || workspaceRunTriggerRepository.findEnabledBySourceWorkspaceId(completedJob.getWorkspace().getId()).isEmpty()) return;
+            cascade = cascadeCoordinatorService.ensureCascade(completedJob);
         }
-
-        // No cap here: WorkspaceGraphValidationService.validateFanOutLimit keeps a workspace
-        // from ever acquiring more than the configured limit, so every edge below dispatches.
-        List<WorkspaceRunTrigger> triggers = workspaceRunTriggerRepository
-                .findEnabledBySourceWorkspaceId(completedJob.getWorkspace().getId());
-        if (triggers.isEmpty()) {
-            return;
-        }
+        List<WorkspaceRunTrigger> triggers = cascadeCoordinatorService.snapshotTriggers(
+                cascade.getId(), completedJob.getWorkspace().getId());
 
         // Tracked rather than logged-and-forgotten: a dependent that failed to enqueue must
         // still fail the batch so the caller (RunTriggerEventDispatchService) retries this job
         // with backoff instead of marking the outbox event PROCESSED. Re-running the loop is
-        // safe because enqueue() is idempotent per (destination, completedJob) - see below.
+        // safe because the coordinator finds the existing attempt under the cascade lock.
         boolean partialFailure = false;
 
-        // Snapshots the whole reachable subgraph once, up front, so an ALL join further down
-        // the graph can see every parent it depends on - not just the ones below this one edge.
-        RunCascade cascade = cascadeCoordinatorService.ensureCascade(completedJob);
-
         for (WorkspaceRunTrigger trigger : triggers) {
-            // Per-dependent isolation: one workspace missing a template, or failing to
-            // schedule, must not cost the dependents that come after it in the list.
             try {
-                if (wasDestroy && trigger.getOnDestroy() == RunTriggerOnDestroyPolicy.IGNORE) {
-                    // The edge only reacts to non-destroy state changes - behaves as if it
-                    // weren't there for this dispatch. The node is left exactly as it was,
-                    // ready to react normally to a later, non-destroy run.
-                    continue;
-                }
-                if (wasDestroy && trigger.getOnDestroy() == RunTriggerOnDestroyPolicy.BLOCK) {
-                    // "Reject the destroy" can only mean rejecting what it would have done to
-                    // THIS edge's destination: a destroy can fan out across several edges with
-                    // different policies, so refusing to run the destroy itself was never an
-                    // option - RunCascadeNodeStatus.BLOCKED already anticipates exactly this.
-                    cascadeCoordinatorService.blockNode(cascade, trigger);
-                    continue;
-                }
-                // EACH (the only mode before this) is unconditionally true here - never gated.
-                if (!cascadeCoordinatorService.shouldDispatch(cascade, trigger)) {
-                    continue;
-                }
-                Job created = enqueue(trigger, completedJob, nextDepth, wasDestroy);
-                if (created != null) {
-                    cascadeCoordinatorService.recordDispatch(cascade, trigger, created);
+                Job created = cascadeCoordinatorService.enqueue(cascade, trigger, completedJob, nextDepth,
+                        wasDestroy, stateChanged && nextDepth <= properties.getMaxCascadeDepth());
+                if (created != null && created.getStatus() == JobStatus.pending) {
+                    try {
+                        jobNotificationTrigger.notifyStatusChanged(created);
+                        scheduleJobService.createJobContext(created);
+                    } catch (ObjectAlreadyExistsException ignored) {
+                        // Event replay or the scheduler sweep already scheduled this durable job.
+                    }
                 }
             } catch (Exception e) {
                 partialFailure = true;
@@ -291,104 +237,6 @@ public class RunTriggerDispatchService {
         log.debug("Job {} state evaluation: serialChanged={}, md5Changed={}, changed={}",
                 job.getId(), serialChanged, md5Changed, changed);
         return changed;
-    }
-
-    /** @return the job created, or null if this dependent had no template to run and was skipped. */
-    private Job enqueue(WorkspaceRunTrigger trigger, Job completedJob, int depth, boolean wasDestroy) throws Exception {
-        Workspace destination = trigger.getDestinationWorkspace();
-        boolean planOnly = wasDestroy && trigger.getOnDestroy() == RunTriggerOnDestroyPolicy.PLAN_ONLY;
-
-        // Idempotency key for this fan-out edge: a RunTriggerEvent can be reclaimed and
-        // reprocessed (lease expiry, a crashed pod, a slow recordResult) after some dependents
-        // already committed, so dispatchInternal's loop must tolerate running twice for the
-        // same completedJob without creating a second downstream job per destination.
-        Optional<Job> existingJob = jobRepository
-                .findFirstByWorkspaceAndTriggeredByJobIdOrderByIdDesc(destination, completedJob.getId());
-        if (existingJob.isPresent()) {
-            reconcilePreviouslyEnqueued(existingJob.get(), completedJob, destination);
-            return existingJob.get();
-        }
-
-        // Resolved here rather than in the writer: it reads fields already loaded by the
-        // dispatch query, so it costs nothing and keeps the writer to a single concern.
-        String templateReference = planOnly ? resolvePlanOnlyTemplate(trigger) : resolveTemplate(trigger, destination);
-        if (templateReference == null || templateReference.isBlank()) {
-            if (planOnly) {
-                // No fallback on purpose: the destination's default template could just as
-                // easily be an apply template, which would defeat PLAN_ONLY entirely.
-                log.warn("Run trigger {} is PLAN_ONLY on destroy but has no plan-only template configured, skipping",
-                        trigger.getId());
-            } else {
-                log.warn("Run trigger {} has no template and workspace {} has no default template, skipping",
-                        trigger.getId(), destination.getName());
-            }
-            return null;
-        }
-
-        Job savedJob = jobWriter.persist(destination, templateReference, completedJob, depth);
-
-        // Only now that the row is committed and visible to other connections. A plain
-        // repository save also bypasses Elide, so neither JobNotificationHook nor JobManageHook
-        // fires for this job and both side effects have to be raised by hand, exactly as
-        // ScheduleJobTrigger does for scheduled runs.
-        jobNotificationTrigger.notifyStatusChanged(savedJob);
-        scheduleJobService.createJobContext(savedJob);
-
-        log.info("Job {} triggered job {} on workspace {} (depth {})",
-                completedJob.getId(), savedJob.getId(), destination.getName(), depth);
-        return savedJob;
-    }
-
-    /**
-     * A job already exists for this (destination, completedJob) pair from an earlier attempt
-     * at this same dispatch. Two cases, distinguished by status rather than by any flag of our
-     * own, because Quartz's job store - not this table - is the real source of truth for
-     * whether the dependent is actually scheduled:
-     *
-     * <p>Still {@code pending}: the row committed on a prior attempt but that attempt did not
-     * get as far as recording a result (died before, or failed during, {@code createJobContext}).
-     * Re-running the scheduling step is safe either way: if Quartz never got the job, this is
-     * what finally schedules it; if Quartz already has it, {@code scheduler.scheduleJob} throws
-     * {@link ObjectAlreadyExistsException}, which is treated as confirmation rather than a
-     * failure (the same tolerance {@code JobReconciliationService} applies when it removes a
-     * trigger).
-     *
-     * <p>Anything else: the dependent already ran its course on a prior attempt. Nothing to do.
-     */
-    private void reconcilePreviouslyEnqueued(Job existingJob, Job completedJob, Workspace destination)
-            throws Exception {
-        if (existingJob.getStatus() != JobStatus.pending) {
-            log.info("Job {} already triggered job {} on workspace {} (status {}), skipping duplicate dispatch",
-                    completedJob.getId(), existingJob.getId(), destination.getName(), existingJob.getStatus());
-            return;
-        }
-        try {
-            scheduleJobService.createJobContext(existingJob);
-            log.info("Re-scheduled previously persisted job {} on workspace {} triggered by job {}",
-                    existingJob.getId(), destination.getName(), completedJob.getId());
-        } catch (ObjectAlreadyExistsException e) {
-            log.debug("Job {} on workspace {} already has a Quartz context, nothing to do",
-                    existingJob.getId(), destination.getName());
-        }
-    }
-
-    /**
-     * The trigger's own template wins, then the destination's default. A locked destination is
-     * deliberately not special-cased: the job is enqueued as pending and ScheduleJob admits it
-     * once the lock clears, because skipping would leave the dependent silently drifted, which
-     * is the very thing run triggers exist to prevent.
-     */
-    private String resolveTemplate(WorkspaceRunTrigger trigger, Workspace destination) {
-        if (trigger.getTemplate() != null) {
-            return trigger.getTemplate().getId().toString();
-        }
-        return destination.getDefaultTemplate();
-    }
-
-    /** No destination-default fallback - see the PLAN_ONLY branch in {@link #enqueue}. */
-    private String resolvePlanOnlyTemplate(WorkspaceRunTrigger trigger) {
-        Template planTemplate = trigger.getOnDestroyPlanTemplate();
-        return planTemplate != null ? planTemplate.getId().toString() : null;
     }
 
     private static String destinationName(WorkspaceRunTrigger trigger) {

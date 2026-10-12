@@ -29,12 +29,13 @@ import lombok.Getter;
 import lombok.Setter;
 
 /**
- * One edge of a cascade's reachable subgraph, as it stood when the cascade was created. A
+ * One dependency of a cascade's reachable subgraph, as it stood when the cascade was created. A
  * snapshot, not a live reference: the real {@link WorkspaceRunTrigger} it was copied from can
  * change or be deleted after this row is written, and a running cascade must keep evaluating
  * against the shape it started with. Read-only from the API, same write lock as {@link RunCascade}.
  */
-@Include(name = "runCascadeEdge", rootLevel = false)
+// RunCascadeEdge is reserved for Elide's GraphQL relay wrapper of RunCascade.
+@Include(name = "runCascadeDependency", rootLevel = false)
 @ReadPermission(expression = "team view run cascade edge")
 @CreatePermission(expression = "user is a super service")
 @UpdatePermission(expression = "user is a super service")
@@ -49,6 +50,7 @@ public class RunCascadeEdge extends GenericAuditFields {
     private UUID id;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @com.yahoo.elide.annotation.Exclude
     private RunCascade cascade;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
@@ -78,4 +80,28 @@ public class RunCascadeEdge extends GenericAuditFields {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "source_trigger_id")
     private WorkspaceRunTrigger sourceTrigger;
+
+    @Column(name = "template_reference")
+    private String templateReference;
+
+    @Column(name = "template_tcl", columnDefinition = "text")
+    @com.yahoo.elide.annotation.Exclude
+    private String templateTcl;
+
+    @Column(name = "plan_template_reference")
+    private String planTemplateReference;
+
+    @Column(name = "plan_template_tcl", columnDefinition = "text")
+    @com.yahoo.elide.annotation.Exclude
+    private String planTemplateTcl;
+
+    @jakarta.persistence.Enumerated(jakarta.persistence.EnumType.STRING)
+    private RunCascadeEdgeStatus status = RunCascadeEdgeStatus.PENDING;
+
+    @Column(name = "plan_only")
+    private boolean planOnly;
+
+    @Column(name = "skip_requested")
+    @com.yahoo.elide.annotation.Exclude
+    private boolean skipRequested;
 }

@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+    <changeSet id="2-34-0-cascade-execution-reliability" author="jake">
+        <addColumn tableName="run_cascade_edge">
+            <column name="template_reference" type="varchar(128)"/>
+            <column name="template_tcl" type="clob"/>
+            <column name="plan_template_reference" type="varchar(128)"/>
+            <column name="plan_template_tcl" type="clob"/>
+            <column name="skip_requested" type="boolean" defaultValueBoolean="false"><constraints nullable="false"/></column>
+            <column name="plan_only" type="boolean" defaultValueBoolean="false"><constraints nullable="false"/></column>
+            <column name="status" type="varchar(20)" defaultValue="PENDING"><constraints nullable="false"/></column>
+        </addColumn>
+        <addColumn tableName="run_cascade_node"><column name="reason" type="varchar(255)"/></addColumn>
+        <addColumn tableName="run_cascade_node_attempt"><column name="outcome" type="varchar(20)" defaultValue="RUNNING"><constraints nullable="false"/></column></addColumn>
+        <addColumn tableName="run_cascade_node_attempt"><column name="superseded" type="boolean" defaultValueBoolean="false"><constraints nullable="false"/></column></addColumn>
+        <addColumn tableName="run_cascade_node_attempt"><column name="state_changed" type="boolean"/></addColumn>
+        <!-- Historical template versions were not stored by the original implementation.
+             Capture the available configuration once at upgrade; all new executions snapshot
+             their exact workflow at creation. Attempt outcomes can be recovered from jobs. -->
+        <sql>
+            UPDATE run_cascade_node_attempt SET outcome = 'SUCCEEDED'
+                WHERE job_id IN (SELECT id FROM job WHERE status IN ('completed', 'noChanges'));
+            UPDATE run_cascade_node_attempt SET outcome = 'FAILED'
+                WHERE job_id IN (SELECT id FROM job WHERE status = 'failed');
+            UPDATE run_cascade_node_attempt SET outcome = 'SKIPPED'
+                WHERE job_id IN (SELECT id FROM job WHERE status IN ('cancelled', 'rejected'));
+            UPDATE run_cascade_edge SET template_reference = COALESCE(
+                (SELECT template_id FROM workspace_run_trigger WHERE id = run_cascade_edge.source_trigger_id),
+                (SELECT default_template FROM workspace WHERE id = run_cascade_edge.destination_workspace_id));
+            UPDATE run_cascade_edge SET template_tcl =
+                (SELECT tcl FROM template WHERE id = run_cascade_edge.template_reference);
+            UPDATE run_cascade_edge SET plan_template_reference = COALESCE(plan_template_id,
+                (SELECT on_destroy_plan_template_id FROM workspace_run_trigger WHERE id = run_cascade_edge.source_trigger_id));
+            UPDATE run_cascade_edge SET plan_template_tcl =
+                (SELECT tcl FROM template WHERE id = run_cascade_edge.plan_template_reference);
+        </sql>
+        <addUniqueConstraint tableName="run_cascade_node_attempt" columnNames="node_id,attempt_number" constraintName="uk_cascade_attempt_number"/>
+        <addUniqueConstraint tableName="run_cascade_node_attempt" columnNames="job_id" constraintName="uk_cascade_attempt_job"/>
+        <createIndex tableName="run_cascade_edge" indexName="idx_cascade_edge_destination"><column name="cascade_id"/><column name="destination_workspace_id"/></createIndex>
+        <createIndex tableName="run_cascade_edge" indexName="idx_cascade_edge_source"><column name="cascade_id"/><column name="source_workspace_id"/></createIndex>
+    </changeSet>
+</databaseChangeLog>

@@ -39,6 +39,14 @@ public class RunCascadeOperationsController {
 
     public record NodeActionResult(UUID nodeId, String status, Integer jobId) {}
 
+    @org.springframework.web.bind.annotation.GetMapping("/capabilities")
+    public java.util.Map<String, Boolean> capabilities(org.springframework.security.core.Authentication authentication) {
+        return java.util.Map.of("operate", accessService.isAdmin(authentication));
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    private io.terrakube.api.plugin.scheduler.reconciliation.SchedulerReconciliationAccessService accessService;
+
     @PostMapping("/{cascadeId}/cancel")
     @PreAuthorize("@schedulerReconciliationAccessService.isAdmin(authentication)")
     public CascadeActionResult cancel(@PathVariable UUID cascadeId) {
@@ -60,8 +68,8 @@ public class RunCascadeOperationsController {
     public NodeActionResult resume(@PathVariable UUID nodeId) {
         Optional<Job> job = coordinatorService.resumeNode(nodeId);
         log.info("Admin resumed cascade node {}{}", nodeId,
-                job.map(j -> " as job " + j.getId()).orElse(" - still not ready, left PENDING"));
-        String status = job.isPresent() ? RunCascadeNodeStatus.RUNNING.name() : RunCascadeNodeStatus.PENDING.name();
+                job.map(j -> " as job " + j.getId()).orElse(" - still not ready, left paused"));
+        String status = job.isPresent() ? RunCascadeNodeStatus.RUNNING.name() : RunCascadeNodeStatus.BLOCKED.name();
         return new NodeActionResult(nodeId, status, job.map(Job::getId).orElse(null));
     }
 

@@ -105,14 +105,14 @@ class RunCascadeOperationsControllerTest extends ServerApplicationTests {
     }
 
     @Test
-    void resumeLeavesItPendingWhenStillNotReady() {
+    void resumeLeavesItPausedWhenStillNotReady() {
         UUID nodeId = UUID.randomUUID();
         when(coordinatorService.resumeNode(nodeId)).thenReturn(Optional.empty());
 
         given().headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_ADMIN"))
                 .when().post("/admin/v1/cascades/nodes/" + nodeId + "/resume")
                 .then().statusCode(HttpStatus.OK.value())
-                .body("status", equalTo("PENDING"))
+                .body("status", equalTo("BLOCKED"))
                 .body("jobId", equalTo((Object) null));
     }
 }

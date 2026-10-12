@@ -30,7 +30,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * a second transaction until the first ends, against a real database rather than a mock - same
  * approach as {@link WorkspaceGraphLockConcurrencyTest} for the organization-row lock. Without
  * this lock, two parents of the same {@code ANY}/{@code ALL} join calling
- * {@code RunCascadeCoordinatorService.shouldDispatch} at nearly the same time could both read the
+ * {@code RunCascadeCoordinatorService.enqueue} at nearly the same time could both read the
  * destination node as {@code PENDING} before either commits {@code RUNNING}, and both dispatch it.
  */
 class RunCascadeNodeLockConcurrencyTest extends ServerApplicationTests {

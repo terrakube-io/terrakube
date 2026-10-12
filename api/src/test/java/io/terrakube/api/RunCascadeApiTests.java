@@ -109,4 +109,46 @@ public class RunCascadeApiTests extends ServerApplicationTests {
                 .assertThat()
                 .statusCode(HttpStatus.NOT_FOUND.value());
     }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    private io.terrakube.api.repository.RunCascadeRepository cascades;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    private io.terrakube.api.repository.RunCascadeNodeRepository nodes;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    private io.terrakube.api.repository.RunCascadeNodeAttemptRepository attempts;
+
+
+    @Test
+    void graphRelationshipsAreReadableButCannotBeMutatedByOrganizationMembers() {
+        Workspace source = workspaceRepository.findById(UUID.fromString(WORKSPACE_SOURCE)).orElseThrow();
+        Job job = new Job(); job.setWorkspace(source); job.setOrganization(source.getOrganization());
+        job.setStatus(JobStatus.completed); job.setCreatedBy("test"); job.setUpdatedBy("test");
+        job.setCreatedDate(new Date()); job.setUpdatedDate(new Date());
+        job = jobRepository.save(job); jobCreated = job.getId();
+        var cascade = new io.terrakube.api.rs.cascade.RunCascade();
+        cascade.setId(UUID.randomUUID()); cascade.setOrganization(source.getOrganization()); cascade.setOriginJob(job);
+        cascade = cascades.save(cascade);
+        var node = new io.terrakube.api.rs.cascade.RunCascadeNode();
+        node.setId(UUID.randomUUID()); node.setCascade(cascade); node.setWorkspace(source);
+        node.setStatus(io.terrakube.api.rs.cascade.RunCascadeNodeStatus.SUCCEEDED);
+        node = nodes.save(node);
+        var attempt = new io.terrakube.api.rs.cascade.RunCascadeNodeAttempt();
+        attempt.setId(UUID.randomUUID()); attempt.setNode(node); attempt.setJob(job); attempt.setAttemptNumber(1);
+        attempt.setOutcome(io.terrakube.api.rs.cascade.RunCascadeNodeStatus.SUCCEEDED);
+        attempts.save(attempt);
+        try {
+            given().headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_ADMIN"))
+                .queryParam("include", "workspace,runCascadeNodeAttempt")
+                .get("/api/v1/runCascade/" + cascade.getId() + "/runCascadeNode")
+                .then().statusCode(200).body("data[0].id", org.hamcrest.Matchers.equalTo(node.getId().toString()))
+                .body("included.type", org.hamcrest.Matchers.hasItem("runCascadeNodeAttempt"));
+            for (String relationship : java.util.List.of("runCascadeNode", "runCascadeEdge")) {
+                given().headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_ADMIN"))
+                    .get("/api/v1/runCascade/" + cascade.getId() + "/" + relationship)
+                    .then().statusCode(200);
+            }
+        } finally { cascades.deleteById(cascade.getId()); }
+    }
 }

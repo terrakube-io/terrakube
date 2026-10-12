@@ -4,765 +4,108 @@ import io.terrakube.api.plugin.notification.JobNotificationTrigger;
 import io.terrakube.api.plugin.scheduler.ScheduleJobService;
 import io.terrakube.api.plugin.scheduler.job.tcl.TclService;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.FlowType;
-import io.terrakube.api.repository.HistoryRepository;
-import io.terrakube.api.repository.JobRepository;
-import io.terrakube.api.repository.StepRepository;
-import io.terrakube.api.repository.WorkspaceRunTriggerRepository;
-import io.terrakube.api.rs.Organization;
+import io.terrakube.api.repository.*;
 import io.terrakube.api.rs.cascade.RunCascade;
-import io.terrakube.api.rs.job.Job;
-import io.terrakube.api.rs.job.JobStatus;
-import io.terrakube.api.rs.job.JobVia;
+import io.terrakube.api.rs.job.*;
 import io.terrakube.api.rs.job.step.Step;
-import io.terrakube.api.rs.template.Template;
 import io.terrakube.api.rs.workspace.Workspace;
 import io.terrakube.api.rs.workspace.history.History;
-import io.terrakube.api.rs.workspace.trigger.RunTriggerOnDestroyPolicy;
 import io.terrakube.api.rs.workspace.trigger.WorkspaceRunTrigger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
-import org.mockito.InOrder;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.quartz.ObjectAlreadyExistsException;
-import org.springframework.dao.DataIntegrityViolationException;
+import java.util.*;
+import static org.assertj.core.api.Assertions.*;
+import static org.mockito.Mockito.*;
+import static org.mockito.ArgumentMatchers.*;
 
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.List;
-import java.util.Optional;
-import java.util.UUID;
-import java.util.stream.IntStream;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.doReturn;
-import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.lenient;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.inOrder;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-
+/** Dispatcher tests keep flow/state qualification and post-commit scheduling separate from joins. */
 class RunTriggerDispatchServiceTest {
+    JobRepository jobs = mock(JobRepository.class);
+    StepRepository steps = mock(StepRepository.class);
+    WorkspaceRunTriggerRepository triggers = mock(WorkspaceRunTriggerRepository.class);
+    HistoryRepository history = mock(HistoryRepository.class);
+    TclService tcl = mock(TclService.class);
+    JobNotificationTrigger notifications = mock(JobNotificationTrigger.class);
+    ScheduleJobService scheduler = mock(ScheduleJobService.class);
+    RunTriggerProperties properties = new RunTriggerProperties();
+    RunCascadeCoordinatorService coordinator = mock(RunCascadeCoordinatorService.class);
+    RunTriggerDispatchService service;
+    Job parent;
+    RunCascade cascade;
+    WorkspaceRunTrigger edge;
 
-    private static final UUID SOURCE_ID = UUID.randomUUID();
-    private static final int COMPLETED_JOB_ID = 900;
-
-    JobRepository jobRepository;
-    StepRepository stepRepository;
-    WorkspaceRunTriggerRepository triggerRepository;
-    HistoryRepository historyRepository;
-    TclService tclService;
-    RunTriggerJobWriter jobWriter;
-    JobNotificationTrigger jobNotificationTrigger;
-    ScheduleJobService scheduleJobService;
-    RunTriggerProperties properties;
-    RunTriggerDispatchMetrics runTriggerDispatchMetrics;
-    RunCascadeCoordinatorService cascadeCoordinatorService;
-    RunTriggerDispatchService subject;
-
-    private int nextJobId;
-
-    @BeforeEach
-    void setup() throws Exception {
-        jobRepository = mock(JobRepository.class);
-        stepRepository = mock(StepRepository.class);
-        triggerRepository = mock(WorkspaceRunTriggerRepository.class);
-        historyRepository = mock(HistoryRepository.class);
-        tclService = mock(TclService.class);
-        jobNotificationTrigger = mock(JobNotificationTrigger.class);
-        scheduleJobService = mock(ScheduleJobService.class);
-        properties = new RunTriggerProperties();
-        runTriggerDispatchMetrics = mock(RunTriggerDispatchMetrics.class);
-        nextJobId = 1000;
-
-        // Transparent by default: every test below predates ANY/ALL and exercises EACH, which
-        // shouldDispatch always allows anyway - these stubs just let ensureCascade/recordDispatch/
-        // recomputeStatus run without NPEs on a mock. RunCascadeCoordinatorServiceTest covers the
-        // coordinator's own gating logic directly.
-        cascadeCoordinatorService = mock(RunCascadeCoordinatorService.class);
-        lenient().doReturn(new RunCascade()).when(cascadeCoordinatorService).ensureCascade(any());
-        lenient().doReturn(true).when(cascadeCoordinatorService).shouldDispatch(any(), any());
-
-        Date now = new Date();
-        Date earlier = new Date(now.getTime() - 60_000);
-        History currentHistory = history(2, "md5-new", now, String.valueOf(COMPLETED_JOB_ID));
-        History baselineHistory = history(1, "md5-old", earlier, "899");
-
-        lenient().doReturn(Optional.of(currentHistory))
-                .when(historyRepository)
-                .findFirstByWorkspaceAndJobReferenceOrderByCreatedDateDesc(any(), eq(String.valueOf(COMPLETED_JOB_ID)));
-        lenient().doReturn(Optional.of(baselineHistory))
-                .when(historyRepository)
-                .findFirstByWorkspaceAndCreatedDateLessThanOrderByCreatedDateDesc(any(), any());
-
-        // No prior attempt at this edge by default; individual tests override this to exercise
-        // the idempotency path.
-        lenient().doReturn(Optional.empty())
-                .when(jobRepository)
-                .findFirstByWorkspaceAndTriggeredByJobIdOrderByIdDesc(any(), any());
-
-        // The writer owns the shape of the job and its transaction boundary, both covered by
-        // RunTriggerJobWriterTest. Here it stands in for a committed row, so the assertions can
-        // stay on what the dispatcher decides: who gets one, with which template, at what depth.
-        jobWriter = mock(RunTriggerJobWriter.class);
-        lenient().doAnswer(i -> {
-            Job saved = new Job();
-            saved.setId(nextJobId++);
-            saved.setWorkspace(i.getArgument(0));
-            return saved;
-        }).when(jobWriter).persist(any(), any(), any(), anyInt());
-
-        subject = new RunTriggerDispatchService(jobRepository, stepRepository, triggerRepository,
-                historyRepository, tclService, jobWriter, jobNotificationTrigger, scheduleJobService, properties,
-                runTriggerDispatchMetrics, cascadeCoordinatorService);
+    @BeforeEach void setup() {
+        service = new RunTriggerDispatchService(jobs, steps, triggers, history, tcl, notifications,
+                scheduler, properties, mock(RunTriggerDispatchMetrics.class), coordinator);
+        Workspace source = new Workspace(); source.setId(UUID.randomUUID());
+        parent = new Job(); parent.setId(900); parent.setWorkspace(source); parent.setStatus(JobStatus.completed);
+        cascade = new RunCascade(); cascade.setId(UUID.randomUUID());
+        edge = new WorkspaceRunTrigger(); edge.setId(UUID.randomUUID()); edge.setDestinationWorkspace(source);
+        when(jobs.findById(900)).thenReturn(Optional.of(parent));
+        when(coordinator.findCascade(900)).thenReturn(Optional.of(cascade));
+        when(coordinator.snapshotTriggers(cascade.getId(), source.getId())).thenReturn(List.of(edge));
     }
-
-    // ---------------------------------------------------------------- fixtures
-
-    private Workspace workspace(String name, String defaultTemplate) {
-        Organization organization = new Organization();
-        organization.setId(UUID.randomUUID());
-        organization.setName("simple");
-
-        Workspace workspace = new Workspace();
-        workspace.setId(UUID.randomUUID());
-        workspace.setName(name);
-        workspace.setDefaultTemplate(defaultTemplate);
-        workspace.setOrganization(organization);
-        return workspace;
+    void flow(FlowType type) {
+        Step step = new Step(); step.setStepNumber(100); step.setStatus(JobStatus.completed);
+        when(steps.findByJobId(900)).thenReturn(List.of(step));
+        when(tcl.getFlowTypeForStep(parent, 100)).thenReturn(type.toString());
     }
-
-    private Job completedJob(int cascadeDepth) {
-        Workspace source = workspace("source", null);
-        source.setId(SOURCE_ID);
-
-        Job job = new Job();
-        job.setId(COMPLETED_JOB_ID);
-        job.setWorkspace(source);
-        job.setStatus(JobStatus.completed);
-        job.setCascadeDepth(cascadeDepth);
-        doReturn(Optional.of(job)).when(jobRepository).findById(COMPLETED_JOB_ID);
-        return job;
+    @ParameterizedTest @EnumSource(value=FlowType.class, names={"terraformApply","terraformDestroy","customScripts"})
+    void qualifiesCompletedStateChangingFlows(FlowType type) {
+        flow(type); service.dispatchInternal(900);
+        verify(coordinator).enqueue(cascade, edge, parent, 1, type == FlowType.terraformDestroy, true);
+        verify(coordinator).resolveNode(parent, true);
     }
-
-    /** One completed step whose flow type is what the test wants to exercise. */
-    private void stepsWithFlow(Job job, FlowType flowType, JobStatus stepStatus) {
-        Step step = new Step();
-        step.setId(UUID.randomUUID());
-        step.setStepNumber(200);
-        step.setStatus(stepStatus);
-        doReturn(List.of(step)).when(stepRepository).findByJobId(job.getId());
-        lenient().doReturn(flowType.toString()).when(tclService).getFlowTypeForStep(job, 200);
+    @ParameterizedTest @EnumSource(value=FlowType.class, names={"terraformPlan","terraformPlanDestroy"})
+    void resolvesExistingCascadeDependenciesEvenForPlanOnlyJobs(FlowType type) {
+        flow(type); service.dispatchInternal(900);
+        verify(coordinator).enqueue(cascade, edge, parent, 1, false, false);
     }
-
-    private WorkspaceRunTrigger trigger(Workspace destination, Template template) {
-        WorkspaceRunTrigger trigger = new WorkspaceRunTrigger();
-        trigger.setId(UUID.randomUUID());
-        trigger.setDestinationWorkspace(destination);
-        trigger.setTemplate(template);
-        trigger.setEnabled(true);
-        return trigger;
+    @Test void unchangedStateResolvesDependenciesWithoutDispatching() {
+        flow(FlowType.terraformApply);
+        History current = new History(); current.setSerial(5); current.setMd5("same"); current.setCreatedDate(new Date());
+        History baseline = new History(); baseline.setSerial(5); baseline.setMd5("same");
+        when(history.findFirstByWorkspaceAndJobReferenceOrderByCreatedDateDesc(parent.getWorkspace(), "900")).thenReturn(Optional.of(current));
+        when(history.findFirstByWorkspaceAndCreatedDateLessThanOrderByCreatedDateDesc(parent.getWorkspace(), current.getCreatedDate())).thenReturn(Optional.of(baseline));
+        service.dispatchInternal(900);
+        verify(coordinator).enqueue(cascade, edge, parent, 1, false, false);
     }
-
-    private WorkspaceRunTrigger triggerWithOnDestroy(Workspace destination, RunTriggerOnDestroyPolicy policy,
-            Template planTemplate) {
-        WorkspaceRunTrigger trigger = trigger(destination, null);
-        trigger.setOnDestroy(policy);
-        trigger.setOnDestroyPlanTemplate(planTemplate);
-        return trigger;
+    @Test void schedulesCommittedPendingJobsAndToleratesReplay() throws Exception {
+        flow(FlowType.terraformApply);
+        Job created = new Job(); created.setId(901); created.setStatus(JobStatus.pending);
+        when(coordinator.enqueue(cascade, edge, parent, 1, false, true)).thenReturn(created);
+        doThrow(new ObjectAlreadyExistsException("already scheduled")).when(scheduler).createJobContext(created);
+        service.dispatchInternal(900);
+        verify(scheduler).createJobContext(created);
     }
-
-    private void triggersFromSource(WorkspaceRunTrigger... triggers) {
-        doReturn(new ArrayList<>(List.of(triggers)))
-                .when(triggerRepository).findEnabledBySourceWorkspaceId(SOURCE_ID);
+    @Test void schedulingFailureRetriesTheDurableEventWithoutDroppingOtherDestinations() throws Exception {
+        flow(FlowType.terraformApply);
+        WorkspaceRunTrigger second = new WorkspaceRunTrigger(); second.setDestinationWorkspace(parent.getWorkspace());
+        when(coordinator.snapshotTriggers(any(), any())).thenReturn(List.of(edge, second));
+        Job created = new Job(); created.setStatus(JobStatus.pending);
+        when(coordinator.enqueue(cascade, edge, parent, 1, false, true)).thenReturn(created);
+        doThrow(new RuntimeException("Quartz unavailable")).when(scheduler).createJobContext(created);
+        assertThatThrownBy(() -> service.dispatchInternal(900)).isInstanceOf(RunTriggerDispatchPartialFailureException.class);
+        verify(coordinator).enqueue(cascade, second, parent, 1, false, true);
     }
-
-    private History history(int serial, String md5, Date createdDate, String jobReference) {
-        History history = new History();
-        history.setId(UUID.randomUUID());
-        history.setSerial(serial);
-        history.setMd5(md5);
-        history.setLineage("lineage-1");
-        history.setCreatedDate(createdDate);
-        history.setJobReference(jobReference);
-        return history;
+    @Test void completedReplayDoesNotScheduleAgain() throws Exception {
+        flow(FlowType.terraformApply); Job created = new Job(); created.setStatus(JobStatus.completed);
+        when(coordinator.enqueue(any(), any(), any(), anyInt(), anyBoolean(), anyBoolean())).thenReturn(created);
+        service.dispatchInternal(900); verifyNoInteractions(scheduler);
     }
-
-    // ---------------------------------------------------------------- qualification
-
-    @Test
-    void applyDispatchesToTheDependent() throws Exception {
-        Job completed = completedJob(0);
-        stepsWithFlow(completed, FlowType.terraformApply, JobStatus.completed);
-        Workspace destination = workspace("consumer", "template-default");
-        triggersFromSource(trigger(destination, null));
-
-        subject.dispatchFor(COMPLETED_JOB_ID);
-
-        ArgumentCaptor<Job> captor = ArgumentCaptor.forClass(Job.class);
-        verify(jobWriter).persist(eq(destination), eq("template-default"), eq(completed), eq(1));
-        verify(jobNotificationTrigger).notifyStatusChanged(captor.capture());
-        Job created = captor.getValue();
-
-        // Neither Elide hook fires for a repository save, so both side effects are explicit.
-        verify(scheduleJobService).createJobContext(created);
-
-        // The order is the fix for the Quartz race: createJobContext fires the trigger at once,
-        // and the worker reads on another connection, so the row has to be committed first.
-        InOrder ordered = inOrder(jobWriter, scheduleJobService);
-        ordered.verify(jobWriter).persist(any(), any(), any(), anyInt());
-        ordered.verify(scheduleJobService).createJobContext(created);
+    @Test void noChangeIndependentRunDoesNotStartACascade() {
+        flow(FlowType.terraformPlan); when(coordinator.findCascade(900)).thenReturn(Optional.empty());
+        service.dispatchInternal(900); verify(coordinator, never()).ensureCascade(any());
     }
-
-    @Test
-    void destroyDispatches() {
-        Job completed = completedJob(0);
-        stepsWithFlow(completed, FlowType.terraformDestroy, JobStatus.completed);
-        triggersFromSource(trigger(workspace("consumer", "template-default"), null));
-
-        subject.dispatchFor(COMPLETED_JOB_ID);
-
-        verify(jobWriter).persist(any(), any(), any(), anyInt());
+    @Test void depthLimitResolvesExistingDependenciesAsSkipped() {
+        flow(FlowType.terraformApply); parent.setCascadeDepth(properties.getMaxCascadeDepth());
+        service.dispatchInternal(900);
+        verify(coordinator).enqueue(cascade, edge, parent, properties.getMaxCascadeDepth()+1, false, false);
     }
-
-    // ---------------------------------------------------------------- onDestroy
-
-    /** TRIGGER (the default) treats a destroy as a state-changing run like any other. */
-    @Test
-    void destroyWithTriggerPolicyDispatchesNormally() {
-        Job completed = completedJob(0);
-        stepsWithFlow(completed, FlowType.terraformDestroy, JobStatus.completed);
-        triggersFromSource(triggerWithOnDestroy(workspace("consumer", "template-default"),
-                RunTriggerOnDestroyPolicy.TRIGGER, null));
-
-        subject.dispatchFor(COMPLETED_JOB_ID);
-
-        verify(jobWriter).persist(any(), eq("template-default"), any(), anyInt());
-    }
-
-    @Test
-    void destroyWithPlanOnlyPolicyDispatchesPlanTemplate() {
-        Job completed = completedJob(0);
-        stepsWithFlow(completed, FlowType.terraformDestroy, JobStatus.completed);
-        Template planTemplate = new Template();
-        planTemplate.setId(UUID.randomUUID());
-        triggersFromSource(triggerWithOnDestroy(workspace("consumer", "template-default"),
-                RunTriggerOnDestroyPolicy.PLAN_ONLY, planTemplate));
-
-        subject.dispatchFor(COMPLETED_JOB_ID);
-
-        // Not the destination's own template or default - the plan-only override specifically.
-        verify(jobWriter).persist(any(), eq(planTemplate.getId().toString()), any(), anyInt());
-    }
-
-    /**
-     * No fallback to the destination's default template on purpose: that could just as easily
-     * be an apply template, which would defeat the whole point of PLAN_ONLY.
-     */
-    @Test
-    void destroyWithPlanOnlyPolicyAndNoPlanTemplateSkips() {
-        Job completed = completedJob(0);
-        stepsWithFlow(completed, FlowType.terraformDestroy, JobStatus.completed);
-        triggersFromSource(triggerWithOnDestroy(workspace("consumer", "template-default"),
-                RunTriggerOnDestroyPolicy.PLAN_ONLY, null));
-
-        subject.dispatchFor(COMPLETED_JOB_ID);
-
-        verify(jobWriter, never()).persist(any(), any(), any(), anyInt());
-    }
-
-    @Test
-    void destroyWithBlockPolicyBlocksNodeInsteadOfDispatching() {
-        Job completed = completedJob(0);
-        stepsWithFlow(completed, FlowType.terraformDestroy, JobStatus.completed);
-        WorkspaceRunTrigger trigger = triggerWithOnDestroy(workspace("consumer", "template-default"),
-                RunTriggerOnDestroyPolicy.BLOCK, null);
-        triggersFromSource(trigger);
-
-        subject.dispatchFor(COMPLETED_JOB_ID);
-
-        verify(cascadeCoordinatorService).blockNode(any(), eq(trigger));
-        verify(jobWriter, never()).persist(any(), any(), any(), anyInt());
-        verify(cascadeCoordinatorService, never()).shouldDispatch(any(), eq(trigger));
-    }
-
-    @Test
-    void destroyWithIgnorePolicySkipsEdge() {
-        Job completed = completedJob(0);
-        stepsWithFlow(completed, FlowType.terraformDestroy, JobStatus.completed);
-        WorkspaceRunTrigger trigger = triggerWithOnDestroy(workspace("consumer", "template-default"),
-                RunTriggerOnDestroyPolicy.IGNORE, null);
-        triggersFromSource(trigger);
-
-        subject.dispatchFor(COMPLETED_JOB_ID);
-
-        verify(jobWriter, never()).persist(any(), any(), any(), anyInt());
-        verify(cascadeCoordinatorService, never()).shouldDispatch(any(), eq(trigger));
-        verify(cascadeCoordinatorService, never()).blockNode(any(), eq(trigger));
-    }
-
-    /**
-     * onDestroy only ever changes behavior for a destroy-originated event - a normal apply
-     * across the very same BLOCK/IGNORE-configured edges dispatches exactly as EACH/TRIGGER
-     * always have, which is what lets an operator configure onDestroy without affecting how
-     * the edge behaves the rest of the time.
-     */
-    @Test
-    void applyIsNeverGatedByOnDestroy() {
-        Job completed = completedJob(0);
-        stepsWithFlow(completed, FlowType.terraformApply, JobStatus.completed);
-        triggersFromSource(
-                triggerWithOnDestroy(workspace("blocked-on-destroy-only", "template-default"),
-                        RunTriggerOnDestroyPolicy.BLOCK, null),
-                triggerWithOnDestroy(workspace("ignored-on-destroy-only", "template-default"),
-                        RunTriggerOnDestroyPolicy.IGNORE, null));
-
-        subject.dispatchFor(COMPLETED_JOB_ID);
-
-        verify(jobWriter, times(2)).persist(any(), any(), any(), anyInt());
-        verify(cascadeCoordinatorService, never()).blockNode(any(), any());
-    }
-
-    @Test
-    void customScriptsDispatches() {
-        Job completed = completedJob(0);
-        stepsWithFlow(completed, FlowType.customScripts, JobStatus.completed);
-        triggersFromSource(trigger(workspace("consumer", "template-default"), null));
-
-        subject.dispatchFor(COMPLETED_JOB_ID);
-
-        verify(jobWriter).persist(any(), any(), any(), anyInt());
-    }
-
-    /** A run that only planned leaves nothing downstream to react to. */
-    @Test
-    void planOnlyRunDispatchesNothing() {
-        Job completed = completedJob(0);
-        stepsWithFlow(completed, FlowType.terraformPlan, JobStatus.completed);
-        triggersFromSource(trigger(workspace("consumer", "template-default"), null));
-
-        subject.dispatchFor(COMPLETED_JOB_ID);
-
-        verify(jobWriter, never()).persist(any(), any(), any(), anyInt());
-    }
-
-    /**
-     * A plan/apply template whose apply never executed still finishes as completed. Reading
-     * the step status rather than the job status is what keeps it from firing.
-     */
-    @Test
-    void applyStepThatDidNotRunDispatchesNothing() {
-        Job completed = completedJob(0);
-        stepsWithFlow(completed, FlowType.terraformApply, JobStatus.notExecuted);
-        triggersFromSource(trigger(workspace("consumer", "template-default"), null));
-
-        subject.dispatchFor(COMPLETED_JOB_ID);
-
-        verify(jobWriter, never()).persist(any(), any(), any(), anyInt());
-    }
-
-    @Test
-    void unparseableTclDispatchesNothing() {
-        Job completed = completedJob(0);
-        Step step = new Step();
-        step.setId(UUID.randomUUID());
-        step.setStepNumber(200);
-        step.setStatus(JobStatus.completed);
-        doReturn(List.of(step)).when(stepRepository).findByJobId(COMPLETED_JOB_ID);
-        doReturn(null).when(tclService).getFlowTypeForStep(completed, 200);
-
-        subject.dispatchFor(COMPLETED_JOB_ID);
-
-        verify(jobWriter, never()).persist(any(), any(), any(), anyInt());
-    }
-
-    @Test
-    void applyWithUnchangedStateDispatchesNothing() {
-        Job completed = completedJob(0);
-        stepsWithFlow(completed, FlowType.terraformApply, JobStatus.completed);
-        triggersFromSource(trigger(workspace("consumer", "template-default"), null));
-
-        Date now = new Date();
-        Date earlier = new Date(now.getTime() - 60_000);
-        History currentHistory = history(1, "md5-same", now, String.valueOf(COMPLETED_JOB_ID));
-        History baselineHistory = history(1, "md5-same", earlier, "899");
-
-        doReturn(Optional.of(currentHistory))
-                .when(historyRepository)
-                .findFirstByWorkspaceAndJobReferenceOrderByCreatedDateDesc(any(), eq(String.valueOf(COMPLETED_JOB_ID)));
-        doReturn(Optional.of(baselineHistory))
-                .when(historyRepository)
-                .findFirstByWorkspaceAndCreatedDateLessThanOrderByCreatedDateDesc(any(), any());
-
-        subject.dispatchFor(COMPLETED_JOB_ID);
-
-        verify(jobWriter, never()).persist(any(), any(), any(), anyInt());
-    }
-
-    @Test
-    void applyWithFirstStateDispatches() {
-        Job completed = completedJob(0);
-        stepsWithFlow(completed, FlowType.terraformApply, JobStatus.completed);
-        triggersFromSource(trigger(workspace("consumer", "template-default"), null));
-
-        Date now = new Date();
-        History currentHistory = history(1, "md5-initial", now, String.valueOf(COMPLETED_JOB_ID));
-
-        doReturn(Optional.of(currentHistory))
-                .when(historyRepository)
-                .findFirstByWorkspaceAndJobReferenceOrderByCreatedDateDesc(any(), eq(String.valueOf(COMPLETED_JOB_ID)));
-        doReturn(Optional.empty())
-                .when(historyRepository)
-                .findFirstByWorkspaceAndCreatedDateLessThanOrderByCreatedDateDesc(any(), any());
-
-        subject.dispatchFor(COMPLETED_JOB_ID);
-
-        verify(jobWriter).persist(any(), any(), any(), anyInt());
-    }
-
-    @Test
-    void applyWithLegacyStateFallsBackAndDispatches() {
-        Job completed = completedJob(0);
-        stepsWithFlow(completed, FlowType.terraformApply, JobStatus.completed);
-        triggersFromSource(trigger(workspace("consumer", "template-default"), null));
-
-        Date now = new Date();
-        Date earlier = new Date(now.getTime() - 60_000);
-        History currentHistory = history(1, "0", now, String.valueOf(COMPLETED_JOB_ID));
-        History baselineHistory = history(1, "0", earlier, "899");
-
-        doReturn(Optional.of(currentHistory))
-                .when(historyRepository)
-                .findFirstByWorkspaceAndJobReferenceOrderByCreatedDateDesc(any(), eq(String.valueOf(COMPLETED_JOB_ID)));
-        doReturn(Optional.of(baselineHistory))
-                .when(historyRepository)
-                .findFirstByWorkspaceAndCreatedDateLessThanOrderByCreatedDateDesc(any(), any());
-
-        subject.dispatchFor(COMPLETED_JOB_ID);
-
-        verify(runTriggerDispatchMetrics).stateIdentityFallback();
-        verify(jobWriter).persist(any(), any(), any(), anyInt());
-    }
-
-    @Test
-    void applyWithNoHistoryRecordFallsBackAndDispatches() {
-        Job completed = completedJob(0);
-        stepsWithFlow(completed, FlowType.terraformApply, JobStatus.completed);
-        triggersFromSource(trigger(workspace("consumer", "template-default"), null));
-
-        doReturn(Optional.empty())
-                .when(historyRepository)
-                .findFirstByWorkspaceAndJobReferenceOrderByCreatedDateDesc(any(), eq(String.valueOf(COMPLETED_JOB_ID)));
-
-        subject.dispatchFor(COMPLETED_JOB_ID);
-
-        verify(runTriggerDispatchMetrics).stateIdentityFallback();
-        verify(jobWriter).persist(any(), any(), any(), anyInt());
-    }
-
-    @Test
-    void queuedJobsEvaluateAgainstCorrectBaseline() {
-        // Job 900 was queued earlier, but executed at t2 (jobHistory.createdDate = t2).
-        // Baseline query must check < t2, properly evaluating against intervening state changes.
-        Job completed = completedJob(0);
-        stepsWithFlow(completed, FlowType.terraformApply, JobStatus.completed);
-        triggersFromSource(trigger(workspace("consumer", "template-default"), null));
-
-        Date t2 = new Date(200000);
-        Date t1 = new Date(150000);
-        History currentHistory = history(2, "md5-new", t2, String.valueOf(COMPLETED_JOB_ID));
-        History interveningHistory = history(1, "md5-old", t1, "899");
-
-        doReturn(Optional.of(currentHistory))
-                .when(historyRepository)
-                .findFirstByWorkspaceAndJobReferenceOrderByCreatedDateDesc(any(), eq(String.valueOf(COMPLETED_JOB_ID)));
-        doReturn(Optional.of(interveningHistory))
-                .when(historyRepository)
-                .findFirstByWorkspaceAndCreatedDateLessThanOrderByCreatedDateDesc(any(), eq(t2));
-
-        subject.dispatchFor(COMPLETED_JOB_ID);
-
-        verify(historyRepository).findFirstByWorkspaceAndCreatedDateLessThanOrderByCreatedDateDesc(any(), eq(t2));
-        verify(jobWriter).persist(any(), any(), any(), anyInt());
-    }
-
-    // ---------------------------------------------------------------- bounds
-
-    @Test
-    void cascadeStopsAtTheConfiguredDepth() {
-        properties.setMaxCascadeDepth(3);
-        Job completed = completedJob(3);
-        stepsWithFlow(completed, FlowType.terraformApply, JobStatus.completed);
-        triggersFromSource(trigger(workspace("consumer", "template-default"), null));
-
-        subject.dispatchFor(COMPLETED_JOB_ID);
-
-        verify(jobWriter, never()).persist(any(), any(), any(), anyInt());
-    }
-
-    @Test
-    void cascadeDispatchesOnTheStepBelowTheLimit() {
-        properties.setMaxCascadeDepth(3);
-        Job completed = completedJob(2);
-        stepsWithFlow(completed, FlowType.terraformApply, JobStatus.completed);
-        triggersFromSource(trigger(workspace("consumer", "template-default"), null));
-
-        subject.dispatchFor(COMPLETED_JOB_ID);
-
-        verify(jobWriter).persist(any(), any(), any(), eq(3));
-    }
-
-    /** Dispatch applies no fan-out cap of its own any more - WorkspaceGraphValidationService does. */
-    @Test
-    void everyEnabledTriggerDispatchesRegardlessOfCount() {
-        properties.setMaxOutboundTriggersPerWorkspace(3);
-        Job completed = completedJob(0);
-        stepsWithFlow(completed, FlowType.terraformApply, JobStatus.completed);
-
-        WorkspaceRunTrigger[] triggers = IntStream.range(0, 5)
-                .mapToObj(i -> trigger(workspace("consumer-" + i, "template-default"), null))
-                .toArray(WorkspaceRunTrigger[]::new);
-        triggersFromSource(triggers);
-
-        subject.dispatchFor(COMPLETED_JOB_ID);
-
-        verify(jobWriter, times(5)).persist(any(), any(), any(), anyInt());
-    }
-
-    @Test
-    void killSwitchDispatchesNothing() {
-        properties.setEnabled(false);
-        completedJob(0);
-
-        subject.dispatchFor(COMPLETED_JOB_ID);
-
-        verify(jobWriter, never()).persist(any(), any(), any(), anyInt());
-        verify(stepRepository, never()).findByJobId(anyInt());
-    }
-
-    // ---------------------------------------------------------------- template resolution
-
-    @Test
-    void triggerTemplateWinsOverTheWorkspaceDefault() {
-        Job completed = completedJob(0);
-        stepsWithFlow(completed, FlowType.terraformApply, JobStatus.completed);
-
-        Template template = new Template();
-        template.setId(UUID.randomUUID());
-        triggersFromSource(trigger(workspace("consumer", "template-default"), template));
-
-        subject.dispatchFor(COMPLETED_JOB_ID);
-
-        verify(jobWriter).persist(any(), eq(template.getId().toString()), any(), anyInt());
-    }
-
-    @Test
-    void dependentWithNoTemplateAtAllIsSkippedWithoutThrowing() {
-        Job completed = completedJob(0);
-        stepsWithFlow(completed, FlowType.terraformApply, JobStatus.completed);
-        triggersFromSource(trigger(workspace("consumer", null), null));
-
-        subject.dispatchFor(COMPLETED_JOB_ID);
-
-        verify(jobWriter, never()).persist(any(), any(), any(), anyInt());
-    }
-
-    // ---------------------------------------------------------------- fault isolation
-
-    /**
-     * The reason each dependent is wrapped: without it, the first workspace that cannot be
-     * scheduled would cost every dependent listed after it.
-     */
-    /**
-     * The case the per-dependent transaction exists for. A failed insert marks its transaction
-     * rollback-only and catching the exception does not clear that, so a shared transaction
-     * would take every job created beside it down at commit - through the try/catch meant to
-     * prevent exactly that. Only a boundary per dependent makes this assertion true.
-     */
-    @Test
-    void oneFailingInsertDoesNotStopTheOthers() throws Exception {
-        Job completed = completedJob(0);
-        stepsWithFlow(completed, FlowType.terraformApply, JobStatus.completed);
-
-        Workspace broken = brokenFirst();
-        Workspace healthy = healthySecond();
-        triggersFromSource(trigger(broken, null), trigger(healthy, null));
-
-        doThrow(new DataIntegrityViolationException("constraint violation"))
-                .when(jobWriter).persist(eq(broken), any(), any(), anyInt());
-
-        subject.dispatchFor(COMPLETED_JOB_ID);
-
-        verify(jobWriter).persist(eq(healthy), any(), any(), anyInt());
-        verify(scheduleJobService).createJobContext(argThatTargets(healthy));
-    }
-
-    /** The same guarantee for a failure on the scheduling side rather than the insert. */
-    @Test
-    void oneFailingScheduleDoesNotStopTheOthers() throws Exception {
-        Job completed = completedJob(0);
-        stepsWithFlow(completed, FlowType.terraformApply, JobStatus.completed);
-
-        Workspace broken = brokenFirst();
-        Workspace healthy = healthySecond();
-        triggersFromSource(trigger(broken, null), trigger(healthy, null));
-
-        doThrow(new IllegalStateException("scheduler down"))
-                .when(scheduleJobService).createJobContext(argThatTargets(broken));
-
-        subject.dispatchFor(COMPLETED_JOB_ID);
-
-        verify(scheduleJobService).createJobContext(argThatTargets(healthy));
-    }
-
-    /** Ids fix the processing order, so the failure is never the last one handled. */
-    private Workspace brokenFirst() {
-        Workspace broken = workspace("broken", "template-default");
-        broken.setId(UUID.fromString("00000000-0000-0000-0000-00000000000a"));
-        return broken;
-    }
-
-    private Workspace healthySecond() {
-        Workspace healthy = workspace("healthy", "template-default");
-        healthy.setId(UUID.fromString("00000000-0000-0000-0000-00000000000b"));
-        return healthy;
-    }
-
-    /** Dispatch must never surface an error on a run that already succeeded. */
-    @Test
-    void dispatchNeverThrows() {
-        completedJob(0);
-        doThrow(new IllegalStateException("database gone")).when(stepRepository).findByJobId(anyInt());
-
-        subject.dispatchFor(COMPLETED_JOB_ID);
-    }
-
-    @Test
-    void unknownJobIsIgnored() {
-        doReturn(Optional.empty()).when(jobRepository).findById(COMPLETED_JOB_ID);
-
-        subject.dispatchFor(COMPLETED_JOB_ID);
-
-        verify(jobWriter, never()).persist(any(), any(), any(), anyInt());
-    }
-
-    // ---------------------------------------------------------------- fan-out idempotency
-
-    /**
-     * The case a reclaimed/retried RunTriggerEvent produces: this same job already fired this
-     * same edge once, and that attempt is still pending because it never got as far as
-     * scheduling. Re-dispatching must retry only the Quartz step, not create a second job.
-     */
-    @Test
-    void previouslyPersistedPendingJobIsRescheduledInsteadOfDuplicated() throws Exception {
-        Job completed = completedJob(0);
-        stepsWithFlow(completed, FlowType.terraformApply, JobStatus.completed);
-        Workspace destination = workspace("consumer", "template-default");
-        triggersFromSource(trigger(destination, null));
-
-        Job existing = new Job();
-        existing.setId(2001);
-        existing.setWorkspace(destination);
-        existing.setStatus(JobStatus.pending);
-        doReturn(Optional.of(existing)).when(jobRepository)
-                .findFirstByWorkspaceAndTriggeredByJobIdOrderByIdDesc(destination, COMPLETED_JOB_ID);
-
-        subject.dispatchFor(COMPLETED_JOB_ID);
-
-        verify(jobWriter, never()).persist(any(), any(), any(), anyInt());
-        verify(jobNotificationTrigger, never()).notifyStatusChanged(any());
-        verify(scheduleJobService).createJobContext(existing);
-    }
-
-    /**
-     * The other half of the same reclaim: the prior attempt actually finished, including
-     * scheduling, before the row was reclaimed. Quartz still has the context, so retrying it
-     * throws - and that must be treated as confirmation, not a dispatch failure.
-     */
-    @Test
-    void previouslyPersistedPendingJobAlreadyScheduledIsLeftAlone() throws Exception {
-        Job completed = completedJob(0);
-        stepsWithFlow(completed, FlowType.terraformApply, JobStatus.completed);
-        Workspace destination = workspace("consumer", "template-default");
-        triggersFromSource(trigger(destination, null));
-
-        Job existing = new Job();
-        existing.setId(2001);
-        existing.setWorkspace(destination);
-        existing.setStatus(JobStatus.pending);
-        doReturn(Optional.of(existing)).when(jobRepository)
-                .findFirstByWorkspaceAndTriggeredByJobIdOrderByIdDesc(destination, COMPLETED_JOB_ID);
-        doThrow(new ObjectAlreadyExistsException("already scheduled"))
-                .when(scheduleJobService).createJobContext(existing);
-
-        subject.dispatchFor(COMPLETED_JOB_ID);
-
-        verify(jobWriter, never()).persist(any(), any(), any(), anyInt());
-    }
-
-    /** A dependent that already ran to completion on a prior attempt needs nothing further. */
-    @Test
-    void previouslyPersistedNonPendingJobIsSkipped() throws Exception {
-        Job completed = completedJob(0);
-        stepsWithFlow(completed, FlowType.terraformApply, JobStatus.completed);
-        Workspace destination = workspace("consumer", "template-default");
-        triggersFromSource(trigger(destination, null));
-
-        Job existing = new Job();
-        existing.setId(2001);
-        existing.setWorkspace(destination);
-        existing.setStatus(JobStatus.completed);
-        doReturn(Optional.of(existing)).when(jobRepository)
-                .findFirstByWorkspaceAndTriggeredByJobIdOrderByIdDesc(destination, COMPLETED_JOB_ID);
-
-        subject.dispatchFor(COMPLETED_JOB_ID);
-
-        verify(jobWriter, never()).persist(any(), any(), any(), anyInt());
-        verify(scheduleJobService, never()).createJobContext(any());
-    }
-
-    // ---------------------------------------------------------------- failure propagation
-
-    /**
-     * dispatchFor (the legacy/fire-and-forget entry point) must stay silent on a run that
-     * already succeeded, but dispatchInternal itself - the one RunTriggerEventDispatchService
-     * calls directly - has to surface a partial failure so the event is retried with backoff
-     * instead of being recorded PROCESSED. See RunTriggerEventDispatchServiceTest for that
-     * side of the contract.
-     */
-    @Test
-    void dispatchInternalThrowsWhenADependentFailsToEnqueue() throws Exception {
-        Job completed = completedJob(0);
-        stepsWithFlow(completed, FlowType.terraformApply, JobStatus.completed);
-        triggersFromSource(trigger(workspace("consumer", "template-default"), null));
-
-        doThrow(new IllegalStateException("scheduler down")).when(scheduleJobService).createJobContext(any());
-
-        assertThatThrownBy(() -> subject.dispatchInternal(COMPLETED_JOB_ID))
-                .isInstanceOf(RunTriggerDispatchPartialFailureException.class);
-    }
-
-    /** dispatchFor must never surface that same failure - it has no retry mechanism of its own. */
-    @Test
-    void dispatchForSwallowsThePartialFailureDispatchInternalThrows() throws Exception {
-        Job completed = completedJob(0);
-        stepsWithFlow(completed, FlowType.terraformApply, JobStatus.completed);
-        triggersFromSource(trigger(workspace("consumer", "template-default"), null));
-
-        doThrow(new IllegalStateException("scheduler down")).when(scheduleJobService).createJobContext(any());
-
-        subject.dispatchFor(COMPLETED_JOB_ID);
-    }
-
-    private static Job argThatTargets(Workspace workspace) {
-        return org.mockito.ArgumentMatchers.argThat(job -> job != null
-                && job.getWorkspace() != null
-                && job.getWorkspace().getId().equals(workspace.getId()));
+    @Test void disabledFeatureDoesNoWork() {
+        properties.setEnabled(false); service.dispatchInternal(900); verifyNoInteractions(coordinator);
     }
 }

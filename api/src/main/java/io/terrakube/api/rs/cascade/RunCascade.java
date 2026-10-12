@@ -26,8 +26,7 @@ import lombok.Setter;
 
 /**
  * One logical multi-workspace propagation, started by a single upstream job completing.
- * Read-only from the API: written exclusively by the cascade coordinator (a later slice of
- * terrakube-io/terrakube#3629), same write lock as {@code History}. Discoverable to the same
+ * Read-only from the API: written by the cascade coordinator, same write lock as {@code History}. Discoverable to the same
  * audience as the triggers that create it - see {@code WorkspaceRunTrigger}'s own reasoning.
  */
 @Include(name = "runCascade")
@@ -55,4 +54,10 @@ public class RunCascade extends GenericAuditFields {
 
     @Enumerated(EnumType.STRING)
     private RunCascadeStatus status = RunCascadeStatus.RUNNING;
+
+    @jakarta.persistence.OneToMany(mappedBy = "cascade")
+    private java.util.List<RunCascadeNode> runCascadeNode = new java.util.ArrayList<>();
+
+    @jakarta.persistence.OneToMany(mappedBy = "cascade")
+    private java.util.List<RunCascadeEdge> runCascadeEdge = new java.util.ArrayList<>();
 }
