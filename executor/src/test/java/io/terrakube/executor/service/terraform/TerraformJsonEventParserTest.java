@@ -149,6 +149,44 @@ class TerraformJsonEventParserTest {
         assertEquals("local-exec provisioner error", diagnostics.get(1).get("summary"));
         assertEquals("Error running command", diagnostics.get(1).get("detail"));
         assertTrue(jobDiagnostics.isEmpty());
+        assertEquals("errored", changes.get(0).get("status"));
+    }
+
+    // Regression test (#3672): a resource already mid-apply must not stay stuck when the only
+    // failure signal is a diagnostic, with no apply_errored event.
+    @Test
+    void correctsAnInProgressStatusToErroredWhenOnlyADiagnosticArrivesForIt() {
+        List<Map<String, Object>> changes = oneChange("null_resource.fails");
+        List<Map<String, Object>> jobDiagnostics = new ArrayList<>();
+
+        subject().parseLine(
+                "{\"@message\":\"null_resource.fails: Creating...\",\"hook\":{\"resource\":{\"addr\":\"null_resource.fails\"},\"action\":\"create\"},\"type\":\"apply_start\"}",
+                changes, jobDiagnostics);
+        assertEquals("applying", changes.get(0).get("status"));
+
+        subject().parseLine(
+                "{\"@message\":\"Error: local-exec provisioner error\",\"diagnostic\":{\"severity\":\"error\",\"summary\":\"local-exec provisioner error\",\"address\":\"null_resource.fails\"},\"type\":\"diagnostic\"}",
+                changes, jobDiagnostics);
+
+        assertEquals("errored", changes.get(0).get("status"));
+    }
+
+    // The other half of the guard: a terminal status must not be reverted by a later diagnostic.
+    @Test
+    void doesNotOverwriteATerminalStatusWhenALaterDiagnosticArrivesForIt() {
+        List<Map<String, Object>> changes = oneChange("aws_instance.foo");
+        List<Map<String, Object>> jobDiagnostics = new ArrayList<>();
+
+        subject().parseLine(
+                "{\"@message\":\"aws_instance.foo: Creation complete after 0s [id=abc]\",\"hook\":{\"resource\":{\"addr\":\"aws_instance.foo\"},\"action\":\"create\",\"id_key\":\"id\",\"id_value\":\"abc\",\"elapsed_seconds\":0},\"type\":\"apply_complete\"}",
+                changes, jobDiagnostics);
+        assertEquals("applied", changes.get(0).get("status"));
+
+        subject().parseLine(
+                "{\"@message\":\"Warning: deprecated argument\",\"diagnostic\":{\"severity\":\"error\",\"summary\":\"deprecated argument\",\"address\":\"aws_instance.foo\"},\"type\":\"diagnostic\"}",
+                changes, jobDiagnostics);
+
+        assertEquals("applied", changes.get(0).get("status"));
     }
 
     @Test
