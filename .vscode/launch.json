@@ -31,7 +31,8 @@
             "projectName": "executor",
             "args": "-Xmx512m -Xms256m",
             "vmArgs": "-Dcom.sun.management.jmxremote.port=45557 -Dcom.sun.management.jmxremote.rmi.port=45557 -Dcom.sun.management.jmxremote.authenticate=false -Dcom.sun.management.jmxremote.ssl=false",
-            "envFile": "${workspaceFolder}/.envExecutor"
+            "envFile": "${workspaceFolder}/.envExecutor",
+            "preLaunchTask": "setup-secret"
         },
         {
             "type": "node",

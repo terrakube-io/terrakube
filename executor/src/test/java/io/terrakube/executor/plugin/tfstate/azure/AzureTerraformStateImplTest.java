@@ -103,7 +103,7 @@ class AzureTerraformStateImplTest {
         String result = azureTerraformState.saveTerraformPlan(organizationId, workspaceId, jobId, stepId, workingDirectory);
 
         assertEquals("https://storage.azure.com/plan", result);
-        verify(blobClient).uploadFromFile(planFile.getAbsolutePath());
+        verify(blobClient).uploadFromFile(planFile.getAbsolutePath(), true);
     }
 
     @Test
@@ -122,7 +122,7 @@ class AzureTerraformStateImplTest {
         azureTerraformState.saveTerraformPlan(organizationId, workspaceId, jobId, stepId, workingDirectory);
 
         verify(blobContainerClient).create();
-        verify(blobClient).uploadFromFile(planFile.getAbsolutePath());
+        verify(blobClient).uploadFromFile(planFile.getAbsolutePath(), true);
     }
 
     @Test
@@ -140,7 +140,7 @@ class AzureTerraformStateImplTest {
 
         azureTerraformState.saveStateJson(job, applyJSON, rawState);
 
-        verify(blobClient, times(2)).upload(any(BinaryData.class));
+        verify(blobClient, times(2)).upload(any(BinaryData.class), eq(true));
         verify(terrakubeClient).createHistory(any(HistoryRequest.class), eq("org1"), eq("ws1"));
     }
 
@@ -230,6 +230,6 @@ class AzureTerraformStateImplTest {
         String result = azureTerraformState.saveOutput(organizationId, jobId, stepId, output, outputError);
 
         assertEquals("https://api/output", result);
-        verify(blobClient).upload(any(BinaryData.class));
+        verify(blobClient).upload(any(BinaryData.class), eq(true));
     }
 }

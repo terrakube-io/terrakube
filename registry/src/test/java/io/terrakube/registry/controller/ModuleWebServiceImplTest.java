@@ -14,6 +14,8 @@ import java.net.URI;
 import java.util.List;
 import java.util.Optional;
 
+import io.terrakube.registry.service.module.ModuleAuthorizationService;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -34,6 +36,7 @@ class ModuleWebServiceImplTest {
 
     private ModuleService moduleService;
     private StorageService storageService;
+    private ModuleAuthorizationService moduleAuthorizationService;
     private ModuleInspectorService moduleInspectorService;
     private MockMvc mockMvc;
 
@@ -41,12 +44,15 @@ class ModuleWebServiceImplTest {
     void setUp() {
         moduleService = mock(ModuleService.class);
         storageService = mock(StorageService.class);
+        moduleAuthorizationService = mock(ModuleAuthorizationService.class);
+        when(moduleAuthorizationService.isAuthorized(any(), any())).thenReturn(true);
         moduleInspectorService = mock(ModuleInspectorService.class);
         when(moduleService.isVersionRemoved("org", "module", "aws", "2.0.0")).thenReturn(true);
 
         ModuleWebServiceImpl controller = new ModuleWebServiceImpl();
         controller.moduleService = moduleService;
         controller.storageService = storageService;
+        controller.moduleAuthorizationService = moduleAuthorizationService;
         controller.moduleInspectorService = moduleInspectorService;
 
         mockMvc = MockMvcBuilders.standaloneSetup(controller)
@@ -135,5 +141,15 @@ class ModuleWebServiceImplTest {
         verifyNoMoreInteractions(storageService);
         // Terraform only asks for a removed version when this replica's cached list still offers it.
         verify(moduleService, times(2)).evictAvailableVersions("org", "module", "aws");
+    }
+
+    @Test
+    void unauthorizedAccessToDetailsIsForbidden() throws Exception {
+        when(moduleAuthorizationService.isAuthorized(any(), any())).thenReturn(false);
+
+        mockMvc.perform(get("/terraform/modules/v1/org/module/aws/1.0.0/details"))
+                .andExpect(status().isForbidden());
+
+        verifyNoMoreInteractions(moduleInspectorService);
     }
 }

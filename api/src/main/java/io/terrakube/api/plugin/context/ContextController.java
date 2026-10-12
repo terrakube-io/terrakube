@@ -19,6 +19,11 @@ import io.terrakube.api.repository.JobRepository;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
 
+import io.terrakube.api.plugin.security.job.JobLogAccessService;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.core.Authentication;
+import org.springframework.web.server.ResponseStatusException;
+
 import java.io.IOException;
 import java.security.Principal;
 import java.util.EnumSet;
@@ -28,7 +33,6 @@ import java.util.Set;
 @Slf4j
 @RestController
 @RequestMapping("/context/v1")
-@AllArgsConstructor
 public class ContextController {
     private static final Set<JobStatus> CONTEXT_WRITABLE_JOB_STATUSES = EnumSet.of(
             JobStatus.pending,
@@ -57,13 +61,95 @@ public class ContextController {
 
     private final io.terrakube.api.plugin.policy.PolicyEvaluationService policyEvaluationService;
 
+    private final JobLogAccessService jobLogAccessService;
+
     private final AuthenticatedUser authenticatedUser;
+
+    @Autowired
+    public ContextController(
+            StorageTypeService storageTypeService,
+            JobRepository jobRepository,
+            ContextSanitizer contextSanitizer,
+            StreamingService streamingService,
+            ContextStorageMetrics contextStorageMetrics,
+            ContextReadService contextReadService,
+            ContextProperties contextProperties,
+            io.terrakube.api.plugin.policy.PolicyEvaluationService policyEvaluationService,
+            JobLogAccessService jobLogAccessService,
+            AuthenticatedUser authenticatedUser) {
+        this.storageTypeService = storageTypeService;
+        this.jobRepository = jobRepository;
+        this.contextSanitizer = contextSanitizer;
+        this.streamingService = streamingService;
+        this.contextStorageMetrics = contextStorageMetrics;
+        this.contextReadService = contextReadService;
+        this.contextProperties = contextProperties;
+        this.policyEvaluationService = policyEvaluationService;
+        this.jobLogAccessService = jobLogAccessService;
+        this.authenticatedUser = authenticatedUser;
+    }
+
+    public ContextController(
+            StorageTypeService storageTypeService,
+            JobRepository jobRepository,
+            ContextSanitizer contextSanitizer,
+            StreamingService streamingService,
+            ContextStorageMetrics contextStorageMetrics,
+            ContextReadService contextReadService,
+            ContextProperties contextProperties,
+            io.terrakube.api.plugin.policy.PolicyEvaluationService policyEvaluationService,
+            JobLogAccessService jobLogAccessService) {
+        this(storageTypeService, jobRepository, contextSanitizer, streamingService,
+                contextStorageMetrics, contextReadService, contextProperties, policyEvaluationService, jobLogAccessService, null);
+    }
+
+    public ContextController(
+            StorageTypeService storageTypeService,
+            JobRepository jobRepository,
+            ContextSanitizer contextSanitizer,
+            StreamingService streamingService,
+            ContextStorageMetrics contextStorageMetrics,
+            ContextReadService contextReadService,
+            ContextProperties contextProperties,
+            io.terrakube.api.plugin.policy.PolicyEvaluationService policyEvaluationService,
+            AuthenticatedUser authenticatedUser) {
+        this(storageTypeService, jobRepository, contextSanitizer, streamingService,
+                contextStorageMetrics, contextReadService, contextProperties, policyEvaluationService, null, authenticatedUser);
+    }
+
+    public ContextController(
+            StorageTypeService storageTypeService,
+            JobRepository jobRepository,
+            ContextSanitizer contextSanitizer,
+            StreamingService streamingService,
+            ContextStorageMetrics contextStorageMetrics,
+            ContextReadService contextReadService,
+            ContextProperties contextProperties,
+            io.terrakube.api.plugin.policy.PolicyEvaluationService policyEvaluationService) {
+        this(storageTypeService, jobRepository, contextSanitizer, streamingService,
+                contextStorageMetrics, contextReadService, contextProperties, policyEvaluationService, null, null);
+    }
+
+    public ResponseEntity<String> getContext(int jobId) {
+        return getContext(jobId, (Principal) null);
+    }
 
     @GetMapping(value = "/{jobId}", produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<String> getContext(@PathVariable("jobId") int jobId, Principal principal) {
+        Authentication authentication = principal instanceof Authentication a ? a : null;
+        if (jobLogAccessService != null) {
+            JobLogAccessService.LogAccessResult access = jobLogAccessService.checkJobAccess(authentication, jobId);
+            if (access == JobLogAccessService.LogAccessResult.NOT_FOUND) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
+            }
+            if (access == JobLogAccessService.LogAccessResult.FORBIDDEN) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            }
+        }
+
         // The executor merges its output into what it reads here and writes it back, so a stale
         // per-pod cache entry would overwrite newer data; only UI polling is served from the cache.
-        boolean executor = principal != null && authenticatedUser.isServiceAccountInternal(new User(principal));
+        boolean executor = principal != null && authenticatedUser != null && authenticatedUser.isServiceAccountInternal(new User(principal));
         String context;
         try {
             context = executor ? contextReadService.readFresh(jobId) : contextReadService.read(jobId);
@@ -92,9 +178,18 @@ public class ContextController {
                 .body("{\"structuredOutputStatus\":{\"state\":\"UNAVAILABLE\"},\"retryAfterSeconds\":" + retryAfter + "}");
     }
 
+    public ResponseEntity<String> saveContext(int jobId, String context) {
+        return saveContext(jobId, context, (Principal) null);
+    }
+
     @PostMapping(value = "/{jobId}", produces = MediaType.APPLICATION_JSON_VALUE)
     @Transactional
-    public ResponseEntity<String> saveContext(@PathVariable("jobId") int jobId, @RequestBody String context) {
+    public ResponseEntity<String> saveContext(@PathVariable("jobId") int jobId, @RequestBody String context, Principal principal) {
+        Authentication authentication = principal instanceof Authentication a ? a : null;
+        if (jobLogAccessService != null && !jobLogAccessService.canWriteContext(authentication, jobId)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
+
         String sanitizedContext;
         try {
             sanitizedContext = contextSanitizer.sanitize(context);
@@ -134,10 +229,32 @@ public class ContextController {
         return new ResponseEntity<>(savedContext, HttpStatus.OK);
     }
 
+    public SseEmitter streamContext(String jobId, String lastEventId) {
+        return streamContext(jobId, lastEventId, (Principal) null);
+    }
+
     @GetMapping(value = "/{jobId}/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter streamContext(
             @PathVariable("jobId") String jobId,
-            @RequestHeader(value = "Last-Event-ID", required = false) String lastEventId) {
+            @RequestHeader(value = "Last-Event-ID", required = false) String lastEventId,
+            Principal principal) {
+        Authentication authentication = principal instanceof Authentication a ? a : null;
+        if (jobLogAccessService != null) {
+            int intJobId;
+            try {
+                intJobId = Integer.parseInt(jobId);
+            } catch (NumberFormatException e) {
+                throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Invalid jobId");
+            }
+            JobLogAccessService.LogAccessResult access = jobLogAccessService.checkJobAccess(authentication, intJobId);
+            if (access == JobLogAccessService.LogAccessResult.NOT_FOUND) {
+                throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Job not found");
+            }
+            if (access == JobLogAccessService.LogAccessResult.FORBIDDEN) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied");
+            }
+        }
+
         SseEmitter emitter = new SseEmitter(0L);
         streamingService.streamJobContextAsync(jobId, emitter, parseResumeId(lastEventId), contextSanitizer);
         return emitter;

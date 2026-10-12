@@ -67,11 +67,18 @@ class StepLogTransactionBoundaryIntegrationTest extends ServerApplicationTests {
             return StepOutputStream.of(new ByteArrayInputStream("apply complete".getBytes()), 14, 14);
         });
 
+        org.springframework.security.oauth2.jwt.Jwt jwt = org.springframework.security.oauth2.jwt.Jwt.withTokenValue("mock-token")
+                .header("alg", "none")
+                .claim("iss", "TerrakubeInternal")
+                .build();
+        org.springframework.security.core.Authentication auth = new org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken(jwt);
+
         ResponseEntity<?> response = terraformOutputController.getFile(
                 workspace.getOrganization().getId().toString(),
                 String.valueOf(job.getId()),
                 step.getId().toString(),
-                null);
+                null,
+                auth);
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertFalse(transactionActiveDuringRead.get(),

@@ -285,7 +285,7 @@ class DexGroupServiceTests {
             assertFalse(service.isMember(user, "OTHER"));
             assertFalse(service.isServiceMember(user, "OTHER"));
         }
-        assertTrue(service.isServiceMember(userWith(Map.of("iss", "TerrakubeInternal")), "ANY"));
+        assertFalse(service.isServiceMember(userWith(Map.of("iss", "TerrakubeInternal")), "ANY"));
     }
 
     @Test
@@ -299,6 +299,50 @@ class DexGroupServiceTests {
             assertEquals(Set.of("TEAM"), service.getEffectiveGroups(userWith(Map.of("groups", groups))));
         }
         assertEquals(Set.of(), service.getEffectiveGroups(userWith(Map.of("sub", "no-groups"))));
+    }
+
+    @Test
+    void terrakubeInternalTokensHaveNoUserServiceMembership() {
+        DexGroupServiceImpl service = new DexGroupServiceImpl(null, null, null, mock(FederatedLookupService.class), "TERRAKUBE_ADMIN");
+        User internalTokenWithoutGroups = userWith(Map.of("iss", "TerrakubeInternal"));
+        User executorToken = userWith(Map.of("iss", "TerrakubeInternal", "sub", "TerrakubeInternal (EXECUTOR)"));
+        User registryToken = userWith(Map.of("iss", "TerrakubeInternal", "sub", "TerrakubeInternal (REGISTRY)"));
+
+        // No internal machine token can claim user service membership or platform admin
+        assertFalse(service.isServiceMember(internalTokenWithoutGroups, "TERRAKUBE_ADMIN"));
+        assertFalse(service.isServiceMember(internalTokenWithoutGroups, "SOME_OTHER_GROUP"));
+        assertFalse(service.isServiceMember(executorToken, "TERRAKUBE_ADMIN"));
+        assertFalse(service.isServiceMember(executorToken, "SOME_OTHER_GROUP"));
+        assertFalse(service.isServiceMember(registryToken, "TERRAKUBE_ADMIN"));
+        assertFalse(service.isServiceMember(registryToken, "SOME_OTHER_GROUP"));
+    }
+
+    @Test
+    void terrakubeInternalWorkspaceScopedTokenCannotClaimUnrelatedGroups() {
+        DexGroupServiceImpl service = new DexGroupServiceImpl(null, null, null, mock(FederatedLookupService.class), "TERRAKUBE_ADMIN");
+        User runnerUser = userWith(Map.of("iss", "TerrakubeInternal", "workspaceId", "ws-123"));
+
+        // Runner token scoped to a workspace must not be granted universal service membership or superuser
+        assertFalse(service.isServiceMember(runnerUser, "TERRAKUBE_ADMIN"));
+        assertFalse(service.isServiceMember(runnerUser, "ANY_OTHER_GROUP"));
+        assertEquals(Set.of(), service.getEffectiveGroups(runnerUser));
+        assertFalse(service.isMember(runnerUser, "TERRAKUBE_ADMIN"));
+    }
+
+    @Test
+    void terrakubeInternalWorkspaceScopedTokenCannotClaimServiceMembershipEvenWithGroupsClaim() {
+        DexGroupServiceImpl service = new DexGroupServiceImpl(null, null, null, mock(FederatedLookupService.class), "TERRAKUBE_ADMIN");
+        User spoofedRunnerUser = userWith(Map.of(
+                "iss", "TerrakubeInternal",
+                "workspaceId", "ws-123",
+                "groups", List.of("TERRAKUBE_ADMIN", "CUSTOM_TEAM")
+        ));
+
+        // Workspace-scoped executor token is fail-closed: it can NEVER claim service or group membership
+        assertFalse(service.isServiceMember(spoofedRunnerUser, "TERRAKUBE_ADMIN"));
+        assertFalse(service.isServiceMember(spoofedRunnerUser, "CUSTOM_TEAM"));
+        assertEquals(Set.of(), service.getEffectiveGroups(spoofedRunnerUser));
+        assertFalse(service.isMember(spoofedRunnerUser, "TERRAKUBE_ADMIN"));
     }
 
     private DexGroupServiceImpl groupServiceWith(Federated federated) {

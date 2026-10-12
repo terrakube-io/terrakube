@@ -2,6 +2,8 @@ package io.terrakube.api.plugin.security.user.dex;
 
 import com.yahoo.elide.core.security.User;
 import io.terrakube.api.plugin.security.federated.FederatedLookupService;
+import io.terrakube.api.plugin.security.token.InternalTokenClassifier;
+import io.terrakube.api.plugin.security.token.InternalTokenType;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -65,14 +67,20 @@ public class DexAuthenticatedUserImpl implements AuthenticatedUser {
 
     @Override
     public boolean isSuperUser(User user) {
-        boolean isServiceAccount=isServiceAccount(user);
+        JwtAuthenticationToken principal = getSecurityPrincipal(user);
+        if (principal != null && InternalTokenClassifier.classify(principal.getTokenAttributes()) != InternalTokenType.NOT_INTERNAL) {
+            log.debug("Internal machine token cannot be super user");
+            return false;
+        }
+
+        boolean isServiceAccount = isServiceAccount(user);
         boolean isSuperUser;
-        String applicationName="";
-        String userName="";
-        if (isServiceAccount){
+        String applicationName = "";
+        String userName = "";
+        if (isServiceAccount) {
             applicationName = getApplication(user);
             isSuperUser = groupService.isServiceMember(user, instanceOwner);
-        }else{
+        } else {
             userName = getEmail(user);
             isSuperUser = groupService.isMember(user, instanceOwner);
         }

@@ -6,6 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
@@ -45,8 +46,8 @@ public class PatController {
 
     @Transactional
     @DeleteMapping(path = "/{tokenId}")
-    public ResponseEntity<String> deleteToken(@PathVariable("tokenId") String tokenId){
-        if(patService.deleteToken(tokenId)) {
+    public ResponseEntity<String> deleteToken(@PathVariable("tokenId") String tokenId, Authentication authentication){
+        if(patService.deleteToken(tokenId, authentication)) {
             return ResponseEntity.accepted().build();
         } else {
             return ResponseEntity.badRequest().build();

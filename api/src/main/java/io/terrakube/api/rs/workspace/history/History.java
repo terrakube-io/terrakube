@@ -15,8 +15,9 @@ import java.util.List;
 import java.util.UUID;
 
 @Include(rootLevel = false)
-@CreatePermission(expression = "user is a super service")
-@UpdatePermission(expression = "user is a super service")
+@ReadPermission(expression = "executor read history OR user is an executor service")
+@CreatePermission(expression = "user is a super service OR executor manage history OR user is an executor service")
+@UpdatePermission(expression = "user is a super service OR executor manage history OR user is an executor service")
 @DeletePermission(expression = "user is a super service")
 @Getter
 @Setter

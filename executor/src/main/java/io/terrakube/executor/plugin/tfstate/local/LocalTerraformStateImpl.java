@@ -16,6 +16,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.text.TextStringBuilder;
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import io.terrakube.executor.service.workspace.security.WorkspaceSecurity;
 import io.terrakube.client.TerrakubeClient;
 import io.terrakube.client.model.organization.workspace.history.History;
 import io.terrakube.client.model.organization.workspace.history.HistoryAttributes;
@@ -55,6 +59,9 @@ public class LocalTerraformStateImpl implements TerraformState {
 
     @NonNull
     StorageRetryMetrics storageRetryMetrics;
+
+    @Builder.Default
+    WorkspaceSecurity workspaceSecurity = null;
 
     @Builder.Default
     private TerraformStateMetadataService terraformStateMetadataService = new TerraformStateMetadataService(null);
@@ -124,15 +131,30 @@ public class LocalTerraformStateImpl implements TerraformState {
                         terrakubeClient.getJobById(organizationId, jobId).getData().getAttributes().getTerraformPlan())
                 .ifPresent(stateFilePath -> {
                     log.info("Copying state from {}:", stateFilePath);
-                    File sourceFile = new File(stateFilePath);
-                    File targetFile = new File(String.join(File.separator,
-                            Stream.of(workingDirectory.getAbsolutePath(), TERRAFORM_PLAN_FILE).toArray(String[]::new)));
+                    File targetFile = new File(
+                            String.join(
+                                    File.separator,
+                                    Stream.of(workingDirectory.getAbsolutePath(), TERRAFORM_PLAN_FILE)
+                                            .toArray(String[]::new)));
 
                     // The caller already confirmed a plan path is recorded before calling this,
                     // so there is no legitimate "not found" case to preserve here - any exception
                     // after retries is a genuine failure (#3671).
                     storageRetryMetrics.withRetry("local", "plan-read", () -> {
-                        FileUtils.copyFile(sourceFile, targetFile);
+                        if (stateFilePath.startsWith("http://") || stateFilePath.startsWith("https://")) {
+                            HttpURLConnection connection = (HttpURLConnection) new URL(stateFilePath).openConnection();
+                            connection.setRequestMethod("GET");
+                            if (workspaceSecurity != null) {
+                                connection.setRequestProperty("Authorization", "Bearer " + workspaceSecurity.generateAccessToken(workspaceId));
+                            }
+                            try (InputStream in = connection.getInputStream()) {
+                                FileUtils.copyInputStreamToFile(in, targetFile);
+                            } finally {
+                                connection.disconnect();
+                            }
+                        } else {
+                            FileUtils.copyFile(new File(stateFilePath), targetFile);
+                        }
                         return null;
                     });
                     planExists.set(true);

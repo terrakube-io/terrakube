@@ -37,9 +37,9 @@ import lombok.Setter;
 
 @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.CREATE, phase = LifeCycleHookBinding.TransactionPhase.POSTCOMMIT, hook = JobManageHook.class)
 @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.POSTCOMMIT, hook = JobManageHook.class)
-@ReadPermission(expression = "team view job OR team project limited view job OR team limited view job")
+@ReadPermission(expression = "team view job OR team project limited view job OR team limited view job OR executor read job OR user is an executor service")
 @CreatePermission(expression = "team manage job OR team limited manage job OR team plan job OR team limited plan job OR team project limited plan job")
-@UpdatePermission(expression = "team manage job OR team limited manage job OR team project limited manage job OR user is a super service")
+@UpdatePermission(expression = "team manage job OR team limited manage job OR team project limited manage job OR user is a super service OR executor manage job OR user is an executor service")
 @Include(rootLevel = false)
 @Getter
 @Setter
@@ -54,7 +54,7 @@ public class Job extends GenericAuditFields {
     @Column(name = "comments")
     private String comments;
 
-    @UpdatePermission(expression = "team approve job OR team approve job rbac OR team limited approve job OR team project limited approve job OR user is a super service")
+    @UpdatePermission(expression = "team approve job OR team approve job rbac OR team limited approve job OR team project limited approve job OR user is a super service OR executor manage job OR user is an executor service")
     @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.PRECOMMIT, hook = JobApprovalHook.class)
     @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.PRECOMMIT, hook = JobNotificationHook.class)
     @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.POSTCOMMIT, hook = JobNotificationHook.class)
@@ -89,10 +89,11 @@ public class Job extends GenericAuditFields {
     private String terraformPlan;
 
     @CreatePermission(expression = "user is a super service")
-    @UpdatePermission(expression = "user is a super service")
+    @UpdatePermission(expression = "user is a super service OR executor manage job OR user is an executor service")
     @Column(name = "approval_team")
     private String approvalTeam;
 
+    @Exclude
     @Column(name = "tcl")
     private String tcl;
 
@@ -196,7 +197,7 @@ public class Job extends GenericAuditFields {
     @ManyToOne
     private Workspace workspace;
 
-    @UpdatePermission(expression = "user is a super service")
+    @UpdatePermission(expression = "user is a super service OR executor manage job OR user is an executor service")
     @OneToMany(mappedBy = "job", cascade = CascadeType.REMOVE, orphanRemoval = true)
     private List<Step> step;
 

@@ -200,4 +200,32 @@ class ExecutorJobImplTest {
         inOrder.verify(jobExecutionWatchdog).markFree();
         inOrder.verify(executorCapacityGate).release();
     }
+
+    @Test
+    void streamsCustomScriptsOutputThroughLogsService() throws Exception {
+        TerraformJob job = createJob("customScripts");
+        File workDir = tempDir.toFile();
+        when(setupWorkspace.prepareWorkspace(job)).thenReturn(workDir);
+
+        io.terrakube.executor.service.logs.ProcessLogs mockProcessLogs = Mockito.mock(io.terrakube.executor.service.logs.ProcessLogs.class);
+        ExecutorJobImpl subjectWithLogs = new ExecutorJobImpl(
+                setupWorkspace, terraformExecutor, updateJobStatus, executorFlagsProperties,
+                shutdownService, scriptEngineService, eventPublisher, jobExecutionWatchdog,
+                executorCapacityGate, redisTemplate, null, mockProcessLogs);
+
+        when(scriptEngineService.execute(eq(job), any(), eq(workDir), any())).thenAnswer(invocation -> {
+            java.util.function.Consumer<String> consumer = invocation.getArgument(3);
+            consumer.accept("line 1 of script");
+            consumer.accept("line 2 of script");
+            return true;
+        });
+
+        subjectWithLogs.createJob(job);
+
+        verify(mockProcessLogs).sendLogs(eq(42), eq("1"), eq(1), eq("line 1 of script"));
+        verify(mockProcessLogs).sendLogs(eq(42), eq("1"), eq(2), eq("line 2 of script"));
+        verify(updateJobStatus).setCompletedStatus(
+                eq(true), eq(false), eq(0), eq(job),
+                org.mockito.ArgumentMatchers.contains("line 1 of script"), any(), any(), any(), anyBoolean(), any());
+    }
 }
