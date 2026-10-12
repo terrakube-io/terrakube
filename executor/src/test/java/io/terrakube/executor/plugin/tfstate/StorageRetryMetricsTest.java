@@ -9,6 +9,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class StorageRetryMetricsTest {
 
@@ -47,5 +48,45 @@ class StorageRetryMetricsTest {
         Timer failureTimer = registry.find("terrakube.executor.storage.duration")
                 .tag("backend", "gcp").tag("operation", "state-write").tag("outcome", "failure").timer();
         assertEquals(1, failureTimer.count());
+    }
+
+    @Test
+    void recoversOnRetryAfterATransientFailureWithoutCountingAFailure() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        StorageRetryMetrics storageRetryMetrics = new StorageRetryMetrics(registry);
+        AtomicInteger calls = new AtomicInteger();
+
+        String result = storageRetryMetrics.withRetry("aws", "state-write", () -> {
+            if (calls.incrementAndGet() == 1) {
+                throw new RuntimeException("transient");
+            }
+            return "recovered";
+        });
+
+        assertEquals("recovered", result);
+        assertEquals(2, calls.get());
+        assertNull(registry.find("terrakube.executor.storage.failures").counter(), "a recovered call must not count as a failure");
+        Timer successTimer = registry.find("terrakube.executor.storage.duration")
+                .tag("backend", "aws").tag("operation", "state-write").tag("outcome", "success").timer();
+        assertEquals(1, successTimer.count());
+    }
+
+    @Test
+    void abortsRetryLoopWhenInterruptedDuringBackoff() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        StorageRetryMetrics storageRetryMetrics = new StorageRetryMetrics(registry);
+        AtomicInteger calls = new AtomicInteger();
+
+        Thread.currentThread().interrupt();
+        try {
+            assertThrows(TerraformStateUnavailableException.class, () -> storageRetryMetrics.withRetry("aws", "state-write", () -> {
+                calls.incrementAndGet();
+                throw new RuntimeException("boom");
+            }));
+            assertEquals(1, calls.get(), "an interrupted backoff must not spin through the remaining attempts");
+            assertTrue(Thread.currentThread().isInterrupted(), "the interrupt flag must be preserved");
+        } finally {
+            Thread.interrupted();
+        }
     }
 }

@@ -46,7 +46,13 @@ public class StorageRetryMetrics {
                     lastFailure = e;
                     if (attempt < MAX_ATTEMPTS) {
                         log.warn("{} {} attempt {} failed, retrying: {}", backend, operation, attempt, e.getMessage());
-                        sleepBackoff(BACKOFF_MILLIS[attempt - 1]);
+                        try {
+                            sleepBackoff(BACKOFF_MILLIS[attempt - 1]);
+                        } catch (InterruptedException ie) {
+                            Thread.currentThread().interrupt();
+                            outcome = "failure";
+                            throw new TerraformStateUnavailableException(backend + " " + operation + " interrupted during retry backoff", ie);
+                        }
                     }
                 }
             }
@@ -63,11 +69,7 @@ public class StorageRetryMetrics {
         }
     }
 
-    private void sleepBackoff(long millis) {
-        try {
-            Thread.sleep(millis);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
+    private void sleepBackoff(long millis) throws InterruptedException {
+        Thread.sleep(millis);
     }
 }

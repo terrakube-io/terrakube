@@ -173,8 +173,8 @@ public class GcpTerraformStateImpl implements TerraformState {
             BlobId rawBlobId = BlobId.of(bucketName, rawBlobKey);
             BlobInfo blobInfo = BlobInfo.newBuilder(blobId).build();
             BlobInfo rawBlobInfo = BlobInfo.newBuilder(rawBlobId).build();
-            storage.create(blobInfo, utf8EncodedString.getBytes());
-            storage.create(rawBlobInfo, rawUtf8EncodedString.getBytes());
+            storageRetryMetrics.withRetry("gcp", "state-write", () -> storage.create(blobInfo, utf8EncodedString.getBytes()));
+            storageRetryMetrics.withRetry("gcp", "state-write", () -> storage.create(rawBlobInfo, rawUtf8EncodedString.getBytes()));
             log.info("File uploaded to bucket {} as {}", bucketName, blobKey);
             log.info("File uploaded to bucket {} as {}", bucketName, rawBlobKey);
 
@@ -204,7 +204,7 @@ public class GcpTerraformStateImpl implements TerraformState {
         String utf8EncodedString = StringUtils.newStringUtf8(bytes);
         BlobId blobId = BlobId.of(bucketName, blobKey);
         BlobInfo blobInfo = BlobInfo.newBuilder(blobId).build();
-        storage.create(blobInfo, utf8EncodedString.getBytes());
+        storageRetryMetrics.withRetry("gcp", "output-write", () -> storage.create(blobInfo, utf8EncodedString.getBytes()));
         log.info("File uploaded to bucket {} as {}", bucketName, blobKey);
 
         return terraformOutputPathService.getOutputPath(organizationId, jobId, stepId);

@@ -197,7 +197,7 @@ public class AwsTerraformStateImpl implements TerraformState {
                     .key(blobKey)
                     .build();
 
-            s3client.putObject(putObjectRequest, RequestBody.fromFile(tfPlanContent));
+            storageRetryMetrics.withRetry("aws", "plan-write", () -> s3client.putObject(putObjectRequest, RequestBody.fromFile(tfPlanContent)));
 
             GetUrlRequest getUrlRequest = GetUrlRequest.builder()
                     .bucket(bucketName)
@@ -223,9 +223,12 @@ public class AwsTerraformStateImpl implements TerraformState {
 
                         byte[] data = downloadObjectFromBucket(bucketName, "tfstate/" + new URL(stateUrl).getPath().split("/tfstate/")[1]);
 
-                        FileUtils.copyToFile(
-                                new ByteArrayInputStream(data),
-                                new File(workingDirectory.getAbsolutePath() + "/" + TERRAFORM_PLAN_FILE));
+                        storageRetryMetrics.withRetry("aws", "plan-disk-write", () -> {
+                            FileUtils.copyToFile(
+                                    new ByteArrayInputStream(data),
+                                    new File(workingDirectory.getAbsolutePath() + "/" + TERRAFORM_PLAN_FILE));
+                            return null;
+                        });
                         planExists.set(true);
                     } catch (IOException e) {
                         log.error(e.getMessage());
@@ -253,14 +256,14 @@ public class AwsTerraformStateImpl implements TerraformState {
                     .key(blobKey)
                     .build();
 
-            s3client.putObject(putObjectRequest, RequestBody.fromString(utf8EncodedString));
+            storageRetryMetrics.withRetry("aws", "state-write", () -> s3client.putObject(putObjectRequest, RequestBody.fromString(utf8EncodedString)));
 
-            putObjectRequest = PutObjectRequest.builder()
+            PutObjectRequest putRawObjectRequest = PutObjectRequest.builder()
                     .bucket(bucketName)
                     .key(blobKeyRaw)
                     .build();
 
-            s3client.putObject(putObjectRequest, RequestBody.fromString(rawUtf8EncodedString));
+            storageRetryMetrics.withRetry("aws", "state-write", () -> s3client.putObject(putRawObjectRequest, RequestBody.fromString(rawUtf8EncodedString)));
 
             String stateURL = terraformStatePathService.getStateJsonPath(terraformJob.getOrganizationId(), terraformJob.getWorkspaceId(), stateFilename);
 
@@ -310,7 +313,7 @@ public class AwsTerraformStateImpl implements TerraformState {
                 .key(blobKey)
                 .build();
 
-        s3client.putObject(putObjectRequest, RequestBody.fromString(utf8EncodedString));
+        storageRetryMetrics.withRetry("aws", "output-write", () -> s3client.putObject(putObjectRequest, RequestBody.fromString(utf8EncodedString)));
         log.info("Upload Object {} completed", blobKey);
 
         return terraformOutputPathService.getOutputPath(organizationId, jobId, stepId);

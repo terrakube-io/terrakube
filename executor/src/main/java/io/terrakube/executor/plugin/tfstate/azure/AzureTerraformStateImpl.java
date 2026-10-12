@@ -116,7 +116,11 @@ public class AzureTerraformStateImpl implements TerraformState {
         File tfPlan = new File(workingDirectory.getAbsolutePath() + "/" + TERRAFORM_PLAN_FILE);
         log.info("terraformStateFile Path: {} {}", workingDirectory.getAbsolutePath() + "/" + TERRAFORM_PLAN_FILE, tfPlan.exists());
         if (tfPlan.exists()) {
-            blobClient.uploadFromFile(tfPlan.getAbsolutePath());
+            // overwrite=true keeps a retry idempotent if a prior attempt landed but its response was lost
+            storageRetryMetrics.withRetry("azure", "plan-write", () -> {
+                blobClient.uploadFromFile(tfPlan.getAbsolutePath(), true);
+                return null;
+            });
             return blobClient.getBlobUrl();
         } else {
             return null;
@@ -144,8 +148,14 @@ public class AzureTerraformStateImpl implements TerraformState {
             byte[] rawBytes = StringUtils.getBytesUtf8(rawState);
             String utf8EncodedString = StringUtils.newStringUtf8(bytes);
             String rawUtf8EncodedString = StringUtils.newStringUtf8(rawBytes);
-            blobClient.upload(BinaryData.fromString(utf8EncodedString));
-            blobRawClient.upload(BinaryData.fromString(rawUtf8EncodedString));
+            storageRetryMetrics.withRetry("azure", "state-write", () -> {
+                blobClient.upload(BinaryData.fromString(utf8EncodedString), true);
+                return null;
+            });
+            storageRetryMetrics.withRetry("azure", "state-write", () -> {
+                blobRawClient.upload(BinaryData.fromString(rawUtf8EncodedString), true);
+                return null;
+            });
 
             String stateURL =  terraformStatePathService.getStateJsonPath(terraformJob.getOrganizationId(), terraformJob.getWorkspaceId(), stateFilename);
 
@@ -213,7 +223,10 @@ public class AzureTerraformStateImpl implements TerraformState {
 
         byte[] bytes = StringUtils.getBytesUtf8(output + outputError);
         String utf8EncodedString = StringUtils.newStringUtf8(bytes);
-        blobClient.upload(BinaryData.fromString(utf8EncodedString));
+        storageRetryMetrics.withRetry("azure", "output-write", () -> {
+            blobClient.upload(BinaryData.fromString(utf8EncodedString), true);
+            return null;
+        });
 
         return terraformOutputPathService.getOutputPath(organizationId, jobId, stepId);
     }
