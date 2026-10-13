@@ -37,6 +37,7 @@ x-api: &api_env
   AwsEndpoint: $TK_OUTPUT_ENDPOINT
   TerrakubeUiURL: https://terrakube.${DOMAIN}
   spring_profiles_active: demo
+  AgentSsrfBlockPrivateNetworks: "false"
   DexClientId: example-app
   TerrakubeToolsRepository: https://github.com/AzBuilder/terrakube-extensions.git
   TerrakubeToolsBranch: main

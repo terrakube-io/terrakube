@@ -99,7 +99,7 @@ const COLLECTION_VARIABLES_COLUMNS = () => [
   {
     title: "Key",
     dataIndex: "key",
-    width: "25%",
+    width: "24%",
     key: "key",
     sorter: (a: any, b: any) => a.key.localeCompare(b.key),
     defaultSortOrder: "ascend" as const,
@@ -116,7 +116,7 @@ const COLLECTION_VARIABLES_COLUMNS = () => [
     title: "Value",
     dataIndex: "value",
     key: "value",
-    width: "25%",
+    width: "31%",
     render: (_: string, record: any) => {
       return record.sensitive ? (
         <i>Sensitive - write only</i>
@@ -146,7 +146,7 @@ const COLLECTION_VARIABLES_COLUMNS = () => [
   {
     title: "Priority",
     dataIndex: "priority",
-    width: "10%",
+    width: "12%",
     key: "priority",
     render: (_: string, record: any) => {
       return <div>{record.priority}</div>;
@@ -155,7 +155,7 @@ const COLLECTION_VARIABLES_COLUMNS = () => [
   {
     title: "Collection",
     dataIndex: "collectionName",
-    width: "25%",
+    width: "18%",
     key: "collectionName",
     render: (_: string, record: any) => {
       return <div>{record.collectionName}</div>;
@@ -395,6 +395,8 @@ export const Variables = ({
               label: `Terraform Variables (${vars.length})`,
               children: (
                 <Table
+                  className="workspace-variables-table"
+                  tableLayout="fixed"
                   dataSource={vars}
                   columns={VARIABLES_COLUMS(onEdit, onDelete, manageWorkspace)}
                   rowKey="key"
@@ -408,6 +410,8 @@ export const Variables = ({
               label: `Environment Variables (${env.length})`,
               children: (
                 <Table
+                  className="workspace-variables-table"
+                  tableLayout="fixed"
                   dataSource={env}
                   columns={VARIABLES_COLUMS(onEdit, onDelete, manageWorkspace)}
                   rowKey="key"
@@ -439,7 +443,13 @@ export const Variables = ({
         description="The following values are taken from the collection used by this workspace, these values are injected inside the Terrakube remote jobs."
         maxWidth="100%"
       >
-        <Table dataSource={collectionVariables} columns={COLLECTION_VARIABLES_COLUMNS()} rowKey="key" />
+        <Table
+          className="workspace-variables-table"
+          tableLayout="fixed"
+          dataSource={collectionVariables}
+          columns={COLLECTION_VARIABLES_COLUMNS()}
+          rowKey="key"
+        />
       </SettingsSection>
 
       <SettingsSection
@@ -447,7 +457,13 @@ export const Variables = ({
         description="The following values are taken from the organization global variables, these values are injected inside the Terrakube remote jobs."
         maxWidth="100%"
       >
-        <Table dataSource={globalVars} columns={GLOBAL_VARIABLES_COLUMNS()} rowKey="key" />
+        <Table
+          className="workspace-variables-table"
+          tableLayout="fixed"
+          dataSource={globalVars}
+          columns={GLOBAL_VARIABLES_COLUMNS()}
+          rowKey="key"
+        />
       </SettingsSection>
 
       <WorkspaceVariableFormModal

@@ -6,6 +6,8 @@ import io.terrakube.api.plugin.storage.model.StepOutputStream;
 import io.terrakube.api.plugin.streaming.JobLogBroadcasterRegistry;
 import io.terrakube.api.plugin.streaming.SseCapacityExceededException;
 import io.terrakube.api.plugin.streaming.StreamingService;
+import io.terrakube.api.plugin.security.job.JobLogAccessService;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -14,14 +16,15 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.ByteArrayInputStream;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -30,15 +33,64 @@ class TerraformOutputControllerTest {
     @Mock StepLogService stepLogService;
     @Mock StreamingService streamingService;
     @Mock JobLogBroadcasterRegistry broadcasterRegistry;
+    @Mock JobLogAccessService jobLogAccessService;
 
     @InjectMocks TerraformOutputController controller;
+
+    @BeforeEach
+    void setUp() {
+        lenient().when(jobLogAccessService.checkAccess(any(), any(), any(), any()))
+                .thenReturn(JobLogAccessService.LogAccessResult.ALLOWED);
+    }
+
+    @Test
+    void returns403WhenAccessIsForbidden() {
+        when(jobLogAccessService.checkAccess(any(), eq("o"), eq("j"), eq("s")))
+                .thenReturn(JobLogAccessService.LogAccessResult.FORBIDDEN);
+
+        ResponseEntity<?> response = controller.getFile("o", "j", "s", null, null);
+
+        assertEquals(HttpStatus.FORBIDDEN, response.getStatusCode());
+    }
+
+    @Test
+    void streamOutputThrows403WhenAccessIsForbidden() {
+        when(jobLogAccessService.checkAccess(any(), eq("o"), eq("j"), eq("s")))
+                .thenReturn(JobLogAccessService.LogAccessResult.FORBIDDEN);
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class, () ->
+                controller.streamOutput("o", "j", "s", null, null));
+
+        assertEquals(HttpStatus.FORBIDDEN, ex.getStatusCode());
+    }
+
+    @Test
+    void returns404WhenJobOrStepAccessNotFound() {
+        when(jobLogAccessService.checkAccess(any(), eq("o"), eq("j"), eq("s")))
+                .thenReturn(JobLogAccessService.LogAccessResult.NOT_FOUND);
+
+        ResponseEntity<?> response = controller.getFile("o", "j", "s", null, null);
+
+        assertEquals(HttpStatus.NOT_FOUND, response.getStatusCode());
+    }
+
+    @Test
+    void streamOutputThrows404WhenJobOrStepAccessNotFound() {
+        when(jobLogAccessService.checkAccess(any(), eq("o"), eq("j"), eq("s")))
+                .thenReturn(JobLogAccessService.LogAccessResult.NOT_FOUND);
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class, () ->
+                controller.streamOutput("o", "j", "s", null, null));
+
+        assertEquals(HttpStatus.NOT_FOUND, ex.getStatusCode());
+    }
 
     @Test
     void returns404WhenTerminalStepHasNoObject() {
         when(streamingService.getCurrentLogs("s", "")).thenReturn("");
         when(stepLogService.resolve("o", "j", "s")).thenReturn(StepLogService.StepLog.missing());
 
-        ResponseEntity<?> response = controller.getFile("o", "j", "s", null);
+        ResponseEntity<?> response = controller.getFile("o", "j", "s", null, null);
 
         assertEquals(HttpStatus.NOT_FOUND, response.getStatusCode());
     }
@@ -58,7 +110,7 @@ class TerraformOutputControllerTest {
         byte[] body = "done".getBytes();
         when(stepLogService.resolve("o", "j", "s")).thenReturn(StepLogService.StepLog.cached(body));
 
-        ResponseEntity<?> response = controller.getFile("o", "j", "s", null);
+        ResponseEntity<?> response = controller.getFile("o", "j", "s", null, null);
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertEquals("public, max-age=31536000, immutable", response.getHeaders().getCacheControl());
@@ -69,7 +121,7 @@ class TerraformOutputControllerTest {
     void servesLiveRedisLogsWithNoStoreWhenStreamHasData() {
         when(streamingService.getCurrentLogs("s", "")).thenReturn("live line\n");
 
-        ResponseEntity<?> response = controller.getFile("o", "j", "s", null);
+        ResponseEntity<?> response = controller.getFile("o", "j", "s", null, null);
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertEquals("no-store", response.getHeaders().getCacheControl());
@@ -81,7 +133,7 @@ class TerraformOutputControllerTest {
         byte[] body = "0123456789".getBytes();
         when(stepLogService.resolve("o", "j", "s")).thenReturn(StepLogService.StepLog.cached(body));
 
-        ResponseEntity<?> response = controller.getFile("o", "j", "s", "bytes=-3");
+        ResponseEntity<?> response = controller.getFile("o", "j", "s", "bytes=-3", null);
 
         assertEquals(HttpStatus.PARTIAL_CONTENT, response.getStatusCode());
         assertEquals("bytes 7-9/10", response.getHeaders().getFirst(HttpHeaders.CONTENT_RANGE));
@@ -94,7 +146,7 @@ class TerraformOutputControllerTest {
         byte[] body = "0123456789".getBytes();
         when(stepLogService.resolve("o", "j", "s")).thenReturn(StepLogService.StepLog.cached(body));
 
-        ResponseEntity<?> response = controller.getFile("o", "j", "s", "bytes=8-2");
+        ResponseEntity<?> response = controller.getFile("o", "j", "s", "bytes=8-2", null);
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
     }
@@ -108,7 +160,7 @@ class TerraformOutputControllerTest {
                         new ByteArrayInputStream("tail".getBytes()), 4,
                         "bytes 49999996-49999999/50000000", 50_000_000L));
 
-        ResponseEntity<?> response = controller.getFile("o", "j", "s", "bytes=-4");
+        ResponseEntity<?> response = controller.getFile("o", "j", "s", "bytes=-4", null);
 
         assertEquals(HttpStatus.PARTIAL_CONTENT, response.getStatusCode());
         assertEquals("bytes 49999996-49999999/50000000",
@@ -120,7 +172,7 @@ class TerraformOutputControllerTest {
         SseEmitter emitter = new SseEmitter(0L);
         when(broadcasterRegistry.subscribe(eq("j"), eq("s"), any())).thenReturn(emitter);
 
-        SseEmitter result = controller.streamOutput("o", "j", "s", null);
+        SseEmitter result = controller.streamOutput("o", "j", "s", null, null);
 
         assertSame(emitter, result);
     }

@@ -106,7 +106,7 @@ class TerraformLoginBrokerIntegrationTests extends ServerApplicationTests {
         org.junit.jupiter.api.Assertions.assertEquals("work-laptop", pat.getDescription());
         org.junit.jupiter.api.Assertions.assertEquals("alice@terrakube.io", pat.getCreatedBy());
 
-        given().header("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+        given().header("Authorization", "Bearer " + token)
             .when().delete("/pat/v1/" + jti).then().statusCode(anyOf(is(202), is(200)));
         given().header("Authorization", "Bearer " + token)
             .when().get("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8")

@@ -274,6 +274,38 @@ class JobTests extends ServerApplicationTests {
     }
 
     @Test
+    public void executorCanUpdateJobStatusAndApprovalTeam() {
+        devsManageJobs(true);
+        String jobId = createJob(jobDefinition("2db36f7c-f549-4341-a789-315d47eb061d"));
+
+        java.util.Map<String, Object> claims = new java.util.HashMap<>();
+        claims.put("workspaceId", workspace.getId().toString());
+        claims.put("jobId", jobId);
+        claims.put("organizationId", "d9b58bd3-f3fc-4056-a026-1163297e80a8");
+        claims.put("stepId", UUID.randomUUID().toString());
+        String runnerToken = generateSystemToken("TerrakubeInternal (EXECUTOR)", claims);
+
+        // Update status to running
+        given()
+                .headers("Authorization", "Bearer " + runnerToken, "Content-Type", "application/vnd.api+json")
+                .body(String.format("{\"data\":{\"type\":\"job\",\"id\":\"%s\",\"attributes\":{\"status\":\"running\",\"commitId\":\"123\"}}}", jobId))
+                .when()
+                .patch("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/job/" + jobId)
+                .then()
+                .statusCode(HttpStatus.NO_CONTENT.value());
+
+        // Update status to waitingApproval with approvalTeam
+        given()
+                .headers("Authorization", "Bearer " + runnerToken, "Content-Type", "application/vnd.api+json")
+                .body(String.format("{\"data\":{\"type\":\"job\",\"id\":\"%s\",\"attributes\":{\"status\":\"waitingApproval\",\"approvalTeam\":\"TERRAKUBE_DEVELOPERS\"}}}", jobId))
+                .when()
+                .patch("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/job/" + jobId)
+                .then()
+                .statusCode(HttpStatus.NO_CONTENT.value());
+    }
+
+
+    @Test
     public void appointedTeamCanApproveJobWithoutManageJobPermission() throws InterruptedException {
         Template template = createTemplate("flow:\n- name: Approve\n  type: approval\n  team: TERRAKUBE_DEVELOPERS\n");
 
@@ -368,5 +400,40 @@ class JobTests extends ServerApplicationTests {
                 .then()
                 .assertThat()
                 .statusCode(HttpStatus.NO_CONTENT.value());
+    }
+
+    @Test
+    void tclAttributeIsExcludedFromElide() {
+        devsManageJobs(true);
+        String jobId = createJob(jobDefinition("2db36f7c-f549-4341-a789-315d47eb061d"));
+
+        // 1. Verify GET /job does not expose tcl in attributes
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+                .when()
+                .get("/api/v1/organization/" + organization.getId() + "/job/" + jobId)
+                .then()
+                .statusCode(HttpStatus.OK.value())
+                .body("data.attributes.tcl", org.hamcrest.Matchers.nullValue());
+
+        // 2. Verify PATCH /job with tcl attribute is rejected by Elide (404 Not Found: unknown attribute)
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"),
+                        "Content-Type", "application/vnd.api+json")
+                .body("{\"data\":{\"type\":\"job\",\"id\":\"" + jobId
+                        + "\",\"attributes\":{\"tcl\":\"ZmxvdzogW10=\"}}}")
+                .patch("/api/v1/organization/" + organization.getId() + "/job/" + jobId)
+                .then()
+                .statusCode(HttpStatus.NOT_FOUND.value());
+
+        // 3. Verify POST /job with tcl attribute is rejected by Elide (404 Not Found: unknown attribute)
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"),
+                        "Content-Type", "application/vnd.api+json")
+                .body(jobDefinition("2db36f7c-f549-4341-a789-315d47eb061d")
+                        .replace("\"templateReference\":", "\"tcl\":\"ZmxvdzogW10=\",\"templateReference\":"))
+                .post("/api/v1/organization/" + organization.getId() + "/job")
+                .then()
+                .statusCode(HttpStatus.NOT_FOUND.value());
     }
 }

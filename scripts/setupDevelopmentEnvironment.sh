@@ -118,6 +118,7 @@ function generateApiVars() {
 	echo "DexIssuerUri=$DexIssuerUri" >>.envApi
 	echo "TerrakubeUiURL=$TerrakubeUiURL" >>.envApi
 	echo "spring_profiles_active=demo" >>.envApi
+	echo "AgentSsrfBlockPrivateNetworks=false" >>.envApi
 	echo "DexClientId=$DexClientId" >>.envApi
 	echo "TerraformLoginEnabled=$TerraformLoginEnabled" >>.envApi
 	echo "TerraformLoginDefaultDays=$TerraformLoginDefaultDays" >>.envApi
@@ -177,6 +178,17 @@ function generateExecutorVars() {
 	TerrakubeEnableSecurity=true
 	InternalSecret=S2JeOGNNZXJQTlpWNmhTITkha2NEKkt1VVBVQmFeQjM=
 
+	# Write internal secret to file automatically
+	echo -n "$InternalSecret" > internal-secret.txt
+	chmod 600 internal-secret.txt 2>/dev/null || true
+
+	if [ -d "/workspaces/terrakube" ] && [ "$(pwd)" != "/workspaces/terrakube" ]; then
+		echo -n "$InternalSecret" > /workspaces/terrakube/internal-secret.txt 2>/dev/null || true
+		chmod 600 /workspaces/terrakube/internal-secret.txt 2>/dev/null || true
+	fi
+
+	InternalSecretFile="/workspaces/terrakube/internal-secret.txt"
+
 	ExecutorFlagBatch=false
 	ExecutorFlagDisableAcknowledge=false
 	TerrakubeToolsRepository=https://github.com/terrakube-io/terrakube-extensions.git
@@ -185,7 +197,8 @@ function generateExecutorVars() {
 	rm -f .envExecutor
 
 	echo "TerrakubeEnableSecurity=$TerrakubeEnableSecurity" >>.envExecutor
-	echo "InternalSecret=$InternalSecret" >>.envExecutor
+	echo "InternalSecret=" >>.envExecutor
+	echo "InternalSecretFile=$InternalSecretFile" >>.envExecutor
 
 	echo "TerraformStateType=$TerraformStateType" >>.envExecutor
 	echo "AwsTerraformStateAccessKey=$AwsTerraformStateAccessKey" >>.envExecutor
@@ -375,6 +388,10 @@ function generateDexConfiguration() {
 		apiUrl="https://$CODESPACE_NAME-8080.app.github.dev"
 	elif [ "$USER" = "vscode" ]; then
 	  echo "Echo using local devcontainer"
+		jwtIssuer="https://terrakube-dex.localhost"
+		uiRedirect="https://terrakube.localhost"
+		apiUrl="https://terrakube-api.localhost"
+	else
 		jwtIssuer="https://terrakube-dex.localhost"
 		uiRedirect="https://terrakube.localhost"
 		apiUrl="https://terrakube-api.localhost"

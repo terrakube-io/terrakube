@@ -286,6 +286,122 @@ class PlanStructuredOutputServiceTest {
     }
 
     @Test
+    void surfacesOutputOnlyChangesWhenNoResourceChangesExist() throws Exception {
+        String json = """
+                {
+                  "resource_changes": [],
+                  "output_changes": {
+                    "derived_value": {
+                      "actions": ["update"],
+                      "before": "old-value",
+                      "after": "new-value",
+                      "after_unknown": false,
+                      "before_sensitive": false,
+                      "after_sensitive": false
+                    }
+                  }
+                }
+                """;
+
+        List<Map<String, Object>> changes = subject().buildChangesFromPlanJson(json);
+
+        assertEquals(1, changes.size());
+        assertEquals("derived_value", changes.get(0).get("address"));
+        assertEquals("output", changes.get(0).get("resourceType"));
+        assertEquals("update", changes.get(0).get("action"));
+        assertEquals("old-value", changes.get(0).get("before"));
+        assertEquals("new-value", changes.get(0).get("after"));
+        assertEquals(true, changes.get(0).get("isOutputChange"));
+    }
+
+    @Test
+    void redactsSensitiveOutputValuesTheSameWayAsResourceAttributes() throws Exception {
+        String json = """
+                {
+                  "resource_changes": [],
+                  "output_changes": {
+                    "api_key": {
+                      "actions": ["update"],
+                      "before": "old-secret",
+                      "after": "new-secret",
+                      "after_unknown": false,
+                      "before_sensitive": true,
+                      "after_sensitive": true
+                    }
+                  }
+                }
+                """;
+
+        List<Map<String, Object>> changes = subject().buildChangesFromPlanJson(json);
+
+        assertEquals(1, changes.size());
+        assertNull(changes.get(0).get("before"));
+        assertNull(changes.get(0).get("after"));
+        assertEquals(true, changes.get(0).get("beforeSensitive"));
+        assertEquals(true, changes.get(0).get("afterSensitive"));
+    }
+
+    @Test
+    void toleratesAnOutputChangeWithNullActions() throws Exception {
+        String json = """
+                {
+                  "resource_changes": [],
+                  "output_changes": {
+                    "odd_output": {
+                      "actions": null,
+                      "before": "a",
+                      "after": "b"
+                    }
+                  }
+                }
+                """;
+
+        // Must not throw a NullPointerException; a null actions array is treated as empty.
+        subject().buildChangesFromPlanJson(json);
+    }
+
+    @Test
+    void skipsNoOpOutputChanges() throws Exception {
+        String json = """
+                {
+                  "resource_changes": [],
+                  "output_changes": {
+                    "unchanged_output": {
+                      "actions": ["no-op"],
+                      "before": "same",
+                      "after": "same",
+                      "after_unknown": false,
+                      "before_sensitive": false,
+                      "after_sensitive": false
+                    }
+                  }
+                }
+                """;
+
+        List<Map<String, Object>> changes = subject().buildChangesFromPlanJson(json);
+
+        assertTrue(changes.isEmpty());
+    }
+
+    @Test
+    void returnsEmptyChangesWhenNeitherResourceNorOutputChangesExist() throws Exception {
+        String json = """
+                {
+                  "resource_changes": [],
+                  "output_changes": {}
+                }
+                """;
+
+        List<Map<String, Object>> changes = subject().buildChangesFromPlanJson(json);
+
+        assertTrue(changes.isEmpty());
+
+        Map<String, Object> context = new HashMap<>();
+        PlanStructuredOutputService.applyNoChangePlanMarker(context, "step-1", changes);
+        assertEquals(Map.of("planStepId", "step-1"), context.get(PlanStructuredOutputService.CONTEXT_NO_CHANGE_PLAN_KEY));
+    }
+
+    @Test
     void mergesStructuredPlanDataWithoutDroppingExistingContext() {
         Map<String, Object> context = new HashMap<>();
         context.put("custom", "value");
@@ -429,6 +545,43 @@ class PlanStructuredOutputServiceTest {
 
         Mockito.verify(jobContextService).getCurrentContext("o", "1");
         Mockito.verify(jobContextService).saveContext(Mockito.eq("o"), Mockito.eq("1"), Mockito.any());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void publishRenderedPlanTextSavesItUnderItsOwnContextKeyByStep() {
+        JobContextService jobContextService = Mockito.mock(JobContextService.class);
+        Mockito.when(jobContextService.getCurrentContext("o", "1")).thenReturn(new HashMap<>());
+        PlanStructuredOutputService service = new PlanStructuredOutputService(jobContextService, new ObjectMapper(), new TerraformClient());
+
+        service.publishRenderedPlanText("o", "1", "step-1", "  # aws_instance.foo will be created\n\nPlan: 1 to add, 0 to change, 0 to destroy.");
+
+        ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
+        Mockito.verify(jobContextService).saveContext(Mockito.eq("o"), Mockito.eq("1"), captor.capture());
+        Map<String, Object> byStep = (Map<String, Object>) captor.getValue().get(PlanStructuredOutputService.CONTEXT_PLAN_RENDERED_TEXT_KEY);
+        assertTrue(((String) byStep.get("step-1")).contains("Plan: 1 to add, 0 to change, 0 to destroy."));
+    }
+
+    @Test
+    void publishRenderedPlanTextDoesNothingForBlankText() {
+        JobContextService jobContextService = Mockito.mock(JobContextService.class);
+        PlanStructuredOutputService service = new PlanStructuredOutputService(jobContextService, new ObjectMapper(), new TerraformClient());
+
+        service.publishRenderedPlanText("o", "1", "step-1", "   ");
+        service.publishRenderedPlanText("o", "1", "step-1", null);
+
+        Mockito.verify(jobContextService, Mockito.never()).getCurrentContext(Mockito.any(), Mockito.any());
+        Mockito.verify(jobContextService, Mockito.never()).saveContext(Mockito.any(), Mockito.any(), Mockito.any());
+    }
+
+    @Test
+    void publishRenderedPlanTextSwallowsAContextFailure() {
+        JobContextService jobContextService = Mockito.mock(JobContextService.class);
+        Mockito.when(jobContextService.getCurrentContext("o", "1")).thenThrow(new RuntimeException("boom"));
+        PlanStructuredOutputService service = new PlanStructuredOutputService(jobContextService, new ObjectMapper(), new TerraformClient());
+
+        org.junit.jupiter.api.Assertions.assertDoesNotThrow(
+                () -> service.publishRenderedPlanText("o", "1", "step-1", "some diff"));
     }
 
     // #3602: the show -json summary used to be a single synchronous POST after the queue drain, so

@@ -40,6 +40,11 @@ public class MigrateService {
         Workspace workspace = workspaceOptional.get();
         String originalOrg = workspace.getOrganization().getId().toString();
 
+        if (originalOrg.equalsIgnoreCase(organizationId)) {
+            log.warn("Workspace {} is already in organization {}", workspaceId, organizationId);
+            return false;
+        }
+
         // Check if workspace is locked or deleted
         if (workspace.isLocked() || workspace.isDeleted()) {
             log.error("Workspace {} is locked or deleted; cannot migrate", workspaceId);

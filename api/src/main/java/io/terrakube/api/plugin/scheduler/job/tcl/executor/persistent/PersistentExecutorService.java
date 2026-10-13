@@ -48,6 +48,9 @@ public class PersistentExecutorService {
     @Value("${io.terrakube.token.internal}")
     private String base64KeyInternal;
 
+    @Autowired(required = false)
+    private AgentUrlValidator agentUrlValidator;
+
     // Manual all-args constructor because Lombok will not copy @Value
     public PersistentExecutorService(
         @Value("${io.terrakube.executor.url}") String executorUrl,
@@ -58,6 +61,11 @@ public class PersistentExecutorService {
             this.globalVarRepository = globalVarRepository;
             this.webClientBuilder = webClientBuilder;
             this.base64KeyInternal = internalJwtSecret;
+            this.agentUrlValidator = new AgentUrlValidator(false);
+    }
+
+    public void setAgentUrlValidator(AgentUrlValidator agentUrlValidator) {
+        this.agentUrlValidator = agentUrlValidator;
     }
 
     private static final Duration RESPONSE_TIMEOUT = Duration.ofSeconds(60);
@@ -71,7 +79,7 @@ public class PersistentExecutorService {
         String executorUrlForRequest;
         try {
             executorUrlForRequest = getExecutorUrl(job);
-        } catch (URISyntaxException e) {
+        } catch (Exception e) {
             throw new ExecutionException(e);
         }
 
@@ -141,6 +149,10 @@ public class PersistentExecutorService {
                 ? job.getWorkspace().getAgent().getUrl() + "/api/v1/terraform-rs"
                 : validateDefaultExecutor(job);
         log.info("Job {} Executor agent url: {}", job.getId(), agentUrl);
+        if (agentUrlValidator == null) {
+            agentUrlValidator = new AgentUrlValidator(false);
+        }
+        agentUrlValidator.validate("agent", agentUrl);
         return new URI(agentUrl).normalize().toString();
     }
 

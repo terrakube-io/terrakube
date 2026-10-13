@@ -33,6 +33,7 @@ public class PlanStructuredOutputService {
     private static final String CONTEXT_UI_KEY = "terrakubeUI";
     private static final String CONTEXT_JOB_DIAGNOSTICS_KEY = "jobDiagnostics";
     static final String CONTEXT_NO_CHANGE_PLAN_KEY = "noChangePlan";
+    static final String CONTEXT_PLAN_RENDERED_TEXT_KEY = "planRenderedText";
     private static final String STRUCTURED_PLAN_MARKER = "<div data-terrakube-structured-plan=\"true\"></div>";
 
     private final JobContextService jobContextService;
@@ -227,6 +228,28 @@ public class PlanStructuredOutputService {
         return planOutput.toString();
     }
 
+    /**
+     * Persists {@link #getPlanAsHumanText}'s text under its own context key, separately from the
+     * console stream it's also written to, so PrCommentService can read just the diff (#3673).
+     * A failure here is logged and swallowed - the console copy is unaffected either way.
+     */
+    void publishRenderedPlanText(String organizationId, String jobId, String stepId, String renderedText) {
+        if (renderedText == null || renderedText.isBlank()) {
+            return;
+        }
+
+        try {
+            Map<String, Object> context = getCurrentContext(organizationId, jobId);
+            Map<String, Object> updatedContext = new HashMap<>(context);
+            Map<String, Object> renderedTextByStep = toMap(updatedContext.get(CONTEXT_PLAN_RENDERED_TEXT_KEY));
+            renderedTextByStep.put(stepId, renderedText);
+            updatedContext.put(CONTEXT_PLAN_RENDERED_TEXT_KEY, renderedTextByStep);
+            saveContext(organizationId, jobId, updatedContext);
+        } catch (Exception e) {
+            log.warn("Unable to persist rendered plan text for job {} step {}: {}", jobId, stepId, e.getMessage());
+        }
+    }
+
     List<Map<String, Object>> buildChangesFromPlanJson(String json) throws IOException {
         Map<String, Object> plan = objectMapper.readValue(json, new TypeReference<>() {
         });
@@ -275,6 +298,62 @@ public class PlanStructuredOutputService {
                     afterValue,
                     beforeSensitive,
                     afterSensitive);
+            entry.put("before", sanitizeSensitiveValues(beforeValue, beforeSensitive));
+            entry.put("beforeSensitive", beforeSensitive);
+            entry.put("after", sanitizeSensitiveValues(afterValue, afterSensitive));
+            entry.put("afterSensitive", afterSensitive);
+            if (changedSensitive != null) {
+                entry.put("changedSensitive", changedSensitive);
+            }
+            entry.put("afterUnknown", changeBlock.get("after_unknown"));
+            result.add(entry);
+        }
+        result.addAll(buildOutputChangeEntries(plan));
+        return result;
+    }
+
+    // output_changes is a map keyed by output name, unlike resource_changes - each value is the
+    // change representation directly (no nested "change" wrapper). A plan with zero resource
+    // changes can still change an output (e.g. one derived from a data source), which otherwise
+    // renders identically to a genuine no-op plan with no way to tell the difference (#3675).
+    private List<Map<String, Object>> buildOutputChangeEntries(Map<String, Object> plan) {
+        Object outputChangesRaw = plan.get("output_changes");
+        if (!(outputChangesRaw instanceof Map<?, ?> outputChanges)) {
+            return List.of();
+        }
+
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (Map.Entry<?, ?> outputChange : outputChanges.entrySet()) {
+            String outputName = String.valueOf(outputChange.getKey());
+            if (!(outputChange.getValue() instanceof Map<?, ?> changeBlockRaw)) {
+                continue;
+            }
+            Map<String, Object> changeBlock = new HashMap<>();
+            changeBlockRaw.forEach((k, v) -> changeBlock.put(String.valueOf(k), v));
+
+            Object actionsRaw = changeBlock.get("actions");
+            List<String> actions = actionsRaw instanceof List<?> actionList
+                    ? actionList.stream().map(String::valueOf).toList()
+                    : List.of();
+            String action = normalizeAction(actions);
+            if ("no-op".equals(action)) {
+                continue;
+            }
+
+            Map<String, Object> entry = new HashMap<>();
+            entry.put("address", outputName);
+            entry.put("moduleAddress", null);
+            entry.put("resourceType", "output");
+            entry.put("resourceName", outputName);
+            entry.put("actions", actions);
+            entry.put("action", action);
+            entry.put("isOutputChange", true);
+
+            Object beforeValue = changeBlock.get("before");
+            Object afterValue = changeBlock.get("after");
+            Object beforeSensitive = changeBlock.get("before_sensitive");
+            Object afterSensitive = changeBlock.get("after_sensitive");
+            Object changedSensitive = collectChangedSensitivePaths(beforeValue, afterValue, beforeSensitive, afterSensitive);
             entry.put("before", sanitizeSensitiveValues(beforeValue, beforeSensitive));
             entry.put("beforeSensitive", beforeSensitive);
             entry.put("after", sanitizeSensitiveValues(afterValue, afterSensitive));

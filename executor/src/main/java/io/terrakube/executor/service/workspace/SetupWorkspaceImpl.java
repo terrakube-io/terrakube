@@ -101,7 +101,11 @@ public class SetupWorkspaceImpl implements SetupWorkspace {
                 generateSshFolder(workspaceCloneFolder, terraformJob.getModuleSshKey(), SSH_DIRECTORY_FILE_MODULE);
             }
 
-            workspaceSecurity.addTerraformCredentials(terraformJob.getWorkspaceId());
+            workspaceSecurity.addTerraformCredentials(
+                    terraformJob.getOrganizationId(),
+                    terraformJob.getWorkspaceId(),
+                    terraformJob.getJobId(),
+                    terraformJob.getStepId());
 
             log.info("Executor WorkingDir: {}", workspaceCloneFolder);
             if (terraformJob.getEnvironmentVariables().containsKey("ENABLE_DYNAMIC_CREDENTIALS_GCP")) {
@@ -356,6 +360,13 @@ public class SetupWorkspaceImpl implements SetupWorkspace {
 
         try (OutputStream stream = new FileOutputStream(terraformTarGz)) {
             IOUtils.copy(urlConnection.getInputStream(), stream);
+        }
+
+        if (terraformTarGz.length() == 0) {
+            // A storage read failure upstream (api module) should surface as a 503, but if one
+            // still slips through as empty bytes, fail clearly here instead of letting gzip
+            // parsing produce the confusing "Input is not in the .gz format" error (#3671).
+            throw new IOException("downloaded configuration tarball was empty for job " + jobId);
         }
 
         extractTarGZ(new FileInputStream(terraformTarGz), tarGzFolder.getPath());

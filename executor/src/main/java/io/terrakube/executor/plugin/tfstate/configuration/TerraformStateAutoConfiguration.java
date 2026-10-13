@@ -7,6 +7,7 @@ import com.google.auth.oauth2.GoogleCredentials;
 import com.google.cloud.storage.Storage;
 import com.google.cloud.storage.StorageOptions;
 import io.terrakube.client.TerrakubeClient;
+import io.terrakube.executor.plugin.tfstate.StorageRetryMetrics;
 import io.terrakube.executor.plugin.tfstate.TerraformOutputPathService;
 import io.terrakube.executor.plugin.tfstate.TerraformState;
 import io.terrakube.executor.plugin.tfstate.TerraformStateMetadataService;
@@ -51,7 +52,17 @@ import java.net.URI;
 public class TerraformStateAutoConfiguration {
 
     @Bean
-    public TerraformState terraformState(TerrakubeClient terrakubeClient, TerraformStateProperties terraformStateProperties, AzureTerraformStateProperties azureTerraformStateProperties, AwsTerraformStateProperties awsTerraformStateProperties, GcpTerraformStateProperties gcpTerraformStateProperties, TerraformStatePathService terraformStatePathService, TerraformOutputPathService terraformOutputPathService, TerraformStateMetadataService terraformStateMetadataService) {
+    public TerraformState terraformState(
+            TerrakubeClient terrakubeClient,
+            TerraformStateProperties terraformStateProperties,
+            AzureTerraformStateProperties azureTerraformStateProperties,
+            AwsTerraformStateProperties awsTerraformStateProperties,
+            GcpTerraformStateProperties gcpTerraformStateProperties,
+            TerraformStatePathService terraformStatePathService,
+            TerraformOutputPathService terraformOutputPathService,
+            TerraformStateMetadataService terraformStateMetadataService,
+            StorageRetryMetrics storageRetryMetrics,
+            @org.springframework.beans.factory.annotation.Autowired(required = false) io.terrakube.executor.service.workspace.security.WorkspaceSecurity workspaceSecurity) {
         TerraformState terraformState = null;
 
         if (terraformStateProperties != null)
@@ -74,6 +85,7 @@ public class TerraformStateAutoConfiguration {
                             .terraformOutputPathService(terraformOutputPathService)
                             .terraformStatePathService(terraformStatePathService)
                             .terraformStateMetadataService(terraformStateMetadataService)
+                            .storageRetryMetrics(storageRetryMetrics)
                             .build();
                     break;
                 case AwsTerraformStateImpl:
@@ -126,6 +138,7 @@ public class TerraformStateAutoConfiguration {
                             .terraformStatePathService(terraformStatePathService)
                             .terraformOutputPathService(terraformOutputPathService)
                             .terraformStateMetadataService(terraformStateMetadataService)
+                            .storageRetryMetrics(storageRetryMetrics)
                             .build();
                     break;
                 case GcpTerraformStateImpl:
@@ -149,6 +162,7 @@ public class TerraformStateAutoConfiguration {
                                 .credentials(gcpTerraformStateProperties.getCredentials())
                                 .terrakubeClient(terrakubeClient)
                                 .terraformStateMetadataService(terraformStateMetadataService)
+                                .storageRetryMetrics(storageRetryMetrics)
                                 .build();
                     } catch (IOException e) {
                         log.error(e.getMessage());
@@ -160,6 +174,8 @@ public class TerraformStateAutoConfiguration {
                             .terraformStatePathService(terraformStatePathService)
                             .terraformOutputPathService(terraformOutputPathService)
                             .terraformStateMetadataService(terraformStateMetadataService)
+                            .storageRetryMetrics(storageRetryMetrics)
+                            .workspaceSecurity(workspaceSecurity)
                             .build();
             }
         else
@@ -167,6 +183,8 @@ public class TerraformStateAutoConfiguration {
                     .terrakubeClient(terrakubeClient)
                     .terraformStatePathService(terraformStatePathService)
                     .terraformStateMetadataService(terraformStateMetadataService)
+                    .storageRetryMetrics(storageRetryMetrics)
+                    .workspaceSecurity(workspaceSecurity)
                     .build();
         return terraformState;
     }

@@ -26,7 +26,7 @@ import java.sql.Types;
 import java.util.List;
 import java.util.UUID;
 
-@ReadPermission(expression = "user belongs organization")
+@ReadPermission(expression = "user belongs organization OR executor read organization OR user is an executor service OR user is a registry service")
 @CreatePermission(expression = "user is a superuser")
 @UpdatePermission(expression = "user is a superuser")
 @DeletePermission(expression = "user is a superuser")

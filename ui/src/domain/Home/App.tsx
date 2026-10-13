@@ -54,6 +54,9 @@ const ImportWorkspace = lazy(() =>
 const WorkspaceDetails = lazy(() =>
   import("../Workspaces/Details").then((module) => ({ default: module.WorkspaceDetails }))
 );
+const RunRedirectRoute = lazy(() =>
+  import("../Workspaces/RunRedirectRoute").then((module) => ({ default: module.RunRedirectRoute }))
+);
 
 // Modules and registry
 const CreateModule = lazy(() => import("../Modules/Create").then((module) => ({ default: module.CreateModule })));
@@ -355,6 +358,10 @@ const router = createBrowserRouter(
         {
           path: "/organizations/:orgid/workspaces/:id/runs/:runid",
           element: <WorkspaceDetailsRoute selectedTab="2" />,
+        },
+        {
+          path: "/app/:orgName/:wsName/runs/:runid",
+          element: <RunRedirectRoute />,
         },
         {
           path: "/workspaces/:id/states",

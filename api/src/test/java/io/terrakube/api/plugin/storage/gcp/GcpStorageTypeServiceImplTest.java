@@ -37,6 +37,8 @@ class GcpStorageTypeServiceImplTest {
         gcpStorageTypeService = GcpStorageTypeServiceImpl.builder()
                 .storage(storage)
                 .bucketName(bucketName)
+                .storageRetryMetrics(new io.terrakube.api.plugin.storage.StorageRetryMetrics(
+                        new io.micrometer.core.instrument.simple.SimpleMeterRegistry()))
                 .build();
     }
 
@@ -61,7 +63,7 @@ class GcpStorageTypeServiceImplTest {
 
     @Test
     void testUploadStateUpdate() throws IOException {
-        when(storage.get(any(BlobId.class))).thenReturn(blob);
+        when(storage.get(BlobId.of(bucketName, "tfstate/org1/ws1/terraform.tfstate/default.tfstate"))).thenReturn(blob);
         com.google.cloud.WriteChannel channel = mock(com.google.cloud.WriteChannel.class);
         when(blob.writer()).thenReturn(channel);
 
@@ -89,6 +91,36 @@ class GcpStorageTypeServiceImplTest {
         String result = gcpStorageTypeService.getContext(123);
 
         assertEquals("{\"a\":1}", result);
+    }
+
+    @Test
+    void getContextReturnsEmptyJsonOnNotFound() {
+        when(storage.get(any(BlobId.class))).thenReturn(null);
+
+        String result = gcpStorageTypeService.getContext(123);
+
+        assertEquals("{}", result);
+    }
+
+    @Test
+    void readThrowsStorageUnavailableAfterRetryingAGenuineFailure() {
+        when(storage.get(any(BlobId.class))).thenThrow(new StorageException(503, "Service unavailable"));
+
+        assertThrows(io.terrakube.api.plugin.storage.StorageUnavailableException.class,
+                () -> gcpStorageTypeService.getContext(123));
+
+        verify(storage, times(3)).get(any(BlobId.class));
+    }
+
+    @Test
+    void writeThrowsStorageUnavailableAfterRetryingAGenuineFailure() {
+        when(storage.get(any(BlobId.class))).thenReturn(null);
+        when(storage.create(any(BlobInfo.class), any(byte[].class))).thenThrow(new StorageException(503, "Service unavailable"));
+
+        assertThrows(io.terrakube.api.plugin.storage.StorageUnavailableException.class,
+                () -> gcpStorageTypeService.saveContext(123, "{}"));
+
+        verify(storage, times(3)).create(any(BlobInfo.class), any(byte[].class));
     }
 
     @Test
@@ -143,7 +175,6 @@ class GcpStorageTypeServiceImplTest {
 
         Blob blob = mock(Blob.class);
         when(storage.get(BlobId.of(bucketName, uri))).thenReturn(blob);
-        when(blob.exists()).thenReturn(true);
         when(blob.getContent()).thenReturn(json.getBytes(StandardCharsets.UTF_8));
 
         String retrieved = gcpStorageTypeService.getPolicyEvaluation(uri);

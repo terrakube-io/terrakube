@@ -236,6 +236,43 @@ public class PrCommentServiceTest {
         verify(jobRepository, times(1)).save(job);
     }
 
+    // #3673: when the executor has persisted the rendered diff separately, the comment must use
+    // that instead of the raw, mixed console output.
+    @Test
+    public void postPlanResultPrefersThePersistedRenderedPlanTextOverTheRawStepOutput() {
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
+        String contextJson = "{\"planRenderedText\":{\"step-1\":\""
+                + "  # aws_instance.foo will be created\\n\\nPlan: 3 to add, 0 to change, 1 to destroy.\"}}";
+        doReturn(contextJson).when(storageTypeService).getContext(job.getId());
+        doReturn("12345").when(gitHubWebhookService).postPrComment(any(), any());
+        doReturn(job).when(jobRepository).save(any());
+
+        subject.postPlanResult(job);
+
+        ArgumentCaptor<String> markdownCaptor = ArgumentCaptor.forClass(String.class);
+        verify(gitHubWebhookService, times(1)).postPrComment(eq(job), markdownCaptor.capture());
+        String markdown = markdownCaptor.getValue();
+        assertTrue(markdown.contains("# aws_instance.foo will be created"));
+        assertTrue(markdown.contains("Plan: 3 to add, 0 to change, 1 to destroy."));
+        // Never falls back to the raw step output when the rendered text is already present.
+        verify(storageTypeService, never()).getStepOutput(any(), any(), any());
+    }
+
+    @Test
+    public void postPlanResultFallsBackToRawStepOutputWhenNoRenderedPlanTextInContext() {
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
+        stubStepOutput("Plan: 3 to add, 0 to change, 1 to destroy.");
+        doReturn(null).when(storageTypeService).getContext(job.getId());
+        doReturn("12345").when(gitHubWebhookService).postPrComment(any(), any());
+        doReturn(job).when(jobRepository).save(any());
+
+        subject.postPlanResult(job);
+
+        ArgumentCaptor<String> markdownCaptor = ArgumentCaptor.forClass(String.class);
+        verify(gitHubWebhookService, times(1)).postPrComment(eq(job), markdownCaptor.capture());
+        assertTrue(markdownCaptor.getValue().contains("Plan: 3 to add, 0 to change, 1 to destroy."));
+    }
+
     @Test
     public void postPlanResultDispatchesToGitLab() {
         Job job = createJob(VcsType.GITLAB, 10, JobStatus.completed);

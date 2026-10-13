@@ -38,6 +38,7 @@ scripts/setup/dex/config-ldap.yaml
 .envExecutor
 .envRegistry
 .envUi
+internal-secret.txt
 .envAzure
 .envGcp
 DEVCONTAINER.md

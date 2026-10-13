@@ -26,7 +26,7 @@ import lombok.Getter;
 import lombok.Setter;
 import io.terrakube.api.rs.workspace.Workspace;
 
-@ReadPermission(expression = "team view vcs")
+@ReadPermission(expression = "team view vcs OR user is a registry service")
 @CreatePermission(expression = "team manage vcs")
 @UpdatePermission(expression = "team manage vcs")
 @DeletePermission(expression = "team manage vcs")
