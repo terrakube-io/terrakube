@@ -1,6 +1,8 @@
-import { Button, Popconfirm, Table, Typography, message } from "antd";
+import { NodeIndexOutlined } from "@ant-design/icons";
+import { Button, Flex, Popconfirm, Table, Typography, message } from "antd";
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { LinkButton } from "@/components/navigation/LinkButton";
 import CascadeStatusTag from "@/components/display/CascadeStatusTag/CascadeStatusTag";
 import { RunCascadeRow, RunCascadeStatus } from "@/domain/types";
 import {
@@ -113,12 +115,19 @@ export const Cascades = ({ organizationId, workspaceId, workspaceName }: Props) 
 
   return (
     <div>
-      <Typography.Title level={2} style={{ margin: 0 }}>
-        Run cascades
-      </Typography.Title>
-      <Typography.Paragraph type="secondary" style={{ marginTop: 8 }}>
-        Executions in which <b>{workspaceName}</b> participates, including changes started by an upstream workspace.
-      </Typography.Paragraph>
+      <Flex justify="space-between" align="flex-start" wrap gap="small">
+        <div>
+          <Typography.Title level={2} className="workspace-flush-title">
+            Run cascades
+          </Typography.Title>
+          <Typography.Paragraph type="secondary">
+            Executions in which <b>{workspaceName}</b> participates, including changes started by an upstream workspace.
+          </Typography.Paragraph>
+        </div>
+        <LinkButton to={`/organizations/${organizationId}/cascades`} icon={<NodeIndexOutlined />}>
+          All run cascades
+        </LinkButton>
+      </Flex>
       <Table
         dataSource={cascades}
         columns={columns}
