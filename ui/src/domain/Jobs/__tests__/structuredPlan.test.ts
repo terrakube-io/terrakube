@@ -203,7 +203,7 @@ describe("structuredPlan helpers", () => {
   it("accepts every documented ChangeStatus value and falls back to pending for unknown ones", () => {
     const knownStatuses = [
       "pending", "planned", "refreshing", "reading", "applying", "provisioning", "applied",
-      "importing", "moving", "errored",
+      "importing", "moving", "errored", "interrupted",
       "ephemeral-opening", "ephemeral-renewed", "ephemeral-closing", "ephemeral-errored",
     ];
 
