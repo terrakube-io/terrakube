@@ -12,6 +12,7 @@ import io.terrakube.client.model.organization.job.LogsRequest;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.*;
+import java.util.concurrent.locks.ReentrantLock;
 
 @Service
 @Slf4j
@@ -20,6 +21,9 @@ import java.util.concurrent.*;
 public class LogsServiceApi implements ProcessLogs {
     private TerrakubeClient terrakubeClient;
     private final LinkedBlockingDeque<Log> logQueue = new LinkedBlockingDeque<>();
+    // Held while a batch is in flight, so flush() can't return while a scheduled batch it never
+    // saw is still being sent.
+    private final ReentrantLock sendLock = new ReentrantLock();
 
     @Override
     public void setupConsumerGroups(String jobId) {
@@ -51,13 +55,33 @@ public class LogsServiceApi implements ProcessLogs {
         // it just doesn't get the new live-push latency improvement in this deployment mode.
     }
 
+    // Best effort: if the API still refuses the batch after the client's retries, the lines are
+    // requeued for the scheduler and this returns anyway rather than holding the step open.
+    @Override
+    public void flush() {
+        sendLock.lock();
+        try {
+            sendQueuedLogs();
+        } finally {
+            sendLock.unlock();
+        }
+    }
+
+    // The scheduler thread is shared (it also refreshes the job heartbeat), so it skips a round
+    // instead of queueing behind a flush that is already sending these lines.
     @Scheduled(fixedDelay = 5000)  // Send logs every 5 seconds
     public void sendBatchedLogs() {
-        log.info("Sending logs to Terrakube API");
-        if (logQueue.isEmpty()) {
+        if (!sendLock.tryLock()) {
             return;
         }
+        try {
+            sendQueuedLogs();
+        } finally {
+            sendLock.unlock();
+        }
+    }
 
+    private void sendQueuedLogs() {
         List<Log> batch = new ArrayList<>();
         logQueue.drainTo(batch);
 
@@ -65,6 +89,7 @@ public class LogsServiceApi implements ProcessLogs {
             return;
         }
 
+        log.info("Sending logs to Terrakube API");
         LogsRequest logsRequest = new LogsRequest();
         logsRequest.setData(batch);
 

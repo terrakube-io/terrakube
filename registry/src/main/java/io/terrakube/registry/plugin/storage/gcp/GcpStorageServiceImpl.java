@@ -12,9 +12,7 @@ import io.terrakube.registry.plugin.storage.StorageService;
 import io.terrakube.registry.plugin.storage.StorageUnavailableException;
 import io.terrakube.registry.service.git.GitService;
 import io.terrakube.registry.service.git.ModuleVersionDownload;
-import org.zeroturnaround.zip.ZipUtil;
 
-import java.io.File;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URL;
@@ -58,22 +56,11 @@ public class GcpStorageServiceImpl implements StorageService {
 
         try {
             if (storage.get(blobId) == null) {
-                File gitCloneDirectory = gitService.getCloneRepositoryByTag(download);
-                File moduleZip = new File(gitCloneDirectory.getAbsolutePath() + ".zip");
-                ZipUtil.pack(gitCloneDirectory, moduleZip);
-
                 BlobInfo blobInfo = BlobInfo.newBuilder(blobId).build();
-                storage.create(blobInfo, FileUtils.readFileToByteArray(moduleZip));
+                gitService.withModuleZip(download,
+                        moduleZip -> storage.create(blobInfo, FileUtils.readFileToByteArray(moduleZip)));
 
                 log.info("File uploaded to bucket {} as {}", bucketName, blobKey);
-
-                try {
-                    FileUtils.cleanDirectory(gitCloneDirectory);
-                    if (FileUtils.deleteQuietly(moduleZip))
-                        log.info("Successfully delete folder for gcp module");
-                } catch (IOException e) {
-                    log.error(e.getMessage());
-                }
             }
         } catch (StorageException e) {
             log.error("GCP Storage operation failed for key {} in bucket {}: {}", blobKey, bucketName,

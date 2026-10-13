@@ -10,14 +10,11 @@ import com.azure.storage.blob.sas.BlobServiceSasSignatureValues;
 import lombok.Builder;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.io.FileUtils;
 import io.terrakube.registry.plugin.storage.StorageService;
 import io.terrakube.registry.plugin.storage.StorageUnavailableException;
 import io.terrakube.registry.service.git.GitService;
 import io.terrakube.registry.service.git.ModuleVersionDownload;
-import org.zeroturnaround.zip.ZipUtil;
 
-import java.io.File;
 import java.io.IOException;
 import java.net.URI;
 import java.time.OffsetDateTime;
@@ -68,24 +65,18 @@ public class AzureStorageServiceImpl implements StorageService {
             BlobClient blobClient = blobContainerClient.getBlobClient(blobName);
 
             if (!blobClient.exists()) {
-                File gitCloneDirectory = gitService.getCloneRepositoryByTag(download);
-                File moduleZip = new File(gitCloneDirectory.getAbsolutePath() + ".zip");
-                ZipUtil.pack(gitCloneDirectory, moduleZip);
-                blobClient.uploadFromFile(moduleZip.getAbsolutePath());
-
-                try {
-                    FileUtils.cleanDirectory(gitCloneDirectory);
-                    if (FileUtils.deleteQuietly(moduleZip))
-                        log.info("Successfully delete folder");
-                } catch (IOException e) {
-                    log.error(e.getMessage());
-                }
+                gitService.withModuleZip(download, moduleZip -> blobClient.uploadFromFile(moduleZip.getAbsolutePath()));
             }
         } catch (BlobStorageException e) {
             log.error("Azure Blob operation failed for blob {} in container {}: {}", blobName, CONTAINER_NAME,
                     e.getMessage());
             throw new StorageUnavailableException(
                     "Azure Blob operation failed while resolving module path for blob " + blobName, e);
+        } catch (IOException e) {
+            log.error("IO error while preparing module upload for blob {} in container {}: {}", blobName,
+                    CONTAINER_NAME, e.getMessage());
+            throw new StorageUnavailableException(
+                    "IO error while preparing Azure module upload for blob " + blobName, e);
         }
 
         return String.format(BUCKET_DOWNLOAD_MODULE_LOCATION, registryHostname, organizationName, moduleName,

@@ -11,7 +11,10 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.connection.stream.MapRecord;
+import org.springframework.data.redis.connection.stream.RecordId;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -19,8 +22,10 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -78,5 +83,22 @@ class StreamingServiceTest {
         assertTrue(result.contains("line A"));
         assertTrue(result.contains("line B"));
         verify(redisStreamReader).readTail(eq("7"), anyInt());
+    }
+
+    @Test
+    @Timeout(5)
+    void streamJobContextCompletesWhenJobEndsRejected() {
+        Job job = new Job();
+        job.setId(7);
+        job.setStatus(JobStatus.rejected);
+        when(redisStreamReader.readAfter(eq("7-context"), any(RecordId.class), any(Duration.class)))
+                .thenReturn(List.of());
+        when(jobRepository.findById(7)).thenReturn(Optional.of(job));
+        SseEmitter emitter = mock(SseEmitter.class);
+
+        new StreamingService(stepRepository, redisStreamReader, jobRepository, 5000)
+                .streamJobContext("7", emitter, RecordId.of("0-0"), null);
+
+        verify(emitter).complete();
     }
 }
