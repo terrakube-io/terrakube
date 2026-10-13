@@ -94,7 +94,7 @@ describe("CreateEditCollection", () => {
     mockGet([]);
     renderAt("/organizations/org-1/settings/collection/new");
 
-    fireEvent.change(await screen.findByLabelText("Name"), { target: { value: "datadog" } });
+    fireEvent.change(await screen.findByLabelText("Name"), { target: { value: "collection" } });
     fireEvent.change(screen.getByLabelText("Description"), { target: { value: "x".repeat(513) } });
     fireEvent.click(screen.getByRole("button", { name: "Create variable collection" }));
 
