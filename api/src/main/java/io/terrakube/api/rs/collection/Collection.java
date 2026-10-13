@@ -2,6 +2,7 @@ package io.terrakube.api.rs.collection;
 
 import com.yahoo.elide.annotation.*;
 import jakarta.persistence.*;
+import jakarta.validation.constraints.Size;
 import lombok.Getter;
 import lombok.Setter;
 import org.hibernate.annotations.JdbcTypeCode;
@@ -28,9 +29,11 @@ public class Collection extends GenericAuditFields {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
+    @Size(max = 128)
     @Column(name = "name")
     private String name;
 
+    @Size(max = 512)
     @Column(name = "description")
     private String description;
 

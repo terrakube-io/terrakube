@@ -5,6 +5,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.post;
 import static com.github.tomakehurst.wiremock.client.WireMock.stubFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static io.restassured.RestAssured.given;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -508,6 +509,45 @@ public class CollectionTests extends ServerApplicationTests {
         scheduleJob.execute(ctx);
     }
 
+    @Test
+    void descriptionOf512CharactersIsAccepted() {
+        allowDevelopersToManageCollections();
 
+        assertEquals(HttpStatus.CREATED.value(), createCollection("Collection512", "x".repeat(512)));
+    }
 
+    @Test
+    void descriptionLongerThan512CharactersIsRejected() {
+        allowDevelopersToManageCollections();
+
+        assertEquals(HttpStatus.BAD_REQUEST.value(), createCollection("CollectionTooLong", "x".repeat(513)));
+    }
+
+    @Test
+    void nameLongerThan128CharactersIsRejected() {
+        allowDevelopersToManageCollections();
+
+        assertEquals(HttpStatus.BAD_REQUEST.value(), createCollection("x".repeat(129), "Sample Description"));
+    }
+
+    private void allowDevelopersToManageCollections() {
+        Team team = teamRepository.findById(UUID.fromString("58529721-425e-44d7-8b0d-1d515043c2f7")).get();
+        team.setManageCollection(true);
+        teamRepository.save(team);
+    }
+
+    private int createCollection(String name, String description) {
+        return given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
+                .body("""
+                        {"data":{"type":"collection","attributes":{"name":"%s","description":"%s","priority":10}}}"""
+                        .formatted(name, description))
+                .when()
+                .post("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/collection/")
+                .then()
+                .log()
+                .ifValidationFails()
+                .extract()
+                .statusCode();
+    }
 }

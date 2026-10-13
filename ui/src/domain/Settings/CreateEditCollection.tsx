@@ -502,11 +502,15 @@ export const CreateEditCollection = ({
           saving={saveLoading}
         >
           {mode === "edit" && collectionid && <IdField id="collection-id" value={collectionid} />}
-          <Form.Item name="name" label="Name" rules={[{ required: true, message: "Enter a name for the collection" }]}>
-            <Input />
+          <Form.Item
+            name="name"
+            label="Name"
+            rules={[{ required: true, message: "Enter a name for the collection" }, { max: 128 }]}
+          >
+            <Input maxLength={128} />
           </Form.Item>
-          <Form.Item name="description" label="Description">
-            <Input.TextArea autoSize={{ minRows: 2, maxRows: 4 }} />
+          <Form.Item name="description" label="Description" rules={[{ max: 512 }]}>
+            <Input.TextArea autoSize={{ minRows: 2, maxRows: 4 }} maxLength={512} showCount />
           </Form.Item>
           <Form.Item
             name="priority"

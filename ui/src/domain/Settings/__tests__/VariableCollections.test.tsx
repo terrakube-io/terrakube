@@ -90,6 +90,18 @@ describe("CreateEditCollection", () => {
     expect(await screen.findByRole("heading", { name: "Edit variable collection" })).toBeInTheDocument();
   });
 
+  it("does not submit a description longer than the API accepts", async () => {
+    mockGet([]);
+    renderAt("/organizations/org-1/settings/collection/new");
+
+    fireEvent.change(await screen.findByLabelText("Name"), { target: { value: "datadog" } });
+    fireEvent.change(screen.getByLabelText("Description"), { target: { value: "x".repeat(513) } });
+    fireEvent.click(screen.getByRole("button", { name: "Create variable collection" }));
+
+    expect(await screen.findByText(/cannot be longer than 512 characters/)).toBeInTheDocument();
+    expect(axiosInstance.post).not.toHaveBeenCalled();
+  });
+
   it("confirms before deleting a variable", async () => {
     mockGet([collection], [variable]);
     (axiosInstance.delete as jest.Mock).mockResolvedValue({});
