@@ -53,6 +53,7 @@ export const DependencyGraph = () => {
   const [hops, setHops] = useState(2);
   const [direction, setDirection] = useState<GraphDirection>("both");
   const [includeDisabled, setIncludeDisabled] = useState(false);
+  const [showUnconnected, setShowUnconnected] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [selectedId, setSelectedId] = useState<string>();
   const [dependencyId, setDependencyId] = useState<string>();
@@ -101,8 +102,12 @@ export const DependencyGraph = () => {
   );
   const scoped = useMemo(() => {
     const ids = focusWorkspaceId ? neighborhood(index, [focusWorkspaceId], hops, direction) : undefined;
-    return data.workspaces.filter((workspace) => !ids || ids.has(workspace.id));
-  }, [data.workspaces, index, focusWorkspaceId, hops, direction]);
+    return data.workspaces.filter((workspace) => {
+      if (ids) return ids.has(workspace.id);
+      // Whole-organization view: a workspace with no dependency edges is just noise unless asked for.
+      return showUnconnected || index.upstream.has(workspace.id) || index.downstream.has(workspace.id);
+    });
+  }, [data.workspaces, index, focusWorkspaceId, hops, direction, showUnconnected]);
   const visible = useMemo(
     () => limitGraphNodes(scoped, focusWorkspaceId, expanded),
     [scoped, focusWorkspaceId, expanded]
@@ -254,6 +259,16 @@ export const DependencyGraph = () => {
                 Expand to full organization
               </LinkButton>
             </>
+          )}
+          {!focusWorkspaceId && (
+            <Space>
+              <Switch
+                checked={showUnconnected}
+                onChange={setShowUnconnected}
+                aria-label="Show workspaces without dependencies"
+              />
+              <Typography.Text>Show workspaces without dependencies</Typography.Text>
+            </Space>
           )}
           <Space>
             <Switch

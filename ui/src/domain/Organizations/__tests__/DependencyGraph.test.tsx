@@ -1,4 +1,5 @@
 import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { DependencyGraph } from "../DependencyGraph";
 
@@ -59,24 +60,61 @@ describe("DependencyGraph", () => {
     await waitFor(() => expect(getOrganizationDependencyGraphMock).toHaveBeenCalledWith("org-42"));
   });
 
-  it("renders every workspace as a node, even ones with no edges at all", async () => {
+  it("hides workspaces with no dependencies in the organization view until asked to show them", async () => {
     getOrganizationDependencyGraphMock.mockResolvedValue({
       workspaces: [
         { id: "ws-network", name: "network" },
+        { id: "ws-vpn", name: "vpn" },
         { id: "ws-isolated", name: "isolated" },
       ],
-      edges: [],
+      edges: [
+        {
+          id: "edge-1",
+          sourceWorkspaceId: "ws-network",
+          destinationWorkspaceId: "ws-vpn",
+          synchronizationMode: "EACH",
+        },
+      ],
     });
     renderPage();
 
     expect(await screen.findByText("network")).toBeInTheDocument();
+    expect(screen.getByText("vpn")).toBeInTheDocument();
+    expect(screen.queryByText("isolated")).toBeNull();
+
+    await userEvent.click(screen.getByRole("switch", { name: "Show workspaces without dependencies" }));
+
     expect(await screen.findByText("isolated")).toBeInTheDocument();
+  });
+
+  it("still shows a workspace with no dependencies when it is the one being focused", async () => {
+    getOrganizationDependencyGraphMock.mockResolvedValue({
+      workspaces: [
+        { id: "ws-isolated", name: "isolated" },
+        { id: "ws-other", name: "other" },
+      ],
+      edges: [],
+    });
+    renderScopedPage("org-1", "ws-isolated");
+
+    expect(await screen.findByText("isolated")).toBeInTheDocument();
+    expect(screen.queryByRole("switch", { name: "Show workspaces without dependencies" })).toBeNull();
   });
 
   it("links a workspace node to its run triggers tab", async () => {
     getOrganizationDependencyGraphMock.mockResolvedValue({
-      workspaces: [{ id: "ws-network", name: "network" }],
-      edges: [],
+      workspaces: [
+        { id: "ws-network", name: "network" },
+        { id: "ws-vpn", name: "vpn" },
+      ],
+      edges: [
+        {
+          id: "edge-1",
+          sourceWorkspaceId: "ws-network",
+          destinationWorkspaceId: "ws-vpn",
+          synchronizationMode: "EACH",
+        },
+      ],
     });
     renderPage("org-1");
 
