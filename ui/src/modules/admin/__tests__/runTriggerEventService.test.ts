@@ -20,12 +20,22 @@ beforeEach(() => {
 });
 
 describe("listRunTriggerEvents", () => {
-  it("defaults to FAILED - the exception queue an operator actually needs", async () => {
+  it("defaults to FAILED and lists every organization's events when none is given", async () => {
     mockGet.mockResolvedValue({ data: [] });
 
     await listRunTriggerEvents();
 
-    expect(mockGet).toHaveBeenCalledWith("/admin/v1/run-trigger-events", {
+    expect(mockGet).toHaveBeenCalledWith("/cascade/v1/trigger-event", {
+      params: { status: RunTriggerEventStatus.Failed },
+    });
+  });
+
+  it("lists one organization's events through its own endpoint", async () => {
+    mockGet.mockResolvedValue({ data: [] });
+
+    await listRunTriggerEvents(undefined, "org-1");
+
+    expect(mockGet).toHaveBeenCalledWith("/cascade/v1/organization/org-1/trigger-event", {
       params: { status: RunTriggerEventStatus.Failed },
     });
   });
@@ -41,12 +51,12 @@ describe("listRunTriggerEvents", () => {
 });
 
 describe("replayRunTriggerEvent", () => {
-  it("posts to the existing replay endpoint", async () => {
+  it("posts to the organization's replay endpoint", async () => {
     mockPost.mockResolvedValue({ data: { eventId: "event-1", rearmed: true } });
 
-    const result = await replayRunTriggerEvent("event-1");
+    const result = await replayRunTriggerEvent("org-1", "event-1");
 
-    expect(mockPost).toHaveBeenCalledWith("/admin/v1/run-trigger-events/event-1/replay", {});
+    expect(mockPost).toHaveBeenCalledWith("/cascade/v1/organization/org-1/trigger-event/event-1/replay", {});
     expect(result).toEqual({ eventId: "event-1", rearmed: true });
   });
 });

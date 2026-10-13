@@ -13,12 +13,15 @@ import org.springframework.http.HttpStatus;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.equalTo;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class RunTriggerEventOperationsControllerTest extends ServerApplicationTests {
@@ -32,46 +35,9 @@ class RunTriggerEventOperationsControllerTest extends ServerApplicationTests {
     @MockitoBean
     RunTriggerEventRepository repository;
 
-    @Test
-    void replayRequiresAdminGroup() {
-        given().headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
-                .when().post("/admin/v1/run-trigger-events/" + UUID.randomUUID() + "/replay")
-                .then().statusCode(HttpStatus.FORBIDDEN.value());
-    }
+    private static final String ORG_EVENTS = "/cascade/v1/organization/" + SIMPLE_ORG + "/trigger-event";
 
-    @Test
-    void replayRearmsAFailedEvent() {
-        UUID eventId = UUID.randomUUID();
-        when(transactions.rearmForRetry(eventId)).thenReturn(true);
-
-        given().headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_ADMIN"))
-                .when().post("/admin/v1/run-trigger-events/" + eventId + "/replay")
-                .then().statusCode(HttpStatus.OK.value())
-                .body("eventId", equalTo(eventId.toString()))
-                .body("rearmed", equalTo(true));
-    }
-
-    @Test
-    void replayOfANonFailedEventIsANoOpNotAnError() {
-        UUID eventId = UUID.randomUUID();
-        when(transactions.rearmForRetry(eventId)).thenReturn(false);
-
-        given().headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_ADMIN"))
-                .when().post("/admin/v1/run-trigger-events/" + eventId + "/replay")
-                .then().statusCode(HttpStatus.OK.value())
-                .body("rearmed", equalTo(false));
-    }
-
-    @Test
-    void listRequiresAdminGroup() {
-        given().headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
-                .when().get("/admin/v1/run-trigger-events")
-                .then().statusCode(HttpStatus.FORBIDDEN.value());
-    }
-
-    @Test
-    void listReturnsFailedEventsByDefault() {
-        UUID eventId = UUID.randomUUID();
+    private RunTriggerEvent failedEvent(UUID eventId) {
         Workspace workspace = new Workspace();
         workspace.setName("drifted-workspace");
         Organization organization = new Organization();
@@ -87,12 +53,65 @@ class RunTriggerEventOperationsControllerTest extends ServerApplicationTests {
         event.setStatus(RunTriggerEventStatus.FAILED);
         event.setAttemptCount(5);
         event.setLastError("workspace graph validation service unreachable");
+        return event;
+    }
 
-        when(repository.findByStatusOrderByCreatedDateDesc(eq(RunTriggerEventStatus.FAILED), any(Pageable.class)))
-                .thenReturn(List.of(event));
+    @Test
+    void replayRearmsAFailedEventInTheOrganization() {
+        UUID eventId = UUID.randomUUID();
+        when(repository.findOrganizationId(eventId)).thenReturn(Optional.of(SIMPLE_ORG));
+        when(transactions.rearmForRetry(eventId)).thenReturn(true);
+
+        given().headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+                .when().post(ORG_EVENTS + "/" + eventId + "/replay")
+                .then().statusCode(HttpStatus.OK.value())
+                .body("eventId", equalTo(eventId.toString()))
+                .body("rearmed", equalTo(true));
+    }
+
+    @Test
+    void replayOfANonFailedEventIsANoOpNotAnError() {
+        UUID eventId = UUID.randomUUID();
+        when(repository.findOrganizationId(eventId)).thenReturn(Optional.of(SIMPLE_ORG));
+        when(transactions.rearmForRetry(eventId)).thenReturn(false);
 
         given().headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_ADMIN"))
-                .when().get("/admin/v1/run-trigger-events")
+                .when().post(ORG_EVENTS + "/" + eventId + "/replay")
+                .then().statusCode(HttpStatus.OK.value())
+                .body("rearmed", equalTo(false));
+    }
+
+    @Test
+    void replayNeedsManageJobInTheOrganization() {
+        UUID eventId = UUID.randomUUID();
+        when(repository.findOrganizationId(eventId)).thenReturn(Optional.of(SIMPLE_ORG));
+
+        given().headers("Authorization", "Bearer " + generatePAT("AZURE_DEVELOPERS"))
+                .when().post(ORG_EVENTS + "/" + eventId + "/replay")
+                .then().statusCode(HttpStatus.FORBIDDEN.value());
+        verify(transactions, never()).rearmForRetry(eventId);
+    }
+
+    @Test
+    void anEventFromAnotherOrganizationIsNotFound() {
+        UUID eventId = UUID.randomUUID();
+        when(repository.findOrganizationId(eventId)).thenReturn(Optional.of(UUID.randomUUID()));
+
+        given().headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+                .when().post(ORG_EVENTS + "/" + eventId + "/replay")
+                .then().statusCode(HttpStatus.NOT_FOUND.value());
+        verify(transactions, never()).rearmForRetry(eventId);
+    }
+
+    @Test
+    void anOrganizationListNeedsManageJobInThatOrganization() {
+        UUID eventId = UUID.randomUUID();
+        when(repository.findByStatusAndOrganizationOrderByCreatedDateDesc(
+                eq(RunTriggerEventStatus.FAILED), eq(SIMPLE_ORG), any(Pageable.class)))
+                .thenReturn(List.of(failedEvent(eventId)));
+
+        given().headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+                .when().get(ORG_EVENTS)
                 .then().statusCode(HttpStatus.OK.value())
                 .body("[0].id", equalTo(eventId.toString()))
                 .body("[0].jobId", equalTo(321))
@@ -100,42 +119,29 @@ class RunTriggerEventOperationsControllerTest extends ServerApplicationTests {
                 .body("[0].attemptCount", equalTo(5))
                 .body("[0].organizationId", equalTo(SIMPLE_ORG.toString()))
                 .body("[0].organizationName", equalTo("simple"));
-    }
-
-    @Test
-    void anOrganizationScopedListNeedsManageJobInThatOrganization() {
-        when(repository.findByStatusAndOrganizationOrderByCreatedDateDesc(
-                eq(RunTriggerEventStatus.FAILED), eq(SIMPLE_ORG), any(Pageable.class)))
-                .thenReturn(List.of());
-
-        given().headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
-                .queryParam("organizationId", SIMPLE_ORG)
-                .when().get("/admin/v1/run-trigger-events")
-                .then().statusCode(HttpStatus.OK.value());
 
         given().headers("Authorization", "Bearer " + generatePAT("AZURE_DEVELOPERS"))
-                .queryParam("organizationId", SIMPLE_ORG)
-                .when().get("/admin/v1/run-trigger-events")
+                .when().get(ORG_EVENTS)
                 .then().statusCode(HttpStatus.FORBIDDEN.value());
 
         given().headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
-                .queryParam("organizationId", UUID.randomUUID())
-                .when().get("/admin/v1/run-trigger-events")
+                .when().get("/cascade/v1/organization/" + UUID.randomUUID() + "/trigger-event")
                 .then().statusCode(HttpStatus.FORBIDDEN.value());
     }
 
     @Test
-    void replayChecksTheOrganizationTheEventBelongsTo() {
+    void theInstanceWideListIsForInstanceAdminsOnly() {
         UUID eventId = UUID.randomUUID();
-        when(repository.findOrganizationId(eventId)).thenReturn(java.util.Optional.of(SIMPLE_ORG));
-        when(transactions.rearmForRetry(eventId)).thenReturn(true);
+        when(repository.findByStatusOrderByCreatedDateDesc(eq(RunTriggerEventStatus.FAILED), any(Pageable.class)))
+                .thenReturn(List.of(failedEvent(eventId)));
+
+        given().headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_ADMIN"))
+                .when().get("/cascade/v1/trigger-event")
+                .then().statusCode(HttpStatus.OK.value())
+                .body("[0].id", equalTo(eventId.toString()));
 
         given().headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
-                .when().post("/admin/v1/run-trigger-events/" + eventId + "/replay")
-                .then().statusCode(HttpStatus.OK.value()).body("rearmed", equalTo(true));
-
-        given().headers("Authorization", "Bearer " + generatePAT("AZURE_DEVELOPERS"))
-                .when().post("/admin/v1/run-trigger-events/" + eventId + "/replay")
+                .when().get("/cascade/v1/trigger-event")
                 .then().statusCode(HttpStatus.FORBIDDEN.value());
     }
 }

@@ -30,7 +30,10 @@ export const Cascades = ({ organizationId, workspaceId, workspaceName }: Props) 
       if (showLoading) setLoading(true);
       listCascadesForWorkspace(workspaceId)
         .then(setCascades)
-        .catch((err) => message.error(getAdminErrorMessage(err)))
+        .catch((err) => {
+          // Keyed, and quiet for background refreshes, so a failing poll cannot stack toasts.
+          if (showLoading) message.error({ key: "workspace-cascades-load", content: getAdminErrorMessage(err) });
+        })
         .finally(() => setLoading(false));
     },
     [workspaceId]
@@ -57,7 +60,7 @@ export const Cascades = ({ organizationId, workspaceId, workspaceName }: Props) 
   }, [organizationId]);
 
   const onCancel = (cascadeId: string) => {
-    cancelCascade(cascadeId)
+    cancelCascade(organizationId, cascadeId)
       .then(() => {
         message.success("Cascade cancelled");
         loadCascades();

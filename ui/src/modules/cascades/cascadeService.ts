@@ -71,17 +71,33 @@ export type CascadeActionResult = {
   jobId?: number;
 };
 
-export async function cancelCascade(cascadeId: string): Promise<void> {
-  await axiosAdmin.post(`/admin/v1/cascades/${cascadeId}/cancel`, {});
+const cascadeApi = (organizationId: string) => `/cascade/v1/organization/${organizationId}`;
+
+export async function cancelCascade(organizationId: string, cascadeId: string): Promise<void> {
+  await axiosAdmin.post(`${cascadeApi(organizationId)}/cascade/${cascadeId}/cancel`, {});
 }
 
-export async function retryNode(nodeId: string): Promise<CascadeActionResult> {
-  const response = await axiosAdmin.post<CascadeActionResult>(`/admin/v1/cascades/nodes/${nodeId}/retry`, {});
+export async function retryNode(
+  organizationId: string,
+  cascadeId: string,
+  nodeId: string
+): Promise<CascadeActionResult> {
+  const response = await axiosAdmin.post<CascadeActionResult>(
+    `${cascadeApi(organizationId)}/cascade/${cascadeId}/node/${nodeId}/retry`,
+    {}
+  );
   return response.data;
 }
 
-export async function resumeNode(nodeId: string): Promise<CascadeActionResult> {
-  const response = await axiosAdmin.post<CascadeActionResult>(`/admin/v1/cascades/nodes/${nodeId}/resume`, {});
+export async function resumeNode(
+  organizationId: string,
+  cascadeId: string,
+  nodeId: string
+): Promise<CascadeActionResult> {
+  const response = await axiosAdmin.post<CascadeActionResult>(
+    `${cascadeApi(organizationId)}/cascade/${cascadeId}/node/${nodeId}/resume`,
+    {}
+  );
   return response.data;
 }
 
@@ -112,19 +128,19 @@ export type CascadeCapabilities = {
  * the manage job permission in the given organization.
  */
 export async function getCascadeCapabilities(organizationId?: string): Promise<CascadeCapabilities> {
-  const response = await axiosAdmin.get("/admin/v1/cascades/capabilities", {
-    params: organizationId ? { organizationId } : undefined,
-  });
-  return { operate: response.data.operate === true, instanceAdmin: response.data.instanceAdmin === true };
+  const response = await axiosAdmin.get(
+    organizationId ? `${cascadeApi(organizationId)}/capabilities` : "/cascade/v1/capabilities"
+  );
+  const instanceAdmin = response.data.instanceAdmin === true;
+  // Without an organization the only thing to operate on is instance-wide, which is for instance admins.
+  return { operate: organizationId ? response.data.operate === true : instanceAdmin, instanceAdmin };
 }
-
-/** Most recent cascades shown on the organization page; older ones are reachable from their workspace. */
-const ORGANIZATION_CASCADE_LIMIT = 100;
 
 /**
  * The organization's most recent cascades, optionally limited to some statuses, with the workspace
- * each one started from. One page only: this is an operator's view of what needs attention, not an
- * archive.
+ * each one started from. One response only, newest first: this is an operator's view of what needs
+ * attention, not an archive, so it relies on the API's default row limit rather than paging (Elide
+ * refuses explicit pagination on this entity, "Cannot paginate runCascade").
  */
 export async function listCascadesForOrganization(
   organizationId: string,
@@ -139,7 +155,6 @@ export async function listCascadesForOrganization(
       "filter[runCascade]": filter.join(";"),
       sort: "-createdDate",
       include: "originJob.workspace",
-      "page[size]": ORGANIZATION_CASCADE_LIMIT,
     },
   });
   const included: { type: string; id: string; attributes?: { name?: string }; relationships?: Record<string, any> }[] =

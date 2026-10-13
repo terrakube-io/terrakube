@@ -44,6 +44,7 @@ const OrganizationsDetailPage = lazy(() => import("@/modules/organizations/Organ
 const ProjectsPage = lazy(() => import("@/modules/projects/ProjectsPage"));
 const ProjectDetailPage = lazy(() => import("@/modules/projects/ProjectDetailPage"));
 const DependencyGraph = lazy(() => import("@/domain/Organizations/DependencyGraph"));
+const OrganizationCascades = lazy(() => import("@/domain/Organizations/OrganizationCascades"));
 const CascadeExecutionPage = lazy(() => import("@/domain/Workspaces/CascadeExecutionPage"));
 const FailedRunTriggerEvents = lazy(() => import("@/domain/Admin/FailedRunTriggerEvents"));
 
@@ -329,6 +330,10 @@ const router = createBrowserRouter(
         {
           path: "/organizations/:id/dependency-graph/:workspaceId",
           element: <DependencyGraph />,
+        },
+        {
+          path: "/organizations/:id/cascades",
+          element: <OrganizationCascades />,
         },
         {
           path: "/workspaces/create",
@@ -649,14 +654,6 @@ const router = createBrowserRouter(
         {
           path: "/organizations/:orgid/settings/notifications/edit/:entityid",
           element: <SettingsEditorWrapper selectedTab="12" />,
-        },
-        {
-          path: "/organizations/:orgid/settings/cascades",
-          element: <OrganizationSettings selectedTab="14" />,
-        },
-        {
-          path: "/organizations/:orgid/settings/trigger-events",
-          element: <OrganizationSettings selectedTab="15" />,
         },
         {
           path: "/organizations/:orgid/settings/collection",

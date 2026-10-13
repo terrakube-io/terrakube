@@ -1,17 +1,36 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import { RunCascadesSettings } from "../RunCascades";
+import { OrganizationCascades } from "../OrganizationCascades";
 
 const listMock = jest.fn();
 const capabilitiesMock = jest.fn();
 const cancelMock = jest.fn();
+const eventsMock = jest.fn();
 
 jest.mock("@/modules/cascades/cascadeService", () => ({
   listCascadesForOrganization: (...args: unknown[]) => listMock(...args),
   getCascadeCapabilities: (...args: unknown[]) => capabilitiesMock(...args),
   cancelCascade: (...args: unknown[]) => cancelMock(...args),
   getAdminErrorMessage: () => "error",
+}));
+jest.mock("@/modules/admin/runTriggerEventService", () => ({
+  listRunTriggerEvents: (...args: unknown[]) => eventsMock(...args),
+  replayRunTriggerEvent: jest.fn(),
+  getAdminErrorMessage: () => "error",
+}));
+
+// PageWrapper deep-imports an ESM-only antd submodule Jest can't transform, so pages built on it mock it.
+jest.mock("@/components/layout/PageWrapper/PageWrapper", () => ({
+  __esModule: true,
+  default: function PageWrapper({ title, children }: { title?: React.ReactNode; children?: React.ReactNode }) {
+    return (
+      <div>
+        <h2>{title}</h2>
+        {children}
+      </div>
+    );
+  },
 }));
 
 const cascade = {
@@ -25,22 +44,23 @@ const cascade = {
 
 const renderPage = () =>
   render(
-    <MemoryRouter initialEntries={["/organizations/org-1/settings/cascades"]}>
+    <MemoryRouter initialEntries={["/organizations/org-1/cascades"]}>
       <Routes>
-        <Route path="/organizations/:orgid/settings/cascades" element={<RunCascadesSettings />} />
+        <Route path="/organizations/:id/cascades" element={<OrganizationCascades />} />
       </Routes>
     </MemoryRouter>
   );
 
-describe("RunCascadesSettings", () => {
+describe("OrganizationCascades", () => {
   beforeEach(() => {
     listMock.mockReset();
     cancelMock.mockReset();
+    eventsMock.mockReset();
     capabilitiesMock.mockReset();
     capabilitiesMock.mockResolvedValue({ operate: true, instanceAdmin: false });
   });
 
-  it("starts with the cascades that need attention in this organization", async () => {
+  it("opens on the cascades that need attention in this organization", async () => {
     listMock.mockResolvedValue([cascade]);
     renderPage();
 
@@ -71,7 +91,7 @@ describe("RunCascadesSettings", () => {
     await userEvent.click(screen.getByRole("button", { name: "Stop future runs" }));
     await userEvent.click(await screen.findByRole("button", { name: "Stop" }));
 
-    await waitFor(() => expect(cancelMock).toHaveBeenCalledWith("cascade-1"));
+    await waitFor(() => expect(cancelMock).toHaveBeenCalledWith("org-1", "cascade-1"));
   });
 
   it("disables stopping for someone without the permission", async () => {
@@ -88,5 +108,19 @@ describe("RunCascadesSettings", () => {
     renderPage();
 
     expect(await screen.findByText("Access Denied")).toBeInTheDocument();
+  });
+
+  it("reports a load failure in one toast and loads failed trigger events only when that tab is opened", async () => {
+    listMock.mockRejectedValue(new Error("boom"));
+    eventsMock.mockResolvedValue([]);
+    renderPage();
+
+    await waitFor(() => expect(listMock).toHaveBeenCalled());
+    expect(eventsMock).not.toHaveBeenCalled();
+
+    await userEvent.click(screen.getByRole("tab", { name: "Failed trigger events" }));
+
+    await waitFor(() => expect(eventsMock).toHaveBeenCalledWith(undefined, "org-1"));
+    expect(await screen.findByText("No failed run trigger events.")).toBeInTheDocument();
   });
 });

@@ -45,7 +45,7 @@ export const axiosRegistry = axios.create({
   withCredentials: sendCookiesWithRequests,
 });
 
-// Plain (non-JSON:API) admin action endpoints under /admin/v1 - same origin-only baseURL as
+// Plain (non-JSON:API) action endpoints such as /cascade/v1 - same origin-only baseURL as
 // axiosRegistry, since these live outside the /api/v1 Elide prefix too.
 export const axiosAdmin = axios.create({
   baseURL: new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin,

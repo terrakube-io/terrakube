@@ -73,7 +73,7 @@ describe("Cascades", () => {
     await userEvent.click(screen.getByRole("button", { name: /stop future runs/i }));
     await userEvent.click(screen.getByRole("button", { name: /yes/i }));
 
-    await waitFor(() => expect(cancelMock).toHaveBeenCalledWith("cascade-1"));
+    await waitFor(() => expect(cancelMock).toHaveBeenCalledWith("org-1", "cascade-1"));
     expect(await screen.findByText("Stopped")).toBeInTheDocument();
   });
 

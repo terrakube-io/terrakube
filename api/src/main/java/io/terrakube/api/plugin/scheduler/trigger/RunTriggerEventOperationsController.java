@@ -5,7 +5,10 @@ import io.terrakube.api.rs.workspace.trigger.RunTriggerEvent;
 import io.terrakube.api.rs.workspace.trigger.RunTriggerEventStatus;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -15,7 +18,6 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Date;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -23,12 +25,11 @@ import java.util.UUID;
  * itself isn't an Elide resource (see its own javadoc - internal queue plumbing, same as
  * NotificationOutbox), so there is no other way to even list one. Listing one organization's
  * events, and replaying an event, need an instance admin or {@code manage_job} in that
- * organization; the instance-wide listing is for instance admins only. Same GET-report /
- * POST-apply split {@code SchedulerReconciliationController} draws.
+ * organization; the instance-wide listing is for instance admins only.
  */
 @Slf4j
 @RestController
-@RequestMapping("/admin/v1/run-trigger-events")
+@RequestMapping("/cascade/v1")
 public class RunTriggerEventOperationsController {
 
     private final RunTriggerEventRepository repository;
@@ -49,20 +50,21 @@ public class RunTriggerEventOperationsController {
             String organizationName) {}
 
     /** Newest first, capped rather than paginated - this is an exception queue, not a log. */
-    @GetMapping
-    public List<EventSummary> list(Authentication authentication,
-            @RequestParam(defaultValue = "FAILED") RunTriggerEventStatus status,
-            @RequestParam(required = false) UUID organizationId) {
-        PageRequest page = PageRequest.of(0, 200);
-        List<RunTriggerEvent> events;
-        if (organizationId == null) {
-            accessService.requireInstanceAdmin(authentication);
-            events = repository.findByStatusOrderByCreatedDateDesc(status, page);
-        } else {
-            accessService.requireOperate(authentication, organizationId);
-            events = repository.findByStatusAndOrganizationOrderByCreatedDateDesc(status, organizationId, page);
-        }
-        return events.stream().map(RunTriggerEventOperationsController::toSummary).toList();
+    @GetMapping("/organization/{organizationId}/trigger-event")
+    public List<EventSummary> list(Authentication authentication, @PathVariable UUID organizationId,
+            @RequestParam(defaultValue = "FAILED") RunTriggerEventStatus status) {
+        accessService.requireOperate(authentication, organizationId);
+        return repository.findByStatusAndOrganizationOrderByCreatedDateDesc(status, organizationId, PageRequest.of(0, 200))
+                .stream().map(RunTriggerEventOperationsController::toSummary).toList();
+    }
+
+    /** Every organization's events; instance administrators only. */
+    @GetMapping("/trigger-event")
+    public List<EventSummary> listAll(Authentication authentication,
+            @RequestParam(defaultValue = "FAILED") RunTriggerEventStatus status) {
+        accessService.requireInstanceAdmin(authentication);
+        return repository.findByStatusOrderByCreatedDateDesc(status, PageRequest.of(0, 200)).stream()
+                .map(RunTriggerEventOperationsController::toSummary).toList();
     }
 
     private static EventSummary toSummary(RunTriggerEvent event) {
@@ -72,14 +74,13 @@ public class RunTriggerEventOperationsController {
                 event.getJob().getOrganization().getName());
     }
 
-    @PostMapping("/{eventId}/replay")
-    public ReplayResult replay(Authentication authentication, @PathVariable UUID eventId) {
-        // An unknown id is only reported as such to an instance admin; anyone else gets a 403.
-        Optional<UUID> organizationId = repository.findOrganizationId(eventId);
-        if (organizationId.isPresent()) {
-            accessService.requireOperate(authentication, organizationId.get());
-        } else {
-            accessService.requireInstanceAdmin(authentication);
+    @PostMapping("/organization/{organizationId}/trigger-event/{eventId}/replay")
+    public ReplayResult replay(Authentication authentication, @PathVariable UUID organizationId,
+            @PathVariable UUID eventId) {
+        accessService.requireOperate(authentication, organizationId);
+        // Authorization has already passed, so an event in another organization is reported as not existing.
+        if (repository.findOrganizationId(eventId).filter(organizationId::equals).isEmpty()) {
+            throw new IllegalArgumentException("No such run trigger event: " + eventId);
         }
         boolean rearmed = transactions.rearmForRetry(eventId);
         if (rearmed) {
@@ -89,5 +90,10 @@ public class RunTriggerEventOperationsController {
                     + "never reached a terminal state)", eventId);
         }
         return new ReplayResult(eventId, rearmed);
+    }
+
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<String> handleNotFound(IllegalArgumentException e) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(e.getMessage());
     }
 }

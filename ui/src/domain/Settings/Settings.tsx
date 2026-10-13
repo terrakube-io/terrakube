@@ -12,8 +12,6 @@ import { TeamSettings } from "./Teams";
 import { FederatedCredentials } from "./FederatedCredentials";
 import { OrgNotifications } from "./Notifications";
 import { PolicySetsSettings } from "./PolicySets";
-import { RunCascadesSettings } from "./RunCascades";
-import { RunTriggerEventsSettings } from "./RunTriggerEvents";
 import { TemplatesSettings } from "./Templates";
 import { VCSSettings } from "./VCS";
 import { VariableCollectionsSettings } from "./VariableCollections";
@@ -35,8 +33,6 @@ const SETTINGS_TAB_PATHS: Record<string, string> = {
   "11": "federated-credentials",
   "12": "notifications",
   "13": "policies",
-  "14": "cascades",
-  "15": "trigger-events",
 };
 
 const SETTINGS_TAB_LABELS: Record<string, string> = {
@@ -53,8 +49,6 @@ const SETTINGS_TAB_LABELS: Record<string, string> = {
   "11": "Federated credentials",
   "12": "Notifications",
   "13": "Policy sets",
-  "14": "Run cascades",
-  "15": "Run trigger events",
 };
 
 type Props = {
@@ -168,10 +162,6 @@ export const OrganizationSettings = ({
             managePermission={permissions.managePolicies || permissions.managePermission}
           />
         );
-      case "14":
-        return <RunCascadesSettings />;
-      case "15":
-        return <RunTriggerEventsSettings />;
       default:
         return <GeneralSettings managePermission={permissions.managePermission} />;
     }

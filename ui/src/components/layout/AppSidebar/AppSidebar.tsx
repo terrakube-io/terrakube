@@ -32,7 +32,6 @@ import {
   TagsOutlined,
   TeamOutlined,
   ThunderboltOutlined,
-  WarningOutlined,
 } from "@ant-design/icons";
 import { Layout, Menu, Tag } from "antd";
 import { useEffect, useRef, useState } from "react";
@@ -188,6 +187,8 @@ export default function AppSidebar({
       setDefaultSelected(["projects"]);
     } else if (location.pathname.includes("dependency-graph")) {
       setDefaultSelected(["dependency-graph"]);
+    } else if (location.pathname.endsWith("/cascades")) {
+      setDefaultSelected(["cascades"]);
     } else if (orgIdFromUrl) {
       setDefaultSelected(["workspaces"]);
     } else {
@@ -268,14 +269,6 @@ export default function AppSidebar({
           icon: <ThunderboltOutlined />,
         },
         { key: "notifications", label: "Notifications", path: "notifications", icon: <BellOutlined /> },
-      ],
-    },
-    {
-      key: "operations",
-      label: "Operations",
-      items: [
-        { key: "cascades", label: "Run cascades", path: "cascades", icon: <ClusterOutlined /> },
-        { key: "trigger-events", label: "Run trigger events", path: "trigger-events", icon: <WarningOutlined /> },
       ],
     },
   ];
@@ -473,6 +466,7 @@ export default function AppSidebar({
                 { key: "projects", name: "Projects", icon: <ProjectOutlined /> },
                 { key: "workspaces", name: "Workspaces", icon: <AppstoreOutlined /> },
                 { key: "dependency-graph", name: "Workspace dependencies", icon: <ClusterOutlined /> },
+                { key: "cascades", name: "Run cascades", icon: <NodeIndexOutlined /> },
                 { key: "registry", name: "Registry", icon: <CloudOutlined /> },
                 { key: "settings", name: "Settings", icon: <SettingOutlined /> },
               ].map((item) => ({

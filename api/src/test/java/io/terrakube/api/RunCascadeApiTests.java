@@ -96,6 +96,34 @@ public class RunCascadeApiTests extends ServerApplicationTests {
     }
 
     /**
+     * The organization view's query. It must not send page[size]: with the in-memory "team view run
+     * cascade" read check Elide answers explicit pagination with "Cannot paginate runCascade", and
+     * relies on its default row limit instead.
+     */
+    @Test
+    void runCascadesCanBeFilteredSortedAndIncludedForAnOrganization() {
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+                .queryParam("filter[runCascade]", "organization.id==d9b58bd3-f3fc-4056-a026-1163297e80a8;status=in=(BLOCKED,DEGRADED)")
+                .queryParam("sort", "-createdDate")
+                .queryParam("include", "originJob.workspace")
+                .when()
+                .get("/api/v1/runCascade")
+                .then()
+                .assertThat()
+                .statusCode(HttpStatus.OK.value());
+
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+                .queryParam("page[size]", 100)
+                .when()
+                .get("/api/v1/runCascade")
+                .then()
+                .assertThat()
+                .statusCode(HttpStatus.BAD_REQUEST.value());
+    }
+
+    /**
      * Not independently postable at all - rootLevel = false, same as History's relationship to
      * Workspace, so the only way to reach it is through its owning cascade.
      */

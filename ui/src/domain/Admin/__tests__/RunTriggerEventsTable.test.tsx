@@ -18,6 +18,7 @@ const event = {
   status: "FAILED",
   attemptCount: 5,
   lastError: "boom",
+  organizationId: "org-1",
 };
 
 describe("RunTriggerEventsTable", () => {
@@ -67,7 +68,7 @@ describe("RunTriggerEventsTable", () => {
     await userEvent.click(screen.getByRole("button", { name: "Replay event for job 900" }));
     await userEvent.click(await screen.findByRole("button", { name: "Replay" }));
 
-    await waitFor(() => expect(replayMock).toHaveBeenCalledWith("event-1"));
+    await waitFor(() => expect(replayMock).toHaveBeenCalledWith("org-1", "event-1"));
     expect(await screen.findByText("No failed run trigger events.")).toBeInTheDocument();
   });
 

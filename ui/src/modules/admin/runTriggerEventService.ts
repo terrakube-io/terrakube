@@ -34,14 +34,18 @@ export async function listRunTriggerEvents(
   status: RunTriggerEventStatus = RunTriggerEventStatus.Failed,
   organizationId?: string
 ): Promise<RunTriggerEventSummary[]> {
-  const response = await axiosAdmin.get<RunTriggerEventSummary[]>("/admin/v1/run-trigger-events", {
-    params: organizationId ? { status, organizationId } : { status },
-  });
+  const path = organizationId
+    ? `/cascade/v1/organization/${organizationId}/trigger-event`
+    : "/cascade/v1/trigger-event";
+  const response = await axiosAdmin.get<RunTriggerEventSummary[]>(path, { params: { status } });
   return response.data;
 }
 
-export async function replayRunTriggerEvent(eventId: string): Promise<ReplayResult> {
-  const response = await axiosAdmin.post<ReplayResult>(`/admin/v1/run-trigger-events/${eventId}/replay`, {});
+export async function replayRunTriggerEvent(organizationId: string, eventId: string): Promise<ReplayResult> {
+  const response = await axiosAdmin.post<ReplayResult>(
+    `/cascade/v1/organization/${organizationId}/trigger-event/${eventId}/replay`,
+    {}
+  );
   return response.data;
 }
 

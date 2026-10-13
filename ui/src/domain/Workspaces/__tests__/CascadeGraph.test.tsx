@@ -111,7 +111,7 @@ describe("CascadeGraph", () => {
     // no real `view` in jsdom - unrelated to anything this test is actually covering.
     fireEvent.click(await findButtonByText("Retry"));
 
-    await waitFor(() => expect(retryNodeMock).toHaveBeenCalledWith("node-1"));
+    await waitFor(() => expect(retryNodeMock).toHaveBeenCalledWith("org-1", "cascade-1", "node-1"));
     expect((await screen.findAllByText("Running")).length).toBeGreaterThan(0);
     await waitFor(() => expect(getCascadeNodesMock).toHaveBeenCalledTimes(2));
     // Empty loading state aside, an unchanged topology is laid out only once.

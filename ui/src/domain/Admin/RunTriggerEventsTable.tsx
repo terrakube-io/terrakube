@@ -35,7 +35,11 @@ export const RunTriggerEventsTable = ({ organizationId, canReplay }: Props) => {
         if (err?.response?.status === 403) {
           setForbidden(true);
         } else {
-          message.error(`Could not load run trigger events: ${getAdminErrorMessage(err)}`);
+          // Keyed so a repeated load (React strict-mode remount, a refresh) updates one toast, not stack two.
+          message.error({
+            key: "run-trigger-events-load",
+            content: `Could not load run trigger events: ${getAdminErrorMessage(err)}`,
+          });
         }
       })
       .finally(() => setLoading(false));
@@ -45,8 +49,10 @@ export const RunTriggerEventsTable = ({ organizationId, canReplay }: Props) => {
     load();
   }, [load]);
 
-  const onReplay = (eventId: string) => {
-    replayRunTriggerEvent(eventId)
+  const onReplay = (event: RunTriggerEventSummary) => {
+    const eventOrganizationId = event.organizationId ?? organizationId;
+    if (!eventOrganizationId) return;
+    replayRunTriggerEvent(eventOrganizationId, event.id)
       .then((result) => {
         message.success(result.rearmed ? "Event replayed" : "Nothing to replay - it already retried on its own");
         load();
@@ -105,7 +111,7 @@ export const RunTriggerEventsTable = ({ organizationId, canReplay }: Props) => {
           okText="Replay"
           cancelText="Cancel"
           disabled={!canReplay}
-          onConfirm={() => onReplay(record.id)}
+          onConfirm={() => onReplay(record)}
         >
           <Tooltip title={canReplay ? "Replay event" : "Requires the manage job permission"}>
             <Button icon={<RedoOutlined />} disabled={!canReplay} aria-label={`Replay event for job ${record.jobId}`}>

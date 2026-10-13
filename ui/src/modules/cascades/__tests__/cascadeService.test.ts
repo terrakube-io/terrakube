@@ -98,26 +98,32 @@ describe("admin actions", () => {
   it("cancelCascade posts to the cascade's cancel action", async () => {
     mockAdminPost.mockResolvedValue({ data: {} });
 
-    await cancelCascade("cascade-1");
+    await cancelCascade("org-1", "cascade-1");
 
-    expect(mockAdminPost).toHaveBeenCalledWith("/admin/v1/cascades/cascade-1/cancel", {});
+    expect(mockAdminPost).toHaveBeenCalledWith("/cascade/v1/organization/org-1/cascade/cascade-1/cancel", {});
   });
 
   it("retryNode posts to the node's retry action and returns the result", async () => {
     mockAdminPost.mockResolvedValue({ data: { status: "RUNNING", jobId: 42 } });
 
-    const result = await retryNode("node-1");
+    const result = await retryNode("org-1", "cascade-1", "node-1");
 
-    expect(mockAdminPost).toHaveBeenCalledWith("/admin/v1/cascades/nodes/node-1/retry", {});
+    expect(mockAdminPost).toHaveBeenCalledWith(
+      "/cascade/v1/organization/org-1/cascade/cascade-1/node/node-1/retry",
+      {}
+    );
     expect(result).toEqual({ status: "RUNNING", jobId: 42 });
   });
 
   it("resumeNode posts to the node's resume action and returns the result", async () => {
     mockAdminPost.mockResolvedValue({ data: { status: "PENDING" } });
 
-    const result = await resumeNode("node-1");
+    const result = await resumeNode("org-1", "cascade-1", "node-1");
 
-    expect(mockAdminPost).toHaveBeenCalledWith("/admin/v1/cascades/nodes/node-1/resume", {});
+    expect(mockAdminPost).toHaveBeenCalledWith(
+      "/cascade/v1/organization/org-1/cascade/cascade-1/node/node-1/resume",
+      {}
+    );
     expect(result).toEqual({ status: "PENDING" });
   });
 });
@@ -164,18 +170,17 @@ describe("getCascadeCapabilities", () => {
 
     const result = await getCascadeCapabilities("org-1");
 
-    expect(mockAdminGet).toHaveBeenCalledWith("/admin/v1/cascades/capabilities", {
-      params: { organizationId: "org-1" },
-    });
+    expect(mockAdminGet).toHaveBeenCalledWith("/cascade/v1/organization/org-1/capabilities");
     expect(result).toEqual({ operate: true, instanceAdmin: false });
   });
 
-  it("asks without an organization for the instance-wide answer", async () => {
-    mockAdminGet.mockResolvedValue({ data: { operate: true, instanceAdmin: true } });
+  it("asks without an organization for the instance-wide answer, where operating means being an admin", async () => {
+    mockAdminGet.mockResolvedValue({ data: { instanceAdmin: true } });
 
-    await getCascadeCapabilities();
+    const result = await getCascadeCapabilities();
 
-    expect(mockAdminGet).toHaveBeenCalledWith("/admin/v1/cascades/capabilities", { params: undefined });
+    expect(mockAdminGet).toHaveBeenCalledWith("/cascade/v1/capabilities");
+    expect(result).toEqual({ operate: true, instanceAdmin: true });
   });
 });
 

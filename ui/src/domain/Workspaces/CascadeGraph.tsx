@@ -238,28 +238,34 @@ export const CascadeGraph = ({ cascadeId, organizationId }: Props) => {
     };
   }, [cascadeId, organizationId]);
 
-  const action = useCallback(async (id: string, kind: "retry" | "resume") => {
-    setBusy((current) => new Set(current).add(id));
-    try {
-      const result = kind === "retry" ? await retryNode(id) : await resumeNode(id);
-      message.success(
-        kind === "retry"
-          ? "Retry dispatched"
-          : result.status === RunCascadeNodeStatus.Running
-            ? "Dispatched"
-            : "Required dependencies are still unresolved"
-      );
-      refresh.current();
-    } catch (err) {
-      message.error(getAdminErrorMessage(err));
-    } finally {
-      setBusy((current) => {
-        const next = new Set(current);
-        next.delete(id);
-        return next;
-      });
-    }
-  }, []);
+  const action = useCallback(
+    async (id: string, kind: "retry" | "resume") => {
+      setBusy((current) => new Set(current).add(id));
+      try {
+        const result =
+          kind === "retry"
+            ? await retryNode(organizationId, cascadeId, id)
+            : await resumeNode(organizationId, cascadeId, id);
+        message.success(
+          kind === "retry"
+            ? "Retry dispatched"
+            : result.status === RunCascadeNodeStatus.Running
+              ? "Dispatched"
+              : "Required dependencies are still unresolved"
+        );
+        refresh.current();
+      } catch (err) {
+        message.error(getAdminErrorMessage(err));
+      } finally {
+        setBusy((current) => {
+          const next = new Set(current);
+          next.delete(id);
+          return next;
+        });
+      }
+    },
+    [organizationId, cascadeId]
+  );
   const onRetry = useCallback(
     (id: string) => {
       void action(id, "retry");

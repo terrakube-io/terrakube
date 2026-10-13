@@ -17,6 +17,8 @@ public interface RunCascadeNodeRepository extends JpaRepository<RunCascadeNode, 
 
     List<RunCascadeNode> findByCascade_Id(UUID cascadeId);
 
+    boolean existsByIdAndCascade_Id(UUID id, UUID cascadeId);
+
     /** One node per (cascade, workspace) - how a diamond's join resolves to a single row. */
     Optional<RunCascadeNode> findByCascade_IdAndWorkspace_Id(UUID cascadeId, UUID workspaceId);
 
