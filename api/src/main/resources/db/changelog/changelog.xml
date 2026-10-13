@@ -137,4 +137,5 @@
     <include file="/db/changelog/local/changelog-2.34.0-history-state-identity-indexes.xml"/>
     <include file="/db/changelog/local/changelog-2.34.0-run-trigger-event.xml" />
     <include file="/db/changelog/local/changelog-2.34.0-job-dispatch-retry.xml"/>
+    <include file="/db/changelog/local/changelog-2.34.0-workspace-execution-mode-default.xml"/>
 </databaseChangeLog>
