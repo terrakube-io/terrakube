@@ -44,7 +44,7 @@ const findButtonByText = async (text: string | RegExp) => (await screen.findByTe
 describe("CascadeGraph", () => {
   beforeEach(() => {
     jest.restoreAllMocks();
-    capabilitiesMock.mockResolvedValue(true);
+    capabilitiesMock.mockResolvedValue({ operate: true, instanceAdmin: false });
     getCascadeNodesMock.mockReset();
     getCascadeEdgesMock.mockReset();
     retryNodeMock.mockReset();
@@ -64,7 +64,7 @@ describe("CascadeGraph", () => {
   });
 
   it("hides recovery controls from viewers without operation permission", async () => {
-    capabilitiesMock.mockResolvedValue(false);
+    capabilitiesMock.mockResolvedValue({ operate: false, instanceAdmin: false });
     getCascadeNodesMock.mockResolvedValue({ nodes: [nodeResponse({ status: "FAILED" })], included: [] });
     renderGraph();
     expect(await screen.findByText("Failed")).toBeInTheDocument();

@@ -228,15 +228,15 @@ export const CascadeGraph = ({ cascadeId, organizationId }: Props) => {
   useEffect(() => {
     let active = true;
     setCanOperate(false);
-    getCascadeCapabilities()
-      .then((operate) => {
+    getCascadeCapabilities(organizationId)
+      .then(({ operate }) => {
         if (active) setCanOperate(operate);
       })
       .catch(() => {});
     return () => {
       active = false;
     };
-  }, [cascadeId]);
+  }, [cascadeId, organizationId]);
 
   const action = useCallback(async (id: string, kind: "retry" | "resume") => {
     setBusy((current) => new Set(current).add(id));

@@ -32,6 +32,7 @@ import {
   TagsOutlined,
   TeamOutlined,
   ThunderboltOutlined,
+  WarningOutlined,
 } from "@ant-design/icons";
 import { Layout, Menu, Tag } from "antd";
 import { useEffect, useRef, useState } from "react";
@@ -267,6 +268,14 @@ export default function AppSidebar({
           icon: <ThunderboltOutlined />,
         },
         { key: "notifications", label: "Notifications", path: "notifications", icon: <BellOutlined /> },
+      ],
+    },
+    {
+      key: "operations",
+      label: "Operations",
+      items: [
+        { key: "cascades", label: "Run cascades", path: "cascades", icon: <ClusterOutlined /> },
+        { key: "trigger-events", label: "Run trigger events", path: "trigger-events", icon: <WarningOutlined /> },
       ],
     },
   ];

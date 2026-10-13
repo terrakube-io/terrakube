@@ -628,6 +628,8 @@ export type RunCascadeRow = {
   status: RunCascadeStatus;
   originJobId: string;
   createdDate?: string;
+  originWorkspaceId?: string;
+  originWorkspaceName?: string;
 };
 
 // Projects

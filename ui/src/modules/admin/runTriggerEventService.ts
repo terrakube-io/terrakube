@@ -16,6 +16,8 @@ export type RunTriggerEventSummary = {
   lastError?: string;
   nextAttemptAt?: string;
   createdDate?: string;
+  organizationId?: string;
+  organizationName?: string;
 };
 
 export type ReplayResult = {
@@ -23,12 +25,17 @@ export type ReplayResult = {
   rearmed: boolean;
 };
 
-/** Defaults to FAILED server-side - the exception queue an operator actually needs to see. */
+/**
+ * Defaults to FAILED - the exception queue an operator actually needs to see. With an organization
+ * only its events are returned (instance admin or manage job); without one, every organization's
+ * (instance admin only).
+ */
 export async function listRunTriggerEvents(
-  status: RunTriggerEventStatus = RunTriggerEventStatus.Failed
+  status: RunTriggerEventStatus = RunTriggerEventStatus.Failed,
+  organizationId?: string
 ): Promise<RunTriggerEventSummary[]> {
   const response = await axiosAdmin.get<RunTriggerEventSummary[]>("/admin/v1/run-trigger-events", {
-    params: { status },
+    params: organizationId ? { status, organizationId } : { status },
   });
   return response.data;
 }

@@ -1,0 +1,92 @@
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { RunCascadesSettings } from "../RunCascades";
+
+const listMock = jest.fn();
+const capabilitiesMock = jest.fn();
+const cancelMock = jest.fn();
+
+jest.mock("@/modules/cascades/cascadeService", () => ({
+  listCascadesForOrganization: (...args: unknown[]) => listMock(...args),
+  getCascadeCapabilities: (...args: unknown[]) => capabilitiesMock(...args),
+  cancelCascade: (...args: unknown[]) => cancelMock(...args),
+  getAdminErrorMessage: () => "error",
+}));
+
+const cascade = {
+  id: "cascade-1",
+  status: "BLOCKED",
+  originJobId: "900",
+  createdDate: "2026-01-02T00:00:00Z",
+  originWorkspaceId: "ws-1",
+  originWorkspaceName: "network",
+};
+
+const renderPage = () =>
+  render(
+    <MemoryRouter initialEntries={["/organizations/org-1/settings/cascades"]}>
+      <Routes>
+        <Route path="/organizations/:orgid/settings/cascades" element={<RunCascadesSettings />} />
+      </Routes>
+    </MemoryRouter>
+  );
+
+describe("RunCascadesSettings", () => {
+  beforeEach(() => {
+    listMock.mockReset();
+    cancelMock.mockReset();
+    capabilitiesMock.mockReset();
+    capabilitiesMock.mockResolvedValue({ operate: true, instanceAdmin: false });
+  });
+
+  it("starts with the cascades that need attention in this organization", async () => {
+    listMock.mockResolvedValue([cascade]);
+    renderPage();
+
+    expect(await screen.findByText("network")).toBeInTheDocument();
+    expect(listMock).toHaveBeenCalledWith("org-1", ["BLOCKED", "DEGRADED"]);
+    expect(capabilitiesMock).toHaveBeenCalledWith("org-1");
+    expect(screen.getByText("network").closest("a")).toHaveAttribute("href", "/organizations/org-1/workspaces/ws-1");
+    expect(screen.getByRole("link", { name: "View" })).toHaveAttribute(
+      "href",
+      "/organizations/org-1/workspaces/ws-1/cascades/cascade-1"
+    );
+  });
+
+  it("says nothing needs attention when the list is empty", async () => {
+    listMock.mockResolvedValue([]);
+    renderPage();
+
+    expect(await screen.findByText("No cascades need attention.")).toBeInTheDocument();
+  });
+
+  it("lets someone with the manage job permission stop a cascade", async () => {
+    listMock.mockResolvedValue([cascade]);
+    cancelMock.mockResolvedValue(undefined);
+    renderPage();
+
+    await screen.findByText("network");
+    await waitFor(() => expect(screen.getByRole("button", { name: "Stop future runs" })).toBeEnabled());
+    await userEvent.click(screen.getByRole("button", { name: "Stop future runs" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Stop" }));
+
+    await waitFor(() => expect(cancelMock).toHaveBeenCalledWith("cascade-1"));
+  });
+
+  it("disables stopping for someone without the permission", async () => {
+    capabilitiesMock.mockResolvedValue({ operate: false, instanceAdmin: false });
+    listMock.mockResolvedValue([cascade]);
+    renderPage();
+
+    await screen.findByText("network");
+    expect(screen.getByRole("button", { name: "Stop future runs" })).toBeDisabled();
+  });
+
+  it("shows an access-denied alert when the API refuses the list", async () => {
+    listMock.mockRejectedValue({ response: { status: 403 } });
+    renderPage();
+
+    expect(await screen.findByText("Access Denied")).toBeInTheDocument();
+  });
+});

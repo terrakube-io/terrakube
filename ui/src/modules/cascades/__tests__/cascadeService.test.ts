@@ -2,8 +2,10 @@ import axiosInstance, { axiosAdmin } from "@/config/axiosConfig";
 import {
   cancelCascade,
   getAdminErrorMessage,
+  getCascadeCapabilities,
   getCascadeEdges,
   getCascadeNodes,
+  listCascadesForOrganization,
   listCascadesForWorkspace,
   resumeNode,
   retryNode,
@@ -12,16 +14,18 @@ import {
 jest.mock("@/config/axiosConfig", () => ({
   __esModule: true,
   default: { get: jest.fn() },
-  axiosAdmin: { post: jest.fn() },
+  axiosAdmin: { post: jest.fn(), get: jest.fn() },
   getErrorMessage: () => "fallback error",
 }));
 
 const mockGet = axiosInstance.get as jest.Mock;
 const mockAdminPost = axiosAdmin.post as jest.Mock;
+const mockAdminGet = axiosAdmin.get as jest.Mock;
 
 beforeEach(() => {
   mockGet.mockReset();
   mockAdminPost.mockReset();
+  mockAdminGet.mockReset();
 });
 
 describe("listCascadesForWorkspace", () => {
@@ -104,7 +108,7 @@ describe("admin actions", () => {
 
     const result = await retryNode("node-1");
 
-    expect(mockAdminPost).toHaveBeenCalledWith("/admin/v1/cascades/runCascadeNode/node-1/retry", {});
+    expect(mockAdminPost).toHaveBeenCalledWith("/admin/v1/cascades/nodes/node-1/retry", {});
     expect(result).toEqual({ status: "RUNNING", jobId: 42 });
   });
 
@@ -113,7 +117,7 @@ describe("admin actions", () => {
 
     const result = await resumeNode("node-1");
 
-    expect(mockAdminPost).toHaveBeenCalledWith("/admin/v1/cascades/runCascadeNode/node-1/resume", {});
+    expect(mockAdminPost).toHaveBeenCalledWith("/admin/v1/cascades/nodes/node-1/resume", {});
     expect(result).toEqual({ status: "PENDING" });
   });
 });
@@ -151,5 +155,79 @@ describe("cascade pagination", () => {
     mockGet.mockResolvedValueOnce({ data: { data: [{ id: "second" }] } });
     expect(await getCascadeEdges("cascade-1")).toEqual([{ id: "first" }, { id: "second" }]);
     expect(mockGet).toHaveBeenLastCalledWith("next-page");
+  });
+});
+
+describe("getCascadeCapabilities", () => {
+  it("asks for the organization's capabilities and returns both flags", async () => {
+    mockAdminGet.mockResolvedValue({ data: { operate: true, instanceAdmin: false } });
+
+    const result = await getCascadeCapabilities("org-1");
+
+    expect(mockAdminGet).toHaveBeenCalledWith("/admin/v1/cascades/capabilities", {
+      params: { organizationId: "org-1" },
+    });
+    expect(result).toEqual({ operate: true, instanceAdmin: false });
+  });
+
+  it("asks without an organization for the instance-wide answer", async () => {
+    mockAdminGet.mockResolvedValue({ data: { operate: true, instanceAdmin: true } });
+
+    await getCascadeCapabilities();
+
+    expect(mockAdminGet).toHaveBeenCalledWith("/admin/v1/cascades/capabilities", { params: undefined });
+  });
+});
+
+describe("listCascadesForOrganization", () => {
+  const response = {
+    data: {
+      data: [
+        {
+          id: "cascade-1",
+          attributes: { status: "BLOCKED", createdDate: "2026-01-02T00:00:00Z" },
+          relationships: { originJob: { data: { type: "job", id: "900" } } },
+        },
+      ],
+      included: [
+        { type: "job", id: "900", relationships: { workspace: { data: { type: "workspace", id: "ws-1" } } } },
+        { type: "workspace", id: "ws-1", attributes: { name: "network" } },
+      ],
+    },
+  };
+
+  it("filters to the organization and statuses, and resolves the origin workspace name", async () => {
+    mockGet.mockResolvedValue(response);
+
+    const rows = await listCascadesForOrganization("org-1", ["BLOCKED", "DEGRADED"] as never);
+
+    expect(mockGet).toHaveBeenCalledWith(
+      "runCascade",
+      expect.objectContaining({
+        params: expect.objectContaining({
+          "filter[runCascade]": "organization.id==org-1;status=in=(BLOCKED,DEGRADED)",
+          sort: "-createdDate",
+          include: "originJob.workspace",
+        }),
+      })
+    );
+    expect(rows).toEqual([
+      {
+        id: "cascade-1",
+        status: "BLOCKED",
+        originJobId: "900",
+        createdDate: "2026-01-02T00:00:00Z",
+        originWorkspaceId: "ws-1",
+        originWorkspaceName: "network",
+      },
+    ]);
+  });
+
+  it("does not filter by status when none are given", async () => {
+    mockGet.mockResolvedValue({ data: { data: [] } });
+
+    await listCascadesForOrganization("org-1");
+
+    expect(mockGet.mock.calls[0][1].params["filter[runCascade]"]).toBe("organization.id==org-1");
   });
 });

@@ -7,7 +7,7 @@ const listMock = jest.fn();
 const cancelMock = jest.fn();
 
 jest.mock("@/modules/cascades/cascadeService", () => ({
-  getCascadeCapabilities: () => Promise.resolve(true),
+  getCascadeCapabilities: () => Promise.resolve({ operate: true, instanceAdmin: false }),
   getCascade: () => Promise.resolve({ attributes: { status: "RUNNING" } }),
   listCascadesForWorkspace: (...args: unknown[]) => listMock(...args),
   cancelCascade: (...args: unknown[]) => cancelMock(...args),

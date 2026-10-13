@@ -1,6 +1,6 @@
 import axios from "axios";
 import axiosInstance, { axiosAdmin, getErrorMessage } from "@/config/axiosConfig";
-import { RunCascade, RunCascadeEdge, RunCascadeNode, RunCascadeRow } from "@/domain/types";
+import { RunCascade, RunCascadeEdge, RunCascadeNode, RunCascadeRow, RunCascadeStatus } from "@/domain/types";
 
 type IncludedResource = CascadeNodesResponse["included"][number];
 
@@ -76,12 +76,12 @@ export async function cancelCascade(cascadeId: string): Promise<void> {
 }
 
 export async function retryNode(nodeId: string): Promise<CascadeActionResult> {
-  const response = await axiosAdmin.post<CascadeActionResult>(`/admin/v1/cascades/runCascadeNode/${nodeId}/retry`, {});
+  const response = await axiosAdmin.post<CascadeActionResult>(`/admin/v1/cascades/nodes/${nodeId}/retry`, {});
   return response.data;
 }
 
 export async function resumeNode(nodeId: string): Promise<CascadeActionResult> {
-  const response = await axiosAdmin.post<CascadeActionResult>(`/admin/v1/cascades/runCascadeNode/${nodeId}/resume`, {});
+  const response = await axiosAdmin.post<CascadeActionResult>(`/admin/v1/cascades/nodes/${nodeId}/resume`, {});
   return response.data;
 }
 
@@ -100,10 +100,64 @@ export function getAdminErrorMessage(error: unknown): string {
   return getErrorMessage(error);
 }
 
-/** Capability checks use the same server-side access rule as the action endpoints. */
-export async function getCascadeCapabilities(): Promise<boolean> {
-  const response = await axiosAdmin.get("/admin/v1/cascades/capabilities");
-  return response.data.operate === true;
+export type CascadeCapabilities = {
+  /** May retry, resume and cancel cascades (and replay trigger events) in the given organization. */
+  operate: boolean;
+  /** May use the instance-wide admin pages. */
+  instanceAdmin: boolean;
+};
+
+/**
+ * Capability checks use the same server-side rule as the action endpoints: an instance admin, or
+ * the manage job permission in the given organization.
+ */
+export async function getCascadeCapabilities(organizationId?: string): Promise<CascadeCapabilities> {
+  const response = await axiosAdmin.get("/admin/v1/cascades/capabilities", {
+    params: organizationId ? { organizationId } : undefined,
+  });
+  return { operate: response.data.operate === true, instanceAdmin: response.data.instanceAdmin === true };
+}
+
+/** Most recent cascades shown on the organization page; older ones are reachable from their workspace. */
+const ORGANIZATION_CASCADE_LIMIT = 100;
+
+/**
+ * The organization's most recent cascades, optionally limited to some statuses, with the workspace
+ * each one started from. One page only: this is an operator's view of what needs attention, not an
+ * archive.
+ */
+export async function listCascadesForOrganization(
+  organizationId: string,
+  statuses?: RunCascadeStatus[]
+): Promise<RunCascadeRow[]> {
+  const filter = [`organization.id==${organizationId}`];
+  if (statuses && statuses.length > 0) {
+    filter.push(`status=in=(${statuses.join(",")})`);
+  }
+  const response = await axiosInstance.get("runCascade", {
+    params: {
+      "filter[runCascade]": filter.join(";"),
+      sort: "-createdDate",
+      include: "originJob.workspace",
+      "page[size]": ORGANIZATION_CASCADE_LIMIT,
+    },
+  });
+  const included: { type: string; id: string; attributes?: { name?: string }; relationships?: Record<string, any> }[] =
+    response.data.included ?? [];
+  const jobs = new Map(included.filter((item) => item.type === "job").map((item) => [item.id, item]));
+  const workspaces = new Map(included.filter((item) => item.type === "workspace").map((item) => [item.id, item]));
+  return (response.data.data as RunCascade[]).map((cascade) => {
+    const originJobId = cascade.relationships.originJob?.data?.id;
+    const workspaceId = originJobId ? jobs.get(originJobId)?.relationships?.workspace?.data?.id : undefined;
+    return {
+      id: cascade.id,
+      status: cascade.attributes.status,
+      originJobId,
+      createdDate: cascade.attributes.createdDate,
+      originWorkspaceId: workspaceId,
+      originWorkspaceName: workspaceId ? workspaces.get(workspaceId)?.attributes?.name : undefined,
+    };
+  });
 }
 
 export async function getCascade(cascadeId: string): Promise<RunCascade> {

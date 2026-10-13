@@ -651,6 +651,14 @@ const router = createBrowserRouter(
           element: <SettingsEditorWrapper selectedTab="12" />,
         },
         {
+          path: "/organizations/:orgid/settings/cascades",
+          element: <OrganizationSettings selectedTab="14" />,
+        },
+        {
+          path: "/organizations/:orgid/settings/trigger-events",
+          element: <OrganizationSettings selectedTab="15" />,
+        },
+        {
           path: "/organizations/:orgid/settings/collection",
           element: <OrganizationSettings selectedTab="9" />,
         },

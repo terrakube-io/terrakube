@@ -44,8 +44,8 @@ export const Cascades = ({ organizationId, workspaceId, workspaceName }: Props) 
 
   useEffect(() => {
     let active = true;
-    getCascadeCapabilities()
-      .then((operate) => {
+    getCascadeCapabilities(organizationId)
+      .then(({ operate }) => {
         if (active) setCanOperate(operate);
       })
       .catch(() => {
@@ -54,7 +54,7 @@ export const Cascades = ({ organizationId, workspaceId, workspaceName }: Props) 
     return () => {
       active = false;
     };
-  }, []);
+  }, [organizationId]);
 
   const onCancel = (cascadeId: string) => {
     cancelCascade(cascadeId)
