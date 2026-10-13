@@ -7,6 +7,8 @@ import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.workspace.Workspace;
 import io.terrakube.api.rs.workspace.trigger.RunTriggerEvent;
 import io.terrakube.api.rs.workspace.trigger.RunTriggerEventStatus;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
@@ -26,7 +28,7 @@ import static org.mockito.Mockito.when;
 
 class RunTriggerEventOperationsControllerTest extends ServerApplicationTests {
 
-    // "simple" org: TERRAKUBE_DEVELOPERS has manage_job there, AZURE_DEVELOPERS does not.
+    // The "simple" demo org; the teams below are created for each test (see CascadeOperationTeams).
     private static final UUID SIMPLE_ORG = UUID.fromString("d9b58bd3-f3fc-4056-a026-1163297e80a8");
 
     @MockitoBean
@@ -34,6 +36,16 @@ class RunTriggerEventOperationsControllerTest extends ServerApplicationTests {
 
     @MockitoBean
     RunTriggerEventRepository repository;
+
+    @BeforeEach
+    void createTeams() {
+        CascadeOperationTeams.create(teamRepository, organizationRepository, SIMPLE_ORG);
+    }
+
+    @AfterEach
+    void removeTeams() {
+        CascadeOperationTeams.delete(teamRepository, SIMPLE_ORG);
+    }
 
     private static final String ORG_EVENTS = "/cascade/v1/organization/" + SIMPLE_ORG + "/trigger-event";
 
@@ -62,7 +74,7 @@ class RunTriggerEventOperationsControllerTest extends ServerApplicationTests {
         when(repository.findOrganizationId(eventId)).thenReturn(Optional.of(SIMPLE_ORG));
         when(transactions.rearmForRetry(eventId)).thenReturn(true);
 
-        given().headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+        given().headers("Authorization", "Bearer " + generatePAT(CascadeOperationTeams.OPERATORS))
                 .when().post(ORG_EVENTS + "/" + eventId + "/replay")
                 .then().statusCode(HttpStatus.OK.value())
                 .body("eventId", equalTo(eventId.toString()))
@@ -86,7 +98,7 @@ class RunTriggerEventOperationsControllerTest extends ServerApplicationTests {
         UUID eventId = UUID.randomUUID();
         when(repository.findOrganizationId(eventId)).thenReturn(Optional.of(SIMPLE_ORG));
 
-        given().headers("Authorization", "Bearer " + generatePAT("AZURE_DEVELOPERS"))
+        given().headers("Authorization", "Bearer " + generatePAT(CascadeOperationTeams.VIEWERS))
                 .when().post(ORG_EVENTS + "/" + eventId + "/replay")
                 .then().statusCode(HttpStatus.FORBIDDEN.value());
         verify(transactions, never()).rearmForRetry(eventId);
@@ -97,7 +109,7 @@ class RunTriggerEventOperationsControllerTest extends ServerApplicationTests {
         UUID eventId = UUID.randomUUID();
         when(repository.findOrganizationId(eventId)).thenReturn(Optional.of(UUID.randomUUID()));
 
-        given().headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+        given().headers("Authorization", "Bearer " + generatePAT(CascadeOperationTeams.OPERATORS))
                 .when().post(ORG_EVENTS + "/" + eventId + "/replay")
                 .then().statusCode(HttpStatus.NOT_FOUND.value());
         verify(transactions, never()).rearmForRetry(eventId);
@@ -110,7 +122,7 @@ class RunTriggerEventOperationsControllerTest extends ServerApplicationTests {
                 eq(RunTriggerEventStatus.FAILED), eq(SIMPLE_ORG), any(Pageable.class)))
                 .thenReturn(List.of(failedEvent(eventId)));
 
-        given().headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+        given().headers("Authorization", "Bearer " + generatePAT(CascadeOperationTeams.OPERATORS))
                 .when().get(ORG_EVENTS)
                 .then().statusCode(HttpStatus.OK.value())
                 .body("[0].id", equalTo(eventId.toString()))
@@ -120,11 +132,11 @@ class RunTriggerEventOperationsControllerTest extends ServerApplicationTests {
                 .body("[0].organizationId", equalTo(SIMPLE_ORG.toString()))
                 .body("[0].organizationName", equalTo("simple"));
 
-        given().headers("Authorization", "Bearer " + generatePAT("AZURE_DEVELOPERS"))
+        given().headers("Authorization", "Bearer " + generatePAT(CascadeOperationTeams.VIEWERS))
                 .when().get(ORG_EVENTS)
                 .then().statusCode(HttpStatus.FORBIDDEN.value());
 
-        given().headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+        given().headers("Authorization", "Bearer " + generatePAT(CascadeOperationTeams.OPERATORS))
                 .when().get("/cascade/v1/organization/" + UUID.randomUUID() + "/trigger-event")
                 .then().statusCode(HttpStatus.FORBIDDEN.value());
     }
@@ -140,7 +152,7 @@ class RunTriggerEventOperationsControllerTest extends ServerApplicationTests {
                 .then().statusCode(HttpStatus.OK.value())
                 .body("[0].id", equalTo(eventId.toString()));
 
-        given().headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+        given().headers("Authorization", "Bearer " + generatePAT(CascadeOperationTeams.OPERATORS))
                 .when().get("/cascade/v1/trigger-event")
                 .then().statusCode(HttpStatus.FORBIDDEN.value());
     }

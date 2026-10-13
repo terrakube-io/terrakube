@@ -6,6 +6,7 @@ import io.terrakube.api.repository.RunCascadeRepository;
 import io.terrakube.api.rs.cascade.RunCascade;
 import io.terrakube.api.rs.cascade.RunCascadeStatus;
 import io.terrakube.api.rs.job.Job;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -28,7 +29,7 @@ import static org.mockito.Mockito.when;
  */
 class RunCascadeOperationsControllerTest extends ServerApplicationTests {
 
-    // "simple" org: TERRAKUBE_DEVELOPERS has manage_job there, AZURE_DEVELOPERS does not.
+    // The "simple" demo org; the teams below are created for each test (see CascadeOperationTeams).
     private static final UUID SIMPLE_ORG = UUID.fromString("d9b58bd3-f3fc-4056-a026-1163297e80a8");
     private static final String BASE = "/cascade/v1/organization/";
 
@@ -46,8 +47,14 @@ class RunCascadeOperationsControllerTest extends ServerApplicationTests {
 
     @BeforeEach
     void cascadeBelongsToSimpleOrg() {
+        CascadeOperationTeams.create(teamRepository, organizationRepository, SIMPLE_ORG);
         when(cascadeRepository.findOrganizationId(cascadeId)).thenReturn(Optional.of(SIMPLE_ORG));
         when(nodeRepository.existsByIdAndCascade_Id(nodeId, cascadeId)).thenReturn(true);
+    }
+
+    @AfterEach
+    void removeTeams() {
+        CascadeOperationTeams.delete(teamRepository, SIMPLE_ORG);
     }
 
     private RunCascade cascade(UUID id, RunCascadeStatus status) {
@@ -87,10 +94,10 @@ class RunCascadeOperationsControllerTest extends ServerApplicationTests {
         when(coordinatorService.cancelCascade(cascadeId)).thenReturn(cascade(cascadeId, RunCascadeStatus.CANCELLED));
         when(coordinatorService.retryNode(nodeId)).thenReturn(job(42));
 
-        given().headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+        given().headers("Authorization", "Bearer " + generatePAT(CascadeOperationTeams.OPERATORS))
                 .when().post(cancelUrl(SIMPLE_ORG))
                 .then().statusCode(HttpStatus.OK.value());
-        given().headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+        given().headers("Authorization", "Bearer " + generatePAT(CascadeOperationTeams.OPERATORS))
                 .when().post(nodeUrl(SIMPLE_ORG, "retry"))
                 .then().statusCode(HttpStatus.OK.value())
                 .body("nodeId", equalTo(nodeId.toString()))
@@ -100,7 +107,7 @@ class RunCascadeOperationsControllerTest extends ServerApplicationTests {
 
     @Test
     void aMemberWithoutManageJobIsForbidden() {
-        given().headers("Authorization", "Bearer " + generatePAT("AZURE_DEVELOPERS"))
+        given().headers("Authorization", "Bearer " + generatePAT(CascadeOperationTeams.VIEWERS))
                 .when().post(cancelUrl(SIMPLE_ORG))
                 .then().statusCode(HttpStatus.FORBIDDEN.value());
         verify(coordinatorService, never()).cancelCascade(cascadeId);
@@ -108,7 +115,7 @@ class RunCascadeOperationsControllerTest extends ServerApplicationTests {
 
     @Test
     void manageJobInAnotherOrganizationDoesNotGrantAccess() {
-        given().headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+        given().headers("Authorization", "Bearer " + generatePAT(CascadeOperationTeams.OPERATORS))
                 .when().post(cancelUrl(UUID.randomUUID()))
                 .then().statusCode(HttpStatus.FORBIDDEN.value());
         verify(coordinatorService, never()).cancelCascade(cascadeId);
@@ -175,13 +182,13 @@ class RunCascadeOperationsControllerTest extends ServerApplicationTests {
 
     @Test
     void capabilitiesArePerOrganization() {
-        given().headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+        given().headers("Authorization", "Bearer " + generatePAT(CascadeOperationTeams.OPERATORS))
                 .when().get(BASE + SIMPLE_ORG + "/capabilities")
                 .then().statusCode(HttpStatus.OK.value())
                 .body("operate", equalTo(true))
                 .body("instanceAdmin", equalTo(false));
 
-        given().headers("Authorization", "Bearer " + generatePAT("AZURE_DEVELOPERS"))
+        given().headers("Authorization", "Bearer " + generatePAT(CascadeOperationTeams.VIEWERS))
                 .when().get(BASE + SIMPLE_ORG + "/capabilities")
                 .then().statusCode(HttpStatus.OK.value())
                 .body("operate", equalTo(false));
@@ -198,7 +205,7 @@ class RunCascadeOperationsControllerTest extends ServerApplicationTests {
         given().headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_ADMIN"))
                 .when().get("/cascade/v1/capabilities")
                 .then().statusCode(HttpStatus.OK.value()).body("instanceAdmin", equalTo(true));
-        given().headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+        given().headers("Authorization", "Bearer " + generatePAT(CascadeOperationTeams.OPERATORS))
                 .when().get("/cascade/v1/capabilities")
                 .then().statusCode(HttpStatus.OK.value()).body("instanceAdmin", equalTo(false));
     }
