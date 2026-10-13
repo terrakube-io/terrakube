@@ -1026,6 +1026,88 @@ describe("StructuredPlanOutput", () => {
     expect(screen.getByText("Showing 1 of 1 change")).toBeInTheDocument();
   });
 
+  // #3674 PR feedback: terraform never applies an unchanged resource, so counting its no-op row
+  // would leave "X of Y applied" permanently short of Y.
+  it("excludes a no-op resource kept for its diagnostic from the apply progress count", () => {
+    render(
+      <StructuredPlanOutput
+        applyMode
+        changes={[
+          { address: "aws_instance.example", action: "update", actions: ["update"], after: {}, status: "applied" },
+          {
+            address: "random_pet.example_noop",
+            action: "no-op",
+            actions: ["no-op"],
+            status: "pending",
+            diagnostics: [{ severity: "warning", summary: "argument is deprecated" }],
+          },
+        ]}
+      />
+    );
+
+    expect(screen.getByText("1 of 1 applied")).toBeInTheDocument();
+  });
+
+  it("shows no apply progress when the only row is a no-op kept for its diagnostic", () => {
+    render(
+      <StructuredPlanOutput
+        applyMode
+        changes={[
+          {
+            address: "random_pet.example_noop",
+            action: "no-op",
+            actions: ["no-op"],
+            status: "pending",
+            diagnostics: [{ severity: "warning", summary: "argument is deprecated" }],
+          },
+        ]}
+      />
+    );
+
+    expect(screen.queryByText(/applied$/)).not.toBeInTheDocument();
+  });
+
+  it("does not show a contradictory 'Showing 0 of 0 changes' when only no-op diagnostic rows exist", () => {
+    render(
+      <StructuredPlanOutput
+        applyMode
+        changes={[
+          {
+            address: "random_pet.example_noop",
+            action: "no-op",
+            actions: ["no-op"],
+            status: "applied",
+            diagnostics: [{ severity: "warning", summary: "argument is deprecated" }],
+          },
+        ]}
+      />
+    );
+
+    fireEvent.change(screen.getByPlaceholderText(/filter resources by address/i), { target: { value: "example" } });
+
+    expect(screen.getByRole("button", { name: /random_pet\.example_noop/i })).toBeInTheDocument();
+    expect(screen.queryByText(/^Showing /)).not.toBeInTheDocument();
+  });
+
+  // #3674 originated from terraform plan output, so cover plan mode (no apply statuses) too.
+  it("keeps a no-op resource's row when it carries a diagnostic in plan mode", () => {
+    render(
+      <StructuredPlanOutput
+        changes={[
+          {
+            address: "random_pet.deprecated_config",
+            action: "no-op",
+            actions: ["no-op"],
+            diagnostics: [{ severity: "warning", summary: "argument is deprecated" }],
+          },
+        ]}
+      />
+    );
+
+    expect(screen.getByRole("button", { name: /random_pet\.deprecated_config/i })).toBeInTheDocument();
+    expect(screen.queryByText(/applied$/)).not.toBeInTheDocument();
+  });
+
   // #3674: a visible row already shows its own diagnostic one click away - mirroring it into the
   // always-visible panel too would duplicate it.
   it("does not mirror a visible (non-filtered-out) row's diagnostic into the always-visible panel", () => {

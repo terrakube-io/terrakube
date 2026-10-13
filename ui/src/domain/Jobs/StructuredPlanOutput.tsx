@@ -1172,6 +1172,12 @@ const buildResourceDiff = (change: PlanChange, action: ActionName, includeUnchan
 const buildSummary = (rows: PreparedChangeRow[]): SummaryCounts => {
   return rows.reduce<SummaryCounts>(
     (summary, row) => {
+      // Kept in preparedRows only so its diagnostic stays reachable (#3674) - not a change, and
+      // not an unrecognised action either.
+      if (row.action === "no-op") {
+        return summary;
+      }
+
       if (row.action === "replace") {
         summary.create += 1;
         summary.delete += 1;
@@ -1395,8 +1401,15 @@ export const StructuredPlanOutput = ({
       return null;
     }
 
-    const appliedCount = preparedRows.filter((row) => row.applyStatus === "applied").length;
-    return { appliedCount, totalCount: preparedRows.length };
+    // A no-op row kept for its diagnostic is never applied, so counting it would leave the
+    // progress permanently short of its total (#3674).
+    const actionableRows = preparedRows.filter((row) => row.action !== "no-op");
+    if (!actionableRows.length) {
+      return null;
+    }
+
+    const appliedCount = actionableRows.filter((row) => row.applyStatus === "applied").length;
+    return { appliedCount, totalCount: actionableRows.length };
   }, [applyMode, preparedRows]);
 
   const summary = useMemo(() => {
@@ -1711,7 +1724,7 @@ export const StructuredPlanOutput = ({
           </div>
 
           <div className="structured-plan-toolbarMeta">
-            {isFilteredView ? (
+            {isFilteredView && changedRowCount > 0 ? (
               <span>
                 Showing {changedFilteredRowCount} of {changedRowCount} change{getPluralSuffix(changedRowCount)}
               </span>
@@ -1747,7 +1760,7 @@ export const StructuredPlanOutput = ({
             {/* Resource-level diagnostics; address-labelled, unlike job-level ones. */}
             {resourceDiagnostics.map(({ address, diagnostic }, index) => (
               <div
-                key={`resource-${index}`}
+                key={`${address}-${diagnostic.severity}-${diagnostic.summary}-${index}`}
                 className={`structured-plan-jobDiagnostic structured-plan-jobDiagnostic--${diagnostic.severity}`}
               >
                 <span className="structured-plan-diagnostic-summary">
