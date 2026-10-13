@@ -13,6 +13,8 @@ export type CascadeNodeData = {
   status: RunCascadeNodeStatus;
   actionLoading: boolean;
   canOperate: boolean;
+  /** False when a paused node's pause is a deliberate destroy policy that rechecking cannot lift. */
+  canRecheck?: boolean;
   reason?: string;
   attempts?: { jobId?: string; number?: number; outcome?: string }[];
   hiddenConnections?: number;
@@ -31,12 +33,15 @@ function CascadeNode({ id, data, selected }: NodeProps<CascadeNodeData>) {
     >
       <Handle type="target" position={Position.Left} isConnectable={false} />
       <Tooltip title={data.workspaceName}>
-        <Link
-          className="workspace-graph__node-name nodrag"
-          to={`/organizations/${data.organizationId}/workspaces/${data.workspaceId}`}
+        {/* Selecting, not navigating: the inspector has the link to the workspace itself. */}
+        <button
+          type="button"
+          className="workspace-graph__node-name workspace-graph__node-name--button nodrag"
+          aria-label={`Inspect ${data.workspaceName}`}
+          onClick={() => data.onInspect?.(id)}
         >
           {data.workspaceName}
-        </Link>
+        </button>
       </Tooltip>
       <div className="workspace-graph__node-meta">
         <CascadeNodeStatusTag status={data.status} />
@@ -55,20 +60,12 @@ function CascadeNode({ id, data, selected }: NodeProps<CascadeNodeData>) {
         {!!data.hiddenConnections && <> · {data.hiddenConnections} connections outside view</>}
       </div>
       <div className="workspace-graph__node-actions nodrag">
-        <Button
-          type="link"
-          size="small"
-          aria-label={`Inspect ${data.workspaceName}`}
-          onClick={() => data.onInspect?.(id)}
-        >
-          Details
-        </Button>
         {data.canOperate && data.status === RunCascadeNodeStatus.Failed && (
           <Button size="small" loading={data.actionLoading} onClick={() => data.onRetry(id)}>
             Retry
           </Button>
         )}
-        {data.canOperate && data.status === RunCascadeNodeStatus.Blocked && (
+        {data.canOperate && data.status === RunCascadeNodeStatus.Blocked && data.canRecheck !== false && (
           <Button size="small" loading={data.actionLoading} onClick={() => data.onResume(id)}>
             Recheck dependencies
           </Button>

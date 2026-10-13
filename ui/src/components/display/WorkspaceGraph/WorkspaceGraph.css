@@ -57,6 +57,20 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.workspace-graph__node-name--button {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  color: var(--tk-accent);
+  cursor: pointer;
+}
+.workspace-graph__node-name--button:hover,
+.workspace-graph__node-name--button:focus-visible {
+  text-decoration: underline;
+}
 .workspace-graph__node-meta {
   margin-top: 8px;
   font-size: 12px;

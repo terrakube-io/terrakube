@@ -125,12 +125,27 @@ describe("CascadeGraph", () => {
       included: [{ type: "workspace", id: "ws-1", attributes: { name: "network" } }],
     });
     renderGraph();
-    const details = await findButtonByText("Details");
+    const name = await findButtonByText("network");
     expect(screen.queryByText("Waiting for network recovery")).toBeNull();
-    fireEvent.click(details);
+    fireEvent.click(name);
     expect(await screen.findByText("Waiting for network recovery")).toBeInTheDocument();
     expect(screen.getByText("Run attempts")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Focus dependencies/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Focus on this workspace/ })).toBeInTheDocument();
+  });
+
+  it("selects a workspace when its name is clicked instead of navigating away from the graph", async () => {
+    getCascadeNodesMock.mockResolvedValue({
+      nodes: [nodeResponse({ status: "SUCCEEDED" })],
+      included: [{ type: "workspace", id: "ws-1", attributes: { name: "network" } }],
+    });
+    renderGraph();
+
+    const name = await findButtonByText("network");
+    expect(name.closest("a")).toBeNull();
+    fireEvent.click(name);
+
+    const open = await screen.findByRole("link", { name: /Open workspace/ });
+    expect(open).toHaveAttribute("href", "/organizations/org-1/workspaces/ws-1");
   });
 
   it("connects an edge between the right two cascade nodes, not raw workspace ids", async () => {

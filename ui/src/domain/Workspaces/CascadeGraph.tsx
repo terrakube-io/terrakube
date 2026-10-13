@@ -1,7 +1,6 @@
 import { AimOutlined, ExpandOutlined, ReloadOutlined } from "@ant-design/icons";
-import { Alert, Button, Drawer, Empty, List, message, Select, Space, Tag, Typography } from "antd";
+import { Alert, Button, Drawer, Empty, message, Select, Space, Tag, Typography } from "antd";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
 import ReactFlow, {
   Background,
   Controls,
@@ -14,7 +13,6 @@ import ReactFlow, {
 } from "reactflow";
 import "reactflow/dist/style.css";
 import "@/components/display/WorkspaceGraph/WorkspaceGraph.css";
-import CascadeNodeStatusTag from "@/components/display/CascadeNodeStatusTag/CascadeNodeStatusTag";
 import CascadeStatusTag from "@/components/display/CascadeStatusTag/CascadeStatusTag";
 import { RunCascadeEdge, RunCascadeNodeStatus } from "@/domain/types";
 import {
@@ -37,6 +35,7 @@ import {
   neighborhood,
 } from "@/modules/dependencyGraph/utils/graphView";
 import CascadeNode, { CascadeNodeData } from "./CascadeNode";
+import { CascadeDependency, CascadeNodeInspector, describeNode } from "./CascadeNodeInspector";
 
 type Props = { cascadeId: string; organizationId: string };
 type WorkspaceRun = Omit<CascadeNodeData, "onRetry" | "onResume" | "onInspect" | "canOperate" | "actionLoading">;
@@ -332,6 +331,27 @@ export const CascadeGraph = ({ cascadeId, organizationId }: Props) => {
     const frame = requestAnimationFrame(() => flow.current?.fitView({ padding: 0.25, maxZoom: 1, duration: 200 }));
     return () => cancelAnimationFrame(frame);
   }, [topology]);
+  // Every dependency with both ends resolved to the nodes drawn for them, for the inspector's lists.
+  const dependencyViews = useMemo<CascadeDependency[]>(() => {
+    const byWorkspace = new Map(model.nodes.map((node) => [node.data.workspaceId, node]));
+    return [...model.dependencies.values()].flatMap((edge) => {
+      const source = byWorkspace.get(edge.relationships.sourceWorkspace.data.id);
+      const target = byWorkspace.get(edge.relationships.destinationWorkspace.data.id);
+      if (!source || !target) return [];
+      return [
+        {
+          id: edge.id,
+          sourceNodeId: source.id,
+          targetNodeId: target.id,
+          sourceName: source.data.workspaceName,
+          targetName: target.data.workspaceName,
+          mode: edge.attributes?.synchronizationMode,
+          onDestroy: edge.attributes?.onDestroy,
+          status: edge.attributes?.status,
+        },
+      ];
+    });
+  }, [model.nodes, model.dependencies]);
   const operationAllowed = canOperate && model.status !== "CANCELLED";
   const displayNodes: Node<CascadeNodeData>[] = visible.map((node) => ({
     ...node,
@@ -340,6 +360,13 @@ export const CascadeGraph = ({ cascadeId, organizationId }: Props) => {
     data: {
       ...node.data,
       canOperate: operationAllowed,
+      // A destroy-policy pause cannot be lifted by rechecking, so the card does not offer it.
+      canRecheck:
+        describeNode(
+          node.data.status,
+          dependencyViews.filter((dep) => dep.targetNodeId === node.id),
+          node.data.reason
+        )?.canRecheck ?? true,
       actionLoading: busy.has(node.id),
       onRetry,
       onResume,
@@ -535,84 +562,24 @@ export const CascadeGraph = ({ cascadeId, organizationId }: Props) => {
         size={420}
       >
         {selected && (
-          <Space orientation="vertical" size="middle" style={{ width: "100%" }}>
-            <CascadeNodeStatusTag status={selected.data.status} />
-            {selected.data.reason && (
-              <Alert
-                showIcon
-                type={ATTENTION.has(selected.data.status) ? "warning" : "info"}
-                description={selected.data.reason}
-              />
-            )}
-            <Link to={`/organizations/${organizationId}/workspaces/${selected.data.workspaceId}`}>Open workspace</Link>
-            <Button
-              icon={<AimOutlined />}
-              onClick={() => {
-                setFocusId(selected.id);
-                setStatusFilter("all");
-                setExpanded(false);
-                setSelectedId(undefined);
-              }}
-            >
-              Focus dependencies
-            </Button>
-            <Typography.Title level={5}>Upstream dependencies</Typography.Title>
-            <List
-              size="small"
-              dataSource={[...(index.upstream.get(selected.id) ?? [])]}
-              pagination={(index.upstream.get(selected.id)?.size ?? 0) > 8 ? { pageSize: 8 } : false}
-              locale={{ emptyText: "This is the originating workspace" }}
-              renderItem={(id) => {
-                const parent = model.nodes.find((node) => node.id === id);
-                return (
-                  <List.Item>
-                    <Button
-                      type="link"
-                      onClick={() => {
-                        inspect(id);
-                        setFocusId(id);
-                      }}
-                    >
-                      {parent?.data.workspaceName ?? id}
-                    </Button>
-                    <CascadeNodeStatusTag status={parent?.data.status} />
-                  </List.Item>
-                );
-              }}
-            />
-            <Typography.Title level={5}>Run attempts</Typography.Title>
-            <List
-              size="small"
-              dataSource={selected.data.attempts ?? []}
-              pagination={(selected.data.attempts?.length ?? 0) > 5 ? { pageSize: 5 } : false}
-              locale={{ emptyText: "No run has been dispatched" }}
-              renderItem={(attempt) => (
-                <List.Item>
-                  <Space>
-                    Attempt {attempt.number}
-                    <CascadeNodeStatusTag status={attempt.outcome} />
-                    {attempt.jobId && (
-                      <Link
-                        to={`/organizations/${organizationId}/workspaces/${selected.data.workspaceId}/runs/${attempt.jobId}`}
-                      >
-                        Run #{attempt.jobId}
-                      </Link>
-                    )}
-                  </Space>
-                </List.Item>
-              )}
-            />
-            {operationAllowed && selected.data.status === RunCascadeNodeStatus.Failed && (
-              <Button type="primary" loading={busy.has(selected.id)} onClick={() => onRetry(selected.id)}>
-                Retry failed run
-              </Button>
-            )}
-            {operationAllowed && selected.data.status === RunCascadeNodeStatus.Blocked && (
-              <Button type="primary" loading={busy.has(selected.id)} onClick={() => onResume(selected.id)}>
-                Recheck dependencies
-              </Button>
-            )}
-          </Space>
+          <CascadeNodeInspector
+            nodeId={selected.id}
+            data={selected.data}
+            upstream={dependencyViews.filter((dep) => dep.targetNodeId === selected.id)}
+            downstream={dependencyViews.filter((dep) => dep.sourceNodeId === selected.id)}
+            organizationId={organizationId}
+            canOperate={operationAllowed}
+            busy={busy.has(selected.id)}
+            onRetry={onRetry}
+            onResume={onResume}
+            onSelect={inspect}
+            onFocus={(id) => {
+              setFocusId(id);
+              setStatusFilter("all");
+              setExpanded(false);
+              setSelectedId(undefined);
+            }}
+          />
         )}
         {selectedDependency && (
           <Space orientation="vertical" size="middle">
