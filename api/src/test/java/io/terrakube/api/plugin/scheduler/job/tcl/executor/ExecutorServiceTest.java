@@ -390,18 +390,19 @@ class ExecutorServiceTest {
     }
 
     @Test
-    void shouldNotOverwriteExistingTfCliArgsPlan() {
+    void shouldAppendAddressesToExistingTfCliArgsPlan() {
         Address address = new Address();
         address.setName("aws_s3_bucket.bucket");
         address.setType(AddressType.TARGET);
         when(addressRepository.findByJob(job)).thenReturn(List.of(address));
 
         ExecutorContext context = createContext();
-        context.getEnvironmentVariables().put("TF_CLI_ARGS_plan", "-existing-flag");
+        context.getEnvironmentVariables().put("TF_CLI_ARGS_plan", "-var-file=variables/dev.tfvars");
 
         ExecutorContext result = executorService.validateJobAddress(context, job);
 
-        assertThat(result.getEnvironmentVariables()).containsEntry("TF_CLI_ARGS_plan", "-existing-flag");
+        assertThat(result.getEnvironmentVariables())
+                .containsEntry("TF_CLI_ARGS_plan", "-var-file=variables/dev.tfvars -target=\"aws_s3_bucket.bucket\"");
     }
 
     private Job jobWithVcsWorkspace() {
