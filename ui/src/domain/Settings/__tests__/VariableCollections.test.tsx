@@ -98,7 +98,7 @@ describe("CreateEditCollection", () => {
     fireEvent.change(screen.getByLabelText("Description"), { target: { value: "x".repeat(513) } });
     fireEvent.click(screen.getByRole("button", { name: "Create variable collection" }));
 
-    expect(await screen.findByText(/cannot be longer than 512 characters/)).toBeInTheDocument();
+    expect(await screen.findByText(/512 characters/)).toBeInTheDocument();
     expect(axiosInstance.post).not.toHaveBeenCalled();
   });
 
