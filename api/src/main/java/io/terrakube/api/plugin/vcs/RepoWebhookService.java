@@ -23,6 +23,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import io.terrakube.api.plugin.scheduler.ScheduleJobService;
+import io.terrakube.api.plugin.security.audit.WebhookAuditContext;
 import io.terrakube.api.plugin.vcs.provider.azdevops.AzDevOpsWebhookService;
 import io.terrakube.api.plugin.vcs.provider.github.GitHubWebhookService;
 import io.terrakube.api.plugin.vcs.provider.gitlab.GitLabWebhookService;
@@ -441,7 +442,10 @@ public class RepoWebhookService {
 
     private void saveAndScheduleJob(Workspace workspace, WebhookResult webhookResult, Job job)
             throws ParseException, SchedulerException {
-        Job savedJob = jobRepository.save(job);
+        // Auditing runs on this worker, which has no request authentication. Supplying the
+        // verified actor here prevents @CreatedBy from replacing it with Internal.
+        Job savedJob = WebhookAuditContext.withActor(webhookResult.getCreatedBy(),
+                () -> jobRepository.save(job));
         if (!webhookResult.isRelease() && workspace.getVcs() != null) {
             if (isAzureDevOps(workspace)) {
                 azDevOpsWebhookService.sendCommitStatus(savedJob, JobStatus.pending, null);

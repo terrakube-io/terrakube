@@ -1,5 +1,6 @@
 package io.terrakube.api.plugin.security.audit.dex;
 
+import io.terrakube.api.plugin.security.audit.WebhookAuditContext;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.AuditorAware;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
@@ -12,6 +13,10 @@ import java.util.Optional;
 public class DexAuditorAwareImpl implements AuditorAware<String> {
     @Override
     public Optional<String> getCurrentAuditor() {
+        Optional<String> webhookActor = WebhookAuditContext.currentActor();
+        if (webhookActor.isPresent()) {
+            return webhookActor;
+        }
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication != null && authentication.isAuthenticated()) {
             log.debug("getCurrentAuditor: {}", authentication);
