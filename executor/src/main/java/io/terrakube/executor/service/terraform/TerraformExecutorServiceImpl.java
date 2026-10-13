@@ -303,6 +303,11 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                     for (String line : humanReadablePlan.split("\n", -1)) {
                         planOutput.accept(line);
                     }
+                    // Separate channel for the same text, so PrCommentService can show one
+                    // authoritative diff instead of the full console stream (init/hook output,
+                    // live progress lines, and this diff all mixed together).
+                    planStructuredOutputService.publishRenderedPlanText(
+                            terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), humanReadablePlan);
                 }
 
                 if (opaExecutorService != null && terraformJob.getPolicyList() != null && !terraformJob.getPolicyList().isEmpty()) {
