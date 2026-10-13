@@ -4,11 +4,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.terrakube.client.TerrakubeClient;
 import io.terrakube.executor.service.workspace.security.WorkspaceSecurity;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -49,17 +50,18 @@ class TerraformOutputsServiceTest {
     }
 
     @Test
-    void updateOutputsContextMergesWithoutDroppingExistingKeys() {
-        Map<String, Object> context = new HashMap<>();
-        context.put("custom", "value");
-        context.put("terraformOutputs", Map.of("existing-step", List.of(Map.of("name", "existing"))));
+    @SuppressWarnings("unchecked")
+    void publishOutputsPatchesOnlyThisStepsEntryWithoutReading() {
+        JobContextService jobContextService = Mockito.mock(JobContextService.class);
+        TerraformOutputsService service = new TerraformOutputsService(jobContextService, new ObjectMapper());
 
-        Map<String, Object> updated = subject().updateOutputsContext(
-                context, "new-step", List.of(Map.of("name", "random_value", "value", "sad-otter", "sensitive", false)));
+        service.publishOutputs("o", "1", "step-1", "{\"random_value\": {\"value\": \"sad-otter\", \"type\": \"string\"}}");
 
-        assertEquals("value", updated.get("custom"));
-        Map<String, Object> terraformOutputs = (Map<String, Object>) updated.get("terraformOutputs");
-        assertTrue(terraformOutputs.containsKey("existing-step"));
-        assertTrue(terraformOutputs.containsKey("new-step"));
+        ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
+        Mockito.verify(jobContextService).patchContextFresh(Mockito.eq("o"), Mockito.eq("1"), captor.capture());
+        Mockito.verify(jobContextService, Mockito.never()).getCurrentContext(Mockito.any(), Mockito.any());
+        assertEquals(Set.of("terraformOutputs/step-1"), captor.getValue().keySet());
+        List<Map<String, Object>> outputs = (List<Map<String, Object>>) captor.getValue().get("terraformOutputs/step-1");
+        assertEquals("sad-otter", outputs.get(0).get("value"));
     }
 }

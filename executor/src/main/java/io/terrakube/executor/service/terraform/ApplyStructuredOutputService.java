@@ -111,23 +111,12 @@ public class ApplyStructuredOutputService {
         return seeded;
     }
 
-    @SuppressWarnings("unchecked")
-    Map<String, Object> updateApplyContext(Map<String, Object> context, String stepId, List<Map<String, Object>> changes, List<Map<String, Object>> jobDiagnostics) {
-        Map<String, Object> updatedContext = new HashMap<>(context);
-
-        Map<String, Object> applyStructuredOutput = updatedContext.get(CONTEXT_APPLY_KEY) instanceof Map<?, ?> existing
-                ? new HashMap<>((Map<String, Object>) existing)
-                : new HashMap<>();
-        applyStructuredOutput.put(stepId, changes);
-        updatedContext.put(CONTEXT_APPLY_KEY, applyStructuredOutput);
-
-        Map<String, Object> jobDiagnosticsByStep = updatedContext.get(CONTEXT_JOB_DIAGNOSTICS_KEY) instanceof Map<?, ?> existingDiagnostics
-                ? new HashMap<>((Map<String, Object>) existingDiagnostics)
-                : new HashMap<>();
-        jobDiagnosticsByStep.put(stepId, jobDiagnostics);
-        updatedContext.put(CONTEXT_JOB_DIAGNOSTICS_KEY, jobDiagnosticsByStep);
-
-        return updatedContext;
+    Map<String, Object> buildApplyPatch(String stepId, List<Map<String, Object>> changes, List<Map<String, Object>> jobDiagnostics) {
+        // HashMap, not Map.of: values may be null.
+        Map<String, Object> set = new HashMap<>();
+        set.put(CONTEXT_APPLY_KEY + "/" + stepId, changes);
+        set.put(CONTEXT_JOB_DIAGNOSTICS_KEY + "/" + stepId, jobDiagnostics);
+        return set;
     }
 
     void publishApplyProgress(String organizationId, String jobId, String stepId, List<Map<String, Object>> changes, List<Map<String, Object>> jobDiagnostics) {
@@ -158,9 +147,8 @@ public class ApplyStructuredOutputService {
         }
 
         try {
-            Map<String, Object> context = getCurrentContext(organizationId, jobId);
-            Map<String, Object> updatedContext = updateApplyContext(context, stepId, changes, jobDiagnostics);
-            saveContext(organizationId, jobId, updatedContext);
+            jobContextService.patchContextFresh(organizationId, jobId,
+                    buildApplyPatch(stepId, changes, jobDiagnostics));
         } catch (Exception e) {
             log.warn("Unable to publish apply structured output for job {} step {}", jobId, stepId, e);
         }
@@ -392,10 +380,6 @@ public class ApplyStructuredOutputService {
 
     private Map<String, Object> getCurrentContext(String organizationId, String jobId) {
         return jobContextService.getCurrentContext(organizationId, jobId);
-    }
-
-    private void saveContext(String organizationId, String jobId, Map<String, Object> context) {
-        jobContextService.saveContext(organizationId, jobId, context);
     }
 }
 

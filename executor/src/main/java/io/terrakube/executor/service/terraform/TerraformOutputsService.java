@@ -35,9 +35,8 @@ public class TerraformOutputsService {
                 return;
             }
 
-            Map<String, Object> context = getCurrentContext(organizationId, jobId);
-            Map<String, Object> updatedContext = updateOutputsContext(context, stepId, outputs);
-            saveContext(organizationId, jobId, updatedContext);
+            jobContextService.patchContextFresh(organizationId, jobId,
+                    Map.of(CONTEXT_OUTPUTS_KEY + "/" + stepId, outputs));
         } catch (Exception e) {
             log.warn("Unable to publish terraform outputs for job {} step {}", jobId, stepId, e);
         }
@@ -72,26 +71,4 @@ public class TerraformOutputsService {
 
         return outputs;
     }
-
-    @SuppressWarnings("unchecked")
-    Map<String, Object> updateOutputsContext(Map<String, Object> context, String stepId, List<Map<String, Object>> outputs) {
-        Map<String, Object> updatedContext = new HashMap<>(context);
-
-        Map<String, Object> terraformOutputs = updatedContext.get(CONTEXT_OUTPUTS_KEY) instanceof Map<?, ?> existing
-                ? new HashMap<>((Map<String, Object>) existing)
-                : new HashMap<>();
-        terraformOutputs.put(stepId, outputs);
-        updatedContext.put(CONTEXT_OUTPUTS_KEY, terraformOutputs);
-
-        return updatedContext;
-    }
-
-    private Map<String, Object> getCurrentContext(String organizationId, String jobId) {
-        return jobContextService.getCurrentContext(organizationId, jobId);
-    }
-
-    private void saveContext(String organizationId, String jobId, Map<String, Object> context) {
-        jobContextService.saveContext(organizationId, jobId, context);
-    }
 }
-

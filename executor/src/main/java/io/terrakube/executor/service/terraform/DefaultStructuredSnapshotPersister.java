@@ -11,9 +11,9 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Runs entirely on the {@code structured-output-persistence} worker thread: reads the current job
- * context, merges this step's plan/apply changes + diagnostics, POSTs it back, and - only on a
- * successful write - emits the best-effort SSE live update. Any failure returns {@code false} so the
+ * Runs entirely on the {@code structured-output-persistence} worker thread: patches this step's
+ * plan/apply changes + diagnostics into the job context (no read first), and - only when the patch
+ * was applied - emits the best-effort SSE live update. Any failure returns {@code false} so the
  * queue can retry; nothing here can reach a Terraform reader thread.
  */
 @Slf4j
@@ -45,27 +45,26 @@ public class DefaultStructuredSnapshotPersister implements StructuredSnapshotPer
         String stepId = snapshot.getStepId();
         boolean planPhase = snapshot.getPhase() == StructuredSnapshot.Phase.PLAN;
         try {
-            Map<String, Object> context = jobContextService.getCurrentContext(organizationId, jobId);
-            Map<String, Object> updated = planPhase
-                    ? planStructuredOutputService.updateContext(context, stepId, snapshot.getChanges(), snapshot.getJobDiagnostics())
-                    : applyStructuredOutputService.updateApplyContext(context, stepId, snapshot.getChanges(), snapshot.getJobDiagnostics());
+            Map<String, Object> set = planPhase
+                    ? planStructuredOutputService.buildPlanPatch(stepId, snapshot.getChanges(), snapshot.getJobDiagnostics(), snapshot.isFinalSnapshot())
+                    : applyStructuredOutputService.buildApplyPatch(stepId, snapshot.getChanges(), snapshot.getJobDiagnostics());
             // Machine-readable persistence status the API/UI can reason about without reading any
             // Terraform payload content. Carries no variable values or secrets.
-            updated.put("structuredOutputStatus", Map.of(
+            set.put("structuredOutputStatus", Map.of(
                     "state", "PERSISTED",
                     "updatedAtEpochMs", snapshot.getCreatedAtEpochMs(),
                     "stepId", stepId,
                     "phase", planPhase ? "plan" : "apply",
                     "finalSnapshot", snapshot.isFinalSnapshot()));
-            if (planPhase && snapshot.isFinalSnapshot()) {
-                PlanStructuredOutputService.applyNoChangePlanMarker(updated, stepId, snapshot.getChanges());
-            }
 
-            boolean saved = jobContextService.saveContextChecked(organizationId, jobId, updated);
-            if (saved) {
+            // The sequence is the revision, so a retried or recovered snapshot that something newer
+            // already superseded comes back SKIPPED: done, but nothing new to push live.
+            JobContextService.PatchResult result =
+                    jobContextService.patchContext(organizationId, jobId, snapshot.getSequence(), set);
+            if (result == JobContextService.PatchResult.APPLIED) {
                 pushLiveUpdate(planPhase ? "plan" : "apply", jobId, stepId, snapshot);
             }
-            return saved;
+            return result != JobContextService.PatchResult.FAILED;
         } catch (Throwable t) {
             log.warn("Unable to persist structured output for job {} step {} phase {}: {}",
                     jobId, stepId, planPhase ? "plan" : "apply", t.toString());

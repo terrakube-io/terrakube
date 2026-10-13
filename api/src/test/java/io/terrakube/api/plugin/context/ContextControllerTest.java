@@ -11,6 +11,7 @@ import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
+import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.data.redis.connection.stream.RecordId;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -18,6 +19,7 @@ import org.springframework.http.ResponseEntity;
 import java.io.IOException;
 import java.security.Principal;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -33,6 +35,9 @@ class ContextControllerTest {
 
     private final Principal uiPrincipal = Mockito.mock(Principal.class);
 
+    private final io.terrakube.api.plugin.policy.PolicyEvaluationService policyEvaluationService =
+            Mockito.mock(io.terrakube.api.plugin.policy.PolicyEvaluationService.class);
+
     private AuthenticatedUser authenticatedUser() {
         AuthenticatedUser authenticatedUser = Mockito.mock(AuthenticatedUser.class);
         when(authenticatedUser.isServiceAccountInternal(Mockito.any()))
@@ -45,12 +50,245 @@ class ContextControllerTest {
     }
 
     private ContextController controller(StorageTypeService storageTypeService, JobRepository jobRepository, MeterRegistry meterRegistry) {
+        return controller(storageTypeService, jobRepository, meterRegistry, Mockito.mock(StreamingService.class));
+    }
+
+    private ContextController controller(StorageTypeService storageTypeService, JobRepository jobRepository, MeterRegistry meterRegistry,
+                                         StreamingService streamingService) {
         ContextProperties properties = new ContextProperties();
         ContextStorageMetrics storageMetrics = new ContextStorageMetrics(meterRegistry);
         ContextReadService readService = new ContextReadService(storageTypeService, storageMetrics, properties, meterRegistry);
-        io.terrakube.api.plugin.policy.PolicyEvaluationService policyEvaluationService = Mockito.mock(io.terrakube.api.plugin.policy.PolicyEvaluationService.class);
-        return new ContextController(storageTypeService, jobRepository, new ContextSanitizer(new ObjectMapper()),
-                Mockito.mock(StreamingService.class), storageMetrics, readService, properties, policyEvaluationService, authenticatedUser());
+        ContextSanitizer sanitizer = new ContextSanitizer(new ObjectMapper());
+        ContextWriteService writeService = new ContextWriteService(jobRepository, readService, sanitizer, storageTypeService,
+                storageMetrics, new ObjectMapper());
+        return new ContextController(sanitizer, streamingService, readService, writeService, properties,
+                policyEvaluationService, null, authenticatedUser(), new ObjectMapper());
+    }
+
+    /** A storage mock whose reads return the last saved context, so successive writes build on each other. */
+    private StorageTypeService inMemoryStorage(String initialContext) {
+        StorageTypeService storageTypeService = Mockito.mock(StorageTypeService.class);
+        AtomicReference<String> stored = new AtomicReference<>(initialContext);
+        when(storageTypeService.getContext(1)).thenAnswer(invocation -> stored.get());
+        when(storageTypeService.saveContext(Mockito.eq(1), Mockito.anyString())).thenAnswer(invocation -> {
+            stored.set(invocation.getArgument(1));
+            return stored.get();
+        });
+        return storageTypeService;
+    }
+
+    private JobRepository runningJob() {
+        JobRepository jobRepository = Mockito.mock(JobRepository.class);
+        Job job = Mockito.mock(Job.class);
+        when(job.getStatus()).thenReturn(JobStatus.running);
+        when(jobRepository.lockForContextWrite(1)).thenReturn(Optional.of(job));
+        return jobRepository;
+    }
+
+    @Test
+    void patchMergesOnlyTouchedEntriesUnderTheJobLock() throws IOException {
+        StorageTypeService storageTypeService = inMemoryStorage("{\"planRenderedText\":{\"s1\":\"text\"}}");
+        JobRepository jobRepository = runningJob();
+        ContextController controller = controller(storageTypeService, jobRepository);
+
+        ResponseEntity<String> response = controller.patchContext(1,
+                "{\"revision\":10,\"set\":{\"planStructuredOutput/s1\":[],\"structuredOutputStatus\":{\"state\":\"COMPLETE\"}}}");
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals("{\"applied\":2,\"skipped\":0}", response.getBody());
+        verify(jobRepository).lockForContextWrite(1);
+        verify(storageTypeService).saveContext(1, "{\"planRenderedText\":{\"s1\":\"text\"},"
+                + "\"contextRevisions\":{\"planStructuredOutput/s1\":10,\"structuredOutputStatus\":10},"
+                + "\"planStructuredOutput\":{\"s1\":[]},\"structuredOutputStatus\":{\"state\":\"COMPLETE\"}}");
+    }
+
+    @Test
+    void allStalePatchWritesNothing() throws IOException {
+        StorageTypeService storageTypeService = inMemoryStorage("{\"contextRevisions\":{\"terrakubeUI/s1\":10},\"terrakubeUI\":{\"s1\":\"final\"}}");
+        ContextController controller = controller(storageTypeService, runningJob());
+
+        ResponseEntity<String> response = controller.patchContext(1, "{\"revision\":10,\"set\":{\"terrakubeUI/s1\":\"progress\"}}");
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals("{\"applied\":0,\"skipped\":1}", response.getBody());
+        verify(storageTypeService, never()).saveContext(Mockito.anyInt(), Mockito.anyString());
+    }
+
+    @Test
+    void patchRejectsInvalidPayloadsBeforeTakingTheLock() {
+        StorageTypeService storageTypeService = inMemoryStorage(null);
+        JobRepository jobRepository = Mockito.mock(JobRepository.class);
+        ContextController controller = controller(storageTypeService, jobRepository);
+        long future = (System.currentTimeMillis() + 120_000) * 1000;
+        StringBuilder oversized = new StringBuilder("{\"revision\":1,\"set\":{");
+        for (int i = 0; i <= ContextPatchApplier.MAX_ENTRIES; i++) {
+            oversized.append(i == 0 ? "" : ",").append("\"terraformOutputs/s").append(i).append("\":[]");
+        }
+        oversized.append("}}");
+
+        for (String patch : new String[]{
+                "{",
+                "[]",
+                "{\"set\":{\"a\":1}}",
+                "{\"revision\":0,\"set\":{\"a\":1}}",
+                "{\"revision\":\"5\",\"set\":{\"a\":1}}",
+                "{\"revision\":1.5,\"set\":{\"a\":1}}",
+                "{\"revision\":" + future + ",\"set\":{\"a\":1}}",
+                "{\"revision\":1}",
+                "{\"revision\":1,\"set\":{}}",
+                "{\"revision\":1,\"set\":[]}",
+                oversized.toString(),
+                "{\"revision\":1,\"set\":{\"a/b/c\":1}}",
+                "{\"revision\":1,\"set\":{\"a/\":1}}",
+                "{\"revision\":1,\"set\":{\"/b\":1}}",
+                "{\"revision\":1,\"set\":{\"contextRevisions\":{}}}",
+                "{\"revision\":1,\"set\":{\"contextRevisions/a\":1}}"}) {
+            assertEquals(HttpStatus.BAD_REQUEST, controller.patchContext(1, patch).getStatusCode(), patch);
+        }
+        Mockito.verifyNoInteractions(jobRepository, storageTypeService);
+    }
+
+    @Test
+    void patchForMissingJobReturnsNotFound() throws IOException {
+        StorageTypeService storageTypeService = inMemoryStorage(null);
+        ContextController controller = controller(storageTypeService, Mockito.mock(JobRepository.class));
+
+        ResponseEntity<String> response = controller.patchContext(1, "{\"revision\":1,\"set\":{\"a\":1}}");
+
+        assertEquals(HttpStatus.NOT_FOUND, response.getStatusCode());
+        verify(storageTypeService, never()).saveContext(Mockito.anyInt(), Mockito.anyString());
+    }
+
+    @Test
+    void patchForTerminalJobReturnsConflict() throws IOException {
+        StorageTypeService storageTypeService = inMemoryStorage(null);
+        JobRepository jobRepository = Mockito.mock(JobRepository.class);
+        Job job = Mockito.mock(Job.class);
+        when(job.getStatus()).thenReturn(JobStatus.failed);
+        when(jobRepository.lockForContextWrite(1)).thenReturn(Optional.of(job));
+        ContextController controller = controller(storageTypeService, jobRepository);
+
+        ResponseEntity<String> response = controller.patchContext(1, "{\"revision\":1,\"set\":{\"a\":1}}");
+
+        assertEquals(HttpStatus.CONFLICT, response.getStatusCode());
+        verify(storageTypeService, never()).saveContext(Mockito.anyInt(), Mockito.anyString());
+    }
+
+    @Test
+    void writesFailWithoutWritingWhenTheStoredContextCannotBeRead() throws IOException {
+        StorageTypeService storageTypeService = Mockito.mock(StorageTypeService.class);
+        when(storageTypeService.getContext(1)).thenThrow(new RuntimeException("apiCallTimeout"));
+        ContextController controller = controller(storageTypeService, runningJob());
+
+        ResponseEntity<String> patched = controller.patchContext(1, "{\"revision\":1,\"set\":{\"a\":1}}");
+        ResponseEntity<String> replaced = controller.saveContext(1, "{\"a\":1}");
+
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, patched.getStatusCode());
+        assertEquals("5", patched.getHeaders().getFirst("Retry-After"));
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, replaced.getStatusCode());
+        verify(storageTypeService, never()).saveContext(Mockito.anyInt(), Mockito.anyString());
+    }
+
+    @Test
+    void patchFailsWithoutWritingWhenTheStoredContextIsMalformed() throws IOException {
+        for (String malformed : new String[]{"{\"truncated\":", "[]"}) {
+            StorageTypeService storageTypeService = inMemoryStorage(malformed);
+            ContextController controller = controller(storageTypeService, runningJob());
+
+            ResponseEntity<String> response = controller.patchContext(1, "{\"revision\":1,\"set\":{\"a\":1}}");
+
+            assertEquals(HttpStatus.SERVICE_UNAVAILABLE, response.getStatusCode(), malformed);
+            verify(storageTypeService, never()).saveContext(Mockito.anyInt(), Mockito.anyString());
+        }
+    }
+
+    @Test
+    void legacySaveRepairsAMalformedStoredContext() throws IOException {
+        StorageTypeService storageTypeService = inMemoryStorage("{\"truncated\":");
+        ContextController controller = controller(storageTypeService, runningJob());
+
+        ResponseEntity<String> response = controller.saveContext(1, "{\"a\":1}");
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        verify(storageTypeService).saveContext(1, "{\"a\":1}");
+    }
+
+    @Test
+    void legacySaveRejectsANonObjectBody() throws IOException {
+        StorageTypeService storageTypeService = inMemoryStorage(null);
+        JobRepository jobRepository = runningJob();
+        ContextController controller = controller(storageTypeService, jobRepository);
+
+        for (String body : new String[]{"[]", "\"text\"", "1", "null"}) {
+            assertEquals(HttpStatus.BAD_REQUEST, controller.saveContext(1, body).getStatusCode(), body);
+        }
+        verify(jobRepository, never()).lockForContextWrite(Mockito.anyInt());
+        verify(storageTypeService, never()).saveContext(Mockito.anyInt(), Mockito.anyString());
+    }
+
+    @Test
+    void legacySaveRunsThePolicyHookOnlyWhenPolicyEvaluationChanges() {
+        StorageTypeService storageTypeService = inMemoryStorage(null);
+        ContextController controller = controller(storageTypeService, runningJob());
+
+        controller.saveContext(1, "{\"policyEvaluation\":{\"status\":\"PASSED\"}}");
+        // A script writing back what it read, plus its own key.
+        controller.saveContext(1, "{\"policyEvaluation\":{\"status\":\"PASSED\"},\"custom\":1}");
+        verify(policyEvaluationService, times(1)).processPolicyEvaluationContext(Mockito.eq(1), Mockito.anyString());
+
+        controller.saveContext(1, "{\"policyEvaluation\":{\"status\":\"FAILED\"}}");
+        verify(policyEvaluationService, times(2)).processPolicyEvaluationContext(Mockito.eq(1), Mockito.anyString());
+
+        // A patched (revisioned) policyEvaluation cannot be changed by a full replace, so the hook does not re-run.
+        controller.patchContext(1, "{\"revision\":1,\"set\":{\"policyEvaluation\":{\"status\":\"PASSED\"}}}");
+        controller.saveContext(1, "{\"policyEvaluation\":{\"status\":\"FORGED\"}}");
+        verify(policyEvaluationService, times(3)).processPolicyEvaluationContext(Mockito.eq(1), Mockito.anyString());
+    }
+
+    @Test
+    void lockTimeoutReturnsServiceUnavailableWithRetryAfter() throws IOException {
+        StorageTypeService storageTypeService = inMemoryStorage(null);
+        JobRepository jobRepository = Mockito.mock(JobRepository.class);
+        when(jobRepository.lockForContextWrite(1)).thenThrow(new CannotAcquireLockException("lock timeout"));
+        ContextController controller = controller(storageTypeService, jobRepository);
+
+        ResponseEntity<String> response = controller.patchContext(1, "{\"revision\":1,\"set\":{\"a\":1}}");
+
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, response.getStatusCode());
+        assertEquals("5", response.getHeaders().getFirst("Retry-After"));
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, controller.saveContext(1, "{\"a\":1}").getStatusCode());
+        verify(storageTypeService, never()).saveContext(Mockito.anyInt(), Mockito.anyString());
+    }
+
+    @Test
+    void policyHookRunsOnlyWhenAPatchAppliesPolicyEvaluation() {
+        StorageTypeService storageTypeService = inMemoryStorage(null);
+        ContextController controller = controller(storageTypeService, runningJob());
+
+        controller.patchContext(1, "{\"revision\":1,\"set\":{\"terrakubeUI/s1\":\"ui\"}}");
+        verify(policyEvaluationService, never()).processPolicyEvaluationContext(Mockito.anyInt(), Mockito.anyString());
+
+        controller.patchContext(1, "{\"revision\":2,\"set\":{\"policyEvaluation\":{\"status\":\"PASSED\"}}}");
+        verify(policyEvaluationService).processPolicyEvaluationContext(Mockito.eq(1),
+                Mockito.argThat(context -> context.contains("\"policyEvaluation\"") && context.contains("\"terrakubeUI\"")));
+
+        // A retried (stale) policy patch must not re-run the hook.
+        controller.patchContext(1, "{\"revision\":2,\"set\":{\"policyEvaluation\":{\"status\":\"PASSED\"}}}");
+        verify(policyEvaluationService, times(1)).processPolicyEvaluationContext(Mockito.anyInt(), Mockito.anyString());
+    }
+
+    @Test
+    void legacySaveKeepsNewerPatchedEntries() throws IOException {
+        StorageTypeService storageTypeService = inMemoryStorage(null);
+        ContextController controller = controller(storageTypeService, runningJob());
+        controller.patchContext(1, "{\"revision\":7,\"set\":{\"planRenderedText/s1\":\"text\"}}");
+
+        // A script that read the document before the patch writes it back with its own key.
+        ResponseEntity<String> response = controller.saveContext(1, "{\"custom\":\"value\"}");
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals("{\"custom\":\"value\",\"planRenderedText\":{\"s1\":\"text\"},"
+                + "\"contextRevisions\":{\"planRenderedText/s1\":7}}", response.getBody());
     }
 
     @Test
@@ -71,7 +309,7 @@ class ContextControllerTest {
         JobRepository jobRepository = Mockito.mock(JobRepository.class);
         Job job = Mockito.mock(Job.class);
         when(job.getStatus()).thenReturn(JobStatus.cancelled);
-        when(jobRepository.findById(1)).thenReturn(Optional.of(job));
+        when(jobRepository.lockForContextWrite(1)).thenReturn(Optional.of(job));
         ContextController controller = controller(storageTypeService, jobRepository);
 
         ResponseEntity<String> response = controller.saveContext(1, "{}");
@@ -86,7 +324,7 @@ class ContextControllerTest {
         JobRepository jobRepository = Mockito.mock(JobRepository.class);
         Job job = Mockito.mock(Job.class);
         when(job.getStatus()).thenReturn(JobStatus.queue);
-        when(jobRepository.findById(1)).thenReturn(Optional.of(job));
+        when(jobRepository.lockForContextWrite(1)).thenReturn(Optional.of(job));
         when(storageTypeService.saveContext(1, "{\"planStructuredOutput\":{}}"))
                 .thenReturn("{\"planStructuredOutput\":{}}");
         ContextController controller = controller(storageTypeService, jobRepository);
@@ -103,7 +341,7 @@ class ContextControllerTest {
         JobRepository jobRepository = Mockito.mock(JobRepository.class);
         Job job = Mockito.mock(Job.class);
         when(job.getStatus()).thenReturn(JobStatus.completed);
-        when(jobRepository.findById(1)).thenReturn(Optional.of(job));
+        when(jobRepository.lockForContextWrite(1)).thenReturn(Optional.of(job));
         when(storageTypeService.saveContext(1, "{\"planStructuredOutput\":{}}"))
                 .thenReturn("{\"planStructuredOutput\":{}}");
         ContextController controller = controller(storageTypeService, jobRepository);
@@ -175,7 +413,7 @@ class ContextControllerTest {
         JobRepository jobRepository = Mockito.mock(JobRepository.class);
         Job job = Mockito.mock(Job.class);
         when(job.getStatus()).thenReturn(JobStatus.queue);
-        when(jobRepository.findById(1)).thenReturn(Optional.of(job));
+        when(jobRepository.lockForContextWrite(1)).thenReturn(Optional.of(job));
         when(storageTypeService.saveContext(Mockito.eq(1), Mockito.anyString()))
                 .thenAnswer(invocation -> invocation.getArgument(1));
         ContextController controller = controller(storageTypeService, jobRepository);
@@ -217,7 +455,7 @@ class ContextControllerTest {
         JobRepository jobRepository = Mockito.mock(JobRepository.class);
         Job job = Mockito.mock(Job.class);
         when(job.getStatus()).thenReturn(JobStatus.running);
-        when(jobRepository.findById(1)).thenReturn(Optional.of(job));
+        when(jobRepository.lockForContextWrite(1)).thenReturn(Optional.of(job));
         when(storageTypeService.saveContext(Mockito.eq(1), Mockito.anyString()))
                 .thenAnswer(invocation -> invocation.getArgument(1));
         ContextController controller = controller(storageTypeService, jobRepository);
@@ -251,7 +489,7 @@ class ContextControllerTest {
         JobRepository jobRepository = Mockito.mock(JobRepository.class);
         Job job = Mockito.mock(Job.class);
         when(job.getStatus()).thenReturn(JobStatus.running);
-        when(jobRepository.findById(1)).thenReturn(Optional.of(job));
+        when(jobRepository.lockForContextWrite(1)).thenReturn(Optional.of(job));
         when(storageTypeService.saveContext(Mockito.eq(1), Mockito.anyString()))
                 .thenAnswer(invocation -> invocation.getArgument(1));
         ContextController controller = controller(storageTypeService, jobRepository);
@@ -309,7 +547,7 @@ class ContextControllerTest {
         JobRepository jobRepository = Mockito.mock(JobRepository.class);
         Job job = Mockito.mock(Job.class);
         when(job.getStatus()).thenReturn(JobStatus.running);
-        when(jobRepository.findById(1)).thenReturn(Optional.of(job));
+        when(jobRepository.lockForContextWrite(1)).thenReturn(Optional.of(job));
         when(storageTypeService.saveContext(Mockito.eq(1), Mockito.anyString()))
                 .thenAnswer(invocation -> invocation.getArgument(1));
         ContextController controller = controller(storageTypeService, jobRepository);
@@ -319,7 +557,8 @@ class ContextControllerTest {
 
         assertEquals(HttpStatus.OK, read.getStatusCode());
         assertTrue(read.getBody().contains("\"planStructuredOutput\""));
-        verify(storageTypeService, never()).getContext(1);
+        // Only the write's own locked fresh read touched storage; the UI read is served from the cache.
+        verify(storageTypeService, times(1)).getContext(1);
     }
 
     @Test
@@ -328,7 +567,7 @@ class ContextControllerTest {
         JobRepository jobRepository = Mockito.mock(JobRepository.class);
         Job job = Mockito.mock(Job.class);
         when(job.getStatus()).thenReturn(JobStatus.running);
-        when(jobRepository.findById(1)).thenReturn(Optional.of(job));
+        when(jobRepository.lockForContextWrite(1)).thenReturn(Optional.of(job));
         when(storageTypeService.saveContext(Mockito.eq(1), Mockito.anyString()))
                 .thenAnswer(invocation -> invocation.getArgument(1));
         ContextController controller = controller(storageTypeService, jobRepository);
@@ -340,10 +579,11 @@ class ContextControllerTest {
 
         assertEquals(HttpStatus.OK, read.getStatusCode());
         assertTrue(read.getBody().contains("\"fresh\""));
-        verify(storageTypeService, times(1)).getContext(1);
+        // One read by the write itself, one by the executor.
+        verify(storageTypeService, times(2)).getContext(1);
         // The stale cache entry is dropped, so the next UI read goes back to storage.
         assertTrue(controller.getContext(1, uiPrincipal).getBody().contains("\"fresh\""));
-        verify(storageTypeService, times(2)).getContext(1);
+        verify(storageTypeService, times(3)).getContext(1);
     }
 
     @Test
@@ -366,7 +606,7 @@ class ContextControllerTest {
         JobRepository jobRepository = Mockito.mock(JobRepository.class);
         Job job = Mockito.mock(Job.class);
         when(job.getStatus()).thenReturn(JobStatus.running);
-        when(jobRepository.findById(1)).thenReturn(Optional.of(job));
+        when(jobRepository.lockForContextWrite(1)).thenReturn(Optional.of(job));
         when(storageTypeService.saveContext(Mockito.eq(1), Mockito.anyString()))
                 .thenThrow(new RuntimeException("S3 unavailable"));
         SimpleMeterRegistry registry = new SimpleMeterRegistry();
@@ -384,13 +624,7 @@ class ContextControllerTest {
         StorageTypeService storageTypeService = Mockito.mock(StorageTypeService.class);
         JobRepository jobRepository = Mockito.mock(JobRepository.class);
         StreamingService streamingService = Mockito.mock(StreamingService.class);
-        SimpleMeterRegistry registry = new SimpleMeterRegistry();
-        ContextProperties properties = new ContextProperties();
-        ContextStorageMetrics storageMetrics = new ContextStorageMetrics(registry);
-        ContextController controller = new ContextController(storageTypeService, jobRepository,
-                new ContextSanitizer(new ObjectMapper()), streamingService, storageMetrics,
-                new ContextReadService(storageTypeService, storageMetrics, properties, registry), properties,
-                Mockito.mock(io.terrakube.api.plugin.policy.PolicyEvaluationService.class), authenticatedUser());
+        ContextController controller = controller(storageTypeService, jobRepository, new SimpleMeterRegistry(), streamingService);
 
         controller.streamContext("42", null);
 

@@ -396,33 +396,31 @@ class PlanStructuredOutputServiceTest {
 
         assertTrue(changes.isEmpty());
 
-        Map<String, Object> context = new HashMap<>();
-        PlanStructuredOutputService.applyNoChangePlanMarker(context, "step-1", changes);
-        assertEquals(Map.of("planStepId", "step-1"), context.get(PlanStructuredOutputService.CONTEXT_NO_CHANGE_PLAN_KEY));
+        Map<String, Object> set = subject().buildPlanPatch("step-1", changes, List.of(), true);
+        assertEquals(Map.of("planStepId", "step-1"), set.get(PlanStructuredOutputService.CONTEXT_NO_CHANGE_PLAN_KEY));
     }
 
     @Test
-    void mergesStructuredPlanDataWithoutDroppingExistingContext() {
-        Map<String, Object> context = new HashMap<>();
-        context.put("custom", "value");
-        context.put("planStructuredOutput", Map.of("existing-step", List.of(Map.of("action", "create"))));
-        context.put("terrakubeUI", Map.of("existing-step", "<div>existing</div>"));
+    void buildPlanPatchTouchesOnlyThisStepsEntries() {
+        List<Map<String, Object>> changes = List.of(Map.of("action", "replace"));
+        List<Map<String, Object>> diagnostics = List.of(Map.of("severity", "warning"));
 
-        Map<String, Object> updatedContext = subject().updateContext(
-                context,
-                "new-step",
-                List.of(Map.of("action", "replace")),
-                List.of());
+        Map<String, Object> set = subject().buildPlanPatch("new-step", changes, diagnostics, false);
 
-        assertEquals("value", updatedContext.get("custom"));
+        assertEquals(3, set.size());
+        assertEquals(changes, set.get("planStructuredOutput/new-step"));
+        assertEquals("<div data-terrakube-structured-plan=\"true\"></div>", set.get("terrakubeUI/new-step"));
+        assertEquals(diagnostics, set.get("jobDiagnostics/new-step"));
+        // Progress writes never touch the no-change marker.
+        assertFalse(set.containsKey(PlanStructuredOutputService.CONTEXT_NO_CHANGE_PLAN_KEY));
+    }
 
-        Map<String, Object> planStructuredOutput = (Map<String, Object>) updatedContext.get("planStructuredOutput");
-        assertTrue(planStructuredOutput.containsKey("existing-step"));
-        assertTrue(planStructuredOutput.containsKey("new-step"));
+    @Test
+    void finalPlanPatchWithChangesClearsTheNoChangePlanMarker() {
+        Map<String, Object> set = subject().buildPlanPatch("step-1", List.of(Map.of("action", "create")), List.of(), true);
 
-        Map<String, Object> terrakubeUi = (Map<String, Object>) updatedContext.get("terrakubeUI");
-        assertTrue(terrakubeUi.containsKey("existing-step"));
-        assertTrue(terrakubeUi.containsKey("new-step"));
+        assertTrue(set.containsKey(PlanStructuredOutputService.CONTEXT_NO_CHANGE_PLAN_KEY));
+        assertNull(set.get(PlanStructuredOutputService.CONTEXT_NO_CHANGE_PLAN_KEY));
     }
 
     @Test
@@ -527,14 +525,13 @@ class PlanStructuredOutputServiceTest {
 
         Mockito.verify(queue).submit(Mockito.argThat(s ->
                 s.key().stepId().equals("step-1") && !s.isFinalSnapshot()));
-        Mockito.verify(jobContextService, Mockito.never()).getCurrentContext(Mockito.any(), Mockito.any());
-        Mockito.verify(jobContextService, Mockito.never()).saveContext(Mockito.any(), Mockito.any(), Mockito.any());
+        Mockito.verify(jobContextService, Mockito.never()).patchContextFresh(Mockito.any(), Mockito.any(), Mockito.any());
     }
 
     @Test
+    @SuppressWarnings("unchecked")
     void publishFinalPlanSnapshotStaysSynchronousWhenAsyncDisabled() {
         JobContextService jobContextService = Mockito.mock(JobContextService.class);
-        Mockito.when(jobContextService.getCurrentContext("o", "1")).thenReturn(new HashMap<>());
         io.terrakube.executor.configuration.ExecutorFlagsProperties flags =
                 new io.terrakube.executor.configuration.ExecutorFlagsProperties();
         flags.setAsyncStructuredOutput(false);
@@ -543,23 +540,28 @@ class PlanStructuredOutputServiceTest {
 
         service.publishFinalPlanSnapshot("o", "1", "step-1", List.of(Map.of("address", "a")), List.of());
 
-        Mockito.verify(jobContextService).getCurrentContext("o", "1");
-        Mockito.verify(jobContextService).saveContext(Mockito.eq("o"), Mockito.eq("1"), Mockito.any());
+        ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
+        Mockito.verify(jobContextService).patchContextFresh(Mockito.eq("o"), Mockito.eq("1"), captor.capture());
+        Mockito.verify(jobContextService, Mockito.never()).getCurrentContext(Mockito.any(), Mockito.any());
+        assertEquals(List.of(Map.of("address", "a")), captor.getValue().get("planStructuredOutput/step-1"));
+        assertTrue(captor.getValue().containsKey(PlanStructuredOutputService.CONTEXT_NO_CHANGE_PLAN_KEY));
+        assertNull(captor.getValue().get(PlanStructuredOutputService.CONTEXT_NO_CHANGE_PLAN_KEY));
     }
 
     @Test
     @SuppressWarnings("unchecked")
     void publishRenderedPlanTextSavesItUnderItsOwnContextKeyByStep() {
         JobContextService jobContextService = Mockito.mock(JobContextService.class);
-        Mockito.when(jobContextService.getCurrentContext("o", "1")).thenReturn(new HashMap<>());
         PlanStructuredOutputService service = new PlanStructuredOutputService(jobContextService, new ObjectMapper(), new TerraformClient());
 
         service.publishRenderedPlanText("o", "1", "step-1", "  # aws_instance.foo will be created\n\nPlan: 1 to add, 0 to change, 0 to destroy.");
 
         ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
-        Mockito.verify(jobContextService).saveContext(Mockito.eq("o"), Mockito.eq("1"), captor.capture());
-        Map<String, Object> byStep = (Map<String, Object>) captor.getValue().get(PlanStructuredOutputService.CONTEXT_PLAN_RENDERED_TEXT_KEY);
-        assertTrue(((String) byStep.get("step-1")).contains("Plan: 1 to add, 0 to change, 0 to destroy."));
+        Mockito.verify(jobContextService).patchContextFresh(Mockito.eq("o"), Mockito.eq("1"), captor.capture());
+        Mockito.verify(jobContextService, Mockito.never()).getCurrentContext(Mockito.any(), Mockito.any());
+        assertEquals(1, captor.getValue().size());
+        String text = (String) captor.getValue().get(PlanStructuredOutputService.CONTEXT_PLAN_RENDERED_TEXT_KEY + "/step-1");
+        assertTrue(text.contains("Plan: 1 to add, 0 to change, 0 to destroy."));
     }
 
     @Test
@@ -570,14 +572,14 @@ class PlanStructuredOutputServiceTest {
         service.publishRenderedPlanText("o", "1", "step-1", "   ");
         service.publishRenderedPlanText("o", "1", "step-1", null);
 
-        Mockito.verify(jobContextService, Mockito.never()).getCurrentContext(Mockito.any(), Mockito.any());
-        Mockito.verify(jobContextService, Mockito.never()).saveContext(Mockito.any(), Mockito.any(), Mockito.any());
+        Mockito.verify(jobContextService, Mockito.never()).patchContextFresh(Mockito.any(), Mockito.any(), Mockito.any());
     }
 
     @Test
     void publishRenderedPlanTextSwallowsAContextFailure() {
         JobContextService jobContextService = Mockito.mock(JobContextService.class);
-        Mockito.when(jobContextService.getCurrentContext("o", "1")).thenThrow(new RuntimeException("boom"));
+        Mockito.when(jobContextService.patchContextFresh(Mockito.any(), Mockito.any(), Mockito.any()))
+                .thenThrow(new RuntimeException("boom"));
         PlanStructuredOutputService service = new PlanStructuredOutputService(jobContextService, new ObjectMapper(), new TerraformClient());
 
         org.junit.jupiter.api.Assertions.assertDoesNotThrow(
@@ -623,6 +625,6 @@ class PlanStructuredOutputServiceTest {
                 && s.isFinalSnapshot()
                 && s.getChanges().size() == 1
                 && "aws_instance.example".equals(s.getChanges().get(0).get("address"))));
-        Mockito.verify(jobContextService, Mockito.never()).saveContext(Mockito.any(), Mockito.any(), Mockito.any());
+        Mockito.verify(jobContextService, Mockito.never()).patchContextFresh(Mockito.any(), Mockito.any(), Mockito.any());
     }
 }

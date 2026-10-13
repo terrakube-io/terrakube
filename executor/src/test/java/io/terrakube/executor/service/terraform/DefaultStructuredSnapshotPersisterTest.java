@@ -2,18 +2,23 @@ package io.terrakube.executor.service.terraform;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.terrakube.executor.service.logs.ProcessLogs;
+import io.terrakube.executor.service.terraform.JobContextService.PatchResult;
 import io.terrakube.executor.service.terraform.structured.StructuredSnapshot;
+import io.terrakube.terraform.TerraformClient;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -24,103 +29,106 @@ import static org.mockito.Mockito.when;
 class DefaultStructuredSnapshotPersisterTest {
 
     private final ObjectMapper mapper = new ObjectMapper();
+    private final JobContextService ctx = mock(JobContextService.class);
+    private final ProcessLogs logs = mock(ProcessLogs.class);
+    private final DefaultStructuredSnapshotPersister persister = new DefaultStructuredSnapshotPersister(ctx,
+            new PlanStructuredOutputService(ctx, mapper, mock(TerraformClient.class)),
+            new ApplyStructuredOutputService(ctx, mapper), logs, mapper);
+
+    private StructuredSnapshot planSnapshot(long sequence, boolean finalSnapshot, List<Map<String, Object>> changes) {
+        return StructuredSnapshot.copyOf("o", "1", "step-1", StructuredSnapshot.Phase.PLAN, sequence, finalSnapshot,
+                changes, List.of(), mapper);
+    }
 
     private StructuredSnapshot planSnapshot() {
-        return StructuredSnapshot.copyOf("o", "1", "step-1", StructuredSnapshot.Phase.PLAN, 1L, false,
-                List.of(Map.of("address", "aws_s3_bucket.a", "action", "create")), List.of(), mapper);
+        return planSnapshot(1L, false, List.of(Map.of("address", "aws_s3_bucket.a", "action", "create")));
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> patchedSet(long revision) {
+        ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
+        verify(ctx).patchContext(eq("o"), eq("1"), eq(revision), captor.capture());
+        return captor.getValue();
     }
 
     @Test
-    void persistDoesGetMergePostThenSseAndReportsSuccess() {
-        JobContextService ctx = mock(JobContextService.class);
-        when(ctx.getCurrentContext("o", "1")).thenReturn(new HashMap<>());
-        when(ctx.saveContextChecked(eq("o"), eq("1"), any())).thenReturn(true);
-        PlanStructuredOutputService plan = mock(PlanStructuredOutputService.class);
-        Map<String, Object> merged = new HashMap<>();
-        merged.put("planStructuredOutput", Map.of());
-        when(plan.updateContext(any(), eq("step-1"), any(), any())).thenReturn(merged);
-        ApplyStructuredOutputService apply = mock(ApplyStructuredOutputService.class);
-        ProcessLogs logs = mock(ProcessLogs.class);
+    void persistPatchesThePlanEntriesWithTheSequenceAsRevisionThenPushesSse() {
+        when(ctx.patchContext(eq("o"), eq("1"), anyLong(), any())).thenReturn(PatchResult.APPLIED);
 
-        DefaultStructuredSnapshotPersister persister =
-                new DefaultStructuredSnapshotPersister(ctx, plan, apply, logs, mapper);
+        assertTrue(persister.persist(planSnapshot()));
 
-        boolean ok = persister.persist(planSnapshot());
-
-        assertTrue(ok);
-        verify(ctx).saveContextChecked(eq("o"), eq("1"), eq(merged));
-        verify(logs).sendStructuredUpdate(eq(1), eq("step-1"), contains("\"phase\":\"plan\""));
+        Map<String, Object> set = patchedSet(1L);
+        assertEquals(Set.of("planStructuredOutput/step-1", "terrakubeUI/step-1", "jobDiagnostics/step-1",
+                "structuredOutputStatus"), set.keySet());
         @SuppressWarnings("unchecked")
-        Map<String, Object> status = (Map<String, Object>) merged.get("structuredOutputStatus");
+        Map<String, Object> status = (Map<String, Object>) set.get("structuredOutputStatus");
         assertEquals("PERSISTED", status.get("state"));
         assertEquals("plan", status.get("phase"));
+        verify(ctx, never()).getCurrentContext(any(), any());
+        verify(logs).sendStructuredUpdate(eq(1), eq("step-1"), contains("\"phase\":\"plan\""));
+    }
+
+    @Test
+    void persistPatchesTheApplyEntries() {
+        when(ctx.patchContext(eq("o"), eq("1"), anyLong(), any())).thenReturn(PatchResult.APPLIED);
+        StructuredSnapshot apply = StructuredSnapshot.copyOf("o", "1", "step-2", StructuredSnapshot.Phase.APPLY, 5L,
+                true, List.of(Map.of("address", "aws_s3_bucket.a", "status", "applied")), List.of(), mapper);
+
+        assertTrue(persister.persist(apply));
+
+        assertEquals(Set.of("applyStructuredOutput/step-2", "jobDiagnostics/step-2", "structuredOutputStatus"),
+                patchedSet(5L).keySet());
+        verify(ctx, never()).getCurrentContext(any(), any());
     }
 
     @Test
     void finalEmptyPlanSnapshotWritesTheNoChangePlanMarker() {
-        JobContextService ctx = mock(JobContextService.class);
-        when(ctx.getCurrentContext("o", "1")).thenReturn(new HashMap<>());
-        when(ctx.saveContextChecked(eq("o"), eq("1"), any())).thenReturn(true);
-        PlanStructuredOutputService plan = mock(PlanStructuredOutputService.class);
-        Map<String, Object> merged = new HashMap<>();
-        when(plan.updateContext(any(), eq("step-1"), any(), any())).thenReturn(merged);
-        DefaultStructuredSnapshotPersister persister = new DefaultStructuredSnapshotPersister(
-                ctx, plan, mock(ApplyStructuredOutputService.class), mock(ProcessLogs.class), mapper);
+        when(ctx.patchContext(eq("o"), eq("1"), anyLong(), any())).thenReturn(PatchResult.APPLIED);
 
-        StructuredSnapshot emptyFinalPlan = StructuredSnapshot.copyOf("o", "1", "step-1",
-                StructuredSnapshot.Phase.PLAN, 2L, true, List.of(), List.of(), mapper);
-        assertTrue(persister.persist(emptyFinalPlan));
+        assertTrue(persister.persist(planSnapshot(2L, true, List.of())));
 
-        @SuppressWarnings("unchecked")
-        Map<String, Object> marker = (Map<String, Object>) merged.get("noChangePlan");
-        assertEquals("step-1", marker.get("planStepId"));
+        assertEquals(Map.of("planStepId", "step-1"), patchedSet(2L).get("noChangePlan"));
     }
 
     @Test
     void finalNonEmptyPlanSnapshotClearsAnyStaleNoChangePlanMarker() {
-        JobContextService ctx = mock(JobContextService.class);
-        Map<String, Object> merged = new HashMap<>();
-        merged.put("noChangePlan", Map.of("planStepId", "step-1"));
-        when(ctx.getCurrentContext("o", "1")).thenReturn(new HashMap<>());
-        when(ctx.saveContextChecked(eq("o"), eq("1"), any())).thenReturn(true);
-        PlanStructuredOutputService plan = mock(PlanStructuredOutputService.class);
-        when(plan.updateContext(any(), eq("step-1"), any(), any())).thenReturn(merged);
-        DefaultStructuredSnapshotPersister persister = new DefaultStructuredSnapshotPersister(
-                ctx, plan, mock(ApplyStructuredOutputService.class), mock(ProcessLogs.class), mapper);
+        when(ctx.patchContext(eq("o"), eq("1"), anyLong(), any())).thenReturn(PatchResult.APPLIED);
 
-        StructuredSnapshot nonEmptyFinalPlan = StructuredSnapshot.copyOf("o", "1", "step-1",
-                StructuredSnapshot.Phase.PLAN, 3L, true,
-                List.of(Map.of("address", "aws_s3_bucket.a", "action", "create")), List.of(), mapper);
-        assertTrue(persister.persist(nonEmptyFinalPlan));
+        assertTrue(persister.persist(planSnapshot(3L, true, List.of(Map.of("address", "aws_s3_bucket.a", "action", "create")))));
 
-        assertFalse(merged.containsKey("noChangePlan"));
+        Map<String, Object> set = patchedSet(3L);
+        assertTrue(set.containsKey("noChangePlan"));
+        assertNull(set.get("noChangePlan"));
     }
 
     @Test
-    void persistReturnsFalseWhenSaveFailsAndDoesNotPushSse() {
-        JobContextService ctx = mock(JobContextService.class);
-        when(ctx.getCurrentContext(any(), any())).thenReturn(new HashMap<>());
-        when(ctx.saveContextChecked(any(), any(), any())).thenReturn(false);
-        PlanStructuredOutputService plan = mock(PlanStructuredOutputService.class);
-        when(plan.updateContext(any(), any(), any(), any())).thenReturn(new HashMap<>());
-        ApplyStructuredOutputService apply = mock(ApplyStructuredOutputService.class);
-        ProcessLogs logs = mock(ProcessLogs.class);
+    void progressPlanSnapshotLeavesTheNoChangePlanMarkerAlone() {
+        when(ctx.patchContext(eq("o"), eq("1"), anyLong(), any())).thenReturn(PatchResult.APPLIED);
 
-        DefaultStructuredSnapshotPersister persister =
-                new DefaultStructuredSnapshotPersister(ctx, plan, apply, logs, mapper);
+        assertTrue(persister.persist(planSnapshot()));
+
+        assertFalse(patchedSet(1L).containsKey("noChangePlan"));
+    }
+
+    @Test
+    void skippedPatchIsDoneButPushesNoSse() {
+        when(ctx.patchContext(any(), any(), anyLong(), any())).thenReturn(PatchResult.SKIPPED);
+
+        assertTrue(persister.persist(planSnapshot()));
+        verify(logs, never()).sendStructuredUpdate(anyInt(), any(), any());
+    }
+
+    @Test
+    void persistReturnsFalseWhenPatchFailsAndDoesNotPushSse() {
+        when(ctx.patchContext(any(), any(), anyLong(), any())).thenReturn(PatchResult.FAILED);
 
         assertFalse(persister.persist(planSnapshot()));
         verify(logs, never()).sendStructuredUpdate(anyInt(), any(), any());
     }
 
     @Test
-    void persistNeverThrowsWhenContextReadBlowsUp() {
-        JobContextService ctx = mock(JobContextService.class);
-        when(ctx.getCurrentContext(any(), any())).thenThrow(new RuntimeException("boom"));
-
-        DefaultStructuredSnapshotPersister persister = new DefaultStructuredSnapshotPersister(
-                ctx, mock(PlanStructuredOutputService.class), mock(ApplyStructuredOutputService.class),
-                mock(ProcessLogs.class), mapper);
+    void persistNeverThrowsWhenThePatchBlowsUp() {
+        when(ctx.patchContext(any(), any(), anyLong(), any())).thenThrow(new RuntimeException("boom"));
 
         assertFalse(persister.persist(planSnapshot()));
     }

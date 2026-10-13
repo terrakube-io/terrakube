@@ -1,6 +1,7 @@
 package io.terrakube.executor.service.terraform;
 
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.terrakube.client.TerrakubeClient;
 import io.terrakube.executor.service.workspace.security.WorkspaceSecurity;
@@ -59,9 +60,8 @@ public class JobContextService {
     }
 
     /**
-     * Throws when the context cannot be read, so read-merge-write callers skip their write instead
-     * of saving an otherwise empty context over the stored one. A job that is no longer running
-     * still reads as empty: its context can no longer be written either.
+     * Read-only: writers use {@link #patchContext} instead. Throws when the context cannot be read;
+     * a job that is no longer running reads as empty.
      */
     public Map<String, Object> getCurrentContext(String organizationId, String jobId) {
         HttpURLConnection connection = null;
@@ -95,48 +95,72 @@ public class JobContextService {
         }
     }
 
-    public void saveContext(String organizationId, String jobId, Map<String, Object> context) {
-        saveContextChecked(organizationId, jobId, context);
-    }
+    public enum PatchResult { APPLIED, SKIPPED, FAILED }
 
     /**
-     * Same as {@link #saveContext} but reports the outcome instead of only logging it, so the
-     * structured-output queue worker can decide whether to retry. Never throws.
+     * POSTs {@code {revision, set}} to the context patch endpoint. Each {@code set} path is
+     * {@code key} or {@code key/child}; a {@code null} value deletes that entry. The API applies an
+     * entry only when {@code revision} is newer than the one it last applied for that path, so a
+     * retry of the same write is a no-op ({@link PatchResult#SKIPPED}). Never throws.
      *
-     * @return {@code true} only when the context write returned a non-error status.
+     * @return {@link PatchResult#FAILED} on any error or HTTP status >= 400, so callers may retry.
      */
-    public boolean saveContextChecked(String organizationId, String jobId, Map<String, Object> context) {
+    public PatchResult patchContext(String organizationId, String jobId, long revision, Map<String, Object> set) {
         HttpURLConnection connection = null;
         try {
             io.terrakube.client.model.organization.job.Job jobInfo = terrakubeClient.getJobById(organizationId, jobId).getData();
             if (jobInfo.getAttributes().getStatus().equals("running")) {
-                log.info("Job {} exists, Terrakube should be able to save the context", jobId);
+                log.info("Job {} exists, Terrakube should be able to patch the context", jobId);
             } else {
-                log.warn("Job {} is not running, cannot save context", jobId);
-                return false;
+                log.warn("Job {} is not running, cannot patch context", jobId);
+                return PatchResult.FAILED;
             }
-            connection = buildConnection(terrakubeApiUrl + "/context/v1/" + jobInfo.getId(), "POST");
+            connection = buildConnection(terrakubeApiUrl + "/context/v1/" + jobInfo.getId() + "/patch", "POST");
             connection.setDoOutput(true);
-            byte[] data = objectMapper.writeValueAsBytes(context);
+            // HashMap, not Map.of: set values may be null (delete the entry).
+            Map<String, Object> body = new HashMap<>();
+            body.put("revision", revision);
+            body.put("set", set);
+            byte[] data = objectMapper.writeValueAsBytes(body);
             try (OutputStream os = connection.getOutputStream()) {
                 os.write(data);
             }
 
             int statusCode = connection.getResponseCode();
+            String responseBody = readResponseBody(connection);
             if (statusCode >= 400) {
-                log.warn("Unable to save context for job {}. Response status: {} Body: {}", jobId, statusCode,
-                        readResponseBody(connection));
-                return false;
+                log.warn("Unable to patch context for job {}. Response status: {} Body: {}", jobId, statusCode, responseBody);
+                return PatchResult.FAILED;
             }
-            return true;
+            // No numeric "applied" (empty body, proxy page, an API without the patch endpoint) is
+            // not proof the write landed.
+            JsonNode applied = objectMapper.readTree(responseBody).get("applied");
+            if (applied == null || !applied.canConvertToLong()) {
+                log.warn("Unexpected context patch response for job {}. Body: {}", jobId, responseBody);
+                return PatchResult.FAILED;
+            }
+            return applied.asLong() > 0 ? PatchResult.APPLIED : PatchResult.SKIPPED;
         } catch (Exception e) {
-            log.warn("Unable to save context for job {}: {}", jobId, e.getMessage());
-            return false;
+            log.warn("Unable to patch context for job {}: {}", jobId, e.getMessage());
+            return PatchResult.FAILED;
         } finally {
             if (connection != null) {
                 connection.disconnect();
             }
         }
+    }
+
+    /**
+     * {@link #patchContext} with a freshly minted {@link ContextRevision}. Such a revision can only be
+     * stale when another executor pod's clock ran ahead of this one, so a SKIPPED result is logged.
+     */
+    public PatchResult patchContextFresh(String organizationId, String jobId, Map<String, Object> set) {
+        PatchResult result = patchContext(organizationId, jobId, ContextRevision.next(), set);
+        if (result == PatchResult.SKIPPED) {
+            log.warn("Context patch for job {} entries {} was skipped as stale despite a fresh revision; "
+                    + "possible clock skew between executor pods", jobId, set.keySet());
+        }
+        return result;
     }
 
     HttpURLConnection buildConnection(String endpoint, String method) throws IOException {

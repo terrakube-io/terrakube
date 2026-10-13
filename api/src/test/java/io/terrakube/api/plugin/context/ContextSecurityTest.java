@@ -44,16 +44,17 @@ class ContextSecurityTest {
         ContextProperties properties = new ContextProperties();
         ContextStorageMetrics storageMetrics = new ContextStorageMetrics(new SimpleMeterRegistry());
         ContextReadService readService = new ContextReadService(storageTypeService, storageMetrics, properties, new SimpleMeterRegistry());
+        ContextSanitizer sanitizer = new ContextSanitizer(new ObjectMapper());
         controller = new ContextController(
-                storageTypeService,
-                jobRepository,
-                new ContextSanitizer(new ObjectMapper()),
+                sanitizer,
                 streamingService,
-                storageMetrics,
                 readService,
+                new ContextWriteService(jobRepository, readService, sanitizer, storageTypeService, storageMetrics, new ObjectMapper()),
                 properties,
                 null,
-                jobLogAccessService);
+                jobLogAccessService,
+                null,
+                new ObjectMapper());
     }
 
     @Test
@@ -138,7 +139,7 @@ class ContextSecurityTest {
         when(jobLogAccessService.canWriteContext(authentication, 1)).thenReturn(true);
         Job job = mock(Job.class);
         when(job.getStatus()).thenReturn(JobStatus.running);
-        when(jobRepository.findById(1)).thenReturn(Optional.of(job));
+        when(jobRepository.lockForContextWrite(1)).thenReturn(Optional.of(job));
         when(storageTypeService.saveContext(1, "{\"plan\":{}}")).thenReturn("{\"plan\":{}}");
 
         ResponseEntity<String> response = controller.saveContext(1, "{\"plan\":{}}", authentication);
