@@ -18,9 +18,11 @@ public class TerraformJsonEventParser {
     private static final Set<String> TERMINAL_STATUSES = Set.of(
             "applied", "errored", "ephemeral-renewed", "ephemeral-errored");
 
+    private static final String STATUS_EPHEMERAL_OPENING = "ephemeral-opening";
+
     // A resource at one of these is actively in-flight and needs reconciling if execution terminates unexpectedly.
     public static final Set<String> IN_PROGRESS_STATUSES = Set.of(
-            "applying", "provisioning", "refreshing", "reading", "ephemeral-opening", "ephemeral-closing");
+            "applying", "provisioning", "refreshing", "reading", STATUS_EPHEMERAL_OPENING, "ephemeral-closing");
 
     private final ObjectMapper objectMapper;
     private volatile boolean sawTerraformEvent;
@@ -416,10 +418,10 @@ public class TerraformJsonEventParser {
 
     private String ephemeralStartStatus(Map<String, Object> event) {
         return switch (ephemeralAction(event)) {
-            case "renew" -> "ephemeral-opening"; // renewing reuses the "in progress" badge; there's
+            case "renew" -> STATUS_EPHEMERAL_OPENING; // renewing reuses the "in progress" badge; there's
                                                   // no meaningful visual difference for a brief renew tick
             case "close" -> "ephemeral-closing";
-            default -> "ephemeral-opening";
+            default -> STATUS_EPHEMERAL_OPENING;
         };
     }
 

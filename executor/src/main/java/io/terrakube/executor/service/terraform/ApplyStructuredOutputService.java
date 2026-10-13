@@ -140,10 +140,8 @@ public class ApplyStructuredOutputService {
         }
         for (Map<String, Object> change : changes) {
             Object statusObj = change.get("status");
-            if (statusObj instanceof String status) {
-                if (TerraformJsonEventParser.IN_PROGRESS_STATUSES.contains(status)) {
-                    change.put("status", "interrupted");
-                }
+            if (statusObj instanceof String status && TerraformJsonEventParser.IN_PROGRESS_STATUSES.contains(status)) {
+                change.put("status", "interrupted");
             }
         }
     }

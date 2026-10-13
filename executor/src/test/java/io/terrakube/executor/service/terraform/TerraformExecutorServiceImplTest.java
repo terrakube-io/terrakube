@@ -56,6 +56,7 @@ import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
@@ -111,7 +112,7 @@ class TerraformExecutorServiceImplTest {
 
     private TerraformExecutorServiceImpl subjectSpy() {
         TerraformExecutorServiceImpl spied = spy(subject());
-        TerraformClient defaultJsonApplyClient = Mockito.mock(TerraformClient.class);
+        TerraformClient defaultJsonApplyClient = mock(TerraformClient.class);
         try {
             when(defaultJsonApplyClient.apply(any(TerraformProcessData.class), any(Consumer.class), any()))
                     .thenAnswer(invocation -> terraformClient.apply(invocation.getArgument(0), invocation.getArgument(1), invocation.getArgument(2)));
@@ -750,7 +751,7 @@ class TerraformExecutorServiceImplTest {
                 + "\"diagnostic\":{\"severity\":\"error\",\"summary\":\"Resource creation failed\"}}";
         String applyStartLine = "{\"type\":\"apply_start\",\"hook\":{\"resource\":{\"addr\":\"aws_instance.new\"},\"action\":\"create\"}}";
 
-        TerraformClient jsonApplyClient = Mockito.mock(TerraformClient.class);
+        TerraformClient jsonApplyClient = mock(TerraformClient.class);
         when(jsonApplyClient.apply(any(TerraformProcessData.class), any(Consumer.class), any()))
                 .thenAnswer(invocation -> {
                     Consumer<String> lineConsumer = invocation.getArgument(1);
@@ -787,7 +788,7 @@ class TerraformExecutorServiceImplTest {
 
         String applyStartLine = "{\"type\":\"apply_start\",\"hook\":{\"resource\":{\"addr\":\"aws_instance.interrupted\"},\"action\":\"create\"}}";
 
-        TerraformClient jsonApplyClient = Mockito.mock(TerraformClient.class);
+        TerraformClient jsonApplyClient = mock(TerraformClient.class);
         when(jsonApplyClient.apply(any(TerraformProcessData.class), any(Consumer.class), any()))
                 .thenAnswer(invocation -> {
                     Consumer<String> lineConsumer = invocation.getArgument(1);
@@ -832,7 +833,7 @@ class TerraformExecutorServiceImplTest {
         when(terraformClient.init(any(TerraformProcessData.class), any(Consumer.class), any()))
                 .thenReturn(CompletableFuture.completedFuture(true));
 
-        TerraformClient jsonApplyClient = Mockito.mock(TerraformClient.class);
+        TerraformClient jsonApplyClient = mock(TerraformClient.class);
         when(jsonApplyClient.apply(any(TerraformProcessData.class), any(Consumer.class), any()))
                 .thenAnswer(invocation -> {
                     Consumer<String> lineConsumer = invocation.getArgument(1);

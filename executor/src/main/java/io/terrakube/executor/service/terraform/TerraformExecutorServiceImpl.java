@@ -553,6 +553,9 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                 if (stateJson != null) {
                     applyStructuredOutputService.resolveFinalValues(changes, stateJson);
                 }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                log.warn("Interrupted while resolving state values after apply for job {}", terraformJob.getJobId(), e);
             } catch (Exception e) {
                 log.warn("Unable to resolve state values after apply for job {}", terraformJob.getJobId(), e);
             }
