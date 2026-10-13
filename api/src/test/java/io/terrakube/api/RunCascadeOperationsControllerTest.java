@@ -13,6 +13,8 @@ import java.util.UUID;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.equalTo;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -22,8 +24,17 @@ import static org.mockito.Mockito.when;
  */
 class RunCascadeOperationsControllerTest extends ServerApplicationTests {
 
+    // "simple" org: TERRAKUBE_DEVELOPERS has manage_job there, AZURE_DEVELOPERS does not.
+    private static final UUID SIMPLE_ORG = UUID.fromString("d9b58bd3-f3fc-4056-a026-1163297e80a8");
+
     @MockitoBean
     RunCascadeCoordinatorService coordinatorService;
+
+    @MockitoBean
+    io.terrakube.api.repository.RunCascadeRepository cascadeRepository;
+
+    @MockitoBean
+    io.terrakube.api.repository.RunCascadeNodeRepository nodeRepository;
 
     private RunCascade cascade(UUID id, RunCascadeStatus status) {
         RunCascade cascade = new RunCascade();
@@ -114,5 +125,74 @@ class RunCascadeOperationsControllerTest extends ServerApplicationTests {
                 .then().statusCode(HttpStatus.OK.value())
                 .body("status", equalTo("BLOCKED"))
                 .body("jobId", equalTo((Object) null));
+    }
+
+    @Test
+    void aMemberWithManageJobInTheCascadesOrganizationCanOperate() {
+        UUID cascadeId = UUID.randomUUID();
+        UUID nodeId = UUID.randomUUID();
+        when(cascadeRepository.findOrganizationId(cascadeId)).thenReturn(Optional.of(SIMPLE_ORG));
+        when(nodeRepository.findOrganizationId(nodeId)).thenReturn(Optional.of(SIMPLE_ORG));
+        when(coordinatorService.cancelCascade(cascadeId)).thenReturn(cascade(cascadeId, RunCascadeStatus.CANCELLED));
+        when(coordinatorService.retryNode(nodeId)).thenReturn(job(44));
+
+        given().headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+                .when().post("/admin/v1/cascades/" + cascadeId + "/cancel")
+                .then().statusCode(HttpStatus.OK.value());
+        given().headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+                .when().post("/admin/v1/cascades/nodes/" + nodeId + "/retry")
+                .then().statusCode(HttpStatus.OK.value()).body("jobId", equalTo(44));
+    }
+
+    @Test
+    void aMemberWithoutManageJobInTheOrganizationIsForbidden() {
+        UUID cascadeId = UUID.randomUUID();
+        when(cascadeRepository.findOrganizationId(cascadeId)).thenReturn(Optional.of(SIMPLE_ORG));
+
+        given().headers("Authorization", "Bearer " + generatePAT("AZURE_DEVELOPERS"))
+                .when().post("/admin/v1/cascades/" + cascadeId + "/cancel")
+                .then().statusCode(HttpStatus.FORBIDDEN.value());
+        verify(coordinatorService, never()).cancelCascade(cascadeId);
+    }
+
+    @Test
+    void manageJobInAnotherOrganizationDoesNotGrantAccess() {
+        UUID cascadeId = UUID.randomUUID();
+        when(cascadeRepository.findOrganizationId(cascadeId)).thenReturn(Optional.of(UUID.randomUUID()));
+
+        given().headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+                .when().post("/admin/v1/cascades/" + cascadeId + "/cancel")
+                .then().statusCode(HttpStatus.FORBIDDEN.value());
+        verify(coordinatorService, never()).cancelCascade(cascadeId);
+    }
+
+    @Test
+    void anUnknownCascadeIs403ForANonAdminSoIdsCannotBeProbed() {
+        given().headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+                .when().post("/admin/v1/cascades/" + UUID.randomUUID() + "/cancel")
+                .then().statusCode(HttpStatus.FORBIDDEN.value());
+    }
+
+    @Test
+    void capabilitiesAreReportedPerOrganization() {
+        given().headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+                .queryParam("organizationId", SIMPLE_ORG)
+                .when().get("/admin/v1/cascades/capabilities")
+                .then().statusCode(HttpStatus.OK.value())
+                .body("operate", equalTo(true))
+                .body("instanceAdmin", equalTo(false));
+
+        given().headers("Authorization", "Bearer " + generatePAT("AZURE_DEVELOPERS"))
+                .queryParam("organizationId", SIMPLE_ORG)
+                .when().get("/admin/v1/cascades/capabilities")
+                .then().statusCode(HttpStatus.OK.value())
+                .body("operate", equalTo(false));
+
+        given().headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_ADMIN"))
+                .queryParam("organizationId", UUID.randomUUID())
+                .when().get("/admin/v1/cascades/capabilities")
+                .then().statusCode(HttpStatus.OK.value())
+                .body("operate", equalTo(true))
+                .body("instanceAdmin", equalTo(true));
     }
 }

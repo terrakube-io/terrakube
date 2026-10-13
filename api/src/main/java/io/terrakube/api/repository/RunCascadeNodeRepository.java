@@ -32,4 +32,8 @@ public interface RunCascadeNodeRepository extends JpaRepository<RunCascadeNode, 
     @Query("SELECT n FROM run_cascade_node n WHERE n.cascade.id = :cascadeId AND n.workspace.id = :workspaceId")
     Optional<RunCascadeNode> lockByCascade_IdAndWorkspace_IdForUpdate(
             @Param("cascadeId") UUID cascadeId, @Param("workspaceId") UUID workspaceId);
+
+    /** The organization a node's cascade belongs to, resolved without loading the lazy associations. */
+    @Query("SELECT n.cascade.organization.id FROM run_cascade_node n WHERE n.id = :id")
+    Optional<UUID> findOrganizationId(@Param("id") UUID id);
 }
