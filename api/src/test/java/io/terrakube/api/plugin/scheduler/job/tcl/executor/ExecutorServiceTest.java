@@ -405,6 +405,46 @@ class ExecutorServiceTest {
                 .containsEntry("TF_CLI_ARGS_plan", "-var-file=variables/dev.tfvars -target=\"aws_s3_bucket.bucket\"");
     }
 
+    @Test
+    void shouldAppendTargetAndReplaceAddressesToExistingTfCliArgsPlan() {
+        Address target = new Address();
+        target.setName("aws_s3_bucket.bucket");
+        target.setType(AddressType.TARGET);
+
+        Address replace = new Address();
+        replace.setName("aws_instance.server[\"web-prod\"]");
+        replace.setType(AddressType.REPLACE);
+
+        when(addressRepository.findByJob(job)).thenReturn(List.of(target, replace));
+
+        ExecutorContext context = createContext();
+        context.getEnvironmentVariables().put("TF_CLI_ARGS_plan", "-var-file=variables/dev.tfvars");
+
+        ExecutorContext result = executorService.validateJobAddress(context, job);
+
+        assertThat(result.getEnvironmentVariables())
+                .containsEntry("TF_CLI_ARGS_plan",
+                        "-var-file=variables/dev.tfvars" +
+                        " -target=\"aws_s3_bucket.bucket\"" +
+                        " -replace=\"aws_instance.server[\\\"web-prod\\\"]\"");
+    }
+
+    @Test
+    void shouldAppendAddressesToEmptyExistingTfCliArgsPlan() {
+        Address address = new Address();
+        address.setName("aws_s3_bucket.bucket");
+        address.setType(AddressType.TARGET);
+        when(addressRepository.findByJob(job)).thenReturn(List.of(address));
+
+        ExecutorContext context = createContext();
+        context.getEnvironmentVariables().put("TF_CLI_ARGS_plan", "");
+
+        ExecutorContext result = executorService.validateJobAddress(context, job);
+
+        assertThat(result.getEnvironmentVariables())
+                .containsEntry("TF_CLI_ARGS_plan", " -target=\"aws_s3_bucket.bucket\"");
+    }
+
     private Job jobWithVcsWorkspace() {
         Vcs vcs = new Vcs();
         vcs.setVcsType(VcsType.GITHUB);
