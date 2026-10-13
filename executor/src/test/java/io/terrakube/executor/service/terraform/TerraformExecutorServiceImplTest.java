@@ -40,7 +40,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
 import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -88,7 +87,6 @@ class TerraformExecutorServiceImplTest {
         when(terraformState.getBackendStateFile(anyString(), anyString(), any(File.class), anyString())).thenReturn("backend.tfvars");
         when(structuredOutputPersistenceQueue.awaitDrain(any())).thenReturn(true);
         structuredOutputProperties.setDrainTimeoutMs(1000);
-        Mockito.doCallRealMethod().when(applyStructuredOutputService).finalizeResourceStatuses(any(), anyBoolean(), anyBoolean());
 
         return new TerraformExecutorServiceImpl(
                 terraformClient,
@@ -107,19 +105,6 @@ class TerraformExecutorServiceImplTest {
                 structuredOutputProperties,
                 meterRegistry,
                 binaryCacheRecoveryService);
-    }
-
-    private TerraformExecutorServiceImpl subjectSpy() {
-        TerraformExecutorServiceImpl spied = spy(subject());
-        TerraformClient defaultJsonApplyClient = Mockito.mock(TerraformClient.class);
-        try {
-            when(defaultJsonApplyClient.apply(any(TerraformProcessData.class), any(Consumer.class), any()))
-                    .thenAnswer(invocation -> terraformClient.apply(invocation.getArgument(0), invocation.getArgument(1), invocation.getArgument(2)));
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
-        doReturn(defaultJsonApplyClient).when(spied).buildJsonEnabledApplyClient();
-        return spied;
     }
 
     private TerraformJob createJob() {
@@ -381,7 +366,7 @@ class TerraformExecutorServiceImplTest {
     // prints after a successful apply.
     @Test
     void appendsHumanReadableOutputsAfterSuccessfulApply() throws Exception {
-        TerraformExecutorServiceImpl subject = subjectSpy();
+        TerraformExecutorServiceImpl subject = subject();
         TerraformJob terraformJob = createJob();
 
         when(applyStructuredOutputService.seedFromPlan("org", "42")).thenReturn(List.of());
@@ -420,7 +405,7 @@ class TerraformExecutorServiceImplTest {
     // apply look like it failed, which would risk an unnecessary re-apply.
     @Test
     void reportsSuccessWithAWarningWhenTheStateHistorySnapshotFailsToSaveAfterASuccessfulApply() throws Exception {
-        TerraformExecutorServiceImpl subject = subjectSpy();
+        TerraformExecutorServiceImpl subject = subject();
         TerraformJob terraformJob = createJob();
 
         stubSuccessfulApply();
@@ -442,7 +427,7 @@ class TerraformExecutorServiceImplTest {
 
     @Test
     void keepsStateAndOutputsOutOfTheExecutorLog() throws Exception {
-        TerraformExecutorServiceImpl subject = subjectSpy();
+        TerraformExecutorServiceImpl subject = subject();
         TerraformJob terraformJob = createJob();
         String secretLine = "{\"password\":\"secret-marker-7f3a\"," + "x".repeat(10_000) + "}";
 
@@ -472,7 +457,7 @@ class TerraformExecutorServiceImplTest {
 
     @Test
     void logsOnlyStderrWhenShowAndStatePullFail() throws Exception {
-        TerraformExecutorServiceImpl subject = subjectSpy();
+        TerraformExecutorServiceImpl subject = subject();
         TerraformJob terraformJob = createJob();
 
         stubSuccessfulApply();
@@ -491,7 +476,7 @@ class TerraformExecutorServiceImplTest {
 
     @Test
     void logsOnlyStderrWhenOutputFails() throws Exception {
-        TerraformExecutorServiceImpl subject = subjectSpy();
+        TerraformExecutorServiceImpl subject = subject();
         TerraformJob terraformJob = createJob();
 
         stubSuccessfulApply();
@@ -555,7 +540,7 @@ class TerraformExecutorServiceImplTest {
     @ParameterizedTest
     @ValueSource(booleans = {true, false})
     void requiredSavedPlanUsesSavedInputsAndDoesNotRetryFailedApply(boolean applySucceeds) throws Exception {
-        TerraformExecutorServiceImpl subject = subjectSpy();
+        TerraformExecutorServiceImpl subject = subject();
         TerraformJob job = createJob();
         job.setRequireSavedPlan(true);
         job.getVariables().put("message", "new-value");
@@ -581,7 +566,7 @@ class TerraformExecutorServiceImplTest {
 
     @Test
     void optionalSavedPlanPreservesStandaloneApplyWithWorkspaceVariables() throws Exception {
-        TerraformExecutorServiceImpl subject = subjectSpy();
+        TerraformExecutorServiceImpl subject = subject();
         TerraformJob job = createJob();
         job.getVariables().put("message", "current-value");
         stubSuccessfulApply();
@@ -631,7 +616,7 @@ class TerraformExecutorServiceImplTest {
     // diff back via getPlanAsHumanText, mirroring plan()'s own append.
     @Test
     void appendsHumanReadablePlanDiffWhenApplyingFromDownloadedPlanFile() throws Exception {
-        TerraformExecutorServiceImpl subject = subjectSpy();
+        TerraformExecutorServiceImpl subject = subject();
         TerraformJob terraformJob = createJob();
 
         when(applyStructuredOutputService.seedFromPlan("org", "42")).thenReturn(List.of());
@@ -661,7 +646,7 @@ class TerraformExecutorServiceImplTest {
     // be called at all rather than rendering stale/empty content.
     @Test
     void doesNotRenderPlanDiffWhenNoPlanFileWasDownloaded() throws Exception {
-        TerraformExecutorServiceImpl subject = subjectSpy();
+        TerraformExecutorServiceImpl subject = subject();
         TerraformJob terraformJob = createJob();
 
         when(applyStructuredOutputService.seedFromPlan("org", "42")).thenReturn(List.of());
@@ -684,7 +669,7 @@ class TerraformExecutorServiceImplTest {
 
     @Test
     void doesNotAppendOutputsToConsoleWhenApplyItselfFailed() throws Exception {
-        TerraformExecutorServiceImpl subject = subjectSpy();
+        TerraformExecutorServiceImpl subject = subject();
         TerraformJob terraformJob = createJob();
 
         when(applyStructuredOutputService.seedFromPlan("org", "42")).thenReturn(List.of());
@@ -733,133 +718,26 @@ class TerraformExecutorServiceImplTest {
     }
 
     @Test
-    void runsJsonApplyEvenWhenThereIsNoSeedDataAndCapturesDiagnostics() throws Exception {
-        TerraformExecutorServiceImpl subject = spy(subject());
+    void fallsBackToSharedClientWhenThereIsNoSeedData() throws Exception {
+        TerraformExecutorServiceImpl subject = subject();
         TerraformJob terraformJob = createJob();
 
         when(applyStructuredOutputService.seedFromPlan("org", "42")).thenReturn(List.of());
 
         when(terraformClient.init(any(TerraformProcessData.class), any(Consumer.class), any()))
                 .thenReturn(CompletableFuture.completedFuture(true));
+        when(terraformClient.apply(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(true));
         when(terraformClient.show(any(TerraformProcessData.class), any(Consumer.class), any(Consumer.class)))
                 .thenReturn(CompletableFuture.completedFuture(false));
         when(terraformClient.statePull(any(TerraformProcessData.class), any(Consumer.class), any(Consumer.class)))
                 .thenReturn(CompletableFuture.completedFuture(false));
 
-        String diagnosticLine = "{\"@message\":\"Error: Resource creation failed\",\"type\":\"diagnostic\","
-                + "\"diagnostic\":{\"severity\":\"error\",\"summary\":\"Resource creation failed\"}}";
-        String applyStartLine = "{\"type\":\"apply_start\",\"hook\":{\"resource\":{\"addr\":\"aws_instance.new\"},\"action\":\"create\"}}";
-
-        TerraformClient jsonApplyClient = Mockito.mock(TerraformClient.class);
-        when(jsonApplyClient.apply(any(TerraformProcessData.class), any(Consumer.class), any()))
-                .thenAnswer(invocation -> {
-                    Consumer<String> lineConsumer = invocation.getArgument(1);
-                    lineConsumer.accept(applyStartLine);
-                    lineConsumer.accept(diagnosticLine);
-                    return CompletableFuture.completedFuture(false);
-                });
-        doReturn(jsonApplyClient).when(subject).buildJsonEnabledApplyClient();
-
         ExecutorJobResult result = subject.apply(terraformJob, tempDir.toFile());
 
-        assertFalse(result.isSuccessfulExecution());
-        verify(applyStructuredOutputService).publishFinalApplySnapshot(
-                eq("org"), eq("42"), eq("1"),
-                argThat(changes -> changes.size() == 1
-                        && "aws_instance.new".equals(changes.get(0).get("address"))
-                        && "interrupted".equals(changes.get(0).get("status"))),
-                argThat(diagnostics -> diagnostics.size() == 1
-                        && "Resource creation failed".equals(diagnostics.get(0).get("summary"))));
-    }
-
-    @Test
-    void applyWithExceptionPublishesFinalSnapshotWithInterruptedStatusBeforeQueueDrain() throws Exception {
-        TerraformExecutorServiceImpl subject = spy(subject());
-        TerraformJob terraformJob = createJob();
-
-        Map<String, Object> seededChange = new HashMap<>();
-        seededChange.put("address", "aws_instance.interrupted");
-        seededChange.put("status", "pending");
-        when(applyStructuredOutputService.seedFromPlan("org", "42")).thenReturn(List.of(seededChange));
-
-        when(terraformClient.init(any(TerraformProcessData.class), any(Consumer.class), any()))
-                .thenReturn(CompletableFuture.completedFuture(true));
-
-        String applyStartLine = "{\"type\":\"apply_start\",\"hook\":{\"resource\":{\"addr\":\"aws_instance.interrupted\"},\"action\":\"create\"}}";
-
-        TerraformClient jsonApplyClient = Mockito.mock(TerraformClient.class);
-        when(jsonApplyClient.apply(any(TerraformProcessData.class), any(Consumer.class), any()))
-                .thenAnswer(invocation -> {
-                    Consumer<String> lineConsumer = invocation.getArgument(1);
-                    lineConsumer.accept(applyStartLine);
-                    CompletableFuture<Boolean> future = new CompletableFuture<>();
-                    future.completeExceptionally(new ExecutionException(new RuntimeException("worker terminated")));
-                    return future;
-                });
-        doReturn(jsonApplyClient).when(subject).buildJsonEnabledApplyClient();
-
-        ExecutorJobResult result = subject.apply(terraformJob, tempDir.toFile());
-
-        assertFalse(result.isSuccessfulExecution());
-        verify(applyStructuredOutputService).finalizeResourceStatuses(any(), eq(false), eq(false));
-        verify(applyStructuredOutputService).publishFinalApplySnapshot(
-                eq("org"), eq("42"), eq("1"),
-                argThat(changes -> changes.size() == 1 && "interrupted".equals(changes.get(0).get("status"))),
-                any());
-        verify(structuredOutputPersistenceQueue).awaitDrain(any());
-    }
-
-    @Test
-    void multiResourceApplyFailurePreservesAppliedAndMarksInFlightAsInterrupted() throws Exception {
-        TerraformExecutorServiceImpl subject = spy(subject());
-        TerraformJob terraformJob = createJob();
-
-        Map<String, Object> c1 = new HashMap<>();
-        c1.put("address", "aws_instance.applied");
-        c1.put("status", "pending");
-        Map<String, Object> c2 = new HashMap<>();
-        c2.put("address", "aws_instance.errored");
-        c2.put("status", "pending");
-        Map<String, Object> c3 = new HashMap<>();
-        c3.put("address", "aws_instance.in_flight");
-        c3.put("status", "pending");
-        Map<String, Object> c4 = new HashMap<>();
-        c4.put("address", "aws_instance.never_started");
-        c4.put("status", "pending");
-
-        when(applyStructuredOutputService.seedFromPlan("org", "42")).thenReturn(List.of(c1, c2, c3, c4));
-
-        when(terraformClient.init(any(TerraformProcessData.class), any(Consumer.class), any()))
-                .thenReturn(CompletableFuture.completedFuture(true));
-
-        TerraformClient jsonApplyClient = Mockito.mock(TerraformClient.class);
-        when(jsonApplyClient.apply(any(TerraformProcessData.class), any(Consumer.class), any()))
-                .thenAnswer(invocation -> {
-                    Consumer<String> lineConsumer = invocation.getArgument(1);
-                    // c1 completes
-                    lineConsumer.accept("{\"type\":\"apply_start\",\"hook\":{\"resource\":{\"addr\":\"aws_instance.applied\"},\"action\":\"create\"}}");
-                    lineConsumer.accept("{\"type\":\"apply_complete\",\"hook\":{\"resource\":{\"addr\":\"aws_instance.applied\"},\"elapsed_seconds\":1}}");
-                    // c2 errors
-                    lineConsumer.accept("{\"type\":\"apply_start\",\"hook\":{\"resource\":{\"addr\":\"aws_instance.errored\"},\"action\":\"create\"}}");
-                    lineConsumer.accept("{\"type\":\"apply_errored\",\"hook\":{\"resource\":{\"addr\":\"aws_instance.errored\"},\"elapsed_seconds\":1}}");
-                    // c3 in flight
-                    lineConsumer.accept("{\"type\":\"apply_start\",\"hook\":{\"resource\":{\"addr\":\"aws_instance.in_flight\"},\"action\":\"create\"}}");
-                    // c4 never started (remains pending)
-                    return CompletableFuture.completedFuture(false);
-                });
-        doReturn(jsonApplyClient).when(subject).buildJsonEnabledApplyClient();
-
-        ExecutorJobResult result = subject.apply(terraformJob, tempDir.toFile());
-
-        assertFalse(result.isSuccessfulExecution());
-        verify(applyStructuredOutputService).publishFinalApplySnapshot(
-                eq("org"), eq("42"), eq("1"),
-                argThat(changes -> changes.size() == 4
-                        && "applied".equals(changes.get(0).get("status"))
-                        && "errored".equals(changes.get(1).get("status"))
-                        && "interrupted".equals(changes.get(2).get("status"))
-                        && "pending".equals(changes.get(3).get("status"))),
-                any());
+        assertTrue(result.isSuccessfulExecution());
+        verify(terraformClient).apply(any(TerraformProcessData.class), any(Consumer.class), any());
+        verify(applyStructuredOutputService, never()).publishApplyProgress(anyString(), anyString(), anyString(), any(), any());
     }
 
     // destroy() previously ran a plain (non-JSON) terraform destroy with none of the structured

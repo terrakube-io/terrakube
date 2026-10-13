@@ -18,10 +18,6 @@ public class TerraformJsonEventParser {
     private static final Set<String> TERMINAL_STATUSES = Set.of(
             "applied", "errored", "ephemeral-renewed", "ephemeral-errored");
 
-    // A resource at one of these is actively in-flight and needs reconciling if execution terminates unexpectedly.
-    public static final Set<String> IN_PROGRESS_STATUSES = Set.of(
-            "applying", "provisioning", "refreshing", "reading", "ephemeral-opening", "ephemeral-closing");
-
     private final ObjectMapper objectMapper;
     private volatile boolean sawTerraformEvent;
 

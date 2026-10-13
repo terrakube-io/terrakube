@@ -91,7 +91,7 @@ public class PlanStructuredOutputService {
 
             Map<String, Object> context = getCurrentContext(terraformJob.getOrganizationId(), terraformJob.getJobId());
             Map<String, Object> updatedContext = updateContext(context, terraformJob.getStepId(), changes, jobDiagnostics);
-            applyNoChangePlanMarker(updatedContext, terraformJob.getStepId(), changes, jobDiagnostics);
+            applyNoChangePlanMarker(updatedContext, terraformJob.getStepId(), changes);
             saveContext(terraformJob.getOrganizationId(), terraformJob.getJobId(), updatedContext);
         } catch (InterruptedException e) {
             log.error("Interrupted while publishing plan summary", e);
@@ -137,7 +137,7 @@ public class PlanStructuredOutputService {
             Map<String, Object> context = getCurrentContext(organizationId, jobId);
             Map<String, Object> updatedContext = updateContext(context, stepId, liveChanges, jobDiagnostics);
             if (finalSnapshot) {
-                applyNoChangePlanMarker(updatedContext, stepId, liveChanges, jobDiagnostics);
+                applyNoChangePlanMarker(updatedContext, stepId, liveChanges);
             }
             saveContext(organizationId, jobId, updatedContext);
         } catch (Exception e) {
@@ -390,27 +390,13 @@ public class PlanStructuredOutputService {
      * UI can treat the associated standard apply as a valid no-op without inferring it from an empty
      * array or console text. The marker is cleared as soon as a real change is recorded for the step.
      * Only written from authoritative final writes (plan summary / final snapshot), never progress.
-     * Must never be set if the plan encountered errors or has error diagnostics.
      */
-    static void applyNoChangePlanMarker(Map<String, Object> context, String stepId, List<?> changes, List<Map<String, Object>> jobDiagnostics) {
-        boolean hasErrors = (jobDiagnostics != null && jobDiagnostics.stream().anyMatch(d -> "error".equals(d.get("severity"))));
-        if (!hasErrors && changes != null) {
-            hasErrors = changes.stream().anyMatch(c -> {
-                if (c instanceof Map<?, ?> m) {
-                    return "errored".equals(m.get("status"));
-                }
-                return false;
-            });
-        }
-        if (!hasErrors && (changes == null || changes.isEmpty())) {
+    static void applyNoChangePlanMarker(Map<String, Object> context, String stepId, List<?> changes) {
+        if (changes == null || changes.isEmpty()) {
             context.put(CONTEXT_NO_CHANGE_PLAN_KEY, Map.of("planStepId", stepId));
         } else {
             context.remove(CONTEXT_NO_CHANGE_PLAN_KEY);
         }
-    }
-
-    static void applyNoChangePlanMarker(Map<String, Object> context, String stepId, List<?> changes) {
-        applyNoChangePlanMarker(context, stepId, changes, List.of());
     }
 
     private Map<String, Object> getCurrentContext(String organizationId, String jobId) {

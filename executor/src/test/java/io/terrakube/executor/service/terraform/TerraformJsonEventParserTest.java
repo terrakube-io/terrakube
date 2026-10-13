@@ -560,18 +560,4 @@ class TerraformJsonEventParserTest {
                 changes, jobDiagnostics);
         assertTrue(parser.hasSeenTerraformEvents());
     }
-
-    @Test
-    void inProgressStatusesContainsAllActiveExecutionStatuses() {
-        assertTrue(TerraformJsonEventParser.IN_PROGRESS_STATUSES.contains("applying"));
-        assertTrue(TerraformJsonEventParser.IN_PROGRESS_STATUSES.contains("provisioning"));
-        assertTrue(TerraformJsonEventParser.IN_PROGRESS_STATUSES.contains("refreshing"));
-        assertTrue(TerraformJsonEventParser.IN_PROGRESS_STATUSES.contains("reading"));
-        assertTrue(TerraformJsonEventParser.IN_PROGRESS_STATUSES.contains("ephemeral-opening"));
-        assertTrue(TerraformJsonEventParser.IN_PROGRESS_STATUSES.contains("ephemeral-closing"));
-        assertFalse(TerraformJsonEventParser.IN_PROGRESS_STATUSES.contains("applied"));
-        assertFalse(TerraformJsonEventParser.IN_PROGRESS_STATUSES.contains("errored"));
-        assertFalse(TerraformJsonEventParser.IN_PROGRESS_STATUSES.contains("interrupted"));
-        assertFalse(TerraformJsonEventParser.IN_PROGRESS_STATUSES.contains("pending"));
-    }
 }

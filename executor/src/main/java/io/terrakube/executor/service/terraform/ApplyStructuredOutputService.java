@@ -130,24 +130,6 @@ public class ApplyStructuredOutputService {
         return updatedContext;
     }
 
-    /**
-     * Reconciles in-progress resource statuses when an execution halts or terminates prematurely
-     * (e.g. failure of another resource, cancellation, interruption, or exception).
-     */
-    public void finalizeResourceStatuses(List<Map<String, Object>> changes, boolean executionSuccessful, boolean interrupted) {
-        if (changes == null || changes.isEmpty() || (executionSuccessful && !interrupted)) {
-            return;
-        }
-        for (Map<String, Object> change : changes) {
-            Object statusObj = change.get("status");
-            if (statusObj instanceof String status) {
-                if (TerraformJsonEventParser.IN_PROGRESS_STATUSES.contains(status)) {
-                    change.put("status", "interrupted");
-                }
-            }
-        }
-    }
-
     void publishApplyProgress(String organizationId, String jobId, String stepId, List<Map<String, Object>> changes, List<Map<String, Object>> jobDiagnostics) {
         publishApplyStructured(organizationId, jobId, stepId, changes, jobDiagnostics, false);
     }
@@ -219,8 +201,8 @@ public class ApplyStructuredOutputService {
             // hook pair that its own JSON view doesn't implement), so ApplyJsonEventParser has
             // nothing to key off of and these rows are stuck at the seeded "pending" status.
             // The resource's presence in the post-apply state is the only signal available that
-            // it was actually applied, so use it to unstick genuine import blocks only.
-            if ("pending".equals(change.get("status")) && "import".equals(change.get("action"))) {
+            // it was actually applied, so use it to unstick anything still marked pending.
+            if ("pending".equals(change.get("status"))) {
                 change.put("status", "applied");
             }
 
