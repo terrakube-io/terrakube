@@ -40,11 +40,12 @@ public class RunCascadeNodeAttempt extends GenericAuditFields {
     @JdbcTypeCode(Types.VARCHAR)
     private UUID id;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    // EAGER: relationships Elide serializes must be loaded, or a lazy proxy is written with the id "null".
+    @ManyToOne(fetch = FetchType.EAGER, optional = false)
     @com.yahoo.elide.annotation.Exclude
     private RunCascadeNode node;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @ManyToOne(fetch = FetchType.EAGER, optional = false)
     private Job job;
 
     @Column(name = "attempt_number", nullable = false)

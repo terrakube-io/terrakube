@@ -49,15 +49,16 @@ public class RunCascadeEdge extends GenericAuditFields {
     @JdbcTypeCode(Types.VARCHAR)
     private UUID id;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    // EAGER: relationships Elide serializes must be loaded, or a lazy proxy is written with the id "null".
+    @ManyToOne(fetch = FetchType.EAGER, optional = false)
     @com.yahoo.elide.annotation.Exclude
     private RunCascade cascade;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @ManyToOne(fetch = FetchType.EAGER, optional = false)
     @JoinColumn(name = "source_workspace_id")
     private Workspace sourceWorkspace;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @ManyToOne(fetch = FetchType.EAGER, optional = false)
     @JoinColumn(name = "destination_workspace_id")
     private Workspace destinationWorkspace;
 
@@ -72,12 +73,12 @@ public class RunCascadeEdge extends GenericAuditFields {
     private RunTriggerOnDestroyPolicy onDestroy;
 
     /** Copied from the live edge at snapshot time - see {@link WorkspaceRunTrigger#getOnDestroyPlanTemplate()}. */
-    @ManyToOne(fetch = FetchType.LAZY)
+    @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "plan_template_id")
     private Template planTemplate;
 
     /** Traceability only - the live row this snapshot came from may since have changed or been deleted. */
-    @ManyToOne(fetch = FetchType.LAZY)
+    @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "source_trigger_id")
     private WorkspaceRunTrigger sourceTrigger;
 

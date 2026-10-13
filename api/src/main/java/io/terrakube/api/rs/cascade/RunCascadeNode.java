@@ -43,11 +43,12 @@ public class RunCascadeNode extends GenericAuditFields {
     @JdbcTypeCode(Types.VARCHAR)
     private UUID id;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    // EAGER: relationships Elide serializes must be loaded, or a lazy proxy is written with the id "null".
+    @ManyToOne(fetch = FetchType.EAGER, optional = false)
     @com.yahoo.elide.annotation.Exclude
     private RunCascade cascade;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @ManyToOne(fetch = FetchType.EAGER, optional = false)
     private Workspace workspace;
 
     /** Hop count from the origin workspace; the origin itself is depth 0. */

@@ -44,12 +44,13 @@ public class RunCascade extends GenericAuditFields {
     private UUID id;
 
     /** The job whose completion started this cascade; its workspace is the root of the graph. */
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    // EAGER: relationships Elide serializes must be loaded, or a lazy proxy is written with the id "null".
+    @ManyToOne(fetch = FetchType.EAGER, optional = false)
     @JoinColumn(name = "origin_job_id")
     private Job originJob;
 
     /** Denormalized from the origin job's workspace, for scoping queries without a join. */
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @ManyToOne(fetch = FetchType.EAGER, optional = false)
     private Organization organization;
 
     @Enumerated(EnumType.STRING)
