@@ -316,6 +316,36 @@ class ReplayAndIsolationTest {
         }
     }
 
+    @Test
+    @Timeout(20)
+    void theFanOutStartPositionIsReadBeforeTheFirstViewerStartsReplaying() {
+        stream.append("stepA", "stepA-1");
+        terminal.set(true);
+
+        subscribe(broadcaster(), "stepA", "0-0");
+
+        // Reading it afterwards could miss a record appended between the viewer's replay and the read.
+        org.mockito.InOrder order = Mockito.inOrder(reader);
+        order.verify(reader).lastEntryId(JOB);
+        await().atMost(Duration.ofSeconds(5)).untilAsserted(() ->
+                order.verify(reader, Mockito.atLeastOnce()).readAfterPage(eq(JOB), any(RecordId.class), anyInt()));
+    }
+
+    @Test
+    @Timeout(20)
+    void aRedisFailureReadingTheStartPositionEndsTheStreamInsteadOfFailingTheRequest() {
+        when(reader.lastEntryId(JOB)).thenThrow(new IllegalStateException("redis down"));
+        when(reader.readAfterPage(eq(JOB), any(RecordId.class), anyInt())).thenReturn(List.of());
+        AtomicBoolean released = new AtomicBoolean();
+
+        JobLogBroadcaster failing = new JobLogBroadcaster(JOB, reader, statusCache, properties, () -> released.set(true));
+        Recorder viewer = subscribe(failing, "stepA", "0-0");
+
+        await().atMost(Duration.ofSeconds(5)).until(() -> viewer.completed);
+        assertEquals("rotate", viewer.endReason());
+        assertTrue(released.get(), "the broadcaster is released so the next viewer builds a fresh one");
+    }
+
     /** In-memory Redis-stream stand-in. */
     static final class FakeStream {
         private final List<MapRecord<String, String, String>> records = new ArrayList<>();

@@ -47,6 +47,9 @@ public class JobLogBroadcaster {
     private final AtomicLong slowViewersDisconnected = new AtomicLong();
 
     private final AtomicReference<RecordId> lastId = new AtomicReference<>(RecordId.of("0-0"));
+    // Guarded by lifecycleLock: where the fan-out starts, read before the first viewer attaches.
+    private boolean startPositionResolved;
+    private boolean startPositionFailed;
 
     public JobLogBroadcaster(String jobId, RedisStreamReader reader, JobStatusCache jobStatusCache,
                              LogsProperties properties, Runnable onEmpty) {
@@ -270,6 +273,11 @@ public class JobLogBroadcaster {
     public Subscription subscribe(String stepId, SseEmitter emitter, RecordId resumeFrom) {
         Subscription subscription = new Subscription(stepId, emitter, resumeFrom);
         synchronized (lifecycleLock) {
+            // The fan-out starts after the newest record as of now, and this viewer replays everything up to
+            // its own later reads, so reading the position before the viewer starts leaves no record in between.
+            if (!started.get() && !startPositionResolved) {
+                resolveStartPosition();
+            }
             // Attach before replaying so nothing falls between replay and live.
             subscriptions.add(subscription);
         }
@@ -291,12 +299,26 @@ public class JobLogBroadcaster {
 
     public void start() {
         if (started.compareAndSet(false, true)) {
-            // Fan out only new records; each viewer replays earlier ones itself.
+            if (startPositionFailed) {
+                // Redis could not be read: end the stream so viewers reconnect, rather than fan out from a guess.
+                endAll("rotate");
+                return;
+            }
+            Thread.ofVirtual().name("joblog-" + jobId).start(this::runLoop);
+        }
+    }
+
+    private void resolveStartPosition() {
+        try {
             RecordId end = reader.lastEntryId(jobId);
             if (end != null) {
                 lastId.set(end);
             }
-            Thread.ofVirtual().name("joblog-" + jobId).start(this::runLoop);
+            startPositionResolved = true;
+        } catch (RuntimeException e) {
+            log.warn("Could not read the end of job {} log stream: {}", jobId, e.getMessage());
+            startPositionFailed = true;
+            startPositionResolved = true;
         }
     }
 
