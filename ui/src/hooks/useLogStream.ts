@@ -24,6 +24,14 @@ export function useLogStream({ url, enabled, onStatus }: UseLogStreamOptions): {
     reduce: (previous, data) => (previous.length === 0 ? data : `${previous}\n${data}`),
     flushIntervalMs: LOG_FLUSH_INTERVAL_MS,
     onStatus,
+    // Say so in the log when output could not be replayed.
+    onGap: (previous, gap) => {
+      const notice =
+        gap.recovery === "step-log"
+          ? "[Earlier output is no longer available in the live stream. The complete log is available once the step finishes.]"
+          : "[Earlier output is no longer available in the live stream.]";
+      return previous.length === 0 ? notice : `${previous}\n${notice}`;
+    },
   });
 
   return { text };

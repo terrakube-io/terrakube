@@ -47,9 +47,15 @@ class JobLogBroadcasterTest {
     @Test
     @Timeout(10)
     void fansOneStreamOutToTwoSubscribersFilteredByStepId() {
+        List<MapRecord> stored = List.of(rec("stepA", "a-line", "1-0"), rec("stepB", "b-line", "2-0"));
         when(reader.readAfter(eq("42"), any(RecordId.class), any(Duration.class)))
-                .thenReturn(List.of(rec("stepA", "a-line", "1-0"), rec("stepB", "b-line", "2-0")))
+                .thenReturn(stored)
                 .thenReturn(List.of());
+        // Records are in the stream before the fan-out sees them, so a viewer's history replay serves them too.
+        when(reader.readAfterPage(eq("42"), any(RecordId.class), org.mockito.ArgumentMatchers.anyInt()))
+                .thenAnswer(i -> stored.stream()
+                        .filter(r -> StreamIds.compare(r.getId(), i.getArgument(1)) > 0)
+                        .toList());
         when(jobStatusCache.isTerminal("42")).thenReturn(false).thenReturn(true);
 
         RecordingEmitter a = new RecordingEmitter();
@@ -116,8 +122,12 @@ class JobLogBroadcasterTest {
                     sb.append(s);
                 }
             }
+            boolean named = false;
             for (String line : sb.toString().split("\n")) {
-                if (line.startsWith("data:")) {
+                if (line.startsWith("event:")) {
+                    named = true;
+                }
+                if (line.startsWith("data:") && !named) {
                     data.add(line.substring("data:".length()));
                 }
             }

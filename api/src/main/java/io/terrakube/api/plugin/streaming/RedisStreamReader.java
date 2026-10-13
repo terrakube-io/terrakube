@@ -44,6 +44,29 @@ public class RedisStreamReader {
         return records == null ? Collections.emptyList() : records;
     }
 
+    /** Up to {@code count} records after {@code lastId}, without blocking. */
+    @SuppressWarnings("unchecked")
+    public List<MapRecord> readAfterPage(String streamKey, RecordId lastId, int count) {
+        StreamOffset<String> offset = StreamOffset.create(streamKey, ReadOffset.from(lastId));
+        StreamReadOptions options = StreamReadOptions.empty().count(count);
+        List<MapRecord> records = redisTemplate.opsForStream().read(options, offset);
+        return records == null ? Collections.emptyList() : records;
+    }
+
+    /** Oldest retained record id, or {@code null} when empty. */
+    @SuppressWarnings("unchecked")
+    public RecordId firstEntryId(String streamKey) {
+        List<MapRecord> first = redisTemplate.opsForStream().range(streamKey, Range.unbounded(), Limit.limit().count(1));
+        return first == null || first.isEmpty() ? null : first.get(0).getId();
+    }
+
+    /** Newest record id, or {@code null} when empty. */
+    @SuppressWarnings("unchecked")
+    public RecordId lastEntryId(String streamKey) {
+        List<MapRecord> last = redisTemplate.opsForStream().reverseRange(streamKey, Range.unbounded(), Limit.limit().count(1));
+        return last == null || last.isEmpty() ? null : last.get(0).getId();
+    }
+
     /**
      * The last {@code count} records of the stream, in chronological order. Used by the running-step
      * plain GET so it never scans the whole (potentially huge) stream from the start.

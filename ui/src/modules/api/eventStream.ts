@@ -1,7 +1,7 @@
 import getUserFromStorage from "../../config/authUser";
 
 type ReadEventStreamOptions = {
-  onMessage: (data: string, id?: string) => void;
+  onMessage: (data: string, id?: string, event?: string) => void;
   signal: AbortSignal;
   lastEventId?: string;
 };
@@ -49,9 +49,12 @@ export async function readEventStream(
         .map((line) => (line.startsWith(" ") ? line.slice(1) : line));
       const idLine = lines.find((line) => line.startsWith("id:"));
       const id = idLine != null ? idLine.slice(3).trimStart() : undefined;
+      // Named events ("gap", "end") are stream control; unnamed events are data.
+      const eventLine = lines.find((line) => line.startsWith("event:"));
+      const eventName = eventLine != null ? eventLine.slice(6).trim() : undefined;
 
       if (dataLines.length > 0) {
-        onMessage(dataLines.join("\n"), id);
+        onMessage(dataLines.join("\n"), id, eventName);
       }
     }
   }
