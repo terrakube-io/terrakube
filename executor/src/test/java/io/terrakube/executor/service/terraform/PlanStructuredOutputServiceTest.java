@@ -402,6 +402,41 @@ class PlanStructuredOutputServiceTest {
     }
 
     @Test
+    void doesNotSetNoChangePlanMarkerWhenErrorDiagnosticsPresent() {
+        Map<String, Object> context = new HashMap<>();
+        List<Map<String, Object>> changes = List.of();
+        List<Map<String, Object>> jobDiagnostics = List.of(Map.of("severity", "error", "summary", "Plugin failure"));
+
+        PlanStructuredOutputService.applyNoChangePlanMarker(context, "step-1", changes, jobDiagnostics);
+
+        assertNull(context.get(PlanStructuredOutputService.CONTEXT_NO_CHANGE_PLAN_KEY),
+                "noChangePlan marker must be suppressed when plan encountered error diagnostics");
+    }
+
+    @Test
+    void doesNotSetNoChangePlanMarkerWhenErroredResourcesPresent() {
+        Map<String, Object> context = new HashMap<>();
+        List<Map<String, Object>> changes = List.of(Map.of("address", "aws_instance.failed", "status", "errored"));
+        List<Map<String, Object>> jobDiagnostics = List.of();
+
+        PlanStructuredOutputService.applyNoChangePlanMarker(context, "step-1", changes, jobDiagnostics);
+
+        assertNull(context.get(PlanStructuredOutputService.CONTEXT_NO_CHANGE_PLAN_KEY),
+                "noChangePlan marker must be suppressed when plan encountered errored resources");
+    }
+
+    @Test
+    void setsNoChangePlanMarkerWhenChangesEmptyAndOnlyWarningDiagnosticsPresent() {
+        Map<String, Object> context = new HashMap<>();
+        List<Map<String, Object>> changes = List.of();
+        List<Map<String, Object>> jobDiagnostics = List.of(Map.of("severity", "warning", "summary", "Deprecated syntax"));
+
+        PlanStructuredOutputService.applyNoChangePlanMarker(context, "step-1", changes, jobDiagnostics);
+
+        assertEquals(Map.of("planStepId", "step-1"), context.get(PlanStructuredOutputService.CONTEXT_NO_CHANGE_PLAN_KEY));
+    }
+
+    @Test
     void mergesStructuredPlanDataWithoutDroppingExistingContext() {
         Map<String, Object> context = new HashMap<>();
         context.put("custom", "value");

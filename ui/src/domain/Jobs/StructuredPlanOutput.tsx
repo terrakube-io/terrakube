@@ -278,6 +278,11 @@ const getApplyStatusMeta = (
       return { label: "moving", className: "moving" };
     case "errored":
       return { label: `${actionMeta[action].displayLabel} failed`, className: "errored" };
+    case "interrupted":
+      return {
+        label: `${actionMeta[action]?.displayLabel ?? "operation"} interrupted`,
+        className: "interrupted",
+      };
     case "ephemeral-opening":
       return { label: "opening", className: "ephemeral" };
     case "ephemeral-renewed":
@@ -1877,7 +1882,7 @@ export const StructuredPlanOutput = ({
               // before Terraform ever computed a diff for it, so it never got one of the normal
               // create/update/delete icons.
               const rowApplyStatusMeta =
-                row.applyStatus && (applyMode || row.applyStatus === "errored")
+                row.applyStatus && (applyMode || row.applyStatus === "errored" || row.applyStatus === "interrupted")
                   ? getApplyStatusMeta(row.action, row.applyStatus)
                   : null;
               const normalizedProviderName = row.providerName.toLowerCase() as keyof typeof providerIconMap;

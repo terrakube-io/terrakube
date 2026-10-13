@@ -505,21 +505,18 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
 
     private boolean runJsonApply(TerraformJob terraformJob, TerraformProcessData terraformProcessData, Consumer<String> applyOutput)
             throws IOException, ExecutionException, InterruptedException {
-        List<Map<String, Object>> changes = applyStructuredOutputService.seedFromPlan(
-                terraformJob.getOrganizationId(), terraformJob.getJobId());
+        List<Map<String, Object>> changes = new ArrayList<>(applyStructuredOutputService.seedFromPlan(
+                terraformJob.getOrganizationId(), terraformJob.getJobId()));
+        List<Map<String, Object>> jobDiagnostics = new ArrayList<>();
+        TerraformJsonEventParser eventParser = new TerraformJsonEventParser(objectMapper);
+        terraformJob.setLiveChanges(changes);
+        terraformJob.setJobDiagnostics(jobDiagnostics);
 
-        if (changes.isEmpty()) {
-            // No plan structured output to seed from (custom TCL with 0/2+ plan steps, or plan
-            // publishing failed) — fall back to a plain apply through the shared client, exactly
-            // as before this feature existed.
-            return terraformClient.apply(terraformProcessData, guardConsumer(applyOutput), null).get();
+        if (!changes.isEmpty()) {
+            applyStructuredOutputService.publishApplyProgress(
+                    terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), changes, jobDiagnostics);
         }
 
-        List<Map<String, Object>> jobDiagnostics = new ArrayList<>();
-        applyStructuredOutputService.publishApplyProgress(
-                terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), changes, jobDiagnostics);
-
-        TerraformJsonEventParser eventParser = new TerraformJsonEventParser(objectMapper);
         // See the matching comment in plan(): starting at 0 flushes the first line immediately.
         // Apply already seeds the panel with pending rows before this point, so this mostly
         // matters for the first real status transition landing without a multi-second delay.
@@ -541,20 +538,27 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
 
         TerraformClient jsonApplyClient = track(buildJsonEnabledApplyClient());
 
-        boolean execution;
+        boolean execution = false;
+        boolean interrupted = false;
         try {
             execution = jsonApplyClient.apply(terraformProcessData, guardConsumer(jsonLineConsumer), null).get();
+        } catch (InterruptedException e) {
+            interrupted = true;
+            Thread.currentThread().interrupt();
+            throw e;
         } finally {
             release(jsonApplyClient);
+            try {
+                String stateJson = getCurrentStateJson(terraformJob, terraformProcessData);
+                if (stateJson != null) {
+                    applyStructuredOutputService.resolveFinalValues(changes, stateJson);
+                }
+            } catch (Exception e) {
+                log.warn("Unable to resolve state values after apply for job {}", terraformJob.getJobId(), e);
+            }
+            applyStructuredOutputService.finalizeResourceStatuses(changes, execution, interrupted);
+            publishFinalApplySnapshotIfStreamed(terraformJob, eventParser, changes, jobDiagnostics);
         }
-
-        String stateJson = getCurrentStateJson(terraformJob, terraformProcessData);
-        if (stateJson != null) {
-            applyStructuredOutputService.resolveFinalValues(changes, stateJson);
-        }
-
-        applyStructuredOutputService.publishFinalApplySnapshot(
-                terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), changes, jobDiagnostics);
 
         return execution;
     }
@@ -570,6 +574,8 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         List<Map<String, Object>> changes = new ArrayList<>();
         List<Map<String, Object>> jobDiagnostics = new ArrayList<>();
         TerraformJsonEventParser eventParser = new TerraformJsonEventParser(objectMapper);
+        terraformJob.setLiveChanges(changes);
+        terraformJob.setJobDiagnostics(jobDiagnostics);
         AtomicLong lastFlush = new AtomicLong(0);
 
         Consumer<String> jsonLineConsumer = (line) -> {
@@ -592,15 +598,19 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
 
         TerraformClient jsonDestroyClient = track(buildJsonEnabledDestroyClient());
 
-        boolean execution;
+        boolean execution = false;
+        boolean interrupted = false;
         try {
             execution = jsonDestroyClient.destroy(terraformProcessData, guardConsumer(jsonLineConsumer), null).get();
+        } catch (InterruptedException e) {
+            interrupted = true;
+            Thread.currentThread().interrupt();
+            throw e;
         } finally {
             release(jsonDestroyClient);
+            applyStructuredOutputService.finalizeResourceStatuses(changes, execution, interrupted);
+            publishFinalApplySnapshotIfStreamed(terraformJob, eventParser, changes, jobDiagnostics);
         }
-
-        applyStructuredOutputService.publishFinalApplySnapshot(
-                terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), changes, jobDiagnostics);
 
         return execution;
     }
@@ -752,6 +762,19 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             result.setExitCode(1);
         }
         return result;
+    }
+
+    private void publishFinalApplySnapshotIfStreamed(TerraformJob terraformJob, TerraformJsonEventParser eventParser,
+                                                     List<Map<String, Object>> changes,
+                                                     List<Map<String, Object>> jobDiagnostics) {
+        if (changes.isEmpty() && !eventParser.hasSeenTerraformEvents() && jobDiagnostics.isEmpty()) {
+            log.warn("Operation for job {} step {} produced no -json events; skipping the live structured snapshot",
+                    terraformJob.getJobId(), terraformJob.getStepId());
+            return;
+        }
+        applyStructuredOutputService.publishFinalApplySnapshot(
+                terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(),
+                changes, jobDiagnostics);
     }
 
     private ExecutorJobResult generateJobResult(boolean scriptAfterSuccess, String jobOutput, String jobErrorOutput) {

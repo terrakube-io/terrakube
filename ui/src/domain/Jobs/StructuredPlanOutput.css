@@ -784,6 +784,11 @@
   color: var(--run-delete);
 }
 
+.structured-plan-applyStatus--interrupted {
+  background: var(--run-warn-bg);
+  color: var(--run-warn);
+}
+
 .structured-plan-applyStatus--destroyed {
   background: var(--run-delete-bg);
   color: var(--run-delete);
