@@ -3,11 +3,13 @@ package io.terrakube.api;
 import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
+import io.terrakube.api.rs.job.step.Step;
 import io.terrakube.api.rs.workspace.Workspace;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Map;
@@ -48,8 +50,20 @@ class JobResolvedVersionControllerTest extends ServerApplicationTests {
         });
     }
 
-    private String executorToken(int forJob) {
-        return generateSystemToken(Map.of("organizationId", ORG_ID, "workspaceId", WORKSPACE_ID, "jobId", String.valueOf(forJob)));
+    // What JobVersionPinner sends in production: the executor service token, with no workspace or job claim.
+    private String executorToken() {
+        return generateExecutorToken();
+    }
+
+    // The token a step runner gets, which user scripts can read. It is only accepted while its step is active.
+    private String runnerToken(int forJob) {
+        Step step = new Step();
+        step.setJob(jobRepository.findById(forJob).orElseThrow());
+        step.setStepNumber(100);
+        step.setStatus(JobStatus.running);
+        String stepId = stepRepository.save(step).getId().toString();
+        return generateSystemToken(Map.of("organizationId", ORG_ID, "workspaceId", WORKSPACE_ID,
+                "jobId", String.valueOf(forJob), "stepId", stepId));
     }
 
     private io.restassured.response.ValidatableResponse pin(String token, String organization, String version) {
@@ -61,6 +75,12 @@ class JobResolvedVersionControllerTest extends ServerApplicationTests {
                 .then();
     }
 
+    private void setStatus(JobStatus status) {
+        Job job = jobRepository.findById(jobId).orElseThrow();
+        job.setStatus(status);
+        jobRepository.save(job);
+    }
+
     private String stored() {
         return jobRepository.findById(jobId).orElseThrow().getResolvedTerraformVersion();
     }
@@ -69,40 +89,68 @@ class JobResolvedVersionControllerTest extends ServerApplicationTests {
     void theExecutorPinsTheVersionOnceAndRepeatingItIsHarmless() {
         assertNull(stored());
 
-        pin(executorToken(jobId), ORG_ID, "1.16.5").statusCode(HttpStatus.OK.value()).body("version", equalTo("1.16.5"));
+        pin(executorToken(), ORG_ID, "1.16.5").statusCode(HttpStatus.OK.value()).body("version", equalTo("1.16.5"));
         assertEquals("1.16.5", stored());
 
-        pin(executorToken(jobId), ORG_ID, "1.16.5").statusCode(HttpStatus.OK.value());
+        pin(executorToken(), ORG_ID, "1.16.5").statusCode(HttpStatus.OK.value());
         assertEquals("1.16.5", stored());
     }
 
     @Test
     void aPinnedVersionCannotBeMovedToAnotherRelease() {
-        pin(executorToken(jobId), ORG_ID, "1.16.5").statusCode(HttpStatus.OK.value());
+        pin(executorToken(), ORG_ID, "1.16.5").statusCode(HttpStatus.OK.value());
 
-        pin(executorToken(jobId), ORG_ID, "1.16.6").statusCode(HttpStatus.CONFLICT.value()).body("version", equalTo("1.16.5"));
+        pin(executorToken(), ORG_ID, "1.16.6").statusCode(HttpStatus.CONFLICT.value()).body("version", equalTo("1.16.5"));
         assertEquals("1.16.5", stored());
     }
 
     @Test
     void onlyAVersionNumberIsAccepted() {
         for (String bad : List.of(">= 1.3.0", "../../etc/passwd", "latest", "1.9", "1.9.5;rm -rf /")) {
-            pin(executorToken(jobId), ORG_ID, bad).statusCode(HttpStatus.BAD_REQUEST.value());
+            pin(executorToken(), ORG_ID, bad).statusCode(HttpStatus.BAD_REQUEST.value());
         }
-        pin(executorToken(jobId), ORG_ID, "1.0.0-" + "a".repeat(80)).statusCode(HttpStatus.BAD_REQUEST.value());
+        pin(executorToken(), ORG_ID, "1.0.0-" + "a".repeat(80)).statusCode(HttpStatus.BAD_REQUEST.value());
         assertNull(stored());
     }
 
     @Test
     void preReleaseVersionsAreAccepted() {
-        pin(executorToken(jobId), ORG_ID, "1.10.0-rc1").statusCode(HttpStatus.OK.value());
+        pin(executorToken(), ORG_ID, "1.10.0-rc1").statusCode(HttpStatus.OK.value());
         assertEquals("1.10.0-rc1", stored());
     }
 
     @Test
-    void anExecutorOfAnotherJobCannotPinThisOne() {
-        pin(executorToken(jobId + 1000), ORG_ID, "1.16.5").statusCode(HttpStatus.FORBIDDEN.value());
+    void aStepRunnerTokenCannotPinEvenItsOwnJob() {
+        pin(runnerToken(jobId), ORG_ID, "1.16.5").statusCode(HttpStatus.FORBIDDEN.value());
         assertNull(stored());
+    }
+
+    @Test
+    void aFinishedJobCannotBePinned() {
+        for (JobStatus finished : List.of(JobStatus.completed, JobStatus.failed, JobStatus.cancelled, JobStatus.rejected,
+                JobStatus.noChanges, JobStatus.notExecuted)) {
+            setStatus(finished);
+            pin(executorToken(), ORG_ID, "1.16.5").statusCode(HttpStatus.CONFLICT.value());
+            assertNull(stored());
+        }
+    }
+
+    @Test
+    void aWaitingJobCanStillBePinned() {
+        setStatus(JobStatus.waitingApproval);
+        pin(executorToken(), ORG_ID, "1.16.5").statusCode(HttpStatus.OK.value());
+        assertEquals("1.16.5", stored());
+    }
+
+    @Test
+    @Transactional
+    void theUpdateItselfRefusesAFinishedJobAndAnotherOrganization() {
+        setStatus(JobStatus.completed);
+        assertEquals(0, jobRepository.pinResolvedTerraformVersion(jobId, UUID.fromString(ORG_ID), "1.16.5"));
+        setStatus(JobStatus.running);
+        assertEquals(0, jobRepository.pinResolvedTerraformVersion(jobId, UUID.randomUUID(), "1.16.5"));
+        assertEquals(1, jobRepository.pinResolvedTerraformVersion(jobId, UUID.fromString(ORG_ID), "1.16.5"));
+        assertEquals("1.16.5", stored());
     }
 
     @Test
@@ -113,16 +161,16 @@ class JobResolvedVersionControllerTest extends ServerApplicationTests {
 
     @Test
     void aJobInAnotherOrganizationIsNotFound() {
-        pin(executorToken(jobId), UUID.randomUUID().toString(), "1.16.5").statusCode(HttpStatus.NOT_FOUND.value());
+        pin(executorToken(), UUID.randomUUID().toString(), "1.16.5").statusCode(HttpStatus.NOT_FOUND.value());
         assertNull(stored());
     }
 
     @Test
     void theVersionCannotBeChangedThroughTheGenericJobApi() {
-        pin(executorToken(jobId), ORG_ID, "1.16.5").statusCode(HttpStatus.OK.value());
+        pin(executorToken(), ORG_ID, "1.16.5").statusCode(HttpStatus.OK.value());
 
         given()
-                .headers("Authorization", "Bearer " + executorToken(jobId), "Content-Type", "application/vnd.api+json")
+                .headers("Authorization", "Bearer " + executorToken(), "Content-Type", "application/vnd.api+json")
                 .body("{\"data\":{\"type\":\"job\",\"id\":\"" + jobId + "\",\"attributes\":{\"resolvedTerraformVersion\":\"1.99.0\"}}}")
                 .when()
                 .patch("/api/v1/organization/" + ORG_ID + "/job/" + jobId)

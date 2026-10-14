@@ -1,12 +1,15 @@
 package io.terrakube.api.plugin.scheduler.job.tcl.executor;
 
-import io.terrakube.api.plugin.security.job.JobLogAccessService;
+import io.terrakube.api.plugin.security.authentication.dex.ActiveStepTokenValidator;
+import io.terrakube.api.plugin.security.token.InternalTokenClassifier;
+import io.terrakube.api.plugin.security.token.InternalTokenType;
 import io.terrakube.api.repository.JobRepository;
 import io.terrakube.api.rs.job.Job;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -16,6 +19,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.regex.Pattern;
 
 /**
@@ -25,7 +29,8 @@ import java.util.regex.Pattern;
  *
  * <p>{@code PUT /version/v1/organization/{organizationId}/job/{jobId}} with {@code {"version":"1.16.5"}}:
  * {@code 200} pinned (or already that version), {@code 409} the job is pinned to a different version,
- * {@code 400} not a version number, {@code 403} not the executor of this job, {@code 404} no such job.
+ * {@code 400} not a version number, {@code 403} not the executor service, {@code 404} no such job in that
+ * organization, {@code 409} also when the job has already finished.
  * It is a dedicated endpoint, not an Elide update, so recording a version does not run the job lifecycle
  * hooks that reschedule a job.
  */
@@ -41,18 +46,19 @@ public class JobResolvedVersionController {
     }
 
     private final JobRepository jobRepository;
-    private final JobLogAccessService jobAccessService;
-
-    public JobResolvedVersionController(JobRepository jobRepository, JobLogAccessService jobAccessService) {
+    public JobResolvedVersionController(JobRepository jobRepository) {
         this.jobRepository = jobRepository;
-        this.jobAccessService = jobAccessService;
     }
 
     @PutMapping("/organization/{organizationId}/job/{jobId}")
     @Transactional
     public ResponseEntity<Map<String, String>> pin(Authentication authentication, @PathVariable String organizationId,
                                                    @PathVariable int jobId, @RequestBody PinRequest request) {
-        if (!jobAccessService.canWriteContext(authentication, jobId)) {
+        // Recording a version is an executor-daemon operation. A step runner token is exposed to user
+        // scripts, so only the executor service token may do it.
+        if (!(authentication instanceof JwtAuthenticationToken jwt)
+                || InternalTokenClassifier.classify(jwt.getTokenAttributes()) != InternalTokenType.EXECUTOR_SERVICE) {
+            log.warn("Forbidden attempt to pin a version on job {} from a non-executor principal", jobId);
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
         String version = request == null ? null : request.version();
@@ -64,12 +70,25 @@ public class JobResolvedVersionController {
                 || !job.get().getOrganization().getId().toString().equals(organizationId)) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
         }
-        if (jobRepository.pinResolvedTerraformVersion(jobId, version) == 1) {
+        if (ActiveStepTokenValidator.isTerminalStatus(job.get().getStatus())) {
+            return finished(jobId, job.get());
+        }
+        if (jobRepository.pinResolvedTerraformVersion(jobId, UUID.fromString(organizationId), version) == 1) {
             return ResponseEntity.ok(Map.of("version", version));
         }
-        // Someone pinned a different version first: report it so the caller can see what the job uses.
-        String existing = jobRepository.findById(jobId).map(Job::getResolvedTerraformVersion).orElse("");
+        // Either a different version was pinned first, or the job finished since the check above.
+        Job current = jobRepository.findById(jobId).orElse(job.get());
+        String existing = current.getResolvedTerraformVersion();
+        if (existing == null) {
+            return finished(jobId, current);
+        }
         log.info("Job {} is already pinned to {}, not {}", jobId, existing, version);
         return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("version", existing));
+    }
+
+    private ResponseEntity<Map<String, String>> finished(int jobId, Job job) {
+        log.warn("Cannot pin a version on job {}: it is {}", jobId, job.getStatus());
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(Map.of("error", "Cannot pin a version on a job that is " + job.getStatus()));
     }
 }

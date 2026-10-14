@@ -43,7 +43,7 @@ public class JobVersionPinner {
     /**
      * Best effort: a failure is logged and the step carries on with the version it resolved, which is how
      * it behaved before versions were pinned. The API refuses to change a version that is already pinned
-     * (400), which is not an error here: the job already has one.
+     * or to pin a finished job (409), which is not an error here.
      *
      * @return {@code true} when the API accepted the version or already has it.
      */
@@ -63,7 +63,7 @@ public class JobVersionPinner {
                     return true;
                 }
                 if (status == 409) {
-                    log.info("Job {} is already pinned to another Terraform version; keeping that one", jobId);
+                    log.info("Job {} was not pinned to {} (already pinned to another version, or finished); carrying on", jobId, version);
                     return true;
                 }
                 if (status == 400 || status == 403 || status == 404) {
