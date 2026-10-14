@@ -146,6 +146,41 @@ class ExecutorServiceTest {
     }
 
     @Test
+    void aJobWithoutAResolvedVersionPassesTheWorkspaceVersionThrough() {
+        workspace.setTerraformVersion(">= 1.3.0");
+
+        assertThat(ExecutorService.terraformVersionFor(job)).isEqualTo(">= 1.3.0");
+    }
+
+    @Test
+    void aJobKeepsItsResolvedVersionEvenIfTheWorkspaceConstraintCouldNowResolveToSomethingNewer() {
+        workspace.setTerraformVersion(">= 1.3.0");
+        job.setResolvedTerraformVersion("1.16.5");
+
+        // The plan step resolved 1.16.5; whatever the release index now says, the apply step must use it too.
+        assertThat(ExecutorService.terraformVersionFor(job)).isEqualTo("1.16.5");
+    }
+
+    @Test
+    void aNewJobOnTheSameWorkspaceStillResolvesAFreshVersion() {
+        workspace.setTerraformVersion(">= 1.3.0");
+        job.setResolvedTerraformVersion("1.16.5");
+        Job next = new Job();
+        next.setId(43);
+        next.setWorkspace(workspace);
+
+        assertThat(ExecutorService.terraformVersionFor(next)).isEqualTo(">= 1.3.0");
+    }
+
+    @Test
+    void aBlankResolvedVersionIsIgnored() {
+        workspace.setTerraformVersion("1.5.7");
+        job.setResolvedTerraformVersion(" ");
+
+        assertThat(ExecutorService.terraformVersionFor(job)).isEqualTo("1.5.7");
+    }
+
+    @Test
     void shouldPersistJobOverrideSourceWhenNotAlreadySet() {
         String resolved = "https://localhost/remote/tfe/v2/configuration-versions/abc/terraformContent.tar.gz";
 

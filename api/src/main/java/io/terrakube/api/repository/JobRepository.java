@@ -56,6 +56,15 @@ public interface JobRepository extends JpaRepository<Job, Integer> {
     @Query("update job j set j.status = :newStatus where j.id = :jobId and j.status in :currentStatuses")
     int updateStatusByIdAndStatusIn(@Param("newStatus") JobStatus newStatus, @Param("jobId") int jobId, @Param("currentStatuses") List<JobStatus> currentStatuses);
 
+    /**
+     * Pins the version a job resolved from its constraint: only when none is set yet, or it is the same one,
+     * in one statement, so two writers cannot both win. Returns 1 when the job now has that version.
+     */
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("update job j set j.resolvedTerraformVersion = :version "
+            + "where j.id = :jobId and (j.resolvedTerraformVersion is null or j.resolvedTerraformVersion = :version)")
+    int pinResolvedTerraformVersion(@Param("jobId") int jobId, @Param("version") String version);
+
     @Query(value = "SELECT id FROM job WHERE workspace_id = :workspaceId", nativeQuery = true)
     List<Integer> findAllJobIdsByWorkspaceIncludingDeleted(@Param("workspaceId") String workspaceId);
 

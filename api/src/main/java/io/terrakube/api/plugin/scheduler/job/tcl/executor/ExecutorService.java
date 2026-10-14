@@ -162,7 +162,7 @@ public class ExecutorService {
         executorContext.setType(flow.getType());
         executorContext.setIgnoreError(flow.isIgnoreError());
         executorContext.setRequireSavedPlan(flow.isRequireSavedPlan());
-        executorContext.setTerraformVersion(job.getWorkspace().getTerraformVersion());
+        executorContext.setTerraformVersion(terraformVersionFor(job));
         if (job.getOverrideSource() == null) {
             executorContext.setSource(job.getWorkspace().getSource());
         } else {
@@ -255,6 +255,17 @@ public class ExecutorService {
                 environmentVariables.put(variable.getKey(), variable.getValue());
             }
         }
+    }
+
+    /**
+     * The version every step of this job runs with. A job that already resolved its version constraint
+     * keeps that exact version: a plan file can only be read by the version that wrote it, and re-resolving
+     * a range such as ">= 1.3.0" can pick a newer release between plan and apply. Until one is resolved the
+     * workspace's value (an exact version or a constraint) is passed through.
+     */
+    static String terraformVersionFor(Job job) {
+        String resolved = job.getResolvedTerraformVersion();
+        return resolved != null && !resolved.isBlank() ? resolved : job.getWorkspace().getTerraformVersion();
     }
 
     ExecutorContext validateJobAddress(ExecutorContext executorContext, Job job) {

@@ -183,6 +183,91 @@ class TerraformExecutorServiceImplTest {
     }
 
     @Test
+    void pinsTheVersionAConstraintResolvedToOnTheJob() throws Exception {
+        TerraformExecutorServiceImpl subject = subject();
+        JobVersionPinner pinner = Mockito.mock(JobVersionPinner.class);
+        subject.setJobVersionPinner(pinner);
+        TerraformJob terraformJob = createJob();
+        terraformJob.setTerraformVersion(">= 1.3.0");
+        TerraformDownloader downloader = Mockito.mock(TerraformDownloader.class);
+        when(terraformClient.createTerraformDownloader()).thenReturn(downloader);
+        when(downloader.resolveTerraformVersion(">= 1.3.0")).thenReturn("1.16.5");
+
+        subject.resolveTerraformVersion(terraformJob);
+
+        verify(pinner).pin("org", "42", "1.16.5");
+    }
+
+    @Test
+    void doesNotPinAnExactVersionOrOneThatCouldNotBeResolved() throws Exception {
+        TerraformExecutorServiceImpl subject = subject();
+        JobVersionPinner pinner = Mockito.mock(JobVersionPinner.class);
+        subject.setJobVersionPinner(pinner);
+        TerraformDownloader downloader = Mockito.mock(TerraformDownloader.class);
+        when(terraformClient.createTerraformDownloader()).thenReturn(downloader);
+
+        TerraformJob exact = createJob();
+        exact.setTerraformVersion("1.9.0");
+        when(downloader.resolveTerraformVersion("1.9.0")).thenReturn("1.9.0");
+        subject.resolveTerraformVersion(exact);
+
+        TerraformJob unresolvable = createJob();
+        unresolvable.setTerraformVersion(">= 99.0.0");
+        when(downloader.resolveTerraformVersion(">= 99.0.0")).thenThrow(new IllegalArgumentException("no match"));
+        subject.resolveTerraformVersion(unresolvable);
+
+        verify(pinner, never()).pin(anyString(), anyString(), anyString());
+    }
+
+    /**
+     * Plan resolves ">= 1.3.0" while 1.16.5 is the newest release; a newer release then appears and the
+     * job is approved. The apply step is dispatched by the API with the pinned version, so it never asks the
+     * release list to resolve the constraint again and cannot land on 1.16.6.
+     */
+    @Test
+    void aJobKeepsItsOriginalVersionAcrossStepsWhenANewerReleaseAppearsBetweenThem() throws Exception {
+        TerraformExecutorServiceImpl subject = subject();
+        TerraformDownloader downloader = Mockito.mock(TerraformDownloader.class);
+        when(terraformClient.createTerraformDownloader()).thenReturn(downloader);
+        String[] newestRelease = {"1.16.5"};
+        when(downloader.resolveTerraformVersion(anyString())).thenAnswer(invocation -> {
+            String requested = invocation.getArgument(0);
+            return requested.startsWith(">=") ? newestRelease[0] : requested;
+        });
+        // Stands in for the API: the first pin is kept, and it is what later steps are dispatched with.
+        String[] pinnedOnJob = {null};
+        JobVersionPinner api = new JobVersionPinner(null, null, "http://api.invalid") {
+            @Override
+            public boolean pin(String organizationId, String jobId, String version) {
+                if (pinnedOnJob[0] == null) {
+                    pinnedOnJob[0] = version;
+                }
+                return true;
+            }
+        };
+        subject.setJobVersionPinner(api);
+
+        TerraformJob planStep = createJob();
+        planStep.setTerraformVersion(">= 1.3.0");
+        subject.resolveTerraformVersion(planStep);
+        assertEquals("1.16.5", planStep.getTerraformVersion());
+
+        newestRelease[0] = "1.16.6"; // a new release lands while the job awaits approval
+
+        TerraformJob applyStep = createJob();
+        applyStep.setTerraformVersion(pinnedOnJob[0] != null ? pinnedOnJob[0] : ">= 1.3.0");
+        subject.resolveTerraformVersion(applyStep);
+
+        assertEquals("1.16.5", applyStep.getTerraformVersion());
+
+        // A new job on the same workspace picks up the newer release.
+        TerraformJob nextJob = createJob();
+        nextJob.setTerraformVersion(">= 1.3.0");
+        subject.resolveTerraformVersion(nextJob);
+        assertEquals("1.16.6", nextJob.getTerraformVersion());
+    }
+
+    @Test
     void keepsTheRequestedVersionWhenResolutionFails() throws Exception {
         TerraformExecutorServiceImpl subject = subject();
         TerraformJob terraformJob = createJob();
