@@ -13,6 +13,7 @@ import graphql.AssertException;
 import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
+import io.terrakube.api.rs.job.step.Step;
 import io.terrakube.api.rs.team.Team;
 import io.terrakube.api.rs.template.Template;
 import io.terrakube.api.rs.workspace.Workspace;
@@ -278,11 +279,19 @@ class JobTests extends ServerApplicationTests {
         devsManageJobs(true);
         String jobId = createJob(jobDefinition("2db36f7c-f549-4341-a789-315d47eb061d"));
 
+        Job job = jobRepository.findById(Integer.parseInt(jobId)).orElseThrow();
+        Step activeStep = new Step();
+        activeStep.setJob(job);
+        activeStep.setName("terraformPlan");
+        activeStep.setStatus(JobStatus.running);
+        activeStep.setStepNumber(100);
+        activeStep = stepRepository.save(activeStep);
+
         java.util.Map<String, Object> claims = new java.util.HashMap<>();
         claims.put("workspaceId", workspace.getId().toString());
         claims.put("jobId", jobId);
         claims.put("organizationId", "d9b58bd3-f3fc-4056-a026-1163297e80a8");
-        claims.put("stepId", UUID.randomUUID().toString());
+        claims.put("stepId", activeStep.getId().toString());
         String runnerToken = generateSystemToken("TerrakubeInternal (EXECUTOR)", claims);
 
         // Update status to running

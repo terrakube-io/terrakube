@@ -145,7 +145,7 @@ public class LocalTerraformStateImpl implements TerraformState {
                             HttpURLConnection connection = (HttpURLConnection) new URL(stateFilePath).openConnection();
                             connection.setRequestMethod("GET");
                             if (workspaceSecurity != null) {
-                                connection.setRequestProperty("Authorization", "Bearer " + workspaceSecurity.generateAccessToken(workspaceId));
+                                connection.setRequestProperty("Authorization", "Bearer " + workspaceSecurity.generateAccessToken(60, organizationId, workspaceId, jobId, stepId));
                             }
                             try (InputStream in = connection.getInputStream()) {
                                 FileUtils.copyInputStreamToFile(in, targetFile);

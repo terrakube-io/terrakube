@@ -149,7 +149,7 @@ class MSSQLStartupTests {
         assertThat(jobRepository.findNextDispatchableExecutableNotDeferredJobId()).isEqualTo(older.getId());
         assertThat(jobRepository.countDispatchEligibleNotDeferredJobs()).isEqualTo(2);
 
-        older.setDispatchNextRetryAt(new java.util.Date(System.currentTimeMillis() + 60_000));
+        older.setDispatchNextRetryAt(new java.util.Date(System.currentTimeMillis() + java.time.Duration.ofDays(1).toMillis()));
         jobRepository.save(older);
 
         // older is now in backoff: it must stop blocking newer (different workspace)...
