@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
 
 import java.util.List;
 import java.util.Map;
@@ -13,6 +14,7 @@ import java.util.concurrent.Executors;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.junit.jupiter.params.provider.NullAndEmptySource;
@@ -59,9 +61,15 @@ class RepoWebhookJobAuditIntegrationTest extends ServerApplicationTests {
 
     @ParameterizedTest
     @NullAndEmptySource
-    @ValueSource(strings = {"   "})
+    @ValueSource(strings = {"   ", "\n\t\u0000\u0085"})
     void missingWebhookActorUsesInternal(String actor) throws Exception {
         assertWebhookActor("pull_request", actor, "Internal");
+    }
+
+    @Test
+    void workerPersistsSanitizedDisplayName() throws Exception {
+        assertWebhookActor("pull_request", "  Jo\nã\to\r\u0000  ", "João");
+        assertWebhookActor("pull_request", "a".repeat(200), "a".repeat(128));
     }
 
     @Test
@@ -136,8 +144,8 @@ class RepoWebhookJobAuditIntegrationTest extends ServerApplicationTests {
                     jobRepository, scheduling, mock(PrCommentService.class), mock(RepoWebhookDeliveryTransactions.class),
                     new ObjectMapper(), worker);
             service.processClaimedDelivery(repoWebhook, "payload", Map.of());
-            var captor = org.mockito.ArgumentCaptor.forClass(Job.class);
-            org.mockito.Mockito.verify(scheduling).createJobContext(captor.capture());
+            var captor = ArgumentCaptor.forClass(Job.class);
+            verify(scheduling).createJobContext(captor.capture());
             int id = captor.getValue().getId();
             try {
                 Job saved = jobRepository.findById(id).orElseThrow();

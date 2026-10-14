@@ -10,6 +10,9 @@ import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullAndEmptySource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -18,14 +21,14 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 
 import io.terrakube.api.plugin.security.audit.dex.DexAuditorAwareImpl;
 
-class WebhookAuditContextTest {
+class AuditActorContextTest {
 
     private final DexAuditorAwareImpl auditor = new DexAuditorAwareImpl();
 
     @AfterEach
     void clearSecurityContext() {
         SecurityContextHolder.clearContext();
-        assertThat(WebhookAuditContext.currentActor()).isEmpty();
+        assertThat(AuditActorContext.currentActor()).isEmpty();
     }
 
     @Test
@@ -35,7 +38,7 @@ class WebhookAuditContextTest {
         var authentication = new JwtAuthenticationToken(jwt, List.of());
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
-        WebhookAuditContext.withActor("pr-author", () -> {
+        AuditActorContext.withActor("pr-author", () -> {
             assertThat(auditor.getCurrentAuditor()).contains("pr-author");
             assertThat(SecurityContextHolder.getContext().getAuthentication()).isSameAs(authentication);
             return null;
@@ -47,8 +50,8 @@ class WebhookAuditContextTest {
 
     @Test
     void exceptionRestoresPreviousActorAndClearsOutermostScope() {
-        WebhookAuditContext.withActor("outer-author", () -> {
-            assertThatThrownBy(() -> WebhookAuditContext.withActor("inner-author", () -> {
+        AuditActorContext.withActor("outer-author", () -> {
+            assertThatThrownBy(() -> AuditActorContext.withActor("inner-author", () -> {
                 assertThat(auditor.getCurrentAuditor()).contains("inner-author");
                 throw new IllegalStateException("save failed");
             })).isInstanceOf(IllegalStateException.class);
@@ -63,22 +66,58 @@ class WebhookAuditContextTest {
         var anonymous = new AnonymousAuthenticationToken("test", "anonymousUser",
                 List.of(new SimpleGrantedAuthority("ROLE_ANONYMOUS")));
         SecurityContextHolder.getContext().setAuthentication(anonymous);
-        assertThat(WebhookAuditContext.withActor(null, auditor::getCurrentAuditor)).isEmpty();
-        assertThat(WebhookAuditContext.withActor("", auditor::getCurrentAuditor)).isEmpty();
-        assertThat(WebhookAuditContext.withActor(" ", auditor::getCurrentAuditor)).isEmpty();
-        assertThat(WebhookAuditContext.withActor("pr-author", auditor::getCurrentAuditor)).contains("pr-author");
+        assertThat(AuditActorContext.withActor(null, auditor::getCurrentAuditor)).isEmpty();
+        assertThat(AuditActorContext.withActor("", auditor::getCurrentAuditor)).isEmpty();
+        assertThat(AuditActorContext.withActor(" ", auditor::getCurrentAuditor)).isEmpty();
+        assertThat(AuditActorContext.withActor("pr-author", auditor::getCurrentAuditor)).contains("pr-author");
         assertThat(auditor.getCurrentAuditor()).isEmpty();
+    }
+
+    @Test
+    void normalizesDisplayNamesAndCapsThemAtTheColumnLimit() {
+        assertThat(AuditActorContext.withActor("  Jo\nã\to\r\u0000\u0085  ", auditor::getCurrentAuditor))
+                .contains("João");
+        assertThat(AuditActorContext.withActor("a".repeat(200), auditor::getCurrentAuditor))
+                .contains("a".repeat(128));
+        assertThat(AuditActorContext.withActor("a".repeat(128), auditor::getCurrentAuditor))
+                .contains("a".repeat(128));
+        assertThat(AuditActorContext.withActor("\u2003João 李\u2003", auditor::getCurrentAuditor))
+                .contains("João 李");
+    }
+
+    @Test
+    void truncationDoesNotSplitSupplementaryCharacters() {
+        String face = "\uD83D\uDE00";
+        assertThat(AuditActorContext.withActor("a".repeat(126) + face + "z", auditor::getCurrentAuditor))
+                .contains("a".repeat(126) + face);
+        assertThat(AuditActorContext.withActor("a".repeat(127) + face, auditor::getCurrentAuditor))
+                .contains("a".repeat(127));
+    }
+
+    @ParameterizedTest
+    @NullAndEmptySource
+    @ValueSource(strings = {"   ", "\u2003", "\n\t\u0000\u0085"})
+    void normalizedEmptyActorKeepsTheExistingFallback(String actor) {
+        assertThat(AuditActorContext.withActor(actor, auditor::getCurrentAuditor)).contains("Internal");
+        Jwt jwt = Jwt.withTokenValue("synthetic-token").header("alg", "none")
+                .claim("email", "operator@example.com").build();
+        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt, List.of()));
+        assertThat(AuditActorContext.withActor(actor, auditor::getCurrentAuditor))
+                .contains("operator@example.com");
+        SecurityContextHolder.getContext().setAuthentication(new AnonymousAuthenticationToken(
+                "test", "anonymousUser", List.of(new SimpleGrantedAuthority("ROLE_ANONYMOUS"))));
+        assertThat(AuditActorContext.withActor(actor, auditor::getCurrentAuditor)).isEmpty();
     }
 
     @Test
     void concurrentWorkersKeepSeparateActorsAndClearThemOnReuse() throws Exception {
         CyclicBarrier barrier = new CyclicBarrier(2);
         try (var workers = Executors.newFixedThreadPool(2)) {
-            var first = workers.submit(() -> WebhookAuditContext.withActor("first-author", () -> {
+            var first = workers.submit(() -> AuditActorContext.withActor("first-author", () -> {
                 await(barrier);
                 return auditor.getCurrentAuditor();
             }));
-            var second = workers.submit(() -> WebhookAuditContext.withActor("second-author", () -> {
+            var second = workers.submit(() -> AuditActorContext.withActor("second-author", () -> {
                 await(barrier);
                 return auditor.getCurrentAuditor();
             }));

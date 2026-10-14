@@ -4,6 +4,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 import io.terrakube.api.rs.webhook.WebhookEvent;
+import io.terrakube.api.plugin.security.audit.AuditActorContext;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import io.terrakube.api.plugin.scheduler.ScheduleJobService;
@@ -198,14 +199,14 @@ public class WebhookService {
         job.setOverrideBranch(webhookResult.isRelease() ? "refs/tags/" + webhookResult.getBranch() : webhookResult.getBranch());
         job.setOrganization(workspace.getOrganization());
         job.setWorkspace(workspace);
-        job.setCreatedBy(webhookResult.getCreatedBy());
-        job.setUpdatedBy(webhookResult.getCreatedBy());
         Date triggerDate = new Date(System.currentTimeMillis());
         job.setCreatedDate(triggerDate);
         job.setUpdatedDate(triggerDate);
         job.setVia(webhookResult.getVia() != null ? webhookResult.getVia() : JobVia.UI.getValue());
         job.setCommitId(webhookResult.getCommit());
-        Job savedJob = jobRepository.save(job);
+        // @PrePersist auditing runs during save, inside the outer webhook transaction.
+        Job savedJob = AuditActorContext.withActor(webhookResult.getCreatedBy(),
+                () -> jobRepository.save(job));
         scheduleJobService.createJobContext(savedJob);
         return savedJob;
     }
