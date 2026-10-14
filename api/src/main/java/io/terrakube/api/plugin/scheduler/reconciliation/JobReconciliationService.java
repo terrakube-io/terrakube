@@ -2,12 +2,14 @@ package io.terrakube.api.plugin.scheduler.reconciliation;
 
 import io.terrakube.api.plugin.notification.JobNotificationTrigger;
 import io.terrakube.api.plugin.scheduler.ScheduleJobService;
+import io.terrakube.api.plugin.scheduler.trigger.RunCascadeCoordinatorService;
 import io.terrakube.api.plugin.scheduler.trigger.RunTriggerEventWriter;
 import io.terrakube.api.plugin.scheduler.reconciliation.ReconciliationResult.ReconciliationDisposition;
 import io.terrakube.api.plugin.scheduler.reconciliation.ReconciliationResult.StepEvidence;
 import io.terrakube.api.repository.JobRepository;
 import io.terrakube.api.repository.StepRepository;
 import io.terrakube.api.repository.WorkspaceRepository;
+import io.terrakube.api.rs.cascade.RunCascadeNodeStatus;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.job.step.Step;
@@ -60,6 +62,7 @@ public class JobReconciliationService {
     private final Scheduler scheduler;
     private final JobReconciliationMetrics metrics;
     private final RunTriggerEventWriter runTriggerEventWriter;
+    private final RunCascadeCoordinatorService cascadeCoordinatorService;
 
     @Transactional
     public ReconciliationResult reconcile(int jobId, boolean dryRun) {
@@ -112,6 +115,13 @@ public class JobReconciliationService {
             // Synchronous, unlike the Quartz cleanup above: the event row has to commit
             // atomically with the status transition it's about, not after it.
             runTriggerEventWriter.enqueueIfQualifying(job);
+        } else if (target == JobStatus.failed) {
+            // Ran and failed - a required cascade node, if this job is one, is FAILED for good.
+            cascadeCoordinatorService.resolveNodeAsUnsuccessful(job, RunCascadeNodeStatus.FAILED);
+        } else if (target == JobStatus.cancelled || target == JobStatus.rejected) {
+            // Never ran to completion - SKIPPED rather than FAILED, same reasoning as ScheduleJob
+            // treating a job it can't find as deleted rather than as having errored.
+            cascadeCoordinatorService.resolveNodeAsUnsuccessful(job, RunCascadeNodeStatus.SKIPPED);
         }
         return result(jobId, job, outcome, target, ReconciliationDisposition.APPLIED, evidence);
     }

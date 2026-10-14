@@ -19,7 +19,7 @@ class SlackPayloadBuilderTest {
         NotificationContext context = new NotificationContext(
                 "acme", "networking", 42, JobStatus.completed,
                 WORKSPACE_URL + "/runs/42",
-                "abc123", null, "Prod Alerts", WORKSPACE_URL, NotificationMessageStyle.DETAILED);
+                "abc123", null, "Prod Alerts", WORKSPACE_URL, NotificationMessageStyle.DETAILED, null, null);
 
         String payload = builder.build(context);
         JsonNode root = new ObjectMapper().readTree(payload);
@@ -44,7 +44,7 @@ class SlackPayloadBuilderTest {
         NotificationContext context = new NotificationContext(
                 "acme", "networking", 43, JobStatus.failed,
                 WORKSPACE_URL + "/runs/43",
-                null, "apply exited with code 1", "Prod Alerts", WORKSPACE_URL, NotificationMessageStyle.DETAILED);
+                null, "apply exited with code 1", "Prod Alerts", WORKSPACE_URL, NotificationMessageStyle.DETAILED, null, null);
 
         String payload = builder.build(context);
         assertThat(payload).contains("apply exited with code 1");
@@ -57,7 +57,7 @@ class SlackPayloadBuilderTest {
         // placeholder like "#" would fail delivery entirely rather than just render a dead link.
         NotificationContext context = new NotificationContext(
                 "acme", "(test notification)", 0, JobStatus.completed, null, null, null, "Test Notification", null,
-                NotificationMessageStyle.DETAILED);
+                NotificationMessageStyle.DETAILED, null, null);
 
         String payload = builder.build(context);
         JsonNode root = new ObjectMapper().readTree(payload);
@@ -72,7 +72,7 @@ class SlackPayloadBuilderTest {
         NotificationContext context = new NotificationContext(
                 "acme", "networking", 42, JobStatus.running,
                 WORKSPACE_URL + "/runs/42", "abc123", null, "Prod Alerts", WORKSPACE_URL,
-                NotificationMessageStyle.SIMPLE);
+                NotificationMessageStyle.SIMPLE, null, null);
 
         String payload = builder.build(context);
         JsonNode root = new ObjectMapper().readTree(payload);
@@ -89,7 +89,7 @@ class SlackPayloadBuilderTest {
             NotificationContext context = new NotificationContext(
                     "acme", "networking", 42, status,
                     WORKSPACE_URL + "/runs/42", "abc123", null, "Prod Alerts", WORKSPACE_URL,
-                    NotificationMessageStyle.DETAILED);
+                    NotificationMessageStyle.DETAILED, null, null);
 
             String payload = builder.build(context);
             JsonNode root = new ObjectMapper().readTree(payload);

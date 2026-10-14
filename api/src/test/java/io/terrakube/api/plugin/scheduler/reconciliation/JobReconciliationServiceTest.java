@@ -4,6 +4,7 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import io.terrakube.api.helpers.FailUnkownMethod;
 import io.terrakube.api.plugin.notification.JobNotificationTrigger;
 import io.terrakube.api.plugin.scheduler.ScheduleJobService;
+import io.terrakube.api.plugin.scheduler.trigger.RunCascadeCoordinatorService;
 import io.terrakube.api.plugin.scheduler.trigger.RunTriggerEventWriter;
 import io.terrakube.api.plugin.scheduler.reconciliation.ReconciliationResult.ReconciliationDisposition;
 import io.terrakube.api.repository.JobRepository;
@@ -38,6 +39,7 @@ class JobReconciliationServiceTest {
     ScheduleJobService scheduleJobService;
     Scheduler scheduler;
     RunTriggerEventWriter runTriggerEventWriter;
+    RunCascadeCoordinatorService cascadeCoordinatorService;
     JobReconciliationService subject;
 
     @BeforeEach
@@ -53,10 +55,11 @@ class JobReconciliationServiceTest {
         lenient().doAnswer(i -> i.getArgument(0)).when(workspaceRepository).save(any());
         lenient().doReturn(null).when(jobRepository).findNextDispatchableExecutableJobId();
         runTriggerEventWriter = mock(RunTriggerEventWriter.class);
+        cascadeCoordinatorService = mock(RunCascadeCoordinatorService.class);
         subject = new JobReconciliationService(jobRepository, stepRepository, workspaceRepository,
                 new JobTerminalStateDeriver(), jobNotificationTrigger, scheduleJobService,
                 scheduler, new JobReconciliationMetrics(new SimpleMeterRegistry()),
-                runTriggerEventWriter);
+                runTriggerEventWriter, cascadeCoordinatorService);
     }
 
     private Job job(int id, JobStatus status) {

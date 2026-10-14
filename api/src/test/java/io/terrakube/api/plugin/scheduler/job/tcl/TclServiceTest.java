@@ -319,4 +319,16 @@ public class TclServiceTest {
         Mockito.verify(stepRepository, Mockito.never()).save(org.mockito.ArgumentMatchers.any(Step.class));
         Mockito.verify(templateRepository, Mockito.never()).findById(org.mockito.ArgumentMatchers.any(UUID.class));
     }
+
+    @Test
+    void planOnlyRejectsImportedScriptsEvenOnAPlanFlow() {
+        String yaml = "flow:\n  - type: terraformPlan\n    step: 100\n    importCommands:\n      repository: https://example.com/scripts\n      branch: main\n      folder: /\n";
+        Assertions.assertFalse(subject().isTclPlanOnly(encodeYaml(yaml)));
+    }
+
+    @Test
+    void planOnlyRejectsMalformedOrEmptyWorkflows() {
+        Assertions.assertFalse(subject().isTclPlanOnly("invalid base64"));
+        Assertions.assertFalse(subject().isTclPlanOnly(encodeYaml("flow: []")));
+    }
 }

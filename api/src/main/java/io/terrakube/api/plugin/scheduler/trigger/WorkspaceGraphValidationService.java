@@ -39,6 +39,30 @@ public class WorkspaceGraphValidationService {
     private final OrganizationRepository organizationRepository;
     private final RunTriggerProperties properties;
 
+    /** A workspace has one join condition; edge actions cannot race to choose its workflow. */
+    public void validateJoinConfiguration(io.terrakube.api.rs.workspace.trigger.WorkspaceRunTrigger trigger) {
+        if (!trigger.isEnabled()) return;
+        organizationRepository.lockForUpdate(trigger.getOrganization().getId())
+                .orElseThrow(() -> new OrganizationUnresolvableException("Could not lock the dependency graph"));
+        var inbound = workspaceRunTriggerRepository.findByDestinationWorkspaceId(trigger.getDestinationWorkspace().getId())
+                .stream().filter(io.terrakube.api.rs.workspace.trigger.WorkspaceRunTrigger::isEnabled)
+                .filter(t -> !t.getId().equals(trigger.getId())).toList();
+        for (var other : inbound) {
+            if (other.getSynchronizationMode() != trigger.getSynchronizationMode()) {
+                throw new InvalidRunTriggerPolicyException("All enabled upstream dependencies must use the same start condition");
+            }
+            if (trigger.getSynchronizationMode() != io.terrakube.api.rs.workspace.trigger.RunTriggerSynchronizationMode.EACH) {
+                String left = other.getTemplate() == null ? other.getDestinationWorkspace().getDefaultTemplate() : other.getTemplate().getId().toString();
+                String right = trigger.getTemplate() == null ? trigger.getDestinationWorkspace().getDefaultTemplate() : trigger.getTemplate().getId().toString();
+                if (!java.util.Objects.equals(left, right) || other.getOnDestroy() != trigger.getOnDestroy()
+                        || !java.util.Objects.equals(other.getOnDestroyPlanTemplate() == null ? null : other.getOnDestroyPlanTemplate().getId(),
+                            trigger.getOnDestroyPlanTemplate() == null ? null : trigger.getOnDestroyPlanTemplate().getId())) {
+                    throw new InvalidRunTriggerPolicyException("Joined dependencies must use the same workflow and destroy response");
+                }
+            }
+        }
+    }
+
     /**
      * Rejects an edge that would push its source workspace's outbound fan-out past the limit -
      * on create, on a disabled edge being enabled, and on an edge being repointed to this

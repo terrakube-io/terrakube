@@ -58,7 +58,7 @@ public class TclService {
         if (stepRepository.findByJobId(job.getId()).isEmpty()) {
 
             FlowConfig flowConfig = null;
-            if (job.getTemplateReference() != null) {
+            if (job.getTemplateReference() != null && !hasFrozenWorkflow(job)) {
                 String tcl = getTemplateTcl(job.getTemplateReference());
                 job.setTcl(tcl);
                 jobRepository.save(job);
@@ -305,12 +305,27 @@ public class TclService {
         }
     }
 
+    private boolean hasFrozenWorkflow(Job job) {
+        return io.terrakube.api.rs.job.JobVia.RUN_TRIGGER.getValue().equals(job.getVia())
+                && job.getTcl() != null && !job.getTcl().isBlank();
+    }
+
     public boolean isTemplatePlanOnly(String templateId) {
         if (templateId == null || templateId.isEmpty()) {
             return false;
         }
         try {
             String tcl = getTemplateTcl(templateId);
+            return isTclPlanOnly(tcl);
+        } catch (Exception e) {
+            log.warn("Error checking if template {} is plan-only: {}", templateId, e.getMessage());
+            return false;
+        }
+    }
+
+    /** Strict allowlist: scripts, imports and unknown flows cannot be called plan-only. */
+    public boolean isTclPlanOnly(String tcl) {
+        try {
             FlowConfig flowConfig = getFlowConfig(tcl);
 
             if (flowConfig == null || flowConfig.getFlow() == null || flowConfig.getFlow().isEmpty()) {
@@ -318,6 +333,13 @@ public class TclService {
             }
 
             for (Flow flow : flowConfig.getFlow()) {
+                if (flow.getImportCommands() != null
+                        || (flow.getCommands() != null && !flow.getCommands().isEmpty())
+                        || (flow.getOnFailure() != null && !flow.getOnFailure().isEmpty())
+                        || (flow.getOnReject() != null && !flow.getOnReject().isEmpty())
+                        || (flow.getTemplates() != null && !flow.getTemplates().isEmpty())) {
+                    return false;
+                }
                 String flowType = flow.getType();
                 if (flowType == null) {
                     return false;
@@ -329,7 +351,7 @@ public class TclService {
             }
             return true;
         } catch (Exception e) {
-            log.warn("Error checking if template {} is plan-only: {}", templateId, e.getMessage());
+            log.warn("Error checking plan-only workflow: {}", e.getMessage());
             return false;
         }
     }

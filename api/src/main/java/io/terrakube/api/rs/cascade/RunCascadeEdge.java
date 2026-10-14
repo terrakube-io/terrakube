@@ -1,0 +1,108 @@
+package io.terrakube.api.rs.cascade;
+
+import java.sql.Types;
+import java.util.UUID;
+
+import org.hibernate.annotations.JdbcTypeCode;
+
+import com.yahoo.elide.annotation.CreatePermission;
+import com.yahoo.elide.annotation.DeletePermission;
+import com.yahoo.elide.annotation.Include;
+import com.yahoo.elide.annotation.ReadPermission;
+import com.yahoo.elide.annotation.UpdatePermission;
+import io.terrakube.api.plugin.security.audit.GenericAuditFields;
+import io.terrakube.api.rs.template.Template;
+import io.terrakube.api.rs.workspace.Workspace;
+import io.terrakube.api.rs.workspace.trigger.RunTriggerOnDestroyPolicy;
+import io.terrakube.api.rs.workspace.trigger.RunTriggerSynchronizationMode;
+import io.terrakube.api.rs.workspace.trigger.WorkspaceRunTrigger;
+
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
+import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
+import lombok.Getter;
+import lombok.Setter;
+
+/**
+ * One dependency of a cascade's reachable subgraph, as it stood when the cascade was created. A
+ * snapshot, not a live reference: the real {@link WorkspaceRunTrigger} it was copied from can
+ * change or be deleted after this row is written, and a running cascade must keep evaluating
+ * against the shape it started with. Read-only from the API, same write lock as {@link RunCascade}.
+ */
+// RunCascadeEdge is reserved for Elide's GraphQL relay wrapper of RunCascade.
+@Include(name = "runCascadeDependency", rootLevel = false)
+@ReadPermission(expression = "team view run cascade edge")
+@CreatePermission(expression = "user is a super service")
+@UpdatePermission(expression = "user is a super service")
+@DeletePermission(expression = "user is a super service")
+@Getter
+@Setter
+@Entity(name = "run_cascade_edge")
+public class RunCascadeEdge extends GenericAuditFields {
+
+    @Id
+    @JdbcTypeCode(Types.VARCHAR)
+    private UUID id;
+
+    // EAGER: relationships Elide serializes must be loaded, or a lazy proxy is written with the id "null".
+    @ManyToOne(fetch = FetchType.EAGER, optional = false)
+    @com.yahoo.elide.annotation.Exclude
+    private RunCascade cascade;
+
+    @ManyToOne(fetch = FetchType.EAGER, optional = false)
+    @JoinColumn(name = "source_workspace_id")
+    private Workspace sourceWorkspace;
+
+    @ManyToOne(fetch = FetchType.EAGER, optional = false)
+    @JoinColumn(name = "destination_workspace_id")
+    private Workspace destinationWorkspace;
+
+    /** Copied from the live edge at snapshot time, not read from it afterwards. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "synchronization_mode")
+    private RunTriggerSynchronizationMode synchronizationMode;
+
+    /** Copied from the live edge at snapshot time, not read from it afterwards. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "on_destroy")
+    private RunTriggerOnDestroyPolicy onDestroy;
+
+    /** Copied from the live edge at snapshot time - see {@link WorkspaceRunTrigger#getOnDestroyPlanTemplate()}. */
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "plan_template_id")
+    private Template planTemplate;
+
+    /** Traceability only - the live row this snapshot came from may since have changed or been deleted. */
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "source_trigger_id")
+    private WorkspaceRunTrigger sourceTrigger;
+
+    @Column(name = "template_reference")
+    private String templateReference;
+
+    @Column(name = "template_tcl", columnDefinition = "text")
+    @com.yahoo.elide.annotation.Exclude
+    private String templateTcl;
+
+    @Column(name = "plan_template_reference")
+    private String planTemplateReference;
+
+    @Column(name = "plan_template_tcl", columnDefinition = "text")
+    @com.yahoo.elide.annotation.Exclude
+    private String planTemplateTcl;
+
+    @jakarta.persistence.Enumerated(jakarta.persistence.EnumType.STRING)
+    private RunCascadeEdgeStatus status = RunCascadeEdgeStatus.PENDING;
+
+    @Column(name = "plan_only")
+    private boolean planOnly;
+
+    @Column(name = "skip_requested")
+    @com.yahoo.elide.annotation.Exclude
+    private boolean skipRequested;
+}

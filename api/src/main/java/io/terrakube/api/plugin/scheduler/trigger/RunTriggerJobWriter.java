@@ -13,23 +13,10 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.Date;
 
 /**
- * Commits one triggered job, and nothing else.
- *
- * <p>A separate bean on purpose. The transaction boundary has to be per dependent, and it has
- * to close before the caller schedules the job with Quartz - two requirements that a
- * {@code @Transactional} method called from inside {@link RunTriggerDispatchService} would not
- * meet, because a self-invocation never passes through the Spring proxy.
- *
- * <p>Why per dependent: a failed insert marks its transaction rollback-only, and catching the
- * exception does not clear that mark. Sharing one transaction across the fan-out would let a
- * single bad dependent roll back every job already created beside it, right through the
- * try/catch that exists to prevent exactly that.
- *
- * <p>Why it must commit before scheduling: {@code ScheduleJobService.createJobContext} fires
- * the Quartz trigger immediately, and the worker picks the job up on another connection. While
- * this transaction is open that row is invisible, and ScheduleJob treats a job it cannot find
- * as deleted and drops the trigger for good. Elide's JobManageHook avoids the same trap by
- * binding to POSTCOMMIT.
+ * Builds triggered jobs with the same options and provenance in every dispatch path. The legacy
+ * writer commits a standalone job; cascade dispatch instead joins the coordinator's transaction
+ * so the job, attempt and workspace-run state either all commit or all roll back. Callers schedule
+ * with Quartz only after commit, when its worker can see the job on another connection.
  */
 @Service
 @AllArgsConstructor
@@ -44,12 +31,23 @@ class RunTriggerJobWriter {
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public Job persist(Workspace destination, String templateReference, Job completedJob, int depth) {
+        return save(destination, templateReference, completedJob, depth, null);
+    }
+
+    /** Job and cascade attempt must commit together; the coordinator owns this transaction. */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public Job persistInCascade(Workspace destination, String templateReference, Job parent, int depth, String tcl) {
+        return save(destination, templateReference, parent, depth, tcl);
+    }
+
+    private Job save(Workspace destination, String templateReference, Job completedJob, int depth, String tcl) {
         Date now = new Date(System.currentTimeMillis());
 
         Job job = new Job();
         job.setWorkspace(destination);
         job.setOrganization(destination.getOrganization());
         job.setTemplateReference(templateReference);
+        job.setTcl(tcl);
         job.setStatus(JobStatus.pending);
         job.setRefresh(true);
         job.setPlanChanges(true);

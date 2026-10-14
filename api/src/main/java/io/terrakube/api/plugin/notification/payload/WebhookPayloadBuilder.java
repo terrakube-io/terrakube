@@ -25,16 +25,21 @@ public class WebhookPayloadBuilder implements NotificationPayloadBuilder {
 
     @Override
     public String build(NotificationContext context) {
+        boolean isCascadeEvent = context.cascadeStatus() != null;
         Map<String, Object> body = new HashMap<>();
+        body.put("eventType", isCascadeEvent ? "cascade" : "job");
         body.put("organization", context.organizationName());
         body.put("workspace", context.workspaceName());
         body.put("jobId", context.jobId());
-        body.put("status", context.jobStatus().name());
+        body.put("status", isCascadeEvent ? context.cascadeStatus().name() : context.jobStatus().name());
         body.put("runUrl", context.runUrl());
         body.put("workspaceUrl", context.workspaceUrl());
         body.put("commitId", context.commitId());
         body.put("failureReason", context.failureReason());
         body.put("configurationName", context.configurationName());
+        if (isCascadeEvent) {
+            body.put("cascadeSummary", context.cascadeSummary());
+        }
         try {
             return objectMapper.writeValueAsString(body);
         } catch (Exception e) {

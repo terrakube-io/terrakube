@@ -4,7 +4,9 @@ import com.yahoo.elide.annotation.LifeCycleHookBinding;
 import com.yahoo.elide.core.lifecycle.LifeCycleHook;
 import com.yahoo.elide.core.security.ChangeSpec;
 import com.yahoo.elide.core.security.RequestScope;
+import io.terrakube.api.plugin.scheduler.trigger.MissingPlanOnlyTemplateException;
 import io.terrakube.api.plugin.scheduler.trigger.WorkspaceGraphValidationService;
+import io.terrakube.api.rs.workspace.trigger.RunTriggerOnDestroyPolicy;
 import io.terrakube.api.rs.workspace.trigger.WorkspaceRunTrigger;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -27,6 +29,7 @@ import java.util.Optional;
 public class WorkspaceRunTriggerHook implements LifeCycleHook<WorkspaceRunTrigger> {
 
     private final WorkspaceGraphValidationService graphValidationService;
+    private final io.terrakube.api.plugin.scheduler.job.tcl.TclService tclService;
 
     @Override
     public void execute(LifeCycleHookBinding.Operation operation,
@@ -40,6 +43,11 @@ public class WorkspaceRunTriggerHook implements LifeCycleHook<WorkspaceRunTrigge
             return;
         }
 
+        if (operation == LifeCycleHookBinding.Operation.CREATE || changes.filter(c ->
+                java.util.Set.of("enabled", "synchronizationMode", "template", "onDestroy", "onDestroyPlanTemplate")
+                    .contains(c.getFieldName())).isPresent()) {
+            graphValidationService.validateJoinConfiguration(trigger);
+        }
         if (topologyChangeApplies(operation, changes)) {
             graphValidationService.validateAcyclic(
                     trigger.getOrganization().getId(),
@@ -52,6 +60,17 @@ public class WorkspaceRunTriggerHook implements LifeCycleHook<WorkspaceRunTrigge
             graphValidationService.validateFanOutLimit(
                     trigger.getSourceWorkspace().getId(),
                     trigger.isEnabled());
+        }
+
+        if (planOnlyTemplateApplies(operation, changes)
+                && trigger.getOnDestroy() == RunTriggerOnDestroyPolicy.PLAN_ONLY
+                && trigger.getOnDestroyPlanTemplate() == null) {
+            throw new MissingPlanOnlyTemplateException(
+                    "Run trigger " + trigger.getId() + " has onDestroy=PLAN_ONLY but no onDestroyPlanTemplate set");
+        }
+        if (planOnlyTemplateApplies(operation, changes) && trigger.getOnDestroy() == RunTriggerOnDestroyPolicy.PLAN_ONLY
+                && !tclService.isTclPlanOnly(trigger.getOnDestroyPlanTemplate().getTcl())) {
+            throw new MissingPlanOnlyTemplateException("A plan-only destroy response requires a workflow containing only plan steps");
         }
     }
 
@@ -88,6 +107,22 @@ public class WorkspaceRunTriggerHook implements LifeCycleHook<WorkspaceRunTrigge
         }
         return changes.filter(c -> "enabled".equals(c.getFieldName()) && Boolean.TRUE.equals(c.getModified()))
                 .or(() -> changes.filter(c -> "sourceWorkspace".equals(c.getFieldName())))
+                .isPresent();
+    }
+
+    /**
+     * True on create, and on an update that touches either {@code onDestroy} or {@code
+     * onDestroyPlanTemplate} - the only two fields whose combination this check cares about.
+     */
+    private boolean planOnlyTemplateApplies(LifeCycleHookBinding.Operation operation, Optional<ChangeSpec> changes) {
+        if (operation == LifeCycleHookBinding.Operation.CREATE) {
+            return true;
+        }
+        if (operation != LifeCycleHookBinding.Operation.UPDATE) {
+            return false;
+        }
+        return changes.filter(c -> "onDestroy".equals(c.getFieldName())
+                        || "onDestroyPlanTemplate".equals(c.getFieldName()))
                 .isPresent();
     }
 }

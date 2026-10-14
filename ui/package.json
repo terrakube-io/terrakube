@@ -5,6 +5,7 @@
   "type": "module",
   "dependencies": {
     "@ant-design/icons": "^6.3.4",
+    "@dagrejs/dagre": "^3.1.1",
     "@monaco-editor/react": "^4.7.0",
     "@scalar/api-reference-react": "^0.9.77",
     "acorn": "^8.17.0",

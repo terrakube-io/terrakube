@@ -1,0 +1,159 @@
+.workspace-graph {
+  border: 1px solid var(--tk-border-primary);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--tk-bg-container);
+}
+.workspace-graph__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  border-bottom: 1px solid var(--tk-border-primary);
+}
+.workspace-graph__summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 16px 12px;
+}
+.workspace-graph__caption {
+  padding: 10px 16px;
+  color: var(--tk-text-secondary);
+  font-size: 12px;
+  border-top: 1px solid var(--tk-border-primary);
+}
+.workspace-graph__canvas {
+  height: 65vh;
+  min-height: 460px;
+  background: var(--tk-bg-layout);
+}
+.workspace-graph__toolbar .ant-select {
+  min-width: 150px;
+}
+.workspace-graph__toolbar .workspace-graph__search {
+  width: 260px;
+}
+.workspace-graph__node {
+  width: 260px;
+  min-height: 132px;
+  padding: 14px;
+  border: 1px solid var(--tk-border-primary);
+  border-left: 4px solid var(--graph-status-color, var(--tk-accent));
+  border-radius: 10px;
+  background: var(--tk-bg-container);
+  box-shadow: var(--tk-shadow-sm);
+}
+.workspace-graph__node--selected {
+  outline: 2px solid var(--tk-accent);
+  outline-offset: 3px;
+}
+.workspace-graph__node-name {
+  display: block;
+  max-width: 230px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workspace-graph__node-name--button {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  color: var(--tk-accent);
+  cursor: pointer;
+}
+.workspace-graph__node-name--button:hover,
+.workspace-graph__node-name--button:focus-visible {
+  text-decoration: underline;
+}
+.workspace-graph__node-meta {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--tk-text-secondary);
+}
+.workspace-graph__node-actions {
+  margin-top: 10px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.workspace-graph__topology-node {
+  border-left-color: var(--tk-border-primary);
+  transition: opacity 0.15s ease;
+}
+.workspace-graph__topology-node.workspace-graph__node--selected {
+  border-left-color: var(--tk-accent);
+}
+.workspace-graph__node-kind {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  color: var(--tk-text-secondary);
+  font-size: 11px;
+}
+.workspace-graph__focus-label {
+  margin-left: auto;
+  color: var(--tk-accent);
+  font-weight: 600;
+}
+.workspace-graph__connections {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--tk-text-secondary);
+}
+.workspace-graph__topology-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  min-height: 24px;
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--tk-text-secondary);
+}
+.workspace-graph__node .react-flow__handle {
+  background: var(--tk-text-tertiary);
+}
+.workspace-graph .react-flow__controls-button {
+  background: var(--tk-bg-container);
+  color: var(--tk-text-primary);
+  border-color: var(--tk-border-primary);
+}
+.workspace-graph .react-flow__controls-button svg {
+  fill: currentColor;
+}
+.workspace-graph .react-flow__minimap {
+  background: var(--tk-bg-container);
+  border: 1px solid var(--tk-border-primary);
+  border-radius: 6px;
+}
+.workspace-graph .react-flow__edge-textbg {
+  fill: var(--tk-bg-container);
+}
+.workspace-graph .react-flow__edge-text {
+  fill: var(--tk-text-primary);
+}
+@media (max-width: 700px) {
+  .workspace-graph__toolbar {
+    gap: 8px;
+  }
+  .workspace-graph__toolbar .workspace-graph__search {
+    width: 100%;
+  }
+  .workspace-graph__canvas {
+    height: 60vh;
+    min-height: 360px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .workspace-graph .react-flow__edge.animated path {
+    animation: none;
+  }
+}

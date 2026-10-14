@@ -1,10 +1,12 @@
 import {
+  ApartmentOutlined,
   ApiOutlined,
   AppstoreOutlined,
   BankOutlined,
   BellOutlined,
   BgColorsOutlined,
   BranchesOutlined,
+  ClusterOutlined,
   CloudOutlined,
   CodeOutlined,
   DashboardOutlined,
@@ -183,6 +185,10 @@ export default function AppSidebar({
       setDefaultSelected(["registry"]);
     } else if (location.pathname.includes("projects")) {
       setDefaultSelected(["projects"]);
+    } else if (location.pathname.includes("dependency-graph")) {
+      setDefaultSelected(["dependency-graph"]);
+    } else if (location.pathname.endsWith("/cascades")) {
+      setDefaultSelected(["cascades"]);
     } else if (orgIdFromUrl) {
       setDefaultSelected(["workspaces"]);
     } else {
@@ -437,6 +443,15 @@ export default function AppSidebar({
                 icon: <NodeIndexOutlined />,
               },
               {
+                key: "cascades",
+                label: (
+                  <Link to={`${workspaceBasePath}/cascades`} onClick={() => handleOrgMenuClick("cascades")}>
+                    Run cascades
+                  </Link>
+                ),
+                icon: <ApartmentOutlined />,
+              },
+              {
                 key: "settings",
                 label: (
                   <Link to={`${workspaceBasePath}/settings/general`} onClick={() => handleOrgMenuClick("settings")}>
@@ -450,6 +465,8 @@ export default function AppSidebar({
             ? [
                 { key: "projects", name: "Projects", icon: <ProjectOutlined /> },
                 { key: "workspaces", name: "Workspaces", icon: <AppstoreOutlined /> },
+                { key: "dependency-graph", name: "Workspace dependencies", icon: <ClusterOutlined /> },
+                { key: "cascades", name: "Run cascades", icon: <NodeIndexOutlined /> },
                 { key: "registry", name: "Registry", icon: <CloudOutlined /> },
                 { key: "settings", name: "Settings", icon: <SettingOutlined /> },
               ].map((item) => ({

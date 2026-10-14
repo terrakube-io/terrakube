@@ -1,10 +1,17 @@
-import { DownOutlined, PoweroffOutlined, SettingOutlined, UserOutlined } from "@ant-design/icons";
+import {
+  DownOutlined,
+  PoweroffOutlined,
+  SafetyCertificateOutlined,
+  SettingOutlined,
+  UserOutlined,
+} from "@ant-design/icons";
 import { Avatar, Dropdown } from "antd";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { ORGANIZATION_ARCHIVE, ORGANIZATION_NAME } from "@/config/actionTypes";
 import { useAuth } from "@/config/authConfig";
 import getUserFromStorage from "@/config/authUser";
+import { getCascadeCapabilities } from "@/modules/cascades/cascadeService";
 import getGravatarUrl from "@/modules/utils/gravatar";
 import "./UserMenu.css";
 
@@ -12,7 +19,20 @@ export const UserMenu = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [username, setUsername] = useState<string>();
   const [avatarUrl, setAvatarUrl] = useState<string>();
+  const [instanceAdmin, setInstanceAdmin] = useState(false);
   const auth = useAuth();
+
+  // Instance-wide pages are only offered to instance admins; organization operations live in each
+  // organization's settings.
+  useEffect(() => {
+    let active = true;
+    getCascadeCapabilities()
+      .then((capabilities) => active && setInstanceAdmin(capabilities.instanceAdmin))
+      .catch(() => active && setInstanceAdmin(false));
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     const user = getUserFromStorage();
@@ -47,6 +67,12 @@ export const UserMenu = () => {
             <SettingOutlined className="user-menu-item-icon" />
             <span>Account settings</span>
           </Link>
+          {instanceAdmin && (
+            <Link to="/admin/run-trigger-events" className="user-menu-item" onClick={() => setIsOpen(false)}>
+              <SafetyCertificateOutlined className="user-menu-item-icon" />
+              <span>Instance administration</span>
+            </Link>
+          )}
           <button type="button" className="user-menu-item" onClick={signOutClickHandler}>
             <PoweroffOutlined className="user-menu-item-icon" />
             <span>Sign out</span>

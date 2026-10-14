@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import io.terrakube.api.rs.cascade.RunCascadeStatus;
 import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.notification.NotificationChannelType;
 import io.terrakube.api.rs.notification.NotificationMessageStyle;
@@ -28,6 +29,9 @@ public class SlackPayloadBuilder implements NotificationPayloadBuilder {
 
     @Override
     public String build(NotificationContext context) {
+        if (context.cascadeStatus() != null) {
+            return buildCascadePayload(context);
+        }
         String statusLabel = statusLabel(context.jobStatus());
 
         if (context.messageStyle() == NotificationMessageStyle.SIMPLE) {
@@ -121,6 +125,81 @@ public class SlackPayloadBuilder implements NotificationPayloadBuilder {
         } catch (Exception e) {
             throw new IllegalStateException("Failed to render Slack payload", e);
         }
+    }
+
+    // Same card shape as the job-status path, with a "Cascade:" context line instead of the
+    // failure-reason block (a cascade event has a summary, not a single step's console tail) and
+    // no View Run button pointed at just the origin job - the origin run page is enough context,
+    // via the workspace link the footer already carries.
+    private String buildCascadePayload(NotificationContext context) {
+        String statusLabel = cascadeStatusLabel(context.cascadeStatus());
+
+        if (context.messageStyle() == NotificationMessageStyle.SIMPLE) {
+            return buildCompactPayload(context, statusLabel);
+        }
+
+        List<Map<String, Object>> blocks = new ArrayList<>();
+        blocks.add(Map.of(
+                "type", "header",
+                "text", Map.of("type", "plain_text",
+                        "text", context.workspaceName() + " - " + statusLabel)));
+
+        StringBuilder contextText = new StringBuilder()
+                .append("Organization: ").append(context.organizationName())
+                .append(" | Started by job: #").append(context.jobId());
+        blocks.add(Map.of(
+                "type", "context",
+                "elements", List.of(Map.of("type", "mrkdwn", "text", contextText.toString()))));
+
+        if (context.cascadeSummary() != null && !context.cascadeSummary().isBlank()) {
+            blocks.add(Map.of(
+                    "type", "section",
+                    "text", Map.of("type", "mrkdwn", "text", context.cascadeSummary())));
+        }
+
+        if (context.configurationName() != null && !context.configurationName().isBlank()) {
+            blocks.add(Map.of(
+                    "type", "context",
+                    "elements", List.of(Map.of("type", "mrkdwn",
+                            "text", "Sent by notification: *" + context.configurationName() + "*"))));
+        }
+
+        Map<String, Object> attachment = new java.util.LinkedHashMap<>();
+        attachment.put("color", cascadeStatusColor(context.cascadeStatus()));
+        attachment.put("blocks", blocks);
+
+        Map<String, Object> payload = new java.util.LinkedHashMap<>();
+        payload.put("text", context.workspaceUrl() != null && !context.workspaceUrl().isBlank()
+                ? "Cascade notification for <" + context.workspaceUrl() + "|" + context.organizationName() + "/"
+                        + context.workspaceName() + ">"
+                : context.workspaceName() + " - " + statusLabel);
+        payload.put("username", context.workspaceName());
+        payload.put("attachments", List.of(attachment));
+
+        try {
+            return objectMapper.writeValueAsString(payload);
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to render Slack payload", e);
+        }
+    }
+
+    private String cascadeStatusLabel(RunCascadeStatus status) {
+        return switch (status) {
+            case COMPLETED -> "✅ Cascade Completed";
+            case DEGRADED -> "⚠️ Cascade Degraded";
+            case BLOCKED -> "⛔ Cascade Blocked";
+            case CANCELLED -> "🛑 Cascade Cancelled";
+            default -> "Cascade " + capitalize(status.name().toLowerCase());
+        };
+    }
+
+    private String cascadeStatusColor(RunCascadeStatus status) {
+        return switch (status) {
+            case COMPLETED -> "#2eb67d";
+            case DEGRADED, BLOCKED -> "#ecb22e";
+            case CANCELLED, FAILED -> "#e01e5a";
+            default -> "#868686";
+        };
     }
 
     private String statusLabel(JobStatus status) {
