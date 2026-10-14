@@ -120,7 +120,7 @@ public class PlanStructuredOutputService {
         if (executorFlagsProperties.isAsyncStructuredOutput() && persistenceQueue != null) {
             try {
                 StructuredSnapshot snapshot = StructuredSnapshot.copyOf(organizationId, jobId, stepId,
-                        StructuredSnapshot.Phase.PLAN, persistenceQueue.nextSequence(), finalSnapshot,
+                        StructuredSnapshot.Phase.PLAN, persistenceQueue.nextSequence(jobId), finalSnapshot,
                         liveChanges, jobDiagnostics, objectMapper);
                 persistenceQueue.submit(snapshot);
             } catch (StructuredSnapshot.SnapshotSerializationException e) {

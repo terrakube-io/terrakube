@@ -12,6 +12,7 @@ import io.terrakube.executor.service.workspace.SetupWorkspace;
 import io.terrakube.executor.service.workspace.WorkspaceException;
 import io.terrakube.executor.service.shutdown.ShutdownServiceImpl;
 import io.terrakube.executor.service.status.UpdateJobStatus;
+import io.terrakube.executor.service.terraform.ContextRevision;
 import io.terrakube.executor.service.terraform.TerraformExecutor;
 import io.terrakube.executor.service.workspace.security.JobContextHolder;
 import org.springframework.boot.availability.AvailabilityChangeEvent;
@@ -119,6 +120,7 @@ public class ExecutorJobImpl implements ExecutorJob {
         jobExecutionWatchdog.markBusy(terraformJob);
         File terraformWorkingDir = null;
         try {
+            ContextRevision.begin(terraformJob.getJobId(), terraformJob.getExecutionEpoch());
             JobContextHolder.set(terraformJob);
             try {
                 terraformWorkingDir = setupWorkspace.prepareWorkspace(terraformJob);
@@ -141,6 +143,8 @@ public class ExecutorJobImpl implements ExecutorJob {
                 updateJobStatus.setCompletedStatus(false, false, -1, terraformJob, "Unexpected error executing job\n", e.getMessage(), null, "");
             }
         } finally {
+            // After executeJob, so the structured-output drain has already minted every revision.
+            ContextRevision.end(terraformJob.getJobId(), terraformJob.getExecutionEpoch());
             JobContextHolder.clear();
             try {
                 if (terraformWorkingDir != null) {

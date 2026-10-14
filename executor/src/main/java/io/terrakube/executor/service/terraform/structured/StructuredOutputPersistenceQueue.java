@@ -154,11 +154,12 @@ public class StructuredOutputPersistenceQueue {
     }
 
     /**
-     * Monotonic sequence for snapshot ordering / eviction. It doubles as the context patch revision,
-     * so a retried or recovered snapshot reuses it and the API ignores it once something newer landed.
+     * Monotonic per-job sequence for snapshot ordering / eviction. It doubles as the context patch
+     * revision, so a retried or recovered snapshot reuses it and the API ignores it once something
+     * newer landed.
      */
-    public long nextSequence() {
-        return ContextRevision.next();
+    public long nextSequence(String jobId) {
+        return ContextRevision.next(jobId);
     }
 
     /** Record that a snapshot could not be built (serialization failure) - never fails the run. */

@@ -11,13 +11,18 @@ import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
-import org.springframework.dao.CannotAcquireLockException;
+import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.data.redis.connection.stream.RecordId;
+import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
 import java.io.IOException;
 import java.security.Principal;
+import java.time.Duration;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -34,6 +39,16 @@ class ContextControllerTest {
     private final Principal executorPrincipal = Mockito.mock(Principal.class);
 
     private final Principal uiPrincipal = Mockito.mock(Principal.class);
+
+    @SuppressWarnings("unchecked")
+    private final RedisTemplate<String, Object> redisTemplate = Mockito.mock(RedisTemplate.class);
+
+    @SuppressWarnings("unchecked")
+    private final ValueOperations<String, Object> valueOperations = Mockito.mock(ValueOperations.class);
+
+    {
+        InMemoryContextWriteLock.stub(redisTemplate, valueOperations);
+    }
 
     private final io.terrakube.api.plugin.policy.PolicyEvaluationService policyEvaluationService =
             Mockito.mock(io.terrakube.api.plugin.policy.PolicyEvaluationService.class);
@@ -59,8 +74,8 @@ class ContextControllerTest {
         ContextStorageMetrics storageMetrics = new ContextStorageMetrics(meterRegistry);
         ContextReadService readService = new ContextReadService(storageTypeService, storageMetrics, properties, meterRegistry);
         ContextSanitizer sanitizer = new ContextSanitizer(new ObjectMapper());
-        ContextWriteService writeService = new ContextWriteService(jobRepository, readService, sanitizer, storageTypeService,
-                storageMetrics, new ObjectMapper());
+        ContextWriteService writeService = new ContextWriteService(jobRepository, new ContextWriteLock(redisTemplate), readService,
+                sanitizer, storageTypeService, storageMetrics, new ObjectMapper());
         return new ContextController(sanitizer, streamingService, readService, writeService, properties,
                 policyEvaluationService, null, authenticatedUser(), new ObjectMapper());
     }
@@ -81,12 +96,12 @@ class ContextControllerTest {
         JobRepository jobRepository = Mockito.mock(JobRepository.class);
         Job job = Mockito.mock(Job.class);
         when(job.getStatus()).thenReturn(JobStatus.running);
-        when(jobRepository.lockForContextWrite(1)).thenReturn(Optional.of(job));
+        when(jobRepository.findById(1)).thenReturn(Optional.of(job));
         return jobRepository;
     }
 
     @Test
-    void patchMergesOnlyTouchedEntriesUnderTheJobLock() throws IOException {
+    void patchMergesOnlyTouchedEntriesUnderTheWriteLock() throws IOException {
         StorageTypeService storageTypeService = inMemoryStorage("{\"planRenderedText\":{\"s1\":\"text\"}}");
         JobRepository jobRepository = runningJob();
         ContextController controller = controller(storageTypeService, jobRepository);
@@ -96,7 +111,8 @@ class ContextControllerTest {
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertEquals("{\"applied\":2,\"skipped\":0}", response.getBody());
-        verify(jobRepository).lockForContextWrite(1);
+        verify(valueOperations).setIfAbsent(Mockito.eq("job-context-write-lock:1"), Mockito.anyString(), Mockito.any(Duration.class));
+        verify(redisTemplate).execute(Mockito.any(RedisScript.class), Mockito.eq(List.of("job-context-write-lock:1")), Mockito.anyString());
         verify(storageTypeService).saveContext(1, "{\"planRenderedText\":{\"s1\":\"text\"},"
                 + "\"contextRevisions\":{\"planStructuredOutput/s1\":10,\"structuredOutputStatus\":10},"
                 + "\"planStructuredOutput\":{\"s1\":[]},\"structuredOutputStatus\":{\"state\":\"COMPLETE\"}}");
@@ -119,7 +135,7 @@ class ContextControllerTest {
         StorageTypeService storageTypeService = inMemoryStorage(null);
         JobRepository jobRepository = Mockito.mock(JobRepository.class);
         ContextController controller = controller(storageTypeService, jobRepository);
-        long future = (System.currentTimeMillis() + 120_000) * 1000;
+        long future = (System.currentTimeMillis() + 20_000) * ContextPatchApplier.REVISION_EPOCH_SCALE;
         StringBuilder oversized = new StringBuilder("{\"revision\":1,\"set\":{");
         for (int i = 0; i <= ContextPatchApplier.MAX_ENTRIES; i++) {
             oversized.append(i == 0 ? "" : ",").append("\"terraformOutputs/s").append(i).append("\":[]");
@@ -145,7 +161,7 @@ class ContextControllerTest {
                 "{\"revision\":1,\"set\":{\"contextRevisions/a\":1}}"}) {
             assertEquals(HttpStatus.BAD_REQUEST, controller.patchContext(1, patch).getStatusCode(), patch);
         }
-        Mockito.verifyNoInteractions(jobRepository, storageTypeService);
+        Mockito.verifyNoInteractions(jobRepository, storageTypeService, redisTemplate);
     }
 
     @Test
@@ -165,7 +181,7 @@ class ContextControllerTest {
         JobRepository jobRepository = Mockito.mock(JobRepository.class);
         Job job = Mockito.mock(Job.class);
         when(job.getStatus()).thenReturn(JobStatus.failed);
-        when(jobRepository.lockForContextWrite(1)).thenReturn(Optional.of(job));
+        when(jobRepository.findById(1)).thenReturn(Optional.of(job));
         ContextController controller = controller(storageTypeService, jobRepository);
 
         ResponseEntity<String> response = controller.patchContext(1, "{\"revision\":1,\"set\":{\"a\":1}}");
@@ -222,7 +238,7 @@ class ContextControllerTest {
         for (String body : new String[]{"[]", "\"text\"", "1", "null"}) {
             assertEquals(HttpStatus.BAD_REQUEST, controller.saveContext(1, body).getStatusCode(), body);
         }
-        verify(jobRepository, never()).lockForContextWrite(Mockito.anyInt());
+        verify(jobRepository, never()).findById(Mockito.anyInt());
         verify(storageTypeService, never()).saveContext(Mockito.anyInt(), Mockito.anyString());
     }
 
@@ -246,11 +262,11 @@ class ContextControllerTest {
     }
 
     @Test
-    void lockTimeoutReturnsServiceUnavailableWithRetryAfter() throws IOException {
+    void writeLockFailureReturnsServiceUnavailableWithRetryAfter() throws IOException {
         StorageTypeService storageTypeService = inMemoryStorage(null);
-        JobRepository jobRepository = Mockito.mock(JobRepository.class);
-        when(jobRepository.lockForContextWrite(1)).thenThrow(new CannotAcquireLockException("lock timeout"));
-        ContextController controller = controller(storageTypeService, jobRepository);
+        Mockito.doThrow(new RedisConnectionFailureException("Redis down"))
+                .when(valueOperations).setIfAbsent(Mockito.anyString(), Mockito.any(), Mockito.any(Duration.class));
+        ContextController controller = controller(storageTypeService, runningJob());
 
         ResponseEntity<String> response = controller.patchContext(1, "{\"revision\":1,\"set\":{\"a\":1}}");
 
@@ -309,7 +325,7 @@ class ContextControllerTest {
         JobRepository jobRepository = Mockito.mock(JobRepository.class);
         Job job = Mockito.mock(Job.class);
         when(job.getStatus()).thenReturn(JobStatus.cancelled);
-        when(jobRepository.lockForContextWrite(1)).thenReturn(Optional.of(job));
+        when(jobRepository.findById(1)).thenReturn(Optional.of(job));
         ContextController controller = controller(storageTypeService, jobRepository);
 
         ResponseEntity<String> response = controller.saveContext(1, "{}");
@@ -324,7 +340,7 @@ class ContextControllerTest {
         JobRepository jobRepository = Mockito.mock(JobRepository.class);
         Job job = Mockito.mock(Job.class);
         when(job.getStatus()).thenReturn(JobStatus.queue);
-        when(jobRepository.lockForContextWrite(1)).thenReturn(Optional.of(job));
+        when(jobRepository.findById(1)).thenReturn(Optional.of(job));
         when(storageTypeService.saveContext(1, "{\"planStructuredOutput\":{}}"))
                 .thenReturn("{\"planStructuredOutput\":{}}");
         ContextController controller = controller(storageTypeService, jobRepository);
@@ -341,7 +357,7 @@ class ContextControllerTest {
         JobRepository jobRepository = Mockito.mock(JobRepository.class);
         Job job = Mockito.mock(Job.class);
         when(job.getStatus()).thenReturn(JobStatus.completed);
-        when(jobRepository.lockForContextWrite(1)).thenReturn(Optional.of(job));
+        when(jobRepository.findById(1)).thenReturn(Optional.of(job));
         when(storageTypeService.saveContext(1, "{\"planStructuredOutput\":{}}"))
                 .thenReturn("{\"planStructuredOutput\":{}}");
         ContextController controller = controller(storageTypeService, jobRepository);
@@ -413,7 +429,7 @@ class ContextControllerTest {
         JobRepository jobRepository = Mockito.mock(JobRepository.class);
         Job job = Mockito.mock(Job.class);
         when(job.getStatus()).thenReturn(JobStatus.queue);
-        when(jobRepository.lockForContextWrite(1)).thenReturn(Optional.of(job));
+        when(jobRepository.findById(1)).thenReturn(Optional.of(job));
         when(storageTypeService.saveContext(Mockito.eq(1), Mockito.anyString()))
                 .thenAnswer(invocation -> invocation.getArgument(1));
         ContextController controller = controller(storageTypeService, jobRepository);
@@ -455,7 +471,7 @@ class ContextControllerTest {
         JobRepository jobRepository = Mockito.mock(JobRepository.class);
         Job job = Mockito.mock(Job.class);
         when(job.getStatus()).thenReturn(JobStatus.running);
-        when(jobRepository.lockForContextWrite(1)).thenReturn(Optional.of(job));
+        when(jobRepository.findById(1)).thenReturn(Optional.of(job));
         when(storageTypeService.saveContext(Mockito.eq(1), Mockito.anyString()))
                 .thenAnswer(invocation -> invocation.getArgument(1));
         ContextController controller = controller(storageTypeService, jobRepository);
@@ -489,7 +505,7 @@ class ContextControllerTest {
         JobRepository jobRepository = Mockito.mock(JobRepository.class);
         Job job = Mockito.mock(Job.class);
         when(job.getStatus()).thenReturn(JobStatus.running);
-        when(jobRepository.lockForContextWrite(1)).thenReturn(Optional.of(job));
+        when(jobRepository.findById(1)).thenReturn(Optional.of(job));
         when(storageTypeService.saveContext(Mockito.eq(1), Mockito.anyString()))
                 .thenAnswer(invocation -> invocation.getArgument(1));
         ContextController controller = controller(storageTypeService, jobRepository);
@@ -547,7 +563,7 @@ class ContextControllerTest {
         JobRepository jobRepository = Mockito.mock(JobRepository.class);
         Job job = Mockito.mock(Job.class);
         when(job.getStatus()).thenReturn(JobStatus.running);
-        when(jobRepository.lockForContextWrite(1)).thenReturn(Optional.of(job));
+        when(jobRepository.findById(1)).thenReturn(Optional.of(job));
         when(storageTypeService.saveContext(Mockito.eq(1), Mockito.anyString()))
                 .thenAnswer(invocation -> invocation.getArgument(1));
         ContextController controller = controller(storageTypeService, jobRepository);
@@ -567,7 +583,7 @@ class ContextControllerTest {
         JobRepository jobRepository = Mockito.mock(JobRepository.class);
         Job job = Mockito.mock(Job.class);
         when(job.getStatus()).thenReturn(JobStatus.running);
-        when(jobRepository.lockForContextWrite(1)).thenReturn(Optional.of(job));
+        when(jobRepository.findById(1)).thenReturn(Optional.of(job));
         when(storageTypeService.saveContext(Mockito.eq(1), Mockito.anyString()))
                 .thenAnswer(invocation -> invocation.getArgument(1));
         ContextController controller = controller(storageTypeService, jobRepository);
@@ -606,7 +622,7 @@ class ContextControllerTest {
         JobRepository jobRepository = Mockito.mock(JobRepository.class);
         Job job = Mockito.mock(Job.class);
         when(job.getStatus()).thenReturn(JobStatus.running);
-        when(jobRepository.lockForContextWrite(1)).thenReturn(Optional.of(job));
+        when(jobRepository.findById(1)).thenReturn(Optional.of(job));
         when(storageTypeService.saveContext(Mockito.eq(1), Mockito.anyString()))
                 .thenThrow(new RuntimeException("S3 unavailable"));
         SimpleMeterRegistry registry = new SimpleMeterRegistry();

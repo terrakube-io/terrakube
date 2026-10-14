@@ -5,6 +5,7 @@ import io.terrakube.executor.service.mode.TerraformJob;
 import io.terrakube.executor.service.scripts.ScriptEngineService;
 import io.terrakube.executor.service.shutdown.ShutdownServiceImpl;
 import io.terrakube.executor.service.status.UpdateJobStatus;
+import io.terrakube.executor.service.terraform.ContextRevision;
 import io.terrakube.executor.service.terraform.TerraformExecutor;
 import io.terrakube.executor.service.workspace.SetupWorkspace;
 import org.junit.jupiter.api.Test;
@@ -94,6 +95,28 @@ class ExecutorJobImplTest {
         inOrder.verify(updateJobStatus).setCompletedStatus(eq(true), anyBoolean(), anyInt(), eq(job), any(), any(), any(), any(), anyBoolean(), any());
         inOrder.verify(jobExecutionWatchdog).markFree();
         inOrder.verify(executorCapacityGate).release();
+    }
+
+    @Test
+    void contextRevisionsCarryTheDispatchEpochOnlyWhileTheJobRuns() throws Exception {
+        TerraformJob job = createJob("terraformPlan");
+        job.setJobId("revision-42");
+        job.setExecutionEpoch(1_760_371_234_567L);
+        File workDir = tempDir.toFile();
+        when(setupWorkspace.prepareWorkspace(job)).thenReturn(workDir);
+        List<Long> duringRun = new ArrayList<>();
+        when(terraformExecutor.plan(eq(job), eq(workDir), eq(false))).thenAnswer(invocation -> {
+            duringRun.add(ContextRevision.next("revision-42"));
+            return new ExecutorJobResult();
+        });
+
+        subject(eventPublisher).createJob(job);
+
+        assertEquals(List.of(1_760_371_234_567L * ContextRevision.SCALE + 1), duringRun);
+        // Ended: a later write falls back to this executor's clock instead of the finished execution.
+        long floor = System.currentTimeMillis() * ContextRevision.SCALE;
+        assertTrue(ContextRevision.next("revision-42") > floor);
+        ContextRevision.end("revision-42", 0);
     }
 
     @Test

@@ -63,6 +63,11 @@ public class DefaultStructuredSnapshotPersister implements StructuredSnapshotPer
                     jobContextService.patchContext(organizationId, jobId, snapshot.getSequence(), set);
             if (result == JobContextService.PatchResult.APPLIED) {
                 pushLiveUpdate(planPhase ? "plan" : "apply", jobId, stepId, snapshot);
+            } else if (result == JobContextService.PatchResult.SKIPPED && snapshot.isFinalSnapshot()) {
+                // Revisions carry the execution epoch, so only a newer execution of this step, or a
+                // queue retry of this same write that already landed (it reuses the revision), gets here.
+                log.warn("Final structured snapshot for job {} step {} phase {} was skipped: "
+                        + "an equal or newer revision already landed", jobId, stepId, planPhase ? "plan" : "apply");
             }
             return result != JobContextService.PatchResult.FAILED;
         } catch (Throwable t) {

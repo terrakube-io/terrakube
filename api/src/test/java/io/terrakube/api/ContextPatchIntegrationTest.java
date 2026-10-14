@@ -1,5 +1,6 @@
 package io.terrakube.api;
 
+import io.terrakube.api.plugin.context.InMemoryContextWriteLock;
 import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
@@ -22,21 +23,20 @@ import java.util.concurrent.TimeUnit;
 
 import static io.restassured.RestAssured.given;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.mockito.Mockito.when;
 
 class ContextPatchIntegrationTest extends ServerApplicationTests {
 
     private static final String ORG_ID = "d9b58bd3-f3fc-4056-a026-1163297e80a8";
     private static final String WORKSPACE_ID = "5ed411ca-7ab8-4d2f-b591-02d0d5788afc";
 
-    // Wall-clock based like the executor's revisions, so a context file left by an earlier run for
-    // the same (in-memory H2) job id never makes these patches stale.
-    private final long revision = System.currentTimeMillis() * 1000;
+    // Built like the executor's revisions (execution epoch * 1,000,000 + seq), so a context file left
+    // by an earlier run for the same (in-memory H2) job id never makes these patches stale.
+    private final long revision = System.currentTimeMillis() * 1_000_000;
 
     @BeforeEach
     public void setup() {
         MockitoAnnotations.openMocks(this);
-        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        InMemoryContextWriteLock.stub(redisTemplate, valueOperations);
     }
 
     private int runningJob() {

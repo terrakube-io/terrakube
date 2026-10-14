@@ -12,7 +12,6 @@ import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.io.IOException;
@@ -22,9 +21,10 @@ import java.util.Objects;
 import java.util.Set;
 
 /**
- * The read-apply-write behind {@code /context/v1} writes. It runs under the job's row lock, so
- * writers on different API pods are serialized and each one merges into the latest stored
- * document. When the stored document cannot be read, nothing is written; a malformed one blocks
+ * The read-apply-write behind {@code /context/v1} writes. It runs under the job's
+ * {@link ContextWriteLock}, so writers on different API pods are serialized and each one merges
+ * into the latest stored document. No database transaction is open while storage is read and
+ * written. When the stored document cannot be read, nothing is written; a malformed one blocks
  * patches but is repaired by a full replace.
  */
 @Slf4j
@@ -51,6 +51,8 @@ public class ContextWriteService {
 
     private final JobRepository jobRepository;
 
+    private final ContextWriteLock contextWriteLock;
+
     private final ContextReadService contextReadService;
 
     private final ContextSanitizer contextSanitizer;
@@ -62,38 +64,49 @@ public class ContextWriteService {
     private final ObjectMapper objectMapper;
 
     /** Applies a {@link ContextPatchApplier#parse validated} patch. */
-    @Transactional
     public PatchResult patch(int jobId, ContextPatchApplier.Patch patch) throws IOException {
-        lock(jobId);
-        ObjectNode stored = readStored(jobId);
-        if (stored == null) {
-            throw new ContextUnavailableException("stored context for job " + jobId + " is malformed", null);
+        String token = contextWriteLock.acquire(jobId);
+        try {
+            checkWritable(jobId);
+            ObjectNode stored = readStored(jobId);
+            if (stored == null) {
+                throw new ContextUnavailableException("stored context for job " + jobId + " is malformed", null);
+            }
+            List<String> applied = ContextPatchApplier.apply(stored, patch);
+            int skipped = patch.set().size() - applied.size();
+            if (applied.isEmpty()) {
+                return new PatchResult(applied, skipped, null);
+            }
+            return new PatchResult(applied, skipped, save(jobId, stored));
+        } finally {
+            contextWriteLock.release(jobId, token);
         }
-        List<String> applied = ContextPatchApplier.apply(stored, patch);
-        int skipped = patch.set().size() - applied.size();
-        if (applied.isEmpty()) {
-            return new PatchResult(applied, skipped, null);
-        }
-        return new PatchResult(applied, skipped, save(jobId, stored));
     }
 
     /** Replaces the whole document, except revisioned entries, which only change through a patch. */
-    @Transactional
     public ReplaceResult replace(int jobId, ObjectNode incoming) throws IOException {
-        lock(jobId);
-        ObjectNode stored = readStored(jobId);
-        if (stored == null) {
-            // Nothing in it can be protected, and this write repairs it.
-            log.warn("Replacing malformed stored context for job {}", jobId);
-            stored = objectMapper.createObjectNode();
+        String token = contextWriteLock.acquire(jobId);
+        try {
+            checkWritable(jobId);
+            ObjectNode stored = readStored(jobId);
+            if (stored == null) {
+                // Nothing in it can be protected, and this write repairs it.
+                log.warn("Replacing malformed stored context for job {}", jobId);
+                stored = objectMapper.createObjectNode();
+            }
+            ContextPatchApplier.protectRevisions(stored, incoming);
+            boolean policyChanged = !Objects.equals(stored.get(POLICY_KEY), incoming.get(POLICY_KEY));
+            return new ReplaceResult(save(jobId, incoming), policyChanged);
+        } finally {
+            contextWriteLock.release(jobId, token);
         }
-        ContextPatchApplier.protectRevisions(stored, incoming);
-        boolean policyChanged = !Objects.equals(stored.get(POLICY_KEY), incoming.get(POLICY_KEY));
-        return new ReplaceResult(save(jobId, incoming), policyChanged);
     }
 
-    private void lock(int jobId) {
-        Job job = jobRepository.lockForContextWrite(jobId).orElseThrow(() -> {
+    // No row lock, so this check is not serialized with status changes: a write can land just after
+    // the job moved to a terminal status. That is harmless, completed and noChanges are writable
+    // anyway and a late snapshot on a failed job hurts nothing.
+    private void checkWritable(int jobId) {
+        Job job = jobRepository.findById(jobId).orElseThrow(() -> {
             log.warn("Cannot save context for missing job {}", jobId);
             return new ResponseStatusException(HttpStatus.NOT_FOUND);
         });

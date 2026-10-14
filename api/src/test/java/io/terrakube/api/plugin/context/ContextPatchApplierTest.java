@@ -64,6 +64,18 @@ class ContextPatchApplierTest {
     }
 
     @Test
+    void olderExecutionsFinalSnapshotLosesToANewerExecutionsProgress() throws Exception {
+        long scale = ContextPatchApplier.REVISION_EPOCH_SCALE;
+        ObjectNode stored = json("{}");
+        // The step was re-dispatched a second later; the new execution's first snapshot lands first.
+        apply(stored, (NOW + 1_000) * scale + 1, "{\"structuredOutputStatus\":{\"state\":\"RUNNING\"}}");
+
+        // The old execution's final snapshot, however late in its own sequence, is stale.
+        assertEquals(List.of(), apply(stored, NOW * scale + 999, "{\"structuredOutputStatus\":{\"state\":\"COMPLETE\"}}"));
+        assertEquals("RUNNING", stored.at("/structuredOutputStatus/state").asText());
+    }
+
+    @Test
     void nullDeletesTheEntryAndKeepsItsRevisionAsATombstone() throws Exception {
         ObjectNode stored = json("{\"noChangePlan\":{\"planStepId\":\"s1\"},\"terrakubeUI\":{\"s1\":\"ui\",\"s2\":\"ui\"}}");
 
@@ -114,8 +126,10 @@ class ContextPatchApplierTest {
 
     @Test
     void parseRejectsForgedRevisionsOversizedSetsAndBadPaths() throws Exception {
-        long future = (NOW + 61_000) * 1000;
-        assertEquals(future - 1_000_000, ContextPatchApplier.parse(json("{\"revision\":" + (future - 1_000_000) + ",\"set\":{\"a\":1}}"), NOW).revision());
+        // The epoch may be at most 10s ahead of this API's clock, whatever its seq.
+        long latest = (NOW + 10_000) * ContextPatchApplier.REVISION_EPOCH_SCALE + 999_999;
+        long future = (NOW + 10_001) * ContextPatchApplier.REVISION_EPOCH_SCALE;
+        assertEquals(latest, ContextPatchApplier.parse(json("{\"revision\":" + latest + ",\"set\":{\"a\":1}}"), NOW).revision());
 
         for (String body : new String[]{
                 "{\"revision\":" + future + ",\"set\":{\"a\":1}}",

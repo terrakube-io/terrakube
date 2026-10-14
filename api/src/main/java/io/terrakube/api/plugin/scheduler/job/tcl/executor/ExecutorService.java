@@ -101,6 +101,7 @@ public class ExecutorService {
         executorContext.setWorkspaceId(job.getWorkspace().getId().toString());
         executorContext.setJobId(String.valueOf(job.getId()));
         executorContext.setStepId(stepId);
+        executorContext.setExecutionEpoch(System.currentTimeMillis());
 
         if (job.getWorkspace().getBranch().equals("remote-content")) {
             log.warn("Running remote operation, disable headers");

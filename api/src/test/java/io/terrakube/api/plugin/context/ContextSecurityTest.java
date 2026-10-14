@@ -13,6 +13,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -36,6 +38,8 @@ class ContextSecurityTest {
     @Mock StreamingService streamingService;
     @Mock JobLogAccessService jobLogAccessService;
     @Mock Authentication authentication;
+    @Mock RedisTemplate<String, Object> redisTemplate;
+    @Mock ValueOperations<String, Object> valueOperations;
 
     private ContextController controller;
 
@@ -45,11 +49,13 @@ class ContextSecurityTest {
         ContextStorageMetrics storageMetrics = new ContextStorageMetrics(new SimpleMeterRegistry());
         ContextReadService readService = new ContextReadService(storageTypeService, storageMetrics, properties, new SimpleMeterRegistry());
         ContextSanitizer sanitizer = new ContextSanitizer(new ObjectMapper());
+        InMemoryContextWriteLock.stub(redisTemplate, valueOperations);
         controller = new ContextController(
                 sanitizer,
                 streamingService,
                 readService,
-                new ContextWriteService(jobRepository, readService, sanitizer, storageTypeService, storageMetrics, new ObjectMapper()),
+                new ContextWriteService(jobRepository, new ContextWriteLock(redisTemplate), readService, sanitizer, storageTypeService,
+                        storageMetrics, new ObjectMapper()),
                 properties,
                 null,
                 jobLogAccessService,
@@ -139,7 +145,7 @@ class ContextSecurityTest {
         when(jobLogAccessService.canWriteContext(authentication, 1)).thenReturn(true);
         Job job = mock(Job.class);
         when(job.getStatus()).thenReturn(JobStatus.running);
-        when(jobRepository.lockForContextWrite(1)).thenReturn(Optional.of(job));
+        when(jobRepository.findById(1)).thenReturn(Optional.of(job));
         when(storageTypeService.saveContext(1, "{\"plan\":{}}")).thenReturn("{\"plan\":{}}");
 
         ResponseEntity<String> response = controller.saveContext(1, "{\"plan\":{}}", authentication);

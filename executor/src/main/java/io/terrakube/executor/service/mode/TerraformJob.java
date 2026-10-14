@@ -1,5 +1,6 @@
 package io.terrakube.executor.service.mode;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.ToString;
@@ -8,6 +9,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+// Ignores unknown fields: BatchModeServiceImpl reads it with a plain ObjectMapper, and a field a newer
+// API adds must not fail an ephemeral executor.
+@JsonIgnoreProperties(ignoreUnknown = true)
 @ToString
 @Getter
 @Setter
@@ -20,6 +24,8 @@ public class TerraformJob {
     private String workspaceId;
     private String jobId;
     private String stepId;
+    // API clock (millis) when it dispatched this step; 0 from an API that does not send it.
+    private long executionEpoch;
     private String terraformVersion;
     private String source;
     private String branch;

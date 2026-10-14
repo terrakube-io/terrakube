@@ -513,7 +513,7 @@ class PlanStructuredOutputServiceTest {
     void publishPlanProgressEnqueuesInsteadOfBlockingWhenAsyncEnabled() {
         io.terrakube.executor.service.terraform.structured.StructuredOutputPersistenceQueue queue =
                 Mockito.mock(io.terrakube.executor.service.terraform.structured.StructuredOutputPersistenceQueue.class);
-        Mockito.when(queue.nextSequence()).thenReturn(1L);
+        Mockito.when(queue.nextSequence("1")).thenReturn(1L);
         JobContextService jobContextService = Mockito.mock(JobContextService.class);
         io.terrakube.executor.configuration.ExecutorFlagsProperties flags =
                 new io.terrakube.executor.configuration.ExecutorFlagsProperties();
@@ -592,7 +592,7 @@ class PlanStructuredOutputServiceTest {
     void publishPlanSummaryGoesThroughTheRetryingQueueAsTheFinalSnapshotWhenAsyncEnabled() throws Exception {
         io.terrakube.executor.service.terraform.structured.StructuredOutputPersistenceQueue queue =
                 Mockito.mock(io.terrakube.executor.service.terraform.structured.StructuredOutputPersistenceQueue.class);
-        Mockito.when(queue.nextSequence()).thenReturn(7L);
+        Mockito.when(queue.nextSequence("1")).thenReturn(7L);
         JobContextService jobContextService = Mockito.mock(JobContextService.class);
         io.terrakube.executor.configuration.ExecutorFlagsProperties flags =
                 new io.terrakube.executor.configuration.ExecutorFlagsProperties();

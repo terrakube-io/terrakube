@@ -135,7 +135,7 @@ public class ApplyStructuredOutputService {
         if (executorFlagsProperties.isAsyncStructuredOutput() && persistenceQueue != null) {
             try {
                 StructuredSnapshot snapshot = StructuredSnapshot.copyOf(organizationId, jobId, stepId,
-                        StructuredSnapshot.Phase.APPLY, persistenceQueue.nextSequence(), finalSnapshot,
+                        StructuredSnapshot.Phase.APPLY, persistenceQueue.nextSequence(jobId), finalSnapshot,
                         changes, jobDiagnostics, objectMapper);
                 persistenceQueue.submit(snapshot);
             } catch (StructuredSnapshot.SnapshotSerializationException e) {

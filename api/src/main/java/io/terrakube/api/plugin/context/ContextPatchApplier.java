@@ -23,9 +23,14 @@ final class ContextPatchApplier {
 
     static final int MAX_ENTRIES = 64;
 
-    // Revisions are executor wall-clock microseconds; one further ahead than this is forged or
-    // comes from a broken clock, and would block every later write to its entries.
-    private static final long MAX_CLOCK_SKEW_MILLIS = 60_000;
+    // A revision is executionEpoch * REVISION_EPOCH_SCALE + seq. The epoch is the API's own clock
+    // when it dispatched the step (ExecutorContext.executionEpoch) and seq counts up inside that
+    // execution, so a re-dispatched step always outranks the execution it replaces.
+    static final long REVISION_EPOCH_SCALE = 1_000_000L;
+
+    // The epoch is minted by an API pod, so this only covers clock skew between API pods. An epoch
+    // further ahead is forged and must not outrank the next dispatched execution for long.
+    private static final long MAX_CLOCK_SKEW_MILLIS = 10_000;
 
     record Patch(long revision, ObjectNode set) {
     }
@@ -41,7 +46,7 @@ final class ContextPatchApplier {
     static Patch parse(JsonNode body, long nowMillis) {
         JsonNode revision = body.get("revision");
         if (revision == null || !revision.isIntegralNumber() || !revision.canConvertToLong()
-                || revision.asLong() <= 0 || revision.asLong() > (nowMillis + MAX_CLOCK_SKEW_MILLIS) * 1000) {
+                || revision.asLong() <= 0 || revision.asLong() / REVISION_EPOCH_SCALE > nowMillis + MAX_CLOCK_SKEW_MILLIS) {
             throw new InvalidContextPatchException("revision must be a positive long that is not in the future");
         }
         if (!(body.get("set") instanceof ObjectNode set) || set.isEmpty() || set.size() > MAX_ENTRIES) {

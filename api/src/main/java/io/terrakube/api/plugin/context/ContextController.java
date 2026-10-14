@@ -146,11 +146,11 @@ public class ContextController {
         } catch (ResponseStatusException e) {
             return new ResponseEntity<>("{}", e.getStatusCode());
         } catch (IOException | RuntimeException e) {
-            // Includes a job row lock that could not be taken in time.
+            // Includes a context write lock that could not be taken in time.
             log.warn("Controlled failure saving context for job {}: {}", jobId, e.getMessage());
             return unavailable();
         }
-        // Runs after the write transaction, so the job row lock is not held during policy processing.
+        // Runs after the write lock is released, so it is not held during policy processing.
         if (policyEvaluationService != null && result.policyChanged()) {
             policyEvaluationService.processPolicyEvaluationContext(jobId, result.saved());
         }
@@ -172,7 +172,7 @@ public class ContextController {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
 
-        // Validated before the job row is locked.
+        // Validated before the write lock is taken.
         ContextPatchApplier.Patch parsed;
         try {
             parsed = ContextPatchApplier.parse(objectMapper.readTree(patch), System.currentTimeMillis());

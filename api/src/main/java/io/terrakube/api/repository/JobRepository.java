@@ -4,12 +4,10 @@ import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
 import jakarta.persistence.LockModeType;
-import jakarta.persistence.QueryHint;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
-import org.springframework.data.jpa.repository.QueryHints;
 import org.springframework.data.repository.query.Param;
 import io.terrakube.api.rs.workspace.Workspace;
 
@@ -98,16 +96,6 @@ public interface JobRepository extends JpaRepository<Job, Integer> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select j from job j where j.id = :jobId")
     Job lockForUpdate(@Param("jobId") int jobId);
-
-    /**
-     * Row-locks the job for a {@code /context/v1} read-apply-write, so concurrent context writes
-     * across API pods are serialized. Bounded to 5s, matching WorkspaceRepository.lockForUpdate - an
-     * unbounded wait would hold a connection from the pool indefinitely under contention.
-     */
-    @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @QueryHints(@QueryHint(name = "jakarta.persistence.lock.timeout", value = "5000"))
-    @Query("select j from job j where j.id = :jobId")
-    Optional<Job> lockForContextWrite(@Param("jobId") int jobId);
 
     /**
      * True if no earlier pending/approved job exists with a smaller id - i.e. candidateJobId is

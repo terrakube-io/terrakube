@@ -1,5 +1,9 @@
 package io.terrakube.executor.service.terraform;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.terrakube.executor.service.logs.ProcessLogs;
 import io.terrakube.executor.service.terraform.JobContextService.PatchResult;
@@ -7,6 +11,7 @@ import io.terrakube.executor.service.terraform.structured.StructuredSnapshot;
 import io.terrakube.terraform.TerraformClient;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.slf4j.LoggerFactory;
 
 import java.util.List;
 import java.util.Map;
@@ -116,6 +121,38 @@ class DefaultStructuredSnapshotPersisterTest {
 
         assertTrue(persister.persist(planSnapshot()));
         verify(logs, never()).sendStructuredUpdate(anyInt(), any(), any());
+    }
+
+    private List<ILoggingEvent> persistCapturingWarns(StructuredSnapshot snapshot) {
+        Logger logger = (Logger) LoggerFactory.getLogger(DefaultStructuredSnapshotPersister.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            assertTrue(persister.persist(snapshot));
+        } finally {
+            logger.detachAppender(appender);
+        }
+        return appender.list.stream().filter(e -> e.getLevel() == Level.WARN).toList();
+    }
+
+    @Test
+    void finalSnapshotSkippedByAHigherRevisionIsDoneButWarned() {
+        when(ctx.patchContext(any(), any(), anyLong(), any())).thenReturn(PatchResult.SKIPPED);
+
+        List<ILoggingEvent> warns = persistCapturingWarns(planSnapshot(1L, true, List.of()));
+
+        assertEquals(1, warns.size());
+        assertTrue(warns.get(0).getFormattedMessage().contains("Final structured snapshot for job 1 step step-1"));
+        assertTrue(warns.get(0).getFormattedMessage().endsWith("an equal or newer revision already landed"));
+        verify(logs, never()).sendStructuredUpdate(anyInt(), any(), any());
+    }
+
+    @Test
+    void progressSnapshotSkippedIsNotWarned() {
+        when(ctx.patchContext(any(), any(), anyLong(), any())).thenReturn(PatchResult.SKIPPED);
+
+        assertTrue(persistCapturingWarns(planSnapshot()).isEmpty());
     }
 
     @Test
