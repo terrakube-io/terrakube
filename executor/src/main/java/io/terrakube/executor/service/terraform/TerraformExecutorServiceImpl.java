@@ -92,6 +92,9 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
     // lock) inside terminationGracePeriodSeconds, instead of the JVM exiting out from under it.
     private final Set<TerraformClient> liveJsonClients = ConcurrentHashMap.newKeySet();
 
+    @Value("${io.terrakube.executor.stream.waitTimeoutSeconds:900}")
+    int streamWaitTimeoutSeconds = 900;
+
     public TerraformExecutorServiceImpl(TerraformClient terraformClient, TerraformState terraformState, ScriptEngineService scriptEngineService, ProcessLogs logsService, PlanStructuredOutputService planStructuredOutputService, ApplyStructuredOutputService applyStructuredOutputService, TerraformOutputsService terraformOutputsService, ObjectMapper objectMapper, @Value("${io.terrakube.terraform.flags.enableColor}") boolean enableColorOutput, RedisTemplate redisTemplate, @Value("${io.terrakube.executor.redis.timeout}") int redisTimeout, StructuredOutputPersistenceQueue structuredOutputPersistenceQueue, ExecutorFlagsProperties executorFlagsProperties, StructuredOutputProperties structuredOutputProperties, MeterRegistry meterRegistry, BinaryCacheRecoveryService binaryCacheRecoveryService) {
         this(terraformClient, terraformState, scriptEngineService, logsService, planStructuredOutputService, applyStructuredOutputService, terraformOutputsService, objectMapper, enableColorOutput, redisTemplate, redisTimeout, structuredOutputPersistenceQueue, executorFlagsProperties, structuredOutputProperties, meterRegistry, binaryCacheRecoveryService, null);
     }
@@ -358,7 +361,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                 planStructuredOutputService.publishPlanSummary(terraformJob, terraformWorkingDir, terraformJob.getLiveChanges(), terraformJob.getJobDiagnostics());
             }
 
-            waitForStreamCompletion(terraformJob.getJobId(), 300);
+            waitForStreamCompletion(terraformJob.getJobId(), streamWaitTimeoutSeconds);
             drainStructuredOutputQueue(terraformJob.getJobId());
 
             result = generateJobResult(scriptAfterSuccessPlan, jobOutput.toString(), jobErrorOutput.toString());
@@ -492,7 +495,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             log.warn("Terraform apply Executed Successfully: {}", execution);
             scriptAfterSuccess = executePostOperationScripts(terraformJob, terraformWorkingDir, applyOutput, execution || terraformJob.isIgnoreError());
 
-            waitForStreamCompletion(terraformJob.getJobId(), 300);
+            waitForStreamCompletion(terraformJob.getJobId(), streamWaitTimeoutSeconds);
             drainStructuredOutputQueue(terraformJob.getJobId());
             result = generateJobResult(scriptAfterSuccess, terraformOutput.toString(), terraformErrorOutput.toString());
         } catch (IOException | ExecutionException | InterruptedException exception) {
@@ -743,7 +746,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             log.warn("Terraform destroy Executed Successfully: {}", execution);
             scriptAfterSuccess = executePostOperationScripts(terraformJob, terraformWorkingDir, outputDestroy, execution);
 
-            waitForStreamCompletion(terraformJob.getJobId(), 300);
+            waitForStreamCompletion(terraformJob.getJobId(), streamWaitTimeoutSeconds);
             drainStructuredOutputQueue(terraformJob.getJobId());
             result = generateJobResult(scriptAfterSuccess, jobOutput.toString(), jobErrorOutput.toString());
         } catch (IOException | ExecutionException | InterruptedException exception) {
