@@ -145,4 +145,30 @@ public class WorkspaceSecurityImpl implements WorkspaceSecurity {
             log.error(e.getMessage());
         }
     }
+
+    /**
+     * Purges ~/.terraformrc created for the executing job.
+     * In Terrakube, persistent executor instances process a single job at a time due to capacity limits
+     * and concurrency gating (ExecutorCapacityGate), and ephemeral executor runs use isolated 1:1
+     * Kubernetes Job pods. Therefore, ~/.terraformrc belongs exclusively to the currently running
+     * job and deleting it post-execution ensures no residual tokens linger on disk.
+     */
+    @Override
+    public void cleanTerraformCredentials() {
+        try {
+            File credentialFile = new File(
+                    FilenameUtils.separatorsToSystem(
+                            FileUtils.getUserDirectoryPath().concat(CREDENTIALS_FILE_NAME)
+                    )
+            );
+            synchronized (this) {
+                if (credentialFile.exists()) {
+                    FileUtils.deleteQuietly(credentialFile);
+                    log.info("Terraform credentials file deleted: {}", credentialFile.getAbsolutePath());
+                }
+            }
+        } catch (Exception e) {
+            log.error("Failed to clean terraform credentials: {}", e.getMessage());
+        }
+    }
 }

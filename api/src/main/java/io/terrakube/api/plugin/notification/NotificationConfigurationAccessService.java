@@ -8,6 +8,8 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import io.terrakube.api.plugin.security.token.InternalTokenClassifier;
+import io.terrakube.api.plugin.security.token.InternalTokenType;
 import io.terrakube.api.plugin.security.rbac.RbacService;
 import io.terrakube.api.repository.NotificationConfigurationRepository;
 import io.terrakube.api.repository.OrganizationRepository;
@@ -51,8 +53,11 @@ public class NotificationConfigurationAccessService {
 
     @Transactional
     public boolean hasManagePermission(Authentication authentication, String configurationId) {
-        if (isInternalIssuer(authentication)) {
+        if (isExecutorService(authentication)) {
             return true;
+        }
+        if (isInternalToken(authentication)) {
+            return false;
         }
         NotificationConfiguration configuration = notificationConfigurationRepository
                 .findById(UUID.fromString(configurationId)).orElse(null);
@@ -67,8 +72,11 @@ public class NotificationConfigurationAccessService {
 
     @Transactional
     public boolean hasManagePermissionForOrganization(Authentication authentication, String organizationId) {
-        if (isInternalIssuer(authentication)) {
+        if (isExecutorService(authentication)) {
             return true;
+        }
+        if (isInternalToken(authentication)) {
+            return false;
         }
         Organization organization = organizationRepository.findById(UUID.fromString(organizationId)).orElse(null);
         if (organization == null) {
@@ -79,8 +87,11 @@ public class NotificationConfigurationAccessService {
 
     @Transactional
     public boolean hasManagePermissionForWorkspace(Authentication authentication, String workspaceId) {
-        if (isInternalIssuer(authentication)) {
+        if (isExecutorService(authentication)) {
             return true;
+        }
+        if (isInternalToken(authentication)) {
+            return false;
         }
         Workspace workspace = workspaceRepository.findById(UUID.fromString(workspaceId)).orElse(null);
         if (workspace == null) {
@@ -89,8 +100,18 @@ public class NotificationConfigurationAccessService {
         return hasManagePermissionForWorkspace(authentication, workspace);
     }
 
-    private boolean isInternalIssuer(Authentication authentication) {
-        return ((JwtAuthenticationToken) authentication).getTokenAttributes().get("iss").equals("TerrakubeInternal");
+    private boolean isExecutorService(Authentication authentication) {
+        if (authentication instanceof JwtAuthenticationToken jwt) {
+            return InternalTokenClassifier.classify(jwt.getTokenAttributes()) == InternalTokenType.EXECUTOR_SERVICE;
+        }
+        return false;
+    }
+
+    private boolean isInternalToken(Authentication authentication) {
+        if (authentication instanceof JwtAuthenticationToken jwt) {
+            return InternalTokenClassifier.classify(jwt.getTokenAttributes()) != InternalTokenType.NOT_INTERNAL;
+        }
+        return false;
     }
 
     @SuppressWarnings("unchecked")

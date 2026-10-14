@@ -8,6 +8,8 @@ import io.terrakube.api.rs.project.access.ProjectAccess;
 import io.terrakube.api.rs.team.Team;
 import io.terrakube.api.rs.workspace.Workspace;
 import io.terrakube.api.rs.workspace.access.Access;
+import io.terrakube.api.plugin.security.token.InternalTokenClassifier;
+import io.terrakube.api.plugin.security.token.InternalTokenType;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.Authentication;
@@ -51,7 +53,24 @@ public class PolicyWorkspaceAccessService {
         if (authentication instanceof JwtAuthenticationToken principalJwt) {
             String issuer = (String) principalJwt.getTokenAttributes().get("iss");
             if ("TerrakubeInternal".equals(issuer)) {
-                return true;
+                InternalTokenType tokenType = InternalTokenClassifier.classify(principalJwt.getTokenAttributes());
+                if (tokenType == InternalTokenType.WORKSPACE_EXECUTOR) {
+                    Object tokenWsId = principalJwt.getTokenAttributes().get("workspaceId");
+                    if (tokenWsId == null || !tokenWsId.toString().equalsIgnoreCase(workspaceId)) {
+                        log.warn("Policy evaluation access denied: token workspaceId={} does not match requested workspaceId={}", tokenWsId, workspaceId);
+                        return false;
+                    }
+                    Object tokenOrgId = principalJwt.getTokenAttributes().get("organizationId");
+                    if (tokenOrgId != null && organizationId != null && !tokenOrgId.toString().equalsIgnoreCase(organizationId)) {
+                        log.warn("Policy evaluation access denied: token organizationId={} does not match requested organizationId={}", tokenOrgId, organizationId);
+                        return false;
+                    }
+                    return true;
+                } else if (tokenType == InternalTokenType.EXECUTOR_SERVICE) {
+                    return true;
+                }
+                log.warn("Internal token cannot evaluate policy: {}", principalJwt.getTokenAttributes().get("sub"));
+                return false;
             }
 
             List<String> groups = teamTokenService.getCurrentGroups(principalJwt);

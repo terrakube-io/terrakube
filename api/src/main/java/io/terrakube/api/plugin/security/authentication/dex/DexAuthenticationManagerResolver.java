@@ -10,6 +10,7 @@ import io.terrakube.api.repository.PatRepository;
 import io.terrakube.api.repository.TeamTokenRepository;
 import io.terrakube.api.rs.federated.Federated;
 import io.terrakube.api.rs.federated.claim.FederatedClaimMatcher;
+import io.terrakube.api.repository.StepRepository;
 import io.terrakube.api.rs.token.group.Group;
 import io.terrakube.api.rs.token.pat.Pat;
 import jakarta.servlet.http.HttpServletRequest;
@@ -23,9 +24,11 @@ import org.springframework.security.authentication.AuthenticationServiceExceptio
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.ProviderManager;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtDecoders;
+import org.springframework.security.oauth2.jwt.JwtTimestampValidator;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationProvider;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
@@ -56,6 +59,7 @@ public class DexAuthenticationManagerResolver implements AuthenticationManagerRe
     private PatRepository patRepository;
     private TeamTokenRepository teamTokenRepository;
     private FederatedRepository federatedRepository;
+    private StepRepository stepRepository;
 
     // Avoids re-fetching issuer metadata from Dex on every request.
     @Builder.Default
@@ -161,9 +165,15 @@ public class DexAuthenticationManagerResolver implements AuthenticationManagerRe
         String jwtSecret = (issuerType.equals(jwtTypePat) ? patJwtSecret : internalJwtSecret);
         byte[] secretBytes = Decoders.BASE64URL.decode(jwtSecret);
         SecretKey jwtSecretKey = Keys.hmacShaKeyFor(secretBytes);
-        JwtDecoder decoder = NimbusJwtDecoder.withSecretKey(jwtSecretKey)
+        NimbusJwtDecoder decoder = NimbusJwtDecoder.withSecretKey(jwtSecretKey)
                 .macAlgorithm(getMacAlgorithm(secretBytes.length))
                 .build();
+        if (jwtTypeInternal.equals(issuerType) && stepRepository != null) {
+            decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(
+                    new JwtTimestampValidator(),
+                    new ActiveStepTokenValidator(stepRepository)
+            ));
+        }
         decoderCache.putIfAbsent(cacheKey, decoder);
         return decoderCache.get(cacheKey);
     }

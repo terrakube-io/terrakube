@@ -56,10 +56,34 @@ class VcsRepositoryAccessServiceTest {
     }
 
     @Test
-    void internalIssuerBypassesAllChecks() {
-        JwtAuthenticationToken token = authWithClaims(Map.of("iss", "TerrakubeInternal"));
+    void executorServiceAllowed() {
+        JwtAuthenticationToken token = authWithClaims(Map.of(
+                "iss", "TerrakubeInternal",
+                "sub", "TerrakubeInternal (EXECUTOR)"
+        ));
 
         assertThat(subject.hasViewPermission(token, vcsId.toString())).isTrue();
+    }
+
+    @Test
+    void workspaceExecutorDenied() {
+        JwtAuthenticationToken token = authWithClaims(Map.of(
+                "iss", "TerrakubeInternal",
+                "sub", "TerrakubeInternal (TOKEN)",
+                "workspaceId", UUID.randomUUID().toString()
+        ));
+
+        assertThat(subject.hasViewPermission(token, vcsId.toString())).isFalse();
+    }
+
+    @Test
+    void unknownInternalDenied() {
+        JwtAuthenticationToken token = authWithClaims(Map.of(
+                "iss", "TerrakubeInternal",
+                "sub", "TerrakubeInternal (TOKEN)"
+        ));
+
+        assertThat(subject.hasViewPermission(token, vcsId.toString())).isFalse();
     }
 
     @Test

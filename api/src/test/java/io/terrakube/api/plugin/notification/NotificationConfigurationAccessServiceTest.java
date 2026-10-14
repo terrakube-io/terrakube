@@ -86,10 +86,24 @@ class NotificationConfigurationAccessServiceTest {
     }
 
     @Test
-    void hasManagePermission_internalIssuerBypassesAllChecks() {
-        JwtAuthenticationToken token = authWithClaims(Map.of("iss", "TerrakubeInternal"));
+    void hasManagePermission_executorServiceAllowed() {
+        JwtAuthenticationToken token = authWithClaims(Map.of(
+                "iss", "TerrakubeInternal",
+                "sub", "TerrakubeInternal (EXECUTOR)"
+        ));
 
         assertThat(subject.hasManagePermission(token, configId.toString())).isTrue();
+    }
+
+    @Test
+    void hasManagePermission_workspaceExecutorDenied() {
+        JwtAuthenticationToken token = authWithClaims(Map.of(
+                "iss", "TerrakubeInternal",
+                "sub", "TerrakubeInternal (TOKEN)",
+                "workspaceId", workspaceId.toString()
+        ));
+
+        assertThat(subject.hasManagePermission(token, configId.toString())).isFalse();
     }
 
     @Test
@@ -196,10 +210,24 @@ class NotificationConfigurationAccessServiceTest {
     }
 
     @Test
-    void hasManagePermissionForWorkspace_internalIssuerBypassesAllChecks() {
-        JwtAuthenticationToken token = authWithClaims(Map.of("iss", "TerrakubeInternal"));
+    void hasManagePermissionForWorkspace_executorServiceAllowed() {
+        JwtAuthenticationToken token = authWithClaims(Map.of(
+                "iss", "TerrakubeInternal",
+                "sub", "TerrakubeInternal (EXECUTOR)"
+        ));
 
         assertThat(subject.hasManagePermissionForWorkspace(token, workspaceId.toString())).isTrue();
+    }
+
+    @Test
+    void hasManagePermissionForWorkspace_workspaceExecutorDenied() {
+        JwtAuthenticationToken token = authWithClaims(Map.of(
+                "iss", "TerrakubeInternal",
+                "sub", "TerrakubeInternal (TOKEN)",
+                "workspaceId", workspaceId.toString()
+        ));
+
+        assertThat(subject.hasManagePermissionForWorkspace(token, workspaceId.toString())).isFalse();
     }
 
     @Test
