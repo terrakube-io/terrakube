@@ -768,25 +768,25 @@ class TerraformExecutorServiceImplTest {
                 eq("org"), eq("42"), eq("1"),
                 argThat(changes -> changes.size() == 1
                         && "aws_instance.new".equals(changes.get(0).get("address"))
-                        && "interrupted".equals(changes.get(0).get("status"))),
+                        && "errored".equals(changes.get(0).get("status"))),
                 argThat(diagnostics -> diagnostics.size() == 1
                         && "Resource creation failed".equals(diagnostics.get(0).get("summary"))));
     }
 
     @Test
-    void applyWithExceptionPublishesFinalSnapshotWithInterruptedStatusBeforeQueueDrain() throws Exception {
+    void applyWithExecutionExceptionPublishesFinalSnapshotWithErroredStatusBeforeQueueDrain() throws Exception {
         TerraformExecutorServiceImpl subject = spy(subject());
         TerraformJob terraformJob = createJob();
 
         Map<String, Object> seededChange = new HashMap<>();
-        seededChange.put("address", "aws_instance.interrupted");
+        seededChange.put("address", "aws_instance.failed");
         seededChange.put("status", "pending");
         when(applyStructuredOutputService.seedFromPlan("org", "42")).thenReturn(List.of(seededChange));
 
         when(terraformClient.init(any(TerraformProcessData.class), any(Consumer.class), any()))
                 .thenReturn(CompletableFuture.completedFuture(true));
 
-        String applyStartLine = "{\"type\":\"apply_start\",\"hook\":{\"resource\":{\"addr\":\"aws_instance.interrupted\"},\"action\":\"create\"}}";
+        String applyStartLine = "{\"type\":\"apply_start\",\"hook\":{\"resource\":{\"addr\":\"aws_instance.failed\"},\"action\":\"create\"}}";
 
         TerraformClient jsonApplyClient = mock(TerraformClient.class);
         when(jsonApplyClient.apply(any(TerraformProcessData.class), any(Consumer.class), any()))
@@ -805,13 +805,51 @@ class TerraformExecutorServiceImplTest {
         verify(applyStructuredOutputService).finalizeResourceStatuses(any(), eq(false), eq(false));
         verify(applyStructuredOutputService).publishFinalApplySnapshot(
                 eq("org"), eq("42"), eq("1"),
-                argThat(changes -> changes.size() == 1 && "interrupted".equals(changes.get(0).get("status"))),
+                argThat(changes -> changes.size() == 1 && "errored".equals(changes.get(0).get("status"))),
                 any());
         verify(structuredOutputPersistenceQueue).awaitDrain(any());
     }
 
     @Test
-    void multiResourceApplyFailurePreservesAppliedAndMarksInFlightAsInterrupted() throws Exception {
+    void applyWithInterruptedExceptionPublishesFinalSnapshotWithInterruptedStatusAndAwaitsDrain() throws Exception {
+        TerraformExecutorServiceImpl subject = spy(subject());
+        TerraformJob terraformJob = createJob();
+
+        Map<String, Object> seededChange = new HashMap<>();
+        seededChange.put("address", "aws_instance.interrupted");
+        seededChange.put("status", "pending");
+        when(applyStructuredOutputService.seedFromPlan("org", "42")).thenReturn(List.of(seededChange));
+
+        when(terraformClient.init(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(true));
+
+        String applyStartLine = "{\"type\":\"apply_start\",\"hook\":{\"resource\":{\"addr\":\"aws_instance.interrupted\"},\"action\":\"create\"}}";
+
+        TerraformClient jsonApplyClient = mock(TerraformClient.class);
+        CompletableFuture<Boolean> future = mock(CompletableFuture.class);
+        when(future.get()).thenThrow(new InterruptedException("job cancelled"));
+        when(jsonApplyClient.apply(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenAnswer(invocation -> {
+                    Consumer<String> lineConsumer = invocation.getArgument(1);
+                    lineConsumer.accept(applyStartLine);
+                    return future;
+                });
+        doReturn(jsonApplyClient).when(subject).buildJsonEnabledApplyClient();
+
+        ExecutorJobResult result = subject.apply(terraformJob, tempDir.toFile());
+
+        assertFalse(result.isSuccessfulExecution());
+        verify(applyStructuredOutputService).finalizeResourceStatuses(any(), eq(false), eq(true));
+        verify(applyStructuredOutputService).publishFinalApplySnapshot(
+                eq("org"), eq("42"), eq("1"),
+                argThat(changes -> changes.size() == 1 && "interrupted".equals(changes.get(0).get("status"))),
+                any());
+        verify(structuredOutputPersistenceQueue).awaitDrain(any());
+        assertTrue(Thread.interrupted());
+    }
+
+    @Test
+    void multiResourceApplyFailurePreservesAppliedAndMarksInFlightAsErrored() throws Exception {
         TerraformExecutorServiceImpl subject = spy(subject());
         TerraformJob terraformJob = createJob();
 
@@ -858,7 +896,7 @@ class TerraformExecutorServiceImplTest {
                 argThat(changes -> changes.size() == 4
                         && "applied".equals(changes.get(0).get("status"))
                         && "errored".equals(changes.get(1).get("status"))
-                        && "interrupted".equals(changes.get(2).get("status"))
+                        && "errored".equals(changes.get(2).get("status"))
                         && "pending".equals(changes.get(3).get("status"))),
                 any());
     }

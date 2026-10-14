@@ -509,8 +509,6 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                 terraformJob.getOrganizationId(), terraformJob.getJobId()));
         List<Map<String, Object>> jobDiagnostics = new ArrayList<>();
         TerraformJsonEventParser eventParser = new TerraformJsonEventParser(objectMapper);
-        terraformJob.setLiveChanges(changes);
-        terraformJob.setJobDiagnostics(jobDiagnostics);
 
         if (!changes.isEmpty()) {
             applyStructuredOutputService.publishApplyProgress(
@@ -544,20 +542,21 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             execution = jsonApplyClient.apply(terraformProcessData, guardConsumer(jsonLineConsumer), null).get();
         } catch (InterruptedException e) {
             interrupted = true;
-            Thread.currentThread().interrupt();
             throw e;
         } finally {
             release(jsonApplyClient);
-            try {
-                String stateJson = getCurrentStateJson(terraformJob, terraformProcessData);
-                if (stateJson != null) {
-                    applyStructuredOutputService.resolveFinalValues(changes, stateJson);
+            if (!interrupted) {
+                try {
+                    String stateJson = getCurrentStateJson(terraformJob, terraformProcessData);
+                    if (stateJson != null) {
+                        applyStructuredOutputService.resolveFinalValues(changes, stateJson);
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    log.warn("Interrupted while resolving state values after apply for job {}", terraformJob.getJobId(), e);
+                } catch (Exception e) {
+                    log.warn("Unable to resolve state values after apply for job {}", terraformJob.getJobId(), e);
                 }
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                log.warn("Interrupted while resolving state values after apply for job {}", terraformJob.getJobId(), e);
-            } catch (Exception e) {
-                log.warn("Unable to resolve state values after apply for job {}", terraformJob.getJobId(), e);
             }
             applyStructuredOutputService.finalizeResourceStatuses(changes, execution, interrupted);
             publishFinalApplySnapshotIfStreamed(terraformJob, eventParser, changes, jobDiagnostics);
@@ -577,8 +576,6 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         List<Map<String, Object>> changes = new ArrayList<>();
         List<Map<String, Object>> jobDiagnostics = new ArrayList<>();
         TerraformJsonEventParser eventParser = new TerraformJsonEventParser(objectMapper);
-        terraformJob.setLiveChanges(changes);
-        terraformJob.setJobDiagnostics(jobDiagnostics);
         AtomicLong lastFlush = new AtomicLong(0);
 
         Consumer<String> jsonLineConsumer = (line) -> {
@@ -607,7 +604,6 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             execution = jsonDestroyClient.destroy(terraformProcessData, guardConsumer(jsonLineConsumer), null).get();
         } catch (InterruptedException e) {
             interrupted = true;
-            Thread.currentThread().interrupt();
             throw e;
         } finally {
             release(jsonDestroyClient);

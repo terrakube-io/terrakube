@@ -754,13 +754,16 @@ class ApplyStructuredOutputServiceTest {
     }
 
     @Test
-    void finalizeResourceStatusesTransitionsInProgressToInterruptedOnFailure() {
+    void finalizeResourceStatusesTransitionsInProgressToInterruptedWhenInterrupted() {
         List<Map<String, Object>> changes = new ArrayList<>();
 
         for (String inProgressStatus : List.of("applying", "provisioning", "refreshing", "reading", "ephemeral-opening", "ephemeral-closing")) {
             Map<String, Object> c = new HashMap<>();
             c.put("address", "res." + inProgressStatus);
             c.put("status", inProgressStatus);
+            if ("refreshing".equals(inProgressStatus)) {
+                c.put("previousStatus", "planned");
+            }
             changes.add(c);
         }
 
@@ -784,15 +787,37 @@ class ApplyStructuredOutputServiceTest {
         planned.put("status", "planned");
         changes.add(planned);
 
-        subject().finalizeResourceStatuses(changes, false, false);
+        subject().finalizeResourceStatuses(changes, false, true);
 
         for (int i = 0; i < 6; i++) {
             assertEquals("interrupted", changes.get(i).get("status"));
+            assertNull(changes.get(i).get("previousStatus"));
         }
         assertEquals("applied", applied.get("status"));
         assertEquals("errored", errored.get("status"));
         assertEquals("pending", pending.get("status"));
         assertEquals("planned", planned.get("status"));
+    }
+
+    @Test
+    void finalizeResourceStatusesTransitionsInProgressToErroredOnUninterruptedFailure() {
+        Map<String, Object> applying = new HashMap<>();
+        applying.put("address", "res.applying");
+        applying.put("status", "applying");
+
+        Map<String, Object> applied = new HashMap<>();
+        applied.put("address", "res.applied");
+        applied.put("status", "applied");
+
+        Map<String, Object> pending = new HashMap<>();
+        pending.put("address", "res.pending");
+        pending.put("status", "pending");
+
+        subject().finalizeResourceStatuses(List.of(applying, applied, pending), false, false);
+
+        assertEquals("errored", applying.get("status"));
+        assertEquals("applied", applied.get("status"));
+        assertEquals("pending", pending.get("status"));
     }
 
     @Test
