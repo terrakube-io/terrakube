@@ -47,6 +47,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
@@ -91,6 +92,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
     // closeLiveJsonClients() can terminate the running terraform (letting it release its state
     // lock) inside terminationGracePeriodSeconds, instead of the JVM exiting out from under it.
     private final Set<TerraformClient> liveJsonClients = ConcurrentHashMap.newKeySet();
+    private final AtomicBoolean shuttingDown = new AtomicBoolean(false);
 
     public TerraformExecutorServiceImpl(TerraformClient terraformClient, TerraformState terraformState, ScriptEngineService scriptEngineService, ProcessLogs logsService, PlanStructuredOutputService planStructuredOutputService, ApplyStructuredOutputService applyStructuredOutputService, TerraformOutputsService terraformOutputsService, ObjectMapper objectMapper, @Value("${io.terrakube.terraform.flags.enableColor}") boolean enableColorOutput, RedisTemplate redisTemplate, @Value("${io.terrakube.executor.redis.timeout}") int redisTimeout, StructuredOutputPersistenceQueue structuredOutputPersistenceQueue, ExecutorFlagsProperties executorFlagsProperties, StructuredOutputProperties structuredOutputProperties, MeterRegistry meterRegistry, BinaryCacheRecoveryService binaryCacheRecoveryService) {
         this(terraformClient, terraformState, scriptEngineService, logsService, planStructuredOutputService, applyStructuredOutputService, terraformOutputsService, objectMapper, enableColorOutput, redisTemplate, redisTimeout, structuredOutputPersistenceQueue, executorFlagsProperties, structuredOutputProperties, meterRegistry, binaryCacheRecoveryService, null);
@@ -505,6 +507,10 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
 
     private boolean runJsonApply(TerraformJob terraformJob, TerraformProcessData terraformProcessData, Consumer<String> applyOutput)
             throws IOException, ExecutionException, InterruptedException {
+        // Appending -json applies even when there is no saved plan file (e.g. templates without
+        // an earlier plan step, custom multi-step templates, or failed plan downloads) guarantees
+        // that any error diagnostics and live execution progress events are captured uniformly
+        // across all apply workflows, rather than dropping them into unparsed stdout.
         List<Map<String, Object>> changes = new ArrayList<>(applyStructuredOutputService.seedFromPlan(
                 terraformJob.getOrganizationId(), terraformJob.getJobId()));
         List<Map<String, Object>> jobDiagnostics = new ArrayList<>();
@@ -545,7 +551,8 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             throw e;
         } finally {
             release(jsonApplyClient);
-            if (!interrupted) {
+            boolean wasInterrupted = interrupted || shuttingDown.get();
+            if (!wasInterrupted) {
                 try {
                     String stateJson = getCurrentStateJson(terraformJob, terraformProcessData);
                     if (stateJson != null) {
@@ -558,7 +565,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                     log.warn("Unable to resolve state values after apply for job {}", terraformJob.getJobId(), e);
                 }
             }
-            applyStructuredOutputService.finalizeResourceStatuses(changes, execution, interrupted);
+            applyStructuredOutputService.finalizeResourceStatuses(changes, execution, wasInterrupted);
             publishFinalApplySnapshotIfStreamed(terraformJob, eventParser, changes, jobDiagnostics);
         }
 
@@ -607,7 +614,8 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             throw e;
         } finally {
             release(jsonDestroyClient);
-            applyStructuredOutputService.finalizeResourceStatuses(changes, execution, interrupted);
+            boolean wasInterrupted = interrupted || shuttingDown.get();
+            applyStructuredOutputService.finalizeResourceStatuses(changes, execution, wasInterrupted);
             publishFinalApplySnapshotIfStreamed(terraformJob, eventParser, changes, jobDiagnostics);
         }
 
@@ -651,10 +659,19 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
     // whose job thread reaches release() concurrently is harmless.
     @PreDestroy
     void closeLiveJsonClients() {
+        shuttingDown.set(true);
         for (TerraformClient client : liveJsonClients) {
             log.warn("Executor shutting down with a terraform process in flight, terminating it");
             release(client);
         }
+    }
+
+    void setShuttingDown(boolean shuttingDown) {
+        this.shuttingDown.set(shuttingDown);
+    }
+
+    boolean isShuttingDown() {
+        return this.shuttingDown.get();
     }
 
     // Package-private (not private) so tests can spy/stub this one seam instead of letting

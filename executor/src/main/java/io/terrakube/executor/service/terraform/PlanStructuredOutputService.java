@@ -409,10 +409,6 @@ public class PlanStructuredOutputService {
         }
     }
 
-    static void applyNoChangePlanMarker(Map<String, Object> context, String stepId, List<?> changes) {
-        applyNoChangePlanMarker(context, stepId, changes, List.of());
-    }
-
     private Map<String, Object> getCurrentContext(String organizationId, String jobId) {
         return jobContextService.getCurrentContext(organizationId, jobId);
     }

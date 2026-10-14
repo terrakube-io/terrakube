@@ -397,7 +397,7 @@ class PlanStructuredOutputServiceTest {
         assertTrue(changes.isEmpty());
 
         Map<String, Object> context = new HashMap<>();
-        PlanStructuredOutputService.applyNoChangePlanMarker(context, "step-1", changes);
+        PlanStructuredOutputService.applyNoChangePlanMarker(context, "step-1", changes, List.of());
         assertEquals(Map.of("planStepId", "step-1"), context.get(PlanStructuredOutputService.CONTEXT_NO_CHANGE_PLAN_KEY));
     }
 
