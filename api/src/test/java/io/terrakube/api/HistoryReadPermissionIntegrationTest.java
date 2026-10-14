@@ -10,6 +10,9 @@ import io.terrakube.api.rs.project.Project;
 import io.terrakube.api.rs.project.access.ProjectAccess;
 import io.terrakube.api.rs.team.Team;
 import io.terrakube.api.rs.workspace.Workspace;
+import io.terrakube.api.rs.job.Job;
+import io.terrakube.api.rs.job.JobStatus;
+import io.terrakube.api.rs.job.step.Step;
 import io.terrakube.api.rs.workspace.access.Access;
 import io.terrakube.api.rs.workspace.history.History;
 import org.junit.jupiter.api.AfterEach;
@@ -168,14 +171,65 @@ class HistoryReadPermissionIntegrationTest extends ServerApplicationTests {
 
     @Test
     void instanceAdministratorsAndMatchingExecutorsStillReadExistingVersions() {
-        assertReadable(generatePAT("TERRAKUBE_ADMIN"));
-        assertReadable(generateSystemToken(Map.of("organizationId", ORGANIZATION_ID,
-                "workspaceId", workspace.getId().toString())));
-        assertReadable(generateExecutorToken());
-        given().header("Authorization", "Bearer " + generateSystemToken(Map.of(
-                        "organizationId", ORGANIZATION_ID, "workspaceId", UUID.randomUUID().toString(),
-                        "groups", List.of("TERRAKUBE_ADMIN", team.getName()))))
-                .get(workspacePath() + "/history").then().statusCode(404);
+        Job job = new Job();
+        job.setOrganization(workspace.getOrganization());
+        job.setWorkspace(workspace);
+        job.setStatus(JobStatus.running);
+        job = jobRepository.save(job);
+
+        Step step = new Step();
+        step.setJob(job);
+        step.setName("terraformPlan");
+        step.setStatus(JobStatus.running);
+        step.setStepNumber(100);
+        step = stepRepository.save(step);
+
+        Workspace otherWs = null;
+        Job otherJob = null;
+        Step otherStep = null;
+        try {
+            assertReadable(generatePAT("TERRAKUBE_ADMIN"));
+            assertReadable(generateSystemToken(Map.of("organizationId", ORGANIZATION_ID,
+                    "workspaceId", workspace.getId().toString(),
+                    "jobId", String.valueOf(job.getId()),
+                    "stepId", step.getId().toString())));
+            assertReadable(generateExecutorToken());
+
+            otherWs = new Workspace();
+            otherWs.setName("other-" + UUID.randomUUID());
+            otherWs.setOrganization(workspace.getOrganization());
+            otherWs.setBranch("main");
+            otherWs.setSource("https://github.com/terrakube-io/terrakube.git");
+            otherWs.setTerraformVersion("1.5.7");
+            otherWs = workspaceRepository.save(otherWs);
+
+            otherJob = new Job();
+            otherJob.setOrganization(workspace.getOrganization());
+            otherJob.setWorkspace(otherWs);
+            otherJob.setStatus(JobStatus.running);
+            otherJob = jobRepository.save(otherJob);
+
+            otherStep = new Step();
+            otherStep.setJob(otherJob);
+            otherStep.setName("terraformPlan");
+            otherStep.setStatus(JobStatus.running);
+            otherStep.setStepNumber(100);
+            otherStep = stepRepository.save(otherStep);
+
+            given().header("Authorization", "Bearer " + generateSystemToken(Map.of(
+                            "organizationId", ORGANIZATION_ID,
+                            "workspaceId", otherWs.getId().toString(),
+                            "jobId", String.valueOf(otherJob.getId()),
+                            "stepId", otherStep.getId().toString(),
+                            "groups", List.of("TERRAKUBE_ADMIN", team.getName()))))
+                    .get(workspacePath() + "/history").then().statusCode(404);
+        } finally {
+            if (otherStep != null) stepRepository.delete(otherStep);
+            if (otherJob != null) jobRepository.delete(otherJob);
+            if (otherWs != null) workspaceRepository.delete(otherWs);
+            stepRepository.delete(step);
+            jobRepository.delete(job);
+        }
     }
 
     @Test

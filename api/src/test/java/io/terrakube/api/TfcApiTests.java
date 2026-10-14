@@ -3,6 +3,7 @@ package io.terrakube.api;
 import io.terrakube.api.repository.WorkspaceTagRepository;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
+import io.terrakube.api.rs.job.step.Step;
 import io.terrakube.api.rs.workspace.Workspace;
 import io.terrakube.api.rs.workspace.parameters.Category;
 import io.terrakube.api.rs.workspace.parameters.Variable;
@@ -369,8 +370,24 @@ class TfcApiTests extends ServerApplicationTests {
         workspace.setSharedIds("");
         workspaceRepository.save(workspace);
 
+        Workspace consumerWorkspace = workspaceRepository.findById(UUID.fromString("24480d33-2649-4c34-aabd-cbc988eb6265")).orElseThrow();
+        Job consumerJob = new Job();
+        consumerJob.setOrganization(consumerWorkspace.getOrganization());
+        consumerJob.setWorkspace(consumerWorkspace);
+        consumerJob.setStatus(JobStatus.running);
+        consumerJob = jobRepository.save(consumerJob);
+
+        Step consumerStep = new Step();
+        consumerStep.setJob(consumerJob);
+        consumerStep.setName("terraformPlan");
+        consumerStep.setStatus(JobStatus.running);
+        consumerStep.setStepNumber(100);
+        consumerStep = stepRepository.save(consumerStep);
+
         Map<String, Object> claims = new HashMap<>();
         claims.put("workspaceId", "24480d33-2649-4c34-aabd-cbc988eb6265");
+        claims.put("jobId", String.valueOf(consumerJob.getId()));
+        claims.put("stepId", consumerStep.getId().toString());
 
         try {
             given()
@@ -386,6 +403,8 @@ class TfcApiTests extends ServerApplicationTests {
                     .body("errors[0].detail", org.hamcrest.Matchers.containsString("To allow this access, 'sample_simple' must configure this workspace ('simple_tag3')"))
                     .body("errors[0].detail", org.hamcrest.Matchers.containsString("as an authorized remote state consumer"));
         } finally {
+            stepRepository.delete(consumerStep);
+            jobRepository.delete(consumerJob);
             // Restore default for other tests
             workspace.setGlobalRemoteState(true);
             workspace.setSharedIds(null);

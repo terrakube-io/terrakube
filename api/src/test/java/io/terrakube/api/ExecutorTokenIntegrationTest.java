@@ -22,18 +22,73 @@ class ExecutorTokenIntegrationTest extends ServerApplicationTests {
     private static final String ORG_ID = "d9b58bd3-f3fc-4056-a026-1163297e80a8";
     private static final String WORKSPACE_ID = "5ed411ca-7ab8-4d2f-b591-02d0d5788afc";
 
+    private Step activeStep;
+
     @BeforeEach
     public void setup() {
         MockitoAnnotations.openMocks(this);
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+
+        Organization org = organizationRepository.findById(UUID.fromString(ORG_ID)).orElseThrow();
+        Workspace ws = workspaceRepository.findById(UUID.fromString(WORKSPACE_ID)).orElseThrow();
+
+        Job job = new Job();
+        job.setOrganization(org);
+        job.setWorkspace(ws);
+        job.setStatus(JobStatus.running);
+        job = jobRepository.save(job);
+
+        Step step = new Step();
+        step.setJob(job);
+        step.setName("terraformPlan");
+        step.setStatus(JobStatus.running);
+        step.setStepNumber(100);
+        activeStep = stepRepository.save(step);
+    }
+
+    private String createMatchingToken() {
+        return generateSystemToken(Map.of(
+                "organizationId", ORG_ID,
+                "workspaceId", WORKSPACE_ID,
+                "jobId", String.valueOf(activeStep.getJob().getId()),
+                "stepId", activeStep.getId().toString()
+        ));
+    }
+
+    private String createMismatchedWorkspaceToken() {
+        Organization org = organizationRepository.findById(UUID.fromString(ORG_ID)).orElseThrow();
+        Workspace otherWs = new Workspace();
+        otherWs.setName("other-" + UUID.randomUUID());
+        otherWs.setOrganization(org);
+        otherWs.setBranch("main");
+        otherWs.setSource("https://github.com/terrakube-io/terrakube.git");
+        otherWs.setTerraformVersion("1.5.7");
+        otherWs = workspaceRepository.save(otherWs);
+
+        Job otherJob = new Job();
+        otherJob.setOrganization(org);
+        otherJob.setWorkspace(otherWs);
+        otherJob.setStatus(JobStatus.running);
+        otherJob = jobRepository.save(otherJob);
+
+        Step otherStep = new Step();
+        otherStep.setJob(otherJob);
+        otherStep.setName("terraformPlan");
+        otherStep.setStatus(JobStatus.running);
+        otherStep.setStepNumber(100);
+        otherStep = stepRepository.save(otherStep);
+
+        return generateSystemToken(Map.of(
+                "organizationId", ORG_ID,
+                "workspaceId", otherWs.getId().toString(),
+                "jobId", String.valueOf(otherJob.getId()),
+                "stepId", otherStep.getId().toString()
+        ));
     }
 
     @Test
     void searchWorkspaceAsExecutorToken_MatchingWorkspace_Success() {
-        String token = generateSystemToken(Map.of(
-                "organizationId", ORG_ID,
-                "workspaceId", WORKSPACE_ID
-        ));
+        String token = createMatchingToken();
 
         given()
                 .headers("Authorization", "Bearer " + token)
@@ -47,11 +102,7 @@ class ExecutorTokenIntegrationTest extends ServerApplicationTests {
 
     @Test
     void searchWorkspaceAsExecutorToken_MismatchedWorkspace_Forbidden() {
-        String otherWorkspaceId = UUID.randomUUID().toString();
-        String token = generateSystemToken(Map.of(
-                "organizationId", ORG_ID,
-                "workspaceId", otherWorkspaceId
-        ));
+        String token = createMismatchedWorkspaceToken();
 
         given()
                 .headers("Authorization", "Bearer " + token)
@@ -64,10 +115,7 @@ class ExecutorTokenIntegrationTest extends ServerApplicationTests {
 
     @Test
     void searchHistoryAsExecutorToken_MatchingWorkspace_Success() {
-        String token = generateSystemToken(Map.of(
-                "organizationId", ORG_ID,
-                "workspaceId", WORKSPACE_ID
-        ));
+        String token = createMatchingToken();
 
         given()
                 .headers("Authorization", "Bearer " + token)
@@ -80,10 +128,7 @@ class ExecutorTokenIntegrationTest extends ServerApplicationTests {
 
     @Test
     void createHistoryAsExecutorToken_MatchingWorkspace_Success() {
-        String token = generateSystemToken(Map.of(
-                "organizationId", ORG_ID,
-                "workspaceId", WORKSPACE_ID
-        ));
+        String token = createMatchingToken();
 
         given()
                 .headers("Authorization", "Bearer " + token, "Content-Type", "application/vnd.api+json")
@@ -104,10 +149,7 @@ class ExecutorTokenIntegrationTest extends ServerApplicationTests {
 
     @Test
     void createHistoryAsExecutorToken_MismatchedWorkspace_Forbidden() {
-        String token = generateSystemToken(Map.of(
-                "organizationId", ORG_ID,
-                "workspaceId", UUID.randomUUID().toString()
-        ));
+        String token = createMismatchedWorkspaceToken();
 
         given()
                 .headers("Authorization", "Bearer " + token, "Content-Type", "application/vnd.api+json")
@@ -128,10 +170,7 @@ class ExecutorTokenIntegrationTest extends ServerApplicationTests {
 
     @Test
     void searchVariableAsExecutorToken_MatchingWorkspace_Success() {
-        String token = generateSystemToken(Map.of(
-                "organizationId", ORG_ID,
-                "workspaceId", WORKSPACE_ID
-        ));
+        String token = createMatchingToken();
 
         given()
                 .headers("Authorization", "Bearer " + token)
@@ -144,10 +183,7 @@ class ExecutorTokenIntegrationTest extends ServerApplicationTests {
 
     @Test
     void searchVariableAsExecutorToken_MismatchedWorkspace_Forbidden() {
-        String token = generateSystemToken(Map.of(
-                "organizationId", ORG_ID,
-                "workspaceId", UUID.randomUUID().toString()
-        ));
+        String token = createMismatchedWorkspaceToken();
 
         given()
                 .headers("Authorization", "Bearer " + token)
@@ -226,12 +262,19 @@ class ExecutorTokenIntegrationTest extends ServerApplicationTests {
                 .assertThat()
                 .statusCode(HttpStatus.NO_CONTENT.value());
 
-        // 2. Token with mismatched jobId
+        // 2. Token with mismatched jobId (active step in DB but with jobId="99999")
+        Step otherStep = new Step();
+        otherStep.setJob(testJob);
+        otherStep.setName("terraformPlan");
+        otherStep.setStatus(JobStatus.running);
+        otherStep.setStepNumber(200);
+        otherStep = stepRepository.save(otherStep);
+
         String mismatchedToken = generateSystemToken(Map.of(
                 "organizationId", ORG_ID,
                 "workspaceId", WORKSPACE_ID,
                 "jobId", "99999",
-                "stepId", UUID.randomUUID().toString()
+                "stepId", otherStep.getId().toString()
         ));
 
         // Read job with mismatched token: Not Found (Elide hides unauthorized entity)
