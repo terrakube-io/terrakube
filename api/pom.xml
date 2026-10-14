@@ -22,17 +22,17 @@
         <msal4j.version>1.26.0</msal4j.version>
         <lombok.version>1.18.48</lombok.version>
         <semver4j.version>6.0.0</semver4j.version>
-        <wiremock.version>4.4.2</wiremock.version>
+        <wiremock.version>4.4.3</wiremock.version>
         <jgit.version>7.8.0.202609011348-r</jgit.version>
         <bouncy.castle>1.86</bouncy.castle>
-        <rest-assured.version>6.0.1</rest-assured.version>
-        <postgresql.version>42.7.13</postgresql.version>
+        <rest-assured.version>6.1.0</rest-assured.version>
+        <postgresql.version>42.7.14</postgresql.version>
         <snakeyaml.version>2.7</snakeyaml.version>
         <quartz.version>2.5.2</quartz.version>
-        <aws-sdk.version>2.55.11</aws-sdk.version>
+        <aws-sdk.version>2.55.14</aws-sdk.version>
         <gcp-libraries-bom.version>26.90.0</gcp-libraries-bom.version>
         <jjwt.version>0.13.0</jjwt.version>
-        <jedis.version>8.0.1</jedis.version>
+        <jedis.version>8.0.2</jedis.version>
         <commons-text.version>1.15.0</commons-text.version>
         <commons-lang3.version>3.21.0</commons-lang3.version>
         <sonar.coverage.jacoco.xmlReportPaths>${basedir}/../${aggregate.report.dir}
