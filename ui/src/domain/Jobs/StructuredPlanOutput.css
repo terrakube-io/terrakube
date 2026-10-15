@@ -764,6 +764,11 @@
   color: var(--tk-text-secondary);
 }
 
+.structured-plan-applyStatus--not-started {
+  background: var(--tk-fill-primary);
+  color: var(--tk-text-secondary);
+}
+
 .structured-plan-applyStatus--unchanged {
   background: var(--tk-fill-primary);
   color: var(--tk-text-secondary);
@@ -782,6 +787,11 @@
 .structured-plan-applyStatus--errored {
   background: var(--run-delete-bg);
   color: var(--run-delete);
+}
+
+.structured-plan-applyStatus--interrupted {
+  background: var(--run-warn-bg);
+  color: var(--run-warn);
 }
 
 .structured-plan-applyStatus--destroyed {

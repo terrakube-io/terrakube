@@ -85,6 +85,8 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.stereotype.Service;
 import org.springframework.http.HttpStatus;
+import io.terrakube.api.plugin.security.token.InternalTokenClassifier;
+import io.terrakube.api.plugin.security.token.InternalTokenType;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.io.InputStream;
@@ -217,13 +219,36 @@ public class RemoteTfeService {
         this.jobNotificationTrigger = jobNotificationTrigger;
     }
 
-    private boolean validateTerrakubeUser(JwtAuthenticationToken currentUser) {
-        return currentUser.getTokenAttributes().get("iss").equals("TerrakubeInternal");
+    private boolean isExecutorService(JwtAuthenticationToken currentUser) {
+        if (currentUser == null) return false;
+        return InternalTokenClassifier.classify(currentUser.getTokenAttributes()) == InternalTokenType.EXECUTOR_SERVICE;
+    }
+
+    private boolean isWorkspaceExecutorFor(Workspace workspace, JwtAuthenticationToken currentUser) {
+        if (currentUser == null || workspace == null || workspace.getId() == null) return false;
+        if (InternalTokenClassifier.classify(currentUser.getTokenAttributes()) != InternalTokenType.WORKSPACE_EXECUTOR) {
+            return false;
+        }
+        Object tokenWsId = currentUser.getTokenAttributes().get("workspaceId");
+        return tokenWsId != null && tokenWsId.toString().equalsIgnoreCase(workspace.getId().toString());
+    }
+
+    private boolean isWorkspaceExecutorForOrg(Organization organization, JwtAuthenticationToken currentUser) {
+        if (currentUser == null || organization == null || organization.getId() == null) return false;
+        if (InternalTokenClassifier.classify(currentUser.getTokenAttributes()) != InternalTokenType.WORKSPACE_EXECUTOR) {
+            return false;
+        }
+        Object tokenOrgId = currentUser.getTokenAttributes().get("organizationId");
+        return tokenOrgId != null && tokenOrgId.toString().equalsIgnoreCase(organization.getId().toString());
     }
 
     private boolean validateUserIsMemberOrg(Organization organization, JwtAuthenticationToken currentUser) {
-        if (validateTerrakubeUser(currentUser))
+        if (isExecutorService(currentUser) || isWorkspaceExecutorForOrg(organization, currentUser)) {
             return true;
+        }
+        if (InternalTokenClassifier.classify(currentUser.getTokenAttributes()) != InternalTokenType.NOT_INTERNAL) {
+            return false;
+        }
         List<String> userGroups = teamTokenService.getCurrentGroups(currentUser);
         AtomicBoolean userIsMemberOrg = new AtomicBoolean(false);
         organization.getTeam().forEach(orgTeam -> {
@@ -247,8 +272,12 @@ public class RemoteTfeService {
     }
 
     private boolean validateUserManageWorkspace(Organization organization, JwtAuthenticationToken currentUser) {
-        if (validateTerrakubeUser(currentUser))
+        if (isExecutorService(currentUser)) {
             return true;
+        }
+        if (InternalTokenClassifier.classify(currentUser.getTokenAttributes()) != InternalTokenType.NOT_INTERNAL) {
+            return false;
+        }
         List<String> userGroups = teamTokenService.getCurrentGroups(currentUser);
         AtomicBoolean userWithManageWorkspace = new AtomicBoolean(false);
         organization.getTeam().forEach(orgTeam -> {
@@ -275,8 +304,12 @@ public class RemoteTfeService {
     }
 
     private boolean validateUserManageJob(Workspace workspace, JwtAuthenticationToken currentUser) {
-        if (validateTerrakubeUser(currentUser))
+        if (isExecutorService(currentUser)) {
             return true;
+        }
+        if (InternalTokenClassifier.classify(currentUser.getTokenAttributes()) != InternalTokenType.NOT_INTERNAL) {
+            return false;
+        }
         List<String> userGroups = teamTokenService.getCurrentGroups(currentUser);
         AtomicBoolean userWithManageWorkspace = new AtomicBoolean(false);
         workspace.getOrganization().getTeam().forEach(orgTeam -> {
@@ -301,8 +334,12 @@ public class RemoteTfeService {
      * Validates that the current user has state management permission for the workspace.
      */
     private boolean validateUserManageState(Workspace workspace, JwtAuthenticationToken currentUser) {
-        if (validateTerrakubeUser(currentUser))
+        if (isExecutorService(currentUser) || isWorkspaceExecutorFor(workspace, currentUser)) {
             return true;
+        }
+        if (InternalTokenClassifier.classify(currentUser.getTokenAttributes()) != InternalTokenType.NOT_INTERNAL) {
+            return false;
+        }
         List<String> userGroups = teamTokenService.getCurrentGroups(currentUser);
         AtomicBoolean userCanManageState = new AtomicBoolean(false);
 
@@ -331,8 +368,12 @@ public class RemoteTfeService {
      * in the workspace.
      */
     private boolean validateUserPlanJob(Workspace workspace, JwtAuthenticationToken currentUser) {
-        if (validateTerrakubeUser(currentUser))
+        if (isExecutorService(currentUser)) {
             return true;
+        }
+        if (InternalTokenClassifier.classify(currentUser.getTokenAttributes()) != InternalTokenType.NOT_INTERNAL) {
+            return false;
+        }
         List<String> userGroups = teamTokenService.getCurrentGroups(currentUser);
         AtomicBoolean userCanPlan = new AtomicBoolean(false);
 
@@ -361,8 +402,12 @@ public class RemoteTfeService {
      * in the workspace. In RBAC V2, this is distinct from plan-only permission.
      */
     private boolean validateUserApproveJob(Workspace workspace, JwtAuthenticationToken currentUser) {
-        if (validateTerrakubeUser(currentUser))
+        if (isExecutorService(currentUser)) {
             return true;
+        }
+        if (InternalTokenClassifier.classify(currentUser.getTokenAttributes()) != InternalTokenType.NOT_INTERNAL) {
+            return false;
+        }
         List<String> userGroups = teamTokenService.getCurrentGroups(currentUser);
         AtomicBoolean userCanApprove = new AtomicBoolean(false);
 
@@ -1227,7 +1272,7 @@ public class RemoteTfeService {
         // validate KEEP_JOB_HISTORY for local runs
         deleteOldJobs(job);
 
-        return getWorkspaceState(history.getId().toString());
+        return getWorkspaceState(history.getId().toString(), currentUser);
     }
 
     private Optional<Integer> getHistoryLimit(Job job) {
@@ -1293,35 +1338,113 @@ public class RemoteTfeService {
         }
     }
 
-    public String getWorkspaceName(String id){
-        return workspaceRepository.getReferenceById(UUID.fromString(id)).getName();
+    public String getWorkspaceName(String id) {
+        if (id == null) {
+            return "unknown";
+        }
+        try {
+            Workspace ws = workspaceRepository.findById(UUID.fromString(id)).orElse(null);
+            if (ws != null && ws.getName() != null) {
+                return ws.getName();
+            }
+        } catch (Exception e) {
+            log.debug("Unable to resolve workspace name for id {}: {}", id, e.getMessage());
+        }
+        return id;
     }
 
     public boolean validateWorkspaceIdTokenCanAccessState(String workspaceIdToken, String workspaceId) {
-        Optional<Workspace> workspaceOptinal = workspaceRepository.findById(UUID.fromString(workspaceId));
-        boolean hasAcess = false;
-        if (!workspaceOptinal.isEmpty()) {
-            Workspace workspace = workspaceOptinal.get();
-            if (workspace.isGlobalRemoteState()) {
-                hasAcess = true;
-            } else {
-                String[] sharedIds = workspace.getSharedIds().split(",");
-                for (String sharedId : sharedIds) {
-                    log.info("Checking if workspace {} is shared with {} result {}", workspace.getName(), workspaceIdToken, sharedId.trim().equals(workspaceIdToken));
-                    if (sharedId.trim().equals(workspaceIdToken)) {
-                        hasAcess = true;
-                    }
+        if (workspaceIdToken == null || workspaceId == null) {
+            return false;
+        }
+        if (workspaceIdToken.equalsIgnoreCase(workspaceId)) {
+            return true;
+        }
+
+        UUID wsUuid;
+        try {
+            wsUuid = UUID.fromString(workspaceId);
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
+
+        Optional<Workspace> workspaceOptional = workspaceRepository.findById(wsUuid);
+        if (workspaceOptional.isEmpty()) {
+            return false;
+        }
+        Workspace workspace = workspaceOptional.get();
+
+        if (workspace.isGlobalRemoteState()) {
+            UUID consumerWsUuid;
+            try {
+                consumerWsUuid = UUID.fromString(workspaceIdToken);
+            } catch (IllegalArgumentException e) {
+                return false;
+            }
+            Optional<Workspace> consumerOptional = workspaceRepository.findById(consumerWsUuid);
+            if (consumerOptional.isPresent()) {
+                Workspace consumerWs = consumerOptional.get();
+                if (workspace.getOrganization() != null && consumerWs.getOrganization() != null
+                        && workspace.getOrganization().getId().equals(consumerWs.getOrganization().getId())) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        String sharedIds = workspace.getSharedIds();
+        if (sharedIds != null && !sharedIds.isBlank()) {
+            for (String sharedId : sharedIds.split(",")) {
+                log.debug("Checking if workspace {} is shared with {} result {}", workspace.getName(), workspaceIdToken, sharedId.trim().equalsIgnoreCase(workspaceIdToken));
+                if (sharedId.trim().equalsIgnoreCase(workspaceIdToken)) {
+                    return true;
                 }
             }
         }
-        return hasAcess;
+        return false;
     }
 
     StateData getWorkspaceState(String historyId) {
+        return getWorkspaceState(historyId, null);
+    }
+
+    StateData getWorkspaceState(String historyId, JwtAuthenticationToken currentUser) {
         Optional<History> historyTmp = historyRepository.findById(UUID.fromString(historyId));
 
         if (historyTmp.isPresent()) {
             History history = historyTmp.get();
+            Workspace workspace = history.getWorkspace();
+            if (workspace == null) {
+                return null;
+            }
+
+            if (currentUser != null) {
+                InternalTokenType tokenType = InternalTokenClassifier.classify(currentUser.getTokenAttributes());
+                if (tokenType == InternalTokenType.WORKSPACE_EXECUTOR) {
+                    String workspaceIdToken = (String) currentUser.getTokenAttributes().get("workspaceId");
+                    if (!validateWorkspaceIdTokenCanAccessState(workspaceIdToken, workspace.getId().toString())) {
+                        log.warn("WorkspaceIdToken {} not authorized for history {}", workspaceIdToken, historyId);
+                        String messageFormat = """
+                                 This Terrakube job is not authorized to read the state of the workspace '%s'.
+                                 Most commonly, this is required when using the terraform_remote_state data source.
+                                 To allow this access, '%s' must configure this workspace ('%s')"
+                                 as an authorized remote state consumer""";
+                        String errorMessage = String.format(messageFormat, getWorkspaceName(workspace.getId().toString()), getWorkspaceName(workspace.getId().toString()), getWorkspaceName(workspaceIdToken));
+                        throw new org.springframework.security.access.AccessDeniedException(errorMessage);
+                    }
+                } else if (tokenType == InternalTokenType.EXECUTOR_SERVICE) {
+                    // Backend executor daemon is authorized
+                } else if (tokenType != InternalTokenType.NOT_INTERNAL) {
+                    log.warn("Internal token cannot read state: {}", currentUser.getTokenAttributes().get("sub"));
+                    throw new org.springframework.security.access.AccessDeniedException("Internal token not authorized to read state");
+                } else {
+                    if (!validateUserManageState(workspace, currentUser)) {
+                        log.warn("User does not have permission to view state in workspace {}", workspace.getName());
+                        throw new org.springframework.security.access.AccessDeniedException(
+                                "User does not have permission to view state in workspace " + workspace.getName());
+                    }
+                }
+            }
             StateData response = new StateData();
             response.setData(new StateModel());
             response.getData().setId(historyId.toString());
@@ -2268,8 +2391,8 @@ public class RemoteTfeService {
         if (currentUser == null) {
             return false;
         }
-        if (validateTerrakubeUser(currentUser)) {
-            return true;
+        if (InternalTokenClassifier.classify(currentUser.getTokenAttributes()) != InternalTokenType.NOT_INTERNAL) {
+            return false;
         }
         Job job = evaluation.getJob();
         if (job == null || job.getOrganization() == null) {

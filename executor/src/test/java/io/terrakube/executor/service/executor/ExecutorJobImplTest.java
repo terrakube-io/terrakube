@@ -8,6 +8,8 @@ import io.terrakube.executor.service.status.UpdateJobStatus;
 import io.terrakube.executor.service.terraform.ContextRevision;
 import io.terrakube.executor.service.terraform.TerraformExecutor;
 import io.terrakube.executor.service.workspace.SetupWorkspace;
+import io.terrakube.executor.service.workspace.WorkspaceException;
+import io.terrakube.executor.service.workspace.security.WorkspaceSecurity;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.InOrder;
@@ -250,5 +252,60 @@ class ExecutorJobImplTest {
         verify(updateJobStatus).setCompletedStatus(
                 eq(true), eq(false), eq(0), eq(job),
                 org.mockito.ArgumentMatchers.contains("line 1 of script"), any(), any(), any(), anyBoolean(), any());
+    }
+
+    @Test
+    void cleansTerraformCredentialsAfterSuccessfulJob() throws Exception {
+        TerraformJob job = createJob("terraformPlan");
+        File workDir = tempDir.toFile();
+        when(setupWorkspace.prepareWorkspace(job)).thenReturn(workDir);
+        ExecutorJobResult result = new ExecutorJobResult();
+        result.setSuccessfulExecution(true);
+        when(terraformExecutor.plan(eq(job), eq(workDir), eq(false))).thenReturn(result);
+
+        WorkspaceSecurity mockSecurity = Mockito.mock(WorkspaceSecurity.class);
+        ExecutorJobImpl subjectWithSecurity = new ExecutorJobImpl(
+                setupWorkspace, terraformExecutor, updateJobStatus, executorFlagsProperties,
+                shutdownService, scriptEngineService, eventPublisher, jobExecutionWatchdog,
+                executorCapacityGate, redisTemplate, null, null, mockSecurity);
+
+        subjectWithSecurity.createJob(job);
+
+        verify(mockSecurity).cleanTerraformCredentials();
+    }
+
+    @Test
+    void cleansTerraformCredentialsWhenJobExecutionFails() throws Exception {
+        TerraformJob job = createJob("terraformPlan");
+        File workDir = tempDir.toFile();
+        when(setupWorkspace.prepareWorkspace(job)).thenReturn(workDir);
+        when(terraformExecutor.plan(eq(job), eq(workDir), eq(false)))
+                .thenThrow(new RuntimeException("Crash during plan"));
+
+        WorkspaceSecurity mockSecurity = Mockito.mock(WorkspaceSecurity.class);
+        ExecutorJobImpl subjectWithSecurity = new ExecutorJobImpl(
+                setupWorkspace, terraformExecutor, updateJobStatus, executorFlagsProperties,
+                shutdownService, scriptEngineService, eventPublisher, jobExecutionWatchdog,
+                executorCapacityGate, redisTemplate, null, null, mockSecurity);
+
+        subjectWithSecurity.createJob(job);
+
+        verify(mockSecurity).cleanTerraformCredentials();
+    }
+
+    @Test
+    void cleansTerraformCredentialsWhenWorkspacePreparationFails() throws Exception {
+        TerraformJob job = createJob("terraformPlan");
+        when(setupWorkspace.prepareWorkspace(job)).thenThrow(new WorkspaceException(new RuntimeException("Cannot prepare")));
+
+        WorkspaceSecurity mockSecurity = Mockito.mock(WorkspaceSecurity.class);
+        ExecutorJobImpl subjectWithSecurity = new ExecutorJobImpl(
+                setupWorkspace, terraformExecutor, updateJobStatus, executorFlagsProperties,
+                shutdownService, scriptEngineService, eventPublisher, jobExecutionWatchdog,
+                executorCapacityGate, redisTemplate, null, null, mockSecurity);
+
+        subjectWithSecurity.createJob(job);
+
+        verify(mockSecurity).cleanTerraformCredentials();
     }
 }

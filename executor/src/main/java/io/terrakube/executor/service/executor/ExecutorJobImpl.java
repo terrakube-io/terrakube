@@ -15,6 +15,7 @@ import io.terrakube.executor.service.status.UpdateJobStatus;
 import io.terrakube.executor.service.terraform.ContextRevision;
 import io.terrakube.executor.service.terraform.TerraformExecutor;
 import io.terrakube.executor.service.workspace.security.JobContextHolder;
+import io.terrakube.executor.service.workspace.security.WorkspaceSecurity;
 import org.springframework.boot.availability.AvailabilityChangeEvent;
 import org.springframework.boot.availability.ReadinessState;
 import org.springframework.context.ApplicationEventPublisher;
@@ -50,6 +51,7 @@ public class ExecutorJobImpl implements ExecutorJob {
     RedisTemplate<String, Object> redisTemplate;
     OpaExecutorService opaExecutorService;
     ProcessLogs logsService;
+    WorkspaceSecurity workspaceSecurity;
 
     public ExecutorJobImpl(
             SetupWorkspace setupWorkspace,
@@ -64,7 +66,7 @@ public class ExecutorJobImpl implements ExecutorJob {
             RedisTemplate<String, Object> redisTemplate) {
         this(setupWorkspace, terraformExecutor, updateJobStatus, executorFlagsProperties,
                 shutdownService, scriptEngineService, eventPublisher, jobExecutionWatchdog,
-                executorCapacityGate, redisTemplate, null, null);
+                executorCapacityGate, redisTemplate, null, null, null);
     }
 
     public ExecutorJobImpl(
@@ -81,7 +83,25 @@ public class ExecutorJobImpl implements ExecutorJob {
             @Autowired(required = false) OpaExecutorService opaExecutorService) {
         this(setupWorkspace, terraformExecutor, updateJobStatus, executorFlagsProperties,
                 shutdownService, scriptEngineService, eventPublisher, jobExecutionWatchdog,
-                executorCapacityGate, redisTemplate, opaExecutorService, null);
+                executorCapacityGate, redisTemplate, opaExecutorService, null, null);
+    }
+
+    public ExecutorJobImpl(
+            SetupWorkspace setupWorkspace,
+            TerraformExecutor terraformExecutor,
+            UpdateJobStatus updateJobStatus,
+            ExecutorFlagsProperties executorFlagsProperties,
+            ShutdownServiceImpl shutdownService,
+            ScriptEngineService scriptEngineService,
+            ApplicationEventPublisher eventPublisher,
+            JobExecutionWatchdog jobExecutionWatchdog,
+            ExecutorCapacityGate executorCapacityGate,
+            RedisTemplate<String, Object> redisTemplate,
+            @Autowired(required = false) OpaExecutorService opaExecutorService,
+            @Autowired(required = false) ProcessLogs logsService) {
+        this(setupWorkspace, terraformExecutor, updateJobStatus, executorFlagsProperties,
+                shutdownService, scriptEngineService, eventPublisher, jobExecutionWatchdog,
+                executorCapacityGate, redisTemplate, opaExecutorService, logsService, null);
     }
 
     @Autowired
@@ -97,7 +117,8 @@ public class ExecutorJobImpl implements ExecutorJob {
             ExecutorCapacityGate executorCapacityGate,
             RedisTemplate<String, Object> redisTemplate,
             @Autowired(required = false) OpaExecutorService opaExecutorService,
-            @Autowired(required = false) ProcessLogs logsService) {
+            @Autowired(required = false) ProcessLogs logsService,
+            @Autowired(required = false) WorkspaceSecurity workspaceSecurity) {
         this.setupWorkspace = setupWorkspace;
         this.terraformExecutor = terraformExecutor;
         this.updateJobStatus = updateJobStatus;
@@ -110,6 +131,7 @@ public class ExecutorJobImpl implements ExecutorJob {
         this.redisTemplate = redisTemplate;
         this.opaExecutorService = opaExecutorService;
         this.logsService = logsService;
+        this.workspaceSecurity = workspaceSecurity;
     }
 
     @Async
@@ -146,6 +168,9 @@ public class ExecutorJobImpl implements ExecutorJob {
             // After executeJob, so the structured-output drain has already minted every revision.
             ContextRevision.end(terraformJob.getJobId(), terraformJob.getExecutionEpoch());
             JobContextHolder.clear();
+            if (workspaceSecurity != null) {
+                workspaceSecurity.cleanTerraformCredentials();
+            }
             try {
                 if (terraformWorkingDir != null) {
                     FileUtils.cleanDirectory(terraformWorkingDir);

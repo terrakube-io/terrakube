@@ -361,7 +361,8 @@ public class PlanStructuredOutputService {
      * Context patch entries for this step. A final write also sets or clears (null) the
      * {@code noChangePlan} marker, with its plan step id, so the UI can treat the associated
      * standard apply as a valid no-op without inferring it from an empty array or console text.
-     * Progress writes never touch the marker.
+     * Progress writes never touch the marker, and it is never set if the plan encountered errors
+     * or has error diagnostics.
      */
     Map<String, Object> buildPlanPatch(String stepId, List<Map<String, Object>> changes,
                                        List<Map<String, Object>> jobDiagnostics, boolean finalSnapshot) {
@@ -371,9 +372,15 @@ public class PlanStructuredOutputService {
         set.put(CONTEXT_UI_KEY + "/" + stepId, STRUCTURED_PLAN_MARKER);
         set.put(CONTEXT_JOB_DIAGNOSTICS_KEY + "/" + stepId, jobDiagnostics);
         if (finalSnapshot) {
-            set.put(CONTEXT_NO_CHANGE_PLAN_KEY, changes == null || changes.isEmpty() ? Map.of("planStepId", stepId) : null);
+            boolean noChanges = !hasPlanErrors(changes, jobDiagnostics) && (changes == null || changes.isEmpty());
+            set.put(CONTEXT_NO_CHANGE_PLAN_KEY, noChanges ? Map.of("planStepId", stepId) : null);
         }
         return set;
+    }
+
+    private static boolean hasPlanErrors(List<Map<String, Object>> changes, List<Map<String, Object>> jobDiagnostics) {
+        return (jobDiagnostics != null && jobDiagnostics.stream().anyMatch(d -> "error".equals(d.get("severity"))))
+                || (changes != null && changes.stream().anyMatch(c -> "errored".equals(c.get("status"))));
     }
 
     private String normalizeAction(List<String> actions) {

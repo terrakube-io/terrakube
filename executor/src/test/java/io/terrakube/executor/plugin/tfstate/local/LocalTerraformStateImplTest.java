@@ -157,7 +157,7 @@ class LocalTerraformStateImplTest {
             String httpPlanUrl = "http://localhost:" + port + "/plan.tfstate";
 
             io.terrakube.executor.service.workspace.security.WorkspaceSecurity workspaceSecurity = mock(io.terrakube.executor.service.workspace.security.WorkspaceSecurity.class);
-            when(workspaceSecurity.generateAccessToken(workspaceId)).thenReturn("mock-token-xyz");
+            when(workspaceSecurity.generateAccessToken(60, organizationId, workspaceId, jobId, stepId)).thenReturn("mock-token-xyz");
 
             localTerraformState.setWorkspaceSecurity(workspaceSecurity);
 

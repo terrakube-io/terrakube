@@ -401,6 +401,38 @@ class PlanStructuredOutputServiceTest {
     }
 
     @Test
+    void doesNotSetNoChangePlanMarkerWhenErrorDiagnosticsPresent() {
+        List<Map<String, Object>> changes = List.of();
+        List<Map<String, Object>> jobDiagnostics = List.of(Map.of("severity", "error", "summary", "Plugin failure"));
+
+        Map<String, Object> set = subject().buildPlanPatch("step-1", changes, jobDiagnostics, true);
+
+        assertNull(set.get(PlanStructuredOutputService.CONTEXT_NO_CHANGE_PLAN_KEY),
+                "noChangePlan marker must be suppressed when plan encountered error diagnostics");
+    }
+
+    @Test
+    void doesNotSetNoChangePlanMarkerWhenErroredResourcesPresent() {
+        List<Map<String, Object>> changes = List.of(Map.of("address", "aws_instance.failed", "status", "errored"));
+        List<Map<String, Object>> jobDiagnostics = List.of();
+
+        Map<String, Object> set = subject().buildPlanPatch("step-1", changes, jobDiagnostics, true);
+
+        assertNull(set.get(PlanStructuredOutputService.CONTEXT_NO_CHANGE_PLAN_KEY),
+                "noChangePlan marker must be suppressed when plan encountered errored resources");
+    }
+
+    @Test
+    void setsNoChangePlanMarkerWhenChangesEmptyAndOnlyWarningDiagnosticsPresent() {
+        List<Map<String, Object>> changes = List.of();
+        List<Map<String, Object>> jobDiagnostics = List.of(Map.of("severity", "warning", "summary", "Deprecated syntax"));
+
+        Map<String, Object> set = subject().buildPlanPatch("step-1", changes, jobDiagnostics, true);
+
+        assertEquals(Map.of("planStepId", "step-1"), set.get(PlanStructuredOutputService.CONTEXT_NO_CHANGE_PLAN_KEY));
+    }
+
+    @Test
     void buildPlanPatchTouchesOnlyThisStepsEntries() {
         List<Map<String, Object>> changes = List.of(Map.of("action", "replace"));
         List<Map<String, Object>> diagnostics = List.of(Map.of("severity", "warning"));

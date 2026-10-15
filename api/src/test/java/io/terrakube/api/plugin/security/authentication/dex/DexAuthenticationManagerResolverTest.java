@@ -2,10 +2,14 @@ package io.terrakube.api.plugin.security.authentication.dex;
 
 import io.terrakube.api.repository.FederatedRepository;
 import io.terrakube.api.repository.PatRepository;
+import io.terrakube.api.repository.StepRepository;
 import io.terrakube.api.repository.TeamTokenRepository;
 import io.terrakube.api.rs.federated.Federated;
 import io.terrakube.api.rs.federated.claim.FederatedClaim;
+import io.terrakube.api.rs.job.JobStatus;
+import io.terrakube.api.rs.job.step.Step;
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.security.core.AuthenticationException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -40,6 +44,9 @@ class DexAuthenticationManagerResolverTest {
     @Mock
     FederatedRepository federatedRepository;
 
+    @Mock
+    StepRepository stepRepository;
+
     private HttpServletRequest dexTokenRequest() {
         String jti = UUID.randomUUID().toString();
         String payloadJson = "{\"iss\":\"https://dummy-dex-issuer\",\"aud\":\"terrakube\",\"jti\":\"" + jti + "\"}";
@@ -59,6 +66,7 @@ class DexAuthenticationManagerResolverTest {
                 .patRepository(patRepository)
                 .teamTokenRepository(teamTokenRepository)
                 .federatedRepository(federatedRepository)
+                .stepRepository(stepRepository)
                 .build();
     }
 
@@ -284,5 +292,115 @@ class DexAuthenticationManagerResolverTest {
         var authResult = manager.authenticate(new org.springframework.security.oauth2.server.resource.authentication.BearerTokenAuthenticationToken(token));
         assertThat(authResult).isNotNull();
         assertThat(authResult.isAuthenticated()).isTrue();
+    }
+
+    private String createSignedRunnerToken(String base64Secret, String workspaceId, String stepId, String jti) {
+        byte[] secretBytes = io.jsonwebtoken.io.Decoders.BASE64URL.decode(base64Secret);
+        javax.crypto.SecretKey key = io.jsonwebtoken.security.Keys.hmacShaKeyFor(secretBytes);
+        var builder = io.jsonwebtoken.Jwts.builder()
+                .issuer("TerrakubeInternal")
+                .subject("TerrakubeInternal (TOKEN)")
+                .audience().add("TerrakubeInternal").and()
+                .claim("workspaceId", workspaceId)
+                .claim("organizationId", UUID.randomUUID().toString())
+                .claim("jobId", UUID.randomUUID().toString())
+                .issuedAt(java.util.Date.from(java.time.Instant.now()))
+                .expiration(java.util.Date.from(java.time.Instant.now().plus(60, java.time.temporal.ChronoUnit.SECONDS)))
+                .signWith(key);
+        if (stepId != null) {
+            builder.claim("stepId", stepId);
+        }
+        if (jti != null) {
+            builder.id(jti);
+        }
+        return builder.compact();
+    }
+
+    @Test
+    void resolve_internalRunnerToken_stepRunning_authenticatesSuccessfully() {
+        byte[] secretBytes = org.apache.commons.lang3.RandomStringUtils.secure().nextAlphanumeric(64).getBytes();
+        String secret = Base64.getUrlEncoder().withoutPadding().encodeToString(secretBytes);
+
+        UUID stepUuid = UUID.randomUUID();
+        Step step = new Step();
+        step.setId(stepUuid);
+        step.setStatus(JobStatus.running);
+        when(stepRepository.findById(stepUuid)).thenReturn(java.util.Optional.of(step));
+
+        DexAuthenticationManagerResolver resolver = DexAuthenticationManagerResolver.builder()
+                .dexIssuerUri("https://dummy-dex-issuer")
+                .patJwtSecret(secret)
+                .internalJwtSecret(secret)
+                .patRepository(patRepository)
+                .teamTokenRepository(teamTokenRepository)
+                .federatedRepository(federatedRepository)
+                .stepRepository(stepRepository)
+                .build();
+
+        String token = createSignedRunnerToken(secret, UUID.randomUUID().toString(), stepUuid.toString(), "job-step-jti");
+        AuthenticationManager manager = resolver.resolve(mockTokenRequest(token));
+
+        assertThat(manager).isNotNull();
+        var authResult = manager.authenticate(new org.springframework.security.oauth2.server.resource.authentication.BearerTokenAuthenticationToken(token));
+        assertThat(authResult).isNotNull();
+        assertThat(authResult.isAuthenticated()).isTrue();
+    }
+
+    @Test
+    void resolve_internalRunnerToken_stepCompleted_throwsAuthenticationException() {
+        byte[] secretBytes = org.apache.commons.lang3.RandomStringUtils.secure().nextAlphanumeric(64).getBytes();
+        String secret = Base64.getUrlEncoder().withoutPadding().encodeToString(secretBytes);
+
+        UUID stepUuid = UUID.randomUUID();
+        Step step = new Step();
+        step.setId(stepUuid);
+        step.setStatus(JobStatus.completed);
+        when(stepRepository.findById(stepUuid)).thenReturn(java.util.Optional.of(step));
+
+        DexAuthenticationManagerResolver resolver = DexAuthenticationManagerResolver.builder()
+                .dexIssuerUri("https://dummy-dex-issuer")
+                .patJwtSecret(secret)
+                .internalJwtSecret(secret)
+                .patRepository(patRepository)
+                .teamTokenRepository(teamTokenRepository)
+                .federatedRepository(federatedRepository)
+                .stepRepository(stepRepository)
+                .build();
+
+        String token = createSignedRunnerToken(secret, UUID.randomUUID().toString(), stepUuid.toString(), "job-step-jti");
+        AuthenticationManager manager = resolver.resolve(mockTokenRequest(token));
+
+        assertThat(manager).isNotNull();
+        assertThatThrownBy(() -> manager.authenticate(new org.springframework.security.oauth2.server.resource.authentication.BearerTokenAuthenticationToken(token)))
+                .isInstanceOf(AuthenticationException.class);
+    }
+
+    @Test
+    void resolve_internalRunnerToken_stepFailed_throwsAuthenticationException() {
+        byte[] secretBytes = org.apache.commons.lang3.RandomStringUtils.secure().nextAlphanumeric(64).getBytes();
+        String secret = Base64.getUrlEncoder().withoutPadding().encodeToString(secretBytes);
+
+        UUID stepUuid = UUID.randomUUID();
+        Step step = new Step();
+        step.setId(stepUuid);
+        step.setStatus(JobStatus.failed);
+        when(stepRepository.findById(stepUuid)).thenReturn(java.util.Optional.of(step));
+
+        DexAuthenticationManagerResolver resolver = DexAuthenticationManagerResolver.builder()
+                .dexIssuerUri("https://dummy-dex-issuer")
+                .patJwtSecret(secret)
+                .internalJwtSecret(secret)
+                .patRepository(patRepository)
+                .teamTokenRepository(teamTokenRepository)
+                .federatedRepository(federatedRepository)
+                .stepRepository(stepRepository)
+                .build();
+
+        String token = createSignedRunnerToken(secret, UUID.randomUUID().toString(), stepUuid.toString(), "job-step-jti");
+        AuthenticationManager manager = resolver.resolve(mockTokenRequest(token));
+
+        assertThat(manager).isNotNull();
+        assertThatThrownBy(() -> manager.authenticate(new org.springframework.security.oauth2.server.resource.authentication.BearerTokenAuthenticationToken(token)))
+                .isInstanceOf(AuthenticationException.class);
     }
 }

@@ -61,11 +61,46 @@ class PolicyWorkspaceAccessServiceTest {
     }
 
     @Test
-    void testInternalTokenReturnsTrue() {
+    void testExecutorServiceTokenReturnsTrue() {
+        JwtAuthenticationToken jwt = Mockito.mock(JwtAuthenticationToken.class);
+        when(jwt.getTokenAttributes()).thenReturn(Map.of(
+                "iss", "TerrakubeInternal",
+                "sub", "TerrakubeInternal (EXECUTOR)"
+        ));
+
+        assertTrue(accessService.hasPolicyEvaluationPermission(jwt, orgId.toString(), wsId.toString()));
+    }
+
+    @Test
+    void testWorkspaceExecutorTokenMatchingReturnsTrue() {
+        JwtAuthenticationToken jwt = Mockito.mock(JwtAuthenticationToken.class);
+        when(jwt.getTokenAttributes()).thenReturn(Map.of(
+                "iss", "TerrakubeInternal",
+                "workspaceId", wsId.toString(),
+                "organizationId", orgId.toString()
+        ));
+
+        assertTrue(accessService.hasPolicyEvaluationPermission(jwt, orgId.toString(), wsId.toString()));
+    }
+
+    @Test
+    void testWorkspaceExecutorTokenCrossWorkspaceReturnsFalse() {
+        JwtAuthenticationToken jwt = Mockito.mock(JwtAuthenticationToken.class);
+        when(jwt.getTokenAttributes()).thenReturn(Map.of(
+                "iss", "TerrakubeInternal",
+                "workspaceId", UUID.randomUUID().toString(),
+                "organizationId", orgId.toString()
+        ));
+
+        assertFalse(accessService.hasPolicyEvaluationPermission(jwt, orgId.toString(), wsId.toString()));
+    }
+
+    @Test
+    void testUnknownInternalTokenFailsClosed() {
         JwtAuthenticationToken jwt = Mockito.mock(JwtAuthenticationToken.class);
         when(jwt.getTokenAttributes()).thenReturn(Map.of("iss", "TerrakubeInternal"));
 
-        assertTrue(accessService.hasPolicyEvaluationPermission(jwt, orgId.toString(), wsId.toString()));
+        assertFalse(accessService.hasPolicyEvaluationPermission(jwt, orgId.toString(), wsId.toString()));
     }
 
     @Test
