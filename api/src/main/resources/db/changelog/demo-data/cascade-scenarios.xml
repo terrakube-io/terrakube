@@ -1,0 +1,1338 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+            http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+
+    <!--
+      Cascade execution scenarios (terrakube-io/terrakube#3629), in an organization of their own
+      so they never disturb the run-trigger scenarios.
+
+      Each scenario is a small dependency graph with a cascade already recorded against it, in a
+      different state, so every view of a cascade can be opened without waiting for runs:
+      completed, blocked on an ALL join, running with an ANY join, the four on_destroy policies,
+      a retried failure with a skipped dependent, and an operator cancel. The live edges are real
+      too, so any of them can also be run for real (every workspace points at
+      terrakube-docker-compose, which completes in about 30 seconds with no cloud credentials).
+
+      Workspaces are named <scenario>-<role> and the cascades are the ones whose origin job is the
+      scenario's root workspace. Job ids start at 910001 to stay clear of generated ids.
+    -->
+    <changeSet author="demo-data" id="demo-cascade-scenarios">
+
+        <!-- ORGANIZATION, TEAM, TEMPLATES -->
+        <insert tableName="organization">
+            <column name="id"                         value="b0f1c2d3-1000-4000-8000-000000000001" />
+            <column name="name"                       value="simple-cascade" />
+            <column name="description"                value="cascade execution scenarios: joins, destroy policies, retries" />
+        </insert>
+        <insert tableName="team">
+            <column name="id"                         value="b0f1c2d3-1000-4000-8000-000000000002" />
+            <column name="name"                       value="TERRAKUBE_ADMIN" />
+            <column name="role"                       value="admin" />
+            <column name="manage_workspace"           valueBoolean="true" />
+            <column name="manage_module"              valueBoolean="true" />
+            <column name="manage_provider"            valueBoolean="true" />
+            <column name="manage_vcs"                 valueBoolean="true" />
+            <column name="manage_template"            valueBoolean="true" />
+            <column name="manage_job"                 valueBoolean="true" />
+            <column name="manage_state"               valueBoolean="true" />
+            <column name="manage_collection"          valueBoolean="true" />
+            <column name="plan_job"                   valueBoolean="true" />
+            <column name="approve_job"                valueBoolean="true" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+        </insert>
+        <insert tableName="template">
+            <column name="id"                         value="b0f1c2d3-1000-4000-8000-000000000011" />
+            <column name="name"                       value="Plan" />
+            <column name="description"                value="Running terraform plan" />
+            <column name="version"                    value="1.0.0" />
+            <column name="tcl"                        value="ZmxvdzoKICAtIHR5cGU6ICJ0ZXJyYWZvcm1QbGFuIgogICAgbmFtZTogIlBsYW4iCiAgICBzdGVwOiAxMDAK" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+        </insert>
+        <insert tableName="template">
+            <column name="id"                         value="b0f1c2d3-1000-4000-8000-000000000012" />
+            <column name="name"                       value="Plan and apply" />
+            <column name="description"                value="Running terraform plan and apply" />
+            <column name="version"                    value="1.0.0" />
+            <column name="tcl"                        value="ZmxvdzoKICAtIHR5cGU6ICJ0ZXJyYWZvcm1QbGFuIgogICAgc3RlcDogMTAwCiAgICBuYW1lOiAiUGxhbiIKICAtIHR5cGU6ICJ0ZXJyYWZvcm1BcHBseSIKICAgIHN0ZXA6IDIwMAogICAgbmFtZTogIkFwcGx5Ig==" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+        </insert>
+
+        <!-- WORKSPACES -->
+        <insert tableName="workspace">
+            <column name="id"                         value="b0f1c2d3-1001-4000-8000-000000000001" />
+            <column name="name"                       value="join-root" />
+            <column name="description"                value="ALL join: both parents succeeded, so the join ran once (root)" />
+            <column name="source"                     value="https://github.com/terrakube-io/terrakube-docker-compose.git" />
+            <column name="branch"                     value="main" />
+            <column name="terraform_version"          value="1.5.7" />
+            <column name="default_template"           value="b0f1c2d3-1000-4000-8000-000000000012" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+        </insert>
+        <insert tableName="workspace">
+            <column name="id"                         value="b0f1c2d3-1001-4000-8000-000000000002" />
+            <column name="name"                       value="join-left" />
+            <column name="description"                value="ALL join: both parents succeeded, so the join ran once (left)" />
+            <column name="source"                     value="https://github.com/terrakube-io/terrakube-docker-compose.git" />
+            <column name="branch"                     value="main" />
+            <column name="terraform_version"          value="1.5.7" />
+            <column name="default_template"           value="b0f1c2d3-1000-4000-8000-000000000012" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+        </insert>
+        <insert tableName="workspace">
+            <column name="id"                         value="b0f1c2d3-1001-4000-8000-000000000003" />
+            <column name="name"                       value="join-right" />
+            <column name="description"                value="ALL join: both parents succeeded, so the join ran once (right)" />
+            <column name="source"                     value="https://github.com/terrakube-io/terrakube-docker-compose.git" />
+            <column name="branch"                     value="main" />
+            <column name="terraform_version"          value="1.5.7" />
+            <column name="default_template"           value="b0f1c2d3-1000-4000-8000-000000000012" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+        </insert>
+        <insert tableName="workspace">
+            <column name="id"                         value="b0f1c2d3-1001-4000-8000-000000000004" />
+            <column name="name"                       value="join-join" />
+            <column name="description"                value="ALL join: both parents succeeded, so the join ran once (join)" />
+            <column name="source"                     value="https://github.com/terrakube-io/terrakube-docker-compose.git" />
+            <column name="branch"                     value="main" />
+            <column name="terraform_version"          value="1.5.7" />
+            <column name="default_template"           value="b0f1c2d3-1000-4000-8000-000000000012" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+        </insert>
+        <insert tableName="workspace">
+            <column name="id"                         value="b0f1c2d3-1001-4000-8000-000000000005" />
+            <column name="name"                       value="blocked-root" />
+            <column name="description"                value="ALL join blocked: one required parent failed, waiting on an operator (root)" />
+            <column name="source"                     value="https://github.com/terrakube-io/terrakube-docker-compose.git" />
+            <column name="branch"                     value="main" />
+            <column name="terraform_version"          value="1.5.7" />
+            <column name="default_template"           value="b0f1c2d3-1000-4000-8000-000000000012" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+        </insert>
+        <insert tableName="workspace">
+            <column name="id"                         value="b0f1c2d3-1001-4000-8000-000000000006" />
+            <column name="name"                       value="blocked-ok" />
+            <column name="description"                value="ALL join blocked: one required parent failed, waiting on an operator (ok)" />
+            <column name="source"                     value="https://github.com/terrakube-io/terrakube-docker-compose.git" />
+            <column name="branch"                     value="main" />
+            <column name="terraform_version"          value="1.5.7" />
+            <column name="default_template"           value="b0f1c2d3-1000-4000-8000-000000000012" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+        </insert>
+        <insert tableName="workspace">
+            <column name="id"                         value="b0f1c2d3-1001-4000-8000-000000000007" />
+            <column name="name"                       value="blocked-bad" />
+            <column name="description"                value="ALL join blocked: one required parent failed, waiting on an operator (bad)" />
+            <column name="source"                     value="https://github.com/terrakube-io/terrakube-docker-compose.git" />
+            <column name="branch"                     value="main" />
+            <column name="terraform_version"          value="1.5.7" />
+            <column name="default_template"           value="b0f1c2d3-1000-4000-8000-000000000012" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+        </insert>
+        <insert tableName="workspace">
+            <column name="id"                         value="b0f1c2d3-1001-4000-8000-000000000008" />
+            <column name="name"                       value="blocked-join" />
+            <column name="description"                value="ALL join blocked: one required parent failed, waiting on an operator (join)" />
+            <column name="source"                     value="https://github.com/terrakube-io/terrakube-docker-compose.git" />
+            <column name="branch"                     value="main" />
+            <column name="terraform_version"          value="1.5.7" />
+            <column name="default_template"           value="b0f1c2d3-1000-4000-8000-000000000012" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+        </insert>
+        <insert tableName="workspace">
+            <column name="id"                         value="b0f1c2d3-1001-4000-8000-000000000009" />
+            <column name="name"                       value="any-root" />
+            <column name="description"                value="ANY join: runs as soon as one parent succeeds; the other is still in flight (root)" />
+            <column name="source"                     value="https://github.com/terrakube-io/terrakube-docker-compose.git" />
+            <column name="branch"                     value="main" />
+            <column name="terraform_version"          value="1.5.7" />
+            <column name="default_template"           value="b0f1c2d3-1000-4000-8000-000000000012" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+        </insert>
+        <insert tableName="workspace">
+            <column name="id"                         value="b0f1c2d3-1001-4000-8000-000000000010" />
+            <column name="name"                       value="any-fast" />
+            <column name="description"                value="ANY join: runs as soon as one parent succeeds; the other is still in flight (fast)" />
+            <column name="source"                     value="https://github.com/terrakube-io/terrakube-docker-compose.git" />
+            <column name="branch"                     value="main" />
+            <column name="terraform_version"          value="1.5.7" />
+            <column name="default_template"           value="b0f1c2d3-1000-4000-8000-000000000012" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+        </insert>
+        <insert tableName="workspace">
+            <column name="id"                         value="b0f1c2d3-1001-4000-8000-000000000011" />
+            <column name="name"                       value="any-slow" />
+            <column name="description"                value="ANY join: runs as soon as one parent succeeds; the other is still in flight (slow)" />
+            <column name="source"                     value="https://github.com/terrakube-io/terrakube-docker-compose.git" />
+            <column name="branch"                     value="main" />
+            <column name="terraform_version"          value="1.5.7" />
+            <column name="default_template"           value="b0f1c2d3-1000-4000-8000-000000000012" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+        </insert>
+        <insert tableName="workspace">
+            <column name="id"                         value="b0f1c2d3-1001-4000-8000-000000000012" />
+            <column name="name"                       value="any-join" />
+            <column name="description"                value="ANY join: runs as soon as one parent succeeds; the other is still in flight (join)" />
+            <column name="source"                     value="https://github.com/terrakube-io/terrakube-docker-compose.git" />
+            <column name="branch"                     value="main" />
+            <column name="terraform_version"          value="1.5.7" />
+            <column name="default_template"           value="b0f1c2d3-1000-4000-8000-000000000012" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+        </insert>
+        <insert tableName="workspace">
+            <column name="id"                         value="b0f1c2d3-1001-4000-8000-000000000013" />
+            <column name="name"                       value="destroy-root" />
+            <column name="description"                value="destroy policies: TRIGGER, IGNORE, BLOCK and PLAN_ONLY on one fan-out (root)" />
+            <column name="source"                     value="https://github.com/terrakube-io/terrakube-docker-compose.git" />
+            <column name="branch"                     value="main" />
+            <column name="terraform_version"          value="1.5.7" />
+            <column name="default_template"           value="b0f1c2d3-1000-4000-8000-000000000012" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+        </insert>
+        <insert tableName="workspace">
+            <column name="id"                         value="b0f1c2d3-1001-4000-8000-000000000014" />
+            <column name="name"                       value="destroy-trigger" />
+            <column name="description"                value="destroy policies: TRIGGER, IGNORE, BLOCK and PLAN_ONLY on one fan-out (trigger)" />
+            <column name="source"                     value="https://github.com/terrakube-io/terrakube-docker-compose.git" />
+            <column name="branch"                     value="main" />
+            <column name="terraform_version"          value="1.5.7" />
+            <column name="default_template"           value="b0f1c2d3-1000-4000-8000-000000000012" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+        </insert>
+        <insert tableName="workspace">
+            <column name="id"                         value="b0f1c2d3-1001-4000-8000-000000000015" />
+            <column name="name"                       value="destroy-ignore" />
+            <column name="description"                value="destroy policies: TRIGGER, IGNORE, BLOCK and PLAN_ONLY on one fan-out (ignore)" />
+            <column name="source"                     value="https://github.com/terrakube-io/terrakube-docker-compose.git" />
+            <column name="branch"                     value="main" />
+            <column name="terraform_version"          value="1.5.7" />
+            <column name="default_template"           value="b0f1c2d3-1000-4000-8000-000000000012" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+        </insert>
+        <insert tableName="workspace">
+            <column name="id"                         value="b0f1c2d3-1001-4000-8000-000000000016" />
+            <column name="name"                       value="destroy-block" />
+            <column name="description"                value="destroy policies: TRIGGER, IGNORE, BLOCK and PLAN_ONLY on one fan-out (block)" />
+            <column name="source"                     value="https://github.com/terrakube-io/terrakube-docker-compose.git" />
+            <column name="branch"                     value="main" />
+            <column name="terraform_version"          value="1.5.7" />
+            <column name="default_template"           value="b0f1c2d3-1000-4000-8000-000000000012" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+        </insert>
+        <insert tableName="workspace">
+            <column name="id"                         value="b0f1c2d3-1001-4000-8000-000000000017" />
+            <column name="name"                       value="destroy-planonly" />
+            <column name="description"                value="destroy policies: TRIGGER, IGNORE, BLOCK and PLAN_ONLY on one fan-out (planonly)" />
+            <column name="source"                     value="https://github.com/terrakube-io/terrakube-docker-compose.git" />
+            <column name="branch"                     value="main" />
+            <column name="terraform_version"          value="1.5.7" />
+            <column name="default_template"           value="b0f1c2d3-1000-4000-8000-000000000012" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+        </insert>
+        <insert tableName="workspace">
+            <column name="id"                         value="b0f1c2d3-1001-4000-8000-000000000018" />
+            <column name="name"                       value="retry-root" />
+            <column name="description"                value="failed node retried: attempt 1 superseded, attempt 2 failed, downstream skipped (root)" />
+            <column name="source"                     value="https://github.com/terrakube-io/terrakube-docker-compose.git" />
+            <column name="branch"                     value="main" />
+            <column name="terraform_version"          value="1.5.7" />
+            <column name="default_template"           value="b0f1c2d3-1000-4000-8000-000000000012" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+        </insert>
+        <insert tableName="workspace">
+            <column name="id"                         value="b0f1c2d3-1001-4000-8000-000000000019" />
+            <column name="name"                       value="retry-flaky" />
+            <column name="description"                value="failed node retried: attempt 1 superseded, attempt 2 failed, downstream skipped (flaky)" />
+            <column name="source"                     value="https://github.com/terrakube-io/terrakube-docker-compose.git" />
+            <column name="branch"                     value="main" />
+            <column name="terraform_version"          value="1.5.7" />
+            <column name="default_template"           value="b0f1c2d3-1000-4000-8000-000000000012" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+        </insert>
+        <insert tableName="workspace">
+            <column name="id"                         value="b0f1c2d3-1001-4000-8000-000000000020" />
+            <column name="name"                       value="retry-after" />
+            <column name="description"                value="failed node retried: attempt 1 superseded, attempt 2 failed, downstream skipped (after)" />
+            <column name="source"                     value="https://github.com/terrakube-io/terrakube-docker-compose.git" />
+            <column name="branch"                     value="main" />
+            <column name="terraform_version"          value="1.5.7" />
+            <column name="default_template"           value="b0f1c2d3-1000-4000-8000-000000000012" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+        </insert>
+        <insert tableName="workspace">
+            <column name="id"                         value="b0f1c2d3-1001-4000-8000-000000000021" />
+            <column name="name"                       value="cancelled-root" />
+            <column name="description"                value="cancelled by an operator before the downstream chain ran (root)" />
+            <column name="source"                     value="https://github.com/terrakube-io/terrakube-docker-compose.git" />
+            <column name="branch"                     value="main" />
+            <column name="terraform_version"          value="1.5.7" />
+            <column name="default_template"           value="b0f1c2d3-1000-4000-8000-000000000012" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+        </insert>
+        <insert tableName="workspace">
+            <column name="id"                         value="b0f1c2d3-1001-4000-8000-000000000022" />
+            <column name="name"                       value="cancelled-one" />
+            <column name="description"                value="cancelled by an operator before the downstream chain ran (one)" />
+            <column name="source"                     value="https://github.com/terrakube-io/terrakube-docker-compose.git" />
+            <column name="branch"                     value="main" />
+            <column name="terraform_version"          value="1.5.7" />
+            <column name="default_template"           value="b0f1c2d3-1000-4000-8000-000000000012" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+        </insert>
+        <insert tableName="workspace">
+            <column name="id"                         value="b0f1c2d3-1001-4000-8000-000000000023" />
+            <column name="name"                       value="cancelled-two" />
+            <column name="description"                value="cancelled by an operator before the downstream chain ran (two)" />
+            <column name="source"                     value="https://github.com/terrakube-io/terrakube-docker-compose.git" />
+            <column name="branch"                     value="main" />
+            <column name="terraform_version"          value="1.5.7" />
+            <column name="default_template"           value="b0f1c2d3-1000-4000-8000-000000000012" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+        </insert>
+
+        <!-- LIVE EDGES -->
+        <insert tableName="workspace_run_trigger">
+            <column name="id"                         value="b0f1c2d3-1002-4000-8000-000000000001" />
+            <column name="source_workspace_id"        value="b0f1c2d3-1001-4000-8000-000000000001" />
+            <column name="destination_workspace_id"   value="b0f1c2d3-1001-4000-8000-000000000002" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+            <column name="enabled"                    valueBoolean="true" />
+            <column name="synchronization_mode"       value="EACH" />
+            <column name="on_destroy"                 value="TRIGGER" />
+        </insert>
+        <insert tableName="workspace_run_trigger">
+            <column name="id"                         value="b0f1c2d3-1002-4000-8000-000000000002" />
+            <column name="source_workspace_id"        value="b0f1c2d3-1001-4000-8000-000000000001" />
+            <column name="destination_workspace_id"   value="b0f1c2d3-1001-4000-8000-000000000003" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+            <column name="enabled"                    valueBoolean="true" />
+            <column name="synchronization_mode"       value="EACH" />
+            <column name="on_destroy"                 value="TRIGGER" />
+        </insert>
+        <insert tableName="workspace_run_trigger">
+            <column name="id"                         value="b0f1c2d3-1002-4000-8000-000000000003" />
+            <column name="source_workspace_id"        value="b0f1c2d3-1001-4000-8000-000000000002" />
+            <column name="destination_workspace_id"   value="b0f1c2d3-1001-4000-8000-000000000004" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+            <column name="enabled"                    valueBoolean="true" />
+            <column name="synchronization_mode"       value="ALL" />
+            <column name="on_destroy"                 value="TRIGGER" />
+        </insert>
+        <insert tableName="workspace_run_trigger">
+            <column name="id"                         value="b0f1c2d3-1002-4000-8000-000000000004" />
+            <column name="source_workspace_id"        value="b0f1c2d3-1001-4000-8000-000000000003" />
+            <column name="destination_workspace_id"   value="b0f1c2d3-1001-4000-8000-000000000004" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+            <column name="enabled"                    valueBoolean="true" />
+            <column name="synchronization_mode"       value="ALL" />
+            <column name="on_destroy"                 value="TRIGGER" />
+        </insert>
+        <insert tableName="workspace_run_trigger">
+            <column name="id"                         value="b0f1c2d3-1002-4000-8000-000000000005" />
+            <column name="source_workspace_id"        value="b0f1c2d3-1001-4000-8000-000000000005" />
+            <column name="destination_workspace_id"   value="b0f1c2d3-1001-4000-8000-000000000006" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+            <column name="enabled"                    valueBoolean="true" />
+            <column name="synchronization_mode"       value="EACH" />
+            <column name="on_destroy"                 value="TRIGGER" />
+        </insert>
+        <insert tableName="workspace_run_trigger">
+            <column name="id"                         value="b0f1c2d3-1002-4000-8000-000000000006" />
+            <column name="source_workspace_id"        value="b0f1c2d3-1001-4000-8000-000000000005" />
+            <column name="destination_workspace_id"   value="b0f1c2d3-1001-4000-8000-000000000007" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+            <column name="enabled"                    valueBoolean="true" />
+            <column name="synchronization_mode"       value="EACH" />
+            <column name="on_destroy"                 value="TRIGGER" />
+        </insert>
+        <insert tableName="workspace_run_trigger">
+            <column name="id"                         value="b0f1c2d3-1002-4000-8000-000000000007" />
+            <column name="source_workspace_id"        value="b0f1c2d3-1001-4000-8000-000000000006" />
+            <column name="destination_workspace_id"   value="b0f1c2d3-1001-4000-8000-000000000008" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+            <column name="enabled"                    valueBoolean="true" />
+            <column name="synchronization_mode"       value="ALL" />
+            <column name="on_destroy"                 value="TRIGGER" />
+        </insert>
+        <insert tableName="workspace_run_trigger">
+            <column name="id"                         value="b0f1c2d3-1002-4000-8000-000000000008" />
+            <column name="source_workspace_id"        value="b0f1c2d3-1001-4000-8000-000000000007" />
+            <column name="destination_workspace_id"   value="b0f1c2d3-1001-4000-8000-000000000008" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+            <column name="enabled"                    valueBoolean="true" />
+            <column name="synchronization_mode"       value="ALL" />
+            <column name="on_destroy"                 value="TRIGGER" />
+        </insert>
+        <insert tableName="workspace_run_trigger">
+            <column name="id"                         value="b0f1c2d3-1002-4000-8000-000000000009" />
+            <column name="source_workspace_id"        value="b0f1c2d3-1001-4000-8000-000000000009" />
+            <column name="destination_workspace_id"   value="b0f1c2d3-1001-4000-8000-000000000010" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+            <column name="enabled"                    valueBoolean="true" />
+            <column name="synchronization_mode"       value="EACH" />
+            <column name="on_destroy"                 value="TRIGGER" />
+        </insert>
+        <insert tableName="workspace_run_trigger">
+            <column name="id"                         value="b0f1c2d3-1002-4000-8000-000000000010" />
+            <column name="source_workspace_id"        value="b0f1c2d3-1001-4000-8000-000000000009" />
+            <column name="destination_workspace_id"   value="b0f1c2d3-1001-4000-8000-000000000011" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+            <column name="enabled"                    valueBoolean="true" />
+            <column name="synchronization_mode"       value="EACH" />
+            <column name="on_destroy"                 value="TRIGGER" />
+        </insert>
+        <insert tableName="workspace_run_trigger">
+            <column name="id"                         value="b0f1c2d3-1002-4000-8000-000000000011" />
+            <column name="source_workspace_id"        value="b0f1c2d3-1001-4000-8000-000000000010" />
+            <column name="destination_workspace_id"   value="b0f1c2d3-1001-4000-8000-000000000012" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+            <column name="enabled"                    valueBoolean="true" />
+            <column name="synchronization_mode"       value="ANY" />
+            <column name="on_destroy"                 value="TRIGGER" />
+        </insert>
+        <insert tableName="workspace_run_trigger">
+            <column name="id"                         value="b0f1c2d3-1002-4000-8000-000000000012" />
+            <column name="source_workspace_id"        value="b0f1c2d3-1001-4000-8000-000000000011" />
+            <column name="destination_workspace_id"   value="b0f1c2d3-1001-4000-8000-000000000012" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+            <column name="enabled"                    valueBoolean="true" />
+            <column name="synchronization_mode"       value="ANY" />
+            <column name="on_destroy"                 value="TRIGGER" />
+        </insert>
+        <insert tableName="workspace_run_trigger">
+            <column name="id"                         value="b0f1c2d3-1002-4000-8000-000000000013" />
+            <column name="source_workspace_id"        value="b0f1c2d3-1001-4000-8000-000000000013" />
+            <column name="destination_workspace_id"   value="b0f1c2d3-1001-4000-8000-000000000014" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+            <column name="enabled"                    valueBoolean="true" />
+            <column name="synchronization_mode"       value="EACH" />
+            <column name="on_destroy"                 value="TRIGGER" />
+        </insert>
+        <insert tableName="workspace_run_trigger">
+            <column name="id"                         value="b0f1c2d3-1002-4000-8000-000000000014" />
+            <column name="source_workspace_id"        value="b0f1c2d3-1001-4000-8000-000000000013" />
+            <column name="destination_workspace_id"   value="b0f1c2d3-1001-4000-8000-000000000015" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+            <column name="enabled"                    valueBoolean="true" />
+            <column name="synchronization_mode"       value="EACH" />
+            <column name="on_destroy"                 value="IGNORE" />
+        </insert>
+        <insert tableName="workspace_run_trigger">
+            <column name="id"                         value="b0f1c2d3-1002-4000-8000-000000000015" />
+            <column name="source_workspace_id"        value="b0f1c2d3-1001-4000-8000-000000000013" />
+            <column name="destination_workspace_id"   value="b0f1c2d3-1001-4000-8000-000000000016" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+            <column name="enabled"                    valueBoolean="true" />
+            <column name="synchronization_mode"       value="EACH" />
+            <column name="on_destroy"                 value="BLOCK" />
+        </insert>
+        <insert tableName="workspace_run_trigger">
+            <column name="id"                         value="b0f1c2d3-1002-4000-8000-000000000016" />
+            <column name="source_workspace_id"        value="b0f1c2d3-1001-4000-8000-000000000013" />
+            <column name="destination_workspace_id"   value="b0f1c2d3-1001-4000-8000-000000000017" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+            <column name="enabled"                    valueBoolean="true" />
+            <column name="synchronization_mode"       value="EACH" />
+            <column name="on_destroy"                 value="PLAN_ONLY" />
+            <column name="on_destroy_plan_template_id" value="b0f1c2d3-1000-4000-8000-000000000011" />
+        </insert>
+        <insert tableName="workspace_run_trigger">
+            <column name="id"                         value="b0f1c2d3-1002-4000-8000-000000000017" />
+            <column name="source_workspace_id"        value="b0f1c2d3-1001-4000-8000-000000000018" />
+            <column name="destination_workspace_id"   value="b0f1c2d3-1001-4000-8000-000000000019" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+            <column name="enabled"                    valueBoolean="true" />
+            <column name="synchronization_mode"       value="EACH" />
+            <column name="on_destroy"                 value="TRIGGER" />
+        </insert>
+        <insert tableName="workspace_run_trigger">
+            <column name="id"                         value="b0f1c2d3-1002-4000-8000-000000000018" />
+            <column name="source_workspace_id"        value="b0f1c2d3-1001-4000-8000-000000000019" />
+            <column name="destination_workspace_id"   value="b0f1c2d3-1001-4000-8000-000000000020" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+            <column name="enabled"                    valueBoolean="true" />
+            <column name="synchronization_mode"       value="EACH" />
+            <column name="on_destroy"                 value="TRIGGER" />
+        </insert>
+        <insert tableName="workspace_run_trigger">
+            <column name="id"                         value="b0f1c2d3-1002-4000-8000-000000000019" />
+            <column name="source_workspace_id"        value="b0f1c2d3-1001-4000-8000-000000000021" />
+            <column name="destination_workspace_id"   value="b0f1c2d3-1001-4000-8000-000000000022" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+            <column name="enabled"                    valueBoolean="true" />
+            <column name="synchronization_mode"       value="EACH" />
+            <column name="on_destroy"                 value="TRIGGER" />
+        </insert>
+        <insert tableName="workspace_run_trigger">
+            <column name="id"                         value="b0f1c2d3-1002-4000-8000-000000000020" />
+            <column name="source_workspace_id"        value="b0f1c2d3-1001-4000-8000-000000000022" />
+            <column name="destination_workspace_id"   value="b0f1c2d3-1001-4000-8000-000000000023" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+            <column name="enabled"                    valueBoolean="true" />
+            <column name="synchronization_mode"       value="EACH" />
+            <column name="on_destroy"                 value="TRIGGER" />
+        </insert>
+
+        <!-- JOBS: the origin job of each cascade, then one per recorded attempt -->
+        <insert tableName="job">
+            <column name="id"                         value="910001" />
+            <column name="status"                     value="completed" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+            <column name="workspace_id"               value="b0f1c2d3-1001-4000-8000-000000000001" />
+            <column name="cascade_depth"              value="0" />
+            <column name="dispatch_failure_count"     value="0" />
+            <column name="auto_apply"                 valueBoolean="true" />
+            <column name="deleted"                    valueBoolean="false" />
+            <column name="refresh"                    valueBoolean="true" />
+            <column name="plan_changes"               valueBoolean="true" />
+            <column name="refresh_only"               valueBoolean="false" />
+            <column name="pr_apply_enabled"           valueBoolean="false" />
+        </insert>
+        <insert tableName="job">
+            <column name="id"                         value="910002" />
+            <column name="status"                     value="completed" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+            <column name="workspace_id"               value="b0f1c2d3-1001-4000-8000-000000000002" />
+            <column name="triggered_by_job_id"        value="910001" />
+            <column name="cascade_depth"              value="1" />
+            <column name="dispatch_failure_count"     value="0" />
+            <column name="auto_apply"                 valueBoolean="true" />
+            <column name="deleted"                    valueBoolean="false" />
+            <column name="refresh"                    valueBoolean="true" />
+            <column name="plan_changes"               valueBoolean="true" />
+            <column name="refresh_only"               valueBoolean="false" />
+            <column name="pr_apply_enabled"           valueBoolean="false" />
+        </insert>
+        <insert tableName="job">
+            <column name="id"                         value="910003" />
+            <column name="status"                     value="completed" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+            <column name="workspace_id"               value="b0f1c2d3-1001-4000-8000-000000000003" />
+            <column name="triggered_by_job_id"        value="910001" />
+            <column name="cascade_depth"              value="1" />
+            <column name="dispatch_failure_count"     value="0" />
+            <column name="auto_apply"                 valueBoolean="true" />
+            <column name="deleted"                    valueBoolean="false" />
+            <column name="refresh"                    valueBoolean="true" />
+            <column name="plan_changes"               valueBoolean="true" />
+            <column name="refresh_only"               valueBoolean="false" />
+            <column name="pr_apply_enabled"           valueBoolean="false" />
+        </insert>
+        <insert tableName="job">
+            <column name="id"                         value="910004" />
+            <column name="status"                     value="completed" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+            <column name="workspace_id"               value="b0f1c2d3-1001-4000-8000-000000000004" />
+            <column name="triggered_by_job_id"        value="910001" />
+            <column name="cascade_depth"              value="2" />
+            <column name="dispatch_failure_count"     value="0" />
+            <column name="auto_apply"                 valueBoolean="true" />
+            <column name="deleted"                    valueBoolean="false" />
+            <column name="refresh"                    valueBoolean="true" />
+            <column name="plan_changes"               valueBoolean="true" />
+            <column name="refresh_only"               valueBoolean="false" />
+            <column name="pr_apply_enabled"           valueBoolean="false" />
+        </insert>
+        <insert tableName="job">
+            <column name="id"                         value="910005" />
+            <column name="status"                     value="completed" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+            <column name="workspace_id"               value="b0f1c2d3-1001-4000-8000-000000000005" />
+            <column name="cascade_depth"              value="0" />
+            <column name="dispatch_failure_count"     value="0" />
+            <column name="auto_apply"                 valueBoolean="true" />
+            <column name="deleted"                    valueBoolean="false" />
+            <column name="refresh"                    valueBoolean="true" />
+            <column name="plan_changes"               valueBoolean="true" />
+            <column name="refresh_only"               valueBoolean="false" />
+            <column name="pr_apply_enabled"           valueBoolean="false" />
+        </insert>
+        <insert tableName="job">
+            <column name="id"                         value="910006" />
+            <column name="status"                     value="completed" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+            <column name="workspace_id"               value="b0f1c2d3-1001-4000-8000-000000000006" />
+            <column name="triggered_by_job_id"        value="910005" />
+            <column name="cascade_depth"              value="1" />
+            <column name="dispatch_failure_count"     value="0" />
+            <column name="auto_apply"                 valueBoolean="true" />
+            <column name="deleted"                    valueBoolean="false" />
+            <column name="refresh"                    valueBoolean="true" />
+            <column name="plan_changes"               valueBoolean="true" />
+            <column name="refresh_only"               valueBoolean="false" />
+            <column name="pr_apply_enabled"           valueBoolean="false" />
+        </insert>
+        <insert tableName="job">
+            <column name="id"                         value="910007" />
+            <column name="status"                     value="failed" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+            <column name="workspace_id"               value="b0f1c2d3-1001-4000-8000-000000000007" />
+            <column name="triggered_by_job_id"        value="910005" />
+            <column name="cascade_depth"              value="1" />
+            <column name="dispatch_failure_count"     value="0" />
+            <column name="auto_apply"                 valueBoolean="true" />
+            <column name="deleted"                    valueBoolean="false" />
+            <column name="refresh"                    valueBoolean="true" />
+            <column name="plan_changes"               valueBoolean="true" />
+            <column name="refresh_only"               valueBoolean="false" />
+            <column name="pr_apply_enabled"           valueBoolean="false" />
+        </insert>
+        <insert tableName="job">
+            <column name="id"                         value="910008" />
+            <column name="status"                     value="completed" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+            <column name="workspace_id"               value="b0f1c2d3-1001-4000-8000-000000000009" />
+            <column name="cascade_depth"              value="0" />
+            <column name="dispatch_failure_count"     value="0" />
+            <column name="auto_apply"                 valueBoolean="true" />
+            <column name="deleted"                    valueBoolean="false" />
+            <column name="refresh"                    valueBoolean="true" />
+            <column name="plan_changes"               valueBoolean="true" />
+            <column name="refresh_only"               valueBoolean="false" />
+            <column name="pr_apply_enabled"           valueBoolean="false" />
+        </insert>
+        <insert tableName="job">
+            <column name="id"                         value="910009" />
+            <column name="status"                     value="completed" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+            <column name="workspace_id"               value="b0f1c2d3-1001-4000-8000-000000000010" />
+            <column name="triggered_by_job_id"        value="910008" />
+            <column name="cascade_depth"              value="1" />
+            <column name="dispatch_failure_count"     value="0" />
+            <column name="auto_apply"                 valueBoolean="true" />
+            <column name="deleted"                    valueBoolean="false" />
+            <column name="refresh"                    valueBoolean="true" />
+            <column name="plan_changes"               valueBoolean="true" />
+            <column name="refresh_only"               valueBoolean="false" />
+            <column name="pr_apply_enabled"           valueBoolean="false" />
+        </insert>
+        <insert tableName="job">
+            <column name="id"                         value="910010" />
+            <column name="status"                     value="running" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+            <column name="workspace_id"               value="b0f1c2d3-1001-4000-8000-000000000011" />
+            <column name="triggered_by_job_id"        value="910008" />
+            <column name="cascade_depth"              value="1" />
+            <column name="dispatch_failure_count"     value="0" />
+            <column name="auto_apply"                 valueBoolean="true" />
+            <column name="deleted"                    valueBoolean="false" />
+            <column name="refresh"                    valueBoolean="true" />
+            <column name="plan_changes"               valueBoolean="true" />
+            <column name="refresh_only"               valueBoolean="false" />
+            <column name="pr_apply_enabled"           valueBoolean="false" />
+        </insert>
+        <insert tableName="job">
+            <column name="id"                         value="910011" />
+            <column name="status"                     value="running" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+            <column name="workspace_id"               value="b0f1c2d3-1001-4000-8000-000000000012" />
+            <column name="triggered_by_job_id"        value="910008" />
+            <column name="cascade_depth"              value="2" />
+            <column name="dispatch_failure_count"     value="0" />
+            <column name="auto_apply"                 valueBoolean="true" />
+            <column name="deleted"                    valueBoolean="false" />
+            <column name="refresh"                    valueBoolean="true" />
+            <column name="plan_changes"               valueBoolean="true" />
+            <column name="refresh_only"               valueBoolean="false" />
+            <column name="pr_apply_enabled"           valueBoolean="false" />
+        </insert>
+        <insert tableName="job">
+            <column name="id"                         value="910012" />
+            <column name="status"                     value="completed" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+            <column name="workspace_id"               value="b0f1c2d3-1001-4000-8000-000000000013" />
+            <column name="cascade_depth"              value="0" />
+            <column name="dispatch_failure_count"     value="0" />
+            <column name="auto_apply"                 valueBoolean="true" />
+            <column name="deleted"                    valueBoolean="false" />
+            <column name="refresh"                    valueBoolean="true" />
+            <column name="plan_changes"               valueBoolean="true" />
+            <column name="refresh_only"               valueBoolean="false" />
+            <column name="pr_apply_enabled"           valueBoolean="false" />
+        </insert>
+        <insert tableName="job">
+            <column name="id"                         value="910013" />
+            <column name="status"                     value="completed" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+            <column name="workspace_id"               value="b0f1c2d3-1001-4000-8000-000000000014" />
+            <column name="triggered_by_job_id"        value="910012" />
+            <column name="cascade_depth"              value="1" />
+            <column name="dispatch_failure_count"     value="0" />
+            <column name="auto_apply"                 valueBoolean="true" />
+            <column name="deleted"                    valueBoolean="false" />
+            <column name="refresh"                    valueBoolean="true" />
+            <column name="plan_changes"               valueBoolean="true" />
+            <column name="refresh_only"               valueBoolean="false" />
+            <column name="pr_apply_enabled"           valueBoolean="false" />
+        </insert>
+        <insert tableName="job">
+            <column name="id"                         value="910014" />
+            <column name="status"                     value="completed" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+            <column name="workspace_id"               value="b0f1c2d3-1001-4000-8000-000000000017" />
+            <column name="triggered_by_job_id"        value="910012" />
+            <column name="cascade_depth"              value="1" />
+            <column name="dispatch_failure_count"     value="0" />
+            <column name="auto_apply"                 valueBoolean="true" />
+            <column name="deleted"                    valueBoolean="false" />
+            <column name="refresh"                    valueBoolean="true" />
+            <column name="plan_changes"               valueBoolean="true" />
+            <column name="refresh_only"               valueBoolean="false" />
+            <column name="pr_apply_enabled"           valueBoolean="false" />
+        </insert>
+        <insert tableName="job">
+            <column name="id"                         value="910015" />
+            <column name="status"                     value="completed" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+            <column name="workspace_id"               value="b0f1c2d3-1001-4000-8000-000000000018" />
+            <column name="cascade_depth"              value="0" />
+            <column name="dispatch_failure_count"     value="0" />
+            <column name="auto_apply"                 valueBoolean="true" />
+            <column name="deleted"                    valueBoolean="false" />
+            <column name="refresh"                    valueBoolean="true" />
+            <column name="plan_changes"               valueBoolean="true" />
+            <column name="refresh_only"               valueBoolean="false" />
+            <column name="pr_apply_enabled"           valueBoolean="false" />
+        </insert>
+        <insert tableName="job">
+            <column name="id"                         value="910016" />
+            <column name="status"                     value="failed" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+            <column name="workspace_id"               value="b0f1c2d3-1001-4000-8000-000000000019" />
+            <column name="triggered_by_job_id"        value="910015" />
+            <column name="cascade_depth"              value="1" />
+            <column name="dispatch_failure_count"     value="0" />
+            <column name="auto_apply"                 valueBoolean="true" />
+            <column name="deleted"                    valueBoolean="false" />
+            <column name="refresh"                    valueBoolean="true" />
+            <column name="plan_changes"               valueBoolean="true" />
+            <column name="refresh_only"               valueBoolean="false" />
+            <column name="pr_apply_enabled"           valueBoolean="false" />
+        </insert>
+        <insert tableName="job">
+            <column name="id"                         value="910017" />
+            <column name="status"                     value="failed" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+            <column name="workspace_id"               value="b0f1c2d3-1001-4000-8000-000000000019" />
+            <column name="triggered_by_job_id"        value="910015" />
+            <column name="cascade_depth"              value="1" />
+            <column name="dispatch_failure_count"     value="0" />
+            <column name="auto_apply"                 valueBoolean="true" />
+            <column name="deleted"                    valueBoolean="false" />
+            <column name="refresh"                    valueBoolean="true" />
+            <column name="plan_changes"               valueBoolean="true" />
+            <column name="refresh_only"               valueBoolean="false" />
+            <column name="pr_apply_enabled"           valueBoolean="false" />
+        </insert>
+        <insert tableName="job">
+            <column name="id"                         value="910018" />
+            <column name="status"                     value="completed" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+            <column name="workspace_id"               value="b0f1c2d3-1001-4000-8000-000000000021" />
+            <column name="cascade_depth"              value="0" />
+            <column name="dispatch_failure_count"     value="0" />
+            <column name="auto_apply"                 valueBoolean="true" />
+            <column name="deleted"                    valueBoolean="false" />
+            <column name="refresh"                    valueBoolean="true" />
+            <column name="plan_changes"               valueBoolean="true" />
+            <column name="refresh_only"               valueBoolean="false" />
+            <column name="pr_apply_enabled"           valueBoolean="false" />
+        </insert>
+
+        <!-- CASCADES, with the snapshot of the graph each one started from -->
+        <insert tableName="run_cascade">
+            <column name="id"                         value="b0f1c2d3-1003-4000-8000-000000000001" />
+            <column name="origin_job_id"              value="910001" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+            <column name="status"                     value="COMPLETED" />
+        </insert>
+        <insert tableName="run_cascade_node">
+            <column name="id"                         value="b0f1c2d3-1004-4000-8000-000000000001" />
+            <column name="cascade_id"                 value="b0f1c2d3-1003-4000-8000-000000000001" />
+            <column name="workspace_id"               value="b0f1c2d3-1001-4000-8000-000000000001" />
+            <column name="depth"                      value="0" />
+            <column name="status"                     value="SUCCEEDED" />
+        </insert>
+        <insert tableName="run_cascade_node">
+            <column name="id"                         value="b0f1c2d3-1004-4000-8000-000000000002" />
+            <column name="cascade_id"                 value="b0f1c2d3-1003-4000-8000-000000000001" />
+            <column name="workspace_id"               value="b0f1c2d3-1001-4000-8000-000000000002" />
+            <column name="depth"                      value="1" />
+            <column name="status"                     value="SUCCEEDED" />
+        </insert>
+        <insert tableName="run_cascade_node">
+            <column name="id"                         value="b0f1c2d3-1004-4000-8000-000000000003" />
+            <column name="cascade_id"                 value="b0f1c2d3-1003-4000-8000-000000000001" />
+            <column name="workspace_id"               value="b0f1c2d3-1001-4000-8000-000000000003" />
+            <column name="depth"                      value="1" />
+            <column name="status"                     value="SUCCEEDED" />
+        </insert>
+        <insert tableName="run_cascade_node">
+            <column name="id"                         value="b0f1c2d3-1004-4000-8000-000000000004" />
+            <column name="cascade_id"                 value="b0f1c2d3-1003-4000-8000-000000000001" />
+            <column name="workspace_id"               value="b0f1c2d3-1001-4000-8000-000000000004" />
+            <column name="depth"                      value="2" />
+            <column name="status"                     value="SUCCEEDED" />
+        </insert>
+        <insert tableName="run_cascade_edge">
+            <column name="id"                         value="b0f1c2d3-1005-4000-8000-000000000001" />
+            <column name="cascade_id"                 value="b0f1c2d3-1003-4000-8000-000000000001" />
+            <column name="source_workspace_id"        value="b0f1c2d3-1001-4000-8000-000000000001" />
+            <column name="destination_workspace_id"   value="b0f1c2d3-1001-4000-8000-000000000002" />
+            <column name="synchronization_mode"       value="EACH" />
+            <column name="on_destroy"                 value="TRIGGER" />
+            <column name="source_trigger_id"          value="b0f1c2d3-1002-4000-8000-000000000001" />
+            <column name="template_reference"         value="b0f1c2d3-1000-4000-8000-000000000012" />
+            <column name="template_tcl"               value="ZmxvdzoKICAtIHR5cGU6ICJ0ZXJyYWZvcm1QbGFuIgogICAgc3RlcDogMTAwCiAgICBuYW1lOiAiUGxhbiIKICAtIHR5cGU6ICJ0ZXJyYWZvcm1BcHBseSIKICAgIHN0ZXA6IDIwMAogICAgbmFtZTogIkFwcGx5Ig==" />
+            <column name="plan_template_reference"    value="b0f1c2d3-1000-4000-8000-000000000011" />
+            <column name="plan_template_tcl"          value="ZmxvdzoKICAtIHR5cGU6ICJ0ZXJyYWZvcm1QbGFuIgogICAgbmFtZTogIlBsYW4iCiAgICBzdGVwOiAxMDAK" />
+            <column name="skip_requested"             valueBoolean="false" />
+            <column name="plan_only"                  valueBoolean="false" />
+            <column name="status"                     value="SATISFIED" />
+        </insert>
+        <insert tableName="run_cascade_edge">
+            <column name="id"                         value="b0f1c2d3-1005-4000-8000-000000000002" />
+            <column name="cascade_id"                 value="b0f1c2d3-1003-4000-8000-000000000001" />
+            <column name="source_workspace_id"        value="b0f1c2d3-1001-4000-8000-000000000001" />
+            <column name="destination_workspace_id"   value="b0f1c2d3-1001-4000-8000-000000000003" />
+            <column name="synchronization_mode"       value="EACH" />
+            <column name="on_destroy"                 value="TRIGGER" />
+            <column name="source_trigger_id"          value="b0f1c2d3-1002-4000-8000-000000000002" />
+            <column name="template_reference"         value="b0f1c2d3-1000-4000-8000-000000000012" />
+            <column name="template_tcl"               value="ZmxvdzoKICAtIHR5cGU6ICJ0ZXJyYWZvcm1QbGFuIgogICAgc3RlcDogMTAwCiAgICBuYW1lOiAiUGxhbiIKICAtIHR5cGU6ICJ0ZXJyYWZvcm1BcHBseSIKICAgIHN0ZXA6IDIwMAogICAgbmFtZTogIkFwcGx5Ig==" />
+            <column name="plan_template_reference"    value="b0f1c2d3-1000-4000-8000-000000000011" />
+            <column name="plan_template_tcl"          value="ZmxvdzoKICAtIHR5cGU6ICJ0ZXJyYWZvcm1QbGFuIgogICAgbmFtZTogIlBsYW4iCiAgICBzdGVwOiAxMDAK" />
+            <column name="skip_requested"             valueBoolean="false" />
+            <column name="plan_only"                  valueBoolean="false" />
+            <column name="status"                     value="SATISFIED" />
+        </insert>
+        <insert tableName="run_cascade_edge">
+            <column name="id"                         value="b0f1c2d3-1005-4000-8000-000000000003" />
+            <column name="cascade_id"                 value="b0f1c2d3-1003-4000-8000-000000000001" />
+            <column name="source_workspace_id"        value="b0f1c2d3-1001-4000-8000-000000000002" />
+            <column name="destination_workspace_id"   value="b0f1c2d3-1001-4000-8000-000000000004" />
+            <column name="synchronization_mode"       value="ALL" />
+            <column name="on_destroy"                 value="TRIGGER" />
+            <column name="source_trigger_id"          value="b0f1c2d3-1002-4000-8000-000000000003" />
+            <column name="template_reference"         value="b0f1c2d3-1000-4000-8000-000000000012" />
+            <column name="template_tcl"               value="ZmxvdzoKICAtIHR5cGU6ICJ0ZXJyYWZvcm1QbGFuIgogICAgc3RlcDogMTAwCiAgICBuYW1lOiAiUGxhbiIKICAtIHR5cGU6ICJ0ZXJyYWZvcm1BcHBseSIKICAgIHN0ZXA6IDIwMAogICAgbmFtZTogIkFwcGx5Ig==" />
+            <column name="plan_template_reference"    value="b0f1c2d3-1000-4000-8000-000000000011" />
+            <column name="plan_template_tcl"          value="ZmxvdzoKICAtIHR5cGU6ICJ0ZXJyYWZvcm1QbGFuIgogICAgbmFtZTogIlBsYW4iCiAgICBzdGVwOiAxMDAK" />
+            <column name="skip_requested"             valueBoolean="false" />
+            <column name="plan_only"                  valueBoolean="false" />
+            <column name="status"                     value="SATISFIED" />
+        </insert>
+        <insert tableName="run_cascade_edge">
+            <column name="id"                         value="b0f1c2d3-1005-4000-8000-000000000004" />
+            <column name="cascade_id"                 value="b0f1c2d3-1003-4000-8000-000000000001" />
+            <column name="source_workspace_id"        value="b0f1c2d3-1001-4000-8000-000000000003" />
+            <column name="destination_workspace_id"   value="b0f1c2d3-1001-4000-8000-000000000004" />
+            <column name="synchronization_mode"       value="ALL" />
+            <column name="on_destroy"                 value="TRIGGER" />
+            <column name="source_trigger_id"          value="b0f1c2d3-1002-4000-8000-000000000004" />
+            <column name="template_reference"         value="b0f1c2d3-1000-4000-8000-000000000012" />
+            <column name="template_tcl"               value="ZmxvdzoKICAtIHR5cGU6ICJ0ZXJyYWZvcm1QbGFuIgogICAgc3RlcDogMTAwCiAgICBuYW1lOiAiUGxhbiIKICAtIHR5cGU6ICJ0ZXJyYWZvcm1BcHBseSIKICAgIHN0ZXA6IDIwMAogICAgbmFtZTogIkFwcGx5Ig==" />
+            <column name="plan_template_reference"    value="b0f1c2d3-1000-4000-8000-000000000011" />
+            <column name="plan_template_tcl"          value="ZmxvdzoKICAtIHR5cGU6ICJ0ZXJyYWZvcm1QbGFuIgogICAgbmFtZTogIlBsYW4iCiAgICBzdGVwOiAxMDAK" />
+            <column name="skip_requested"             valueBoolean="false" />
+            <column name="plan_only"                  valueBoolean="false" />
+            <column name="status"                     value="SATISFIED" />
+        </insert>
+        <insert tableName="run_cascade_node_attempt">
+            <column name="id"                         value="b0f1c2d3-1006-4000-8000-000000000001" />
+            <column name="node_id"                    value="b0f1c2d3-1004-4000-8000-000000000002" />
+            <column name="job_id"                     value="910002" />
+            <column name="attempt_number"             value="1" />
+            <column name="outcome"                    value="SUCCEEDED" />
+            <column name="superseded"                 valueBoolean="false" />
+        </insert>
+        <insert tableName="run_cascade_node_attempt">
+            <column name="id"                         value="b0f1c2d3-1006-4000-8000-000000000002" />
+            <column name="node_id"                    value="b0f1c2d3-1004-4000-8000-000000000003" />
+            <column name="job_id"                     value="910003" />
+            <column name="attempt_number"             value="1" />
+            <column name="outcome"                    value="SUCCEEDED" />
+            <column name="superseded"                 valueBoolean="false" />
+        </insert>
+        <insert tableName="run_cascade_node_attempt">
+            <column name="id"                         value="b0f1c2d3-1006-4000-8000-000000000003" />
+            <column name="node_id"                    value="b0f1c2d3-1004-4000-8000-000000000004" />
+            <column name="job_id"                     value="910004" />
+            <column name="attempt_number"             value="1" />
+            <column name="outcome"                    value="SUCCEEDED" />
+            <column name="superseded"                 valueBoolean="false" />
+        </insert>
+        <insert tableName="run_cascade">
+            <column name="id"                         value="b0f1c2d3-1003-4000-8000-000000000002" />
+            <column name="origin_job_id"              value="910005" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+            <column name="status"                     value="BLOCKED" />
+        </insert>
+        <insert tableName="run_cascade_node">
+            <column name="id"                         value="b0f1c2d3-1004-4000-8000-000000000005" />
+            <column name="cascade_id"                 value="b0f1c2d3-1003-4000-8000-000000000002" />
+            <column name="workspace_id"               value="b0f1c2d3-1001-4000-8000-000000000005" />
+            <column name="depth"                      value="0" />
+            <column name="status"                     value="SUCCEEDED" />
+        </insert>
+        <insert tableName="run_cascade_node">
+            <column name="id"                         value="b0f1c2d3-1004-4000-8000-000000000006" />
+            <column name="cascade_id"                 value="b0f1c2d3-1003-4000-8000-000000000002" />
+            <column name="workspace_id"               value="b0f1c2d3-1001-4000-8000-000000000006" />
+            <column name="depth"                      value="1" />
+            <column name="status"                     value="SUCCEEDED" />
+        </insert>
+        <insert tableName="run_cascade_node">
+            <column name="id"                         value="b0f1c2d3-1004-4000-8000-000000000007" />
+            <column name="cascade_id"                 value="b0f1c2d3-1003-4000-8000-000000000002" />
+            <column name="workspace_id"               value="b0f1c2d3-1001-4000-8000-000000000007" />
+            <column name="depth"                      value="1" />
+            <column name="status"                     value="FAILED" />
+        </insert>
+        <insert tableName="run_cascade_node">
+            <column name="id"                         value="b0f1c2d3-1004-4000-8000-000000000008" />
+            <column name="cascade_id"                 value="b0f1c2d3-1003-4000-8000-000000000002" />
+            <column name="workspace_id"               value="b0f1c2d3-1001-4000-8000-000000000008" />
+            <column name="depth"                      value="2" />
+            <column name="status"                     value="BLOCKED" />
+            <column name="reason"                     value="A required upstream run failed or was paused" />
+        </insert>
+        <insert tableName="run_cascade_edge">
+            <column name="id"                         value="b0f1c2d3-1005-4000-8000-000000000005" />
+            <column name="cascade_id"                 value="b0f1c2d3-1003-4000-8000-000000000002" />
+            <column name="source_workspace_id"        value="b0f1c2d3-1001-4000-8000-000000000005" />
+            <column name="destination_workspace_id"   value="b0f1c2d3-1001-4000-8000-000000000006" />
+            <column name="synchronization_mode"       value="EACH" />
+            <column name="on_destroy"                 value="TRIGGER" />
+            <column name="source_trigger_id"          value="b0f1c2d3-1002-4000-8000-000000000005" />
+            <column name="template_reference"         value="b0f1c2d3-1000-4000-8000-000000000012" />
+            <column name="template_tcl"               value="ZmxvdzoKICAtIHR5cGU6ICJ0ZXJyYWZvcm1QbGFuIgogICAgc3RlcDogMTAwCiAgICBuYW1lOiAiUGxhbiIKICAtIHR5cGU6ICJ0ZXJyYWZvcm1BcHBseSIKICAgIHN0ZXA6IDIwMAogICAgbmFtZTogIkFwcGx5Ig==" />
+            <column name="plan_template_reference"    value="b0f1c2d3-1000-4000-8000-000000000011" />
+            <column name="plan_template_tcl"          value="ZmxvdzoKICAtIHR5cGU6ICJ0ZXJyYWZvcm1QbGFuIgogICAgbmFtZTogIlBsYW4iCiAgICBzdGVwOiAxMDAK" />
+            <column name="skip_requested"             valueBoolean="false" />
+            <column name="plan_only"                  valueBoolean="false" />
+            <column name="status"                     value="SATISFIED" />
+        </insert>
+        <insert tableName="run_cascade_edge">
+            <column name="id"                         value="b0f1c2d3-1005-4000-8000-000000000006" />
+            <column name="cascade_id"                 value="b0f1c2d3-1003-4000-8000-000000000002" />
+            <column name="source_workspace_id"        value="b0f1c2d3-1001-4000-8000-000000000005" />
+            <column name="destination_workspace_id"   value="b0f1c2d3-1001-4000-8000-000000000007" />
+            <column name="synchronization_mode"       value="EACH" />
+            <column name="on_destroy"                 value="TRIGGER" />
+            <column name="source_trigger_id"          value="b0f1c2d3-1002-4000-8000-000000000006" />
+            <column name="template_reference"         value="b0f1c2d3-1000-4000-8000-000000000012" />
+            <column name="template_tcl"               value="ZmxvdzoKICAtIHR5cGU6ICJ0ZXJyYWZvcm1QbGFuIgogICAgc3RlcDogMTAwCiAgICBuYW1lOiAiUGxhbiIKICAtIHR5cGU6ICJ0ZXJyYWZvcm1BcHBseSIKICAgIHN0ZXA6IDIwMAogICAgbmFtZTogIkFwcGx5Ig==" />
+            <column name="plan_template_reference"    value="b0f1c2d3-1000-4000-8000-000000000011" />
+            <column name="plan_template_tcl"          value="ZmxvdzoKICAtIHR5cGU6ICJ0ZXJyYWZvcm1QbGFuIgogICAgbmFtZTogIlBsYW4iCiAgICBzdGVwOiAxMDAK" />
+            <column name="skip_requested"             valueBoolean="false" />
+            <column name="plan_only"                  valueBoolean="false" />
+            <column name="status"                     value="SATISFIED" />
+        </insert>
+        <insert tableName="run_cascade_edge">
+            <column name="id"                         value="b0f1c2d3-1005-4000-8000-000000000007" />
+            <column name="cascade_id"                 value="b0f1c2d3-1003-4000-8000-000000000002" />
+            <column name="source_workspace_id"        value="b0f1c2d3-1001-4000-8000-000000000006" />
+            <column name="destination_workspace_id"   value="b0f1c2d3-1001-4000-8000-000000000008" />
+            <column name="synchronization_mode"       value="ALL" />
+            <column name="on_destroy"                 value="TRIGGER" />
+            <column name="source_trigger_id"          value="b0f1c2d3-1002-4000-8000-000000000007" />
+            <column name="template_reference"         value="b0f1c2d3-1000-4000-8000-000000000012" />
+            <column name="template_tcl"               value="ZmxvdzoKICAtIHR5cGU6ICJ0ZXJyYWZvcm1QbGFuIgogICAgc3RlcDogMTAwCiAgICBuYW1lOiAiUGxhbiIKICAtIHR5cGU6ICJ0ZXJyYWZvcm1BcHBseSIKICAgIHN0ZXA6IDIwMAogICAgbmFtZTogIkFwcGx5Ig==" />
+            <column name="plan_template_reference"    value="b0f1c2d3-1000-4000-8000-000000000011" />
+            <column name="plan_template_tcl"          value="ZmxvdzoKICAtIHR5cGU6ICJ0ZXJyYWZvcm1QbGFuIgogICAgbmFtZTogIlBsYW4iCiAgICBzdGVwOiAxMDAK" />
+            <column name="skip_requested"             valueBoolean="false" />
+            <column name="plan_only"                  valueBoolean="false" />
+            <column name="status"                     value="BLOCKED" />
+        </insert>
+        <insert tableName="run_cascade_edge">
+            <column name="id"                         value="b0f1c2d3-1005-4000-8000-000000000008" />
+            <column name="cascade_id"                 value="b0f1c2d3-1003-4000-8000-000000000002" />
+            <column name="source_workspace_id"        value="b0f1c2d3-1001-4000-8000-000000000007" />
+            <column name="destination_workspace_id"   value="b0f1c2d3-1001-4000-8000-000000000008" />
+            <column name="synchronization_mode"       value="ALL" />
+            <column name="on_destroy"                 value="TRIGGER" />
+            <column name="source_trigger_id"          value="b0f1c2d3-1002-4000-8000-000000000008" />
+            <column name="template_reference"         value="b0f1c2d3-1000-4000-8000-000000000012" />
+            <column name="template_tcl"               value="ZmxvdzoKICAtIHR5cGU6ICJ0ZXJyYWZvcm1QbGFuIgogICAgc3RlcDogMTAwCiAgICBuYW1lOiAiUGxhbiIKICAtIHR5cGU6ICJ0ZXJyYWZvcm1BcHBseSIKICAgIHN0ZXA6IDIwMAogICAgbmFtZTogIkFwcGx5Ig==" />
+            <column name="plan_template_reference"    value="b0f1c2d3-1000-4000-8000-000000000011" />
+            <column name="plan_template_tcl"          value="ZmxvdzoKICAtIHR5cGU6ICJ0ZXJyYWZvcm1QbGFuIgogICAgbmFtZTogIlBsYW4iCiAgICBzdGVwOiAxMDAK" />
+            <column name="skip_requested"             valueBoolean="false" />
+            <column name="plan_only"                  valueBoolean="false" />
+            <column name="status"                     value="BLOCKED" />
+        </insert>
+        <insert tableName="run_cascade_node_attempt">
+            <column name="id"                         value="b0f1c2d3-1006-4000-8000-000000000004" />
+            <column name="node_id"                    value="b0f1c2d3-1004-4000-8000-000000000006" />
+            <column name="job_id"                     value="910006" />
+            <column name="attempt_number"             value="1" />
+            <column name="outcome"                    value="SUCCEEDED" />
+            <column name="superseded"                 valueBoolean="false" />
+        </insert>
+        <insert tableName="run_cascade_node_attempt">
+            <column name="id"                         value="b0f1c2d3-1006-4000-8000-000000000005" />
+            <column name="node_id"                    value="b0f1c2d3-1004-4000-8000-000000000007" />
+            <column name="job_id"                     value="910007" />
+            <column name="attempt_number"             value="1" />
+            <column name="outcome"                    value="FAILED" />
+            <column name="superseded"                 valueBoolean="false" />
+        </insert>
+        <insert tableName="run_cascade">
+            <column name="id"                         value="b0f1c2d3-1003-4000-8000-000000000003" />
+            <column name="origin_job_id"              value="910008" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+            <column name="status"                     value="RUNNING" />
+        </insert>
+        <insert tableName="run_cascade_node">
+            <column name="id"                         value="b0f1c2d3-1004-4000-8000-000000000009" />
+            <column name="cascade_id"                 value="b0f1c2d3-1003-4000-8000-000000000003" />
+            <column name="workspace_id"               value="b0f1c2d3-1001-4000-8000-000000000009" />
+            <column name="depth"                      value="0" />
+            <column name="status"                     value="SUCCEEDED" />
+        </insert>
+        <insert tableName="run_cascade_node">
+            <column name="id"                         value="b0f1c2d3-1004-4000-8000-000000000010" />
+            <column name="cascade_id"                 value="b0f1c2d3-1003-4000-8000-000000000003" />
+            <column name="workspace_id"               value="b0f1c2d3-1001-4000-8000-000000000010" />
+            <column name="depth"                      value="1" />
+            <column name="status"                     value="SUCCEEDED" />
+        </insert>
+        <insert tableName="run_cascade_node">
+            <column name="id"                         value="b0f1c2d3-1004-4000-8000-000000000011" />
+            <column name="cascade_id"                 value="b0f1c2d3-1003-4000-8000-000000000003" />
+            <column name="workspace_id"               value="b0f1c2d3-1001-4000-8000-000000000011" />
+            <column name="depth"                      value="1" />
+            <column name="status"                     value="RUNNING" />
+        </insert>
+        <insert tableName="run_cascade_node">
+            <column name="id"                         value="b0f1c2d3-1004-4000-8000-000000000012" />
+            <column name="cascade_id"                 value="b0f1c2d3-1003-4000-8000-000000000003" />
+            <column name="workspace_id"               value="b0f1c2d3-1001-4000-8000-000000000012" />
+            <column name="depth"                      value="2" />
+            <column name="status"                     value="RUNNING" />
+        </insert>
+        <insert tableName="run_cascade_edge">
+            <column name="id"                         value="b0f1c2d3-1005-4000-8000-000000000009" />
+            <column name="cascade_id"                 value="b0f1c2d3-1003-4000-8000-000000000003" />
+            <column name="source_workspace_id"        value="b0f1c2d3-1001-4000-8000-000000000009" />
+            <column name="destination_workspace_id"   value="b0f1c2d3-1001-4000-8000-000000000010" />
+            <column name="synchronization_mode"       value="EACH" />
+            <column name="on_destroy"                 value="TRIGGER" />
+            <column name="source_trigger_id"          value="b0f1c2d3-1002-4000-8000-000000000009" />
+            <column name="template_reference"         value="b0f1c2d3-1000-4000-8000-000000000012" />
+            <column name="template_tcl"               value="ZmxvdzoKICAtIHR5cGU6ICJ0ZXJyYWZvcm1QbGFuIgogICAgc3RlcDogMTAwCiAgICBuYW1lOiAiUGxhbiIKICAtIHR5cGU6ICJ0ZXJyYWZvcm1BcHBseSIKICAgIHN0ZXA6IDIwMAogICAgbmFtZTogIkFwcGx5Ig==" />
+            <column name="plan_template_reference"    value="b0f1c2d3-1000-4000-8000-000000000011" />
+            <column name="plan_template_tcl"          value="ZmxvdzoKICAtIHR5cGU6ICJ0ZXJyYWZvcm1QbGFuIgogICAgbmFtZTogIlBsYW4iCiAgICBzdGVwOiAxMDAK" />
+            <column name="skip_requested"             valueBoolean="false" />
+            <column name="plan_only"                  valueBoolean="false" />
+            <column name="status"                     value="SATISFIED" />
+        </insert>
+        <insert tableName="run_cascade_edge">
+            <column name="id"                         value="b0f1c2d3-1005-4000-8000-000000000010" />
+            <column name="cascade_id"                 value="b0f1c2d3-1003-4000-8000-000000000003" />
+            <column name="source_workspace_id"        value="b0f1c2d3-1001-4000-8000-000000000009" />
+            <column name="destination_workspace_id"   value="b0f1c2d3-1001-4000-8000-000000000011" />
+            <column name="synchronization_mode"       value="EACH" />
+            <column name="on_destroy"                 value="TRIGGER" />
+            <column name="source_trigger_id"          value="b0f1c2d3-1002-4000-8000-000000000010" />
+            <column name="template_reference"         value="b0f1c2d3-1000-4000-8000-000000000012" />
+            <column name="template_tcl"               value="ZmxvdzoKICAtIHR5cGU6ICJ0ZXJyYWZvcm1QbGFuIgogICAgc3RlcDogMTAwCiAgICBuYW1lOiAiUGxhbiIKICAtIHR5cGU6ICJ0ZXJyYWZvcm1BcHBseSIKICAgIHN0ZXA6IDIwMAogICAgbmFtZTogIkFwcGx5Ig==" />
+            <column name="plan_template_reference"    value="b0f1c2d3-1000-4000-8000-000000000011" />
+            <column name="plan_template_tcl"          value="ZmxvdzoKICAtIHR5cGU6ICJ0ZXJyYWZvcm1QbGFuIgogICAgbmFtZTogIlBsYW4iCiAgICBzdGVwOiAxMDAK" />
+            <column name="skip_requested"             valueBoolean="false" />
+            <column name="plan_only"                  valueBoolean="false" />
+            <column name="status"                     value="SATISFIED" />
+        </insert>
+        <insert tableName="run_cascade_edge">
+            <column name="id"                         value="b0f1c2d3-1005-4000-8000-000000000011" />
+            <column name="cascade_id"                 value="b0f1c2d3-1003-4000-8000-000000000003" />
+            <column name="source_workspace_id"        value="b0f1c2d3-1001-4000-8000-000000000010" />
+            <column name="destination_workspace_id"   value="b0f1c2d3-1001-4000-8000-000000000012" />
+            <column name="synchronization_mode"       value="ANY" />
+            <column name="on_destroy"                 value="TRIGGER" />
+            <column name="source_trigger_id"          value="b0f1c2d3-1002-4000-8000-000000000011" />
+            <column name="template_reference"         value="b0f1c2d3-1000-4000-8000-000000000012" />
+            <column name="template_tcl"               value="ZmxvdzoKICAtIHR5cGU6ICJ0ZXJyYWZvcm1QbGFuIgogICAgc3RlcDogMTAwCiAgICBuYW1lOiAiUGxhbiIKICAtIHR5cGU6ICJ0ZXJyYWZvcm1BcHBseSIKICAgIHN0ZXA6IDIwMAogICAgbmFtZTogIkFwcGx5Ig==" />
+            <column name="plan_template_reference"    value="b0f1c2d3-1000-4000-8000-000000000011" />
+            <column name="plan_template_tcl"          value="ZmxvdzoKICAtIHR5cGU6ICJ0ZXJyYWZvcm1QbGFuIgogICAgbmFtZTogIlBsYW4iCiAgICBzdGVwOiAxMDAK" />
+            <column name="skip_requested"             valueBoolean="false" />
+            <column name="plan_only"                  valueBoolean="false" />
+            <column name="status"                     value="SATISFIED" />
+        </insert>
+        <insert tableName="run_cascade_edge">
+            <column name="id"                         value="b0f1c2d3-1005-4000-8000-000000000012" />
+            <column name="cascade_id"                 value="b0f1c2d3-1003-4000-8000-000000000003" />
+            <column name="source_workspace_id"        value="b0f1c2d3-1001-4000-8000-000000000011" />
+            <column name="destination_workspace_id"   value="b0f1c2d3-1001-4000-8000-000000000012" />
+            <column name="synchronization_mode"       value="ANY" />
+            <column name="on_destroy"                 value="TRIGGER" />
+            <column name="source_trigger_id"          value="b0f1c2d3-1002-4000-8000-000000000012" />
+            <column name="template_reference"         value="b0f1c2d3-1000-4000-8000-000000000012" />
+            <column name="template_tcl"               value="ZmxvdzoKICAtIHR5cGU6ICJ0ZXJyYWZvcm1QbGFuIgogICAgc3RlcDogMTAwCiAgICBuYW1lOiAiUGxhbiIKICAtIHR5cGU6ICJ0ZXJyYWZvcm1BcHBseSIKICAgIHN0ZXA6IDIwMAogICAgbmFtZTogIkFwcGx5Ig==" />
+            <column name="plan_template_reference"    value="b0f1c2d3-1000-4000-8000-000000000011" />
+            <column name="plan_template_tcl"          value="ZmxvdzoKICAtIHR5cGU6ICJ0ZXJyYWZvcm1QbGFuIgogICAgbmFtZTogIlBsYW4iCiAgICBzdGVwOiAxMDAK" />
+            <column name="skip_requested"             valueBoolean="false" />
+            <column name="plan_only"                  valueBoolean="false" />
+            <column name="status"                     value="PENDING" />
+        </insert>
+        <insert tableName="run_cascade_node_attempt">
+            <column name="id"                         value="b0f1c2d3-1006-4000-8000-000000000006" />
+            <column name="node_id"                    value="b0f1c2d3-1004-4000-8000-000000000010" />
+            <column name="job_id"                     value="910009" />
+            <column name="attempt_number"             value="1" />
+            <column name="outcome"                    value="SUCCEEDED" />
+            <column name="superseded"                 valueBoolean="false" />
+        </insert>
+        <insert tableName="run_cascade_node_attempt">
+            <column name="id"                         value="b0f1c2d3-1006-4000-8000-000000000007" />
+            <column name="node_id"                    value="b0f1c2d3-1004-4000-8000-000000000011" />
+            <column name="job_id"                     value="910010" />
+            <column name="attempt_number"             value="1" />
+            <column name="outcome"                    value="RUNNING" />
+            <column name="superseded"                 valueBoolean="false" />
+        </insert>
+        <insert tableName="run_cascade_node_attempt">
+            <column name="id"                         value="b0f1c2d3-1006-4000-8000-000000000008" />
+            <column name="node_id"                    value="b0f1c2d3-1004-4000-8000-000000000012" />
+            <column name="job_id"                     value="910011" />
+            <column name="attempt_number"             value="1" />
+            <column name="outcome"                    value="RUNNING" />
+            <column name="superseded"                 valueBoolean="false" />
+        </insert>
+        <insert tableName="run_cascade">
+            <column name="id"                         value="b0f1c2d3-1003-4000-8000-000000000004" />
+            <column name="origin_job_id"              value="910012" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+            <column name="status"                     value="BLOCKED" />
+        </insert>
+        <insert tableName="run_cascade_node">
+            <column name="id"                         value="b0f1c2d3-1004-4000-8000-000000000013" />
+            <column name="cascade_id"                 value="b0f1c2d3-1003-4000-8000-000000000004" />
+            <column name="workspace_id"               value="b0f1c2d3-1001-4000-8000-000000000013" />
+            <column name="depth"                      value="0" />
+            <column name="status"                     value="SUCCEEDED" />
+        </insert>
+        <insert tableName="run_cascade_node">
+            <column name="id"                         value="b0f1c2d3-1004-4000-8000-000000000014" />
+            <column name="cascade_id"                 value="b0f1c2d3-1003-4000-8000-000000000004" />
+            <column name="workspace_id"               value="b0f1c2d3-1001-4000-8000-000000000014" />
+            <column name="depth"                      value="1" />
+            <column name="status"                     value="SUCCEEDED" />
+        </insert>
+        <insert tableName="run_cascade_node">
+            <column name="id"                         value="b0f1c2d3-1004-4000-8000-000000000015" />
+            <column name="cascade_id"                 value="b0f1c2d3-1003-4000-8000-000000000004" />
+            <column name="workspace_id"               value="b0f1c2d3-1001-4000-8000-000000000016" />
+            <column name="depth"                      value="1" />
+            <column name="status"                     value="BLOCKED" />
+            <column name="reason"                     value="Upstream infrastructure was destroyed; dependent run is paused" />
+        </insert>
+        <insert tableName="run_cascade_node">
+            <column name="id"                         value="b0f1c2d3-1004-4000-8000-000000000016" />
+            <column name="cascade_id"                 value="b0f1c2d3-1003-4000-8000-000000000004" />
+            <column name="workspace_id"               value="b0f1c2d3-1001-4000-8000-000000000017" />
+            <column name="depth"                      value="1" />
+            <column name="status"                     value="SUCCEEDED" />
+        </insert>
+        <insert tableName="run_cascade_edge">
+            <column name="id"                         value="b0f1c2d3-1005-4000-8000-000000000013" />
+            <column name="cascade_id"                 value="b0f1c2d3-1003-4000-8000-000000000004" />
+            <column name="source_workspace_id"        value="b0f1c2d3-1001-4000-8000-000000000013" />
+            <column name="destination_workspace_id"   value="b0f1c2d3-1001-4000-8000-000000000014" />
+            <column name="synchronization_mode"       value="EACH" />
+            <column name="on_destroy"                 value="TRIGGER" />
+            <column name="source_trigger_id"          value="b0f1c2d3-1002-4000-8000-000000000013" />
+            <column name="template_reference"         value="b0f1c2d3-1000-4000-8000-000000000012" />
+            <column name="template_tcl"               value="ZmxvdzoKICAtIHR5cGU6ICJ0ZXJyYWZvcm1QbGFuIgogICAgc3RlcDogMTAwCiAgICBuYW1lOiAiUGxhbiIKICAtIHR5cGU6ICJ0ZXJyYWZvcm1BcHBseSIKICAgIHN0ZXA6IDIwMAogICAgbmFtZTogIkFwcGx5Ig==" />
+            <column name="plan_template_reference"    value="b0f1c2d3-1000-4000-8000-000000000011" />
+            <column name="plan_template_tcl"          value="ZmxvdzoKICAtIHR5cGU6ICJ0ZXJyYWZvcm1QbGFuIgogICAgbmFtZTogIlBsYW4iCiAgICBzdGVwOiAxMDAK" />
+            <column name="skip_requested"             valueBoolean="false" />
+            <column name="plan_only"                  valueBoolean="false" />
+            <column name="status"                     value="SATISFIED" />
+        </insert>
+        <insert tableName="run_cascade_edge">
+            <column name="id"                         value="b0f1c2d3-1005-4000-8000-000000000014" />
+            <column name="cascade_id"                 value="b0f1c2d3-1003-4000-8000-000000000004" />
+            <column name="source_workspace_id"        value="b0f1c2d3-1001-4000-8000-000000000013" />
+            <column name="destination_workspace_id"   value="b0f1c2d3-1001-4000-8000-000000000016" />
+            <column name="synchronization_mode"       value="EACH" />
+            <column name="on_destroy"                 value="BLOCK" />
+            <column name="source_trigger_id"          value="b0f1c2d3-1002-4000-8000-000000000015" />
+            <column name="template_reference"         value="b0f1c2d3-1000-4000-8000-000000000012" />
+            <column name="template_tcl"               value="ZmxvdzoKICAtIHR5cGU6ICJ0ZXJyYWZvcm1QbGFuIgogICAgc3RlcDogMTAwCiAgICBuYW1lOiAiUGxhbiIKICAtIHR5cGU6ICJ0ZXJyYWZvcm1BcHBseSIKICAgIHN0ZXA6IDIwMAogICAgbmFtZTogIkFwcGx5Ig==" />
+            <column name="plan_template_reference"    value="b0f1c2d3-1000-4000-8000-000000000011" />
+            <column name="plan_template_tcl"          value="ZmxvdzoKICAtIHR5cGU6ICJ0ZXJyYWZvcm1QbGFuIgogICAgbmFtZTogIlBsYW4iCiAgICBzdGVwOiAxMDAK" />
+            <column name="skip_requested"             valueBoolean="false" />
+            <column name="plan_only"                  valueBoolean="false" />
+            <column name="status"                     value="BLOCKED" />
+        </insert>
+        <insert tableName="run_cascade_edge">
+            <column name="id"                         value="b0f1c2d3-1005-4000-8000-000000000015" />
+            <column name="cascade_id"                 value="b0f1c2d3-1003-4000-8000-000000000004" />
+            <column name="source_workspace_id"        value="b0f1c2d3-1001-4000-8000-000000000013" />
+            <column name="destination_workspace_id"   value="b0f1c2d3-1001-4000-8000-000000000017" />
+            <column name="synchronization_mode"       value="EACH" />
+            <column name="on_destroy"                 value="PLAN_ONLY" />
+            <column name="source_trigger_id"          value="b0f1c2d3-1002-4000-8000-000000000016" />
+            <column name="template_reference"         value="b0f1c2d3-1000-4000-8000-000000000012" />
+            <column name="template_tcl"               value="ZmxvdzoKICAtIHR5cGU6ICJ0ZXJyYWZvcm1QbGFuIgogICAgc3RlcDogMTAwCiAgICBuYW1lOiAiUGxhbiIKICAtIHR5cGU6ICJ0ZXJyYWZvcm1BcHBseSIKICAgIHN0ZXA6IDIwMAogICAgbmFtZTogIkFwcGx5Ig==" />
+            <column name="plan_template_reference"    value="b0f1c2d3-1000-4000-8000-000000000011" />
+            <column name="plan_template_tcl"          value="ZmxvdzoKICAtIHR5cGU6ICJ0ZXJyYWZvcm1QbGFuIgogICAgbmFtZTogIlBsYW4iCiAgICBzdGVwOiAxMDAK" />
+            <column name="skip_requested"             valueBoolean="false" />
+            <column name="plan_only"                  valueBoolean="true" />
+            <column name="status"                     value="SATISFIED" />
+        </insert>
+        <insert tableName="run_cascade_node_attempt">
+            <column name="id"                         value="b0f1c2d3-1006-4000-8000-000000000009" />
+            <column name="node_id"                    value="b0f1c2d3-1004-4000-8000-000000000014" />
+            <column name="job_id"                     value="910013" />
+            <column name="attempt_number"             value="1" />
+            <column name="outcome"                    value="SUCCEEDED" />
+            <column name="superseded"                 valueBoolean="false" />
+        </insert>
+        <insert tableName="run_cascade_node_attempt">
+            <column name="id"                         value="b0f1c2d3-1006-4000-8000-000000000010" />
+            <column name="node_id"                    value="b0f1c2d3-1004-4000-8000-000000000016" />
+            <column name="job_id"                     value="910014" />
+            <column name="attempt_number"             value="1" />
+            <column name="outcome"                    value="SUCCEEDED" />
+            <column name="superseded"                 valueBoolean="false" />
+        </insert>
+        <insert tableName="run_cascade">
+            <column name="id"                         value="b0f1c2d3-1003-4000-8000-000000000005" />
+            <column name="origin_job_id"              value="910015" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+            <column name="status"                     value="DEGRADED" />
+        </insert>
+        <insert tableName="run_cascade_node">
+            <column name="id"                         value="b0f1c2d3-1004-4000-8000-000000000017" />
+            <column name="cascade_id"                 value="b0f1c2d3-1003-4000-8000-000000000005" />
+            <column name="workspace_id"               value="b0f1c2d3-1001-4000-8000-000000000018" />
+            <column name="depth"                      value="0" />
+            <column name="status"                     value="SUCCEEDED" />
+        </insert>
+        <insert tableName="run_cascade_node">
+            <column name="id"                         value="b0f1c2d3-1004-4000-8000-000000000018" />
+            <column name="cascade_id"                 value="b0f1c2d3-1003-4000-8000-000000000005" />
+            <column name="workspace_id"               value="b0f1c2d3-1001-4000-8000-000000000019" />
+            <column name="depth"                      value="1" />
+            <column name="status"                     value="FAILED" />
+        </insert>
+        <insert tableName="run_cascade_node">
+            <column name="id"                         value="b0f1c2d3-1004-4000-8000-000000000019" />
+            <column name="cascade_id"                 value="b0f1c2d3-1003-4000-8000-000000000005" />
+            <column name="workspace_id"               value="b0f1c2d3-1001-4000-8000-000000000020" />
+            <column name="depth"                      value="2" />
+            <column name="status"                     value="SKIPPED" />
+            <column name="reason"                     value="No eligible upstream change" />
+        </insert>
+        <insert tableName="run_cascade_edge">
+            <column name="id"                         value="b0f1c2d3-1005-4000-8000-000000000016" />
+            <column name="cascade_id"                 value="b0f1c2d3-1003-4000-8000-000000000005" />
+            <column name="source_workspace_id"        value="b0f1c2d3-1001-4000-8000-000000000018" />
+            <column name="destination_workspace_id"   value="b0f1c2d3-1001-4000-8000-000000000019" />
+            <column name="synchronization_mode"       value="EACH" />
+            <column name="on_destroy"                 value="TRIGGER" />
+            <column name="source_trigger_id"          value="b0f1c2d3-1002-4000-8000-000000000017" />
+            <column name="template_reference"         value="b0f1c2d3-1000-4000-8000-000000000012" />
+            <column name="template_tcl"               value="ZmxvdzoKICAtIHR5cGU6ICJ0ZXJyYWZvcm1QbGFuIgogICAgc3RlcDogMTAwCiAgICBuYW1lOiAiUGxhbiIKICAtIHR5cGU6ICJ0ZXJyYWZvcm1BcHBseSIKICAgIHN0ZXA6IDIwMAogICAgbmFtZTogIkFwcGx5Ig==" />
+            <column name="plan_template_reference"    value="b0f1c2d3-1000-4000-8000-000000000011" />
+            <column name="plan_template_tcl"          value="ZmxvdzoKICAtIHR5cGU6ICJ0ZXJyYWZvcm1QbGFuIgogICAgbmFtZTogIlBsYW4iCiAgICBzdGVwOiAxMDAK" />
+            <column name="skip_requested"             valueBoolean="false" />
+            <column name="plan_only"                  valueBoolean="false" />
+            <column name="status"                     value="SATISFIED" />
+        </insert>
+        <insert tableName="run_cascade_edge">
+            <column name="id"                         value="b0f1c2d3-1005-4000-8000-000000000017" />
+            <column name="cascade_id"                 value="b0f1c2d3-1003-4000-8000-000000000005" />
+            <column name="source_workspace_id"        value="b0f1c2d3-1001-4000-8000-000000000019" />
+            <column name="destination_workspace_id"   value="b0f1c2d3-1001-4000-8000-000000000020" />
+            <column name="synchronization_mode"       value="EACH" />
+            <column name="on_destroy"                 value="TRIGGER" />
+            <column name="source_trigger_id"          value="b0f1c2d3-1002-4000-8000-000000000018" />
+            <column name="template_reference"         value="b0f1c2d3-1000-4000-8000-000000000012" />
+            <column name="template_tcl"               value="ZmxvdzoKICAtIHR5cGU6ICJ0ZXJyYWZvcm1QbGFuIgogICAgc3RlcDogMTAwCiAgICBuYW1lOiAiUGxhbiIKICAtIHR5cGU6ICJ0ZXJyYWZvcm1BcHBseSIKICAgIHN0ZXA6IDIwMAogICAgbmFtZTogIkFwcGx5Ig==" />
+            <column name="plan_template_reference"    value="b0f1c2d3-1000-4000-8000-000000000011" />
+            <column name="plan_template_tcl"          value="ZmxvdzoKICAtIHR5cGU6ICJ0ZXJyYWZvcm1QbGFuIgogICAgbmFtZTogIlBsYW4iCiAgICBzdGVwOiAxMDAK" />
+            <column name="skip_requested"             valueBoolean="false" />
+            <column name="plan_only"                  valueBoolean="false" />
+            <column name="status"                     value="SKIPPED" />
+        </insert>
+        <insert tableName="run_cascade_node_attempt">
+            <column name="id"                         value="b0f1c2d3-1006-4000-8000-000000000011" />
+            <column name="node_id"                    value="b0f1c2d3-1004-4000-8000-000000000018" />
+            <column name="job_id"                     value="910016" />
+            <column name="attempt_number"             value="1" />
+            <column name="outcome"                    value="FAILED" />
+            <column name="superseded"                 valueBoolean="true" />
+        </insert>
+        <insert tableName="run_cascade_node_attempt">
+            <column name="id"                         value="b0f1c2d3-1006-4000-8000-000000000012" />
+            <column name="node_id"                    value="b0f1c2d3-1004-4000-8000-000000000018" />
+            <column name="job_id"                     value="910017" />
+            <column name="attempt_number"             value="2" />
+            <column name="outcome"                    value="FAILED" />
+            <column name="superseded"                 valueBoolean="false" />
+        </insert>
+        <insert tableName="run_cascade">
+            <column name="id"                         value="b0f1c2d3-1003-4000-8000-000000000006" />
+            <column name="origin_job_id"              value="910018" />
+            <column name="organization_id"            value="b0f1c2d3-1000-4000-8000-000000000001" />
+            <column name="status"                     value="CANCELLED" />
+        </insert>
+        <insert tableName="run_cascade_node">
+            <column name="id"                         value="b0f1c2d3-1004-4000-8000-000000000020" />
+            <column name="cascade_id"                 value="b0f1c2d3-1003-4000-8000-000000000006" />
+            <column name="workspace_id"               value="b0f1c2d3-1001-4000-8000-000000000021" />
+            <column name="depth"                      value="0" />
+            <column name="status"                     value="SUCCEEDED" />
+        </insert>
+        <insert tableName="run_cascade_node">
+            <column name="id"                         value="b0f1c2d3-1004-4000-8000-000000000021" />
+            <column name="cascade_id"                 value="b0f1c2d3-1003-4000-8000-000000000006" />
+            <column name="workspace_id"               value="b0f1c2d3-1001-4000-8000-000000000022" />
+            <column name="depth"                      value="1" />
+            <column name="status"                     value="CANCELLED" />
+            <column name="reason"                     value="Future runs stopped by an operator" />
+        </insert>
+        <insert tableName="run_cascade_node">
+            <column name="id"                         value="b0f1c2d3-1004-4000-8000-000000000022" />
+            <column name="cascade_id"                 value="b0f1c2d3-1003-4000-8000-000000000006" />
+            <column name="workspace_id"               value="b0f1c2d3-1001-4000-8000-000000000023" />
+            <column name="depth"                      value="2" />
+            <column name="status"                     value="CANCELLED" />
+            <column name="reason"                     value="Future runs stopped by an operator" />
+        </insert>
+        <insert tableName="run_cascade_edge">
+            <column name="id"                         value="b0f1c2d3-1005-4000-8000-000000000018" />
+            <column name="cascade_id"                 value="b0f1c2d3-1003-4000-8000-000000000006" />
+            <column name="source_workspace_id"        value="b0f1c2d3-1001-4000-8000-000000000021" />
+            <column name="destination_workspace_id"   value="b0f1c2d3-1001-4000-8000-000000000022" />
+            <column name="synchronization_mode"       value="EACH" />
+            <column name="on_destroy"                 value="TRIGGER" />
+            <column name="source_trigger_id"          value="b0f1c2d3-1002-4000-8000-000000000019" />
+            <column name="template_reference"         value="b0f1c2d3-1000-4000-8000-000000000012" />
+            <column name="template_tcl"               value="ZmxvdzoKICAtIHR5cGU6ICJ0ZXJyYWZvcm1QbGFuIgogICAgc3RlcDogMTAwCiAgICBuYW1lOiAiUGxhbiIKICAtIHR5cGU6ICJ0ZXJyYWZvcm1BcHBseSIKICAgIHN0ZXA6IDIwMAogICAgbmFtZTogIkFwcGx5Ig==" />
+            <column name="plan_template_reference"    value="b0f1c2d3-1000-4000-8000-000000000011" />
+            <column name="plan_template_tcl"          value="ZmxvdzoKICAtIHR5cGU6ICJ0ZXJyYWZvcm1QbGFuIgogICAgbmFtZTogIlBsYW4iCiAgICBzdGVwOiAxMDAK" />
+            <column name="skip_requested"             valueBoolean="false" />
+            <column name="plan_only"                  valueBoolean="false" />
+            <column name="status"                     value="SKIPPED" />
+        </insert>
+        <insert tableName="run_cascade_edge">
+            <column name="id"                         value="b0f1c2d3-1005-4000-8000-000000000019" />
+            <column name="cascade_id"                 value="b0f1c2d3-1003-4000-8000-000000000006" />
+            <column name="source_workspace_id"        value="b0f1c2d3-1001-4000-8000-000000000022" />
+            <column name="destination_workspace_id"   value="b0f1c2d3-1001-4000-8000-000000000023" />
+            <column name="synchronization_mode"       value="EACH" />
+            <column name="on_destroy"                 value="TRIGGER" />
+            <column name="source_trigger_id"          value="b0f1c2d3-1002-4000-8000-000000000020" />
+            <column name="template_reference"         value="b0f1c2d3-1000-4000-8000-000000000012" />
+            <column name="template_tcl"               value="ZmxvdzoKICAtIHR5cGU6ICJ0ZXJyYWZvcm1QbGFuIgogICAgc3RlcDogMTAwCiAgICBuYW1lOiAiUGxhbiIKICAtIHR5cGU6ICJ0ZXJyYWZvcm1BcHBseSIKICAgIHN0ZXA6IDIwMAogICAgbmFtZTogIkFwcGx5Ig==" />
+            <column name="plan_template_reference"    value="b0f1c2d3-1000-4000-8000-000000000011" />
+            <column name="plan_template_tcl"          value="ZmxvdzoKICAtIHR5cGU6ICJ0ZXJyYWZvcm1QbGFuIgogICAgbmFtZTogIlBsYW4iCiAgICBzdGVwOiAxMDAK" />
+            <column name="skip_requested"             valueBoolean="false" />
+            <column name="plan_only"                  valueBoolean="false" />
+            <column name="status"                     value="SKIPPED" />
+        </insert>
+    </changeSet>
+</databaseChangeLog>
