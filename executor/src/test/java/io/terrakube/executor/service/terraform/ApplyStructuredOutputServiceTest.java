@@ -752,4 +752,125 @@ class ApplyStructuredOutputServiceTest {
         assertEquals(true, resolvedSensitive.get("input"));
         assertEquals(true, resolvedSensitive.get("output"));
     }
+
+    @Test
+    void finalizeResourceStatusesTransitionsInProgressToInterruptedWhenInterrupted() {
+        List<Map<String, Object>> changes = new ArrayList<>();
+
+        for (String inProgressStatus : List.of("applying", "provisioning", "refreshing", "reading", "ephemeral-opening", "ephemeral-closing")) {
+            Map<String, Object> c = new HashMap<>();
+            c.put("address", "res." + inProgressStatus);
+            c.put("status", inProgressStatus);
+            if ("refreshing".equals(inProgressStatus)) {
+                c.put("previousStatus", "planned");
+            }
+            changes.add(c);
+        }
+
+        Map<String, Object> applied = new HashMap<>();
+        applied.put("address", "res.applied");
+        applied.put("status", "applied");
+        changes.add(applied);
+
+        Map<String, Object> errored = new HashMap<>();
+        errored.put("address", "res.errored");
+        errored.put("status", "errored");
+        changes.add(errored);
+
+        Map<String, Object> pending = new HashMap<>();
+        pending.put("address", "res.pending");
+        pending.put("status", "pending");
+        changes.add(pending);
+
+        Map<String, Object> planned = new HashMap<>();
+        planned.put("address", "res.planned");
+        planned.put("status", "planned");
+        changes.add(planned);
+
+        subject().finalizeResourceStatuses(changes, false, true);
+
+        for (int i = 0; i < 6; i++) {
+            assertEquals("interrupted", changes.get(i).get("status"));
+            assertNull(changes.get(i).get("previousStatus"));
+        }
+        assertEquals("applied", applied.get("status"));
+        assertEquals("errored", errored.get("status"));
+        assertEquals("not-started", pending.get("status"));
+        assertEquals("planned", planned.get("status"));
+    }
+
+    @Test
+    void finalizeResourceStatusesTransitionsInProgressToErroredOnUninterruptedFailure() {
+        Map<String, Object> applying = new HashMap<>();
+        applying.put("address", "res.applying");
+        applying.put("status", "applying");
+
+        Map<String, Object> applied = new HashMap<>();
+        applied.put("address", "res.applied");
+        applied.put("status", "applied");
+
+        Map<String, Object> pending = new HashMap<>();
+        pending.put("address", "res.pending");
+        pending.put("status", "pending");
+
+        subject().finalizeResourceStatuses(List.of(applying, applied, pending), false, false);
+
+        assertEquals("errored", applying.get("status"));
+        assertEquals("applied", applied.get("status"));
+        assertEquals("not-started", pending.get("status"));
+    }
+
+    @Test
+    void finalizeResourceStatusesDoesNothingOnSuccessfulExecution() {
+        Map<String, Object> applying = new HashMap<>();
+        applying.put("address", "res.applying");
+        applying.put("status", "applying");
+
+        Map<String, Object> pending = new HashMap<>();
+        pending.put("address", "res.pending");
+        pending.put("status", "pending");
+
+        subject().finalizeResourceStatuses(List.of(applying, pending), true, false);
+
+        assertEquals("applying", applying.get("status"));
+        assertEquals("pending", pending.get("status"));
+    }
+
+    @Test
+    void resolveFinalValuesPromotesOnlyPendingImportToAppliedWhenPresentInState() {
+        Map<String, Object> importChange = new HashMap<>();
+        importChange.put("address", "aws_instance.imported");
+        importChange.put("action", "import");
+        importChange.put("status", "pending");
+
+        Map<String, Object> updateChange = new HashMap<>();
+        updateChange.put("address", "aws_instance.existing_update");
+        updateChange.put("action", "update");
+        updateChange.put("status", "pending");
+
+        Map<String, Object> deleteChange = new HashMap<>();
+        deleteChange.put("address", "aws_instance.existing_delete");
+        deleteChange.put("action", "delete");
+        deleteChange.put("status", "pending");
+
+        String stateJson = """
+                {
+                  "values": {
+                    "root_module": {
+                      "resources": [
+                        { "address": "aws_instance.imported", "values": { "id": "i-imp" } },
+                        { "address": "aws_instance.existing_update", "values": { "id": "i-upd" } },
+                        { "address": "aws_instance.existing_delete", "values": { "id": "i-del" } }
+                      ]
+                    }
+                  }
+                }
+                """;
+
+        subject().resolveFinalValues(List.of(importChange, updateChange, deleteChange), stateJson);
+
+        assertEquals("applied", importChange.get("status"), "Pending import found in state must be promoted to applied");
+        assertEquals("pending", updateChange.get("status"), "Pending update already in state must NOT be promoted to applied");
+        assertEquals("pending", deleteChange.get("status"), "Pending delete still in state must NOT be promoted to applied");
+    }
 }
