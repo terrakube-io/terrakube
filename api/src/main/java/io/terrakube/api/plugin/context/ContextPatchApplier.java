@@ -30,6 +30,8 @@ final class ContextPatchApplier {
 
     // The epoch is minted by an API pod, so this only covers clock skew between API pods. An epoch
     // further ahead is forged and must not outrank the next dispatched execution for long.
+    // Executions are only ordered correctly while API pod clocks agree: a re-dispatch minted on a
+    // pod whose clock lags the previous dispatcher's by more than the gap between them loses.
     private static final long MAX_CLOCK_SKEW_MILLIS = 10_000;
 
     record Patch(long revision, ObjectNode set) {

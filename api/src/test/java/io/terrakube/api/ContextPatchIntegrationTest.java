@@ -4,6 +4,7 @@ import io.terrakube.api.plugin.context.InMemoryContextWriteLock;
 import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
+import io.terrakube.api.rs.job.step.Step;
 import io.terrakube.api.rs.workspace.Workspace;
 import org.hamcrest.Matchers;
 import org.junit.jupiter.api.BeforeEach;
@@ -12,6 +13,7 @@ import org.mockito.MockitoAnnotations;
 import org.springframework.http.HttpStatus;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -33,6 +35,9 @@ class ContextPatchIntegrationTest extends ServerApplicationTests {
     // by an earlier run for the same (in-memory H2) job id never makes these patches stale.
     private final long revision = System.currentTimeMillis() * 1_000_000;
 
+    // Executor tokens must name a running step of their job (ActiveStepTokenValidator).
+    private final Map<Integer, UUID> runningStepByJob = new HashMap<>();
+
     @BeforeEach
     public void setup() {
         MockitoAnnotations.openMocks(this);
@@ -46,11 +51,19 @@ class ContextPatchIntegrationTest extends ServerApplicationTests {
         job.setOrganization(org);
         job.setWorkspace(ws);
         job.setStatus(JobStatus.running);
-        return jobRepository.save(job).getId();
+        job = jobRepository.save(job);
+        Step step = new Step();
+        step.setJob(job);
+        step.setName("terraformPlan");
+        step.setStatus(JobStatus.running);
+        step.setStepNumber(100);
+        runningStepByJob.put(job.getId(), stepRepository.save(step).getId());
+        return job.getId();
     }
 
     private String executorToken(int jobId) {
-        return generateSystemToken(Map.of("organizationId", ORG_ID, "workspaceId", WORKSPACE_ID, "jobId", String.valueOf(jobId)));
+        return generateSystemToken(Map.of("organizationId", ORG_ID, "workspaceId", WORKSPACE_ID,
+                "jobId", String.valueOf(jobId), "stepId", runningStepByJob.get(jobId).toString()));
     }
 
     private io.restassured.response.ValidatableResponse patch(String token, int jobId, String body) {
@@ -77,7 +90,7 @@ class ContextPatchIntegrationTest extends ServerApplicationTests {
         String body = "{\"revision\":" + revision + ",\"set\":{\"terrakubeUI/s1\":\"ui\"}}";
 
         patch(generatePAT("TERRAKUBE_DEVELOPERS"), jobId, body).statusCode(HttpStatus.FORBIDDEN.value());
-        patch(executorToken(jobId + 1000), jobId, body).statusCode(HttpStatus.FORBIDDEN.value());
+        patch(executorToken(runningJob()), jobId, body).statusCode(HttpStatus.FORBIDDEN.value());
         patch(executorToken(jobId), jobId, body)
                 .statusCode(HttpStatus.OK.value())
                 .body("applied", Matchers.equalTo(1))
