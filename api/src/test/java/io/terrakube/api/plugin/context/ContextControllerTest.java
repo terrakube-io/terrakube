@@ -396,4 +396,22 @@ class ContextControllerTest {
 
         verify(streamingService).streamJobContextAsync(Mockito.eq("42"), Mockito.any(), Mockito.eq(RecordId.of("0-0")), Mockito.any());
     }
+
+    @Test
+    void streamEndpointTreatsWildcardLastEventIdAsStart() {
+        StorageTypeService storageTypeService = Mockito.mock(StorageTypeService.class);
+        JobRepository jobRepository = Mockito.mock(JobRepository.class);
+        StreamingService streamingService = Mockito.mock(StreamingService.class);
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        ContextProperties properties = new ContextProperties();
+        ContextStorageMetrics storageMetrics = new ContextStorageMetrics(registry);
+        ContextController controller = new ContextController(storageTypeService, jobRepository,
+                new ContextSanitizer(new ObjectMapper()), streamingService, storageMetrics,
+                new ContextReadService(storageTypeService, storageMetrics, properties, registry), properties,
+                Mockito.mock(io.terrakube.api.plugin.policy.PolicyEvaluationService.class), authenticatedUser());
+
+        controller.streamContext("42", "*");
+
+        verify(streamingService).streamJobContextAsync(Mockito.eq("42"), Mockito.any(), Mockito.eq(RecordId.of("0-0")), Mockito.any());
+    }
 }

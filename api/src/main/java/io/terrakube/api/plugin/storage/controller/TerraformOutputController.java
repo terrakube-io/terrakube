@@ -135,6 +135,10 @@ public class TerraformOutputController {
             return RecordId.of("0-0");
         }
         try {
+            if (!lastEventId.matches("\\d+(-\\d+)?")) {
+                // e.g. "*" parses as a RecordId but carries no position.
+                throw new IllegalArgumentException("not a stream position");
+            }
             return RecordId.of(lastEventId);
         } catch (IllegalArgumentException e) {
             log.warn("Ignoring unparseable Last-Event-ID '{}': {}", lastEventId, e.getMessage());

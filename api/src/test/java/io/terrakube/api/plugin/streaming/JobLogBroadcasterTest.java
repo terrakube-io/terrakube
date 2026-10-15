@@ -105,6 +105,22 @@ class JobLogBroadcasterTest {
         await().atMost(Duration.ofSeconds(5)).until(() -> a.completed);
     }
 
+    @Test
+    @Timeout(10)
+    void subscribeReturnsNullOnceBroadcasterFinished() {
+        when(reader.readAfter(eq("42"), any(RecordId.class), any(Duration.class))).thenReturn(List.of());
+        when(jobStatusCache.isTerminal("42")).thenReturn(true);
+
+        JobLogBroadcaster broadcaster =
+                new JobLogBroadcaster("42", reader, jobStatusCache, props(), () -> { });
+        broadcaster.subscribe("stepA", new RecordingEmitter(), RecordId.of("0-0"));
+        broadcaster.start();
+        await().atMost(Duration.ofSeconds(5)).until(broadcaster::isFinished);
+
+        org.junit.jupiter.api.Assertions.assertNull(
+                broadcaster.subscribe("stepA", new RecordingEmitter(), RecordId.of("0-0")));
+    }
+
     /** Captures the {@code data:} payloads sent to an emitter and its completion state. */
     static class RecordingEmitter extends SseEmitter {
         final List<String> data = new CopyOnWriteArrayList<>();

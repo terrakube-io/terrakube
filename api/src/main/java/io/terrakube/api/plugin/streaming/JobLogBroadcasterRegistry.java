@@ -42,19 +42,26 @@ public class JobLogBroadcasterRegistry {
 
         SseEmitter emitter = new SseEmitter(properties.getSseMaxStreamDuration().toMillis());
 
-        JobLogBroadcaster broadcaster = broadcasters.compute(jobId, (id, existing) -> {
-            if (existing != null && !existing.isFinished()) {
-                return existing;
+        JobLogBroadcaster.Subscription subscription;
+        do {
+            JobLogBroadcaster broadcaster = broadcasters.compute(jobId, (id, existing) -> {
+                if (existing != null && !existing.isFinished()) {
+                    return existing;
+                }
+                return new JobLogBroadcaster(id, reader, jobStatusCache, properties,
+                        () -> broadcasters.computeIfPresent(id, (k, v) -> v.isFinished() ? null : v),
+                        replayReadPermits);
+            });
+            // Null when the broadcaster finished between compute and subscribe: retry with a fresh one.
+            subscription = broadcaster.subscribe(stepId, emitter, resumeFrom);
+            if (subscription != null) {
+                broadcaster.start();
             }
-            return new JobLogBroadcaster(id, reader, jobStatusCache, properties,
-                    () -> broadcasters.remove(id), replayReadPermits);
-        });
+        } while (subscription == null);
 
-        JobLogBroadcaster.Subscription subscription = broadcaster.subscribe(stepId, emitter, resumeFrom);
-        broadcaster.start();
-
+        JobLogBroadcaster.Subscription attached = subscription;
         Runnable release = () -> {
-            subscription.close();
+            attached.close();
             connections.decrementAndGet();
         };
         emitter.onCompletion(release);

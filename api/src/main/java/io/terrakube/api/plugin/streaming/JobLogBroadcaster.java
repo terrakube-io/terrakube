@@ -81,7 +81,7 @@ public class JobLogBroadcaster {
         private volatile boolean closed;
         private volatile boolean slow;
         private volatile String endReason;
-        private RecordId cursor;
+        private volatile RecordId cursor;
         private long lastSendNanos = System.nanoTime();
 
         private Subscription(String stepId, SseEmitter emitter, RecordId resumeFrom) {
@@ -145,6 +145,12 @@ public class JobLogBroadcaster {
                 Thread.currentThread().interrupt();
             } catch (Exception e) {
                 log.warn("Log viewer of job {} step {} stopped: {}", jobId, stepId, e.getMessage());
+                try {
+                    // Lets the client resume from its cursor instead of freezing.
+                    emitter.send(SseEmitter.event().name("end").data("{\"reason\":\"rotate\"}"));
+                } catch (Exception ignored) {
+                    // client gone
+                }
             } finally {
                 closed = true;
                 removeSubscriber(this);
@@ -270,9 +276,13 @@ public class JobLogBroadcaster {
         }
     }
 
+    /** Returns {@code null} when this broadcaster has already finished; the caller must obtain a fresh one. */
     public Subscription subscribe(String stepId, SseEmitter emitter, RecordId resumeFrom) {
         Subscription subscription = new Subscription(stepId, emitter, resumeFrom);
         synchronized (lifecycleLock) {
+            if (finished.get()) {
+                return null;
+            }
             // The fan-out starts after the newest record as of now, and this viewer replays everything up to
             // its own later reads, so reading the position before the viewer starts leaves no record in between.
             if (!started.get() && !startPositionResolved) {
