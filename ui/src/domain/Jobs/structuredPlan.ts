@@ -190,7 +190,7 @@ export type ChangeStatus =
   | "refreshing" | "reading"
   | "applying" | "provisioning" | "applied"
   | "importing" | "moving"
-  | "errored" | "interrupted"
+  | "errored" | "interrupted" | "not_started"
   | "ephemeral-opening" | "ephemeral-renewed" | "ephemeral-closing" | "ephemeral-errored";
 
 export type Diagnostic = {
@@ -219,7 +219,7 @@ const CHANGE_STATUSES: ChangeStatus[] = [
   "refreshing", "reading",
   "applying", "provisioning", "applied",
   "importing", "moving",
-  "errored", "interrupted",
+  "errored", "interrupted", "not_started",
   "ephemeral-opening", "ephemeral-renewed", "ephemeral-closing", "ephemeral-errored",
 ];
 

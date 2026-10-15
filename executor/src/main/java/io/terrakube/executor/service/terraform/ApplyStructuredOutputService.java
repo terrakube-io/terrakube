@@ -141,9 +141,13 @@ public class ApplyStructuredOutputService {
         String targetStatus = interrupted ? "interrupted" : "errored";
         for (Map<String, Object> change : changes) {
             Object statusObj = change.get("status");
-            if (statusObj instanceof String status && TerraformJsonEventParser.IN_PROGRESS_STATUSES.contains(status)) {
-                change.put("status", targetStatus);
-                change.remove("previousStatus");
+            if (statusObj instanceof String status) {
+                if (TerraformJsonEventParser.IN_PROGRESS_STATUSES.contains(status)) {
+                    change.put("status", targetStatus);
+                    change.remove("previousStatus");
+                } else if ("pending".equals(status)) {
+                    change.put("status", "not_started");
+                }
             }
         }
     }

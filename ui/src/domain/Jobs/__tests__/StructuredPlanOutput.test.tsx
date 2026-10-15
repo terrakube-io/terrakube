@@ -367,6 +367,36 @@ describe("StructuredPlanOutput", () => {
     expect(screen.getByText("create interrupted", { selector: ".structured-plan-applyStatus" })).toBeInTheDocument();
   });
 
+  it("renders not started badge and does not increment applied count", () => {
+    render(
+      <StructuredPlanOutput
+        applyMode
+        changes={[
+          {
+            address: "aws_instance.applied_one",
+            action: "create",
+            actions: ["create"],
+            after: { id: "i-1" },
+            status: "applied",
+          },
+          {
+            address: "aws_instance.not_started_resource",
+            action: "create",
+            actions: ["create"],
+            after: { id: "i-2" },
+            status: "not_started",
+          },
+        ]}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /aws_instance\.not_started_resource/i }));
+    const notStartedBadge = screen.getByText("not started", { selector: ".structured-plan-applyStatus" });
+    expect(notStartedBadge).toBeInTheDocument();
+    expect(notStartedBadge).toHaveClass("structured-plan-applyStatus--not-started");
+    expect(screen.getByText(/1 of 2 applied/i)).toBeInTheDocument();
+  });
+
   it("filters rows by address", () => {
     render(
       <StructuredPlanOutput

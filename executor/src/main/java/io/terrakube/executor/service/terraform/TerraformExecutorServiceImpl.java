@@ -551,7 +551,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             throw e;
         } finally {
             release(jsonApplyClient);
-            boolean wasInterrupted = interrupted || shuttingDown.get();
+            boolean wasInterrupted = interrupted || (!execution && shuttingDown.get());
             if (!wasInterrupted) {
                 try {
                     String stateJson = getCurrentStateJson(terraformJob, terraformProcessData);
@@ -614,7 +614,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             throw e;
         } finally {
             release(jsonDestroyClient);
-            boolean wasInterrupted = interrupted || shuttingDown.get();
+            boolean wasInterrupted = interrupted || (!execution && shuttingDown.get());
             applyStructuredOutputService.finalizeResourceStatuses(changes, execution, wasInterrupted);
             publishFinalApplySnapshotIfStreamed(terraformJob, eventParser, changes, jobDiagnostics);
         }

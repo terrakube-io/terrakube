@@ -795,7 +795,7 @@ class ApplyStructuredOutputServiceTest {
         }
         assertEquals("applied", applied.get("status"));
         assertEquals("errored", errored.get("status"));
-        assertEquals("pending", pending.get("status"));
+        assertEquals("not_started", pending.get("status"));
         assertEquals("planned", planned.get("status"));
     }
 
@@ -817,7 +817,7 @@ class ApplyStructuredOutputServiceTest {
 
         assertEquals("errored", applying.get("status"));
         assertEquals("applied", applied.get("status"));
-        assertEquals("pending", pending.get("status"));
+        assertEquals("not_started", pending.get("status"));
     }
 
     @Test
@@ -826,9 +826,14 @@ class ApplyStructuredOutputServiceTest {
         applying.put("address", "res.applying");
         applying.put("status", "applying");
 
-        subject().finalizeResourceStatuses(List.of(applying), true, false);
+        Map<String, Object> pending = new HashMap<>();
+        pending.put("address", "res.pending");
+        pending.put("status", "pending");
+
+        subject().finalizeResourceStatuses(List.of(applying, pending), true, false);
 
         assertEquals("applying", applying.get("status"));
+        assertEquals("pending", pending.get("status"));
     }
 
     @Test
