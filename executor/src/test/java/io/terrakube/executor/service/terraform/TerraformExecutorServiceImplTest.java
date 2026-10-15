@@ -1009,7 +1009,7 @@ class TerraformExecutorServiceImplTest {
                         && "applied".equals(changes.get(0).get("status"))
                         && "errored".equals(changes.get(1).get("status"))
                         && "errored".equals(changes.get(2).get("status"))
-                        && "not_started".equals(changes.get(3).get("status"))),
+                        && "not-started".equals(changes.get(3).get("status"))),
                 any());
     }
 

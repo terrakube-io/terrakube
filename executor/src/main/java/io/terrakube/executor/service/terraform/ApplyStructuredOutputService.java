@@ -146,7 +146,7 @@ public class ApplyStructuredOutputService {
                     change.put("status", targetStatus);
                     change.remove("previousStatus");
                 } else if ("pending".equals(status)) {
-                    change.put("status", "not_started");
+                    change.put("status", "not-started");
                 }
             }
         }

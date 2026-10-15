@@ -795,7 +795,7 @@ class ApplyStructuredOutputServiceTest {
         }
         assertEquals("applied", applied.get("status"));
         assertEquals("errored", errored.get("status"));
-        assertEquals("not_started", pending.get("status"));
+        assertEquals("not-started", pending.get("status"));
         assertEquals("planned", planned.get("status"));
     }
 
@@ -817,7 +817,7 @@ class ApplyStructuredOutputServiceTest {
 
         assertEquals("errored", applying.get("status"));
         assertEquals("applied", applied.get("status"));
-        assertEquals("not_started", pending.get("status"));
+        assertEquals("not-started", pending.get("status"));
     }
 
     @Test

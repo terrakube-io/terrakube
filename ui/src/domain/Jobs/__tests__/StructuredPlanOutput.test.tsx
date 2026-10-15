@@ -384,7 +384,7 @@ describe("StructuredPlanOutput", () => {
             action: "create",
             actions: ["create"],
             after: { id: "i-2" },
-            status: "not_started",
+            status: "not-started",
           },
         ]}
       />
