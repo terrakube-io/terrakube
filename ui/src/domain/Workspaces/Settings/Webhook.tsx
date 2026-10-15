@@ -354,7 +354,7 @@ export const WorkspaceWebhook = ({
             {webhookEnabled && !webhookId && vcsProvider && SHARED_WEBHOOK_VCS.includes(vcsProvider) && (
               <Form.Item
                 label="Shared webhook"
-                extra="Experimental. One webhook on the repository serves every workspace that uses it, instead of one webhook per workspace. You can switch back after saving."
+                extra="One webhook on the repository serves every workspace that uses it, instead of one webhook per workspace. You can switch back after saving."
               >
                 <Checkbox
                   checked={createShared}
@@ -386,7 +386,7 @@ export const WorkspaceWebhook = ({
                     extra={
                       migratedV2
                         ? "One webhook on the repository serves every workspace that uses it. Switch back to give this workspace its own."
-                        : "Experimental. Replace this workspace's webhook with one webhook that serves every workspace that uses this repository."
+                        : "Replace this workspace's webhook with one webhook that serves every workspace that uses this repository."
                     }
                   >
                     <Popconfirm
