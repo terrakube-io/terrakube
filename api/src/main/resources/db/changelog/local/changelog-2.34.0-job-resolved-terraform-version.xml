@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+
+    <!-- The concrete Terraform/OpenTofu version a job resolved from the workspace's version
+         constraint, so every step of the job (plan, apply, after approval or a retry) uses the
+         version that created the plan. Null until the first step resolves it. -->
+    <changeSet id="2-34-0-job-resolved-terraform-version" author="terrakube">
+        <addColumn tableName="job">
+            <column name="resolved_terraform_version" type="varchar(64)"/>
+        </addColumn>
+    </changeSet>
+</databaseChangeLog>

@@ -78,6 +78,14 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
     int redisTimeout;
     PlanStructuredOutputService planStructuredOutputService;
     ApplyStructuredOutputService applyStructuredOutputService;
+
+    // Optional and set by setter so the existing constructors are unchanged; absent in unit tests that do not pin.
+    private JobVersionPinner jobVersionPinner;
+
+    @Autowired(required = false)
+    void setJobVersionPinner(JobVersionPinner jobVersionPinner) {
+        this.jobVersionPinner = jobVersionPinner;
+    }
     TerraformOutputsService terraformOutputsService;
     ObjectMapper objectMapper;
     StructuredOutputPersistenceQueue structuredOutputPersistenceQueue;
@@ -1125,6 +1133,11 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                 log.info("Resolved {} version \"{}\" to {} for job {}", getIaCType(terraformJob), requestedVersion,
                         resolvedVersion, terraformJob.getJobId());
                 terraformJob.setTerraformVersion(resolvedVersion);
+                // Only a constraint gets here (an exact version, or one the API already pinned, resolves
+                // to itself). Pin the result so the job's later steps use the same version.
+                if (jobVersionPinner != null) {
+                    jobVersionPinner.pin(terraformJob.getOrganizationId(), terraformJob.getJobId(), resolvedVersion);
+                }
             }
         } catch (Exception e) {
             log.warn("Unable to resolve {} version \"{}\" for job {}, using it as-is: {}", getIaCType(terraformJob),

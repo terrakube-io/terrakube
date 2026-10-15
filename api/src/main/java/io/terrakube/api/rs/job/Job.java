@@ -120,6 +120,18 @@ public class Job extends GenericAuditFields {
     @Column(name = "refresh_only")
     private boolean refreshOnly = false;
 
+    /**
+     * The concrete version the workspace's version constraint resolved to for this job. The executor pins
+     * it the first time it resolves one (through JobResolvedVersionController, which writes it atomically
+     * and only once), and every later step is dispatched with it: a plan file can only be read by the exact
+     * version that wrote it, so a constraint such as ">= 1.3.0" must not be re-resolved between plan and
+     * apply. Read-only through the generic API.
+     */
+    @CreatePermission(expression = "NONE")
+    @UpdatePermission(expression = "NONE")
+    @Column(name = "resolved_terraform_version")
+    private String resolvedTerraformVersion;
+
     @CreatePermission(expression = "user is a super service")
     @UpdatePermission(expression = "user is a super service")
     @Column(name = "pr_number")
