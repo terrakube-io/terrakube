@@ -21,6 +21,9 @@ public class ExecutorContext {
     private String workspaceId;
     private String jobId;
     private String stepId;
+    // The API's System.currentTimeMillis() when it dispatched this step. The executor builds its
+    // context revisions from it, so a re-dispatched step always outranks the execution it replaces.
+    private long executionEpoch;
     private String terraformVersion;
     private String source;
     private String branch;

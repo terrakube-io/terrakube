@@ -840,7 +840,7 @@ public class OpaExecutorServiceImpl implements OpaExecutorService {
         }
     }
 
-    private void saveStructuredContext(TerraformJob job, List<OpaEvaluationResult> results) {
+    void saveStructuredContext(TerraformJob job, List<OpaEvaluationResult> results) {
         try {
             int totalPassed = 0;
             int totalWarnings = 0;
@@ -883,12 +883,15 @@ public class OpaExecutorServiceImpl implements OpaExecutorService {
             payload.put("shadowSoftViolations", totalShadowSoft);
             payload.put("results", results);
 
-            jobContextService.saveContext(
+            // A single entry: posting it as the whole context would wipe every other key.
+            JobContextService.PatchResult result = jobContextService.patchContextFresh(
                     job.getOrganizationId(),
                     job.getJobId(),
                     Map.of("policyEvaluation", payload)
             );
-            log.info("Successfully persisted structured policyEvaluation context for job {}", job.getJobId());
+            if (result == JobContextService.PatchResult.APPLIED) {
+                log.info("Successfully persisted structured policyEvaluation context for job {}", job.getJobId());
+            }
         } catch (Exception e) {
             log.warn("Failed to save policyEvaluation context for job {}: {}", job.getJobId(), e.getMessage());
         }

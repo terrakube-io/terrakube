@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.terrakube.client.TerrakubeClient;
 import io.terrakube.executor.service.workspace.security.WorkspaceSecurity;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 
 import java.util.ArrayList;
@@ -12,6 +13,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -90,33 +92,29 @@ class ApplyStructuredOutputServiceTest {
     }
 
     @Test
-    void updateApplyContextMergesWithoutDroppingExistingKeys() {
-        Map<String, Object> context = new HashMap<>();
-        context.put("custom", "value");
-        context.put("applyStructuredOutput", Map.of("existing-step", List.of(Map.of("address", "existing"))));
-
-        Map<String, Object> updated = subject().updateApplyContext(
-                context, "new-step", List.of(Map.of("address", "aws_instance.new", "status", "pending")), List.of());
-
-        assertEquals("value", updated.get("custom"));
-        Map<String, Object> applyOutput = (Map<String, Object>) updated.get("applyStructuredOutput");
-        assertTrue(applyOutput.containsKey("existing-step"));
-        assertTrue(applyOutput.containsKey("new-step"));
-    }
-
-    @Test
-    void publishApplyProgressIncludesJobDiagnosticsInSavedContext() {
+    void buildApplyPatchTouchesOnlyThisStepsEntries() {
         List<Map<String, Object>> changes = List.of(Map.of("address", "aws_instance.foo", "status", "applied"));
         List<Map<String, Object>> jobDiagnostics = List.of(Map.of("severity", "warning", "summary", "deprecated argument"));
 
-        Map<String, Object> context = new HashMap<>();
-        Map<String, Object> updated = subject().updateApplyContext(context, "step-1", changes, jobDiagnostics);
+        Map<String, Object> set = subject().buildApplyPatch("step-1", changes, jobDiagnostics);
 
-        Map<String, Object> applyOutput = (Map<String, Object>) updated.get("applyStructuredOutput");
-        assertEquals(changes, applyOutput.get("step-1"));
+        assertEquals(Map.of("applyStructuredOutput/step-1", changes, "jobDiagnostics/step-1", jobDiagnostics), set);
+    }
 
-        Map<String, Object> jobDiagnosticsOutput = (Map<String, Object>) updated.get("jobDiagnostics");
-        assertEquals(jobDiagnostics, jobDiagnosticsOutput.get("step-1"));
+    @Test
+    @SuppressWarnings("unchecked")
+    void publishFinalApplySnapshotPatchesWithoutReadingWhenSynchronous() {
+        JobContextService jobContextService = Mockito.mock(JobContextService.class);
+        ApplyStructuredOutputService service = new ApplyStructuredOutputService(jobContextService, new ObjectMapper());
+        List<Map<String, Object>> changes = List.of(Map.of("address", "aws_instance.foo", "status", "applied"));
+
+        service.publishFinalApplySnapshot("o", "1", "step-1", changes, List.of());
+
+        ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
+        Mockito.verify(jobContextService).patchContextFresh(Mockito.eq("o"), Mockito.eq("1"), captor.capture());
+        Mockito.verify(jobContextService, Mockito.never()).getCurrentContext(Mockito.any(), Mockito.any());
+        assertEquals(changes, captor.getValue().get("applyStructuredOutput/step-1"));
+        assertFalse(captor.getValue().containsKey("structuredOutputStatus"));
     }
 
     @Test

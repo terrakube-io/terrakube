@@ -30,6 +30,24 @@ class TerraformJobTest {
         assertEquals(required, job.isRequireSavedPlan());
     }
 
+    @Test
+    void readsTheExecutionEpochAndDefaultsItToZeroForALegacyPayload() throws Exception {
+        ObjectMapper objectMapper = new ObjectMapper();
+
+        assertEquals(0, objectMapper.readValue("{\"type\":\"terraformPlan\"}", TerraformJob.class).getExecutionEpoch());
+        assertEquals(1_760_371_234_567L, objectMapper.readValue(
+                "{\"type\":\"terraformPlan\",\"executionEpoch\":1760371234567}", TerraformJob.class).getExecutionEpoch());
+    }
+
+    // BatchModeServiceImpl reads the payload with a plain ObjectMapper.
+    @Test
+    void ignoresAFieldANewerApiAdds() throws Exception {
+        TerraformJob job = new ObjectMapper().readValue(
+                "{\"type\":\"terraformPlan\",\"fieldFromANewerApi\":{\"a\":1}}", TerraformJob.class);
+
+        assertEquals("terraformPlan", job.getType());
+    }
+
     // OnlineModeServiceImpl logs the whole job at debug level, so toString() must not carry credentials,
     // variable values or outputs.
     @Test

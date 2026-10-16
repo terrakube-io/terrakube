@@ -13,6 +13,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -36,6 +38,8 @@ class ContextSecurityTest {
     @Mock StreamingService streamingService;
     @Mock JobLogAccessService jobLogAccessService;
     @Mock Authentication authentication;
+    @Mock RedisTemplate<String, Object> redisTemplate;
+    @Mock ValueOperations<String, Object> valueOperations;
 
     private ContextController controller;
 
@@ -44,16 +48,19 @@ class ContextSecurityTest {
         ContextProperties properties = new ContextProperties();
         ContextStorageMetrics storageMetrics = new ContextStorageMetrics(new SimpleMeterRegistry());
         ContextReadService readService = new ContextReadService(storageTypeService, storageMetrics, properties, new SimpleMeterRegistry());
+        ContextSanitizer sanitizer = new ContextSanitizer(new ObjectMapper());
+        InMemoryContextWriteLock.stub(redisTemplate, valueOperations);
         controller = new ContextController(
-                storageTypeService,
-                jobRepository,
-                new ContextSanitizer(new ObjectMapper()),
+                sanitizer,
                 streamingService,
-                storageMetrics,
                 readService,
+                new ContextWriteService(jobRepository, new ContextWriteLock(redisTemplate), readService, sanitizer, storageTypeService,
+                        storageMetrics, new ObjectMapper()),
                 properties,
                 null,
-                jobLogAccessService);
+                jobLogAccessService,
+                null,
+                new ObjectMapper());
     }
 
     @Test
