@@ -51,6 +51,24 @@ public class Step {
     @Column(name = "output")
     private String output;
 
+    @Column(name = "delivery_state")
+    @Enumerated(EnumType.STRING)
+    private DeliveryState deliveryState;
+
+    @Column(name = "delivery_revision")
+    private Long deliveryRevision;
+
+    @Column(name = "delivery_timestamp")
+    private Long deliveryTimestamp;
+
+    @Exclude
+    @Column(name = "lease_owner")
+    private String leaseOwner;
+
+    @Exclude
+    @Column(name = "lease_until")
+    private java.util.Date leaseUntil;
+
     @ManyToOne
     private Job job;
 
