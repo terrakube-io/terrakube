@@ -208,4 +208,22 @@ public class UpdateJobStatusImplTest {
         Assertions.assertEquals("waitingApproval", job.getAttributes().getStatus());
         Assertions.assertNull(job.getAttributes().getApprovalTeam());
     }
+
+    @Test
+    public void setCompletedStatusWithDeliveryStateSetsAttributeOnStepRequest() {
+        stubJobWithStatus("queue", 1);
+        doReturn("output-url").when(terraformState).saveOutput(anyString(), anyString(), anyString(), anyString(), anyString());
+
+        ArgumentCaptor<StepRequest> captor = ArgumentCaptor.forClass(StepRequest.class);
+
+        subject().setCompletedStatus(true, false, 0, terraformJob(), "output", "", "", "commit-1", false, null, "ACKED");
+
+        verify(terrakubeClient).updateStep(captor.capture(), anyString(), anyString(), anyString());
+        StepRequest request = captor.getValue();
+        Assertions.assertNotNull(request.getData());
+        Assertions.assertTrue(request.getData().getAttributes() instanceof StepDeliveryAttributes);
+        StepDeliveryAttributes attrs = (StepDeliveryAttributes) request.getData().getAttributes();
+        Assertions.assertEquals("ACKED", attrs.getDeliveryState());
+        Assertions.assertNotNull(attrs.getDeliveryTimestamp());
+    }
 }

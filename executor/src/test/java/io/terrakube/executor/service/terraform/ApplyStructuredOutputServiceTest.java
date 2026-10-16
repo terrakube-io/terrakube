@@ -871,4 +871,32 @@ class ApplyStructuredOutputServiceTest {
         assertEquals("pending", updateChange.get("status"), "Pending update already in state must NOT be promoted to applied");
         assertEquals("pending", deleteChange.get("status"), "Pending delete still in state must NOT be promoted to applied");
     }
+
+    @Test
+    void publishFinalApplySynchronous_returnsTrueOnAck() {
+        JobContextService jobContextService = Mockito.mock(JobContextService.class);
+        Mockito.when(jobContextService.getCurrentContext("o", "1")).thenReturn(new HashMap<>());
+        Mockito.when(jobContextService.saveContextChecked(Mockito.eq("o"), Mockito.eq("1"), Mockito.any())).thenReturn(true);
+
+        ApplyStructuredOutputService service = new ApplyStructuredOutputService(
+                jobContextService, new ObjectMapper());
+
+        boolean acked = service.publishFinalApplySynchronous("o", "1", "step-1", List.of(), List.of());
+        assertTrue(acked);
+        Mockito.verify(jobContextService, Mockito.times(1)).saveContextChecked(Mockito.eq("o"), Mockito.eq("1"), Mockito.any());
+    }
+
+    @Test
+    void publishFinalApplySynchronous_retriesUpTo3TimesAndReturnsFalseOnFailure() {
+        JobContextService jobContextService = Mockito.mock(JobContextService.class);
+        Mockito.when(jobContextService.getCurrentContext("o", "1")).thenReturn(new HashMap<>());
+        Mockito.when(jobContextService.saveContextChecked(Mockito.eq("o"), Mockito.eq("1"), Mockito.any())).thenReturn(false);
+
+        ApplyStructuredOutputService service = new ApplyStructuredOutputService(
+                jobContextService, new ObjectMapper());
+
+        boolean acked = service.publishFinalApplySynchronous("o", "1", "step-1", List.of(), List.of());
+        assertFalse(acked);
+        Mockito.verify(jobContextService, Mockito.times(3)).saveContextChecked(Mockito.eq("o"), Mockito.eq("1"), Mockito.any());
+    }
 }

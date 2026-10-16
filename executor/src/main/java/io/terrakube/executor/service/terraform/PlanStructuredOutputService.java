@@ -81,22 +81,81 @@ public class PlanStructuredOutputService {
                     ? mergeShowJsonDiff(liveChanges, planJson)
                     : buildChangesFromPlanJson(planJson);
 
-            // Same retrying queue as the live snapshots, as the newest final snapshot for this
-            // step - it supersedes any live snapshot still pending or retained for recovery.
             if (executorFlagsProperties.isAsyncStructuredOutput() && persistenceQueue != null) {
                 publishFinalPlanSnapshot(terraformJob.getOrganizationId(), terraformJob.getJobId(),
                         terraformJob.getStepId(), changes, jobDiagnostics);
                 return;
             }
 
-            jobContextService.patchContextFresh(terraformJob.getOrganizationId(), terraformJob.getJobId(),
-                    buildPlanPatch(terraformJob.getStepId(), changes, jobDiagnostics, true));
+            publishFinalPlanSnapshotSynchronous(terraformJob.getOrganizationId(), terraformJob.getJobId(),
+                    terraformJob.getStepId(), changes, jobDiagnostics);
         } catch (InterruptedException e) {
             log.error("Interrupted while publishing plan summary", e);
             Thread.currentThread().interrupt();
         } catch (Exception e) {
             log.warn("Unable to publish structured plan output for job {} step {}", terraformJob.getJobId(),
                     terraformJob.getStepId(), e);
+        }
+    }
+
+    public boolean publishFinalPlanSynchronous(TerraformJob terraformJob, File terraformWorkingDir, List<Map<String, Object>> liveChanges, List<Map<String, Object>> jobDiagnostics) {
+        try {
+            String planJson = getPlanAsJson(terraformJob, terraformWorkingDir);
+            List<Map<String, Object>> changes;
+            if (planJson != null && !planJson.isBlank()) {
+                changes = liveChanges != null && !liveChanges.isEmpty()
+                        ? mergeShowJsonDiff(liveChanges, planJson)
+                        : buildChangesFromPlanJson(planJson);
+            } else {
+                changes = liveChanges != null ? liveChanges : new ArrayList<>();
+            }
+
+            return publishFinalPlanSnapshotSynchronous(terraformJob.getOrganizationId(), terraformJob.getJobId(),
+                    terraformJob.getStepId(), changes, jobDiagnostics);
+        } catch (InterruptedException e) {
+            log.error("Interrupted while publishing plan summary", e);
+            Thread.currentThread().interrupt();
+            return false;
+        } catch (Exception e) {
+            log.warn("Unable to publish structured plan output for job {} step {}", terraformJob.getJobId(),
+                    terraformJob.getStepId(), e);
+            return false;
+        }
+    }
+
+    public boolean publishFinalPlanSnapshotSynchronous(String organizationId, String jobId, String stepId,
+                                                      List<Map<String, Object>> changes, List<Map<String, Object>> jobDiagnostics) {
+        try {
+            Map<String, Object> context = getCurrentContext(organizationId, jobId);
+            Map<String, Object> updatedContext = updateContext(context, stepId, changes, jobDiagnostics);
+            applyNoChangePlanMarker(updatedContext, stepId, changes, jobDiagnostics);
+            updatedContext.put("structuredOutputStatus", Map.of(
+                    "state", "PERSISTED",
+                    "updatedAtEpochMs", System.currentTimeMillis(),
+                    "stepId", stepId,
+                    "phase", "plan",
+                    "finalSnapshot", true));
+
+            for (int attempt = 1; attempt <= 3; attempt++) {
+                boolean saved = jobContextService.saveContextChecked(organizationId, jobId, updatedContext);
+                if (saved) {
+                    log.info("Synchronous final plan snapshot persisted and ACKed for job {} step {}", jobId, stepId);
+                    return true;
+                }
+                if (attempt < 3) {
+                    try {
+                        Thread.sleep(200L * attempt);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+                }
+            }
+            log.warn("Failed to obtain synchronous ACK for final plan snapshot for job {} step {} after 3 attempts", jobId, stepId);
+            return false;
+        } catch (Exception e) {
+            log.warn("Error publishing synchronous final plan snapshot for job {} step {}: {}", jobId, stepId, e.getMessage());
+            return false;
         }
     }
 

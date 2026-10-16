@@ -151,6 +151,41 @@ public class ApplyStructuredOutputService {
         publishApplyStructured(organizationId, jobId, stepId, changes, jobDiagnostics, true);
     }
 
+    public boolean publishFinalApplySynchronous(String organizationId, String jobId, String stepId,
+                                               List<Map<String, Object>> changes, List<Map<String, Object>> jobDiagnostics) {
+        try {
+            Map<String, Object> context = getCurrentContext(organizationId, jobId);
+            Map<String, Object> updatedContext = updateApplyContext(context, stepId, changes, jobDiagnostics);
+            updatedContext.put("structuredOutputStatus", Map.of(
+                    "state", "PERSISTED",
+                    "updatedAtEpochMs", System.currentTimeMillis(),
+                    "stepId", stepId,
+                    "phase", "apply",
+                    "finalSnapshot", true));
+
+            for (int attempt = 1; attempt <= 3; attempt++) {
+                boolean saved = jobContextService.saveContextChecked(organizationId, jobId, updatedContext);
+                if (saved) {
+                    log.info("Synchronous final apply snapshot persisted and ACKed for job {} step {}", jobId, stepId);
+                    return true;
+                }
+                if (attempt < 3) {
+                    try {
+                        Thread.sleep(200L * attempt);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+                }
+            }
+            log.warn("Failed to obtain synchronous ACK for final apply snapshot for job {} step {} after 3 attempts", jobId, stepId);
+            return false;
+        } catch (Exception e) {
+            log.warn("Error publishing synchronous final apply snapshot for job {} step {}: {}", jobId, stepId, e.getMessage());
+            return false;
+        }
+    }
+
     private void publishApplyStructured(String organizationId, String jobId, String stepId,
                                         List<Map<String, Object>> changes, List<Map<String, Object>> jobDiagnostics,
                                         boolean finalSnapshot) {

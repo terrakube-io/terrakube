@@ -659,4 +659,32 @@ class PlanStructuredOutputServiceTest {
                 && "aws_instance.example".equals(s.getChanges().get(0).get("address"))));
         Mockito.verify(jobContextService, Mockito.never()).patchContextFresh(Mockito.any(), Mockito.any(), Mockito.any());
     }
+
+    @Test
+    void publishFinalPlanSnapshotSynchronous_returnsTrueOnAck() {
+        JobContextService jobContextService = Mockito.mock(JobContextService.class);
+        Mockito.when(jobContextService.getCurrentContext("o", "1")).thenReturn(new HashMap<>());
+        Mockito.when(jobContextService.saveContextChecked(Mockito.eq("o"), Mockito.eq("1"), Mockito.any())).thenReturn(true);
+
+        PlanStructuredOutputService service = new PlanStructuredOutputService(
+                jobContextService, new ObjectMapper(), new TerraformClient());
+
+        boolean acked = service.publishFinalPlanSnapshotSynchronous("o", "1", "step-1", List.of(), List.of());
+        assertTrue(acked);
+        Mockito.verify(jobContextService, Mockito.times(1)).saveContextChecked(Mockito.eq("o"), Mockito.eq("1"), Mockito.any());
+    }
+
+    @Test
+    void publishFinalPlanSnapshotSynchronous_retriesUpTo3TimesAndReturnsFalseOnFailure() {
+        JobContextService jobContextService = Mockito.mock(JobContextService.class);
+        Mockito.when(jobContextService.getCurrentContext("o", "1")).thenReturn(new HashMap<>());
+        Mockito.when(jobContextService.saveContextChecked(Mockito.eq("o"), Mockito.eq("1"), Mockito.any())).thenReturn(false);
+
+        PlanStructuredOutputService service = new PlanStructuredOutputService(
+                jobContextService, new ObjectMapper(), new TerraformClient());
+
+        boolean acked = service.publishFinalPlanSnapshotSynchronous("o", "1", "step-1", List.of(), List.of());
+        assertFalse(acked);
+        Mockito.verify(jobContextService, Mockito.times(3)).saveContextChecked(Mockito.eq("o"), Mockito.eq("1"), Mockito.any());
+    }
 }
