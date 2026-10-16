@@ -3,6 +3,7 @@ package io.terrakube.executor.service.terraform;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.terrakube.executor.configuration.ExecutorFlagsProperties;
+import io.terrakube.executor.service.terraform.spool.ContextSpoolService;
 import io.terrakube.executor.service.terraform.structured.StructuredOutputPersistenceQueue;
 import io.terrakube.executor.service.terraform.structured.StructuredSnapshot;
 import lombok.extern.slf4j.Slf4j;
@@ -11,6 +12,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -26,24 +28,35 @@ public class ApplyStructuredOutputService {
     private final ObjectMapper objectMapper;
     private final StructuredOutputPersistenceQueue persistenceQueue;
     private final ExecutorFlagsProperties executorFlagsProperties;
+    private final ContextSpoolService contextSpoolService;
 
     @Autowired
     public ApplyStructuredOutputService(
             JobContextService jobContextService,
             ObjectMapper objectMapper,
             StructuredOutputPersistenceQueue persistenceQueue,
-            ExecutorFlagsProperties executorFlagsProperties) {
+            ExecutorFlagsProperties executorFlagsProperties,
+            @Autowired(required = false) ContextSpoolService contextSpoolService) {
         this.jobContextService = jobContextService;
         this.objectMapper = objectMapper;
         this.persistenceQueue = persistenceQueue;
         this.executorFlagsProperties = executorFlagsProperties;
+        this.contextSpoolService = contextSpoolService;
+    }
+
+    public ApplyStructuredOutputService(
+            JobContextService jobContextService,
+            ObjectMapper objectMapper,
+            StructuredOutputPersistenceQueue persistenceQueue,
+            ExecutorFlagsProperties executorFlagsProperties) {
+        this(jobContextService, objectMapper, persistenceQueue, executorFlagsProperties, null);
     }
 
     // Convenience constructor for tests and callers that keep the previous synchronous behaviour.
     public ApplyStructuredOutputService(
             JobContextService jobContextService,
             ObjectMapper objectMapper) {
-        this(jobContextService, objectMapper, null, synchronousFlags());
+        this(jobContextService, objectMapper, null, synchronousFlags(), null);
     }
 
     private static ExecutorFlagsProperties synchronousFlags() {
@@ -151,11 +164,12 @@ public class ApplyStructuredOutputService {
         publishApplyStructured(organizationId, jobId, stepId, changes, jobDiagnostics, true);
     }
 
-    public boolean publishFinalApplySynchronous(String organizationId, String jobId, String stepId,
+    public String publishFinalApplySynchronous(String organizationId, String jobId, String stepId,
                                                List<Map<String, Object>> changes, List<Map<String, Object>> jobDiagnostics) {
+        Map<String, Object> updatedContext = null;
         try {
             Map<String, Object> context = getCurrentContext(organizationId, jobId);
-            Map<String, Object> updatedContext = updateApplyContext(context, stepId, changes, jobDiagnostics);
+            updatedContext = updateApplyContext(context, stepId, changes, jobDiagnostics);
             updatedContext.put("structuredOutputStatus", Map.of(
                     "state", "PERSISTED",
                     "updatedAtEpochMs", System.currentTimeMillis(),
@@ -167,7 +181,7 @@ public class ApplyStructuredOutputService {
                 boolean saved = jobContextService.saveContextChecked(organizationId, jobId, updatedContext);
                 if (saved) {
                     log.info("Synchronous final apply snapshot persisted and ACKed for job {} step {}", jobId, stepId);
-                    return true;
+                    return "ACKED";
                 }
                 if (attempt < 3) {
                     try {
@@ -179,11 +193,26 @@ public class ApplyStructuredOutputService {
                 }
             }
             log.warn("Failed to obtain synchronous ACK for final apply snapshot for job {} step {} after 3 attempts", jobId, stepId);
-            return false;
         } catch (Exception e) {
             log.warn("Error publishing synchronous final apply snapshot for job {} step {}: {}", jobId, stepId, e.getMessage());
-            return false;
+            if (updatedContext == null) {
+                updatedContext = new LinkedHashMap<>();
+                updatedContext.put(CONTEXT_APPLY_KEY, Map.of(stepId, changes != null ? changes : List.of()));
+                if (jobDiagnostics != null && !jobDiagnostics.isEmpty()) {
+                    updatedContext.put(CONTEXT_JOB_DIAGNOSTICS_KEY, Map.of(stepId, jobDiagnostics));
+                }
+            }
         }
+
+        if (contextSpoolService != null && updatedContext != null) {
+            String spooledPath = contextSpoolService.spoolContextPatch(organizationId, jobId, stepId, "apply", updatedContext);
+            if (spooledPath != null) {
+                log.info("Successfully spooled final apply snapshot to storage at {} for job {} step {}", spooledPath, jobId, stepId);
+                return "SPOOLED";
+            }
+        }
+
+        return "NOT_DURABLE";
     }
 
     private void publishApplyStructured(String organizationId, String jobId, String stepId,

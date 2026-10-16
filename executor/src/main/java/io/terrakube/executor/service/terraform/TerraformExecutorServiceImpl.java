@@ -320,16 +320,16 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             scriptAfterSuccessPlan = executePostOperationScripts(terraformJob, terraformWorkingDir, planOutput, executionPlan);
 
             // Synchronous authoritative final snapshot delivery with explicit ACK from the API.
-            boolean planAcked = false;
+            String planDeliveryState = "NOT_DURABLE";
             if (executionPlan) {
-                planAcked = planStructuredOutputService.publishFinalPlanSynchronous(terraformJob, terraformWorkingDir, terraformJob.getLiveChanges(), terraformJob.getJobDiagnostics());
+                planDeliveryState = planStructuredOutputService.publishFinalPlanSynchronous(terraformJob, terraformWorkingDir, terraformJob.getLiveChanges(), terraformJob.getJobDiagnostics());
             }
 
             logsService.flush();
             drainStructuredOutputQueue(terraformJob.getJobId());
 
             result = generateJobResult(scriptAfterSuccessPlan, jobOutput.toString(), jobErrorOutput.toString());
-            result.setDeliveryState(planAcked ? "ACKED" : "NOT_DURABLE");
+            result.setDeliveryState(planDeliveryState);
             result.setDeliveryTimestamp(System.currentTimeMillis());
             result.setPlanFile(executionPlan ? terraformState.saveTerraformPlan(terraformJob.getOrganizationId(),
                     terraformJob.getWorkspaceId(), terraformJob.getJobId(), terraformJob.getStepId(), terraformWorkingDir)
@@ -342,10 +342,10 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             // A stream-drain failure or late exception must not swallow the plan diagnostics the
             // UI needs - publish what was parsed before it broke, then let it drain.
             logsService.flush();
-            boolean failureAcked = false;
+            String failureDeliveryState = "NOT_DURABLE";
             try {
                 publishFinalPlanSnapshotIfStreamed(terraformJob, eventParser, liveChanges, jobDiagnostics);
-                failureAcked = planStructuredOutputService.publishFinalPlanSnapshotSynchronous(
+                failureDeliveryState = planStructuredOutputService.publishFinalPlanSnapshotSynchronous(
                         terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(),
                         liveChanges, jobDiagnostics);
                 drainStructuredOutputQueue(terraformJob.getJobId());
@@ -353,7 +353,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                 log.warn("Unable to publish final plan snapshot after failure for job {}", terraformJob.getJobId(), e);
             }
             result = setError(exception, jobOutput.toString());
-            result.setDeliveryState(failureAcked ? "ACKED" : "NOT_DURABLE");
+            result.setDeliveryState(failureDeliveryState);
             result.setDeliveryTimestamp(System.currentTimeMillis());
             result.setPlan(true);
             result.setExitCode(1);
@@ -470,19 +470,19 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
 
             logsService.flush();
             // Synchronous authoritative final apply snapshot delivery with explicit ACK from the API.
-            boolean applyAcked = applyStructuredOutputService.publishFinalApplySynchronous(
+            String applyDeliveryState = applyStructuredOutputService.publishFinalApplySynchronous(
                     terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(),
                     terraformJob.getLiveChanges(), terraformJob.getJobDiagnostics());
 
             drainStructuredOutputQueue(terraformJob.getJobId());
             result = generateJobResult(scriptAfterSuccess, terraformOutput.toString(), terraformErrorOutput.toString());
-            result.setDeliveryState(applyAcked ? "ACKED" : "NOT_DURABLE");
+            result.setDeliveryState(applyDeliveryState);
             result.setDeliveryTimestamp(System.currentTimeMillis());
         } catch (IOException | ExecutionException | InterruptedException exception) {
             logsService.flush();
-            boolean failureAcked = false;
+            String failureDeliveryState = "NOT_DURABLE";
             try {
-                failureAcked = applyStructuredOutputService.publishFinalApplySynchronous(
+                failureDeliveryState = applyStructuredOutputService.publishFinalApplySynchronous(
                         terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(),
                         terraformJob.getLiveChanges(), terraformJob.getJobDiagnostics());
             } catch (Exception e) {
@@ -490,7 +490,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             }
             drainStructuredOutputQueue(terraformJob.getJobId());
             result = setError(exception, terraformOutput.toString());
-            result.setDeliveryState(failureAcked ? "ACKED" : "NOT_DURABLE");
+            result.setDeliveryState(failureDeliveryState);
             result.setDeliveryTimestamp(System.currentTimeMillis());
             result.setExitCode(1);
         }

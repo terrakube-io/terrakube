@@ -661,7 +661,7 @@ class PlanStructuredOutputServiceTest {
     }
 
     @Test
-    void publishFinalPlanSnapshotSynchronous_returnsTrueOnAck() {
+    void publishFinalPlanSnapshotSynchronous_returnsAckedOnSuccess() {
         JobContextService jobContextService = Mockito.mock(JobContextService.class);
         Mockito.when(jobContextService.getCurrentContext("o", "1")).thenReturn(new HashMap<>());
         Mockito.when(jobContextService.saveContextChecked(Mockito.eq("o"), Mockito.eq("1"), Mockito.any())).thenReturn(true);
@@ -669,22 +669,44 @@ class PlanStructuredOutputServiceTest {
         PlanStructuredOutputService service = new PlanStructuredOutputService(
                 jobContextService, new ObjectMapper(), new TerraformClient());
 
-        boolean acked = service.publishFinalPlanSnapshotSynchronous("o", "1", "step-1", List.of(), List.of());
-        assertTrue(acked);
+        String state = service.publishFinalPlanSnapshotSynchronous("o", "1", "step-1", List.of(), List.of());
+        assertEquals("ACKED", state);
         Mockito.verify(jobContextService, Mockito.times(1)).saveContextChecked(Mockito.eq("o"), Mockito.eq("1"), Mockito.any());
     }
 
     @Test
-    void publishFinalPlanSnapshotSynchronous_retriesUpTo3TimesAndReturnsFalseOnFailure() {
+    void publishFinalPlanSnapshotSynchronous_spoolsOnFailureWhenSpoolerAvailable() {
         JobContextService jobContextService = Mockito.mock(JobContextService.class);
         Mockito.when(jobContextService.getCurrentContext("o", "1")).thenReturn(new HashMap<>());
         Mockito.when(jobContextService.saveContextChecked(Mockito.eq("o"), Mockito.eq("1"), Mockito.any())).thenReturn(false);
 
-        PlanStructuredOutputService service = new PlanStructuredOutputService(
-                jobContextService, new ObjectMapper(), new TerraformClient());
+        io.terrakube.executor.service.terraform.spool.ContextSpoolService contextSpoolService = Mockito.mock(io.terrakube.executor.service.terraform.spool.ContextSpoolService.class);
+        Mockito.when(contextSpoolService.spoolContextPatch(Mockito.eq("o"), Mockito.eq("1"), Mockito.eq("step-1"), Mockito.eq("plan"), Mockito.any()))
+                .thenReturn("context-spool/o/1/step-1-plan.json.gz");
 
-        boolean acked = service.publishFinalPlanSnapshotSynchronous("o", "1", "step-1", List.of(), List.of());
-        assertFalse(acked);
+        PlanStructuredOutputService service = new PlanStructuredOutputService(
+                jobContextService, new ObjectMapper(), new TerraformClient(), null, null, contextSpoolService);
+
+        String state = service.publishFinalPlanSnapshotSynchronous("o", "1", "step-1", List.of(), List.of());
+        assertEquals("SPOOLED", state);
         Mockito.verify(jobContextService, Mockito.times(3)).saveContextChecked(Mockito.eq("o"), Mockito.eq("1"), Mockito.any());
+        Mockito.verify(contextSpoolService).spoolContextPatch(Mockito.eq("o"), Mockito.eq("1"), Mockito.eq("step-1"), Mockito.eq("plan"), Mockito.any());
+    }
+
+    @Test
+    void publishFinalPlanSnapshotSynchronous_returnsNotDurableWhenSpoolerFails() {
+        JobContextService jobContextService = Mockito.mock(JobContextService.class);
+        Mockito.when(jobContextService.getCurrentContext("o", "1")).thenReturn(new HashMap<>());
+        Mockito.when(jobContextService.saveContextChecked(Mockito.eq("o"), Mockito.eq("1"), Mockito.any())).thenReturn(false);
+
+        io.terrakube.executor.service.terraform.spool.ContextSpoolService contextSpoolService = Mockito.mock(io.terrakube.executor.service.terraform.spool.ContextSpoolService.class);
+        Mockito.when(contextSpoolService.spoolContextPatch(Mockito.eq("o"), Mockito.eq("1"), Mockito.eq("step-1"), Mockito.eq("plan"), Mockito.any()))
+                .thenReturn(null);
+
+        PlanStructuredOutputService service = new PlanStructuredOutputService(
+                jobContextService, new ObjectMapper(), new TerraformClient(), null, null, contextSpoolService);
+
+        String state = service.publishFinalPlanSnapshotSynchronous("o", "1", "step-1", List.of(), List.of());
+        assertEquals("NOT_DURABLE", state);
     }
 }
