@@ -103,4 +103,25 @@ describe("readEventStream", () => {
     const [, requestInit] = fetchMock.mock.calls[0];
     expect(requestInit.headers["Last-Event-ID"]).toBe("100-0");
   });
+
+  it("passes the event name of a named event, and none for plain data", async () => {
+    const response = makeStreamResponse([
+      "id: 5-0\ndata: line\n\n",
+      'event: gap\ndata: {"reason":"trimmed"}\n\n',
+      'event: end\ndata: {"reason":"rotate"}\n\n',
+    ]);
+    (global.fetch as jest.Mock) = jest.fn().mockResolvedValue(response);
+
+    const received: Array<[string, string | undefined, string | undefined]> = [];
+    await readEventStream("http://localhost/stream", {
+      onMessage: (data, id, event) => received.push([data, id, event]),
+      signal: new AbortController().signal,
+    });
+
+    expect(received).toEqual([
+      ["line", "5-0", undefined],
+      ['{"reason":"trimmed"}', undefined, "gap"],
+      ['{"reason":"rotate"}', undefined, "end"],
+    ]);
+  });
 });

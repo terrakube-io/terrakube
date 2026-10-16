@@ -113,4 +113,17 @@ describe("useLogStream", () => {
       expect(mock).toHaveBeenCalledTimes(1);
     });
   });
+
+  it("tells the viewer when earlier output could not be replayed", async () => {
+    (readEventStream as jest.Mock).mockImplementation(async (_url, { onMessage }) => {
+      onMessage('{"reason":"trimmed","recovery":"step-log"}', undefined, "gap");
+      onMessage("line 1", "50-0");
+    });
+
+    const { result } = renderHook(() => useLogStream({ url: "http://localhost/stream", enabled: true }));
+
+    await waitFor(() => expect(result.current.text).toContain("line 1"));
+    expect(result.current.text).toMatch(/^\[Earlier output is no longer available/);
+    expect(result.current.text).toContain("complete log is available once the step finishes");
+  });
 });

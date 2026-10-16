@@ -32,16 +32,27 @@ public class RedisStreamReader {
         return records == null ? Collections.emptyList() : records;
     }
 
-    /**
-     * All records after {@code lastId}, without blocking. Used for the one-shot catch-up a new SSE
-     * subscriber needs before it joins the job's shared broadcaster loop.
-     */
+    /** Up to {@code count} records after {@code lastId}, without blocking. */
     @SuppressWarnings("unchecked")
-    public List<MapRecord> readAfterOnce(String streamKey, RecordId lastId) {
+    public List<MapRecord> readAfterPage(String streamKey, RecordId lastId, int count) {
         StreamOffset<String> offset = StreamOffset.create(streamKey, ReadOffset.from(lastId));
-        StreamReadOptions options = StreamReadOptions.empty().count(10_000);
+        StreamReadOptions options = StreamReadOptions.empty().count(count);
         List<MapRecord> records = redisTemplate.opsForStream().read(options, offset);
         return records == null ? Collections.emptyList() : records;
+    }
+
+    /** Oldest retained record id, or {@code null} when empty. */
+    @SuppressWarnings("unchecked")
+    public RecordId firstEntryId(String streamKey) {
+        List<MapRecord> first = redisTemplate.opsForStream().range(streamKey, Range.unbounded(), Limit.limit().count(1));
+        return first == null || first.isEmpty() ? null : first.get(0).getId();
+    }
+
+    /** Newest record id, or {@code null} when empty. */
+    @SuppressWarnings("unchecked")
+    public RecordId lastEntryId(String streamKey) {
+        List<MapRecord> last = redisTemplate.opsForStream().reverseRange(streamKey, Range.unbounded(), Limit.limit().count(1));
+        return last == null || last.isEmpty() ? null : last.get(0).getId();
     }
 
     /**

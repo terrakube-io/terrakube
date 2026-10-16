@@ -184,4 +184,15 @@ class TerraformOutputControllerTest {
         assertEquals(HttpStatus.SERVICE_UNAVAILABLE, response.getStatusCode());
         assertEquals("5", response.getHeaders().getFirst(HttpHeaders.RETRY_AFTER));
     }
+
+    @Test
+    void streamOutputTreatsWildcardLastEventIdAsStart() {
+        SseEmitter emitter = new SseEmitter(0L);
+        when(broadcasterRegistry.subscribe(eq("j"), eq("s"), any())).thenReturn(emitter);
+
+        controller.streamOutput("o", "j", "s", "*", null);
+
+        org.mockito.Mockito.verify(broadcasterRegistry).subscribe("j", "s",
+                org.springframework.data.redis.connection.stream.RecordId.of("0-0"));
+    }
 }

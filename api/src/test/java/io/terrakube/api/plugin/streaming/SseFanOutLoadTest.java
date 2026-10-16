@@ -17,6 +17,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.when;
 
 /**
@@ -43,7 +44,7 @@ class SseFanOutLoadTest {
 
         AtomicInteger readAfterCalls = new AtomicInteger(0);
         when(jobStatusCache.isTerminal("42")).thenReturn(false);
-        when(reader.readAfterOnce(any(), any())).thenReturn(List.of());
+        when(reader.readAfterPage(any(), any(), anyInt())).thenReturn(List.of());
         when(reader.readAfter(any(), any(), any())).thenAnswer(invocation -> {
             readAfterCalls.incrementAndGet();
             Thread.sleep(20); // simulate the Redis XREAD BLOCK

@@ -41,7 +41,7 @@ class JobLogBroadcasterRegistryTest {
         properties.setSseMaxConnections(2);
         properties.setSseJobIdleTimeout(Duration.ofMillis(20));
         properties.setSseMaxStreamDuration(Duration.ofSeconds(30));
-        when(reader.readAfterOnce(any(), any())).thenReturn(List.of());
+        when(reader.readAfterPage(any(), any(), org.mockito.ArgumentMatchers.anyInt())).thenReturn(List.of());
         when(reader.readAfter(any(), any(), any())).thenReturn(List.of());
         registry = new JobLogBroadcasterRegistry(reader, jobStatusCache, properties);
     }
@@ -73,12 +73,13 @@ class JobLogBroadcasterRegistryTest {
 
     @Test
     @Timeout(10)
-    void doesAOneShotCatchUpReadForANewSubscriber() {
+    void replaysHistoryFromTheViewersResumeId() {
         when(jobStatusCache.isTerminal("42")).thenReturn(false);
 
         registry.subscribe("42", "stepA", RecordId.of("7-0"));
 
-        verify(reader).readAfterOnce(eq("42"), eq(RecordId.of("7-0")));
+        await().atMost(Duration.ofSeconds(5)).untilAsserted(() ->
+                verify(reader).readAfterPage(eq("42"), eq(RecordId.of("7-0")), org.mockito.ArgumentMatchers.anyInt()));
     }
 
     @Test

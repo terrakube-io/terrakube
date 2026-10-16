@@ -200,4 +200,109 @@ describe("useEventStream", () => {
       expect(result.current).toEqual(["a", "b"]);
     });
   });
+
+  it("ignores a record it has already seen, so a replayed and live copy are folded once", async () => {
+    (readEventStream as jest.Mock).mockImplementation(async (_url, { onMessage }) => {
+      onMessage("a", "10-0");
+      onMessage("b", "11-0");
+      onMessage("b-again", "11-0");
+      onMessage("older", "9-0");
+      onMessage("c", "12-0");
+    });
+
+    const { result } = renderHook(() =>
+      useEventStream<string[]>({
+        url: "http://localhost/stream",
+        enabled: true,
+        initial: [],
+        reduce: (previous, data) => [...previous, data],
+      })
+    );
+
+    await waitFor(() => expect(result.current).toEqual(["a", "b", "c"]));
+  });
+
+  it("hands a reported gap to onGap and never folds a control event as data", async () => {
+    (readEventStream as jest.Mock).mockImplementation(async (_url, { onMessage }) => {
+      onMessage(
+        '{"reason":"trimmed","afterId":"1-0","firstAvailableId":"50-0","recovery":"step-log"}',
+        undefined,
+        "gap"
+      );
+      onMessage("a", "50-0");
+      onMessage('{"reason":"complete"}', undefined, "end");
+    });
+
+    const { result } = renderHook(() =>
+      useEventStream<string[]>({
+        url: "http://localhost/stream",
+        enabled: true,
+        initial: [],
+        reduce: (previous, data) => [...previous, data],
+        onGap: (previous, gap) => [...previous, `gap:${gap.firstAvailableId}`],
+      })
+    );
+
+    await waitFor(() => expect(result.current).toEqual(["gap:50-0", "a"]));
+  });
+
+  it("resumes from the last event id when the server rotates the connection", async () => {
+    jest.useFakeTimers();
+    const seenLastEventIds: Array<string | undefined> = [];
+    let attempt = 0;
+    (readEventStream as jest.Mock).mockImplementation(async (_url, { onMessage, lastEventId }) => {
+      attempt += 1;
+      seenLastEventIds.push(lastEventId);
+      if (attempt === 1) {
+        onMessage("a", "10-0");
+        onMessage('{"reason":"rotate"}', undefined, "end");
+        return;
+      }
+      onMessage("b", "11-0");
+      return new Promise(() => {});
+    });
+
+    const { result } = renderHook(() =>
+      useEventStream<string[]>({
+        url: "http://localhost/stream",
+        enabled: true,
+        initial: [],
+        reduce: (previous, data) => [...previous, data],
+      })
+    );
+
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(2500);
+    });
+
+    expect(result.current).toEqual(["a", "b"]);
+    expect(seenLastEventIds).toEqual([undefined, "10-0"]);
+    jest.useRealTimers();
+  });
+
+  it("does not reconnect after the server reports the stream complete", async () => {
+    jest.useFakeTimers();
+    let attempt = 0;
+    (readEventStream as jest.Mock).mockImplementation(async (_url, { onMessage }) => {
+      attempt += 1;
+      onMessage("a", "10-0");
+      onMessage('{"reason":"complete"}', undefined, "end");
+    });
+
+    renderHook(() =>
+      useEventStream<string[]>({
+        url: "http://localhost/stream",
+        enabled: true,
+        initial: [],
+        reduce: (previous, data) => [...previous, data],
+      })
+    );
+
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(5000);
+    });
+
+    expect(attempt).toBe(1);
+    jest.useRealTimers();
+  });
 });

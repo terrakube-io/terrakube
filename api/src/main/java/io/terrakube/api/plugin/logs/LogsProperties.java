@@ -31,6 +31,21 @@ public class LogsProperties {
     /** A step-log SSE stream is closed after this long; the client reconnects with Last-Event-ID. */
     private Duration sseMaxStreamDuration = Duration.ofMinutes(30);
 
+    /** Live bytes buffered per viewer before a slow one is disconnected (it resumes from its cursor). */
+    private long sseSubscriberMaxQueuedBytes = 1_048_576L;
+
+    /** Newest job records sent to a viewer with no resume id; 0 replays everything retained. */
+    private int sseFreshViewerTailRecords = 5000;
+
+    /** Records per page when replaying history. */
+    private int sseReplayPageSize = 1000;
+
+    /** Replay page reads a pod runs at once across all viewers. */
+    private int sseMaxConcurrentReplayReads = 16;
+
+    /** Idle time before a keep-alive comment is sent. */
+    private Duration sseHeartbeatInterval = Duration.ofSeconds(15);
+
     /** How long a job's terminal/non-terminal state is cached for the broadcaster loop. */
     private Duration jobStatusCacheTtl = Duration.ofSeconds(2);
 
