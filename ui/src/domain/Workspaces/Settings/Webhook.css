@@ -12,6 +12,7 @@
 }
 
 .webhook-trigger-summary {
+  flex-wrap: wrap;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -45,4 +46,94 @@
 .webhook-mono.ant-input {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 13px;
+}
+
+.webhook-trigger-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* A pattern chip: long regexes wrap instead of widening the page. */
+.webhook-pattern-tag {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.webhook-tester {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: -8px 0 24px;
+}
+
+.webhook-tester-result {
+  font-size: 13px;
+}
+
+/* This page is wider than the other settings pages: the trigger editor lays out in two columns. */
+.settings-form.webhook-form {
+  max-width: 1040px;
+}
+
+.webhook-group-title.ant-typography,
+h5.webhook-group-title {
+  margin: 0 0 12px;
+  color: var(--ant-color-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.webhook-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 32px;
+}
+
+.webhook-column {
+  min-width: 0;
+}
+
+.webhook-run {
+  margin-top: 8px;
+  padding-top: 16px;
+  border-top: 1px solid var(--ant-color-border-secondary);
+}
+
+@media (max-width: 800px) {
+  .webhook-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.webhook-playground {
+  margin: 0 -12px;
+}
+
+.webhook-samples {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 32px;
+}
+
+.webhook-sample {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.webhook-sample-result {
+  min-height: 22px;
+  font-size: 13px;
+}
+
+@media (max-width: 800px) {
+  .webhook-samples {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
