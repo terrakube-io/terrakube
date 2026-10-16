@@ -214,4 +214,34 @@ class AzureStorageTypeServiceImplTest {
         azureStorageTypeService.deletePolicyEvaluation(uri);
         verify(blobClient).delete();
     }
+
+    @Test
+    void testSpooledContextPatchLifecycle() {
+        String orgId = "org1";
+        String jobId = "job1";
+        String stepId = "step1";
+        String phase = "plan";
+        String blobName = "context-spool/org1/job1/step1-plan.json.gz";
+        byte[] data = "dummy-gzipped-bytes".getBytes(StandardCharsets.UTF_8);
+
+        when(blobServiceClient.getBlobContainerClient("tfoutput")).thenReturn(containerClient);
+        when(containerClient.getBlobClient(blobName)).thenReturn(blobClient);
+
+        // 1. Get
+        when(blobClient.downloadContent()).thenReturn(BinaryData.fromBytes(data));
+        byte[] retrieved = azureStorageTypeService.getSpooledContextPatch(orgId, jobId, stepId, phase);
+        assertArrayEquals(data, retrieved);
+
+        // 2. Has
+        when(blobClient.exists()).thenReturn(true);
+        assertTrue(azureStorageTypeService.hasSpooledContextPatch(orgId, jobId, stepId, phase));
+
+        // 3. Delete
+        azureStorageTypeService.deleteSpooledContextPatch(orgId, jobId, stepId, phase);
+        verify(blobClient).deleteIfExists();
+
+        // 4. Missing key returns null / false
+        when(blobClient.exists()).thenReturn(false);
+        assertFalse(azureStorageTypeService.hasSpooledContextPatch(orgId, jobId, stepId, phase));
+    }
 }
