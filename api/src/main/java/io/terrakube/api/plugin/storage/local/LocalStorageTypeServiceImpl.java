@@ -35,6 +35,7 @@ public class LocalStorageTypeServiceImpl implements StorageTypeService {
     private static final String NO_CONTEXT_FOUND = "{}";
     private static final String LOCAL_BACKEND_DIRECTORY = "/.terraform-spring-boot/local/backend/%s/%s/terraform.tfstate";
     private static final String LOCAL_HISTORY_BACKEND_DIRECTORY = "/.terraform-spring-boot/local/state/%s/%s/state/%s.raw.json";
+    private static final String CONTEXT_SPOOL_DIRECTORY = "/.terraform-spring-boot/local/context-spool/%s/%s/%s-%s.json.gz";
 
     @NonNull
     private StorageRetryMetrics storageRetryMetrics;
@@ -292,5 +293,37 @@ public class LocalStorageTypeServiceImpl implements StorageTypeService {
         } catch (Exception e) {
             log.warn("Failed to delete policy evaluation from local storage: {}", e.getMessage());
         }
+    }
+
+    @Override
+    public byte[] getSpooledContextPatch(String organizationId, String jobId, String stepId, String phase) {
+        String path = String.format(CONTEXT_SPOOL_DIRECTORY, organizationId, jobId, stepId, phase);
+        byte[] bytes = readFile(path);
+        return (bytes != null && bytes.length > 0) ? bytes : null;
+    }
+
+    @Override
+    public void deleteSpooledContextPatch(String organizationId, String jobId, String stepId, String phase) {
+        String path = String.format(CONTEXT_SPOOL_DIRECTORY, organizationId, jobId, stepId, phase);
+        log.info("Deleting spooled context patch from local storage: {}", path);
+        storageRetryMetrics.withRetry("local", "delete", () -> {
+            try {
+                File file = new File(FileUtils.getUserDirectoryPath().concat(FilenameUtils.separatorsToSystem(path)));
+                if (file.exists()) {
+                    FileUtils.deleteQuietly(file);
+                    log.info("Successfully deleted spooled context patch {}", path);
+                }
+            } catch (Exception e) {
+                log.warn("Error deleting spooled context patch from local storage: {}", e.getMessage());
+            }
+            return null;
+        });
+    }
+
+    @Override
+    public boolean hasSpooledContextPatch(String organizationId, String jobId, String stepId, String phase) {
+        String path = String.format(CONTEXT_SPOOL_DIRECTORY, organizationId, jobId, stepId, phase);
+        File file = new File(FileUtils.getUserDirectoryPath().concat(FilenameUtils.separatorsToSystem(path)));
+        return file.exists() && file.isFile();
     }
 }

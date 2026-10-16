@@ -47,6 +47,7 @@ public class LocalTerraformStateImpl implements TerraformState {
     private static final String LOCAL_OUTPUT_DIRECTORY = "/.terraform-spring-boot/local/output/%s/%s/%s.tfoutput";
     private static final String LOCAL_BINARY_DIRECTORY = "/.terraform-spring-boot/local/binary/%s/%s/%s";
     private static final String LOCAL_OPA_BINARY_DIRECTORY = "/.terraform-spring-boot/local/opa/%s/%s_%s/opa";
+    private static final String LOCAL_CONTEXT_SPOOL_DIRECTORY = "/.terraform-spring-boot/local/context-spool/%s/%s/%s-%s.json.gz";
 
     @NonNull
     TerraformOutputPathService terraformOutputPathService;
@@ -319,6 +320,26 @@ public class LocalTerraformStateImpl implements TerraformState {
         } catch (Exception e) {
             log.warn("Failed to restore OPA binary version {} ({}_{}) from local storage: {}", version, os, arch, e.getMessage());
             return false;
+        }
+    }
+
+    @Override
+    public String spoolContextPatch(String organizationId, String jobId, String stepId, String phase, byte[] data) {
+        String relativePath = String.format(LOCAL_CONTEXT_SPOOL_DIRECTORY, organizationId, jobId, stepId, phase);
+        log.info("Spooling context patch to local storage: {}", relativePath);
+        try {
+            File targetFile = new File(FileUtils.getUserDirectoryPath().concat(
+                    FilenameUtils.separatorsToSystem(relativePath)));
+            storageRetryMetrics.withRetry("local", "spool-write", () -> {
+                FileUtils.forceMkdir(targetFile.getParentFile());
+                FileUtils.writeByteArrayToFile(targetFile, data);
+                return null;
+            });
+            log.info("Successfully spooled context patch for job {} step {} phase {} to local storage", jobId, stepId, phase);
+            return relativePath;
+        } catch (Exception e) {
+            log.error("Failed to spool context patch to local storage: {}", e.getMessage(), e);
+            return null;
         }
     }
 }

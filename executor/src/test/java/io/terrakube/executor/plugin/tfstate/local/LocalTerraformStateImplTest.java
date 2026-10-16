@@ -274,5 +274,26 @@ class LocalTerraformStateImplTest {
         // Cleanup
         FileUtils.deleteQuietly(new File(FileUtils.getUserDirectoryPath(), ".terraform-spring-boot"));
     }
+
+    @Test
+    void testSpoolContextPatch() throws IOException {
+        String organizationId = "org1";
+        String jobId = "job1";
+        String stepId = "step1";
+        String phase = "plan";
+        byte[] gzippedPatch = "dummy-gzipped-bytes".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+
+        String result = localTerraformState.spoolContextPatch(organizationId, jobId, stepId, phase, gzippedPatch);
+
+        assertNotNull(result);
+        assertTrue(result.contains(".terraform-spring-boot/local/context-spool/org1/job1/step1-plan.json.gz"));
+
+        File spooledFile = new File(FileUtils.getUserDirectoryPath(), result);
+        assertTrue(spooledFile.exists());
+        assertArrayEquals(gzippedPatch, FileUtils.readFileToByteArray(spooledFile));
+
+        // Cleanup
+        FileUtils.deleteQuietly(new File(FileUtils.getUserDirectoryPath(), ".terraform-spring-boot"));
+    }
 }
 
