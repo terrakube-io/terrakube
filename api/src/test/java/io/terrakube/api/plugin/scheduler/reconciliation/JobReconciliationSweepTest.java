@@ -22,6 +22,7 @@ import org.springframework.data.redis.core.ValueOperations;
 import java.util.Date;
 import java.util.List;
 import java.util.Properties;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -419,5 +420,48 @@ class JobReconciliationSweepTest {
         verify(stepRepository, never()).save(any());
         verify(workspaceRepository, never()).save(any());
         verify(scheduler, never()).deleteJob(any());
+    }
+
+    @Test
+    void sweepProbesStorageAndRecoversSpooledOutputWhenExecutorHeartbeatExpires() throws Exception {
+        io.terrakube.api.plugin.storage.StorageTypeService storageTypeService = mock(io.terrakube.api.plugin.storage.StorageTypeService.class);
+        io.terrakube.api.plugin.scheduler.spool.SpoolRecoveryService spoolRecoveryService = mock(io.terrakube.api.plugin.scheduler.spool.SpoolRecoveryService.class);
+
+        Job running = job(43, JobStatus.running);
+        running.setUpdatedDate(new Date(System.currentTimeMillis() - 350_000));
+        io.terrakube.api.rs.Organization org = new io.terrakube.api.rs.Organization();
+        org.setId(UUID.randomUUID());
+        running.setOrganization(org);
+
+        UUID stepId = UUID.randomUUID();
+        Step step = new Step();
+        step.setId(stepId);
+        step.setStatus(JobStatus.running);
+        step.setJob(running);
+
+        doReturn(List.of(running)).when(jobRepository)
+                .findAllByStatusInOrderByIdAsc(JobReconciliationSweep.ACTIVE_STATUSES);
+        doReturn(true).when(scheduler).checkExists(new JobKey("TerrakubeV2_Job_43"));
+        doReturn(false).when(redisTemplate).hasKey("executor-job-heartbeat:43");
+        doReturn(List.of(step)).when(stepRepository).findByJobId(43);
+        doReturn(step).when(stepRepository).save(any(Step.class));
+        doReturn(1).when(jobRepository).updateStatusByIdAndStatusIn(
+                JobStatus.failed, 43, List.of(JobStatus.queue, JobStatus.running));
+        doReturn(true).when(scheduler).deleteJob(any(JobKey.class));
+
+        doReturn(true).when(storageTypeService).hasSpooledContextPatch(org.getId().toString(), "43", stepId.toString(), "plan");
+        doReturn(false).when(storageTypeService).hasSpooledContextPatch(org.getId().toString(), "43", stepId.toString(), "apply");
+        doReturn(true).when(spoolRecoveryService).recoverStep(any(Step.class));
+
+        JobReconciliationSweep sweepWithSpool = new JobReconciliationSweep(
+                jobRepository, stepRepository, workspaceRepository, scheduler,
+                scheduleJobService, redisTemplate, properties, reconciliationService, metrics,
+                300L, storageTypeService, spoolRecoveryService);
+
+        sweepWithSpool.execute(null);
+
+        verify(storageTypeService).hasSpooledContextPatch(org.getId().toString(), "43", stepId.toString(), "plan");
+        verify(spoolRecoveryService).recoverStep(step);
+        verify(jobRepository).updateStatusByIdAndStatusIn(JobStatus.failed, 43, List.of(JobStatus.queue, JobStatus.running));
     }
 }

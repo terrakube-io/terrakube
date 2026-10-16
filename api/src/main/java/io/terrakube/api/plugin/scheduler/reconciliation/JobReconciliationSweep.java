@@ -7,6 +7,9 @@ import io.terrakube.api.repository.WorkspaceRepository;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.job.step.Step;
+import io.terrakube.api.plugin.scheduler.spool.SpoolRecoveryService;
+import io.terrakube.api.plugin.storage.StorageTypeService;
+import io.terrakube.api.rs.job.step.DeliveryState;
 import io.terrakube.api.rs.workspace.Workspace;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -73,6 +76,8 @@ public class JobReconciliationSweep implements org.quartz.Job {
     JobReconciliationService reconciliationService;
     JobReconciliationMetrics metrics;
     Duration heartbeatGracePeriod;
+    StorageTypeService storageTypeService;
+    SpoolRecoveryService spoolRecoveryService;
 
     @Autowired
     public JobReconciliationSweep(
@@ -85,7 +90,9 @@ public class JobReconciliationSweep implements org.quartz.Job {
             ReconciliationProperties properties,
             JobReconciliationService reconciliationService,
             JobReconciliationMetrics metrics,
-            @Value("${io.terrakube.scheduler.reconciliation.heartbeat-grace-period-seconds:${ReconciliationHeartbeatGracePeriodSeconds:300}}") long heartbeatGracePeriodSeconds) {
+            @Value("${io.terrakube.scheduler.reconciliation.heartbeat-grace-period-seconds:${ReconciliationHeartbeatGracePeriodSeconds:300}}") long heartbeatGracePeriodSeconds,
+            @Autowired(required = false) StorageTypeService storageTypeService,
+            @Autowired(required = false) SpoolRecoveryService spoolRecoveryService) {
         this.jobRepository = jobRepository;
         this.stepRepository = stepRepository;
         this.workspaceRepository = workspaceRepository;
@@ -96,6 +103,22 @@ public class JobReconciliationSweep implements org.quartz.Job {
         this.reconciliationService = reconciliationService;
         this.metrics = metrics;
         this.heartbeatGracePeriod = Duration.ofSeconds(heartbeatGracePeriodSeconds);
+        this.storageTypeService = storageTypeService;
+        this.spoolRecoveryService = spoolRecoveryService;
+    }
+
+    public JobReconciliationSweep(
+            JobRepository jobRepository,
+            StepRepository stepRepository,
+            WorkspaceRepository workspaceRepository,
+            Scheduler scheduler,
+            ScheduleJobService scheduleJobService,
+            RedisTemplate<String, Object> redisTemplate,
+            ReconciliationProperties properties,
+            JobReconciliationService reconciliationService,
+            JobReconciliationMetrics metrics,
+            long heartbeatGracePeriodSeconds) {
+        this(jobRepository, stepRepository, workspaceRepository, scheduler, scheduleJobService, redisTemplate, properties, reconciliationService, metrics, heartbeatGracePeriodSeconds, null, null);
     }
 
     public JobReconciliationSweep(
@@ -108,7 +131,7 @@ public class JobReconciliationSweep implements org.quartz.Job {
             ReconciliationProperties properties,
             JobReconciliationService reconciliationService,
             JobReconciliationMetrics metrics) {
-        this(jobRepository, stepRepository, workspaceRepository, scheduler, scheduleJobService, redisTemplate, properties, reconciliationService, metrics, 300);
+        this(jobRepository, stepRepository, workspaceRepository, scheduler, scheduleJobService, redisTemplate, properties, reconciliationService, metrics, 300, null, null);
     }
 
     @Transactional
@@ -271,6 +294,7 @@ public class JobReconciliationSweep implements org.quartz.Job {
         }
 
         log.warn("Job {} has no executor heartbeat after {}, the executor that had it is gone - failing it", job.getId(), age);
+        probeAndRecoverSpooledSteps(job);
         int rowsUpdated = jobRepository.updateStatusByIdAndStatusIn(
                 JobStatus.failed, job.getId(), List.of(JobStatus.queue, JobStatus.running));
         if (rowsUpdated == 0) {
@@ -298,6 +322,35 @@ public class JobReconciliationSweep implements org.quartz.Job {
             scheduler.deleteJob(new JobKey(PREFIX_JOB_CONTEXT + job.getId()));
         } catch (SchedulerException e) {
             log.warn("Could not delete Quartz context for failed Job {}: {}", job.getId(), e.getMessage());
+        }
+    }
+
+    private void probeAndRecoverSpooledSteps(Job job) {
+        if (storageTypeService == null || job.getOrganization() == null) {
+            return;
+        }
+        try {
+            String orgId = job.getOrganization().getId().toString();
+            String jobId = String.valueOf(job.getId());
+            for (Step step : stepRepository.findByJobId(job.getId())) {
+                if (step.getId() == null) {
+                    continue;
+                }
+                String stepId = step.getId().toString();
+                for (String phase : List.of("plan", "apply")) {
+                    if (storageTypeService.hasSpooledContextPatch(orgId, jobId, stepId, phase)) {
+                        log.info("Dead executor probe found spooled context patch for step {} job {} phase {}", stepId, jobId, phase);
+                        step.setDeliveryState(DeliveryState.SPOOLED);
+                        stepRepository.save(step);
+                        if (spoolRecoveryService != null) {
+                            spoolRecoveryService.recoverStep(step);
+                        }
+                        break;
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Error probing spooled output for dead executor of job {}: {}", job.getId(), e.getMessage());
         }
     }
 }
