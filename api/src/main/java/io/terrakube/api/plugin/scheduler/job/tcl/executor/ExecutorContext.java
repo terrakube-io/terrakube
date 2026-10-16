@@ -34,6 +34,8 @@ public class ExecutorContext {
     private boolean requireSavedPlan;
     private String accessToken;
     private String moduleSshKey;
+    @ToString.Exclude
+    private String runnerToken;
     private String commitId;
     private boolean tofu;
     private HashMap<String, String> environmentVariables;

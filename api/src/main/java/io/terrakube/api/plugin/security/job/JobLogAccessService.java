@@ -1,5 +1,6 @@
 package io.terrakube.api.plugin.security.job;
 
+import io.terrakube.api.plugin.security.token.RunnerToken;
 import io.terrakube.api.plugin.security.rbac.RbacService;
 import io.terrakube.api.repository.JobRepository;
 import io.terrakube.api.repository.StepRepository;
@@ -97,7 +98,7 @@ public class JobLogAccessService {
 
         // Internal service token has full access if genuine system token, or scoped if executor token
         String iss = (String) jwt.getTokenAttributes().get("iss");
-        if ("TerrakubeInternal".equals(iss)) {
+        if ("TerrakubeInternal".equals(iss) || RunnerToken.ISSUER.equals(iss)) {
             Object tokenJobId = jwt.getTokenAttributes().get("jobId");
             if (tokenJobId != null && !String.valueOf(intJobId).equals(String.valueOf(tokenJobId))) {
                 log.warn("TerrakubeInternal token jobId {} does not match requested job {}", tokenJobId, intJobId);
@@ -165,7 +166,7 @@ public class JobLogAccessService {
 
         // Internal service token has full access if genuine system token, or scoped if executor token
         String iss = (String) jwt.getTokenAttributes().get("iss");
-        if ("TerrakubeInternal".equals(iss)) {
+        if ("TerrakubeInternal".equals(iss) || RunnerToken.ISSUER.equals(iss)) {
             Object tokenJobId = jwt.getTokenAttributes().get("jobId");
             if (tokenJobId != null && !String.valueOf(jobId).equals(String.valueOf(tokenJobId))) {
                 log.warn("TerrakubeInternal token jobId {} does not match requested job {}", tokenJobId, jobId);
@@ -231,6 +232,12 @@ public class JobLogAccessService {
         }
 
         String iss = (String) jwt.getTokenAttributes().get("iss");
+        if (RunnerToken.ISSUER.equals(iss)) {
+            return String.valueOf(jobId).equals(String.valueOf(jwt.getTokenAttributes().get("jobId")))
+                    && jobRepository.findById(jobId)
+                    .map(job -> !io.terrakube.api.plugin.hardened.RunnerJobGuard.FINISHED.contains(job.getStatus()))
+                    .orElse(false);
+        }
         if ("TerrakubeInternal".equals(iss)) {
             Object tokenJobId = jwt.getTokenAttributes().get("jobId");
             if (tokenJobId != null) {

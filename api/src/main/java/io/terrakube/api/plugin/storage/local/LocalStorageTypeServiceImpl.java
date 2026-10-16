@@ -105,6 +105,51 @@ public class LocalStorageTypeServiceImpl implements StorageTypeService {
         return getOutputBytes(currentStateFile);
     }
 
+    private void writeBytes(String relativePath, byte[] data) {
+        try {
+            File file = new File(FileUtils.getUserDirectoryPath().concat(FilenameUtils.separatorsToSystem(relativePath)));
+            FileUtils.forceMkdir(file.getParentFile());
+            FileUtils.writeByteArrayToFile(file, data);
+        } catch (IOException e) {
+            throw new java.io.UncheckedIOException(e);
+        }
+    }
+
+    @Override
+    public java.util.Optional<byte[]> readCurrentState(String organizationId, String workspaceId) {
+        File file = new File(FileUtils.getUserDirectoryPath().concat(FilenameUtils.separatorsToSystem(
+                String.format(LOCAL_BACKEND_DIRECTORY, organizationId, workspaceId))));
+        if (!file.exists()) {
+            return java.util.Optional.empty();
+        }
+        try {
+            return java.util.Optional.of(FileUtils.readFileToByteArray(file));
+        } catch (IOException e) {
+            throw new java.io.UncheckedIOException(e);
+        }
+    }
+
+    @Override
+    public void uploadStateHistory(String organizationId, String workspaceId, String historyId, byte[] stateJson, byte[] rawState) {
+        writeBytes(String.format(STATE_DIRECTORY_JSON, organizationId, workspaceId, historyId), stateJson);
+        writeBytes(String.format(LOCAL_HISTORY_BACKEND_DIRECTORY, organizationId, workspaceId, historyId), rawState);
+    }
+
+    @Override
+    public void uploadCurrentState(String organizationId, String workspaceId, byte[] terraformState) {
+        writeBytes(String.format(LOCAL_BACKEND_DIRECTORY, organizationId, workspaceId), terraformState);
+    }
+
+    @Override
+    public void uploadTerraformPlan(String organizationId, String workspaceId, String jobId, String stepId, byte[] terraformPlan) {
+        writeBytes(String.format(STATE_DIRECTORY, organizationId, workspaceId, jobId, stepId), terraformPlan);
+    }
+
+    @Override
+    public void uploadStepOutput(String organizationId, String jobId, String stepId, byte[] output) {
+        writeBytes(String.format(OUTPUT_DIRECTORY, organizationId, jobId, stepId), output);
+    }
+
     @Override
     public void uploadState(String organizationId, String workspaceId, String terraformState, String historyId) {
         try {

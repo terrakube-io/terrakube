@@ -147,6 +147,38 @@ public class GcpStorageTypeServiceImpl implements StorageTypeService {
         return response;
     }
 
+    private void uploadBytes(String objectName, byte[] data) {
+        storage.create(BlobInfo.newBuilder(BlobId.of(bucketName, objectName)).build(), data);
+        log.info("Upload object {} completed", objectName);
+    }
+
+    @Override
+    public java.util.Optional<byte[]> readCurrentState(String organizationId, String workspaceId) {
+        Blob blob = storage.get(BlobId.of(bucketName, String.format(GCP_CURRENT_STATE, organizationId, workspaceId)));
+        return blob == null ? java.util.Optional.empty() : java.util.Optional.of(blob.getContent());
+    }
+
+    @Override
+    public void uploadStateHistory(String organizationId, String workspaceId, String historyId, byte[] stateJson, byte[] rawState) {
+        uploadBytes(String.format(GCP_STATE_JSON, organizationId, workspaceId, historyId), stateJson);
+        uploadBytes(String.format(GCP_HISTORY_RAW_STATE, organizationId, workspaceId, historyId), rawState);
+    }
+
+    @Override
+    public void uploadCurrentState(String organizationId, String workspaceId, byte[] terraformState) {
+        uploadBytes(String.format(GCP_CURRENT_STATE, organizationId, workspaceId), terraformState);
+    }
+
+    @Override
+    public void uploadTerraformPlan(String organizationId, String workspaceId, String jobId, String stepId, byte[] terraformPlan) {
+        uploadBytes(String.format(GCP_STATE_LOCATION, organizationId, workspaceId, jobId, stepId), terraformPlan);
+    }
+
+    @Override
+    public void uploadStepOutput(String organizationId, String jobId, String stepId, byte[] output) {
+        uploadBytes(String.format(GCP_LOCATION_OUTPUT, organizationId, jobId, stepId), output);
+    }
+
     @Override
     public void uploadState(String organizationId, String workspaceId, String terraformState, String historyId) {
         String currentStateKey = String.format(GCP_CURRENT_STATE, organizationId, workspaceId);

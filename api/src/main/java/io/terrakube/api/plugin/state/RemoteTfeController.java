@@ -1,5 +1,6 @@
 package io.terrakube.api.plugin.state;
 
+import io.terrakube.api.plugin.security.token.RunnerToken;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import io.terrakube.api.plugin.state.model.apply.ApplyRunData;
 import io.terrakube.api.plugin.state.model.configuration.ConfigurationData;
@@ -262,6 +263,9 @@ public class RemoteTfeController {
         log.info("Get current workspace state {}", workspaceId);
 
         JwtAuthenticationToken principalJwt = (JwtAuthenticationToken) principal;
+        if (RunnerToken.isRunner(principalJwt.getTokenAttributes()) && !remoteTfeService.runnerCanReadState(principalJwt.getTokenAttributes(), workspaceId)) {
+            return handleAccessDenied(new AccessDeniedException("This Terrakube job is not authorized to read this workspace state"));
+        }
         if (principalJwt.getTokenAttributes().containsKey("workspaceId")) {
             String workspaceIdToken = (String) principalJwt.getTokenAttributes().get("workspaceId");
             log.info("WorkspaceIdToken: {}", workspaceIdToken);
@@ -461,6 +465,9 @@ public class RemoteTfeController {
         log.info("Get current outputs for: {}", workspaceId);
 
         JwtAuthenticationToken principalJwt = (JwtAuthenticationToken) principal;
+        if (RunnerToken.isRunner(principalJwt.getTokenAttributes()) && !remoteTfeService.runnerCanReadState(principalJwt.getTokenAttributes(), workspaceId)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
         if (principalJwt.getTokenAttributes().containsKey("workspaceId")) {
             String workspaceIdToken = (String) principalJwt.getTokenAttributes().get("workspaceId");
             log.info("Token WorkspaceId: {}", workspaceIdToken);

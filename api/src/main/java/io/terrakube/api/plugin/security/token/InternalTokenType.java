@@ -5,5 +5,6 @@ public enum InternalTokenType {
     WORKSPACE_EXECUTOR, // Per-job runner tokens (iss=TerrakubeInternal, carries workspaceId)
     EXECUTOR_SERVICE,   // Executor backend daemon (iss=TerrakubeInternal, sub=TerrakubeInternal (EXECUTOR), no workspaceId)
     REGISTRY_SERVICE,   // Registry daemon (iss=TerrakubeInternal, sub=TerrakubeInternal (REGISTRY), no workspaceId)
+    RUNNER_JOB,         // Hardened mode job tokens (iss=TerrakubeRunner, RS256 signed by the API, scoped to org/workspace/job/step)
     UNKNOWN_INTERNAL    // Any internal token with unrecognized/missing subject or legacy "TerrakubeInternal (TOKEN)" without workspaceId (fail-closed)
 }

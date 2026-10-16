@@ -159,6 +159,52 @@ public class UpdateJobStatusImplTest {
         verify(terrakubeClient, times(1)).updateJob(any(JobRequest.class), anyString(), anyString());
     }
 
+    private String sentCommitId() {
+        ArgumentCaptor<JobRequest> captor = ArgumentCaptor.forClass(JobRequest.class);
+        verify(terrakubeClient).updateJob(captor.capture(), anyString(), anyString());
+        return captor.getValue().getData().getAttributes().getCommitId();
+    }
+
+    @Test
+    public void hardenedRunnerKeepsTheCommitResolvedByTheApiWhenRunning() {
+        doReturn(true).when(executorFlagsProperties).isHardened();
+        stubJobWithStatus("queue").getAttributes().setCommitId("api-commit");
+
+        subject().setRunningStatus(terraformJob(), "");
+
+        Assertions.assertEquals("api-commit", sentCommitId());
+    }
+
+    @Test
+    public void hardenedRunnerKeepsTheCommitResolvedByTheApiWhenCompleting() {
+        doReturn(true).when(executorFlagsProperties).isHardened();
+        stubJobWithStatus("running").getAttributes().setCommitId("api-commit");
+        doReturn("output-url").when(terraformState).saveOutput(anyString(), anyString(), anyString(), anyString(), anyString());
+
+        subject().setCompletedStatus(true, false, 0, terraformJob(), "output", "", "", "");
+
+        Assertions.assertEquals("api-commit", sentCommitId());
+    }
+
+    @Test
+    public void hardenedRunnerReportsItsCommitWhenTheApiHasNone() {
+        doReturn(true).when(executorFlagsProperties).isHardened();
+        stubJobWithStatus("queue");
+
+        subject().setRunningStatus(terraformJob(), "000000000");
+
+        Assertions.assertEquals("000000000", sentCommitId());
+    }
+
+    @Test
+    public void defaultRunnerReportsItsOwnCommit() {
+        stubJobWithStatus("queue").getAttributes().setCommitId("previous");
+
+        subject().setRunningStatus(terraformJob(), "runner-commit");
+
+        Assertions.assertEquals("runner-commit", sentCommitId());
+    }
+
     @Test
     public void planWithChangesAndNoFurtherSteps_marksJobCompleted() {
         // A plan-only template has exactly one step. When that plan finds changes
@@ -196,6 +242,21 @@ public class UpdateJobStatusImplTest {
         Assertions.assertEquals("waitingApproval", job.getAttributes().getStatus());
         Assertions.assertEquals("SecOps", job.getAttributes().getApprovalTeam());
         Assertions.assertTrue(job.getAttributes().isPlanChanges());
+    }
+
+    @Test
+    public void hardenedRunnerNeverReroutesTheApprovalTeam() {
+        doReturn(true).when(executorFlagsProperties).isHardened();
+        Job job = stubJobWithStatus("queue", 2);
+        doReturn("output-url").when(terraformState).saveOutput(anyString(), anyString(), anyString(), anyString(), anyString());
+
+        subject().setCompletedStatus(true, true, 2, terraformJob(), "plan output", "", "plan-file", "commit-1", true, "SecOps");
+
+        ArgumentCaptor<JobRequest> captor = ArgumentCaptor.forClass(JobRequest.class);
+        verify(terrakubeClient).updateJob(captor.capture(), anyString(), anyString());
+        Assertions.assertEquals("waitingApproval", captor.getValue().getData().getAttributes().getStatus());
+        Assertions.assertNull(captor.getValue().getData().getAttributes().getApprovalTeam());
+        Assertions.assertNull(job.getAttributes().getApprovalTeam());
     }
 
     @Test

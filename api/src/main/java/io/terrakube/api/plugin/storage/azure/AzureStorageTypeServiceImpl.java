@@ -133,6 +133,50 @@ public class AzureStorageTypeServiceImpl implements StorageTypeService {
         return response;
     }
 
+    private void uploadBytes(String containerName, String blobName, byte[] data) {
+        BlobContainerClient containerClient = blobServiceClient.getBlobContainerClient(containerName);
+        if (!containerClient.exists()) {
+            containerClient.create();
+        }
+        containerClient.getBlobClient(blobName).upload(BinaryData.fromBytes(data), true);
+        log.info("Upload blob {}/{} completed", containerName, blobName);
+    }
+
+    @Override
+    public java.util.Optional<byte[]> readCurrentState(String organizationId, String workspaceId) {
+        try {
+            return java.util.Optional.of(blobServiceClient.getBlobContainerClient(CONTAINER_NAME_STATE)
+                    .getBlobClient(String.format("%s/%s/terraform.tfstate", organizationId, workspaceId))
+                    .downloadContent().toBytes());
+        } catch (BlobStorageException e) {
+            if (e.getStatusCode() == 404) {
+                return java.util.Optional.empty();
+            }
+            throw e;
+        }
+    }
+
+    @Override
+    public void uploadStateHistory(String organizationId, String workspaceId, String historyId, byte[] stateJson, byte[] rawState) {
+        uploadBytes(CONTAINER_NAME_STATE, String.format("%s/%s/state/%s.json", organizationId, workspaceId, historyId), stateJson);
+        uploadBytes(CONTAINER_NAME_STATE, String.format("%s/%s/state/%s.raw.json", organizationId, workspaceId, historyId), rawState);
+    }
+
+    @Override
+    public void uploadCurrentState(String organizationId, String workspaceId, byte[] terraformState) {
+        uploadBytes(CONTAINER_NAME_STATE, String.format("%s/%s/terraform.tfstate", organizationId, workspaceId), terraformState);
+    }
+
+    @Override
+    public void uploadTerraformPlan(String organizationId, String workspaceId, String jobId, String stepId, byte[] terraformPlan) {
+        uploadBytes(CONTAINER_NAME_STATE, String.format("%s/%s/%s/%s/terraformLibrary.tfPlan", organizationId, workspaceId, jobId, stepId), terraformPlan);
+    }
+
+    @Override
+    public void uploadStepOutput(String organizationId, String jobId, String stepId, byte[] output) {
+        uploadBytes(CONTAINER_NAME_OUTPUT, String.format("%s/%s/%s.tfoutput", organizationId, jobId, stepId), output);
+    }
+
     @Override
     public void uploadState(String organizationId, String workspaceId, String terraformState, String historyId) {
         BlobContainerClient contextContainerClient = blobServiceClient.getBlobContainerClient(CONTAINER_NAME_STATE);

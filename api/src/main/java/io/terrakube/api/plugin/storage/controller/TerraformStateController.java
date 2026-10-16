@@ -54,7 +54,7 @@ public class TerraformStateController {
         this.hostname = hostname;  
     }
     @GetMapping(value = "/organization/{organizationId}/workspace/{workspaceId}/jobId/{jobId}/step/{stepId}/terraform.tfstate", produces = MediaType.APPLICATION_OCTET_STREAM_VALUE)
-    @PreAuthorize("@stateService.hasManageStatePermission(authentication, #organizationId, #workspaceId)")
+    @PreAuthorize("@stateService.hasManageStatePermission(authentication, #organizationId, #workspaceId) and @stateService.runnerMayReadPlan(authentication, #workspaceId, #jobId)")
     public @ResponseBody byte[] getTerraformPlanBinary(@PathVariable("organizationId") String organizationId,
             @PathVariable("workspaceId") String workspaceId, @PathVariable("jobId") String jobId,
             @PathVariable("stepId") String stepId) {
@@ -120,7 +120,7 @@ public class TerraformStateController {
     }
 
     @PutMapping(value = "/organization/{organizationId}/workspace/{workspaceId}/rollback/{stateFilename}.json", produces = MediaType.APPLICATION_JSON_VALUE)
-    @PreAuthorize("@stateService.hasManageStatePermission(authentication, #organizationId, #workspaceId)")
+    @PreAuthorize("!@stateService.isRunner(authentication) and @stateService.hasManageStatePermission(authentication, #organizationId, #workspaceId)")
     public ResponseEntity<String> rollbackToState(
             @PathVariable("organizationId") String organizationId,
             @PathVariable("workspaceId") String workspaceId,

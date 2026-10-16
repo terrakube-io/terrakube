@@ -1,5 +1,6 @@
 package io.terrakube.api.rs.checks.executor;
 
+import io.terrakube.api.plugin.security.token.RunnerToken;
 import com.yahoo.elide.annotation.SecurityCheck;
 import com.yahoo.elide.core.security.ChangeSpec;
 import com.yahoo.elide.core.security.RequestScope;
@@ -28,7 +29,10 @@ public class ExecutorManageWorkspaceHistory extends OperationCheck<Workspace> {
         }
 
         Map<String, Object> claims = jwt.getTokenAttributes();
-        if (!"TerrakubeInternal".equals(claims.get("iss"))) {
+        if (!"TerrakubeInternal".equals(claims.get("iss")) && !RunnerToken.isRunner(claims)) {
+            return false;
+        }
+        if (RunnerToken.isRunner(claims)) {
             return false;
         }
 

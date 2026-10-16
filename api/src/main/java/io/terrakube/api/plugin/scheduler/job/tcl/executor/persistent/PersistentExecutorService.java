@@ -71,6 +71,10 @@ public class PersistentExecutorService {
     private static final Duration RESPONSE_TIMEOUT = Duration.ofSeconds(60);
 
     public void send(Job job, ExecutorContext executorContext) throws ExecutionException {
+        if (executorContext.getRunnerToken() != null) {
+            throw new ExecutionException(new Throwable("Hardened job " + job.getId()
+                    + " cannot be dispatched to a persistent executor or agent"));
+        }
         WebClient webClient = webClientBuilder
                 .clone()
                 .clientConnector(ReactorNettyWebClientFactory.connector(RESPONSE_TIMEOUT))
@@ -126,6 +130,7 @@ public class PersistentExecutorService {
         log.debug("Sending Job: /n {}", executorContext.toBuilder()
                 .accessToken("****")
                 .moduleSshKey("****")
+                .runnerToken(null)
                 .build());
         log.info("Response Status: {}", response.getStatusCode().value());
 

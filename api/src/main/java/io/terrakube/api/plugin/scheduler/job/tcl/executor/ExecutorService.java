@@ -18,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 
+import io.terrakube.api.plugin.hardened.RunnerTokenService;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ephemeral.EphemeralExecutorService;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.persistent.PersistentExecutorService;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.Flow;
@@ -92,6 +93,10 @@ public class ExecutorService {
     private AddressRepository addressRepository;
     @Autowired
     private io.terrakube.api.plugin.policy.PolicyResolutionService policyResolutionService;
+    @Autowired(required = false)
+    RunnerTokenService runnerTokenService;
+    @Autowired(required = false)
+    io.terrakube.api.plugin.hardened.RunnerSourceService runnerSourceService;
 
     public void execute(Job job, String stepId, Flow flow) throws ExecutionException {
         log.info("Pending Job: {} WorkspaceId: {}", job.getId(), job.getWorkspace().getId());
@@ -225,7 +230,12 @@ public class ExecutorService {
             executorContext.setPolicyExemptionList(policyResolutionService.resolveExemptionsForJob(job));
         }
         executorContext = validateJobAddress(executorContext, job);
-        if (isEphemeralExecutorEnabled(executorContext.getEnvironmentVariables())) {
+        if (runnerTokenService != null && runnerTokenService.isEnabled()) {
+            runnerSourceService.prepare(job, executorContext);
+            executorContext.setRunnerToken(runnerTokenService.mint(executorContext.getOrganizationId(),
+                    executorContext.getWorkspaceId(), executorContext.getJobId(), executorContext.getStepId(), flow.getType()));
+            ephemeralExecutorService.send(job, executorContext);
+        } else if (isEphemeralExecutorEnabled(executorContext.getEnvironmentVariables())) {
             ephemeralExecutorService.send(job, executorContext);
         } else {
             persistentExecutorService.send(job, executorContext);

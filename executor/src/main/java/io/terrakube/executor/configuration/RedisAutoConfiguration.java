@@ -10,6 +10,7 @@ import javax.net.ssl.SSLSocketFactory;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.TrustManagerFactory;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.connection.RedisClusterConfiguration;
@@ -25,6 +26,7 @@ import org.springframework.util.StringUtils;
 
 @Slf4j
 @Configuration
+@ConditionalOnProperty(prefix = "io.terrakube.executor.flags", name = "hardened", havingValue = "false", matchIfMissing = true)
 public class RedisAutoConfiguration {
 
     @Bean

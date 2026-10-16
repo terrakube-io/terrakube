@@ -1,5 +1,6 @@
 package io.terrakube.executor.service.workspace;
 
+import io.terrakube.executor.service.workspace.security.RunnerTokenHolder;
 import java.io.*;
 import java.net.*;
 import java.nio.charset.Charset;
@@ -91,6 +92,8 @@ public class SetupWorkspaceImpl implements SetupWorkspace {
                     terraformJob.getWorkspaceId());
             if ("policyEvaluation".equals(terraformJob.getType())) {
                 log.info("policyEvaluation job detected: bypassing workspace git clone and tar.gz download (headless compliance evaluation)");
+            } else if (RunnerTokenHolder.isSet()) {
+                downloadRunnerConfiguration(workspaceCloneFolder);
             } else if (!terraformJob.getBranch().equals("remote-content")) {
                 downloadWorkspaceGit(workspaceCloneFolder, terraformJob);
             } else {
@@ -342,6 +345,15 @@ public class SetupWorkspaceImpl implements SetupWorkspace {
             SshdSessionFactory sshSessionFactory, TerraformJob terraformJob) {
         fetchCommand.setRemote("origin");
         return configureTransport(fetchCommand, sshSessionFactory, credentialsProvider(terraformJob));
+    }
+
+    private void downloadRunnerConfiguration(File folder) throws IOException, URISyntaxException {
+        String base = apiUrl.endsWith("/") ? apiUrl.substring(0, apiUrl.length() - 1) : apiUrl;
+        URLConnection connection = new URI(base + "/tfstate/v1/runner/configuration").toURL().openConnection();
+        connection.setRequestProperty("Authorization", "Bearer " + RunnerTokenHolder.require());
+        try (InputStream in = connection.getInputStream()) {
+            extractTarGZ(in, folder.getPath());
+        }
     }
 
     private void downloadWorkspaceTarGz(File tarGzFolder, String organizationId, String jobId) throws IOException, URISyntaxException {

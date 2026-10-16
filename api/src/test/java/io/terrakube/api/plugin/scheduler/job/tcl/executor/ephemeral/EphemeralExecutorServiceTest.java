@@ -81,7 +81,7 @@ public class EphemeralExecutorServiceTest {
     }
 
     private EphemeralExecutorService subject() {
-        return new EphemeralExecutorService(client, config);
+        return new EphemeralExecutorService(client, config, null);
     }
 
     private Job job() {

@@ -27,6 +27,8 @@ public class TerraformJob {
     private String vcsType;
     @ToString.Exclude
     private String accessToken;
+    @ToString.Exclude
+    private String runnerToken;
     private String connectionType;
     @ToString.Exclude
     private String terraformOutput;

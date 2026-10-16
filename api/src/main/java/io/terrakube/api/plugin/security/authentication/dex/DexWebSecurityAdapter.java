@@ -1,5 +1,6 @@
 package io.terrakube.api.plugin.security.authentication.dex;
 
+import io.terrakube.api.plugin.hardened.RunnerTokenService;
 import io.terrakube.api.plugin.token.login.TerraformLoginProperties;
 import io.terrakube.api.repository.FederatedRepository;
 import lombok.extern.slf4j.Slf4j;
@@ -14,6 +15,8 @@ import org.springframework.security.config.annotation.method.configuration.Enabl
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.csrf.CsrfFilter;
+import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -72,7 +75,13 @@ public class DexWebSecurityAdapter {
                                                @Value("${io.terrakube.token.issuer-uri}") String issuerUri,
                                                @Value("${io.terrakube.token.pat}") String patJwtSecret,
                                                @Value("${io.terrakube.token.internal}") String internalJwtSecret, PatRepository patRepository,
-                                               TeamTokenRepository teamTokenRepository, FederatedRepository federatedRepository) throws Exception {
+                                               TeamTokenRepository teamTokenRepository, FederatedRepository federatedRepository,
+                                               RunnerTokenService runnerTokenService) throws Exception {
+                if (runnerTokenService.isEnabled()) {
+                        http.addFilterBefore(new RunnerBasicAuthFilter(), CsrfFilter.class);
+                        http.addFilterAfter(new RunnerEndpointFilter(), BearerTokenAuthenticationFilter.class);
+                        http.csrf(csrf -> csrf.ignoringRequestMatchers(RunnerBasicAuthFilter.RUNNER_PATH_PREFIX + "**"));
+                }
                 http.cors(Customizer.withDefaults())
                                 .csrf(crsf -> crsf.ignoringRequestMatchers("/remote/tfe/v2/configuration-versions/*",
                                                 "/tfstate/v1/archive/*/terraform.tfstate",
@@ -119,6 +128,7 @@ public class DexWebSecurityAdapter {
                                                         .patRepository(patRepository)
                                                         .teamTokenRepository(teamTokenRepository)
                                                         .federatedRepository(federatedRepository)
+                                                        .runnerTokenService(runnerTokenService)
                                                         .build();
                                         oauth2.authenticationManagerResolver(authenticationManagerResolver);
                                 });

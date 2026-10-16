@@ -4,11 +4,13 @@ import lombok.Getter;
 import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.PropertySource;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
 
 @Component
+@ConditionalOnProperty(prefix = "io.terrakube.executor.flags", name = "hardened", havingValue = "false", matchIfMissing = true)
 @Getter
 @Setter
 @PropertySource(value = "classpath:application.properties", ignoreResourceNotFound = true)

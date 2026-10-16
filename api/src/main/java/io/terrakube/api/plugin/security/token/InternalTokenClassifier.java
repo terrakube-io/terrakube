@@ -12,6 +12,9 @@ public final class InternalTokenClassifier {
     }
 
     public static InternalTokenType classify(Map<String, Object> claims) {
+        if (RunnerToken.isRunner(claims)) {
+            return InternalTokenType.RUNNER_JOB;
+        }
         if (claims == null || !INTERNAL_ISSUER.equals(claims.get("iss"))) {
             return InternalTokenType.NOT_INTERNAL;
         }

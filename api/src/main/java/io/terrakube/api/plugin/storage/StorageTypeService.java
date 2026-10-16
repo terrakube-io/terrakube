@@ -21,6 +21,16 @@ public interface StorageTypeService {
 
     void uploadState(String organizationId, String workspaceId, String terraformState, String historyId);
 
+    java.util.Optional<byte[]> readCurrentState(String organizationId, String workspaceId);
+
+    void uploadCurrentState(String organizationId, String workspaceId, byte[] terraformState);
+
+    void uploadStateHistory(String organizationId, String workspaceId, String historyId, byte[] stateJson, byte[] rawState);
+
+    void uploadTerraformPlan(String organizationId, String workspaceId, String jobId, String stepId, byte[] terraformPlan);
+
+    void uploadStepOutput(String organizationId, String jobId, String stepId, byte[] output);
+
     String saveContext(int jobId, String jobContext);
 
     String getContext(int jobId);

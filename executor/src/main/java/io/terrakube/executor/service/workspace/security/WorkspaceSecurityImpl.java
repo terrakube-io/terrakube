@@ -77,6 +77,9 @@ public class WorkspaceSecurityImpl implements WorkspaceSecurity {
 
     @Override
     public String generateAccessToken(int minutes, String organizationId, String workspaceId, String jobId, String stepId) {
+        if (RunnerTokenHolder.isSet()) {
+            return RunnerTokenHolder.require();
+        }
         SecretKey key = Keys.hmacShaKeyFor(Decoders.BASE64URL.decode(this.internalSecret));
 
         var builder = Jwts.builder()

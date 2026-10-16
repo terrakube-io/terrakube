@@ -15,6 +15,7 @@ import io.terrakube.executor.service.scripts.ScriptEngineService;
 import io.terrakube.executor.service.terraform.cache.BinaryCacheRecoveryException;
 import io.terrakube.executor.service.terraform.cache.BinaryCacheRecoveryService;
 import io.terrakube.executor.service.terraform.structured.StructuredOutputPersistenceQueue;
+import io.terrakube.executor.service.workspace.security.RunnerTokenHolder;
 import io.terrakube.terraform.TerraformClient;
 import io.terrakube.terraform.TerraformDownloader;
 import io.terrakube.terraform.TerraformProcessData;
@@ -97,7 +98,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
     }
 
     @Autowired
-    public TerraformExecutorServiceImpl(TerraformClient terraformClient, TerraformState terraformState, ScriptEngineService scriptEngineService, ProcessLogs logsService, PlanStructuredOutputService planStructuredOutputService, ApplyStructuredOutputService applyStructuredOutputService, TerraformOutputsService terraformOutputsService, ObjectMapper objectMapper, @Value("${io.terrakube.terraform.flags.enableColor}") boolean enableColorOutput, RedisTemplate redisTemplate, @Value("${io.terrakube.executor.redis.timeout}") int redisTimeout, StructuredOutputPersistenceQueue structuredOutputPersistenceQueue, ExecutorFlagsProperties executorFlagsProperties, StructuredOutputProperties structuredOutputProperties, MeterRegistry meterRegistry, BinaryCacheRecoveryService binaryCacheRecoveryService, @Autowired(required = false) OpaExecutorService opaExecutorService) {
+    public TerraformExecutorServiceImpl(TerraformClient terraformClient, TerraformState terraformState, ScriptEngineService scriptEngineService, ProcessLogs logsService, PlanStructuredOutputService planStructuredOutputService, ApplyStructuredOutputService applyStructuredOutputService, TerraformOutputsService terraformOutputsService, ObjectMapper objectMapper, @Value("${io.terrakube.terraform.flags.enableColor}") boolean enableColorOutput, @org.springframework.lang.Nullable RedisTemplate redisTemplate, @Value("${io.terrakube.executor.redis.timeout}") int redisTimeout, StructuredOutputPersistenceQueue structuredOutputPersistenceQueue, ExecutorFlagsProperties executorFlagsProperties, StructuredOutputProperties structuredOutputProperties, MeterRegistry meterRegistry, BinaryCacheRecoveryService binaryCacheRecoveryService, @Autowired(required = false) OpaExecutorService opaExecutorService) {
         this.terraformClient = terraformClient;
         this.terraformState = terraformState;
         this.scriptEngineService = scriptEngineService;
@@ -139,6 +140,9 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
     }
 
     private void waitForStreamCompletion(String jobId, int maxWaitSeconds) {
+        if (redisTemplate == null || (executorFlagsProperties != null && executorFlagsProperties.isHardened())) {
+            return;
+        }
         int pollInterval = 1000; // 1 second
         int totalWait = 0;
         long lastMessageCount = -1;
@@ -1366,6 +1370,11 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         if (terraformJob.getEnvironmentVariables().containsKey("ENABLE_DYNAMIC_CREDENTIALS_GCP")) {
             log.info("GOOGLE_APPLICATION_CREDENTIALS updating location to: {}", workspaceRootDirectory.getAbsolutePath() + "/terrakube_config_dynamic_credentials.json");
             terraformJob.getEnvironmentVariables().put("GOOGLE_APPLICATION_CREDENTIALS", workspaceRootDirectory.getAbsolutePath() + "/terrakube_config_dynamic_credentials.json");
+        }
+
+        if (RunnerTokenHolder.isSet()) {
+            terraformJob.getEnvironmentVariables().put("TF_HTTP_USERNAME", "runner");
+            terraformJob.getEnvironmentVariables().put("TF_HTTP_PASSWORD", RunnerTokenHolder.require());
         }
 
         return terraformJob.getEnvironmentVariables();

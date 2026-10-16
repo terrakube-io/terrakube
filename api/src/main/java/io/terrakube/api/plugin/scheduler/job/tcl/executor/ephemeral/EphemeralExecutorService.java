@@ -9,6 +9,7 @@ import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import io.terrakube.api.plugin.hardened.HardenedModeProperties;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutionException;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutorContext;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutorUnavailableException;
@@ -42,11 +43,19 @@ public class EphemeralExecutorService {
     private static final String ENVFROM_CONFIG_MAP = "EPHEMERAL_CONFIG_ENVFROM_CONFIG_MAP";
     private static final String POD_ANNOTATIONS = "EPHEMERAL_CONFIG_POD_ANNOTATIONS";
 
+    static final String HARDENED_LABEL = "terrakube.io/hardened";
+    static final String HARDENED_JOB_DATA_KEY = "EphemeralJobData";
+
     KubernetesClient kubernetesClient;
     EphemeralConfiguration ephemeralConfiguration;
+    HardenedModeProperties hardenedModeProperties;
 
     public void send(Job job, ExecutorContext executorContext) throws ExecutionException {
         final String jobName = String.format("job-%s-%s", job.getId(), System.currentTimeMillis());
+        if (hardenedModeProperties != null && hardenedModeProperties.isEnabled()) {
+            applyHardened(buildHardenedSecret(jobName, executorContext), buildHardenedJob(jobName, executorContext));
+            return;
+        }
         log.info("Ephemeral Executor Image {}, Job: {}, Namespace: {}, NodeSelector: {}", ephemeralConfiguration.getImage(), jobName, ephemeralConfiguration.getNamespace(), ephemeralConfiguration.getNodeSelector());
         final List<EnvFromSource> executorEnvFromSources = new ArrayList<>();
         if (ephemeralConfiguration.getSecret() != null) {
@@ -349,10 +358,124 @@ public class EphemeralExecutorService {
                     .endMetadata().endTemplate().endSpec();
         }
 
-        io.fabric8.kubernetes.api.model.batch.v1.Job k8sJob = jobBuilder.build();
+        apply(jobBuilder.build());
+    }
 
+    io.fabric8.kubernetes.api.model.batch.v1.Job buildHardenedJob(String jobName, ExecutorContext executorContext)
+            throws ExecutionException {
+        if (executorContext.getRunnerToken() == null || executorContext.getRunnerToken().isBlank()) {
+            throw new ExecutionException(new Throwable("Hardened job " + jobName + " has no runner token"));
+        }
+
+        List<EnvVar> env = List.of(
+                new EnvVar("EphemeralFlagBatch", "true", null),
+                new EnvVarBuilder().withName("EphemeralJobData").withNewValueFrom()
+                        .withNewSecretKeyRef(HARDENED_JOB_DATA_KEY, jobName, false).endValueFrom().build(),
+                new EnvVar("TerrakubeHardenedMode", "true", null),
+                new EnvVar("TerraformStateType", "ApiTerraformStateImpl", null),
+                new EnvVar("LogViaApi", "true", null));
+
+        Map<String, String> labels = new HashMap<>();
+        labels.put("terrakube.io/organization", executorContext.getOrganizationId());
+        labels.put("terrakube.io/workspace", executorContext.getWorkspaceId());
+        labels.put(HARDENED_LABEL, "true");
+
+        return new JobBuilder()
+                .withApiVersion("batch/v1")
+                .withNewMetadata()
+                .withName(jobName)
+                .withLabels(labels)
+                .endMetadata()
+                .withNewSpec()
+                .withNewTemplate()
+                .withNewMetadata()
+                .withLabels(labels)
+                .endMetadata()
+                .withNewSpec()
+                .withServiceAccountName(hardenedModeProperties.getRunnerServiceAccount())
+                .withAutomountServiceAccountToken(false)
+                .withEnableServiceLinks(false)
+                .withNodeSelector(ephemeralConfiguration.getNodeSelector())
+                .withNewSecurityContext()
+                .withRunAsNonRoot(true)
+                .withFsGroup(1000L)
+                .withNewSeccompProfile().withType("RuntimeDefault").endSeccompProfile()
+                .endSecurityContext()
+                .addNewContainer()
+                .withName("executor")
+                .withImage(ephemeralConfiguration.getImage())
+                .addNewEnvFrom()
+                .withNewConfigMapRef().withName(hardenedModeProperties.getRunnerConfigMap()).withOptional(false).endConfigMapRef()
+                .endEnvFrom()
+                .withEnv(env)
+                .withNewSecurityContext()
+                .withAllowPrivilegeEscalation(false)
+                .withPrivileged(false)
+                .withRunAsNonRoot(true)
+                .withNewCapabilities().withDrop("ALL").endCapabilities()
+                .endSecurityContext()
+                .endContainer()
+                .withRestartPolicy("Never")
+                .withTerminationGracePeriodSeconds(ephemeralConfiguration.getTerminationGracePeriodSeconds())
+                .endSpec()
+                .endTemplate()
+                .withTtlSecondsAfterFinished(ephemeralConfiguration.getTtlSecondsAfterFinished())
+                .withActiveDeadlineSeconds(ephemeralConfiguration.getActiveDeadlineSeconds())
+                .withBackoffLimit(0)
+                .endSpec()
+                .build();
+    }
+
+    Secret buildHardenedSecret(String jobName, ExecutorContext executorContext) throws ExecutionException {
+        String jobData;
         try {
-            kubernetesClient.batch().v1().jobs().inNamespace(ephemeralConfiguration.getNamespace()).resource(k8sJob).serverSideApply();
+            jobData = Base64.getEncoder().encodeToString(
+                    new ObjectMapper().writeValueAsString(executorContext).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        } catch (Exception e) {
+            throw new ExecutionException(e);
+        }
+        return new SecretBuilder()
+                .withNewMetadata()
+                .withName(jobName)
+                .addToLabels("terrakube.io/workspace", executorContext.getWorkspaceId())
+                .addToLabels(HARDENED_LABEL, "true")
+                .endMetadata()
+                .withType("Opaque")
+                .addToStringData(HARDENED_JOB_DATA_KEY, jobData)
+                .build();
+    }
+
+    private void applyHardened(Secret secret, io.fabric8.kubernetes.api.model.batch.v1.Job k8sJob) throws ExecutionException {
+        try {
+            kubernetesClient.secrets().inNamespace(ephemeralConfiguration.getNamespace()).resource(secret).serverSideApply();
+        } catch (KubernetesClientException e) {
+            if (isRetryable(e)) {
+                throw new ExecutorUnavailableException(e);
+            }
+            throw new ExecutionException(e);
+        }
+        io.fabric8.kubernetes.api.model.batch.v1.Job created;
+        try {
+            created = apply(k8sJob);
+        } catch (ExecutionException e) {
+            kubernetesClient.secrets().inNamespace(ephemeralConfiguration.getNamespace()).withName(secret.getMetadata().getName()).delete();
+            throw e;
+        }
+        if (created != null && created.getMetadata() != null && created.getMetadata().getUid() != null) {
+            try {
+                kubernetesClient.secrets().inNamespace(ephemeralConfiguration.getNamespace()).withName(secret.getMetadata().getName())
+                        .edit(s -> new SecretBuilder(s).editMetadata().withOwnerReferences(new OwnerReferenceBuilder()
+                                .withApiVersion("batch/v1").withKind("Job").withName(created.getMetadata().getName())
+                                .withUid(created.getMetadata().getUid()).build()).endMetadata().build());
+            } catch (KubernetesClientException e) {
+                log.warn("Unable to attach secret {} to job {}: {}", secret.getMetadata().getName(), k8sJob.getMetadata().getName(), e.getMessage());
+            }
+        }
+    }
+
+    private io.fabric8.kubernetes.api.model.batch.v1.Job apply(io.fabric8.kubernetes.api.model.batch.v1.Job k8sJob) throws ExecutionException {
+        try {
+            return kubernetesClient.batch().v1().jobs().inNamespace(ephemeralConfiguration.getNamespace()).resource(k8sJob).serverSideApply();
         } catch (KubernetesClientException e) {
             if (isRetryable(e)) {
                 throw new ExecutorUnavailableException(e);

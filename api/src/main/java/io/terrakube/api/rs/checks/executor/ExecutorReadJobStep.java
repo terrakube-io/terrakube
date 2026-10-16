@@ -1,5 +1,6 @@
 package io.terrakube.api.rs.checks.executor;
 
+import io.terrakube.api.plugin.security.token.RunnerToken;
 import com.yahoo.elide.annotation.SecurityCheck;
 import com.yahoo.elide.core.security.ChangeSpec;
 import com.yahoo.elide.core.security.RequestScope;
@@ -15,6 +16,9 @@ import java.util.Optional;
 @SecurityCheck(ExecutorReadJobStep.RULE)
 public class ExecutorReadJobStep extends OperationCheck<Step> {
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    io.terrakube.api.plugin.hardened.RunnerChangePolicy runnerChangePolicy;
+
     public static final String RULE = "executor read job step";
 
     @Override
@@ -28,7 +32,10 @@ public class ExecutorReadJobStep extends OperationCheck<Step> {
         }
 
         Map<String, Object> claims = jwt.getTokenAttributes();
-        if (!"TerrakubeInternal".equals(claims.get("iss"))) {
+        if (!"TerrakubeInternal".equals(claims.get("iss")) && !RunnerToken.isRunner(claims)) {
+            return false;
+        }
+        if (RunnerToken.isRunner(claims) && (runnerChangePolicy == null || !runnerChangePolicy.canRead(claims))) {
             return false;
         }
 

@@ -47,6 +47,7 @@ public class UpdateJobStatusImpl implements UpdateJobStatus {
             if (job.getAttributes().getStatus().equals("rejected")) {
                 log.warn("Job {} is rejected, keeping job status unchanged", terraformJob.getJobId());
             } else {
+                commitId = commitIdFor(job, commitId);
                 job.getAttributes().setStatus("running");
                 job.getAttributes().setCommitId(commitId);
 
@@ -90,6 +91,9 @@ public class UpdateJobStatusImpl implements UpdateJobStatus {
     }
 
     private void updateJobStatus(boolean successful, boolean isPlan, int exitCode, String organizationId, String jobId, String stepId, String jobOutput, String jobErrorOutput, String jobPlan, String commitId, boolean hasSoftMandatoryViolations, String approvalTeam) {
+        if (executorFlagsProperties.isHardened()) {
+            approvalTeam = null;
+        }
         Job job = terrakubeClient.getJobById(organizationId, jobId).getData();
         String status = "";
         boolean planChanges = true;
@@ -138,6 +142,7 @@ public class UpdateJobStatusImpl implements UpdateJobStatus {
         String stepOutput = existingOutput + " Step " + stepId + " completed\n";
         job.getAttributes().setOutput(stepOutput);
         job.getAttributes().setTerraformPlan(jobPlan);
+        commitId = commitIdFor(job, commitId);
         job.getAttributes().setCommitId(commitId);
 
         Job updateJob = new Job();
@@ -159,6 +164,11 @@ public class UpdateJobStatusImpl implements UpdateJobStatus {
         jobRequest.setData(updateJob);
 
         terrakubeClient.updateJob(jobRequest, job.getRelationships().getOrganization().getData().getId(), job.getId());
+    }
+
+    private String commitIdFor(Job job, String commitId) {
+        String current = job.getAttributes().getCommitId();
+        return executorFlagsProperties.isHardened() && current != null ? current : commitId;
     }
 
     private void updateStepStatus(boolean status, String organizationId, String jobId, String stepId, String jobOutput, String jobErrorOutput) {

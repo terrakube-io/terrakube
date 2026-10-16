@@ -109,6 +109,32 @@ class RemoteTfeServiceTest {
     private final JobNotificationTrigger jobNotificationTrigger = Mockito.mock(JobNotificationTrigger.class);
 
     @Test
+    void runnerTokensAreOrganizationScoped() {
+        RemoteTfeService service = remoteTfeService();
+        Organization organization = organization("sample-org");
+        Organization other = organization("other-org");
+        Workspace workspace = workspace("alpha", organization);
+        Jwt jwt = Jwt.withTokenValue("token").header("alg", "none")
+                .claim("iss", "TerrakubeRunner")
+                .claim("organizationId", organization.getId().toString())
+                .claim("workspaceId", workspace.getId().toString())
+                .build();
+        JwtAuthenticationToken runner = new JwtAuthenticationToken(jwt);
+        when(organizationRepository.getOrganizationByName("sample-org")).thenReturn(organization);
+        when(organizationRepository.getOrganizationByName("other-org")).thenReturn(other);
+        when(workspaceRepository.findById(workspace.getId())).thenReturn(Optional.of(workspace));
+
+        assertNotNull(service.getOrgEntitlementSet("sample-org", runner));
+        assertNull(service.getOrgEntitlementSet("other-org", runner));
+        verify(teamTokenService, never()).getCurrentGroups(runner);
+
+        assertTrue(service.workspaceBelongsToOrganization(workspace.getId().toString(), organization.getId().toString()));
+        assertFalse(service.workspaceBelongsToOrganization(workspace.getId().toString(), other.getId().toString()));
+        assertFalse(service.workspaceBelongsToOrganization("not-a-uuid", organization.getId().toString()));
+        assertFalse(service.workspaceBelongsToOrganization(UUID.randomUUID().toString(), organization.getId().toString()));
+    }
+
+    @Test
     void listWorkspaceWithSearchNameUsesLoadedWorkspaceEntities() {
         RemoteTfeService service = remoteTfeService();
         JwtAuthenticationToken currentUser = currentUser();

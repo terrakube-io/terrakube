@@ -44,7 +44,10 @@ public class DexWebSecurityAdapter {
 
     @Bean
     @Order(1)
-    public SecurityFilterChain filterChain(HttpSecurity http, @Value("${io.terrakube.token.issuer-uri}") String issuerUri, @Value("${io.terrakube.token.pat}") String patJwtSecret, @Value("${io.terrakube.token.internal}") String internalJwtSecret, TerrakubeClient terrakubeClient, OpenRegistryProperties openRegistryProperties) throws Exception {
+    public SecurityFilterChain filterChain(HttpSecurity http, @Value("${io.terrakube.token.issuer-uri}") String issuerUri, @Value("${io.terrakube.token.pat}") String patJwtSecret, @Value("${io.terrakube.token.internal}") String internalJwtSecret, TerrakubeClient terrakubeClient, OpenRegistryProperties openRegistryProperties,
+                                           @Value("${io.terrakube.registry.runner-token-public-key-path:}") String runnerTokenPublicKeyPath) throws Exception {
+        java.security.interfaces.RSAPublicKey runnerPublicKey = runnerTokenPublicKeyPath.isBlank()
+                ? null : RunnerTokenDecoder.readPublicKey(runnerTokenPublicKeyPath);
         http.cors(Customizer.withDefaults())
                 .authorizeHttpRequests(authz -> authz
                         .requestMatchers("/.well-known/**").permitAll()
@@ -60,6 +63,7 @@ public class DexWebSecurityAdapter {
                             .patSecret(patJwtSecret)
                             .internalSecret(internalJwtSecret)
                             .terrakubeClient(terrakubeClient)
+                            .runnerPublicKey(runnerPublicKey)
                             .federatedCacheExpireAfterWrite(openRegistryProperties.getFederatedCacheExpireAfterWrite())
                             .federatedCacheMaximumSize(openRegistryProperties.getFederatedCacheMaximumSize())
                             .providerManagerCacheExpireAfterWrite(openRegistryProperties.getProviderManagerCacheExpireAfterWrite())

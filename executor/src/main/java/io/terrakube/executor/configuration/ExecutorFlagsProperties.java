@@ -18,6 +18,7 @@ public class ExecutorFlagsProperties {
     private String ephemeralJobData;
     private String batchJobFile;
     private boolean disableAcknowledge;
+    private boolean hardened;
 
     // When true, structured plan/apply context persistence is handed to a bounded async queue
     // instead of running synchronously on the Terraform process-output reader thread. Set false to

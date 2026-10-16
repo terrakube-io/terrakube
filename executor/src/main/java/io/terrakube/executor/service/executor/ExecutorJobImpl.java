@@ -19,6 +19,7 @@ import org.springframework.boot.availability.ReadinessState;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataAccessException;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.lang.Nullable;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
@@ -94,7 +95,7 @@ public class ExecutorJobImpl implements ExecutorJob {
             ApplicationEventPublisher eventPublisher,
             JobExecutionWatchdog jobExecutionWatchdog,
             ExecutorCapacityGate executorCapacityGate,
-            RedisTemplate<String, Object> redisTemplate,
+            @Nullable RedisTemplate<String, Object> redisTemplate,
             @Autowired(required = false) OpaExecutorService opaExecutorService,
             @Autowired(required = false) ProcessLogs logsService) {
         this.setupWorkspace = setupWorkspace;
@@ -175,6 +176,9 @@ public class ExecutorJobImpl implements ExecutorJob {
     // one Redis round-trip instead of its own 30s interval. Channel name is duplicated as a
     // literal in ExecutorAvailabilityListener (api module has no shared module with this one).
     private void publishExecutorAvailable() {
+        if (redisTemplate == null) {
+            return;
+        }
         try {
             redisTemplate.convertAndSend("terrakube:executor-available", "");
         } catch (DataAccessException e) {

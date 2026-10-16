@@ -4,7 +4,10 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
+import io.terrakube.api.plugin.hardened.RunnerTokenDecoder;
+import io.terrakube.api.plugin.hardened.RunnerTokenService;
 import io.terrakube.api.plugin.security.federated.FederatedTokenClaims;
+import io.terrakube.api.plugin.security.token.RunnerToken;
 import io.terrakube.api.repository.FederatedRepository;
 import io.terrakube.api.repository.PatRepository;
 import io.terrakube.api.repository.TeamTokenRepository;
@@ -56,6 +59,7 @@ public class DexAuthenticationManagerResolver implements AuthenticationManagerRe
     private PatRepository patRepository;
     private TeamTokenRepository teamTokenRepository;
     private FederatedRepository federatedRepository;
+    private RunnerTokenService runnerTokenService;
 
     // Avoids re-fetching issuer metadata from Dex on every request.
     @Builder.Default
@@ -73,6 +77,15 @@ public class DexAuthenticationManagerResolver implements AuthenticationManagerRe
         if (jwtTypePat.equals(issuer) && isTokenDeleted(claimAsString(tokenAttributes, "jti"))) {
             // Force a revoked token to use the wrong key so authentication always fails.
             issuer = jwtTypeInternal;
+        }
+
+        if (RunnerToken.ISSUER.equals(issuer)) {
+            if (runnerTokenService == null || !runnerTokenService.isEnabled() || runnerTokenService.getPublicKey() == null) {
+                throw new BadCredentialsException("Runner tokens are only accepted in hardened mode");
+            }
+            JwtDecoder runnerDecoder = decoderCache.computeIfAbsent("runner-decoder:" + RunnerToken.ISSUER,
+                    k -> RunnerTokenDecoder.create(runnerTokenService.getPublicKey()));
+            return new ProviderManager(new JwtAuthenticationProvider(runnerDecoder));
         }
 
         boolean federatedCredentialFound = false;

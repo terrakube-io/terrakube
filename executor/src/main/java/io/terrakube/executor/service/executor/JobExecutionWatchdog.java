@@ -10,6 +10,9 @@ import org.springframework.boot.availability.LivenessState;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataAccessException;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.lang.Nullable;
+import org.springframework.beans.factory.annotation.Autowired;
+import io.terrakube.executor.plugin.tfstate.api.RunnerApiClient;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -43,9 +46,19 @@ public class JobExecutionWatchdog {
     private final AtomicReference<Instant> busySince = new AtomicReference<>();
     private final AtomicReference<TerraformJob> currentJob = new AtomicReference<>();
 
+    private final RunnerApiClient runnerApiClient;
+
+    public JobExecutionWatchdog(ApplicationEventPublisher eventPublisher, long maxDurationMinutes,
+            RedisTemplate<String, Object> redisTemplate, UpdateJobStatus updateJobStatus) {
+        this(eventPublisher, maxDurationMinutes, redisTemplate, updateJobStatus, null);
+    }
+
+    @Autowired
     public JobExecutionWatchdog(ApplicationEventPublisher eventPublisher,
             @Value("${io.terrakube.executor.job.maxDurationMinutes}") long maxDurationMinutes,
-            RedisTemplate<String, Object> redisTemplate, UpdateJobStatus updateJobStatus) {
+            @Nullable RedisTemplate<String, Object> redisTemplate, UpdateJobStatus updateJobStatus,
+            @Nullable RunnerApiClient runnerApiClient) {
+        this.runnerApiClient = runnerApiClient;
         this.eventPublisher = eventPublisher;
         this.maxJobDuration = Duration.ofMinutes(maxDurationMinutes);
         this.redisTemplate = redisTemplate;
@@ -83,6 +96,14 @@ public class JobExecutionWatchdog {
         if (job == null) {
             return;
         }
+        if (runnerApiClient != null) {
+            try {
+                runnerApiClient.put("/heartbeat", new byte[0]);
+            } catch (IllegalStateException | java.io.UncheckedIOException e) {
+                log.warn("Could not refresh heartbeat for Job {}: {}", job.getJobId(), e.getMessage());
+            }
+            return;
+        }
         try {
             if (redisTemplate != null && redisTemplate.opsForValue() != null) {
                 redisTemplate.opsForValue().set(HEARTBEAT_PREFIX + job.getJobId(), "1", HEARTBEAT_TTL);
@@ -93,6 +114,14 @@ public class JobExecutionWatchdog {
     }
 
     private void deleteHeartbeat(String jobId) {
+        if (runnerApiClient != null) {
+            try {
+                runnerApiClient.delete("/heartbeat");
+            } catch (IllegalStateException | java.io.UncheckedIOException e) {
+                log.warn("Could not delete heartbeat for Job {}: {}", jobId, e.getMessage());
+            }
+            return;
+        }
         try {
             redisTemplate.delete(HEARTBEAT_PREFIX + jobId);
         } catch (DataAccessException e) {

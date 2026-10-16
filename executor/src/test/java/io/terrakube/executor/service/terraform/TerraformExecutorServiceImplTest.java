@@ -16,6 +16,7 @@ import io.terrakube.executor.service.scripts.ScriptEngineService;
 import io.terrakube.executor.service.terraform.cache.BinaryCacheRecoveryException;
 import io.terrakube.executor.service.terraform.cache.BinaryCacheRecoveryService;
 import io.terrakube.executor.service.terraform.structured.StructuredOutputPersistenceQueue;
+import io.terrakube.executor.service.workspace.security.RunnerTokenHolder;
 import io.terrakube.terraform.TerraformClient;
 import io.terrakube.terraform.TerraformDownloader;
 import io.terrakube.terraform.TerraformProcessData;
@@ -193,6 +194,27 @@ class TerraformExecutorServiceImplTest {
         subject.resolveTerraformVersion(terraformJob);
 
         assertEquals(">= 99.0.0", terraformJob.getTerraformVersion());
+    }
+
+    @Test
+    void hardenedRunnersPassTheBackendCredentialsThroughTheEnvironmentOnly() throws Exception {
+        TerraformJob terraformJob = new TerraformJob();
+        terraformJob.setEnvironmentVariables(new HashMap<>());
+        Files.writeString(tempDir.resolve(".terrakube_temp_env"), "TF_HTTP_PASSWORD=forged\n");
+        RunnerTokenHolder.set("runner.jwt.token");
+        try {
+            Map<String, String> environment = subject().loadTempEnvironmentVariables(tempDir.toFile(), tempDir.toFile(), terraformJob);
+            assertEquals("runner", environment.get("TF_HTTP_USERNAME"));
+            assertEquals("runner.jwt.token", environment.get("TF_HTTP_PASSWORD"));
+        } finally {
+            RunnerTokenHolder.clear();
+        }
+
+        TerraformJob defaultJob = new TerraformJob();
+        defaultJob.setEnvironmentVariables(new HashMap<>());
+        Files.delete(tempDir.resolve(".terrakube_temp_env"));
+        Map<String, String> environment = subject().loadTempEnvironmentVariables(tempDir.toFile(), tempDir.toFile(), defaultJob);
+        assertEquals(null, environment.get("TF_HTTP_PASSWORD"));
     }
 
     @Test

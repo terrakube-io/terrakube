@@ -149,7 +149,9 @@ public class ContextController {
 
         // The executor merges its output into what it reads here and writes it back, so a stale
         // per-pod cache entry would overwrite newer data; only UI polling is served from the cache.
-        boolean executor = principal != null && authenticatedUser != null && authenticatedUser.isServiceAccountInternal(new User(principal));
+        boolean executor = principal != null && ((principal instanceof org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken jwt
+                && io.terrakube.api.plugin.security.token.RunnerToken.isRunner(jwt.getTokenAttributes()))
+                || (authenticatedUser != null && authenticatedUser.isServiceAccountInternal(new User(principal))));
         String context;
         try {
             context = executor ? contextReadService.readFresh(jobId) : contextReadService.read(jobId);

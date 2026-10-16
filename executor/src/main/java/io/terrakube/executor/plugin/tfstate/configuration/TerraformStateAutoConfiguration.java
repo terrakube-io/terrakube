@@ -1,5 +1,7 @@
 package io.terrakube.executor.plugin.tfstate.configuration;
 
+import io.terrakube.executor.plugin.tfstate.api.ApiTerraformStateImpl;
+import io.terrakube.executor.plugin.tfstate.api.RunnerApiClient;
 import com.azure.storage.blob.BlobServiceClient;
 import com.azure.storage.blob.BlobServiceClientBuilder;
 import com.google.auth.Credentials;
@@ -60,7 +62,8 @@ public class TerraformStateAutoConfiguration {
             TerraformStatePathService terraformStatePathService,
             TerraformOutputPathService terraformOutputPathService,
             TerraformStateMetadataService terraformStateMetadataService,
-            @org.springframework.beans.factory.annotation.Autowired(required = false) io.terrakube.executor.service.workspace.security.WorkspaceSecurity workspaceSecurity) {
+            @org.springframework.beans.factory.annotation.Autowired(required = false) io.terrakube.executor.service.workspace.security.WorkspaceSecurity workspaceSecurity,
+            @org.springframework.beans.factory.annotation.Autowired(required = false) RunnerApiClient runnerApiClient) {
         TerraformState terraformState = null;
 
         if (terraformStateProperties != null)
@@ -162,6 +165,17 @@ public class TerraformStateAutoConfiguration {
                     } catch (IOException e) {
                         log.error(e.getMessage());
                     }
+                    break;
+                case ApiTerraformStateImpl:
+                    if (runnerApiClient == null) {
+                        throw new IllegalStateException("ApiTerraformStateImpl is only available in hardened mode");
+                    }
+                    terraformState = ApiTerraformStateImpl.builder()
+                            .runnerApiClient(runnerApiClient)
+                            .terrakubeClient(terrakubeClient)
+                            .terraformStatePathService(terraformStatePathService)
+                            .terraformOutputPathService(terraformOutputPathService)
+                            .build();
                     break;
                 default:
                     terraformState = LocalTerraformStateImpl.builder()

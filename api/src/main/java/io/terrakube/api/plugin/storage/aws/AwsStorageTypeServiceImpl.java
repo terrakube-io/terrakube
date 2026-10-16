@@ -61,6 +61,49 @@ public class AwsStorageTypeServiceImpl implements StorageTypeService {
         return data;
     }
 
+    private void uploadBytesToBucket(String blobKey, byte[] data) {
+        PutObjectRequest putObjectRequest = PutObjectRequest.builder()
+                .bucket(bucketName)
+                .key(blobKey)
+                .build();
+
+        s3client.putObject(putObjectRequest, RequestBody.fromBytes(data));
+        log.info("Upload Object {} completed", blobKey);
+    }
+
+    @Override
+    public java.util.Optional<byte[]> readCurrentState(String organizationId, String workspaceId) {
+        try {
+            return java.util.Optional.of(s3client.getObject(GetObjectRequest.builder()
+                    .bucket(bucketName)
+                    .key(String.format("tfstate/%s/%s/terraform.tfstate", organizationId, workspaceId))
+                    .build(), ResponseTransformer.toBytes()).asByteArray());
+        } catch (NoSuchKeyException e) {
+            return java.util.Optional.empty();
+        }
+    }
+
+    @Override
+    public void uploadStateHistory(String organizationId, String workspaceId, String historyId, byte[] stateJson, byte[] rawState) {
+        uploadBytesToBucket(String.format(BUCKET_STATE_JSON, organizationId, workspaceId, historyId), stateJson);
+        uploadBytesToBucket(String.format("tfstate/%s/%s/state/%s.raw.json", organizationId, workspaceId, historyId), rawState);
+    }
+
+    @Override
+    public void uploadCurrentState(String organizationId, String workspaceId, byte[] terraformState) {
+        uploadBytesToBucket(String.format("tfstate/%s/%s/terraform.tfstate", organizationId, workspaceId), terraformState);
+    }
+
+    @Override
+    public void uploadTerraformPlan(String organizationId, String workspaceId, String jobId, String stepId, byte[] terraformPlan) {
+        uploadBytesToBucket(String.format(BUCKET_STATE_LOCATION, organizationId, workspaceId, jobId, stepId), terraformPlan);
+    }
+
+    @Override
+    public void uploadStepOutput(String organizationId, String jobId, String stepId, byte[] output) {
+        uploadBytesToBucket(String.format(BUCKET_LOCATION_OUTPUT, organizationId, jobId, stepId), output);
+    }
+
     private void uploadStringToBucket(String bucketName, String blobKey, String data){
         PutObjectRequest putObjectRequest = PutObjectRequest.builder()
                 .bucket(bucketName)

@@ -3,6 +3,7 @@ package io.terrakube.api.plugin.state;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.terrakube.api.plugin.scheduler.ScheduleJobService;
+import io.terrakube.api.plugin.security.token.RunnerToken;
 import io.terrakube.api.plugin.security.encryption.EncryptionService;
 import io.terrakube.api.plugin.state.model.apply.ApplyRunData;
 import io.terrakube.api.plugin.state.model.apply.ApplyRunModel;
@@ -215,11 +216,16 @@ public class RemoteTfeService {
         this.jobNotificationTrigger = jobNotificationTrigger;
     }
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    io.terrakube.api.plugin.hardened.RunnerJobGuard runnerJobGuard;
+
     private boolean validateTerrakubeUser(JwtAuthenticationToken currentUser) {
         return currentUser.getTokenAttributes().get("iss").equals("TerrakubeInternal");
     }
 
     private boolean validateUserIsMemberOrg(Organization organization, JwtAuthenticationToken currentUser) {
+        if (RunnerToken.isRunner(currentUser.getTokenAttributes()))
+            return organization.getId().toString().equals(RunnerToken.claim(currentUser.getTokenAttributes(), RunnerToken.CLAIM_ORGANIZATION_ID));
         if (validateTerrakubeUser(currentUser))
             return true;
         List<String> userGroups = teamTokenService.getCurrentGroups(currentUser);
@@ -235,6 +241,8 @@ public class RemoteTfeService {
     }
 
     private boolean validateUserLimitedWorkspaceAccess(Organization organization, JwtAuthenticationToken currentUser) {
+        if (RunnerToken.isRunner(currentUser.getTokenAttributes()))
+            return false;
         List<String> groups = teamTokenService.getCurrentGroups(currentUser);
         Optional<List<Access>> accessList = accessRepository.findAllByWorkspaceOrganizationIdAndNameIn(organization.getId(), groups);
         if (accessList.isPresent()) {
@@ -1277,6 +1285,32 @@ public class RemoteTfeService {
 
     public String getWorkspaceName(String id){
         return workspaceRepository.getReferenceById(UUID.fromString(id)).getName();
+    }
+
+    public boolean runnerCanReadState(Map<String, Object> claims, String workspaceId) {
+        String organizationId = RunnerToken.claim(claims, RunnerToken.CLAIM_ORGANIZATION_ID);
+        String tokenWorkspaceId = RunnerToken.claim(claims, RunnerToken.CLAIM_WORKSPACE_ID);
+        if (tokenWorkspaceId == null || runnerJobGuard == null || !runnerJobGuard.jobActive(claims)
+                || !workspaceBelongsToOrganization(workspaceId, organizationId)) {
+            return false;
+        }
+        if (tokenWorkspaceId.equals(workspaceId)) {
+            return true;
+        }
+        return workspaceRepository.findById(UUID.fromString(workspaceId))
+                .map(Workspace::getSharedIds)
+                .map(ids -> Arrays.stream(ids.split(",")).map(String::trim).anyMatch(tokenWorkspaceId::equals))
+                .orElse(false);
+    }
+
+    public boolean workspaceBelongsToOrganization(String workspaceId, String organizationId) {
+        try {
+            return workspaceRepository.findById(UUID.fromString(workspaceId))
+                    .map(workspace -> workspace.getOrganization().getId().toString().equals(organizationId))
+                    .orElse(false);
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
     }
 
     public boolean validateWorkspaceIdTokenCanAccessState(String workspaceIdToken, String workspaceId) {

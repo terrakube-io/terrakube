@@ -1,5 +1,6 @@
 package io.terrakube.api.rs.checks.workspace;
 
+import io.terrakube.api.plugin.security.token.RunnerToken;
 import com.yahoo.elide.annotation.SecurityCheck;
 import com.yahoo.elide.core.Path;
 import com.yahoo.elide.core.filter.expression.AndFilterExpression;
@@ -37,7 +38,7 @@ public class WorkspaceReadFilter extends FilterExpressionCheck<Workspace> {
     public FilterExpression getFilterExpression(Type<?> entityClass, RequestScope requestScope) {
         if (requestScope.getUser() != null && requestScope.getUser().getPrincipal() instanceof JwtAuthenticationToken jwt) {
             Map<String, Object> claims = jwt.getTokenAttributes();
-            if ("TerrakubeInternal".equals(claims.get("iss")) && claims.get("workspaceId") != null) {
+            if (("TerrakubeInternal".equals(claims.get("iss")) && claims.get("workspaceId") != null) || RunnerToken.isRunner(claims)) {
                 try {
                     UUID wsId = UUID.fromString(claims.get("workspaceId").toString());
                     return new InPredicate(path(entityClass, requestScope, "id"), wsId);
@@ -70,7 +71,7 @@ public class WorkspaceReadFilter extends FilterExpressionCheck<Workspace> {
             Workspace workspace, FilterPredicate predicate, RequestScope requestScope) {
         if (requestScope.getUser() != null && requestScope.getUser().getPrincipal() instanceof JwtAuthenticationToken jwt) {
             Map<String, Object> claims = jwt.getTokenAttributes();
-            if ("TerrakubeInternal".equals(claims.get("iss")) && claims.get("workspaceId") != null) {
+            if (("TerrakubeInternal".equals(claims.get("iss")) && claims.get("workspaceId") != null) || RunnerToken.isRunner(claims)) {
                 try {
                     UUID wsId = UUID.fromString(claims.get("workspaceId").toString());
                     return workspace.getId() != null && workspace.getId().equals(wsId);

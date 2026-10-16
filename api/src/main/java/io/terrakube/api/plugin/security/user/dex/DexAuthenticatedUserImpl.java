@@ -4,6 +4,7 @@ import com.yahoo.elide.core.security.User;
 import io.terrakube.api.plugin.security.federated.FederatedLookupService;
 import io.terrakube.api.plugin.security.token.InternalTokenClassifier;
 import io.terrakube.api.plugin.security.token.InternalTokenType;
+import io.terrakube.api.plugin.security.token.RunnerToken;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -47,6 +48,8 @@ public class DexAuthenticatedUserImpl implements AuthenticatedUser {
     @Override
     public boolean isServiceAccount(User user) {
         log.debug("isServiceAccount/PAT {}", getSecurityPrincipal(user).getTokenAttributes().get("iss").equals("Terrakube") || getSecurityPrincipal(user).getTokenAttributes().get("iss").equals("TerrakubeInternal"));
+        if (RunnerToken.isRunner(getSecurityPrincipal(user).getTokenAttributes()))
+            return true;
         boolean isFederated = isFederatedAccount(user);
         if (isFederated)
             return true;

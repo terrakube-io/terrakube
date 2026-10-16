@@ -1,5 +1,6 @@
 package io.terrakube.executor.service.mode.online;
 
+import io.terrakube.executor.service.hardened.HardenedRunnerGuard;
 import io.terrakube.client.TerrakubeClient;
 import io.terrakube.client.model.organization.workspace.Workspace;
 import io.terrakube.client.model.response.Response;
@@ -32,6 +33,12 @@ public class OnlineModeServiceImpl {
     @PostMapping(produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<TerraformJob> terraformJob(@RequestBody TerraformJob terraformJob) {
         log.debug("Received terraform job {}", terraformJob);
+
+        if (HardenedRunnerGuard.isHardenedToken(terraformJob.getRunnerToken())) {
+            log.error("Refusing hardened job for Organization {} Workspace {}: hardened jobs only run on ephemeral runners",
+                    terraformJob.getOrganizationId(), terraformJob.getWorkspaceId());
+            return new ResponseEntity<>(HttpStatus.FORBIDDEN);
+        }
 
         if (!executorCapacityGate.tryAcquire()) {
             log.warn("Rejecting job for Organization {} Workspace {}: this pod is already running a job",

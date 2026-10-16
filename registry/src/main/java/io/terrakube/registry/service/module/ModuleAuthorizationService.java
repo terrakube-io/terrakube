@@ -1,5 +1,6 @@
 package io.terrakube.registry.service.module;
 
+import io.terrakube.registry.configuration.authentication.dex.RunnerTokenDecoder;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.benmanes.caffeine.cache.Cache;
@@ -115,6 +116,11 @@ public class ModuleAuthorizationService {
             String iss = (String) jwt.getTokenAttributes().get("iss");
             if (ISSUER.equals(iss)) {
                 return true;
+            }
+            if (RunnerTokenDecoder.ISSUER.equals(iss)) {
+                Object organizationId = jwt.getTokenAttributes().get("organizationId");
+                return organizationId != null && commonSearchService != null
+                        && organizationId.toString().equals(commonSearchService.getOrganizationId(organizationName));
             }
 
             List<String> groups = extractGroups(jwt);

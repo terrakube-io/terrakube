@@ -134,6 +134,20 @@ class JobLogAccessServiceTest {
     }
 
     @Test
+    void runnerTokenIsScopedToItsJob() {
+        when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
+        when(jwt.getTokenAttributes()).thenReturn(Map.of("iss", "TerrakubeRunner", "jobId", String.valueOf(jobId),
+                "workspaceId", workspace.getId().toString()));
+        assertEquals(JobLogAccessService.LogAccessResult.ALLOWED, service.checkJobAccess(jwt, jobId));
+        assertTrue(service.canWriteContext(jwt, jobId));
+
+        when(jwt.getTokenAttributes()).thenReturn(Map.of("iss", "TerrakubeRunner", "jobId", "7",
+                "workspaceId", workspace.getId().toString()));
+        assertEquals(JobLogAccessService.LogAccessResult.FORBIDDEN, service.checkJobAccess(jwt, jobId));
+        assertFalse(service.canWriteContext(jwt, jobId));
+    }
+
+    @Test
     void testCheckAccess_TerrakubeInternalToken_ReturnsAllowed() {
         when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
         when(stepRepository.findById(stepId)).thenReturn(Optional.of(step));

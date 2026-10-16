@@ -42,6 +42,7 @@ public class RegistryAuthenticationManagerResolver implements AuthenticationMana
     private String issuerUri;
     private String patSecret;
     private TerrakubeClient terrakubeClient;
+    private java.security.interfaces.RSAPublicKey runnerPublicKey;
 
     @Builder.Default
     private long federatedCacheExpireAfterWrite = 10;
@@ -87,6 +88,14 @@ public class RegistryAuthenticationManagerResolver implements AuthenticationMana
         Map<String, Object> payloadMap = getJwtPayload(request);
         String tokenIssuer = extractClaimString(payloadMap, "iss");
         List<String> audiences = extractClaimStrings(payloadMap, "aud");
+
+        if (RunnerTokenDecoder.ISSUER.equals(tokenIssuer)) {
+            if (runnerPublicKey == null) {
+                throw new BadCredentialsException("Runner tokens are only accepted in hardened mode");
+            }
+            return getProviderManagerCache().get("runner",
+                    k -> new ProviderManager(new JwtAuthenticationProvider(RunnerTokenDecoder.create(runnerPublicKey))));
+        }
 
         boolean federatedCredentialFound = false;
         if (!tokenIssuer.isEmpty() && !audiences.isEmpty()
