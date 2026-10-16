@@ -336,4 +336,25 @@ class AwsTerraformStateImplTest {
         assertEquals("http://api/output", result);
         verify(s3Client, times(1)).putObject(any(PutObjectRequest.class), any(RequestBody.class));
     }
+
+    @Test
+    void testSpoolContextPatch() {
+        String orgId = "org1";
+        String jobId = "job1";
+        String stepId = "step1";
+        String phase = "plan";
+        byte[] gzippedData = "dummy-data".getBytes();
+
+        org.mockito.ArgumentCaptor<PutObjectRequest> putCaptor = org.mockito.ArgumentCaptor.forClass(PutObjectRequest.class);
+
+        String result = awsTerraformState.spoolContextPatch(orgId, jobId, stepId, phase, gzippedData);
+
+        assertEquals("context-spool/org1/job1/step1-plan.json.gz", result);
+        verify(s3Client).putObject(putCaptor.capture(), any(RequestBody.class));
+        PutObjectRequest captured = putCaptor.getValue();
+        assertEquals("test-bucket", captured.bucket());
+        assertEquals("context-spool/org1/job1/step1-plan.json.gz", captured.key());
+        assertEquals("application/json", captured.contentType());
+        assertEquals("gzip", captured.contentEncoding());
+    }
 }

@@ -264,4 +264,37 @@ class AwsStorageTypeServiceImplTest {
         verify(s3Client).deleteObject(argThat((DeleteObjectRequest req) ->
                 req.bucket().equals(bucketName) && req.key().equals(uri)));
     }
+
+    @Test
+    void testSpooledContextPatchLifecycle() {
+        String orgId = "org1";
+        String jobId = "job1";
+        String stepId = "step1";
+        String phase = "plan";
+        String key = "context-spool/org1/job1/step1-plan.json.gz";
+        byte[] data = "dummy-gzipped-bytes".getBytes(StandardCharsets.UTF_8);
+
+        // 1. Get
+        ResponseBytes<GetObjectResponse> responseBytes = mock(ResponseBytes.class);
+        when(responseBytes.asByteArray()).thenReturn(data);
+        when(s3Client.getObject(argThat((GetObjectRequest req) -> req != null && key.equals(req.key())), any(ResponseTransformer.class)))
+                .thenReturn(responseBytes);
+
+        byte[] retrieved = awsStorageTypeService.getSpooledContextPatch(orgId, jobId, stepId, phase);
+        assertArrayEquals(data, retrieved);
+
+        // 2. Has
+        when(s3Client.headObject(argThat((HeadObjectRequest req) -> req != null && key.equals(req.key()))))
+                .thenReturn(HeadObjectResponse.builder().build());
+        assertTrue(awsStorageTypeService.hasSpooledContextPatch(orgId, jobId, stepId, phase));
+
+        // 3. Delete
+        awsStorageTypeService.deleteSpooledContextPatch(orgId, jobId, stepId, phase);
+        verify(s3Client).deleteObject(argThat((DeleteObjectRequest req) -> req != null && key.equals(req.key())));
+
+        // 4. Missing key returns null / false
+        when(s3Client.headObject(argThat((HeadObjectRequest req) -> req != null && key.equals(req.key()))))
+                .thenThrow(NoSuchKeyException.builder().message("not found").build());
+        assertFalse(awsStorageTypeService.hasSpooledContextPatch(orgId, jobId, stepId, phase));
+    }
 }

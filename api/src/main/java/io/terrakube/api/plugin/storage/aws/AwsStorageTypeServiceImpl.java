@@ -311,4 +311,50 @@ public class AwsStorageTypeServiceImpl implements StorageTypeService {
             log.warn("Failed to delete policy evaluation {} from S3: {}", storageUri, e.getMessage());
         }
     }
+
+    private static final String CONTEXT_SPOOL_LOCATION = "context-spool/%s/%s/%s-%s.json.gz";
+
+    @Override
+    public byte[] getSpooledContextPatch(String organizationId, String jobId, String stepId, String phase) {
+        String key = String.format(CONTEXT_SPOOL_LOCATION, organizationId, jobId, stepId, phase);
+        byte[] bytes = downloadObjectFromBucket(bucketName, key);
+        return (bytes != null && bytes.length > 0) ? bytes : null;
+    }
+
+    @Override
+    public void deleteSpooledContextPatch(String organizationId, String jobId, String stepId, String phase) {
+        String key = String.format(CONTEXT_SPOOL_LOCATION, organizationId, jobId, stepId, phase);
+        log.info("Deleting spooled context patch from S3: {}", key);
+        storageRetryMetrics.withRetry("aws", "delete", () -> {
+            try {
+                DeleteObjectRequest deleteRequest = DeleteObjectRequest.builder()
+                        .bucket(bucketName)
+                        .key(key)
+                        .build();
+                s3client.deleteObject(deleteRequest);
+                log.info("Successfully deleted spooled context patch {}", key);
+            } catch (NoSuchKeyException e) {
+                log.debug("Spooled context patch already gone: {}", key);
+            }
+            return null;
+        });
+    }
+
+    @Override
+    public boolean hasSpooledContextPatch(String organizationId, String jobId, String stepId, String phase) {
+        String key = String.format(CONTEXT_SPOOL_LOCATION, organizationId, jobId, stepId, phase);
+        try {
+            HeadObjectRequest headRequest = HeadObjectRequest.builder()
+                    .bucket(bucketName)
+                    .key(key)
+                    .build();
+            s3client.headObject(headRequest);
+            return true;
+        } catch (NoSuchKeyException e) {
+            return false;
+        } catch (Exception e) {
+            log.warn("Error probing spooled context patch in S3: {}", e.getMessage());
+            return false;
+        }
+    }
 }

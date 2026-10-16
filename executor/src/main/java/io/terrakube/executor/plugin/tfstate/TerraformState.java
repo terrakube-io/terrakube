@@ -67,5 +67,20 @@ public interface TerraformState {
     default boolean downloadOpaBinary(String version, String os, String arch, File targetFile) {
         return false;
     }
+
+    /**
+     * Spool a gzipped structured output patch envelope directly to object storage when API is unavailable.
+     * Stored at deterministic path: context-spool/<organizationId>/<jobId>/<stepId>-<phase>.json.gz
+     *
+     * @param organizationId the organization ID
+     * @param jobId          the job ID
+     * @param stepId         the step ID
+     * @param phase          the execution phase ("plan" or "apply")
+     * @param data           the gzipped JSON patch envelope bytes
+     * @return storage path or URI where spooled, or null if write failed
+     */
+    default String spoolContextPatch(String organizationId, String jobId, String stepId, String phase, byte[] data) {
+        return null;
+    }
 }
 

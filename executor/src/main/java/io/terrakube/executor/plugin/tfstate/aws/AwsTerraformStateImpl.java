@@ -441,6 +441,28 @@ public class AwsTerraformStateImpl implements TerraformState {
         }
     }
 
+    private static final String CONTEXT_SPOOL_LOCATION = "context-spool/%s/%s/%s-%s.json.gz";
+
+    @Override
+    public String spoolContextPatch(String organizationId, String jobId, String stepId, String phase, byte[] data) {
+        String blobKey = String.format(CONTEXT_SPOOL_LOCATION, organizationId, jobId, stepId, phase);
+        log.info("Spooling context patch to S3: {}", blobKey);
+        try {
+            PutObjectRequest putObjectRequest = PutObjectRequest.builder()
+                    .bucket(bucketName)
+                    .key(blobKey)
+                    .contentType("application/json")
+                    .contentEncoding("gzip")
+                    .build();
+
+            s3client.putObject(putObjectRequest, RequestBody.fromBytes(data));
+            log.info("Successfully spooled context patch for job {} step {} phase {} to S3", jobId, stepId, phase);
+            return blobKey;
+        } catch (Exception e) {
+            log.warn("Failed to spool context patch for job {} step {} phase {} to S3: {}", jobId, stepId, phase, e.getMessage());
+            return null;
+        }
+    }
 }
 
 
