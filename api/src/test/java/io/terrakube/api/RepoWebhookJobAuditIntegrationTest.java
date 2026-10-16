@@ -61,14 +61,14 @@ class RepoWebhookJobAuditIntegrationTest extends ServerApplicationTests {
 
     @ParameterizedTest
     @NullAndEmptySource
-    @ValueSource(strings = {"   ", "\n\t\u0000\u0085"})
+    @ValueSource(strings = {"   ", "\n\t\u0000\u0085", "\u202E\u2028\u2029\uDB40\uDC01"})
     void missingWebhookActorUsesInternal(String actor) throws Exception {
         assertWebhookActor("pull_request", actor, "Internal");
     }
 
     @Test
     void workerPersistsSanitizedDisplayName() throws Exception {
-        assertWebhookActor("pull_request", "  Jo\nã\to\r\u0000  ", "João");
+        assertWebhookActor("pull_request", "  Jo\nã\to\r\u0000\u202E\u2028\u2029\uDB40\uDC01  ", "João");
         assertWebhookActor("pull_request", "a".repeat(200), "a".repeat(128));
     }
 

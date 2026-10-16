@@ -29,7 +29,11 @@ public final class AuditActorContext {
             return Optional.empty();
         }
         StringBuilder clean = new StringBuilder();
-        actor.codePoints().filter(codePoint -> !Character.isISOControl(codePoint)).forEach(clean::appendCodePoint);
+        actor.codePoints().filter(codePoint -> switch (Character.getType(codePoint)) {
+            case Character.CONTROL, Character.FORMAT,
+                    Character.LINE_SEPARATOR, Character.PARAGRAPH_SEPARATOR -> false;
+            default -> true;
+        }).forEach(clean::appendCodePoint);
         String normalized = clean.toString().strip();
         if (normalized.length() > MAX_ACTOR_LENGTH) {
             // Cap UTF-16 length without splitting a surrogate pair.

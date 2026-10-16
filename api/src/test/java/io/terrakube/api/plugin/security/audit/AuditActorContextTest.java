@@ -85,6 +85,14 @@ class AuditActorContextTest {
                 .contains("João 李");
     }
 
+    @ParameterizedTest
+    @ValueSource(ints = {0x0000, 0x0085, 0x202E, 0x2066, 0xE0001, 0x2028, 0x2029})
+    void removesControlFormatAndSeparatorCharactersWithinDisplayNames(int codePoint) {
+        String actor = "Jo" + new String(Character.toChars(codePoint)) + "ão 李 e\u0301\uD83D\uDE00";
+        assertThat(AuditActorContext.withActor(actor, auditor::getCurrentAuditor))
+                .contains("João 李 e\u0301\uD83D\uDE00");
+    }
+
     @Test
     void truncationDoesNotSplitSupplementaryCharacters() {
         String face = "\uD83D\uDE00";
@@ -96,7 +104,7 @@ class AuditActorContextTest {
 
     @ParameterizedTest
     @NullAndEmptySource
-    @ValueSource(strings = {"   ", "\u2003", "\n\t\u0000\u0085"})
+    @ValueSource(strings = {"   ", "\u2003", "\n\t\u0000\u0085", "\u202E\u2028\u2029\uDB40\uDC01"})
     void normalizedEmptyActorKeepsTheExistingFallback(String actor) {
         assertThat(AuditActorContext.withActor(actor, auditor::getCurrentAuditor)).contains("Internal");
         Jwt jwt = Jwt.withTokenValue("synthetic-token").header("alg", "none")

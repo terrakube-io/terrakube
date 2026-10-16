@@ -105,7 +105,7 @@ class WebhookJobAuditIntegrationTest extends ServerApplicationTests {
 
     @Test
     void polledPushPersistsActorAfterOuterTransactionCommits() throws Exception {
-        assertSavedActor("  polled\nauthor  ", "polledauthor", false);
+        assertSavedActor("  polled\n\u202E\u2028author\u2029\uDB40\uDC01  ", "polledauthor", false);
     }
 
     @Test
@@ -115,19 +115,19 @@ class WebhookJobAuditIntegrationTest extends ServerApplicationTests {
 
     @ParameterizedTest
     @NullAndEmptySource
-    @ValueSource(strings = {"   ", "\n\t\u0000\u0085"})
+    @ValueSource(strings = {"   ", "\n\t\u0000\u0085", "\u202E\u2028\u2029\uDB40\uDC01"})
     void polledPushWithoutNormalizedActorRetainsInternalFallback(String actor) throws Exception {
         assertSavedActor(actor, "Internal", false);
     }
 
     @Test
     void legacyAnonymousWebhookPreservesSanitizedActor() throws Exception {
-        assertSavedActor("  legacy\nauthor  ", "legacyauthor", true);
+        assertSavedActor("  legacy\n\u202E\u2028author\u2029\uDB40\uDC01  ", "legacyauthor", true);
     }
 
     @ParameterizedTest
     @NullAndEmptySource
-    @ValueSource(strings = {"   ", "\n\t\u0000\u0085"})
+    @ValueSource(strings = {"   ", "\n\t\u0000\u0085", "\u202E\u2028\u2029\uDB40\uDC01"})
     void legacyAnonymousWebhookWithoutNormalizedActorRetainsEmptyFallback(String actor) throws Exception {
         assertSavedActor(actor, null, true);
     }
