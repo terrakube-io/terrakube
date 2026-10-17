@@ -296,7 +296,6 @@ public class JobReconciliationSweep implements org.quartz.Job {
         }
 
         log.warn("Job {} has no executor heartbeat after {}, the executor that had it is gone - failing it", job.getId(), age);
-        probeAndRecoverSpooledSteps(job);
         int rowsUpdated = jobRepository.updateStatusByIdAndStatusIn(
                 JobStatus.failed, job.getId(), List.of(JobStatus.queue, JobStatus.running));
         if (rowsUpdated == 0) {
@@ -325,6 +324,7 @@ public class JobReconciliationSweep implements org.quartz.Job {
         } catch (SchedulerException e) {
             log.warn("Could not delete Quartz context for failed Job {}: {}", job.getId(), e.getMessage());
         }
+        probeAndRecoverSpooledSteps(job);
     }
 
     private void probeAndRecoverSpooledSteps(Job job) {
@@ -336,6 +336,10 @@ public class JobReconciliationSweep implements org.quartz.Job {
             String jobId = String.valueOf(job.getId());
             for (Step step : stepRepository.findByJobId(job.getId())) {
                 if (step.getId() == null) {
+                    continue;
+                }
+                DeliveryState state = step.getDeliveryState();
+                if (state == DeliveryState.ACKED || state == DeliveryState.RECOVERED || state == DeliveryState.EXPIRED) {
                     continue;
                 }
                 String stepId = step.getId().toString();

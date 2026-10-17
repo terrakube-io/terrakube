@@ -203,8 +203,18 @@ public class LocalStorageTypeServiceImpl implements StorageTypeService {
         try {
             for (Integer jobId : jobList) {
                 String workspaceOutputFolder = String.format("%s/.terraform-spring-boot/local/output/%s/%s", FileUtils.getUserDirectoryPath(), organizationId, jobId);
-                log.warn("Delete workspace output folder: {}", workspaceOutputFolder);
-                FileUtils.cleanDirectory(new File(workspaceOutputFolder));
+                File outputDir = new File(workspaceOutputFolder);
+                if (outputDir.exists()) {
+                    log.warn("Delete workspace output folder: {}", workspaceOutputFolder);
+                    FileUtils.cleanDirectory(outputDir);
+                }
+
+                String contextSpoolFolder = String.format("%s/.terraform-spring-boot/local/context-spool/%s/%s", FileUtils.getUserDirectoryPath(), organizationId, jobId);
+                File spoolDir = new File(contextSpoolFolder);
+                if (spoolDir.exists()) {
+                    log.warn("Delete workspace context spool folder: {}", contextSpoolFolder);
+                    FileUtils.deleteQuietly(spoolDir);
+                }
             }
         } catch (IOException e) {
             log.error(e.getMessage());
@@ -295,9 +305,23 @@ public class LocalStorageTypeServiceImpl implements StorageTypeService {
         }
     }
 
+    private File resolveSafeFile(String basePath, String relativePath) throws SecurityException {
+        java.nio.file.Path base = java.nio.file.Paths.get(basePath, ".terraform-spring-boot/local/context-spool").toAbsolutePath().normalize();
+        String rel = FilenameUtils.separatorsToSystem(relativePath.startsWith("/") ? relativePath.substring(1) : relativePath);
+        java.nio.file.Path target = java.nio.file.Paths.get(basePath, rel).toAbsolutePath().normalize();
+        if (!target.startsWith(base)) {
+            throw new SecurityException("Potential path traversal attempt detected for path: " + relativePath);
+        }
+        return target.toFile();
+    }
+
     @Override
     public byte[] getSpooledContextPatch(String organizationId, String jobId, String stepId, String phase) {
         String path = String.format(CONTEXT_SPOOL_DIRECTORY, organizationId, jobId, stepId, phase);
+        File file = resolveSafeFile(FileUtils.getUserDirectoryPath(), path);
+        if (!file.exists()) {
+            return null;
+        }
         byte[] bytes = readFile(path);
         return (bytes != null && bytes.length > 0) ? bytes : null;
     }
@@ -308,7 +332,7 @@ public class LocalStorageTypeServiceImpl implements StorageTypeService {
         log.info("Deleting spooled context patch from local storage: {}", path);
         storageRetryMetrics.withRetry("local", "delete", () -> {
             try {
-                File file = new File(FileUtils.getUserDirectoryPath().concat(FilenameUtils.separatorsToSystem(path)));
+                File file = resolveSafeFile(FileUtils.getUserDirectoryPath(), path);
                 if (file.exists()) {
                     FileUtils.deleteQuietly(file);
                     log.info("Successfully deleted spooled context patch {}", path);
@@ -322,8 +346,13 @@ public class LocalStorageTypeServiceImpl implements StorageTypeService {
 
     @Override
     public boolean hasSpooledContextPatch(String organizationId, String jobId, String stepId, String phase) {
-        String path = String.format(CONTEXT_SPOOL_DIRECTORY, organizationId, jobId, stepId, phase);
-        File file = new File(FileUtils.getUserDirectoryPath().concat(FilenameUtils.separatorsToSystem(path)));
-        return file.exists() && file.isFile();
+        try {
+            String path = String.format(CONTEXT_SPOOL_DIRECTORY, organizationId, jobId, stepId, phase);
+            File file = resolveSafeFile(FileUtils.getUserDirectoryPath(), path);
+            return file.exists() && file.isFile();
+        } catch (Exception e) {
+            log.warn("Error probing spooled context patch in local storage: {}", e.getMessage());
+            return false;
+        }
     }
 }

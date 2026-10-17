@@ -218,6 +218,8 @@ public class AwsStorageTypeServiceImpl implements StorageTypeService {
         for (Integer jobId : jobList) {
             String workspaceOutputFolder = String.format("tfoutput/%s/%s/", organizationId, jobId);
             deleteFolderFromBucket(workspaceOutputFolder);
+            String contextSpoolFolder = String.format("context-spool/%s/%s/", organizationId, jobId);
+            deleteFolderFromBucket(contextSpoolFolder);
         }
     }
 

@@ -204,6 +204,8 @@ public class GcpStorageTypeServiceImpl implements StorageTypeService {
         for (Integer jobId : jobList) {
             String outputPath = String.format("tfoutput/%s/%s/", organizationId, jobId);
             deleteFolderFromBucket(outputPath);
+            String contextSpoolFolder = String.format("context-spool/%s/%s/", organizationId, jobId);
+            deleteFolderFromBucket(contextSpoolFolder);
         }
     }
 

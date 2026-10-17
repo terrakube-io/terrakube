@@ -357,4 +357,21 @@ class AwsTerraformStateImplTest {
         assertEquals("application/json", captured.contentType());
         assertEquals("gzip", captured.contentEncoding());
     }
+
+    @Test
+    void testSpoolContextPatch_RetriesOnFailure() {
+        String orgId = "org1";
+        String jobId = "job1";
+        String stepId = "step1";
+        String phase = "plan";
+        byte[] gzippedData = "dummy-data".getBytes();
+
+        when(s3Client.putObject(any(PutObjectRequest.class), any(RequestBody.class)))
+                .thenThrow(S3Exception.builder().message("503 Service Unavailable").build());
+
+        String result = awsTerraformState.spoolContextPatch(orgId, jobId, stepId, phase, gzippedData);
+
+        assertNull(result);
+        verify(s3Client, times(3)).putObject(any(PutObjectRequest.class), any(RequestBody.class));
+    }
 }

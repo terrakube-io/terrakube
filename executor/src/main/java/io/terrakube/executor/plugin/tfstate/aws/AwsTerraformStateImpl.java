@@ -455,7 +455,10 @@ public class AwsTerraformStateImpl implements TerraformState {
                     .contentEncoding("gzip")
                     .build();
 
-            s3client.putObject(putObjectRequest, RequestBody.fromBytes(data));
+            storageRetryMetrics.withRetry("aws", "spool-write", () -> {
+                s3client.putObject(putObjectRequest, RequestBody.fromBytes(data));
+                return null;
+            });
             log.info("Successfully spooled context patch for job {} step {} phase {} to S3", jobId, stepId, phase);
             return blobKey;
         } catch (Exception e) {

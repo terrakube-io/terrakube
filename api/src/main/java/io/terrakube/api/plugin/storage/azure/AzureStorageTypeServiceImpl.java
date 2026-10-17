@@ -201,6 +201,8 @@ public class AzureStorageTypeServiceImpl implements StorageTypeService {
         for (Integer jobId : jobList) {
             String workspaceOutputFolder = String.format("%s/%s", organizationId, jobId);
             deleteFolderFromContainer(CONTAINER_NAME_OUTPUT, workspaceOutputFolder);
+            String contextSpoolFolder = String.format("context-spool/%s/%s", organizationId, jobId);
+            deleteFolderFromContainer(CONTAINER_NAME_OUTPUT, contextSpoolFolder);
         }
     }
 

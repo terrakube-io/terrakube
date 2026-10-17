@@ -295,5 +295,11 @@ class LocalTerraformStateImplTest {
         // Cleanup
         FileUtils.deleteQuietly(new File(FileUtils.getUserDirectoryPath(), ".terraform-spring-boot"));
     }
+
+    @Test
+    void testSpoolContextPatchPathTraversalRejected() {
+        String result = localTerraformState.spoolContextPatch("../../etc", "job1", "step1", "plan", "data".getBytes());
+        assertNull(result);
+    }
 }
 

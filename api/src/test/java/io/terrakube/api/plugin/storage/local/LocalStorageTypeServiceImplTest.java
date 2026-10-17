@@ -251,4 +251,30 @@ class LocalStorageTypeServiceImplTest {
             assertNull(localStorageTypeService.getSpooledContextPatch(orgId, jobId, stepId, phase));
         }
     }
+
+    @Test
+    void testSpooledContextPatchPathTraversalRejected() {
+        try (MockedStatic<FileUtils> mockedFileUtils = mockStatic(FileUtils.class, CALLS_REAL_METHODS)) {
+            mockedFileUtils.when(FileUtils::getUserDirectoryPath).thenReturn(tempDir.toString());
+
+            assertThrows(SecurityException.class, () ->
+                    localStorageTypeService.getSpooledContextPatch("../../etc", "job", "step", "plan"));
+        }
+    }
+
+    @Test
+    void testDeleteWorkspaceOutputDataCleansSpooledFolder() throws IOException {
+        try (MockedStatic<FileUtils> mockedFileUtils = mockStatic(FileUtils.class, CALLS_REAL_METHODS)) {
+            mockedFileUtils.when(FileUtils::getUserDirectoryPath).thenReturn(tempDir.toString());
+
+            File spoolFile = tempDir.resolve(".terraform-spring-boot/local/context-spool/org1/100/step1-plan.json.gz").toFile();
+            spoolFile.getParentFile().mkdirs();
+            java.nio.file.Files.write(spoolFile.toPath(), "test".getBytes(StandardCharsets.UTF_8));
+            assertTrue(spoolFile.exists());
+
+            localStorageTypeService.deleteWorkspaceOutputData("org1", java.util.List.of(100));
+
+            assertFalse(spoolFile.exists());
+        }
+    }
 }
