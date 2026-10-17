@@ -16,6 +16,8 @@ import WorkspaceTable from "@/modules/workspaces/components/WorkspaceTable/Works
 import ListViewToggle from "@/components/display/ListViewToggle/ListViewToggle";
 import { getStoredListViewMode, ListViewMode } from "@/components/display/ListViewToggle/listViewPreference";
 import { useWorkspaceFilterState } from "@/modules/workspaces/hooks/useWorkspaceFilterState";
+import { useCollapsedProjectGroups } from "@/modules/workspaces/hooks/useCollapsedProjectGroups";
+import { useAuth } from "@/config/authConfig";
 import {
   getStoredWorkspaceSortOption,
   setStoredWorkspaceSortOption,
@@ -35,6 +37,8 @@ const DEFAULT_PAGE_SIZE = 20;
 export default function OrganizationsDetailPage({ organizationName, setOrganizationName }: Props) {
   const { id } = useParams();
   const filterState = useWorkspaceFilterState();
+  const auth = useAuth();
+  const collapsedGroups = useCollapsedProjectGroups(auth.user?.profile?.sub, id);
   const [workspaces, setWorkspaces] = useState<WorkspaceListItem[]>([]);
   const [sortOption, setSortOption] = useState<WorkspaceSortOption>(() => getStoredWorkspaceSortOption());
   const [tags, setTags] = useState<TagModel[]>([]);
@@ -273,6 +277,10 @@ export default function OrganizationsDetailPage({ organizationName, setOrganizat
             pageSize={pageSize}
             total={pageInfo.totalRecords}
             onPageChange={handlePageChange}
+            collapsedGroups={collapsedGroups.collapsed}
+            onToggleGroup={collapsedGroups.toggle}
+            onSetGroupsCollapsed={collapsedGroups.setCollapsed}
+            groupsForcedOpen={debouncedSearch.trim() !== ""}
           />
         )}
         {listViewMode === "cards" && (

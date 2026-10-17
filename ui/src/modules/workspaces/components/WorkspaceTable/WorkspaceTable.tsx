@@ -1,12 +1,14 @@
-import { Tag, Typography, Pagination } from "antd";
+import { Button, Tag, Typography, Pagination } from "antd";
 import {
   FolderOutlined,
   ClockCircleOutlined,
   LockOutlined,
   CaretUpOutlined,
   CaretDownOutlined,
+  DownOutlined,
+  RightOutlined,
 } from "@ant-design/icons";
-import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
+import { useEffect, useId, useMemo, useState, type KeyboardEvent } from "react";
 import { Link } from "react-router-dom";
 import { WorkspaceListItem } from "@/modules/workspaces/types";
 import { TagModel } from "@/modules/organizations/types";
@@ -44,6 +46,13 @@ type Props = {
   pageSize?: number;
   total?: number;
   onPageChange?: (page: number, pageSize: number) => void;
+  /** Project groups the user has collapsed, by group key. Without `onToggleGroup` the headings stay static. */
+  collapsedGroups?: ReadonlySet<string>;
+  onToggleGroup?: (key: string) => void;
+  /** Collapses or expands the given groups; backs "Expand all" and "Collapse all". */
+  onSetGroupsCollapsed?: (keys: string[], collapsed: boolean) => void;
+  /** Shows every group open, e.g. while a search is active, without touching the stored choices. */
+  groupsForcedOpen?: boolean;
 };
 
 type SortSpec = { asc: WorkspaceSortOption; desc: WorkspaceSortOption } | { single: WorkspaceSortOption };
@@ -208,11 +217,17 @@ export default function WorkspaceTable({
   pageSize: controlledPageSize,
   total,
   onPageChange,
+  collapsedGroups,
+  onToggleGroup,
+  onSetGroupsCollapsed,
+  groupsForcedOpen = false,
 }: Props) {
+  const listId = useId();
   const [internalPage, setInternalPage] = useState(1);
   const [internalPageSize, setInternalPageSize] = useState(20);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const isGrouped = !!groups;
+  const collapsible = isGrouped && !!onToggleGroup;
   const isControlled = controlledPage !== undefined && controlledPageSize !== undefined && !!onPageChange;
   const page = controlledPage ?? internalPage;
   const pageSize = controlledPageSize ?? internalPageSize;
@@ -243,6 +258,36 @@ export default function WorkspaceTable({
 
   return (
     <div className="workspace-list">
+      {collapsible && onSetGroupsCollapsed && (
+        <div className="workspace-group-controls">
+          <Button
+            type="link"
+            size="small"
+            disabled={groupsForcedOpen}
+            onClick={() =>
+              onSetGroupsCollapsed(
+                groups!.map((group) => group.key),
+                false
+              )
+            }
+          >
+            Expand all
+          </Button>
+          <Button
+            type="link"
+            size="small"
+            disabled={groupsForcedOpen}
+            onClick={() =>
+              onSetGroupsCollapsed(
+                groups!.map((group) => group.key),
+                true
+              )
+            }
+          >
+            Collapse all
+          </Button>
+        </div>
+      )}
       <div className="workspace-list-header">
         <div className="workspace-col-name">
           <SortableHeader
@@ -292,37 +337,64 @@ export default function WorkspaceTable({
       {isGrouped
         ? groups!.map((group) => {
             const isExpanded = expandedGroups.has(group.key);
+            const isCollapsed = collapsible && !groupsForcedOpen && !!collapsedGroups?.has(group.key);
             const visibleItems = isControlled || isExpanded ? group.items : group.items.slice(0, GROUP_PREVIEW_SIZE);
             const hiddenCount = group.items.length - visibleItems.length;
+            const panelId = `${listId}-group-${group.key}`;
+            const heading = (
+              <>
+                {collapsible && (isCollapsed ? <RightOutlined aria-hidden /> : <DownOutlined aria-hidden />)}
+                <span className="workspace-group-label">{group.label}</span>{" "}
+                <span className="workspace-group-count">
+                  {group.items.length} workspace{group.items.length === 1 ? "" : "s"}
+                  {isControlled ? " on this page" : ""}
+                </span>
+              </>
+            );
             return (
               <div key={group.key}>
                 <div className="workspace-group-divider">
-                  {group.label}{" "}
-                  <span className="workspace-group-count">
-                    {group.items.length} workspace{group.items.length === 1 ? "" : "s"}
-                    {isControlled ? " on this page" : ""}
-                  </span>
+                  {collapsible ? (
+                    <button
+                      type="button"
+                      className="workspace-group-toggle"
+                      aria-expanded={!isCollapsed}
+                      aria-controls={panelId}
+                      aria-disabled={groupsForcedOpen || undefined}
+                      title={groupsForcedOpen ? "Groups stay open while searching" : undefined}
+                      onClick={() => {
+                        if (!groupsForcedOpen) onToggleGroup!(group.key);
+                      }}
+                    >
+                      {heading}
+                    </button>
+                  ) : (
+                    heading
+                  )}
                 </div>
-                {visibleItems.map((item) => (
-                  <WorkspaceRow
-                    key={item.id}
-                    item={item}
-                    organizationId={organizationId}
-                    onSelectProject={onSelectProject}
-                    tags={tags}
-                  />
-                ))}
-                {!isControlled && group.items.length > GROUP_PREVIEW_SIZE && (
-                  <div
-                    className="workspace-group-show-more"
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => toggleGroupExpanded(group.key)}
-                    onKeyDown={(e) => activateOnKey(e, () => toggleGroupExpanded(group.key))}
-                  >
-                    {isExpanded ? "Show less" : `Show ${hiddenCount} more workspace${hiddenCount === 1 ? "" : "s"}`}
-                  </div>
-                )}
+                <div id={panelId}>
+                  {!isCollapsed &&
+                    visibleItems.map((item) => (
+                      <WorkspaceRow
+                        key={item.id}
+                        item={item}
+                        organizationId={organizationId}
+                        onSelectProject={onSelectProject}
+                        tags={tags}
+                      />
+                    ))}
+                  {!isCollapsed && !isControlled && group.items.length > GROUP_PREVIEW_SIZE && (
+                    <div
+                      className="workspace-group-show-more"
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => toggleGroupExpanded(group.key)}
+                      onKeyDown={(e) => activateOnKey(e, () => toggleGroupExpanded(group.key))}
+                    >
+                      {isExpanded ? "Show less" : `Show ${hiddenCount} more workspace${hiddenCount === 1 ? "" : "s"}`}
+                    </div>
+                  )}
+                </div>
               </div>
             );
           })

@@ -21,6 +21,7 @@ jest.mock("@/components/layout/PageWrapper/PageWrapper", () => ({
     );
   },
 }));
+jest.mock("@/config/authConfig", () => ({ useAuth: () => ({ user: { profile: { sub: "user-1" } } }) }));
 jest.mock("@/hooks", () => ({ usePolling: jest.fn(), useOrganizationJobStatusSubscription: jest.fn() }));
 jest.mock("@/modules/workspaces/components/WorkspaceFilter", () => () => null);
 let tableProps: any;
@@ -121,5 +122,27 @@ describe("OrganizationDetailsPage project filter", () => {
 
     const create = await screen.findByRole("link", { name: /New workspace/ });
     expect(create.closest(".ant-space")).toHaveStyle({ flexWrap: "wrap" });
+  });
+
+  it("keeps project group choices per user and organization and passes them to the table", async () => {
+    (projectService.listProjects as jest.Mock).mockResolvedValue({ isError: false, data: [] });
+    render(<OrganizationsDetailPage organizationName="org" setOrganizationName={jest.fn()} />);
+    await waitFor(() => expect(tableProps).toBeDefined());
+    expect(tableProps.collapsedGroups.size).toBe(0);
+    expect(tableProps.groupsForcedOpen).toBe(false);
+
+    await act(async () => tableProps.onToggleGroup("proj-1"));
+    expect(tableProps.collapsedGroups.has("proj-1")).toBe(true);
+    expect(sessionStorage.getItem("terrakube.workspaceCollapsedGroups:user-1:org-2")).toBe('["proj-1"]');
+
+    await act(async () => tableProps.onSetGroupsCollapsed(["proj-1", "__unassigned__"], false));
+    expect(tableProps.collapsedGroups.size).toBe(0);
+  });
+
+  it("forces the groups open while a search is active", async () => {
+    sessionStorage.setItem("searchValue", "billing");
+    (projectService.listProjects as jest.Mock).mockResolvedValue({ isError: false, data: [] });
+    render(<OrganizationsDetailPage organizationName="org" setOrganizationName={jest.fn()} />);
+    await waitFor(() => expect(tableProps?.groupsForcedOpen).toBe(true));
   });
 });
