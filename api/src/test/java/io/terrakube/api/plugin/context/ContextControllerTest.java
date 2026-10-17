@@ -652,13 +652,7 @@ class ContextControllerTest {
         StorageTypeService storageTypeService = Mockito.mock(StorageTypeService.class);
         JobRepository jobRepository = Mockito.mock(JobRepository.class);
         StreamingService streamingService = Mockito.mock(StreamingService.class);
-        SimpleMeterRegistry registry = new SimpleMeterRegistry();
-        ContextProperties properties = new ContextProperties();
-        ContextStorageMetrics storageMetrics = new ContextStorageMetrics(registry);
-        ContextController controller = new ContextController(storageTypeService, jobRepository,
-                new ContextSanitizer(new ObjectMapper()), streamingService, storageMetrics,
-                new ContextReadService(storageTypeService, storageMetrics, properties, registry), properties,
-                Mockito.mock(io.terrakube.api.plugin.policy.PolicyEvaluationService.class), authenticatedUser());
+        ContextController controller = controller(storageTypeService, jobRepository, new SimpleMeterRegistry(), streamingService);
 
         controller.streamContext("42", "*");
 
