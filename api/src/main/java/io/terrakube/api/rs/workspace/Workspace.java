@@ -23,6 +23,7 @@ import io.terrakube.api.rs.workspace.tag.WorkspaceTag;
 import io.terrakube.api.rs.workspace.trigger.WorkspaceRunTrigger;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.*;
+import jakarta.validation.constraints.Size;
 import lombok.Getter;
 import lombok.Setter;
 import org.hibernate.annotations.JdbcTypeCode;
@@ -55,6 +56,7 @@ public class Workspace extends GenericAuditFields {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
+    @Size(max = 128, message = "Workspace name must be 128 characters or fewer")
     @Column(name = "name")
     private String name;
 
