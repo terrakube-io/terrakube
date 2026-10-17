@@ -43,6 +43,7 @@ public class PlanStructuredOutputService {
     private final StructuredOutputPersistenceQueue persistenceQueue;
     private final ExecutorFlagsProperties executorFlagsProperties;
     private final ContextSpoolService contextSpoolService;
+    private final io.terrakube.executor.service.logs.ProcessLogs processLogs;
 
     @Autowired
     public PlanStructuredOutputService(
@@ -51,13 +52,25 @@ public class PlanStructuredOutputService {
             TerraformClient terraformClient,
             StructuredOutputPersistenceQueue persistenceQueue,
             ExecutorFlagsProperties executorFlagsProperties,
-            @Autowired(required = false) ContextSpoolService contextSpoolService) {
+            @Autowired(required = false) ContextSpoolService contextSpoolService,
+            @Autowired(required = false) io.terrakube.executor.service.logs.ProcessLogs processLogs) {
         this.jobContextService = jobContextService;
         this.objectMapper = objectMapper;
         this.terraformClient = terraformClient;
         this.persistenceQueue = persistenceQueue;
         this.executorFlagsProperties = executorFlagsProperties;
         this.contextSpoolService = contextSpoolService;
+        this.processLogs = processLogs;
+    }
+
+    public PlanStructuredOutputService(
+            JobContextService jobContextService,
+            ObjectMapper objectMapper,
+            TerraformClient terraformClient,
+            StructuredOutputPersistenceQueue persistenceQueue,
+            ExecutorFlagsProperties executorFlagsProperties,
+            ContextSpoolService contextSpoolService) {
+        this(jobContextService, objectMapper, terraformClient, persistenceQueue, executorFlagsProperties, contextSpoolService, null);
     }
 
     public PlanStructuredOutputService(
@@ -66,7 +79,7 @@ public class PlanStructuredOutputService {
             TerraformClient terraformClient,
             StructuredOutputPersistenceQueue persistenceQueue,
             ExecutorFlagsProperties executorFlagsProperties) {
-        this(jobContextService, objectMapper, terraformClient, persistenceQueue, executorFlagsProperties, null);
+        this(jobContextService, objectMapper, terraformClient, persistenceQueue, executorFlagsProperties, null, null);
     }
 
     // Convenience constructor for tests and callers that keep the previous synchronous behaviour.
@@ -112,6 +125,13 @@ public class PlanStructuredOutputService {
     }
 
     public String publishFinalPlanSynchronous(TerraformJob terraformJob, File terraformWorkingDir, List<Map<String, Object>> liveChanges, List<Map<String, Object>> jobDiagnostics) {
+        long revision = (terraformJob != null && terraformJob.getDeliveryRevision() != null)
+                ? terraformJob.getDeliveryRevision()
+                : 1L;
+        return publishFinalPlanSynchronous(terraformJob, terraformWorkingDir, revision, liveChanges, jobDiagnostics);
+    }
+
+    public String publishFinalPlanSynchronous(TerraformJob terraformJob, File terraformWorkingDir, long deliveryRevision, List<Map<String, Object>> liveChanges, List<Map<String, Object>> jobDiagnostics) {
         try {
             String planJson = getPlanAsJson(terraformJob, terraformWorkingDir);
             List<Map<String, Object>> changes;
@@ -124,7 +144,7 @@ public class PlanStructuredOutputService {
             }
 
             return publishFinalPlanSnapshotSynchronous(terraformJob.getOrganizationId(), terraformJob.getJobId(),
-                    terraformJob.getStepId(), changes, jobDiagnostics);
+                    terraformJob.getStepId(), deliveryRevision, changes, jobDiagnostics);
         } catch (InterruptedException e) {
             log.error("Interrupted while publishing plan summary", e);
             Thread.currentThread().interrupt();
@@ -137,6 +157,11 @@ public class PlanStructuredOutputService {
     }
 
     public String publishFinalPlanSnapshotSynchronous(String organizationId, String jobId, String stepId,
+                                                      List<Map<String, Object>> changes, List<Map<String, Object>> jobDiagnostics) {
+        return publishFinalPlanSnapshotSynchronous(organizationId, jobId, stepId, 1L, changes, jobDiagnostics);
+    }
+
+    public String publishFinalPlanSnapshotSynchronous(String organizationId, String jobId, String stepId, long deliveryRevision,
                                                       List<Map<String, Object>> changes, List<Map<String, Object>> jobDiagnostics) {
         Map<String, Object> updatedContext = null;
         try {
@@ -154,6 +179,7 @@ public class PlanStructuredOutputService {
                 boolean saved = jobContextService.saveContextChecked(organizationId, jobId, updatedContext);
                 if (saved) {
                     log.info("Synchronous final plan snapshot persisted and ACKed for job {} step {}", jobId, stepId);
+                    pushLiveUpdate("plan", jobId, stepId, changes, jobDiagnostics);
                     return "ACKED";
                 }
                 if (attempt < 3) {
@@ -174,11 +200,22 @@ public class PlanStructuredOutputService {
                 if (jobDiagnostics != null && !jobDiagnostics.isEmpty()) {
                     updatedContext.put(CONTEXT_JOB_DIAGNOSTICS_KEY, Map.of(stepId, jobDiagnostics));
                 }
+                updatedContext.put(CONTEXT_UI_KEY, Map.of(stepId, STRUCTURED_PLAN_MARKER));
+                applyNoChangePlanMarker(updatedContext, stepId, changes, jobDiagnostics);
+                updatedContext.put("structuredOutputStatus", Map.of(
+                        "state", "PERSISTED",
+                        "updatedAtEpochMs", System.currentTimeMillis(),
+                        "stepId", stepId,
+                        "phase", "plan",
+                        "finalSnapshot", true));
             }
         }
 
         if (contextSpoolService != null && updatedContext != null) {
-            String spooledPath = contextSpoolService.spoolContextPatch(organizationId, jobId, stepId, "plan", updatedContext);
+            String spooledPath = contextSpoolService.spoolContextPatch(organizationId, jobId, stepId, "plan", deliveryRevision, updatedContext);
+            if (spooledPath == null) {
+                spooledPath = contextSpoolService.spoolContextPatch(organizationId, jobId, stepId, "plan", updatedContext);
+            }
             if (spooledPath != null) {
                 log.info("Successfully spooled final plan snapshot to storage at {} for job {} step {}", spooledPath, jobId, stepId);
                 return "SPOOLED";
@@ -186,6 +223,21 @@ public class PlanStructuredOutputService {
         }
 
         return "NOT_DURABLE";
+    }
+
+    private void pushLiveUpdate(String phase, String jobId, String stepId, List<Map<String, Object>> changes, List<Map<String, Object>> jobDiagnostics) {
+        if (processLogs == null) {
+            return;
+        }
+        try {
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("phase", phase);
+            payload.put("changes", Map.of(stepId, changes != null ? changes : List.of()));
+            payload.put("jobDiagnostics", Map.of(stepId, jobDiagnostics != null ? jobDiagnostics : List.of()));
+            processLogs.sendStructuredUpdate(Integer.valueOf(jobId), stepId, objectMapper.writeValueAsString(payload));
+        } catch (Exception e) {
+            log.warn("Unable to push live structured update for job {} step {}: {}", jobId, stepId, e.getMessage());
+        }
     }
 
     void publishPlanProgress(String organizationId, String jobId, String stepId, List<Map<String, Object>> liveChanges, List<Map<String, Object>> jobDiagnostics) {

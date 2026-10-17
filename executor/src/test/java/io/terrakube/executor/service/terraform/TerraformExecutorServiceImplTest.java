@@ -44,12 +44,14 @@ import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
@@ -85,7 +87,11 @@ class TerraformExecutorServiceImplTest {
         when(terraformState.getBackendStateFile(anyString(), anyString(), any(File.class), anyString())).thenReturn("backend.tfvars");
         when(structuredOutputPersistenceQueue.awaitDrain(any())).thenReturn(true);
         when(planStructuredOutputService.publishFinalPlanSynchronous(any(), any(), any(), any())).thenReturn("ACKED");
+        when(planStructuredOutputService.publishFinalPlanSynchronous(any(), any(), anyLong(), any(), any())).thenReturn("ACKED");
+        when(planStructuredOutputService.publishFinalPlanSnapshotSynchronous(any(), any(), any(), any(), any())).thenReturn("ACKED");
+        when(planStructuredOutputService.publishFinalPlanSnapshotSynchronous(any(), any(), any(), anyLong(), any(), any())).thenReturn("ACKED");
         when(applyStructuredOutputService.publishFinalApplySynchronous(any(), any(), any(), any(), any())).thenReturn("ACKED");
+        when(applyStructuredOutputService.publishFinalApplySynchronous(any(), any(), any(), anyLong(), any(), any())).thenReturn("ACKED");
         structuredOutputProperties.setDrainTimeoutMs(1000);
         Mockito.doCallRealMethod().when(applyStructuredOutputService).finalizeResourceStatuses(any(), anyBoolean(), anyBoolean());
 
@@ -1304,8 +1310,8 @@ class TerraformExecutorServiceImplTest {
         verify(planStructuredOutputService, never()).publishFinalPlanSnapshot(any(), any(), any(), any(), any());
 
         InOrder inOrder = Mockito.inOrder(planStructuredOutputService, structuredOutputPersistenceQueue);
-        inOrder.verify(planStructuredOutputService).publishFinalPlanSynchronous(eq(terraformJob), any(File.class), any(), any());
         inOrder.verify(structuredOutputPersistenceQueue).awaitDrain(any());
+        inOrder.verify(planStructuredOutputService).publishFinalPlanSynchronous(eq(terraformJob), any(File.class), any(), any());
     }
 
     // Regression test for the reported bug: running `tofu plan` from the CLI showed only a bare
@@ -1546,5 +1552,65 @@ class TerraformExecutorServiceImplTest {
         assertTrue(applyMs < 5000, "apply took " + applyMs + " ms");
         assertEquals(List.of("flush"), logCalls.subList(logCalls.indexOf("flush"), logCalls.size()));
         assertTrue(logCalls.size() > 1, "apply sent no log lines");
+    }
+
+    @Test
+    void planFailure_SynchronouslyDeliversDiagnostics() throws Exception {
+        TerraformExecutorServiceImpl subject = subjectSpy();
+        TerraformJob terraformJob = createJob();
+
+        when(terraformClient.init(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(true));
+
+        TerraformClient jsonPlanClient = Mockito.mock(TerraformClient.class);
+        when(jsonPlanClient.planDetailExitCode(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenAnswer(invocation -> {
+                    Consumer<String> lineConsumer = invocation.getArgument(1);
+                    lineConsumer.accept("{\"type\":\"diagnostic\",\"diagnostic\":{\"severity\":\"error\",\"summary\":\"Configuration error\"}}");
+                    return CompletableFuture.completedFuture(1);
+                });
+        doReturn(jsonPlanClient).when(subject).buildJsonEnabledPlanClient();
+        when(planStructuredOutputService.publishFinalPlanSnapshotSynchronous(any(), any(), any(), anyLong(), any(), any()))
+                .thenReturn("ACKED");
+
+        ExecutorJobResult result = subject.plan(terraformJob, tempDir.toFile(), false);
+
+        assertEquals(1, result.getExitCode());
+        assertEquals("ACKED", result.getDeliveryState());
+        assertNotNull(result.getDeliveryRevision());
+        assertNotNull(result.getDeliveryTimestamp());
+        verify(planStructuredOutputService).publishFinalPlanSnapshotSynchronous(
+                eq(terraformJob.getOrganizationId()), eq(terraformJob.getJobId()), eq(terraformJob.getStepId()),
+                anyLong(), any(), any());
+    }
+
+    @Test
+    void destroy_SynchronouslyDeliversAndSetsState() throws Exception {
+        TerraformExecutorServiceImpl subject = subjectSpy();
+        TerraformJob terraformJob = createJob();
+
+        when(terraformClient.init(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(true));
+
+        TerraformClient jsonDestroyClient = Mockito.mock(TerraformClient.class);
+        when(jsonDestroyClient.destroy(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenAnswer(invocation -> {
+                    Consumer<String> lineConsumer = invocation.getArgument(1);
+                    lineConsumer.accept("{\"type\":\"change_summary\",\"changes\":{\"deleted\":1}}");
+                    return CompletableFuture.completedFuture(true);
+                });
+        doReturn(jsonDestroyClient).when(subject).buildJsonEnabledDestroyClient();
+        when(applyStructuredOutputService.publishFinalApplySynchronous(any(), any(), any(), anyLong(), any(), any()))
+                .thenReturn("ACKED");
+
+        ExecutorJobResult result = subject.destroy(terraformJob, tempDir.toFile());
+
+        assertTrue(result.isSuccessfulExecution());
+        assertEquals("ACKED", result.getDeliveryState());
+        assertNotNull(result.getDeliveryRevision());
+        assertNotNull(result.getDeliveryTimestamp());
+        verify(applyStructuredOutputService).publishFinalApplySynchronous(
+                eq(terraformJob.getOrganizationId()), eq(terraformJob.getJobId()), eq(terraformJob.getStepId()),
+                anyLong(), any(), any());
     }
 }

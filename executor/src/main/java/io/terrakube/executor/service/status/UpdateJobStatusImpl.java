@@ -70,13 +70,13 @@ public class UpdateJobStatusImpl implements UpdateJobStatus {
     }
 
     @Override
-    public void setCompletedStatus(boolean successful, boolean isPlan, int exitCode, TerraformJob terraformJob, String jobOutput, String jobErrorOutput, String jobPlan, String commitId, boolean hasSoftMandatoryViolations, String approvalTeam, String deliveryState) {
+    public void setCompletedStatus(boolean successful, boolean isPlan, int exitCode, TerraformJob terraformJob, String jobOutput, String jobErrorOutput, String jobPlan, String commitId, boolean hasSoftMandatoryViolations, String approvalTeam, String deliveryState, Long deliveryRevision) {
         if (!executorFlagsProperties.isDisableAcknowledge()) {
             String currentJobStatus = getCurrentJobStatus(terraformJob);
             // A rejected run keeps showing its approval step as failed: onReject command
             // output is still saved, but its success must not repaint the step as completed.
             boolean rejected = currentJobStatus.equals("rejected");
-            updateStepStatus(successful && !rejected, terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), jobOutput, jobErrorOutput, deliveryState);
+            updateStepStatus(successful && !rejected, terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), jobOutput, jobErrorOutput, deliveryState, deliveryRevision);
             if (rejected || currentJobStatus.equals("cancelled"))
                 log.warn("Job {} was {} when running executor, skipping job status update", terraformJob.getJobId(), currentJobStatus);
             else
@@ -161,13 +161,14 @@ public class UpdateJobStatusImpl implements UpdateJobStatus {
         terrakubeClient.updateJob(jobRequest, job.getRelationships().getOrganization().getData().getId(), job.getId());
     }
 
-    private void updateStepStatus(boolean status, String organizationId, String jobId, String stepId, String jobOutput, String jobErrorOutput, String deliveryState) {
+    private void updateStepStatus(boolean status, String organizationId, String jobId, String stepId, String jobOutput, String jobErrorOutput, String deliveryState, Long deliveryRevision) {
         StepDeliveryAttributes stepAttributes = new StepDeliveryAttributes();
         stepAttributes.setOutput(this.terraformOutput.saveOutput(organizationId, jobId, stepId, jobOutput, jobErrorOutput));
         stepAttributes.setStatus(status ? "completed": "failed");
         if (deliveryState != null) {
             stepAttributes.setDeliveryState(deliveryState);
             stepAttributes.setDeliveryTimestamp(System.currentTimeMillis());
+            stepAttributes.setDeliveryRevision(deliveryRevision);
         }
 
         Step step = new Step();
