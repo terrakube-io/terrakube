@@ -219,6 +219,40 @@
   font-weight: 400;
 }
 
+/* The whole heading is the toggle, so the click target is the full 36px band. */
+.workspace-group-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  height: 100%;
+  margin: 0 -16px;
+  padding: 0 16px;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.workspace-group-toggle[aria-disabled="true"] {
+  cursor: default;
+}
+
+.workspace-group-toggle:focus-visible {
+  outline: 2px solid var(--tk-accent);
+  outline-offset: -2px;
+}
+
+.workspace-group-controls {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+  padding: 4px 12px;
+  border-bottom: 1px solid var(--tk-border-primary);
+}
+
 .workspace-list-pagination {
   display: flex;
   justify-content: flex-end;
