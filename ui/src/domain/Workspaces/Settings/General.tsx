@@ -247,6 +247,7 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace,
               name="name"
               rules={[
                 { required: true },
+                { max: 128 },
                 {
                   pattern: /^[A-Za-z0-9_-]+$/,
                   message: "Only dashes, underscores, and alphanumeric characters are permitted.",
@@ -254,7 +255,7 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace,
               ]}
               label="Name"
             >
-              <Input disabled={!manageWorkspace} />
+              <Input disabled={!manageWorkspace} maxLength={128} />
             </Form.Item>
             <Form.Item name="description" label="Description" extra="Optional">
               <Input.TextArea

@@ -857,14 +857,15 @@ export const CreateWorkspace = () => {
             label="Workspace Name"
             rules={[
               { required: true },
+              { max: 128 },
               {
                 pattern: /^[A-Za-z0-9_-]+$/,
                 message: "Only dashes, underscores, and alphanumeric characters are permitted.",
               },
             ]}
-            extra="The name of your workspace is unique and used in tools, routing, and UI. Dashes, underscores, and alphanumeric characters are permitted."
+            extra="The name of your workspace is unique and used in tools, routing, and UI. Dashes, underscores, and alphanumeric characters are permitted. Up to 128 characters."
           >
-            <Input />
+            <Input maxLength={128} />
           </Form.Item>
 
           <Form.Item
