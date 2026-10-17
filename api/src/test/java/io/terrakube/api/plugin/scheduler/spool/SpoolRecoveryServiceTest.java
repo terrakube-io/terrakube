@@ -197,4 +197,214 @@ class SpoolRecoveryServiceTest {
         assertThat(recovered).isEqualTo(0);
         verify(stepRepository, never()).findByDeliveryStateAndLeaseUntilBefore(any(), any(), any());
     }
+
+    @Test
+    void decompressionBomb_ThrowsExceptionAndRejects() throws IOException {
+        UUID orgId = UUID.randomUUID();
+        UUID stepId = UUID.randomUUID();
+        int jobId = 100;
+
+        Organization org = new Organization();
+        org.setId(orgId);
+
+        Job job = new Job();
+        job.setId(jobId);
+        job.setOrganization(org);
+
+        Step step = new Step();
+        step.setId(stepId);
+        step.setJob(job);
+        step.setDeliveryState(DeliveryState.SPOOLED);
+        step.setDeliveryTimestamp(System.currentTimeMillis() - 60_000L);
+
+        when(stepRepository.findByDeliveryStateAndLeaseUntilBefore(eq(DeliveryState.SPOOLED), any(Date.class), any(Pageable.class)))
+                .thenReturn(List.of(step));
+        when(stepRepository.acquireLease(eq(stepId), anyString(), any(Date.class), any(Date.class)))
+                .thenReturn(1);
+
+        // Set uncompressed limit to 50 bytes
+        properties.setMaxUncompressedBytes(50);
+
+        Map<String, Object> envelope = Map.of(
+                "organizationId", orgId.toString(),
+                "jobId", String.valueOf(jobId),
+                "stepId", stepId.toString(),
+                "phase", "plan"
+        );
+        Map<String, Object> patch = Map.of("largeField", "A".repeat(500));
+        Map<String, Object> payload = Map.of("envelope", envelope, "patch", patch);
+        byte[] gzippedBytes = createGzippedPayload(payload);
+
+        when(storageTypeService.getSpooledContextPatch(orgId.toString(), String.valueOf(jobId), stepId.toString(), "plan"))
+                .thenReturn(gzippedBytes);
+        when(storageTypeService.getSpooledContextPatch(orgId.toString(), String.valueOf(jobId), stepId.toString(), "apply"))
+                .thenReturn(null);
+
+        int recovered = spoolRecoveryService.recoverPendingSpooledSteps();
+
+        assertThat(recovered).isEqualTo(0);
+        // Should delete corrupted spool
+        verify(storageTypeService).deleteSpooledContextPatch(orgId.toString(), String.valueOf(jobId), stepId.toString(), "plan");
+        verify(storageTypeService, never()).saveContext(anyInt(), anyString());
+    }
+
+    @Test
+    void compressedPayloadExceedsLimit_RejectsAndPurges() {
+        UUID orgId = UUID.randomUUID();
+        UUID stepId = UUID.randomUUID();
+        int jobId = 100;
+
+        Organization org = new Organization();
+        org.setId(orgId);
+
+        Job job = new Job();
+        job.setId(jobId);
+        job.setOrganization(org);
+
+        Step step = new Step();
+        step.setId(stepId);
+        step.setJob(job);
+        step.setDeliveryState(DeliveryState.SPOOLED);
+        step.setDeliveryTimestamp(System.currentTimeMillis() - 60_000L);
+
+        when(stepRepository.findByDeliveryStateAndLeaseUntilBefore(eq(DeliveryState.SPOOLED), any(Date.class), any(Pageable.class)))
+                .thenReturn(List.of(step));
+        when(stepRepository.acquireLease(eq(stepId), anyString(), any(Date.class), any(Date.class)))
+                .thenReturn(1);
+
+        // Set compressed limit very low
+        properties.setMaxCompressedBytes(10);
+        byte[] oversizedCompressed = new byte[50];
+
+        when(storageTypeService.getSpooledContextPatch(orgId.toString(), String.valueOf(jobId), stepId.toString(), "plan"))
+                .thenReturn(oversizedCompressed);
+        when(storageTypeService.getSpooledContextPatch(orgId.toString(), String.valueOf(jobId), stepId.toString(), "apply"))
+                .thenReturn(null);
+
+        int recovered = spoolRecoveryService.recoverPendingSpooledSteps();
+
+        assertThat(recovered).isEqualTo(0);
+        verify(storageTypeService).deleteSpooledContextPatch(orgId.toString(), String.valueOf(jobId), stepId.toString(), "plan");
+        verify(storageTypeService, never()).saveContext(anyInt(), anyString());
+    }
+
+    @Test
+    void envelopeMismatch_RejectsAndPurges() throws IOException {
+        UUID orgId = UUID.randomUUID();
+        UUID stepId = UUID.randomUUID();
+        int jobId = 100;
+
+        Organization org = new Organization();
+        org.setId(orgId);
+
+        Job job = new Job();
+        job.setId(jobId);
+        job.setOrganization(org);
+
+        Step step = new Step();
+        step.setId(stepId);
+        step.setJob(job);
+        step.setDeliveryState(DeliveryState.SPOOLED);
+        step.setDeliveryTimestamp(System.currentTimeMillis() - 60_000L);
+
+        when(stepRepository.findByDeliveryStateAndLeaseUntilBefore(eq(DeliveryState.SPOOLED), any(Date.class), any(Pageable.class)))
+                .thenReturn(List.of(step));
+        when(stepRepository.acquireLease(eq(stepId), anyString(), any(Date.class), any(Date.class)))
+                .thenReturn(1);
+
+        // Envelope with mismatched organization ID
+        Map<String, Object> envelope = Map.of(
+                "organizationId", UUID.randomUUID().toString(),
+                "jobId", String.valueOf(jobId),
+                "stepId", stepId.toString(),
+                "phase", "plan"
+        );
+        Map<String, Object> patch = Map.of("key", "val");
+        Map<String, Object> payload = Map.of("envelope", envelope, "patch", patch);
+        byte[] gzippedBytes = createGzippedPayload(payload);
+
+        when(storageTypeService.getSpooledContextPatch(orgId.toString(), String.valueOf(jobId), stepId.toString(), "plan"))
+                .thenReturn(gzippedBytes);
+        when(storageTypeService.getSpooledContextPatch(orgId.toString(), String.valueOf(jobId), stepId.toString(), "apply"))
+                .thenReturn(null);
+
+        int recovered = spoolRecoveryService.recoverPendingSpooledSteps();
+
+        assertThat(recovered).isEqualTo(0);
+        verify(storageTypeService).deleteSpooledContextPatch(orgId.toString(), String.valueOf(jobId), stepId.toString(), "plan");
+        verify(storageTypeService, never()).saveContext(anyInt(), anyString());
+    }
+
+    @Test
+    void sensitiveDataRedactedByContextSanitizer() throws IOException {
+        UUID orgId = UUID.randomUUID();
+        UUID stepId = UUID.randomUUID();
+        int jobId = 100;
+
+        Organization org = new Organization();
+        org.setId(orgId);
+
+        Job job = new Job();
+        job.setId(jobId);
+        job.setOrganization(org);
+
+        Step step = new Step();
+        step.setId(stepId);
+        step.setJob(job);
+        step.setDeliveryState(DeliveryState.SPOOLED);
+        step.setDeliveryTimestamp(System.currentTimeMillis() - 60_000L);
+
+        io.terrakube.api.plugin.context.ContextSanitizer contextSanitizer = new io.terrakube.api.plugin.context.ContextSanitizer(objectMapper);
+        spoolRecoveryService = new SpoolRecoveryService(
+                stepRepository,
+                jobRepository,
+                storageTypeService,
+                objectMapper,
+                properties,
+                contextReadService,
+                policyEvaluationService,
+                contextSanitizer);
+
+        when(stepRepository.findByDeliveryStateAndLeaseUntilBefore(eq(DeliveryState.SPOOLED), any(Date.class), any(Pageable.class)))
+                .thenReturn(List.of(step));
+        when(stepRepository.acquireLease(eq(stepId), anyString(), any(Date.class), any(Date.class)))
+                .thenReturn(1);
+
+        Map<String, Object> envelope = Map.of(
+                "organizationId", orgId.toString(),
+                "jobId", String.valueOf(jobId),
+                "stepId", stepId.toString(),
+                "phase", "plan"
+        );
+        Map<String, Object> patch = Map.of(
+                "planStructuredOutput", Map.of(
+                        stepId.toString(), List.of(
+                                Map.of(
+                                        "resource", "vault_secret.s",
+                                        "after", "secret-password",
+                                        "afterSensitive", true
+                                )
+                        )
+                )
+        );
+        Map<String, Object> payload = Map.of("envelope", envelope, "patch", patch);
+        byte[] gzippedBytes = createGzippedPayload(payload);
+
+        when(storageTypeService.getSpooledContextPatch(orgId.toString(), String.valueOf(jobId), stepId.toString(), "plan"))
+                .thenReturn(gzippedBytes);
+        when(storageTypeService.getSpooledContextPatch(orgId.toString(), String.valueOf(jobId), stepId.toString(), "apply"))
+                .thenReturn(null);
+        when(storageTypeService.getContext(jobId)).thenReturn("{}");
+
+        int recovered = spoolRecoveryService.recoverPendingSpooledSteps();
+
+        assertThat(recovered).isEqualTo(1);
+        ArgumentCaptor<String> savedContextCaptor = ArgumentCaptor.forClass(String.class);
+        verify(storageTypeService).saveContext(eq(jobId), savedContextCaptor.capture());
+
+        String savedJson = savedContextCaptor.getValue();
+        // The sensitive value must be redacted (null)
+        assertThat(savedJson).doesNotContain("secret-password");
+        assertThat(savedJson).contains("\"after\":null");
+    }
 }

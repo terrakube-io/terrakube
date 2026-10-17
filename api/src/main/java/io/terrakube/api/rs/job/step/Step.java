@@ -53,7 +53,7 @@ public class Step {
 
     @Column(name = "delivery_state")
     @Enumerated(EnumType.STRING)
-    private DeliveryState deliveryState;
+    private DeliveryState deliveryState = DeliveryState.NOT_DURABLE;
 
     @Column(name = "delivery_revision")
     private Long deliveryRevision;

@@ -39,4 +39,15 @@ public class SpoolRecoveryProperties {
      * Duration in seconds for which an atomic lease is held by a worker instance.
      */
     private long leaseDurationSeconds = 120;
+
+    /**
+     * Maximum allowed size for a compressed spool object in bytes (default: 5 MB).
+     */
+    private int maxCompressedBytes = 5 * 1024 * 1024;
+
+    /**
+     * Maximum allowed size for an uncompressed spool payload in bytes (default: 15 MB).
+     * Prevents decompression bomb denial-of-service (CWE-409).
+     */
+    private int maxUncompressedBytes = 15 * 1024 * 1024;
 }

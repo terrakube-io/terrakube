@@ -19,6 +19,9 @@ import java.util.zip.GZIPOutputStream;
 @Service
 public class ContextSpoolService {
 
+    public static final int MAX_UNCOMPRESSED_BYTES = 15 * 1024 * 1024; // 15 MB
+    public static final int MAX_COMPRESSED_BYTES = 5 * 1024 * 1024; // 5 MB
+
     private final TerraformState terraformState;
     private final ObjectMapper objectMapper;
 
@@ -29,6 +32,10 @@ public class ContextSpoolService {
     }
 
     public String spoolContextPatch(String organizationId, String jobId, String stepId, String phase, Map<String, Object> patch) {
+        return spoolContextPatch(organizationId, jobId, stepId, phase, 1L, patch);
+    }
+
+    public String spoolContextPatch(String organizationId, String jobId, String stepId, String phase, long deliveryRevision, Map<String, Object> patch) {
         if (terraformState == null) {
             log.warn("Cannot spool context patch: terraformState is null");
             return null;
@@ -39,7 +46,7 @@ public class ContextSpoolService {
             envelope.put("jobId", jobId);
             envelope.put("stepId", stepId);
             envelope.put("phase", phase);
-            envelope.put("deliveryRevision", 1);
+            envelope.put("deliveryRevision", deliveryRevision);
             envelope.put("timestamp", System.currentTimeMillis());
 
             Map<String, Object> payload = new LinkedHashMap<>();
@@ -47,7 +54,16 @@ public class ContextSpoolService {
             payload.put("patch", patch);
 
             byte[] jsonBytes = objectMapper.writeValueAsBytes(payload);
+            if (jsonBytes.length > MAX_UNCOMPRESSED_BYTES) {
+                log.warn("Uncompressed spool payload exceeds limit of {} bytes for job {} step {}", MAX_UNCOMPRESSED_BYTES, jobId, stepId);
+                return null;
+            }
+
             byte[] gzippedBytes = gzip(jsonBytes);
+            if (gzippedBytes.length > MAX_COMPRESSED_BYTES) {
+                log.warn("Compressed spool payload exceeds limit of {} bytes for job {} step {}", MAX_COMPRESSED_BYTES, jobId, stepId);
+                return null;
+            }
 
             return terraformState.spoolContextPatch(organizationId, jobId, stepId, phase, gzippedBytes);
         } catch (Exception e) {
@@ -66,9 +82,28 @@ public class ContextSpoolService {
     }
 
     public static byte[] gunzip(byte[] compressed) throws IOException {
+        return gunzip(compressed, MAX_UNCOMPRESSED_BYTES);
+    }
+
+    public static byte[] gunzip(byte[] compressed, int maxUncompressedBytes) throws IOException {
+        if (compressed == null) {
+            return new byte[0];
+        }
+        if (compressed.length > MAX_COMPRESSED_BYTES) {
+            throw new IOException("Compressed spool payload exceeds maximum size of " + MAX_COMPRESSED_BYTES + " bytes");
+        }
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         try (GZIPInputStream gzis = new GZIPInputStream(new ByteArrayInputStream(compressed))) {
-            gzis.transferTo(baos);
+            byte[] buffer = new byte[8192];
+            int total = 0;
+            int read;
+            while ((read = gzis.read(buffer)) != -1) {
+                total += read;
+                if (total > maxUncompressedBytes) {
+                    throw new IOException("Uncompressed spool payload exceeds maximum size of " + maxUncompressedBytes + " bytes");
+                }
+                baos.write(buffer, 0, read);
+            }
         }
         return baos.toByteArray();
     }

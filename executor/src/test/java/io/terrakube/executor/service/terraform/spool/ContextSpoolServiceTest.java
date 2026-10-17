@@ -86,4 +86,21 @@ class ContextSpoolServiceTest {
         String result = service.spoolContextPatch("o", "j", "s", "plan", Map.of());
         assertNull(result);
     }
+
+    @Test
+    void gunzip_throwsIOExceptionWhenUncompressedExceedsLimit() throws IOException {
+        byte[] uncompressed = "B".repeat(1000).getBytes();
+        byte[] gzipped = ContextSpoolService.gzip(uncompressed);
+
+        assertThrows(IOException.class, () -> ContextSpoolService.gunzip(gzipped, 50));
+    }
+
+    @Test
+    void gunzip_decompressesValidStreamWithinLimit() throws IOException {
+        byte[] uncompressed = "Hello Terrakube".getBytes();
+        byte[] gzipped = ContextSpoolService.gzip(uncompressed);
+
+        byte[] result = ContextSpoolService.gunzip(gzipped, 1024);
+        assertArrayEquals(uncompressed, result);
+    }
 }
