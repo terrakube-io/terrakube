@@ -213,9 +213,6 @@ public class PlanStructuredOutputService {
 
         if (contextSpoolService != null && updatedContext != null) {
             String spooledPath = contextSpoolService.spoolContextPatch(organizationId, jobId, stepId, "plan", deliveryRevision, updatedContext);
-            if (spooledPath == null) {
-                spooledPath = contextSpoolService.spoolContextPatch(organizationId, jobId, stepId, "plan", updatedContext);
-            }
             if (spooledPath != null) {
                 log.info("Successfully spooled final plan snapshot to storage at {} for job {} step {}", spooledPath, jobId, stepId);
                 return "SPOOLED";

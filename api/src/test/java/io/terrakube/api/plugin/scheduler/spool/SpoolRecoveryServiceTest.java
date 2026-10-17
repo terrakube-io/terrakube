@@ -243,8 +243,9 @@ class SpoolRecoveryServiceTest {
         int recovered = spoolRecoveryService.recoverPendingSpooledSteps();
 
         assertThat(recovered).isEqualTo(0);
-        // Should delete corrupted spool
+        // Should delete corrupted spool and mark step EXPIRED
         verify(storageTypeService).deleteSpooledContextPatch(orgId.toString(), String.valueOf(jobId), stepId.toString(), "plan");
+        verify(stepRepository).updateDeliveryState(stepId, DeliveryState.EXPIRED);
         verify(storageTypeService, never()).saveContext(anyInt(), anyString());
     }
 
@@ -285,6 +286,7 @@ class SpoolRecoveryServiceTest {
 
         assertThat(recovered).isEqualTo(0);
         verify(storageTypeService).deleteSpooledContextPatch(orgId.toString(), String.valueOf(jobId), stepId.toString(), "plan");
+        verify(stepRepository).updateDeliveryState(stepId, DeliveryState.EXPIRED);
         verify(storageTypeService, never()).saveContext(anyInt(), anyString());
     }
 
@@ -332,6 +334,7 @@ class SpoolRecoveryServiceTest {
 
         assertThat(recovered).isEqualTo(0);
         verify(storageTypeService).deleteSpooledContextPatch(orgId.toString(), String.valueOf(jobId), stepId.toString(), "plan");
+        verify(stepRepository).updateDeliveryState(stepId, DeliveryState.EXPIRED);
         verify(storageTypeService, never()).saveContext(anyInt(), anyString());
     }
 

@@ -893,7 +893,7 @@ class ApplyStructuredOutputServiceTest {
         Mockito.when(jobContextService.saveContextChecked(Mockito.eq("o"), Mockito.eq("1"), Mockito.any())).thenReturn(false);
 
         io.terrakube.executor.service.terraform.spool.ContextSpoolService contextSpoolService = Mockito.mock(io.terrakube.executor.service.terraform.spool.ContextSpoolService.class);
-        Mockito.when(contextSpoolService.spoolContextPatch(Mockito.eq("o"), Mockito.eq("1"), Mockito.eq("step-1"), Mockito.eq("apply"), Mockito.any()))
+        Mockito.when(contextSpoolService.spoolContextPatch(Mockito.eq("o"), Mockito.eq("1"), Mockito.eq("step-1"), Mockito.eq("apply"), Mockito.anyLong(), Mockito.any()))
                 .thenReturn("context-spool/o/1/step-1-apply.json.gz");
 
         ApplyStructuredOutputService service = new ApplyStructuredOutputService(
@@ -902,7 +902,7 @@ class ApplyStructuredOutputServiceTest {
         String state = service.publishFinalApplySynchronous("o", "1", "step-1", List.of(), List.of());
         assertEquals("SPOOLED", state);
         Mockito.verify(jobContextService, Mockito.times(3)).saveContextChecked(Mockito.eq("o"), Mockito.eq("1"), Mockito.any());
-        Mockito.verify(contextSpoolService).spoolContextPatch(Mockito.eq("o"), Mockito.eq("1"), Mockito.eq("step-1"), Mockito.eq("apply"), Mockito.any());
+        Mockito.verify(contextSpoolService).spoolContextPatch(Mockito.eq("o"), Mockito.eq("1"), Mockito.eq("step-1"), Mockito.eq("apply"), Mockito.anyLong(), Mockito.any());
     }
 
     @Test
@@ -912,7 +912,7 @@ class ApplyStructuredOutputServiceTest {
         Mockito.when(jobContextService.saveContextChecked(Mockito.eq("o"), Mockito.eq("1"), Mockito.any())).thenReturn(false);
 
         io.terrakube.executor.service.terraform.spool.ContextSpoolService contextSpoolService = Mockito.mock(io.terrakube.executor.service.terraform.spool.ContextSpoolService.class);
-        Mockito.when(contextSpoolService.spoolContextPatch(Mockito.eq("o"), Mockito.eq("1"), Mockito.eq("step-1"), Mockito.eq("apply"), Mockito.any()))
+        Mockito.when(contextSpoolService.spoolContextPatch(Mockito.eq("o"), Mockito.eq("1"), Mockito.eq("step-1"), Mockito.eq("apply"), Mockito.anyLong(), Mockito.any()))
                 .thenReturn(null);
 
         ApplyStructuredOutputService service = new ApplyStructuredOutputService(

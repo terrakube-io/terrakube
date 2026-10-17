@@ -230,9 +230,6 @@ public class ApplyStructuredOutputService {
 
         if (contextSpoolService != null && updatedContext != null) {
             String spooledPath = contextSpoolService.spoolContextPatch(organizationId, jobId, stepId, "apply", deliveryRevision, updatedContext);
-            if (spooledPath == null) {
-                spooledPath = contextSpoolService.spoolContextPatch(organizationId, jobId, stepId, "apply", updatedContext);
-            }
             if (spooledPath != null) {
                 log.info("Successfully spooled final apply snapshot to storage at {} for job {} step {}", spooledPath, jobId, stepId);
                 return "SPOOLED";

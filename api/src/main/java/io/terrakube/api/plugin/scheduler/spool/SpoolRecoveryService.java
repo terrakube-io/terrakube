@@ -161,6 +161,7 @@ public class SpoolRecoveryService {
         }
 
         boolean anyRecovered = false;
+        boolean anyCorruptedOrInvalid = false;
         for (String phase : List.of("plan", "apply")) {
             byte[] spooledBytes = storageTypeService.getSpooledContextPatch(orgId, jobId, stepId, phase);
             if (spooledBytes != null && spooledBytes.length > 0) {
@@ -168,6 +169,7 @@ public class SpoolRecoveryService {
                     log.error("Spooled payload for step {} job {} phase {} exceeds max compressed bytes ({} > {}). Deleting corrupted spool.",
                             stepId, jobId, phase, spooledBytes.length, properties.getMaxCompressedBytes());
                     storageTypeService.deleteSpooledContextPatch(orgId, jobId, stepId, phase);
+                    anyCorruptedOrInvalid = true;
                     continue;
                 }
 
@@ -181,6 +183,7 @@ public class SpoolRecoveryService {
                         log.error("Security envelope mismatch for step {} job {} phase {}. Expected org={}, job={}, step={}, phase={}, but got {}. Deleting invalid spool.",
                                 stepId, jobId, phase, orgId, jobId, stepId, phase, envelope);
                         storageTypeService.deleteSpooledContextPatch(orgId, jobId, stepId, phase);
+                        anyCorruptedOrInvalid = true;
                         continue;
                     }
 
@@ -200,6 +203,7 @@ public class SpoolRecoveryService {
                     log.error("Failed to decompress, parse or apply spooled patch for step {} job {} phase {}: {}. Deleting corrupted spool.",
                             stepId, jobId, phase, e.getMessage(), e);
                     storageTypeService.deleteSpooledContextPatch(orgId, jobId, stepId, phase);
+                    anyCorruptedOrInvalid = true;
                 }
             }
         }
@@ -208,6 +212,10 @@ public class SpoolRecoveryService {
             stepRepository.updateDeliveryState(step.getId(), DeliveryState.RECOVERED);
             log.info("Successfully recovered spooled structured output for step {} job {}", stepId, jobId);
             return true;
+        } else if (anyCorruptedOrInvalid) {
+            log.warn("Spooled output for step {} job {} was corrupted or invalid, marking EXPIRED", stepId, jobId);
+            stepRepository.updateDeliveryState(step.getId(), DeliveryState.EXPIRED);
+            return false;
         } else {
             log.debug("No spooled context patch found for step {} job {}", stepId, jobId);
             clearLease(step);
@@ -306,7 +314,7 @@ public class SpoolRecoveryService {
             }
 
             if ("noChangePlan".equals(key)) {
-                if (target.containsKey("terraformApply") || isApplyPhase(target.get("structuredOutputStatus"))) {
+                if (target.containsKey("applyStructuredOutput") || target.containsKey("terraformApply") || isApplyPhase(target.get("structuredOutputStatus"))) {
                     log.info("Skipping noChangePlan merge because apply already executed");
                     continue;
                 }
