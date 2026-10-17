@@ -44,9 +44,10 @@ public class SpoolRecoveryScheduler {
         }
         try {
             log.info("Setting up spool recovery sweeper with cron: {}", properties.getCron());
-            JobDetail existingJob = scheduler.getJobDetail(new JobKey(PREFIX_SPOOL_RECOVERY));
-            if (existingJob != null) {
-                scheduler.deleteJob(new JobKey(PREFIX_SPOOL_RECOVERY));
+            JobKey jobKey = new JobKey(PREFIX_SPOOL_RECOVERY);
+            if (scheduler.checkExists(jobKey)) {
+                log.info("Spool recovery sweeper job already scheduled: {}", jobKey);
+                return;
             }
             setupSpoolRecoverySchedule(properties.getCron());
         } catch (Exception e) {
@@ -55,6 +56,12 @@ public class SpoolRecoveryScheduler {
     }
 
     public void setupSpoolRecoverySchedule(String cronExpression) throws ParseException, SchedulerException {
+        JobKey jobKey = new JobKey(PREFIX_SPOOL_RECOVERY);
+        if (scheduler.checkExists(jobKey)) {
+            log.info("Spool recovery sweep job already exists in scheduler: {}", jobKey);
+            return;
+        }
+
         JobDataMap jobDataMap = new JobDataMap();
         jobDataMap.put("SpoolRecoverySweep", "SpoolRecoverySweepV1");
 
@@ -73,7 +80,11 @@ public class SpoolRecoveryScheduler {
                 .withSchedule(CronScheduleBuilder.cronSchedule(new CronExpression(cronExpression)))
                 .build();
 
-        log.info("Created schedule trigger for spool recovery sweep: {}", jobDetail.getKey());
-        scheduler.scheduleJob(jobDetail, trigger);
+        try {
+            scheduler.scheduleJob(jobDetail, trigger);
+            log.info("Created schedule trigger for spool recovery sweep: {}", jobDetail.getKey());
+        } catch (org.quartz.ObjectAlreadyExistsException e) {
+            log.info("Spool recovery sweep job was already scheduled by another replica: {}", jobDetail.getKey());
+        }
     }
 }

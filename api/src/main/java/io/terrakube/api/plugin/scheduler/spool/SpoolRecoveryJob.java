@@ -1,6 +1,7 @@
 package io.terrakube.api.plugin.scheduler.spool;
 
 import lombok.extern.slf4j.Slf4j;
+import org.quartz.DisallowConcurrentExecution;
 import org.quartz.Job;
 import org.quartz.JobExecutionContext;
 import org.quartz.JobExecutionException;
@@ -9,6 +10,7 @@ import org.springframework.stereotype.Component;
 
 @Slf4j
 @Component
+@DisallowConcurrentExecution
 public class SpoolRecoveryJob implements Job {
 
     private final SpoolRecoveryService spoolRecoveryService;

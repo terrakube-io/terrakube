@@ -33,6 +33,7 @@ import java.time.Instant;
 import java.util.Date;
 import java.util.List;
 import java.util.Properties;
+import java.util.UUID;
 
 import static io.terrakube.api.plugin.scheduler.ScheduleJobService.PREFIX_JOB_CONTEXT;
 
@@ -176,6 +177,7 @@ public class JobReconciliationSweep implements org.quartz.Job {
             return null; // a live ScheduleJob firing (or another replica's sweep) owns this job now
         }
         try {
+            probeAndRecoverSpooledSteps(job);
             return reconciliationService.reconcile(job.getId(), !properties.isAutoRemediate());
         } catch (RuntimeException e) {
             log.warn("Reconciliation of zero-pending job {} failed this sweep, will retry: {}",
@@ -340,9 +342,15 @@ public class JobReconciliationSweep implements org.quartz.Job {
                 for (String phase : List.of("plan", "apply")) {
                     if (storageTypeService.hasSpooledContextPatch(orgId, jobId, stepId, phase)) {
                         log.info("Dead executor probe found spooled context patch for step {} job {} phase {}", stepId, jobId, phase);
-                        step.setDeliveryState(DeliveryState.SPOOLED);
-                        stepRepository.save(step);
-                        if (spoolRecoveryService != null) {
+                        if (step.getDeliveryState() != DeliveryState.SPOOLED) {
+                            step.setDeliveryState(DeliveryState.SPOOLED);
+                            stepRepository.save(step);
+                        }
+                        Date now = new Date();
+                        Date leaseUntil = new Date(now.getTime() + 60_000L);
+                        String owner = "reconciliation-probe-" + UUID.randomUUID();
+                        int leased = stepRepository.acquireLease(step.getId(), owner, leaseUntil, now);
+                        if (leased > 0 && spoolRecoveryService != null) {
                             spoolRecoveryService.recoverStep(step);
                         }
                         break;

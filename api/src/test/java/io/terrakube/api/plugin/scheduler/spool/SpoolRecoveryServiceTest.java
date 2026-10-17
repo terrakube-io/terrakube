@@ -407,4 +407,139 @@ class SpoolRecoveryServiceTest {
         assertThat(savedJson).doesNotContain("secret-password");
         assertThat(savedJson).contains("\"after\":null");
     }
+
+    @Test
+    void recoverPendingSpooledSteps_NoPatch_ReleasesLeaseViaReleaseLease() {
+        UUID orgId = UUID.randomUUID();
+        UUID stepId = UUID.randomUUID();
+        int jobId = 100;
+
+        Organization org = new Organization();
+        org.setId(orgId);
+
+        Job job = new Job();
+        job.setId(jobId);
+        job.setOrganization(org);
+
+        Step step = new Step();
+        step.setId(stepId);
+        step.setJob(job);
+        step.setDeliveryState(DeliveryState.SPOOLED);
+        step.setDeliveryTimestamp(System.currentTimeMillis() - 60_000L);
+
+        when(stepRepository.findByDeliveryStateAndLeaseUntilBefore(eq(DeliveryState.SPOOLED), any(Date.class), any(Pageable.class)))
+                .thenReturn(List.of(step));
+        when(stepRepository.acquireLease(eq(stepId), anyString(), any(Date.class), any(Date.class)))
+                .thenReturn(1);
+
+        when(storageTypeService.getSpooledContextPatch(orgId.toString(), String.valueOf(jobId), stepId.toString(), "plan"))
+                .thenReturn(null);
+        when(storageTypeService.getSpooledContextPatch(orgId.toString(), String.valueOf(jobId), stepId.toString(), "apply"))
+                .thenReturn(null);
+
+        int recovered = spoolRecoveryService.recoverPendingSpooledSteps();
+
+        assertThat(recovered).isEqualTo(0);
+        verify(stepRepository).releaseLease(stepId);
+        verify(stepRepository, never()).save(any());
+    }
+
+    @Test
+    void mergeAndSaveContext_SkipsOverwritingNewerStructuredOutputStatus() throws IOException {
+        int jobId = 200;
+        String existingContext = "{\"structuredOutputStatus\":{\"updatedAtEpochMs\":2000,\"phase\":\"apply\",\"state\":\"PERSISTED\"}}";
+        when(storageTypeService.getContext(jobId)).thenReturn(existingContext);
+
+        Map<String, Object> patch = Map.of(
+                "structuredOutputStatus", Map.of("updatedAtEpochMs", 1000, "phase", "plan", "state", "PERSISTED")
+        );
+
+        boolean saved = spoolRecoveryService.mergeAndSaveContext(jobId, patch);
+
+        assertThat(saved).isTrue();
+        ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
+        verify(storageTypeService).saveContext(eq(jobId), captor.capture());
+        assertThat(captor.getValue()).contains("\"phase\":\"apply\"").contains("\"updatedAtEpochMs\":2000");
+    }
+
+    @Test
+    void mergeAndSaveContext_SkipsNoChangePlanIfApplyExists() throws IOException {
+        int jobId = 201;
+        String existingContext = "{\"structuredOutputStatus\":{\"updatedAtEpochMs\":2000,\"phase\":\"apply\",\"state\":\"PERSISTED\"}}";
+        when(storageTypeService.getContext(jobId)).thenReturn(existingContext);
+
+        Map<String, Object> patch = Map.of(
+                "noChangePlan", Map.of("planStepId", "old-step")
+        );
+
+        boolean saved = spoolRecoveryService.mergeAndSaveContext(jobId, patch);
+
+        assertThat(saved).isTrue();
+        ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
+        verify(storageTypeService).saveContext(eq(jobId), captor.capture());
+        assertThat(captor.getValue()).doesNotContain("noChangePlan");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void mergeAndSaveContext_RedisLockBusy_ReturnsFalseAndReleasesLease() throws IOException {
+        UUID orgId = UUID.randomUUID();
+        UUID stepId = UUID.randomUUID();
+        int jobId = 100;
+
+        Organization org = new Organization();
+        org.setId(orgId);
+
+        Job job = new Job();
+        job.setId(jobId);
+        job.setOrganization(org);
+
+        Step step = new Step();
+        step.setId(stepId);
+        step.setJob(job);
+        step.setDeliveryState(DeliveryState.SPOOLED);
+        step.setDeliveryTimestamp(System.currentTimeMillis() - 60_000L);
+
+        org.springframework.data.redis.core.RedisTemplate<String, Object> redisTemplateMock = mock(org.springframework.data.redis.core.RedisTemplate.class);
+        org.springframework.data.redis.core.ValueOperations<String, Object> valOps = mock(org.springframework.data.redis.core.ValueOperations.class);
+        when(redisTemplateMock.opsForValue()).thenReturn(valOps);
+        when(valOps.setIfAbsent(anyString(), any(), any(java.time.Duration.class))).thenReturn(false);
+
+        spoolRecoveryService = new SpoolRecoveryService(
+                stepRepository,
+                jobRepository,
+                storageTypeService,
+                objectMapper,
+                properties,
+                contextReadService,
+                policyEvaluationService,
+                null,
+                redisTemplateMock);
+
+        when(stepRepository.findByDeliveryStateAndLeaseUntilBefore(eq(DeliveryState.SPOOLED), any(Date.class), any(Pageable.class)))
+                .thenReturn(List.of(step));
+        when(stepRepository.acquireLease(eq(stepId), anyString(), any(Date.class), any(Date.class)))
+                .thenReturn(1);
+
+        Map<String, Object> envelope = Map.of(
+                "organizationId", orgId.toString(),
+                "jobId", String.valueOf(jobId),
+                "stepId", stepId.toString(),
+                "phase", "plan"
+        );
+        Map<String, Object> patch = Map.of("key", "val");
+        Map<String, Object> payload = Map.of("envelope", envelope, "patch", patch);
+        byte[] gzippedBytes = createGzippedPayload(payload);
+
+        when(storageTypeService.getSpooledContextPatch(orgId.toString(), String.valueOf(jobId), stepId.toString(), "plan"))
+                .thenReturn(gzippedBytes);
+
+        int recovered = spoolRecoveryService.recoverPendingSpooledSteps();
+
+        assertThat(recovered).isEqualTo(0);
+        // Did not delete spool file because it was locked, not corrupt
+        verify(storageTypeService, never()).deleteSpooledContextPatch(anyString(), anyString(), anyString(), anyString());
+        // Released lease for next retry
+        verify(stepRepository).releaseLease(stepId);
+    }
 }

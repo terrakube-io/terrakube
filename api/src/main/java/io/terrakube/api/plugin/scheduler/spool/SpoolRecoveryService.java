@@ -15,9 +15,12 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
+import org.springframework.data.redis.core.RedisTemplate;
+
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.time.Duration;
 import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -32,6 +35,9 @@ import io.terrakube.api.plugin.context.ContextSanitizer;
 @Service
 public class SpoolRecoveryService {
 
+    private static final String CONTEXT_LOCK_PREFIX = "job-context-lock:";
+    private static final Duration CONTEXT_LOCK_TTL = Duration.ofSeconds(30);
+
     private final StepRepository stepRepository;
     private final JobRepository jobRepository;
     private final StorageTypeService storageTypeService;
@@ -40,6 +46,7 @@ public class SpoolRecoveryService {
     private final ContextReadService contextReadService;
     private final PolicyEvaluationService policyEvaluationService;
     private final ContextSanitizer contextSanitizer;
+    private final RedisTemplate<String, Object> redisTemplate;
 
     @Autowired
     public SpoolRecoveryService(
@@ -50,7 +57,8 @@ public class SpoolRecoveryService {
             SpoolRecoveryProperties properties,
             @Autowired(required = false) ContextReadService contextReadService,
             @Autowired(required = false) PolicyEvaluationService policyEvaluationService,
-            @Autowired(required = false) ContextSanitizer contextSanitizer) {
+            @Autowired(required = false) ContextSanitizer contextSanitizer,
+            @Autowired(required = false) RedisTemplate<String, Object> redisTemplate) {
         this.stepRepository = stepRepository;
         this.jobRepository = jobRepository;
         this.storageTypeService = storageTypeService;
@@ -59,6 +67,19 @@ public class SpoolRecoveryService {
         this.contextReadService = contextReadService;
         this.policyEvaluationService = policyEvaluationService;
         this.contextSanitizer = contextSanitizer;
+        this.redisTemplate = redisTemplate;
+    }
+
+    public SpoolRecoveryService(
+            StepRepository stepRepository,
+            JobRepository jobRepository,
+            StorageTypeService storageTypeService,
+            ObjectMapper objectMapper,
+            SpoolRecoveryProperties properties,
+            ContextReadService contextReadService,
+            PolicyEvaluationService policyEvaluationService,
+            ContextSanitizer contextSanitizer) {
+        this(stepRepository, jobRepository, storageTypeService, objectMapper, properties, contextReadService, policyEvaluationService, contextSanitizer, null);
     }
 
     public SpoolRecoveryService(
@@ -69,7 +90,7 @@ public class SpoolRecoveryService {
             SpoolRecoveryProperties properties,
             ContextReadService contextReadService,
             PolicyEvaluationService policyEvaluationService) {
-        this(stepRepository, jobRepository, storageTypeService, objectMapper, properties, contextReadService, policyEvaluationService, null);
+        this(stepRepository, jobRepository, storageTypeService, objectMapper, properties, contextReadService, policyEvaluationService, null, null);
     }
 
     public int recoverPendingSpooledSteps() {
@@ -166,7 +187,12 @@ public class SpoolRecoveryService {
                     @SuppressWarnings("unchecked")
                     Map<String, Object> patch = (Map<String, Object>) payload.get("patch");
                     if (patch != null && !patch.isEmpty()) {
-                        mergeAndSaveContext(job.getId(), patch);
+                        boolean merged = mergeAndSaveContext(job.getId(), patch);
+                        if (!merged) {
+                            log.warn("Context lock busy for job {}, will retry step {} next sweep", jobId, stepId);
+                            clearLease(step);
+                            return false;
+                        }
                         anyRecovered = true;
                     }
                     storageTypeService.deleteSpooledContextPatch(orgId, jobId, stepId, phase);
@@ -204,28 +230,63 @@ public class SpoolRecoveryService {
                 && expectedPhase.equalsIgnoreCase(envPhase != null ? String.valueOf(envPhase) : null);
     }
 
-    public void mergeAndSaveContext(int jobId, Map<String, Object> patch) throws IOException {
-        String currentContextJson = storageTypeService.getContext(jobId);
-        Map<String, Object> currentContext = new LinkedHashMap<>();
-        if (currentContextJson != null && !currentContextJson.isBlank()) {
-            try {
-                currentContext = objectMapper.readValue(currentContextJson, new TypeReference<Map<String, Object>>() {});
-            } catch (Exception e) {
-                log.warn("Unable to parse current context JSON for job {}, starting with fresh context", jobId, e);
-                currentContext = new LinkedHashMap<>();
+    public boolean mergeAndSaveContext(int jobId, Map<String, Object> patch) throws IOException {
+        boolean locked = acquireContextLock(jobId);
+        if (!locked) {
+            log.warn("Could not acquire context lock for job {}, aborting concurrent context merge", jobId);
+            return false;
+        }
+        try {
+            String currentContextJson = storageTypeService.getContext(jobId);
+            Map<String, Object> currentContext = new LinkedHashMap<>();
+            if (currentContextJson != null && !currentContextJson.isBlank()) {
+                try {
+                    currentContext = objectMapper.readValue(currentContextJson, new TypeReference<Map<String, Object>>() {});
+                } catch (Exception e) {
+                    log.warn("Unable to parse current context JSON for job {}, starting with fresh context", jobId, e);
+                    currentContext = new LinkedHashMap<>();
+                }
             }
+            mergeContextMaps(currentContext, patch);
+            String updatedContextJson = objectMapper.writeValueAsString(currentContext);
+            if (contextSanitizer != null) {
+                updatedContextJson = contextSanitizer.sanitize(updatedContextJson);
+            }
+            storageTypeService.saveContext(jobId, updatedContextJson);
+            if (contextReadService != null) {
+                contextReadService.invalidate(jobId, updatedContextJson);
+            }
+            if (policyEvaluationService != null) {
+                policyEvaluationService.processPolicyEvaluationContext(jobId, updatedContextJson);
+            }
+            return true;
+        } finally {
+            releaseContextLock(jobId);
         }
-        mergeContextMaps(currentContext, patch);
-        String updatedContextJson = objectMapper.writeValueAsString(currentContext);
-        if (contextSanitizer != null) {
-            updatedContextJson = contextSanitizer.sanitize(updatedContextJson);
+    }
+
+    private boolean acquireContextLock(int jobId) {
+        if (redisTemplate == null) {
+            return true;
         }
-        storageTypeService.saveContext(jobId, updatedContextJson);
-        if (contextReadService != null) {
-            contextReadService.invalidate(jobId, updatedContextJson);
+        try {
+            Boolean acquired = redisTemplate.opsForValue()
+                    .setIfAbsent(CONTEXT_LOCK_PREFIX + jobId, "1", CONTEXT_LOCK_TTL);
+            return Boolean.TRUE.equals(acquired);
+        } catch (Exception e) {
+            log.warn("Could not reach Redis to acquire context lock for Job {}: {}", jobId, e.getMessage());
+            return false;
         }
-        if (policyEvaluationService != null) {
-            policyEvaluationService.processPolicyEvaluationContext(jobId, updatedContextJson);
+    }
+
+    private void releaseContextLock(int jobId) {
+        if (redisTemplate == null) {
+            return;
+        }
+        try {
+            redisTemplate.delete(CONTEXT_LOCK_PREFIX + jobId);
+        } catch (Exception e) {
+            log.warn("Could not reach Redis to release context lock for Job {}: {}", jobId, e.getMessage());
         }
     }
 
@@ -234,6 +295,25 @@ public class SpoolRecoveryService {
         for (Map.Entry<String, Object> entry : patch.entrySet()) {
             String key = entry.getKey();
             Object patchVal = entry.getValue();
+
+            if ("structuredOutputStatus".equals(key)) {
+                if (shouldSkipStructuredOutputStatus(target.get("structuredOutputStatus"), patchVal)) {
+                    log.info("Skipping structuredOutputStatus merge because target is newer or higher priority");
+                    continue;
+                }
+                target.put(key, patchVal);
+                continue;
+            }
+
+            if ("noChangePlan".equals(key)) {
+                if (target.containsKey("terraformApply") || isApplyPhase(target.get("structuredOutputStatus"))) {
+                    log.info("Skipping noChangePlan merge because apply already executed");
+                    continue;
+                }
+                target.put(key, patchVal);
+                continue;
+            }
+
             if (patchVal instanceof Map<?, ?> patchMap && target.get(key) instanceof Map<?, ?> targetMap) {
                 Map<String, Object> mergedSubMap = new LinkedHashMap<>((Map<String, Object>) targetMap);
                 mergedSubMap.putAll((Map<String, Object>) patchMap);
@@ -244,10 +324,44 @@ public class SpoolRecoveryService {
         }
     }
 
+    private boolean shouldSkipStructuredOutputStatus(Object existingVal, Object patchVal) {
+        if (!(existingVal instanceof Map<?, ?> existingMap) || !(patchVal instanceof Map<?, ?> patchMap)) {
+            return false;
+        }
+        long existingTime = extractEpoch(existingMap.get("updatedAtEpochMs"));
+        long patchTime = extractEpoch(patchMap.get("updatedAtEpochMs"));
+        if (existingTime > patchTime) {
+            return true;
+        }
+        if ("apply".equals(existingMap.get("phase")) && "plan".equals(patchMap.get("phase"))) {
+            return true;
+        }
+        return false;
+    }
+
+    private boolean isApplyPhase(Object status) {
+        if (status instanceof Map<?, ?> map) {
+            return "apply".equals(map.get("phase"));
+        }
+        return false;
+    }
+
+    private long extractEpoch(Object val) {
+        if (val instanceof Number n) {
+            return n.longValue();
+        }
+        if (val != null) {
+            try {
+                return Long.parseLong(val.toString());
+            } catch (NumberFormatException ignored) {}
+        }
+        return 0L;
+    }
+
     private void clearLease(Step step) {
-        step.setLeaseOwner(null);
-        step.setLeaseUntil(null);
-        stepRepository.save(step);
+        if (step != null && step.getId() != null) {
+            stepRepository.releaseLease(step.getId());
+        }
     }
 
     public static byte[] gunzip(byte[] compressed) throws IOException {

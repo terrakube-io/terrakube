@@ -26,12 +26,16 @@ public interface StepRepository extends JpaRepository<Step, UUID> {
             Pageable pageable);
 
     @Modifying(clearAutomatically = true)
-    @Query("UPDATE step s SET s.leaseOwner = :owner, s.leaseUntil = :leaseUntil WHERE s.id = :stepId AND (s.leaseUntil IS NULL OR s.leaseUntil < :now)")
+    @Query("UPDATE step s SET s.leaseOwner = :owner, s.leaseUntil = :leaseUntil WHERE s.id = :stepId AND s.deliveryState = io.terrakube.api.rs.job.step.DeliveryState.SPOOLED AND (s.leaseUntil IS NULL OR s.leaseUntil < :now)")
     int acquireLease(
             @Param("stepId") UUID stepId,
             @Param("owner") String owner,
             @Param("leaseUntil") Date leaseUntil,
             @Param("now") Date now);
+
+    @Modifying(clearAutomatically = true)
+    @Query("UPDATE step s SET s.leaseOwner = null, s.leaseUntil = null WHERE s.id = :stepId")
+    int releaseLease(@Param("stepId") UUID stepId);
 
     @Modifying(clearAutomatically = true)
     @Query("UPDATE step s SET s.deliveryState = :newState, s.leaseOwner = null, s.leaseUntil = null WHERE s.id = :stepId")
