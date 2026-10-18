@@ -14,6 +14,13 @@ export function formatDateTime(iso?: string | null): string {
   return date.isValid ? date.toLocaleString(DateTime.DATETIME_MED) : iso;
 }
 
+// The exact time with its timezone in the browser's locale ("17 October 2026 at 19:58 BST"), for the tooltip next to a relative time.
+export function formatDateTimeWithZone(iso?: string | null): string {
+  if (!iso) return "";
+  const date = DateTime.fromISO(iso);
+  return date.isValid ? date.toLocaleString(DateTime.DATETIME_FULL) : iso;
+}
+
 // "November 3rd, 2026": the long ordinal date format used next to token expirations.
 export function formatOrdinalDate(date: DateTime): string {
   const day = date.day;

@@ -1,0 +1,21 @@
+/* One line, like the organization list: the clock and the time never wrap apart. */
+.workspace-last-run-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  color: var(--tk-text-secondary);
+}
+
+/* The dotted underline tells keyboard and pointer users that the exact time is available. */
+.workspace-last-run {
+  text-decoration: underline dotted;
+  text-decoration-color: var(--tk-text-secondary);
+  text-underline-offset: 3px;
+  cursor: default;
+}
+
+.workspace-last-run:focus-visible {
+  outline: 2px solid var(--tk-accent);
+  outline-offset: 2px;
+}
