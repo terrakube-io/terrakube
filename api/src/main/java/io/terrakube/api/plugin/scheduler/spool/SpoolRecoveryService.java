@@ -173,38 +173,48 @@ public class SpoolRecoveryService {
                     continue;
                 }
 
+                Map<String, Object> payload;
                 try {
                     byte[] uncompressed = gunzip(spooledBytes, properties.getMaxUncompressedBytes());
-                    Map<String, Object> payload = objectMapper.readValue(uncompressed, new TypeReference<Map<String, Object>>() {});
-
-                    @SuppressWarnings("unchecked")
-                    Map<String, Object> envelope = (Map<String, Object>) payload.get("envelope");
-                    if (!validateEnvelope(envelope, orgId, jobId, stepId, phase)) {
-                        log.error("Security envelope mismatch for step {} job {} phase {}. Expected org={}, job={}, step={}, phase={}, but got {}. Deleting invalid spool.",
-                                stepId, jobId, phase, orgId, jobId, stepId, phase, envelope);
-                        storageTypeService.deleteSpooledContextPatch(orgId, jobId, stepId, phase);
-                        anyCorruptedOrInvalid = true;
-                        continue;
-                    }
-
-                    @SuppressWarnings("unchecked")
-                    Map<String, Object> patch = (Map<String, Object>) payload.get("patch");
-                    if (patch != null && !patch.isEmpty()) {
-                        boolean merged = mergeAndSaveContext(job.getId(), patch);
-                        if (!merged) {
-                            log.warn("Context lock busy for job {}, will retry step {} next sweep", jobId, stepId);
-                            clearLease(step);
-                            return false;
-                        }
-                        anyRecovered = true;
-                    }
-                    storageTypeService.deleteSpooledContextPatch(orgId, jobId, stepId, phase);
+                    payload = objectMapper.readValue(uncompressed, new TypeReference<Map<String, Object>>() {});
                 } catch (Exception e) {
-                    log.error("Failed to decompress, parse or apply spooled patch for step {} job {} phase {}: {}. Deleting corrupted spool.",
+                    log.error("Failed to decompress or parse spooled patch for step {} job {} phase {}: {}. Deleting corrupted spool.",
                             stepId, jobId, phase, e.getMessage(), e);
                     storageTypeService.deleteSpooledContextPatch(orgId, jobId, stepId, phase);
                     anyCorruptedOrInvalid = true;
+                    continue;
                 }
+
+                @SuppressWarnings("unchecked")
+                Map<String, Object> envelope = (Map<String, Object>) payload.get("envelope");
+                if (!validateEnvelope(envelope, orgId, jobId, stepId, phase)) {
+                    log.error("Security envelope mismatch for step {} job {} phase {}. Expected org={}, job={}, step={}, phase={}, but got {}. Deleting invalid spool.",
+                            stepId, jobId, phase, orgId, jobId, stepId, phase, envelope);
+                    storageTypeService.deleteSpooledContextPatch(orgId, jobId, stepId, phase);
+                    anyCorruptedOrInvalid = true;
+                    continue;
+                }
+
+                @SuppressWarnings("unchecked")
+                Map<String, Object> patch = (Map<String, Object>) payload.get("patch");
+                if (patch != null && !patch.isEmpty()) {
+                    boolean merged;
+                    try {
+                        merged = mergeAndSaveContext(job.getId(), patch);
+                    } catch (Exception e) {
+                        log.warn("Transient error applying spooled patch for step {} job {} phase {}: {}. Will retry next sweep.",
+                                stepId, jobId, phase, e.getMessage(), e);
+                        clearLease(step);
+                        return false;
+                    }
+                    if (!merged) {
+                        log.warn("Context lock busy for job {}, will retry step {} next sweep", jobId, stepId);
+                        clearLease(step);
+                        return false;
+                    }
+                    anyRecovered = true;
+                }
+                storageTypeService.deleteSpooledContextPatch(orgId, jobId, stepId, phase);
             }
         }
 
@@ -239,8 +249,8 @@ public class SpoolRecoveryService {
     }
 
     public boolean mergeAndSaveContext(int jobId, Map<String, Object> patch) throws IOException {
-        boolean locked = acquireContextLock(jobId);
-        if (!locked) {
+        String lockToken = acquireContextLock(jobId);
+        if (lockToken == null) {
             log.warn("Could not acquire context lock for job {}, aborting concurrent context merge", jobId);
             return false;
         }
@@ -269,30 +279,34 @@ public class SpoolRecoveryService {
             }
             return true;
         } finally {
-            releaseContextLock(jobId);
+            releaseContextLock(jobId, lockToken);
         }
     }
 
-    private boolean acquireContextLock(int jobId) {
+    private String acquireContextLock(int jobId) {
         if (redisTemplate == null) {
-            return true;
+            return "NO_REDIS";
         }
+        String token = UUID.randomUUID().toString();
         try {
             Boolean acquired = redisTemplate.opsForValue()
-                    .setIfAbsent(CONTEXT_LOCK_PREFIX + jobId, "1", CONTEXT_LOCK_TTL);
-            return Boolean.TRUE.equals(acquired);
+                    .setIfAbsent(CONTEXT_LOCK_PREFIX + jobId, token, CONTEXT_LOCK_TTL);
+            return Boolean.TRUE.equals(acquired) ? token : null;
         } catch (Exception e) {
             log.warn("Could not reach Redis to acquire context lock for Job {}: {}", jobId, e.getMessage());
-            return false;
+            return null;
         }
     }
 
-    private void releaseContextLock(int jobId) {
-        if (redisTemplate == null) {
+    private void releaseContextLock(int jobId, String lockToken) {
+        if (redisTemplate == null || lockToken == null || "NO_REDIS".equals(lockToken)) {
             return;
         }
         try {
-            redisTemplate.delete(CONTEXT_LOCK_PREFIX + jobId);
+            Object current = redisTemplate.opsForValue().get(CONTEXT_LOCK_PREFIX + jobId);
+            if (lockToken.equals(current)) {
+                redisTemplate.delete(CONTEXT_LOCK_PREFIX + jobId);
+            }
         } catch (Exception e) {
             log.warn("Could not reach Redis to release context lock for Job {}: {}", jobId, e.getMessage());
         }

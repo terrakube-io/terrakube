@@ -545,4 +545,53 @@ class SpoolRecoveryServiceTest {
         // Released lease for next retry
         verify(stepRepository).releaseLease(stepId);
     }
+
+    @Test
+    void transientStorageFailureDuringMerge_RetriesWithoutDeletingSpoolOrExpiringStep() throws IOException {
+        UUID orgId = UUID.randomUUID();
+        UUID stepId = UUID.randomUUID();
+        int jobId = 100;
+
+        Organization org = new Organization();
+        org.setId(orgId);
+
+        Job job = new Job();
+        job.setId(jobId);
+        job.setOrganization(org);
+
+        Step step = new Step();
+        step.setId(stepId);
+        step.setJob(job);
+        step.setDeliveryState(DeliveryState.SPOOLED);
+        step.setDeliveryTimestamp(System.currentTimeMillis() - 60_000L);
+
+        when(stepRepository.findByDeliveryStateAndLeaseUntilBefore(eq(DeliveryState.SPOOLED), any(Date.class), any(Pageable.class)))
+                .thenReturn(List.of(step));
+        when(stepRepository.acquireLease(eq(stepId), anyString(), any(Date.class), any(Date.class)))
+                .thenReturn(1);
+
+        Map<String, Object> envelope = Map.of(
+                "organizationId", orgId.toString(),
+                "jobId", String.valueOf(jobId),
+                "stepId", stepId.toString(),
+                "phase", "plan"
+        );
+        Map<String, Object> patch = Map.of("key", "val");
+        Map<String, Object> payload = Map.of("envelope", envelope, "patch", patch);
+        byte[] gzippedBytes = createGzippedPayload(payload);
+
+        when(storageTypeService.getSpooledContextPatch(orgId.toString(), String.valueOf(jobId), stepId.toString(), "plan"))
+                .thenReturn(gzippedBytes);
+        when(storageTypeService.getContext(jobId)).thenThrow(new RuntimeException("503 Service Unavailable / Transient storage failure"));
+
+        int recovered = spoolRecoveryService.recoverPendingSpooledSteps();
+
+        assertThat(recovered).isEqualTo(0);
+        // Spool must NOT be deleted on transient storage failure
+        verify(storageTypeService, never()).deleteSpooledContextPatch(anyString(), anyString(), anyString(), anyString());
+        // Step must NOT be marked EXPIRED
+        verify(stepRepository, never()).updateDeliveryState(any(), eq(DeliveryState.EXPIRED));
+        // Lease released so next sweep retries
+        verify(stepRepository).releaseLease(stepId);
+    }
 }

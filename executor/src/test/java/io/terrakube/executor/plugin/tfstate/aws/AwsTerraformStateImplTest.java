@@ -354,8 +354,8 @@ class AwsTerraformStateImplTest {
         PutObjectRequest captured = putCaptor.getValue();
         assertEquals("test-bucket", captured.bucket());
         assertEquals("context-spool/org1/job1/step1-plan.json.gz", captured.key());
-        assertEquals("application/json", captured.contentType());
-        assertEquals("gzip", captured.contentEncoding());
+        assertEquals("application/gzip", captured.contentType());
+        assertNull(captured.contentEncoding());
     }
 
     @Test

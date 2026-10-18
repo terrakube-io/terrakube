@@ -316,8 +316,7 @@ public class GcpTerraformStateImpl implements TerraformState {
         try {
             BlobId blobId = BlobId.of(bucketName, blobKey);
             BlobInfo blobInfo = BlobInfo.newBuilder(blobId)
-                    .setContentType("application/json")
-                    .setContentEncoding("gzip")
+                    .setContentType("application/gzip")
                     .build();
             storageRetryMetrics.withRetry("gcp", "spool-write", () -> storage.create(blobInfo, data));
             log.info("Successfully spooled context patch for job {} step {} phase {} to GCS", jobId, stepId, phase);

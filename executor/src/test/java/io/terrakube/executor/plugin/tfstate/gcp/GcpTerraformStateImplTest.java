@@ -228,8 +228,8 @@ class GcpTerraformStateImplTest {
         verify(storage).create(
                 argThat((BlobInfo info) -> info != null
                         && info.getBlobId().getName().equals("context-spool/org1/job1/step1-plan.json.gz")
-                        && "application/json".equals(info.getContentType())
-                        && "gzip".equals(info.getContentEncoding())),
+                        && "application/gzip".equals(info.getContentType())
+                        && info.getContentEncoding() == null),
                 eq(gzippedPatch));
     }
 }

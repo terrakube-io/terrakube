@@ -451,8 +451,7 @@ public class AwsTerraformStateImpl implements TerraformState {
             PutObjectRequest putObjectRequest = PutObjectRequest.builder()
                     .bucket(bucketName)
                     .key(blobKey)
-                    .contentType("application/json")
-                    .contentEncoding("gzip")
+                    .contentType("application/gzip")
                     .build();
 
             storageRetryMetrics.withRetry("aws", "spool-write", () -> {
