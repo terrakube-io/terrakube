@@ -2,7 +2,9 @@ package io.terrakube.api.plugin.security.authentication.dex;
 
 import io.terrakube.api.plugin.token.login.TerraformLoginProperties;
 import io.terrakube.api.repository.FederatedRepository;
+import io.terrakube.api.repository.StepRepository;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -72,7 +74,8 @@ public class DexWebSecurityAdapter {
                                                @Value("${io.terrakube.token.issuer-uri}") String issuerUri,
                                                @Value("${io.terrakube.token.pat}") String patJwtSecret,
                                                @Value("${io.terrakube.token.internal}") String internalJwtSecret, PatRepository patRepository,
-                                               TeamTokenRepository teamTokenRepository, FederatedRepository federatedRepository) throws Exception {
+                                               TeamTokenRepository teamTokenRepository, FederatedRepository federatedRepository,
+                                               @Autowired(required = false) StepRepository stepRepository) throws Exception {
                 http.cors(Customizer.withDefaults())
                                 .csrf(crsf -> crsf.ignoringRequestMatchers("/remote/tfe/v2/configuration-versions/*",
                                                 "/tfstate/v1/archive/*/terraform.tfstate",
@@ -119,6 +122,7 @@ public class DexWebSecurityAdapter {
                                                         .patRepository(patRepository)
                                                         .teamTokenRepository(teamTokenRepository)
                                                         .federatedRepository(federatedRepository)
+                                                        .stepRepository(stepRepository)
                                                         .build();
                                         oauth2.authenticationManagerResolver(authenticationManagerResolver);
                                 });

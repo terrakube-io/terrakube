@@ -101,4 +101,73 @@ class StreamingServiceTest {
 
         verify(emitter).complete();
     }
+
+    /** Records the named events and data sent to a context-stream viewer. */
+    static class RecordingEmitter extends org.springframework.web.servlet.mvc.method.annotation.SseEmitter {
+        final java.util.List<String> sent = new java.util.concurrent.CopyOnWriteArrayList<>();
+        volatile boolean completed;
+
+        RecordingEmitter() {
+            super(0L);
+        }
+
+        @Override
+        public void send(SseEventBuilder builder) {
+            StringBuilder sb = new StringBuilder();
+            for (org.springframework.web.servlet.mvc.method.annotation.ResponseBodyEmitter.DataWithMediaType d : builder.build()) {
+                if (d.getData() instanceof String text) {
+                    sb.append(text);
+                }
+            }
+            sent.add(sb.toString().replace("\n", "|"));
+        }
+
+        @Override
+        public void complete() {
+            completed = true;
+        }
+    }
+
+    private Job jobWithStatus(JobStatus status) {
+        Job job = new Job();
+        job.setId(7);
+        job.setStatus(status);
+        when(jobRepository.findById(7)).thenReturn(Optional.of(job));
+        return job;
+    }
+
+    @Test
+    @Timeout(10)
+    void contextStreamReportsATrimmedResumeIdBeforeReplayAndEndsWithCompleteWhenTheJobFinishes() throws Exception {
+        jobWithStatus(JobStatus.completed);
+        when(redisStreamReader.firstEntryId("7-context")).thenReturn(org.springframework.data.redis.connection.stream.RecordId.of("50-0"));
+        when(redisStreamReader.readAfter(eq("7-context"), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(List.of());
+        StreamingService service = new StreamingService(stepRepository, redisStreamReader, jobRepository, 5000);
+        RecordingEmitter emitter = new RecordingEmitter();
+
+        service.streamJobContext("7", emitter, org.springframework.data.redis.connection.stream.RecordId.of("10-0"),
+                new io.terrakube.api.plugin.context.ContextSanitizer(new com.fasterxml.jackson.databind.ObjectMapper()));
+
+        assertTrue(emitter.sent.get(0).contains("event:gap"), emitter.sent.toString());
+        assertTrue(emitter.sent.get(0).contains("\"firstAvailableId\":\"50-0\""));
+        assertTrue(emitter.sent.get(0).contains("\"recovery\":\"context\""));
+        assertTrue(emitter.sent.get(1).contains("event:end"));
+        assertTrue(emitter.sent.get(1).contains("\"reason\":\"complete\""));
+        assertTrue(emitter.completed);
+    }
+
+    @Test
+    @Timeout(10)
+    void contextStreamRotatesAfterTheMaximumStreamDurationSoTheClientCanTellRotationFromCompletion() throws Exception {
+        StreamingService service = new StreamingService(stepRepository, redisStreamReader, jobRepository, 5000);
+        service.maxStreamDuration = java.time.Duration.ZERO;
+        RecordingEmitter emitter = new RecordingEmitter();
+
+        service.streamJobContext("7", emitter, org.springframework.data.redis.connection.stream.RecordId.of("0-0"),
+                new io.terrakube.api.plugin.context.ContextSanitizer(new com.fasterxml.jackson.databind.ObjectMapper()));
+
+        assertTrue(emitter.sent.get(0).contains("\"reason\":\"rotate\""), emitter.sent.toString());
+        assertTrue(emitter.completed);
+    }
 }

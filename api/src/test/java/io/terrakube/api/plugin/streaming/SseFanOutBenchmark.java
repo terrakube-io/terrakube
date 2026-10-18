@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.when;
 
 /**
@@ -42,7 +43,7 @@ class SseFanOutBenchmark {
         props.setSseMaxStreamDuration(Duration.ofSeconds(30));
 
         when(jobStatusCache.isTerminal(any())).thenReturn(false);
-        when(reader.readAfterOnce(any(), any())).thenReturn(List.of());
+        when(reader.readAfterPage(any(), any(), anyInt())).thenReturn(List.of());
 
         // One counter per jobId - a broadcaster loop leaked from an earlier iteration keeps reading
         // its own key, so counting per-key keeps each row clean.

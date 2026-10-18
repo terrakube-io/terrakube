@@ -16,6 +16,7 @@ import org.apache.commons.text.TextStringBuilder;
 
 import java.io.IOException;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -30,6 +31,10 @@ public class StreamingService {
     final RedisStreamReader redisStreamReader;
 
     final JobRepository jobRepository;
+
+    /** A context stream is closed after this long; the client resumes with Last-Event-ID. */
+    @Value("${io.terrakube.logs.sse-max-stream-duration:30m}")
+    Duration maxStreamDuration = Duration.ofMinutes(30);
 
     /** Max trailing lines the running-step plain GET returns from the Redis stream. */
     final int liveTailRecords;
@@ -76,14 +81,31 @@ public class StreamingService {
             String streamKey = jobId + "-context";
             RecordId lastId = resumeFrom;
             int emptyReads = 0;
+            Instant deadline = Instant.now().plus(maxStreamDuration);
+
+            // Tell a viewer whose resume id was trimmed away; GET /context/v1/{jobId} is the recovery path.
+            if (resumeFrom != null && !StreamIds.isZero(resumeFrom)) {
+                RecordId oldest = redisStreamReader.firstEntryId(streamKey);
+                if (oldest != null && StreamIds.compare(resumeFrom, oldest) < 0) {
+                    emitter.send(SseEmitter.event().name("gap").data(
+                            "{\"reason\":\"trimmed\",\"afterId\":\"" + resumeFrom.getValue()
+                                    + "\",\"firstAvailableId\":\"" + oldest.getValue() + "\",\"recovery\":\"context\"}"));
+                }
+            }
 
             while (true) {
+                if (Instant.now().isAfter(deadline)) {
+                    emitter.send(SseEmitter.event().name("end").data("{\"reason\":\"rotate\"}"));
+                    emitter.complete();
+                    return;
+                }
                 List<MapRecord> records = redisStreamReader.readAfter(streamKey, lastId, Duration.ofSeconds(2));
 
                 if (records.isEmpty()) {
                     emptyReads++;
                     Job job = jobRepository.findById(Integer.parseInt(jobId)).orElseThrow();
                     if (job.getStatus().isTerminal()) {
+                        emitter.send(SseEmitter.event().name("end").data("{\"reason\":\"complete\"}"));
                         emitter.complete();
                         return;
                     }

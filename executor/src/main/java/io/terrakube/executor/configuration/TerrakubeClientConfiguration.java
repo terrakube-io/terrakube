@@ -9,8 +9,6 @@ import feign.jackson.JacksonDecoder;
 import feign.jackson.JacksonEncoder;
 import io.terrakube.client.TerrakubeClient;
 import io.terrakube.client.spring.autoconfigure.RestClientProperties;
-import io.terrakube.executor.service.mode.TerraformJob;
-import io.terrakube.executor.service.workspace.security.JobContextHolder;
 import io.terrakube.executor.service.workspace.security.WorkspaceSecurity;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -43,18 +41,7 @@ public class TerrakubeClientConfiguration {
                 .decoder(new JacksonDecoder(objectMapper))
                 .client(new Http2Client())
                 .requestInterceptor(template -> {
-                    TerraformJob job = JobContextHolder.get();
-                    String token;
-                    if (job != null) {
-                        token = workspaceSecurity.generateAccessToken(
-                                15,
-                                job.getOrganizationId(),
-                                job.getWorkspaceId(),
-                                job.getJobId(),
-                                job.getStepId());
-                    } else {
-                        token = workspaceSecurity.generateAccessToken(15);
-                    }
+                    String token = workspaceSecurity.generateAccessToken(1);
                     template.header("Authorization", "Bearer " + token);
                 })
                 .target(TerrakubeClient.class, restClientProperties.getUrl());

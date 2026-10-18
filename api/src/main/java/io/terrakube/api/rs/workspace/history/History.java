@@ -15,7 +15,7 @@ import java.util.List;
 import java.util.UUID;
 
 @Include(rootLevel = false)
-@ReadPermission(expression = "executor read history OR user is an executor service")
+@ReadPermission(expression = "team read history OR executor read history OR user is an executor service")
 @CreatePermission(expression = "user is a super service OR executor manage history OR user is an executor service")
 @UpdatePermission(expression = "user is a super service OR executor manage history OR user is an executor service")
 @DeletePermission(expression = "user is a super service")

@@ -4,12 +4,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.terrakube.executor.plugin.tfstate.TerraformState;
 import io.terrakube.executor.service.mode.PolicyContext;
 import io.terrakube.executor.service.mode.PolicyExemptionContext;
+import io.terrakube.executor.service.mode.TerraformJob;
 import io.terrakube.executor.service.opa.model.OpaEvaluationResult;
 import io.terrakube.executor.service.opa.model.PolicyViolation;
 import io.terrakube.executor.service.opa.model.ViolationStatus;
 import io.terrakube.executor.service.terraform.JobContextService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
@@ -18,11 +20,14 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import org.junit.jupiter.api.io.TempDir;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.eq;
 
 class OpaExecutorServiceTest {
 
@@ -423,5 +428,21 @@ class OpaExecutorServiceTest {
         assertTrue(inputsNode.path("simple_string").isTextual());
         assertEquals("production-env", inputsNode.path("simple_string").asText());
     }
-}
 
+    @Test
+    @SuppressWarnings("unchecked")
+    void saveStructuredContextPatchesOnlyThePolicyEvaluationEntry() {
+        TerraformJob job = new TerraformJob();
+        job.setOrganizationId("org-1");
+        job.setJobId("42");
+        job.setStepId("step-1");
+
+        opaExecutorService.saveStructuredContext(job, List.of(OpaEvaluationResult.builder().passedRules(2).build()));
+
+        ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
+        Mockito.verify(jobContextService).patchContextFresh(eq("org-1"), eq("42"), captor.capture());
+        assertEquals(Set.of("policyEvaluation"), captor.getValue().keySet());
+        Map<String, Object> payload = (Map<String, Object>) captor.getValue().get("policyEvaluation");
+        assertEquals(2, payload.get("passedRules"));
+    }
+}

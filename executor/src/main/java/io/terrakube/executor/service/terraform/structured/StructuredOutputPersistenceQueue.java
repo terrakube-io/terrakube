@@ -4,6 +4,7 @@ import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.terrakube.executor.configuration.ExecutorFlagsProperties;
 import io.terrakube.executor.configuration.StructuredOutputProperties;
+import io.terrakube.executor.service.terraform.ContextRevision;
 import io.terrakube.executor.service.terraform.structured.StructuredSnapshot.Key;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
@@ -49,7 +50,6 @@ public class StructuredOutputPersistenceQueue {
     private final Map<Key, RetainedSnapshot> retained = new ConcurrentHashMap<>();
     private final Semaphore signal = new Semaphore(0);
     private final Object drainLock = new Object();
-    private final AtomicLong sequence = new AtomicLong();
 
     private final int capacity;
     private final int maxAttempts;
@@ -153,9 +153,13 @@ public class StructuredOutputPersistenceQueue {
         drainRetainedOnce(Duration.ofSeconds(5));
     }
 
-    /** Monotonic sequence for snapshot ordering / eviction. */
-    public long nextSequence() {
-        return sequence.incrementAndGet();
+    /**
+     * Monotonic per-job sequence for snapshot ordering / eviction. It doubles as the context patch
+     * revision, so a retried or recovered snapshot reuses it and the API ignores it once something
+     * newer landed.
+     */
+    public long nextSequence(String jobId) {
+        return ContextRevision.next(jobId);
     }
 
     /** Record that a snapshot could not be built (serialization failure) - never fails the run. */

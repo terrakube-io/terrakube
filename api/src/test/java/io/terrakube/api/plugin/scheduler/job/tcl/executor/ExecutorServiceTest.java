@@ -146,6 +146,41 @@ class ExecutorServiceTest {
     }
 
     @Test
+    void aJobWithoutAResolvedVersionPassesTheWorkspaceVersionThrough() {
+        workspace.setTerraformVersion(">= 1.3.0");
+
+        assertThat(ExecutorService.terraformVersionFor(job)).isEqualTo(">= 1.3.0");
+    }
+
+    @Test
+    void aJobKeepsItsResolvedVersionEvenIfTheWorkspaceConstraintCouldNowResolveToSomethingNewer() {
+        workspace.setTerraformVersion(">= 1.3.0");
+        job.setResolvedTerraformVersion("1.16.5");
+
+        // The plan step resolved 1.16.5; whatever the release index now says, the apply step must use it too.
+        assertThat(ExecutorService.terraformVersionFor(job)).isEqualTo("1.16.5");
+    }
+
+    @Test
+    void aNewJobOnTheSameWorkspaceStillResolvesAFreshVersion() {
+        workspace.setTerraformVersion(">= 1.3.0");
+        job.setResolvedTerraformVersion("1.16.5");
+        Job next = new Job();
+        next.setId(43);
+        next.setWorkspace(workspace);
+
+        assertThat(ExecutorService.terraformVersionFor(next)).isEqualTo(">= 1.3.0");
+    }
+
+    @Test
+    void aBlankResolvedVersionIsIgnored() {
+        workspace.setTerraformVersion("1.5.7");
+        job.setResolvedTerraformVersion(" ");
+
+        assertThat(ExecutorService.terraformVersionFor(job)).isEqualTo("1.5.7");
+    }
+
+    @Test
     void shouldPersistJobOverrideSourceWhenNotAlreadySet() {
         String resolved = "https://localhost/remote/tfe/v2/configuration-versions/abc/terraformContent.tar.gz";
 
@@ -390,18 +425,59 @@ class ExecutorServiceTest {
     }
 
     @Test
-    void shouldNotOverwriteExistingTfCliArgsPlan() {
+    void shouldAppendAddressesToExistingTfCliArgsPlan() {
         Address address = new Address();
         address.setName("aws_s3_bucket.bucket");
         address.setType(AddressType.TARGET);
         when(addressRepository.findByJob(job)).thenReturn(List.of(address));
 
         ExecutorContext context = createContext();
-        context.getEnvironmentVariables().put("TF_CLI_ARGS_plan", "-existing-flag");
+        context.getEnvironmentVariables().put("TF_CLI_ARGS_plan", "-var-file=variables/dev.tfvars");
 
         ExecutorContext result = executorService.validateJobAddress(context, job);
 
-        assertThat(result.getEnvironmentVariables()).containsEntry("TF_CLI_ARGS_plan", "-existing-flag");
+        assertThat(result.getEnvironmentVariables())
+                .containsEntry("TF_CLI_ARGS_plan", "-var-file=variables/dev.tfvars -target=\"aws_s3_bucket.bucket\"");
+    }
+
+    @Test
+    void shouldAppendTargetAndReplaceAddressesToExistingTfCliArgsPlan() {
+        Address target = new Address();
+        target.setName("aws_s3_bucket.bucket");
+        target.setType(AddressType.TARGET);
+
+        Address replace = new Address();
+        replace.setName("aws_instance.server[\"web-prod\"]");
+        replace.setType(AddressType.REPLACE);
+
+        when(addressRepository.findByJob(job)).thenReturn(List.of(target, replace));
+
+        ExecutorContext context = createContext();
+        context.getEnvironmentVariables().put("TF_CLI_ARGS_plan", "-var-file=variables/dev.tfvars");
+
+        ExecutorContext result = executorService.validateJobAddress(context, job);
+
+        assertThat(result.getEnvironmentVariables())
+                .containsEntry("TF_CLI_ARGS_plan",
+                        "-var-file=variables/dev.tfvars" +
+                        " -target=\"aws_s3_bucket.bucket\"" +
+                        " -replace=\"aws_instance.server[\\\"web-prod\\\"]\"");
+    }
+
+    @Test
+    void shouldAppendAddressesToEmptyExistingTfCliArgsPlan() {
+        Address address = new Address();
+        address.setName("aws_s3_bucket.bucket");
+        address.setType(AddressType.TARGET);
+        when(addressRepository.findByJob(job)).thenReturn(List.of(address));
+
+        ExecutorContext context = createContext();
+        context.getEnvironmentVariables().put("TF_CLI_ARGS_plan", "");
+
+        ExecutorContext result = executorService.validateJobAddress(context, job);
+
+        assertThat(result.getEnvironmentVariables())
+                .containsEntry("TF_CLI_ARGS_plan", " -target=\"aws_s3_bucket.bucket\"");
     }
 
     private Job jobWithVcsWorkspace() {

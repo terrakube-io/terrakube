@@ -289,5 +289,117 @@ describe("WorkspaceTable", () => {
       expect(screen.getByText("bulk-workspace-11")).toBeInTheDocument();
       expect(screen.getByText("Show less")).toBeInTheDocument();
     });
+
+    describe("collapsible groups", () => {
+      const onToggleGroup = jest.fn();
+      const onSetGroupsCollapsed = jest.fn();
+      const collapsibleProps = (extra = {}) => ({
+        groups,
+        page: 1,
+        pageSize: 20,
+        total: 2,
+        onPageChange: jest.fn(),
+        collapsedGroups: new Set<string>(),
+        onToggleGroup,
+        onSetGroupsCollapsed,
+        ...extra,
+      });
+
+      beforeEach(() => {
+        onToggleGroup.mockClear();
+        onSetGroupsCollapsed.mockClear();
+      });
+
+      it("renders each heading as a toggle that starts expanded", () => {
+        renderTable(collapsibleProps());
+        const toggles = screen.getAllByRole("button", { expanded: true });
+        const headings = toggles.filter((toggle) => toggle.classList.contains("workspace-group-toggle"));
+        expect(headings).toHaveLength(2);
+        expect(headings[0]).toHaveTextContent("platform");
+        expect(headings[1]).toHaveTextContent("(unassigned)");
+        expect(screen.getByText("billing-api-staging")).toBeInTheDocument();
+      });
+
+      it("hides the rows of a collapsed group but keeps its heading and page-scoped count", () => {
+        renderTable(collapsibleProps({ collapsedGroups: new Set(["proj-1"]) }));
+        const toggle = screen.getByRole("button", { name: /platform/ });
+
+        expect(toggle).toHaveAttribute("aria-expanded", "false");
+        expect(toggle).toHaveTextContent("1 workspace on this page");
+        expect(screen.queryByText("billing-api-staging")).not.toBeInTheDocument();
+        expect(screen.getByText("auth-service-dev")).toBeInTheDocument();
+      });
+
+      it("collapses the unassigned group like any other", () => {
+        renderTable(collapsibleProps({ collapsedGroups: new Set(["__unassigned__"]) }));
+        expect(screen.getByRole("button", { name: /\(unassigned\)/ })).toHaveAttribute("aria-expanded", "false");
+        expect(screen.queryByText("auth-service-dev")).not.toBeInTheDocument();
+        expect(screen.getByText("billing-api-staging")).toBeInTheDocument();
+      });
+
+      it("toggles a group when its heading button is clicked", () => {
+        renderTable(collapsibleProps());
+        const toggle = screen.getByRole("button", { name: /platform/ });
+
+        fireEvent.click(toggle);
+        expect(onToggleGroup).toHaveBeenCalledWith("proj-1");
+        expect(toggle.tagName).toBe("BUTTON");
+        expect(toggle).toHaveAttribute("type", "button");
+      });
+
+      it("points the toggle at the region it shows and hides", () => {
+        const { container } = renderTable(collapsibleProps({ collapsedGroups: new Set(["proj-1"]) }));
+        const toggle = screen.getByRole("button", { name: /platform/ });
+        const panel = container.querySelector(`[id="${toggle.getAttribute("aria-controls")}"]`);
+        expect(panel).toBeInTheDocument();
+        expect(panel).toBeEmptyDOMElement();
+      });
+
+      it("leaves the project chip, row links and tag buttons working in an expanded group", () => {
+        const { container } = renderTable(collapsibleProps());
+        fireEvent.click(container.querySelector(".workspace-clickable-tag")!);
+        expect(defaultProps.onSelectProject).toHaveBeenCalledWith("proj-1");
+        expect(onToggleGroup).not.toHaveBeenCalled();
+        expect(screen.getByLabelText("Open workspace billing-api-staging")).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "Show 3 tags" })).toBeInTheDocument();
+      });
+
+      it("expands and collapses every group on the page", () => {
+        renderTable(collapsibleProps());
+        fireEvent.click(screen.getByRole("button", { name: "Collapse all" }));
+        expect(onSetGroupsCollapsed).toHaveBeenLastCalledWith(["proj-1", "__unassigned__"], true);
+        fireEvent.click(screen.getByRole("button", { name: "Expand all" }));
+        expect(onSetGroupsCollapsed).toHaveBeenLastCalledWith(["proj-1", "__unassigned__"], false);
+      });
+
+      it("keeps every group open and the controls off while forced open, without changing the choices", () => {
+        const collapsedGroups = new Set(["proj-1"]);
+        const { rerender } = renderTable(collapsibleProps({ collapsedGroups, groupsForcedOpen: true }));
+        const toggle = screen.getByRole("button", { name: /platform/ });
+
+        expect(toggle).toHaveAttribute("aria-expanded", "true");
+        expect(toggle).toHaveAttribute("aria-disabled", "true");
+        expect(screen.getByText("billing-api-staging")).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "Expand all" })).toBeDisabled();
+        expect(screen.getByRole("button", { name: "Collapse all" })).toBeDisabled();
+
+        fireEvent.click(toggle);
+        expect(onToggleGroup).not.toHaveBeenCalled();
+
+        rerender(
+          <MemoryRouter>
+            <WorkspaceTable {...defaultProps} {...collapsibleProps({ collapsedGroups })} />
+          </MemoryRouter>
+        );
+        expect(screen.queryByText("billing-api-staging")).not.toBeInTheDocument();
+        expect(screen.getByRole("button", { name: /platform/ })).toHaveAttribute("aria-expanded", "false");
+      });
+
+      it("keeps the heading static when no toggle handler is given", () => {
+        renderTable({ groups });
+        expect(screen.queryByRole("button", { name: /platform/ })).not.toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: "Collapse all" })).not.toBeInTheDocument();
+      });
+    });
   });
 });

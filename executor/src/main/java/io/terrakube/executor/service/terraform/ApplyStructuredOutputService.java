@@ -111,23 +111,34 @@ public class ApplyStructuredOutputService {
         return seeded;
     }
 
-    @SuppressWarnings("unchecked")
-    Map<String, Object> updateApplyContext(Map<String, Object> context, String stepId, List<Map<String, Object>> changes, List<Map<String, Object>> jobDiagnostics) {
-        Map<String, Object> updatedContext = new HashMap<>(context);
+    Map<String, Object> buildApplyPatch(String stepId, List<Map<String, Object>> changes, List<Map<String, Object>> jobDiagnostics) {
+        // HashMap, not Map.of: values may be null.
+        Map<String, Object> set = new HashMap<>();
+        set.put(CONTEXT_APPLY_KEY + "/" + stepId, changes);
+        set.put(CONTEXT_JOB_DIAGNOSTICS_KEY + "/" + stepId, jobDiagnostics);
+        return set;
+    }
 
-        Map<String, Object> applyStructuredOutput = updatedContext.get(CONTEXT_APPLY_KEY) instanceof Map<?, ?> existing
-                ? new HashMap<>((Map<String, Object>) existing)
-                : new HashMap<>();
-        applyStructuredOutput.put(stepId, changes);
-        updatedContext.put(CONTEXT_APPLY_KEY, applyStructuredOutput);
-
-        Map<String, Object> jobDiagnosticsByStep = updatedContext.get(CONTEXT_JOB_DIAGNOSTICS_KEY) instanceof Map<?, ?> existingDiagnostics
-                ? new HashMap<>((Map<String, Object>) existingDiagnostics)
-                : new HashMap<>();
-        jobDiagnosticsByStep.put(stepId, jobDiagnostics);
-        updatedContext.put(CONTEXT_JOB_DIAGNOSTICS_KEY, jobDiagnosticsByStep);
-
-        return updatedContext;
+    /**
+     * Reconciles in-progress resource statuses when an execution halts or terminates prematurely
+     * (e.g. failure of another resource, cancellation, interruption, or exception).
+     */
+    public void finalizeResourceStatuses(List<Map<String, Object>> changes, boolean executionSuccessful, boolean interrupted) {
+        if (changes == null || changes.isEmpty() || (executionSuccessful && !interrupted)) {
+            return;
+        }
+        String targetStatus = interrupted ? "interrupted" : "errored";
+        for (Map<String, Object> change : changes) {
+            Object statusObj = change.get("status");
+            if (statusObj instanceof String status) {
+                if (TerraformJsonEventParser.IN_PROGRESS_STATUSES.contains(status)) {
+                    change.put("status", targetStatus);
+                    change.remove("previousStatus");
+                } else if ("pending".equals(status)) {
+                    change.put("status", "not-started");
+                }
+            }
+        }
     }
 
     void publishApplyProgress(String organizationId, String jobId, String stepId, List<Map<String, Object>> changes, List<Map<String, Object>> jobDiagnostics) {
@@ -146,7 +157,7 @@ public class ApplyStructuredOutputService {
         if (executorFlagsProperties.isAsyncStructuredOutput() && persistenceQueue != null) {
             try {
                 StructuredSnapshot snapshot = StructuredSnapshot.copyOf(organizationId, jobId, stepId,
-                        StructuredSnapshot.Phase.APPLY, persistenceQueue.nextSequence(), finalSnapshot,
+                        StructuredSnapshot.Phase.APPLY, persistenceQueue.nextSequence(jobId), finalSnapshot,
                         changes, jobDiagnostics, objectMapper);
                 persistenceQueue.submit(snapshot);
             } catch (StructuredSnapshot.SnapshotSerializationException e) {
@@ -158,9 +169,8 @@ public class ApplyStructuredOutputService {
         }
 
         try {
-            Map<String, Object> context = getCurrentContext(organizationId, jobId);
-            Map<String, Object> updatedContext = updateApplyContext(context, stepId, changes, jobDiagnostics);
-            saveContext(organizationId, jobId, updatedContext);
+            jobContextService.patchContextFresh(organizationId, jobId,
+                    buildApplyPatch(stepId, changes, jobDiagnostics));
         } catch (Exception e) {
             log.warn("Unable to publish apply structured output for job {} step {}", jobId, stepId, e);
         }
@@ -201,8 +211,8 @@ public class ApplyStructuredOutputService {
             // hook pair that its own JSON view doesn't implement), so ApplyJsonEventParser has
             // nothing to key off of and these rows are stuck at the seeded "pending" status.
             // The resource's presence in the post-apply state is the only signal available that
-            // it was actually applied, so use it to unstick anything still marked pending.
-            if ("pending".equals(change.get("status"))) {
+            // it was actually applied, so use it to unstick genuine import blocks only.
+            if ("pending".equals(change.get("status")) && "import".equals(change.get("action"))) {
                 change.put("status", "applied");
             }
 
@@ -392,10 +402,6 @@ public class ApplyStructuredOutputService {
 
     private Map<String, Object> getCurrentContext(String organizationId, String jobId) {
         return jobContextService.getCurrentContext(organizationId, jobId);
-    }
-
-    private void saveContext(String organizationId, String jobId, Map<String, Object> context) {
-        jobContextService.saveContext(organizationId, jobId, context);
     }
 }
 

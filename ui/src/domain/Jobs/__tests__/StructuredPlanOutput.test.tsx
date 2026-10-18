@@ -294,6 +294,109 @@ describe("StructuredPlanOutput", () => {
     );
   });
 
+  it("renders interrupted status badge with action label and does not increment applied count", () => {
+    render(
+      <StructuredPlanOutput
+        applyMode
+        changes={[
+          {
+            address: "aws_instance.applied_one",
+            action: "create",
+            actions: ["create"],
+            after: { id: "i-1" },
+            status: "applied",
+          },
+          {
+            address: "aws_instance.interrupted_update",
+            action: "update",
+            actions: ["update"],
+            before: { id: "i-2" },
+            after: { id: "i-2" },
+            status: "interrupted",
+          },
+          {
+            address: "aws_instance.interrupted_destroy",
+            action: "delete",
+            actions: ["delete"],
+            before: { id: "i-3" },
+            status: "interrupted",
+          },
+          {
+            address: "aws_instance.pending_one",
+            action: "create",
+            actions: ["create"],
+            after: { id: "i-4" },
+            status: "pending",
+          },
+        ]}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /aws_instance\.applied_one/i }));
+    fireEvent.click(screen.getByRole("button", { name: /aws_instance\.interrupted_update/i }));
+    fireEvent.click(screen.getByRole("button", { name: /aws_instance\.interrupted_destroy/i }));
+    fireEvent.click(screen.getByRole("button", { name: /aws_instance\.pending_one/i }));
+
+    const updateInterruptedBadge = screen.getByText("update interrupted", { selector: ".structured-plan-applyStatus" });
+    expect(updateInterruptedBadge).toBeInTheDocument();
+    expect(updateInterruptedBadge).toHaveClass("structured-plan-applyStatus--interrupted");
+
+    const destroyInterruptedBadge = screen.getByText("destroy interrupted", { selector: ".structured-plan-applyStatus" });
+    expect(destroyInterruptedBadge).toBeInTheDocument();
+    expect(destroyInterruptedBadge).toHaveClass("structured-plan-applyStatus--interrupted");
+
+    // Applied counter: only 1 of 4 is applied (interrupted and pending do not count towards applied)
+    expect(screen.getByText(/1 of 4 applied/i)).toBeInTheDocument();
+  });
+
+  it("renders interrupted badge outside applyMode when status is interrupted", () => {
+    render(
+      <StructuredPlanOutput
+        changes={[
+          {
+            address: "aws_instance.interrupted_plan",
+            action: "create",
+            actions: ["create"],
+            status: "interrupted",
+          },
+        ]}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /aws_instance\.interrupted_plan/i }));
+    expect(screen.getByText("create interrupted", { selector: ".structured-plan-applyStatus" })).toBeInTheDocument();
+  });
+
+  it("renders not started badge and does not increment applied count", () => {
+    render(
+      <StructuredPlanOutput
+        applyMode
+        changes={[
+          {
+            address: "aws_instance.applied_one",
+            action: "create",
+            actions: ["create"],
+            after: { id: "i-1" },
+            status: "applied",
+          },
+          {
+            address: "aws_instance.not_started_resource",
+            action: "create",
+            actions: ["create"],
+            after: { id: "i-2" },
+            status: "not-started",
+          },
+        ]}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /aws_instance\.not_started_resource/i }));
+    const notStartedBadge = screen.getByText("not started", { selector: ".structured-plan-applyStatus" });
+    expect(notStartedBadge).toBeInTheDocument();
+    expect(notStartedBadge).toHaveClass("structured-plan-applyStatus--not-started");
+    expect(screen.getByText(/1 of 2 applied/i)).toBeInTheDocument();
+  });
+
   it("filters rows by address", () => {
     render(
       <StructuredPlanOutput
@@ -949,18 +1052,194 @@ describe("StructuredPlanOutput", () => {
     expect(screen.getByRole("button", { name: /random_pet\.created/i })).toBeInTheDocument();
   });
 
-  it("does not render an Outputs section when there are no outputs", () => {
+  // #3674: a warning/error attached to a resource with nothing to change previously had no row
+  // to live in at all once the no-op filter above dropped it.
+  it("keeps a no-op resource's row when it carries a diagnostic", () => {
     render(
       <StructuredPlanOutput
         applyMode
         changes={[
           {
-            address: "random_pet.this",
+            address: "random_pet.deprecated_config",
+            action: "no-op",
+            actions: ["no-op"],
+            status: "applied",
+            diagnostics: [{ severity: "warning", summary: "argument is deprecated" }],
+          },
+        ]}
+      />
+    );
+
+    expect(screen.getByRole("button", { name: /random_pet\.deprecated_config/i })).toBeInTheDocument();
+  });
+
+  // #3674: a resource's diagnostics must stay visible even when its row is hidden by a filter.
+  it("surfaces a resource-level diagnostic in the always-visible panel even when its row is filtered out by search", () => {
+    render(
+      <StructuredPlanOutput
+        applyMode
+        changes={[
+          {
+            address: "aws_instance.foo",
             action: "create",
             actions: ["create"],
-            after: { id: "abc" },
+            after: {},
             status: "applied",
+            diagnostics: [{ severity: "warning", summary: "deprecated argument on foo" }],
           },
+          { address: "aws_instance.bar", action: "create", actions: ["create"], after: {}, status: "applied" },
+        ]}
+      />
+    );
+
+    fireEvent.change(screen.getByPlaceholderText(/filter resources by address/i), { target: { value: "bar" } });
+
+    expect(screen.queryByRole("button", { name: /aws_instance\.foo/i })).not.toBeInTheDocument();
+    expect(
+      screen.getByText("aws_instance.foo", { selector: ".structured-plan-jobDiagnostics code" })
+    ).toBeInTheDocument();
+    expect(screen.getByText(/deprecated argument on foo/)).toBeInTheDocument();
+  });
+
+  // #3674 PR feedback: a no-op row kept around only for its diagnostic isn't a change, so it
+  // shouldn't inflate the "Showing X of Y changes" count.
+  it("excludes a no-op resource kept for its diagnostic from the 'Showing X of Y changes' count", () => {
+    render(
+      <StructuredPlanOutput
+        applyMode
+        changes={[
+          { address: "aws_instance.example", action: "create", actions: ["create"], after: {}, status: "applied" },
+          {
+            address: "random_pet.example_noop",
+            action: "no-op",
+            actions: ["no-op"],
+            status: "applied",
+            diagnostics: [{ severity: "warning", summary: "argument is deprecated" }],
+          },
+        ]}
+      />
+    );
+
+    // Filter text that matches both addresses - isFilteredView becomes true without hiding
+    // either row, isolating the count itself from the filtered-out-diagnostics behavior.
+    fireEvent.change(screen.getByPlaceholderText(/filter resources by address/i), { target: { value: "example" } });
+
+    expect(screen.getByRole("button", { name: /aws_instance\.example/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /random_pet\.example_noop/i })).toBeInTheDocument();
+    expect(screen.getByText("Showing 1 of 1 change")).toBeInTheDocument();
+  });
+
+  // #3674 PR feedback: terraform never applies an unchanged resource, so counting its no-op row
+  // would leave "X of Y applied" permanently short of Y.
+  it("excludes a no-op resource kept for its diagnostic from the apply progress count", () => {
+    render(
+      <StructuredPlanOutput
+        applyMode
+        changes={[
+          { address: "aws_instance.example", action: "update", actions: ["update"], after: {}, status: "applied" },
+          {
+            address: "random_pet.example_noop",
+            action: "no-op",
+            actions: ["no-op"],
+            status: "pending",
+            diagnostics: [{ severity: "warning", summary: "argument is deprecated" }],
+          },
+        ]}
+      />
+    );
+
+    expect(screen.getByText("1 of 1 applied")).toBeInTheDocument();
+  });
+
+  it("shows no apply progress when the only row is a no-op kept for its diagnostic", () => {
+    render(
+      <StructuredPlanOutput
+        applyMode
+        changes={[
+          {
+            address: "random_pet.example_noop",
+            action: "no-op",
+            actions: ["no-op"],
+            status: "pending",
+            diagnostics: [{ severity: "warning", summary: "argument is deprecated" }],
+          },
+        ]}
+      />
+    );
+
+    expect(screen.queryByText(/applied$/)).not.toBeInTheDocument();
+  });
+
+  it("does not show a contradictory 'Showing 0 of 0 changes' when only no-op diagnostic rows exist", () => {
+    render(
+      <StructuredPlanOutput
+        applyMode
+        changes={[
+          {
+            address: "random_pet.example_noop",
+            action: "no-op",
+            actions: ["no-op"],
+            status: "applied",
+            diagnostics: [{ severity: "warning", summary: "argument is deprecated" }],
+          },
+        ]}
+      />
+    );
+
+    fireEvent.change(screen.getByPlaceholderText(/filter resources by address/i), { target: { value: "example" } });
+
+    expect(screen.getByRole("button", { name: /random_pet\.example_noop/i })).toBeInTheDocument();
+    expect(screen.queryByText(/^Showing /)).not.toBeInTheDocument();
+  });
+
+  // #3674 originated from terraform plan output, so cover plan mode (no apply statuses) too.
+  it("keeps a no-op resource's row when it carries a diagnostic in plan mode", () => {
+    render(
+      <StructuredPlanOutput
+        changes={[
+          {
+            address: "random_pet.deprecated_config",
+            action: "no-op",
+            actions: ["no-op"],
+            diagnostics: [{ severity: "warning", summary: "argument is deprecated" }],
+          },
+        ]}
+      />
+    );
+
+    expect(screen.getByRole("button", { name: /random_pet\.deprecated_config/i })).toBeInTheDocument();
+    expect(screen.queryByText(/applied$/)).not.toBeInTheDocument();
+  });
+
+  // #3674: a visible row already shows its own diagnostic one click away - mirroring it into the
+  // always-visible panel too would duplicate it.
+  it("does not mirror a visible (non-filtered-out) row's diagnostic into the always-visible panel", () => {
+    render(
+      <StructuredPlanOutput
+        applyMode
+        changes={[
+          {
+            address: "aws_instance.foo",
+            action: "create",
+            actions: ["create"],
+            after: {},
+            status: "applied",
+            diagnostics: [{ severity: "warning", summary: "deprecated argument on foo" }],
+          },
+        ]}
+      />
+    );
+
+    expect(screen.getByRole("button", { name: /aws_instance\.foo/i })).toBeInTheDocument();
+    expect(document.querySelector(".structured-plan-jobDiagnostics")).not.toBeInTheDocument();
+  });
+
+  it("does not render an Outputs section when there are no outputs", () => {
+    render(
+      <StructuredPlanOutput
+        applyMode
+        changes={[
+          { address: "random_pet.this", action: "create", actions: ["create"], after: { id: "abc" }, status: "applied" },
         ]}
       />
     );

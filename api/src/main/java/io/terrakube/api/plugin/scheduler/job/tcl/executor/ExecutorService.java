@@ -101,6 +101,7 @@ public class ExecutorService {
         executorContext.setWorkspaceId(job.getWorkspace().getId().toString());
         executorContext.setJobId(String.valueOf(job.getId()));
         executorContext.setStepId(stepId);
+        executorContext.setExecutionEpoch(System.currentTimeMillis());
 
         if (job.getWorkspace().getBranch().equals("remote-content")) {
             log.warn("Running remote operation, disable headers");
@@ -162,7 +163,7 @@ public class ExecutorService {
         executorContext.setType(flow.getType());
         executorContext.setIgnoreError(flow.isIgnoreError());
         executorContext.setRequireSavedPlan(flow.isRequireSavedPlan());
-        executorContext.setTerraformVersion(job.getWorkspace().getTerraformVersion());
+        executorContext.setTerraformVersion(terraformVersionFor(job));
         if (job.getOverrideSource() == null) {
             executorContext.setSource(job.getWorkspace().getSource());
         } else {
@@ -257,6 +258,17 @@ public class ExecutorService {
         }
     }
 
+    /**
+     * The version every step of this job runs with. A job that already resolved its version constraint
+     * keeps that exact version: a plan file can only be read by the version that wrote it, and re-resolving
+     * a range such as ">= 1.3.0" can pick a newer release between plan and apply. Until one is resolved the
+     * workspace's value (an exact version or a constraint) is passed through.
+     */
+    static String terraformVersionFor(Job job) {
+        String resolved = job.getResolvedTerraformVersion();
+        return resolved != null && !resolved.isBlank() ? resolved : job.getWorkspace().getTerraformVersion();
+    }
+
     ExecutorContext validateJobAddress(ExecutorContext executorContext, Job job) {
         // Queried, not job.getAddress(): this runs after ScheduleJob has deliberately released its
         // transaction before making external calls (see ScheduleJob's class comment), and
@@ -277,7 +289,8 @@ public class ExecutorService {
 
             if(!tfCliArgsPlan.isEmpty()) {
                 log.info("Adding TF_CLI_ARGS_PLAN to environment variables: {}", tfCliArgsPlan.toString());
-                executorContext.getEnvironmentVariables().putIfAbsent("TF_CLI_ARGS_plan", tfCliArgsPlan.toString());
+                executorContext.getEnvironmentVariables()
+                        .merge("TF_CLI_ARGS_plan", tfCliArgsPlan.toString(), (existing, addresses) -> existing + addresses);
             }
         }
 

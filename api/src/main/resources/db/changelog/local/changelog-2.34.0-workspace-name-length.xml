@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+            http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+    <!--
+      Workspace names were capped at 64 characters, which is short for the naming conventions
+      used when migrating from HCP Terraform / Terraform Enterprise. The API now validates the
+      name against the same 128 character limit up front (Workspace#name, @Size(max = 128)) and
+      answers 400 with a clear message instead of letting the insert fail with an opaque 423.
+      Widening only: PostgreSQL, H2 and SQL Server keep the data in place, and the
+      const_workspace unique constraint (organization_id, name) stays valid.
+    -->
+    <changeSet id="2-34-0-workspace-name-length" author="medlabib">
+        <modifyDataType
+                columnName="name"
+                newDataType="varchar(128)"
+                tableName="workspace"/>
+    </changeSet>
+</databaseChangeLog>

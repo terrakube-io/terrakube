@@ -255,7 +255,7 @@ export default function ProjectDetailPage({ organizationName, setOrganizationNam
   const renderContent = () => {
     switch (activeKey) {
       case "workspaces":
-        return <ProjectWorkspaces orgid={orgid!} projectId={id!} />;
+        return <ProjectWorkspaces key={`${orgid}:${id}`} orgid={orgid!} projectId={id!} />;
       case "teams":
         return <ProjectAccessTab orgid={orgid!} projectId={id!} canManage={canManageProject} />;
       case "general":

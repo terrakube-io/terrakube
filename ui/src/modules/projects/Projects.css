@@ -97,3 +97,27 @@
   margin-top: 16px;
   font-size: 12px;
 }
+
+/* Name is sorted by default, which antd marks with a shaded column. Here that reads as a highlighted column
+   rather than a sort, and the caret in the header already says it, so the shading is dropped. */
+.project-workspaces-table .ant-table-tbody > tr > td.ant-table-column-sort {
+  background: transparent;
+}
+
+.project-workspaces-table .ant-table-thead > tr > th.ant-table-column-sort {
+  background: var(--ant-table-header-bg, var(--tk-fill-secondary));
+}
+
+.project-workspace-source {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.project-workspace-source a {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

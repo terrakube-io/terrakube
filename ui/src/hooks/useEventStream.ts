@@ -1,5 +1,14 @@
 import { useEffect, useState } from "react";
 import { readEventStream } from "../modules/api/eventStream";
+import { compareStreamIds } from "../modules/api/streamIds";
+
+// `event: gap` payload: output the server could not replay. `recovery` says where to read it instead.
+export type StreamGap = {
+  reason: string;
+  afterId?: string;
+  firstAvailableId?: string;
+  recovery?: string;
+};
 
 type UseEventStreamOptions<T> = {
   url: string;
@@ -16,7 +25,15 @@ type UseEventStreamOptions<T> = {
   // failures), and { failed: false } again on the next successful message. Lets a consumer fall
   // back to polling - see LiveTerminalOutput.
   onStatus?: (status: { failed: boolean }) => void;
+  // Folds a gap into the value; without it a gap is ignored.
+  onGap?: (previous: T, gap: StreamGap) => T;
 };
+
+// End reasons after which the client resumes from its last event id. "complete" (or no end event) does not.
+const RECONNECT_END_REASONS = new Set(["rotate", "overflow"]);
+// Viewers of a job rotate together; jitter spreads their reconnects.
+const RESUME_DELAY_MS = 250;
+const RESUME_JITTER_MS = 1750;
 
 const INITIAL_BACKOFF_MS = 1000;
 const MAX_BACKOFF_MS = 30000;
@@ -25,7 +42,15 @@ function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === "AbortError";
 }
 
-export function useEventStream<T>({ url, enabled, initial, reduce, flushIntervalMs, onStatus }: UseEventStreamOptions<T>): T {
+export function useEventStream<T>({
+  url,
+  enabled,
+  initial,
+  reduce,
+  flushIntervalMs,
+  onStatus,
+  onGap,
+}: UseEventStreamOptions<T>): T {
   const [value, setValue] = useState<T>(initial);
 
   useEffect(() => {
@@ -62,13 +87,42 @@ export function useEventStream<T>({ url, enabled, initial, reduce, flushInterval
       setValue(currentValue);
     };
 
+    let endReason: string | undefined;
+
     const connect = () => {
       controller = new AbortController();
+      endReason = undefined;
 
       readEventStream(url, {
         signal: controller.signal,
         lastEventId,
-        onMessage: (data, id) => {
+        onMessage: (data, id, event) => {
+          if (event === "end") {
+            try {
+              endReason = (JSON.parse(data) as { reason?: string }).reason;
+            } catch {
+              endReason = undefined;
+            }
+            return;
+          }
+          if (event === "gap") {
+            try {
+              currentValue = onGap != null ? onGap(currentValue, JSON.parse(data) as StreamGap) : currentValue;
+            } catch {
+              // A malformed gap notice must not break the stream.
+            }
+            dirty = true;
+            if (flushIntervalMs == null) {
+              flush();
+            } else if (flushTimeout == null) {
+              flushTimeout = setTimeout(flush, flushIntervalMs);
+            }
+            return;
+          }
+          // A record can arrive twice (replayed and live); ids are ordered, so a non-newer id is a repeat.
+          if (id != null && lastEventId != null && (compareStreamIds(id, lastEventId) ?? 1) <= 0) {
+            return;
+          }
           backoffMs = INITIAL_BACKOFF_MS;
           if (reportedFailed) {
             reportedFailed = false;
@@ -91,6 +145,12 @@ export function useEventStream<T>({ url, enabled, initial, reduce, flushInterval
           }
         },
       })
+        .then(() => {
+          if (!cancelled && endReason != null && RECONNECT_END_REASONS.has(endReason)) {
+            backoffMs = INITIAL_BACKOFF_MS;
+            retryTimeout = setTimeout(connect, RESUME_DELAY_MS + Math.random() * RESUME_JITTER_MS);
+          }
+        })
         .catch((error: unknown) => {
           if (cancelled || isAbortError(error)) {
             return;

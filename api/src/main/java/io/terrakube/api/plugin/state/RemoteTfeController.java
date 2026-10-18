@@ -252,7 +252,7 @@ public class RemoteTfeController {
     @GetMapping(produces = "application/vnd.api+json", path = "/state-versions/{historyId}")
     public ResponseEntity<StateData> getWorkspaceState(@PathVariable("historyId") String historyId, Principal principal) {
         log.info("Looking history id {}", historyId);
-        return ResponseEntity.of(Optional.ofNullable(remoteTfeService.getWorkspaceState(historyId)));
+        return ResponseEntity.of(Optional.ofNullable(remoteTfeService.getWorkspaceState(historyId, (JwtAuthenticationToken) principal)));
     }
 
     @Transactional

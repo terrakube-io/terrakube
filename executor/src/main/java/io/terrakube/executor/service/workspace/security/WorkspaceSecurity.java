@@ -19,4 +19,7 @@ public interface WorkspaceSecurity {
     default String generateAccessToken(int minutes, String organizationId, String workspaceId, String jobId, String stepId) {
         return generateAccessToken(minutes, workspaceId);
     }
+
+    default void cleanTerraformCredentials() {
+    }
 }

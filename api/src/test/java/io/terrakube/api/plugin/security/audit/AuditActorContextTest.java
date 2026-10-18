@@ -1,0 +1,148 @@
+package io.terrakube.api.plugin.security.audit;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import java.util.List;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullAndEmptySource;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
+
+import io.terrakube.api.plugin.security.audit.dex.DexAuditorAwareImpl;
+
+class AuditActorContextTest {
+
+    private final DexAuditorAwareImpl auditor = new DexAuditorAwareImpl();
+
+    @AfterEach
+    void clearSecurityContext() {
+        SecurityContextHolder.clearContext();
+        assertThat(AuditActorContext.currentActor()).isEmpty();
+    }
+
+    @Test
+    void scopedActorDoesNotChangeAuthenticationAndRestoresAuthenticatedAuditor() {
+        Jwt jwt = Jwt.withTokenValue("synthetic-token").header("alg", "none")
+                .claim("email", "operator@example.com").build();
+        var authentication = new JwtAuthenticationToken(jwt, List.of());
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+
+        AuditActorContext.withActor("pr-author", () -> {
+            assertThat(auditor.getCurrentAuditor()).contains("pr-author");
+            assertThat(SecurityContextHolder.getContext().getAuthentication()).isSameAs(authentication);
+            return null;
+        });
+
+        assertThat(auditor.getCurrentAuditor()).contains("operator@example.com");
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isSameAs(authentication);
+    }
+
+    @Test
+    void exceptionRestoresPreviousActorAndClearsOutermostScope() {
+        AuditActorContext.withActor("outer-author", () -> {
+            assertThatThrownBy(() -> AuditActorContext.withActor("inner-author", () -> {
+                assertThat(auditor.getCurrentAuditor()).contains("inner-author");
+                throw new IllegalStateException("save failed");
+            })).isInstanceOf(IllegalStateException.class);
+            assertThat(auditor.getCurrentAuditor()).contains("outer-author");
+            return null;
+        });
+        assertThat(auditor.getCurrentAuditor()).contains("Internal");
+    }
+
+    @Test
+    void absentActorUsesExistingAuthenticationAndAnonymousBehavior() {
+        var anonymous = new AnonymousAuthenticationToken("test", "anonymousUser",
+                List.of(new SimpleGrantedAuthority("ROLE_ANONYMOUS")));
+        SecurityContextHolder.getContext().setAuthentication(anonymous);
+        assertThat(AuditActorContext.withActor(null, auditor::getCurrentAuditor)).isEmpty();
+        assertThat(AuditActorContext.withActor("", auditor::getCurrentAuditor)).isEmpty();
+        assertThat(AuditActorContext.withActor(" ", auditor::getCurrentAuditor)).isEmpty();
+        assertThat(AuditActorContext.withActor("pr-author", auditor::getCurrentAuditor)).contains("pr-author");
+        assertThat(auditor.getCurrentAuditor()).isEmpty();
+    }
+
+    @Test
+    void normalizesDisplayNamesAndCapsThemAtTheColumnLimit() {
+        assertThat(AuditActorContext.withActor("  Jo\nã\to\r\u0000\u0085  ", auditor::getCurrentAuditor))
+                .contains("João");
+        assertThat(AuditActorContext.withActor("a".repeat(200), auditor::getCurrentAuditor))
+                .contains("a".repeat(128));
+        assertThat(AuditActorContext.withActor("a".repeat(128), auditor::getCurrentAuditor))
+                .contains("a".repeat(128));
+        assertThat(AuditActorContext.withActor("\u2003João 李\u2003", auditor::getCurrentAuditor))
+                .contains("João 李");
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {0x0000, 0x0085, 0x202E, 0x2066, 0xE0001, 0x2028, 0x2029})
+    void removesControlFormatAndSeparatorCharactersWithinDisplayNames(int codePoint) {
+        String actor = "Jo" + new String(Character.toChars(codePoint)) + "ão 李 e\u0301\uD83D\uDE00";
+        assertThat(AuditActorContext.withActor(actor, auditor::getCurrentAuditor))
+                .contains("João 李 e\u0301\uD83D\uDE00");
+    }
+
+    @Test
+    void truncationDoesNotSplitSupplementaryCharacters() {
+        String face = "\uD83D\uDE00";
+        assertThat(AuditActorContext.withActor("a".repeat(126) + face + "z", auditor::getCurrentAuditor))
+                .contains("a".repeat(126) + face);
+        assertThat(AuditActorContext.withActor("a".repeat(127) + face, auditor::getCurrentAuditor))
+                .contains("a".repeat(127));
+    }
+
+    @ParameterizedTest
+    @NullAndEmptySource
+    @ValueSource(strings = {"   ", "\u2003", "\n\t\u0000\u0085", "\u202E\u2028\u2029\uDB40\uDC01"})
+    void normalizedEmptyActorKeepsTheExistingFallback(String actor) {
+        assertThat(AuditActorContext.withActor(actor, auditor::getCurrentAuditor)).contains("Internal");
+        Jwt jwt = Jwt.withTokenValue("synthetic-token").header("alg", "none")
+                .claim("email", "operator@example.com").build();
+        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt, List.of()));
+        assertThat(AuditActorContext.withActor(actor, auditor::getCurrentAuditor))
+                .contains("operator@example.com");
+        SecurityContextHolder.getContext().setAuthentication(new AnonymousAuthenticationToken(
+                "test", "anonymousUser", List.of(new SimpleGrantedAuthority("ROLE_ANONYMOUS"))));
+        assertThat(AuditActorContext.withActor(actor, auditor::getCurrentAuditor)).isEmpty();
+    }
+
+    @Test
+    void concurrentWorkersKeepSeparateActorsAndClearThemOnReuse() throws Exception {
+        CyclicBarrier barrier = new CyclicBarrier(2);
+        try (var workers = Executors.newFixedThreadPool(2)) {
+            var first = workers.submit(() -> AuditActorContext.withActor("first-author", () -> {
+                await(barrier);
+                return auditor.getCurrentAuditor();
+            }));
+            var second = workers.submit(() -> AuditActorContext.withActor("second-author", () -> {
+                await(barrier);
+                return auditor.getCurrentAuditor();
+            }));
+            assertThat(first.get(10, TimeUnit.SECONDS)).contains("first-author");
+            assertThat(second.get(10, TimeUnit.SECONDS)).contains("second-author");
+            var afterFirst = workers.submit(() -> { await(barrier); return auditor.getCurrentAuditor(); });
+            var afterSecond = workers.submit(() -> { await(barrier); return auditor.getCurrentAuditor(); });
+            assertThat(afterFirst.get(10, TimeUnit.SECONDS)).contains("Internal");
+            assertThat(afterSecond.get(10, TimeUnit.SECONDS)).contains("Internal");
+        }
+    }
+
+    private static void await(CyclicBarrier barrier) {
+        try {
+            barrier.await(10, TimeUnit.SECONDS);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
+    }
+}

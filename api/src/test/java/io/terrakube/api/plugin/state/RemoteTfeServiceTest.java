@@ -46,6 +46,7 @@ import io.terrakube.api.rs.project.Project;
 import io.terrakube.api.rs.tag.Tag;
 import io.terrakube.api.rs.team.Team;
 import io.terrakube.api.rs.workspace.Workspace;
+import io.terrakube.api.rs.workspace.history.History;
 import io.terrakube.api.rs.workspace.tag.WorkspaceTag;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -701,8 +702,81 @@ class RemoteTfeServiceTest {
         TagBindingList bindings = fixture.service.listTagBindings(response.getData().getId(), fixture.currentUser);
         assertEquals(List.of(Map.of("key", "env", "value", "prod"), Map.of("key", "legacy", "value", "")),
                 bindings.getData().stream().map(TagBindingModel::getAttributes).toList());
+        assertEquals(ExecutionMode.remote, saved.get().getExecutionMode());
         // A single workspace resolves only its own tags, not every tag of the organization
         verify(tagRepository, never()).findByOrganizationName(anyString());
+    }
+
+    @Test
+    void createWorkspaceSetsExecutionMode() {
+        TagFixture fixture = new TagFixture();
+        AtomicReference<Workspace> saved = new AtomicReference<>();
+        when(workspaceRepository.save(any(Workspace.class))).thenAnswer(invocation -> {
+            Workspace created = invocation.getArgument(0);
+            created.setId(UUID.randomUUID());
+            created.setAccess(Collections.emptyList());
+            saved.set(created);
+            return created;
+        });
+        when(workspaceRepository.getByOrganizationNameAndName("sample-org", "local-ws"))
+                .thenAnswer(invocation -> saved.get());
+        when(workspaceRepository.findById(any(UUID.class)))
+                .thenAnswer(invocation -> Optional.ofNullable(saved.get()));
+
+        WorkspaceModel model = new WorkspaceModel();
+        model.setAttributes(new HashMap<>(Map.of("name", "local-ws", "execution-mode", "local")));
+        WorkspaceData request = new WorkspaceData();
+        request.setData(model);
+
+        fixture.service.createWorkspace("sample-org", request, fixture.currentUser);
+        assertEquals(ExecutionMode.local, saved.get().getExecutionMode());
+    }
+
+    @Test
+    void createWorkspaceFallsBackToOrganizationExecutionModeWhenOmittedOrUnknown() {
+        TagFixture fixture = new TagFixture();
+        fixture.organization.setExecutionMode(ExecutionMode.local);
+        Map<String, Workspace> workspaces = new HashMap<>();
+        when(workspaceRepository.save(any(Workspace.class))).thenAnswer(invocation -> {
+            Workspace created = invocation.getArgument(0);
+            created.setId(UUID.randomUUID());
+            created.setAccess(Collections.emptyList());
+            workspaces.put(created.getName(), created);
+            return created;
+        });
+        when(workspaceRepository.getByOrganizationNameAndName(Mockito.eq("sample-org"), anyString()))
+                .thenAnswer(invocation -> workspaces.get(invocation.getArgument(1, String.class)));
+        when(workspaceRepository.findById(any(UUID.class)))
+                .thenAnswer(invocation -> workspaces.values().stream()
+                        .filter(ws -> ws.getId().equals(invocation.getArgument(0)))
+                        .findFirst());
+
+        // 1. Missing execution-mode attribute falls back to organization default
+        WorkspaceModel missingAttrModel = new WorkspaceModel();
+        missingAttrModel.setAttributes(new HashMap<>(Map.of("name", "omitted-mode-ws")));
+        WorkspaceData missingRequest = new WorkspaceData();
+        missingRequest.setData(missingAttrModel);
+
+        fixture.service.createWorkspace("sample-org", missingRequest, fixture.currentUser);
+        assertEquals(ExecutionMode.local, workspaces.get("omitted-mode-ws").getExecutionMode());
+
+        // 2. Unknown execution-mode attribute (e.g. TFE "agent") logs warning and falls back to organization default
+        WorkspaceModel unknownAttrModel = new WorkspaceModel();
+        unknownAttrModel.setAttributes(new HashMap<>(Map.of("name", "unknown-mode-ws", "execution-mode", "agent")));
+        WorkspaceData unknownRequest = new WorkspaceData();
+        unknownRequest.setData(unknownAttrModel);
+
+        fixture.service.createWorkspace("sample-org", unknownRequest, fixture.currentUser);
+        assertEquals(ExecutionMode.local, workspaces.get("unknown-mode-ws").getExecutionMode());
+
+        // 3. Explicit execution-mode ("remote") wins over organization default ("local")
+        WorkspaceModel explicitAttrModel = new WorkspaceModel();
+        explicitAttrModel.setAttributes(new HashMap<>(Map.of("name", "explicit-mode-ws", "execution-mode", "remote")));
+        WorkspaceData explicitRequest = new WorkspaceData();
+        explicitRequest.setData(explicitAttrModel);
+
+        fixture.service.createWorkspace("sample-org", explicitRequest, fixture.currentUser);
+        assertEquals(ExecutionMode.remote, workspaces.get("explicit-mode-ws").getExecutionMode());
     }
 
     @Test
@@ -1018,5 +1092,264 @@ class RemoteTfeServiceTest {
     @SuppressWarnings("unchecked")
     private Map<String, Boolean> permissions(WorkspaceModel workspaceModel) {
         return (Map<String, Boolean>) workspaceModel.getAttributes().get("permissions");
+    }
+
+    @Test
+    void validateWorkspaceIdTokenCanAccessState_sameWorkspace_returnsTrue() {
+        RemoteTfeService service = remoteTfeService();
+        String wsId = UUID.randomUUID().toString();
+        assertTrue(service.validateWorkspaceIdTokenCanAccessState(wsId, wsId));
+    }
+
+    @Test
+    void validateWorkspaceIdTokenCanAccessState_nullIds_returnsFalse() {
+        RemoteTfeService service = remoteTfeService();
+        assertFalse(service.validateWorkspaceIdTokenCanAccessState(null, UUID.randomUUID().toString()));
+        assertFalse(service.validateWorkspaceIdTokenCanAccessState(UUID.randomUUID().toString(), null));
+    }
+
+    @Test
+    void validateWorkspaceIdTokenCanAccessState_globalRemoteState_sameOrg_returnsTrue() {
+        RemoteTfeService service = remoteTfeService();
+        UUID orgId = UUID.randomUUID();
+        Organization org = organization("test-org");
+        org.setId(orgId);
+
+        UUID targetWsId = UUID.randomUUID();
+        Workspace targetWs = workspace("target", org);
+        targetWs.setId(targetWsId);
+        targetWs.setGlobalRemoteState(true);
+
+        UUID consumerWsId = UUID.randomUUID();
+        Workspace consumerWs = workspace("consumer", org);
+        consumerWs.setId(consumerWsId);
+
+        when(workspaceRepository.findById(targetWsId)).thenReturn(Optional.of(targetWs));
+        when(workspaceRepository.findById(consumerWsId)).thenReturn(Optional.of(consumerWs));
+
+        assertTrue(service.validateWorkspaceIdTokenCanAccessState(consumerWsId.toString(), targetWsId.toString()));
+    }
+
+    @Test
+    void validateWorkspaceIdTokenCanAccessState_globalRemoteState_diffOrg_returnsFalse() {
+        RemoteTfeService service = remoteTfeService();
+        UUID org1Id = UUID.randomUUID();
+        Organization org1 = organization("org1");
+        org1.setId(org1Id);
+
+        UUID org2Id = UUID.randomUUID();
+        Organization org2 = organization("org2");
+        org2.setId(org2Id);
+
+        UUID targetWsId = UUID.randomUUID();
+        Workspace targetWs = workspace("target", org1);
+        targetWs.setId(targetWsId);
+        targetWs.setGlobalRemoteState(true);
+
+        UUID consumerWsId = UUID.randomUUID();
+        Workspace consumerWs = workspace("consumer", org2);
+        consumerWs.setId(consumerWsId);
+
+        when(workspaceRepository.findById(targetWsId)).thenReturn(Optional.of(targetWs));
+        when(workspaceRepository.findById(consumerWsId)).thenReturn(Optional.of(consumerWs));
+
+        assertFalse(service.validateWorkspaceIdTokenCanAccessState(consumerWsId.toString(), targetWsId.toString()));
+    }
+
+    @Test
+    void validateWorkspaceIdTokenCanAccessState_sharedIds_returnsTrue() {
+        RemoteTfeService service = remoteTfeService();
+        UUID targetWsId = UUID.randomUUID();
+        Workspace targetWs = workspace("target", organization("org"));
+        targetWs.setId(targetWsId);
+        targetWs.setGlobalRemoteState(false);
+
+        UUID consumerWsId = UUID.randomUUID();
+        targetWs.setSharedIds(UUID.randomUUID() + "," + consumerWsId + "," + UUID.randomUUID());
+
+        when(workspaceRepository.findById(targetWsId)).thenReturn(Optional.of(targetWs));
+
+        assertTrue(service.validateWorkspaceIdTokenCanAccessState(consumerWsId.toString(), targetWsId.toString()));
+    }
+
+    @Test
+    void validateWorkspaceIdTokenCanAccessState_sharedIds_notShared_returnsFalse() {
+        RemoteTfeService service = remoteTfeService();
+        UUID targetWsId = UUID.randomUUID();
+        Workspace targetWs = workspace("target", organization("org"));
+        targetWs.setId(targetWsId);
+        targetWs.setGlobalRemoteState(false);
+        targetWs.setSharedIds(UUID.randomUUID().toString());
+
+        UUID consumerWsId = UUID.randomUUID();
+
+        when(workspaceRepository.findById(targetWsId)).thenReturn(Optional.of(targetWs));
+
+        assertFalse(service.validateWorkspaceIdTokenCanAccessState(consumerWsId.toString(), targetWsId.toString()));
+    }
+
+    @Test
+    void validateUserCanOverridePolicy_internalMachineToken_returnsFalse() {
+        RemoteTfeService service = remoteTfeService();
+        Jwt jwt = Jwt.withTokenValue("token")
+                .header("alg", "none")
+                .claim("iss", "TerrakubeInternal")
+                .claim("workspaceId", UUID.randomUUID().toString())
+                .issuedAt(Instant.now())
+                .expiresAt(Instant.now().plusSeconds(60))
+                .build();
+        JwtAuthenticationToken runnerToken = new JwtAuthenticationToken(jwt);
+
+        assertFalse(service.validateUserCanOverridePolicy(Mockito.mock(io.terrakube.api.rs.policy.PolicyEvaluation.class), runnerToken));
+    }
+
+    @Test
+    void getWorkspaceState_historyNotFound_returnsNull() {
+        RemoteTfeService service = remoteTfeService();
+        UUID historyId = UUID.randomUUID();
+        when(historyRepository.findById(historyId)).thenReturn(Optional.empty());
+
+        assertNull(service.getWorkspaceState(historyId.toString(), currentUser()));
+    }
+
+    @Test
+    void getWorkspaceState_workspaceExecutor_unauthorized_throwsAccessDeniedException() {
+        RemoteTfeService service = remoteTfeService();
+        UUID historyId = UUID.randomUUID();
+        UUID targetWsId = UUID.randomUUID();
+        UUID consumerWsId = UUID.randomUUID();
+
+        Organization org = organization("sample-org");
+        Workspace targetWs = workspace("target-ws", org);
+        targetWs.setId(targetWsId);
+        targetWs.setGlobalRemoteState(false);
+        targetWs.setSharedIds(UUID.randomUUID().toString());
+
+        History history = new History();
+        history.setId(historyId);
+        history.setWorkspace(targetWs);
+
+        when(historyRepository.findById(historyId)).thenReturn(Optional.of(history));
+        when(workspaceRepository.findById(targetWsId)).thenReturn(Optional.of(targetWs));
+
+        Jwt jwt = Jwt.withTokenValue("token")
+                .header("alg", "none")
+                .claim("iss", "TerrakubeInternal")
+                .claim("workspaceId", consumerWsId.toString())
+                .issuedAt(Instant.now())
+                .expiresAt(Instant.now().plusSeconds(60))
+                .build();
+        JwtAuthenticationToken runnerToken = new JwtAuthenticationToken(jwt);
+
+        assertThrows(AccessDeniedException.class, () -> service.getWorkspaceState(historyId.toString(), runnerToken));
+    }
+
+    @Test
+    void getWorkspaceState_workspaceExecutor_authorized_returnsStateData() {
+        RemoteTfeService service = remoteTfeService();
+        UUID historyId = UUID.randomUUID();
+        UUID targetWsId = UUID.randomUUID();
+
+        Organization org = organization("sample-org");
+        Workspace targetWs = workspace("target-ws", org);
+        targetWs.setId(targetWsId);
+
+        History history = new History();
+        history.setId(historyId);
+        history.setWorkspace(targetWs);
+
+        when(historyRepository.findById(historyId)).thenReturn(Optional.of(history));
+        when(workspaceRepository.findById(targetWsId)).thenReturn(Optional.of(targetWs));
+
+        Jwt jwt = Jwt.withTokenValue("token")
+                .header("alg", "none")
+                .claim("iss", "TerrakubeInternal")
+                .claim("workspaceId", targetWsId.toString())
+                .issuedAt(Instant.now())
+                .expiresAt(Instant.now().plusSeconds(60))
+                .build();
+        JwtAuthenticationToken runnerToken = new JwtAuthenticationToken(jwt);
+
+        assertNotNull(service.getWorkspaceState(historyId.toString(), runnerToken));
+    }
+
+    @Test
+    void getWorkspaceState_executorService_returnsStateData() {
+        RemoteTfeService service = remoteTfeService();
+        UUID historyId = UUID.randomUUID();
+        UUID targetWsId = UUID.randomUUID();
+
+        Organization org = organization("sample-org");
+        Workspace targetWs = workspace("target-ws", org);
+        targetWs.setId(targetWsId);
+
+        History history = new History();
+        history.setId(historyId);
+        history.setWorkspace(targetWs);
+
+        when(historyRepository.findById(historyId)).thenReturn(Optional.of(history));
+
+        Jwt jwt = Jwt.withTokenValue("token")
+                .header("alg", "none")
+                .claim("iss", "TerrakubeInternal")
+                .claim("sub", "TerrakubeInternal (EXECUTOR)")
+                .issuedAt(Instant.now())
+                .expiresAt(Instant.now().plusSeconds(60))
+                .build();
+        JwtAuthenticationToken serviceToken = new JwtAuthenticationToken(jwt);
+
+        assertNotNull(service.getWorkspaceState(historyId.toString(), serviceToken));
+    }
+
+    @Test
+    void getWorkspaceState_userToken_withManageStatePermission_returnsStateData() {
+        RemoteTfeService service = remoteTfeService();
+        UUID historyId = UUID.randomUUID();
+        UUID targetWsId = UUID.randomUUID();
+
+        Organization org = organization("sample-org");
+        Team adminTeam = team("admin-team");
+        org.setTeam(List.of(adminTeam));
+
+        Workspace targetWs = workspace("target-ws", org);
+        targetWs.setId(targetWsId);
+
+        History history = new History();
+        history.setId(historyId);
+        history.setWorkspace(targetWs);
+
+        when(historyRepository.findById(historyId)).thenReturn(Optional.of(history));
+
+        JwtAuthenticationToken userToken = currentUser();
+        when(teamTokenService.getCurrentGroups(userToken)).thenReturn(List.of("admin-team"));
+        when(rbacService.canManageState(adminTeam)).thenReturn(true);
+
+        assertNotNull(service.getWorkspaceState(historyId.toString(), userToken));
+    }
+
+    @Test
+    void getWorkspaceState_userToken_withoutManageStatePermission_throwsAccessDeniedException() {
+        RemoteTfeService service = remoteTfeService();
+        UUID historyId = UUID.randomUUID();
+        UUID targetWsId = UUID.randomUUID();
+
+        Organization org = organization("sample-org");
+        Team viewerTeam = team("viewer-team");
+        org.setTeam(List.of(viewerTeam));
+
+        Workspace targetWs = workspace("target-ws", org);
+        targetWs.setId(targetWsId);
+
+        History history = new History();
+        history.setId(historyId);
+        history.setWorkspace(targetWs);
+
+        when(historyRepository.findById(historyId)).thenReturn(Optional.of(history));
+
+        JwtAuthenticationToken userToken = currentUser();
+        when(teamTokenService.getCurrentGroups(userToken)).thenReturn(List.of("viewer-team"));
+        when(rbacService.canManageState(viewerTeam)).thenReturn(false);
+
+        assertThrows(AccessDeniedException.class, () -> service.getWorkspaceState(historyId.toString(), userToken));
     }
 }

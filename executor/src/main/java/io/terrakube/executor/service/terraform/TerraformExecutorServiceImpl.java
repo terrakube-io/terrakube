@@ -46,6 +46,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
@@ -76,6 +77,14 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
     int redisTimeout;
     PlanStructuredOutputService planStructuredOutputService;
     ApplyStructuredOutputService applyStructuredOutputService;
+
+    // Optional and set by setter so the existing constructors are unchanged; absent in unit tests that do not pin.
+    private JobVersionPinner jobVersionPinner;
+
+    @Autowired(required = false)
+    void setJobVersionPinner(JobVersionPinner jobVersionPinner) {
+        this.jobVersionPinner = jobVersionPinner;
+    }
     TerraformOutputsService terraformOutputsService;
     ObjectMapper objectMapper;
     StructuredOutputPersistenceQueue structuredOutputPersistenceQueue;
@@ -89,6 +98,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
     // closeLiveJsonClients() can terminate the running terraform (letting it release its state
     // lock) inside terminationGracePeriodSeconds, instead of the JVM exiting out from under it.
     private final Set<TerraformClient> liveJsonClients = ConcurrentHashMap.newKeySet();
+    private final AtomicBoolean shuttingDown = new AtomicBoolean(false);
 
     public TerraformExecutorServiceImpl(TerraformClient terraformClient, TerraformState terraformState, ScriptEngineService scriptEngineService, ProcessLogs logsService, PlanStructuredOutputService planStructuredOutputService, ApplyStructuredOutputService applyStructuredOutputService, TerraformOutputsService terraformOutputsService, ObjectMapper objectMapper, @Value("${io.terrakube.terraform.flags.enableColor}") boolean enableColorOutput, @Value("${io.terrakube.executor.redis.timeout}") int redisTimeout, StructuredOutputPersistenceQueue structuredOutputPersistenceQueue, ExecutorFlagsProperties executorFlagsProperties, StructuredOutputProperties structuredOutputProperties, MeterRegistry meterRegistry, BinaryCacheRecoveryService binaryCacheRecoveryService) {
         this(terraformClient, terraformState, scriptEngineService, logsService, planStructuredOutputService, applyStructuredOutputService, terraformOutputsService, objectMapper, enableColorOutput, redisTimeout, structuredOutputPersistenceQueue, executorFlagsProperties, structuredOutputProperties, meterRegistry, binaryCacheRecoveryService, null);
@@ -466,21 +476,20 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
 
     private boolean runJsonApply(TerraformJob terraformJob, TerraformProcessData terraformProcessData, Consumer<String> applyOutput)
             throws IOException, ExecutionException, InterruptedException {
-        List<Map<String, Object>> changes = applyStructuredOutputService.seedFromPlan(
-                terraformJob.getOrganizationId(), terraformJob.getJobId());
+        // Appending -json applies even when there is no saved plan file (e.g. templates without
+        // an earlier plan step, custom multi-step templates, or failed plan downloads) guarantees
+        // that any error diagnostics and live execution progress events are captured uniformly
+        // across all apply workflows, rather than dropping them into unparsed stdout.
+        List<Map<String, Object>> changes = new ArrayList<>(applyStructuredOutputService.seedFromPlan(
+                terraformJob.getOrganizationId(), terraformJob.getJobId()));
+        List<Map<String, Object>> jobDiagnostics = new ArrayList<>();
+        TerraformJsonEventParser eventParser = new TerraformJsonEventParser(objectMapper);
 
-        if (changes.isEmpty()) {
-            // No plan structured output to seed from (custom TCL with 0/2+ plan steps, or plan
-            // publishing failed) — fall back to a plain apply through the shared client, exactly
-            // as before this feature existed.
-            return terraformClient.apply(terraformProcessData, guardConsumer(applyOutput), null).get();
+        if (!changes.isEmpty()) {
+            applyStructuredOutputService.publishApplyProgress(
+                    terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), changes, jobDiagnostics);
         }
 
-        List<Map<String, Object>> jobDiagnostics = new ArrayList<>();
-        applyStructuredOutputService.publishApplyProgress(
-                terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), changes, jobDiagnostics);
-
-        TerraformJsonEventParser eventParser = new TerraformJsonEventParser(objectMapper);
         // See the matching comment in plan(): starting at 0 flushes the first line immediately.
         // Apply already seeds the panel with pending rows before this point, so this mostly
         // matters for the first real status transition landing without a multi-second delay.
@@ -502,20 +511,32 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
 
         TerraformClient jsonApplyClient = track(buildJsonEnabledApplyClient());
 
-        boolean execution;
+        boolean execution = false;
+        boolean interrupted = false;
         try {
             execution = jsonApplyClient.apply(terraformProcessData, guardConsumer(jsonLineConsumer), null).get();
+        } catch (InterruptedException e) {
+            interrupted = true;
+            throw e;
         } finally {
             release(jsonApplyClient);
+            boolean wasInterrupted = interrupted || (!execution && shuttingDown.get());
+            if (!wasInterrupted) {
+                try {
+                    String stateJson = getCurrentStateJson(terraformJob, terraformProcessData);
+                    if (stateJson != null) {
+                        applyStructuredOutputService.resolveFinalValues(changes, stateJson);
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    log.warn("Interrupted while resolving state values after apply for job {}", terraformJob.getJobId(), e);
+                } catch (Exception e) {
+                    log.warn("Unable to resolve state values after apply for job {}", terraformJob.getJobId(), e);
+                }
+            }
+            applyStructuredOutputService.finalizeResourceStatuses(changes, execution, wasInterrupted);
+            publishFinalApplySnapshotIfStreamed(terraformJob, eventParser, changes, jobDiagnostics);
         }
-
-        String stateJson = getCurrentStateJson(terraformJob, terraformProcessData);
-        if (stateJson != null) {
-            applyStructuredOutputService.resolveFinalValues(changes, stateJson);
-        }
-
-        applyStructuredOutputService.publishFinalApplySnapshot(
-                terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), changes, jobDiagnostics);
 
         return execution;
     }
@@ -553,15 +574,19 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
 
         TerraformClient jsonDestroyClient = track(buildJsonEnabledDestroyClient());
 
-        boolean execution;
+        boolean execution = false;
+        boolean interrupted = false;
         try {
             execution = jsonDestroyClient.destroy(terraformProcessData, guardConsumer(jsonLineConsumer), null).get();
+        } catch (InterruptedException e) {
+            interrupted = true;
+            throw e;
         } finally {
             release(jsonDestroyClient);
+            boolean wasInterrupted = interrupted || (!execution && shuttingDown.get());
+            applyStructuredOutputService.finalizeResourceStatuses(changes, execution, wasInterrupted);
+            publishFinalApplySnapshotIfStreamed(terraformJob, eventParser, changes, jobDiagnostics);
         }
-
-        applyStructuredOutputService.publishFinalApplySnapshot(
-                terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), changes, jobDiagnostics);
 
         return execution;
     }
@@ -603,10 +628,19 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
     // whose job thread reaches release() concurrently is harmless.
     @PreDestroy
     void closeLiveJsonClients() {
+        shuttingDown.set(true);
         for (TerraformClient client : liveJsonClients) {
             log.warn("Executor shutting down with a terraform process in flight, terminating it");
             release(client);
         }
+    }
+
+    void setShuttingDown(boolean shuttingDown) {
+        this.shuttingDown.set(shuttingDown);
+    }
+
+    boolean isShuttingDown() {
+        return this.shuttingDown.get();
     }
 
     // Package-private (not private) so tests can spy/stub this one seam instead of letting
@@ -714,6 +748,19 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             result.setExitCode(1);
         }
         return result;
+    }
+
+    private void publishFinalApplySnapshotIfStreamed(TerraformJob terraformJob, TerraformJsonEventParser eventParser,
+                                                     List<Map<String, Object>> changes,
+                                                     List<Map<String, Object>> jobDiagnostics) {
+        if (changes.isEmpty() && !eventParser.hasSeenTerraformEvents() && jobDiagnostics.isEmpty()) {
+            log.warn("Operation for job {} step {} produced no -json events; skipping the live structured snapshot",
+                    terraformJob.getJobId(), terraformJob.getStepId());
+            return;
+        }
+        applyStructuredOutputService.publishFinalApplySnapshot(
+                terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(),
+                changes, jobDiagnostics);
     }
 
     private ExecutorJobResult generateJobResult(boolean scriptAfterSuccess, String jobOutput, String jobErrorOutput) {
@@ -1084,6 +1131,11 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                 log.info("Resolved {} version \"{}\" to {} for job {}", getIaCType(terraformJob), requestedVersion,
                         resolvedVersion, terraformJob.getJobId());
                 terraformJob.setTerraformVersion(resolvedVersion);
+                // Only a constraint gets here (an exact version, or one the API already pinned, resolves
+                // to itself). Pin the result so the job's later steps use the same version.
+                if (jobVersionPinner != null) {
+                    jobVersionPinner.pin(terraformJob.getOrganizationId(), terraformJob.getJobId(), resolvedVersion);
+                }
             }
         } catch (Exception e) {
             log.warn("Unable to resolve {} version \"{}\" for job {}, using it as-is: {}", getIaCType(terraformJob),

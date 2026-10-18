@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+    <changeSet id="2-34-0-workspace-execution-mode-default" author="terrakube">
+        <comment>Backfill workspace execution_mode from organization execution_mode, defaulting to remote</comment>
+        <sql>
+            UPDATE workspace
+            SET execution_mode = COALESCE(
+                (SELECT execution_mode FROM organization WHERE organization.id = workspace.organization_id),
+                'remote'
+            )
+            WHERE execution_mode IS NULL
+        </sql>
+    </changeSet>
+</databaseChangeLog>

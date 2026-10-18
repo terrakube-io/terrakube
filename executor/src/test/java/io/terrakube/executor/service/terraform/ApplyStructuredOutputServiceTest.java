@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.terrakube.client.TerrakubeClient;
 import io.terrakube.executor.service.workspace.security.WorkspaceSecurity;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 
 import java.util.ArrayList;
@@ -12,6 +13,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -90,33 +92,29 @@ class ApplyStructuredOutputServiceTest {
     }
 
     @Test
-    void updateApplyContextMergesWithoutDroppingExistingKeys() {
-        Map<String, Object> context = new HashMap<>();
-        context.put("custom", "value");
-        context.put("applyStructuredOutput", Map.of("existing-step", List.of(Map.of("address", "existing"))));
-
-        Map<String, Object> updated = subject().updateApplyContext(
-                context, "new-step", List.of(Map.of("address", "aws_instance.new", "status", "pending")), List.of());
-
-        assertEquals("value", updated.get("custom"));
-        Map<String, Object> applyOutput = (Map<String, Object>) updated.get("applyStructuredOutput");
-        assertTrue(applyOutput.containsKey("existing-step"));
-        assertTrue(applyOutput.containsKey("new-step"));
-    }
-
-    @Test
-    void publishApplyProgressIncludesJobDiagnosticsInSavedContext() {
+    void buildApplyPatchTouchesOnlyThisStepsEntries() {
         List<Map<String, Object>> changes = List.of(Map.of("address", "aws_instance.foo", "status", "applied"));
         List<Map<String, Object>> jobDiagnostics = List.of(Map.of("severity", "warning", "summary", "deprecated argument"));
 
-        Map<String, Object> context = new HashMap<>();
-        Map<String, Object> updated = subject().updateApplyContext(context, "step-1", changes, jobDiagnostics);
+        Map<String, Object> set = subject().buildApplyPatch("step-1", changes, jobDiagnostics);
 
-        Map<String, Object> applyOutput = (Map<String, Object>) updated.get("applyStructuredOutput");
-        assertEquals(changes, applyOutput.get("step-1"));
+        assertEquals(Map.of("applyStructuredOutput/step-1", changes, "jobDiagnostics/step-1", jobDiagnostics), set);
+    }
 
-        Map<String, Object> jobDiagnosticsOutput = (Map<String, Object>) updated.get("jobDiagnostics");
-        assertEquals(jobDiagnostics, jobDiagnosticsOutput.get("step-1"));
+    @Test
+    @SuppressWarnings("unchecked")
+    void publishFinalApplySnapshotPatchesWithoutReadingWhenSynchronous() {
+        JobContextService jobContextService = Mockito.mock(JobContextService.class);
+        ApplyStructuredOutputService service = new ApplyStructuredOutputService(jobContextService, new ObjectMapper());
+        List<Map<String, Object>> changes = List.of(Map.of("address", "aws_instance.foo", "status", "applied"));
+
+        service.publishFinalApplySnapshot("o", "1", "step-1", changes, List.of());
+
+        ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
+        Mockito.verify(jobContextService).patchContextFresh(Mockito.eq("o"), Mockito.eq("1"), captor.capture());
+        Mockito.verify(jobContextService, Mockito.never()).getCurrentContext(Mockito.any(), Mockito.any());
+        assertEquals(changes, captor.getValue().get("applyStructuredOutput/step-1"));
+        assertFalse(captor.getValue().containsKey("structuredOutputStatus"));
     }
 
     @Test
@@ -751,5 +749,126 @@ class ApplyStructuredOutputServiceTest {
         Map<?, ?> resolvedSensitive = (Map<?, ?>) change.get("afterSensitive");
         assertEquals(true, resolvedSensitive.get("input"));
         assertEquals(true, resolvedSensitive.get("output"));
+    }
+
+    @Test
+    void finalizeResourceStatusesTransitionsInProgressToInterruptedWhenInterrupted() {
+        List<Map<String, Object>> changes = new ArrayList<>();
+
+        for (String inProgressStatus : List.of("applying", "provisioning", "refreshing", "reading", "ephemeral-opening", "ephemeral-closing")) {
+            Map<String, Object> c = new HashMap<>();
+            c.put("address", "res." + inProgressStatus);
+            c.put("status", inProgressStatus);
+            if ("refreshing".equals(inProgressStatus)) {
+                c.put("previousStatus", "planned");
+            }
+            changes.add(c);
+        }
+
+        Map<String, Object> applied = new HashMap<>();
+        applied.put("address", "res.applied");
+        applied.put("status", "applied");
+        changes.add(applied);
+
+        Map<String, Object> errored = new HashMap<>();
+        errored.put("address", "res.errored");
+        errored.put("status", "errored");
+        changes.add(errored);
+
+        Map<String, Object> pending = new HashMap<>();
+        pending.put("address", "res.pending");
+        pending.put("status", "pending");
+        changes.add(pending);
+
+        Map<String, Object> planned = new HashMap<>();
+        planned.put("address", "res.planned");
+        planned.put("status", "planned");
+        changes.add(planned);
+
+        subject().finalizeResourceStatuses(changes, false, true);
+
+        for (int i = 0; i < 6; i++) {
+            assertEquals("interrupted", changes.get(i).get("status"));
+            assertNull(changes.get(i).get("previousStatus"));
+        }
+        assertEquals("applied", applied.get("status"));
+        assertEquals("errored", errored.get("status"));
+        assertEquals("not-started", pending.get("status"));
+        assertEquals("planned", planned.get("status"));
+    }
+
+    @Test
+    void finalizeResourceStatusesTransitionsInProgressToErroredOnUninterruptedFailure() {
+        Map<String, Object> applying = new HashMap<>();
+        applying.put("address", "res.applying");
+        applying.put("status", "applying");
+
+        Map<String, Object> applied = new HashMap<>();
+        applied.put("address", "res.applied");
+        applied.put("status", "applied");
+
+        Map<String, Object> pending = new HashMap<>();
+        pending.put("address", "res.pending");
+        pending.put("status", "pending");
+
+        subject().finalizeResourceStatuses(List.of(applying, applied, pending), false, false);
+
+        assertEquals("errored", applying.get("status"));
+        assertEquals("applied", applied.get("status"));
+        assertEquals("not-started", pending.get("status"));
+    }
+
+    @Test
+    void finalizeResourceStatusesDoesNothingOnSuccessfulExecution() {
+        Map<String, Object> applying = new HashMap<>();
+        applying.put("address", "res.applying");
+        applying.put("status", "applying");
+
+        Map<String, Object> pending = new HashMap<>();
+        pending.put("address", "res.pending");
+        pending.put("status", "pending");
+
+        subject().finalizeResourceStatuses(List.of(applying, pending), true, false);
+
+        assertEquals("applying", applying.get("status"));
+        assertEquals("pending", pending.get("status"));
+    }
+
+    @Test
+    void resolveFinalValuesPromotesOnlyPendingImportToAppliedWhenPresentInState() {
+        Map<String, Object> importChange = new HashMap<>();
+        importChange.put("address", "aws_instance.imported");
+        importChange.put("action", "import");
+        importChange.put("status", "pending");
+
+        Map<String, Object> updateChange = new HashMap<>();
+        updateChange.put("address", "aws_instance.existing_update");
+        updateChange.put("action", "update");
+        updateChange.put("status", "pending");
+
+        Map<String, Object> deleteChange = new HashMap<>();
+        deleteChange.put("address", "aws_instance.existing_delete");
+        deleteChange.put("action", "delete");
+        deleteChange.put("status", "pending");
+
+        String stateJson = """
+                {
+                  "values": {
+                    "root_module": {
+                      "resources": [
+                        { "address": "aws_instance.imported", "values": { "id": "i-imp" } },
+                        { "address": "aws_instance.existing_update", "values": { "id": "i-upd" } },
+                        { "address": "aws_instance.existing_delete", "values": { "id": "i-del" } }
+                      ]
+                    }
+                  }
+                }
+                """;
+
+        subject().resolveFinalValues(List.of(importChange, updateChange, deleteChange), stateJson);
+
+        assertEquals("applied", importChange.get("status"), "Pending import found in state must be promoted to applied");
+        assertEquals("pending", updateChange.get("status"), "Pending update already in state must NOT be promoted to applied");
+        assertEquals("pending", deleteChange.get("status"), "Pending delete still in state must NOT be promoted to applied");
     }
 }

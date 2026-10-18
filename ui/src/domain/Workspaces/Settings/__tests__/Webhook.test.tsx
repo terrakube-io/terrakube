@@ -91,11 +91,12 @@ describe("WorkspaceWebhook", () => {
     fireEvent.click(edit);
     expect(edit).toHaveAttribute("aria-expanded", "true");
 
-    for (const label of ["Event", "Branches or releases", "Paths", "Template", "Priority"]) {
+    for (const label of ["Event", "Branches", "Paths", "Template"]) {
       expect(screen.getByLabelText(label)).toBeVisible();
     }
-    expect(screen.getByRole("radio", { name: /^Pattern/ })).toBeChecked();
+    expect(screen.getByRole("radio", { name: /^Wildcards/ })).toBeChecked();
     expect(screen.getByRole("radio", { name: /^Regex/ })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: /^Any file/ })).toBeInTheDocument();
   });
 
   it("confirms a delete and sends it only when the webhook is saved", async () => {
@@ -200,8 +201,205 @@ describe("WorkspaceWebhook", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save webhook" }));
 
     expect(await screen.findByText("Choose an event.")).toBeInTheDocument();
-    expect(screen.getByText("Enter at least one path.")).toBeInTheDocument();
+    expect(screen.getByText("Enter at least one branch regex.")).toBeInTheDocument();
     expect(screen.getByText("Choose a template.")).toBeInTheDocument();
     expect(axiosInstance.post).not.toHaveBeenCalled();
+  });
+
+  describe("shared webhook", () => {
+    const patch = () => axiosInstance.patch as jest.Mock;
+    const mockWebhook = (attributes: Record<string, unknown>) =>
+      (axiosInstance.get as jest.Mock).mockImplementation((url: string) =>
+        Promise.resolve(
+          url.endsWith("/events")
+            ? { data: { data: [] } }
+            : { data: { data: { attributes: { remoteHookId: "4242", ...attributes } } } }
+        )
+      );
+
+    it("migrates a dedicated webhook to a shared one", async () => {
+      patch().mockResolvedValue({ status: 200 });
+      renderWebhook();
+      await screen.findByText("Triggers (1)");
+
+      fireEvent.click(screen.getByRole("button", { name: "Migrate to shared webhook" }));
+      fireEvent.click(await screen.findByRole("button", { name: "Migrate" }));
+
+      await waitFor(() => expect(patch()).toHaveBeenCalledTimes(1));
+      expect(patch().mock.calls[0][1].data.attributes).toEqual({ migratedV2: true });
+      expect(await screen.findByText("Shared with every workspace on this repository.")).toBeInTheDocument();
+      expect(screen.queryByLabelText("Repository webhook ID")).not.toBeInTheDocument();
+    });
+
+    it("switches a shared webhook back to one for the workspace and shows its new ID", async () => {
+      mockWebhook({ migratedV2: true, remoteHookId: null });
+      patch().mockResolvedValue({ status: 200 });
+      renderWebhook();
+
+      const revert = await screen.findByRole("button", { name: "Switch to a webhook for this workspace" });
+      mockWebhook({ migratedV2: false, remoteHookId: "9001" });
+      fireEvent.click(revert);
+      fireEvent.click(await screen.findByRole("button", { name: "Switch" }));
+
+      await waitFor(() => expect(patch()).toHaveBeenCalledTimes(1));
+      expect(patch().mock.calls[0][1].data.attributes).toEqual({ migratedV2: false });
+      expect(await screen.findByLabelText("Repository webhook ID")).toHaveValue("9001");
+    });
+
+    it("creates a new webhook as a shared one when asked", async () => {
+      renderWebhook(workspace({ vcs: { data: { type: "vcs", id: "vcs-1" } } }));
+      fireEvent.click(screen.getByRole("switch", { name: "Enable webhook" }));
+      fireEvent.click(screen.getByRole("checkbox", { name: "Share one webhook across this repository" }));
+
+      fireEvent.click(await screen.findByLabelText("Any branch"));
+      fireEvent.mouseDown(screen.getByLabelText("Event"));
+      fireEvent.click(await screen.findByTitle("Push"));
+      fireEvent.mouseDown(screen.getByLabelText("Template"));
+      fireEvent.click(await screen.findByTitle("Plan and apply"));
+      fireEvent.click(screen.getByRole("button", { name: "Save webhook" }));
+
+      await waitFor(() => expect(axiosInstance.post).toHaveBeenCalledTimes(1));
+      const ops = (axiosInstance.post as jest.Mock).mock.calls[0][1]["atomic:operations"];
+      expect(ops[0]).toMatchObject({ op: "add", data: { type: "webhook", attributes: { migratedV2: true } } });
+    });
+
+    it("offers no shared webhook for a provider that can't share one", async () => {
+      render(
+        <MemoryRouter>
+          <WorkspaceWebhook
+            workspace={withVcs}
+            vcsProvider={VcsType.BITBUCKET}
+            orgTemplates={templates}
+            manageWorkspace
+          />
+        </MemoryRouter>
+      );
+      await screen.findByText("Triggers (1)");
+
+      expect(screen.queryByRole("button", { name: /shared webhook/i })).not.toBeInTheDocument();
+    });
+  });
+
+  describe("triggers", () => {
+    const loadEvents = (events: Record<string, unknown>[]) =>
+      (axiosInstance.get as jest.Mock).mockImplementation((url: string) =>
+        Promise.resolve(
+          url.endsWith("/events")
+            ? { data: { data: events.map((attributes, i) => ({ id: `ev-${i + 1}`, attributes })) } }
+            : { data: { data: { attributes: { remoteHookId: "4242" } } } }
+        )
+      );
+    const base = { event: "PUSH", templateId: "tpl-1", pathType: "REGEX", prWorkflowEnabled: false };
+    const savedOps = () => (axiosInstance.post as jest.Mock).mock.calls[0][1]["atomic:operations"];
+
+    it("shows each regex as its own chip and sends them back comma-separated", async () => {
+      loadEvents([{ ...base, priority: 0, branch: "master", path: "^environments/.*$,^modules/.*$" }]);
+      renderWebhook();
+      await screen.findByText("Triggers (1)");
+
+      fireEvent.click(screen.getByRole("button", { name: "Edit trigger 1" }));
+      expect(screen.getByText("^environments/.*$")).toBeInTheDocument();
+      expect(screen.getByText("^modules/.*$")).toBeInTheDocument();
+      expect(screen.getByRole("radio", { name: /^Regex/ })).toBeChecked();
+
+      fireEvent.click(screen.getByRole("button", { name: "Save webhook" }));
+      await waitFor(() => expect(axiosInstance.post).toHaveBeenCalledTimes(1));
+      expect(savedOps()[1].data.attributes).toMatchObject({
+        priority: 1,
+        branch: "master",
+        path: "^environments/.*$,^modules/.*$",
+        pathType: "REGEX",
+      });
+    });
+
+    it("rejects an invalid regex and says which one", async () => {
+      loadEvents([{ ...base, priority: 0, branch: "main", path: "terraform/(" }]);
+      renderWebhook();
+      await screen.findByText("Triggers (1)");
+
+      fireEvent.click(screen.getByRole("button", { name: "Save webhook" }));
+
+      expect(await screen.findByText('"terraform/(" is not a valid regex.')).toBeInTheDocument();
+      expect(axiosInstance.post).not.toHaveBeenCalled();
+    });
+
+    it("tests a sample against the whole value", async () => {
+      loadEvents([{ ...base, priority: 0, branch: "release/.*", path: "modules/.*" }]);
+      renderWebhook();
+      await screen.findByText("Triggers (1)");
+      fireEvent.click(screen.getByRole("button", { name: "Edit trigger 1" }));
+      fireEvent.click(screen.getByText("Test patterns"));
+
+      fireEvent.change(screen.getByLabelText("Try a branch name"), { target: { value: "release/1.2" } });
+      expect(screen.getByText("Matches release/.*")).toBeInTheDocument();
+      fireEvent.change(screen.getByLabelText("Try a file path"), { target: { value: "docs/modules/a.tf" } });
+      expect(screen.getByText("No pattern matches.")).toBeInTheDocument();
+    });
+
+    it("warns, without blocking, when a wildcard is typed into a regex", async () => {
+      loadEvents([{ ...base, priority: 0, branch: "main", path: "environments/*" }]);
+      renderWebhook();
+      await screen.findByText("Triggers (1)");
+
+      fireEvent.click(screen.getByRole("button", { name: "Save webhook" }));
+
+      expect(await screen.findByText(/means a slash repeated, not any file/)).toBeInTheDocument();
+      expect(screen.getByText(/Use "environments\/\.\*"/)).toBeInTheDocument();
+      await waitFor(() => expect(axiosInstance.post).toHaveBeenCalledTimes(1));
+    });
+
+    it("saves 'any branch' and 'any file' as catch-all patterns and loads them back", async () => {
+      loadEvents([{ ...base, priority: 0, branch: ".*", path: "**", pathType: "PATTERN" }]);
+      renderWebhook();
+      await screen.findByText("Triggers (1)");
+
+      expect(screen.getByRole("listitem")).toHaveTextContent("Push · any branch · any file → Plan and apply");
+      fireEvent.click(screen.getByRole("button", { name: "Save webhook" }));
+      await waitFor(() => expect(axiosInstance.post).toHaveBeenCalledTimes(1));
+      expect(savedOps()[1].data.attributes).toMatchObject({ branch: ".*", path: "**", pathType: "PATTERN" });
+    });
+
+    it("hides the path filter for a release", async () => {
+      loadEvents([{ ...base, event: "RELEASE", priority: 0, branch: "v.*", path: "**", pathType: "PATTERN" }]);
+      renderWebhook();
+      await screen.findByText("Triggers (1)");
+      fireEvent.click(screen.getByRole("button", { name: "Edit trigger 1" }));
+
+      expect(screen.getByLabelText("Release tags")).toBeInTheDocument();
+      expect(screen.queryByText("Changed files")).not.toBeInTheDocument();
+    });
+
+    it("saves the list order as the priority", async () => {
+      loadEvents([
+        { ...base, priority: 5, branch: "first", path: "a/*", pathType: "PATTERN" },
+        { ...base, priority: 9, branch: "second", path: "b/*", pathType: "PATTERN" },
+      ]);
+      renderWebhook();
+      await screen.findByText("Triggers (2)");
+
+      fireEvent.click(screen.getByRole("button", { name: "Check trigger 2 earlier" }));
+      fireEvent.click(screen.getByRole("button", { name: "Save webhook" }));
+
+      await waitFor(() => expect(axiosInstance.post).toHaveBeenCalledTimes(1));
+      expect(
+        savedOps()
+          .slice(1)
+          .map((op: any) => [op.data.id, op.data.attributes.priority])
+      ).toEqual([
+        ["ev-2", 1],
+        ["ev-1", 2],
+      ]);
+    });
+
+    it("duplicates a trigger as a new unsaved one", async () => {
+      loadEvents([{ ...base, priority: 0, branch: "main", path: "a/*", pathType: "PATTERN" }]);
+      renderWebhook();
+      await screen.findByText("Triggers (1)");
+
+      fireEvent.click(screen.getByRole("button", { name: "Duplicate trigger 1" }));
+
+      expect(await screen.findByText("Triggers (2)")).toBeInTheDocument();
+      expect(screen.getAllByRole("listitem")[1]).toHaveTextContent("Not saved");
+    });
   });
 });
