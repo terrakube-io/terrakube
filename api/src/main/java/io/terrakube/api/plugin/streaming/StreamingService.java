@@ -104,7 +104,7 @@ public class StreamingService {
                 if (records.isEmpty()) {
                     emptyReads++;
                     Job job = jobRepository.findById(Integer.parseInt(jobId)).orElseThrow();
-                    if (isTerminal(job.getStatus())) {
+                    if (job.getStatus().isTerminal()) {
                         emitter.send(SseEmitter.event().name("end").data("{\"reason\":\"complete\"}"));
                         emitter.complete();
                         return;
@@ -129,9 +129,5 @@ public class StreamingService {
             log.error("Error streaming context for job {}: {}", jobId, e.getMessage());
             emitter.completeWithError(e);
         }
-    }
-
-    private boolean isTerminal(JobStatus status) {
-        return status == JobStatus.completed || status == JobStatus.failed || status == JobStatus.cancelled;
     }
 }

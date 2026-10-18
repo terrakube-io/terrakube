@@ -3,12 +3,10 @@ package io.terrakube.registry.plugin.storage.aws;
 import lombok.Builder;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.io.FileUtils;
 import io.terrakube.registry.plugin.storage.StorageService;
 import io.terrakube.registry.plugin.storage.StorageUnavailableException;
 import io.terrakube.registry.service.git.GitService;
 import io.terrakube.registry.service.git.ModuleVersionDownload;
-import org.zeroturnaround.zip.ZipUtil;
 import software.amazon.awssdk.core.ResponseBytes;
 import software.amazon.awssdk.core.exception.SdkException;
 import software.amazon.awssdk.core.sync.RequestBody;
@@ -19,7 +17,6 @@ import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PresignedGetObjectRequest;
 
-import java.io.File;
 import java.io.IOException;
 import java.net.URI;
 import java.time.Duration;
@@ -65,10 +62,6 @@ public class AwsStorageServiceImpl implements StorageService {
 
         try {
             if (!doesObjectExistByListObjects(bucketName, blobKey)) {
-                File gitCloneDirectory = gitService.getCloneRepositoryByTag(download);
-                File moduleZip = new File(gitCloneDirectory.getAbsolutePath() + ".zip");
-                ZipUtil.pack(gitCloneDirectory, moduleZip);
-
                 log.info("Uploading Aws S3 Object {}", blobKey);
                 PutObjectRequest putObjectRequest = PutObjectRequest.builder()
                         .bucket(bucketName)
@@ -76,18 +69,13 @@ public class AwsStorageServiceImpl implements StorageService {
                         .contentType("application/zip")
                         .build();
 
-                log.info("Running PUT Aws S3 Object {}", blobKey);
-                log.info("Path {}", moduleZip.getAbsolutePath());
-                s3client.putObject(putObjectRequest, RequestBody.fromFile(moduleZip));
+                gitService.withModuleZip(download, moduleZip -> {
+                    log.info("Running PUT Aws S3 Object {}", blobKey);
+                    log.info("Path {}", moduleZip.getAbsolutePath());
+                    s3client.putObject(putObjectRequest, RequestBody.fromFile(moduleZip));
+                });
 
                 log.info("Upload Aws S3 Object completed {}", blobKey);
-                try {
-                    FileUtils.cleanDirectory(gitCloneDirectory);
-                    if (FileUtils.deleteQuietly(moduleZip))
-                        log.info("Successfully delete folder");
-                } catch (IOException e) {
-                    log.error(e.getMessage());
-                }
             }
         } catch (SdkException e) {
             // Covers HeadObject/PutObject connectivity failures, timeouts, and throttling - a
@@ -95,6 +83,9 @@ public class AwsStorageServiceImpl implements StorageService {
             // that a later ZIP request can't recover from.
             log.error(S3_ERROR_LOG, blobKey, e.getMessage());
             throw new StorageUnavailableException("S3 operation failed while resolving module path for key " + blobKey, e);
+        } catch (IOException e) {
+            log.error("IO error while preparing module upload for key {}: {}", blobKey, e.getMessage());
+            throw new StorageUnavailableException("IO error while preparing S3 module upload for key " + blobKey, e);
         }
 
         return String.format(BUCKET_DOWNLOAD_MODULE_LOCATION, registryHostname, organizationName, moduleName,

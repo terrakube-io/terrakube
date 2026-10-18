@@ -9,11 +9,11 @@ import io.terrakube.registry.plugin.storage.StorageService;
 import io.terrakube.registry.plugin.storage.StorageUnavailableException;
 import io.terrakube.registry.service.git.GitService;
 import io.terrakube.registry.service.git.ModuleVersionDownload;
-import org.zeroturnaround.zip.ZipUtil;
 
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.nio.file.Files;
 
 @Builder
 @Slf4j
@@ -39,11 +39,8 @@ public class LocalStorageServiceImpl implements StorageService {
         try {
             FileUtils.forceMkdirParent(moduleFile);
             if (!moduleFile.exists()) {
-                File gitCloneDirectory = gitService.getCloneRepositoryByTag(download);
-                log.info("Git Clone Directory {}", gitCloneDirectory.getAbsolutePath());
                 log.info("moduleZip {}", moduleFile.getAbsolutePath());
-                ZipUtil.pack(gitCloneDirectory, moduleFile);
-                FileUtils.cleanDirectory(gitCloneDirectory);
+                gitService.withModuleZip(download, moduleZip -> Files.move(moduleZip.toPath(), moduleFile.toPath()));
             }
         } catch (IOException ex) {
             log.error(ex.getLocalizedMessage());

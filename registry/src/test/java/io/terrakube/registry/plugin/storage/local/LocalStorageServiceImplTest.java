@@ -11,7 +11,6 @@ import org.mockito.Mockito;
 
 import java.io.File;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -45,19 +44,13 @@ class LocalStorageServiceImplTest {
                 }
                 return null;
             });
-            fileUtilsMockedStatic.when(() -> FileUtils.cleanDirectory(any(File.class))).thenAnswer(invocation -> {
-                // Do nothing to avoid recursion or use a non-recursive delete
+
+            File moduleZip = tempDir.resolve("module.zip").toFile();
+            java.nio.file.Files.writeString(moduleZip.toPath(), "zip");
+            doAnswer(invocation -> {
+                invocation.<GitService.ModuleZipHandler>getArgument(1).accept(moduleZip);
                 return null;
-            });
-
-            // Mock gitService
-            File gitCloneDir = tempDir.resolve("git-clone").toFile();
-            assertTrue(gitCloneDir.mkdirs());
-            File dummyFile = new File(gitCloneDir, "main.tf");
-            java.nio.file.Files.write(dummyFile.toPath(), "resource \"null_resource\" \"this\" {}".getBytes(StandardCharsets.UTF_8));
-
-            when(gitService.getCloneRepositoryByTag(any(ModuleVersionDownload.class)))
-                    .thenReturn(gitCloneDir);
+            }).when(gitService).withModuleZip(any(ModuleVersionDownload.class), any());
 
             ModuleVersionDownload download = new ModuleVersionDownload("source", "1.0.0", "v1.0.0", "vcsType",
                     "vcsConn", "token", "tag", "folder");

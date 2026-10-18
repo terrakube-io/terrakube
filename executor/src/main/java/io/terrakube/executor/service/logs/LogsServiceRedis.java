@@ -72,6 +72,11 @@ public class LogsServiceRedis implements ProcessLogs {
         }
     }
 
+    @Override
+    public void flush() {
+        // Nothing buffered: sendLogs writes each line to the stream before it returns.
+    }
+
     public void deleteLogs(String jobId) {
         redisTemplate.delete(jobId);
     }

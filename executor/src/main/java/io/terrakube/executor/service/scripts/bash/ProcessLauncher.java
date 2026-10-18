@@ -9,14 +9,19 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 @Slf4j
 public final class ProcessLauncher {
+    // Same bound terraform-client uses for its own process streams.
+    private static final long STREAM_DRAIN_TIMEOUT_SECONDS = 60;
     private static final List<String> PID_ISOLATION_PREFIX = detectPidIsolationPrefix();
 
     private Process process;
@@ -130,24 +135,43 @@ public final class ProcessLauncher {
         } catch (IOException ex) {
             throw new RuntimeException(ex);
         }
-        CompletableFuture<Void> outputFuture = (this.outputListener != null && !this.inheritIO)
-                ? CompletableFuture.runAsync(() -> this.readProcessStream(this.process.getInputStream(), this.outputListener), this.executor)
-                : CompletableFuture.completedFuture(null);
-        CompletableFuture<Void> errorFuture = (this.errorListener != null && !this.inheritIO)
-                ? CompletableFuture.runAsync(() -> this.readProcessStream(this.process.getErrorStream(), this.errorListener), this.executor)
-                : CompletableFuture.completedFuture(null);
-
+        Future<Boolean> outputReader = null;
+        Future<Boolean> errorReader = null;
+        if (!this.inheritIO) {
+            if (this.outputListener != null) {
+                outputReader = this.executor.submit(() -> this.readProcessStream(this.process.getInputStream(), this.outputListener));
+            }
+            if (this.errorListener != null) {
+                errorReader = this.executor.submit(() -> this.readProcessStream(this.process.getErrorStream(), this.errorListener));
+            }
+        }
+        Future<Boolean> stdoutReader = outputReader;
+        Future<Boolean> stderrReader = errorReader;
+        // The process exiting doesn't mean its output has been read: complete only once both
+        // readers have handed every line to their listener, so callers never see partial output.
         return CompletableFuture.supplyAsync(() -> {
             try {
                 int exitCode = this.process.waitFor();
-                outputFuture.join();
-                errorFuture.join();
+                awaitStreamDrained(stdoutReader, "output");
+                awaitStreamDrained(stderrReader, "error");
                 return exitCode;
             } catch (InterruptedException ex) {
                 Thread.currentThread().interrupt();
                 throw new RuntimeException(ex);
             }
         }, this.executor);
+    }
+
+    // A background child still holding the stream open must not hang the step: log and move on.
+    private void awaitStreamDrained(Future<Boolean> reader, String stream) throws InterruptedException {
+        if (reader == null) {
+            return;
+        }
+        try {
+            reader.get(STREAM_DRAIN_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        } catch (ExecutionException | TimeoutException ex) {
+            log.warn("Script {} stream was not fully read: {}", stream, ex.toString());
+        }
     }
 
     private boolean readProcessStream(InputStream stream, Consumer<String> listener) {

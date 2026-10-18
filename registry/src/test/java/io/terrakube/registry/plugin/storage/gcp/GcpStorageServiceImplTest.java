@@ -6,13 +6,11 @@ import com.google.cloud.storage.BlobInfo;
 import com.google.cloud.storage.Storage;
 import io.terrakube.registry.service.git.GitService;
 import io.terrakube.registry.service.git.ModuleVersionDownload;
-import org.apache.commons.io.FileUtils;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.File;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -40,14 +38,12 @@ class GcpStorageServiceImplTest {
 
         when(storage.get(any(BlobId.class))).thenReturn(null);
 
-        // Mock gitService
-        File gitCloneDir = tempDir.resolve("git-clone").toFile();
-        assertTrue(gitCloneDir.mkdirs());
-        File dummyFile = new File(gitCloneDir, "main.tf");
-        FileUtils.writeStringToFile(dummyFile, "resource \"null_resource\" \"this\" {}", StandardCharsets.UTF_8);
-
-        when(gitService.getCloneRepositoryByTag(any(ModuleVersionDownload.class)))
-                .thenReturn(gitCloneDir);
+        File moduleZip = tempDir.resolve("module.zip").toFile();
+        java.nio.file.Files.writeString(moduleZip.toPath(), "zip");
+        doAnswer(invocation -> {
+            invocation.<GitService.ModuleZipHandler>getArgument(1).accept(moduleZip);
+            return null;
+        }).when(gitService).withModuleZip(any(ModuleVersionDownload.class), any());
 
         ModuleVersionDownload download = new ModuleVersionDownload("source", "1.0.0", "v1.0.0", "vcsType",
                 "vcsConn", "token", "tag", "folder");
