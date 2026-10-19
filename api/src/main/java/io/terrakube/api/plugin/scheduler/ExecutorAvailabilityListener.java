@@ -4,11 +4,8 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
-import io.terrakube.api.repository.JobRepository;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
-import org.quartz.SchedulerException;
-import org.springframework.dao.DataAccessException;
 import org.springframework.data.redis.connection.Message;
 import org.springframework.data.redis.connection.MessageListener;
 import org.springframework.data.redis.listener.ChannelTopic;
@@ -26,23 +23,15 @@ public class ExecutorAvailabilityListener implements MessageListener {
     public static final String CHANNEL = "terrakube:executor-available";
 
     private final RedisMessageListenerContainer redisMessageListenerContainer;
-    private final JobRepository jobRepository;
     private final ScheduleJobService scheduleJobService;
-    private final io.terrakube.api.plugin.scheduler.reconciliation.ReconciliationProperties reconciliationProperties;
-    private final io.terrakube.api.plugin.scheduler.dispatchretry.DispatchRetryProperties dispatchRetryProperties;
     // Initialized to "now" at startup, not zero, so the gauge below doesn't report a huge bogus
     // age before the very first real signal arrives after a fresh deploy.
     private final AtomicLong lastSignalEpochMillis = new AtomicLong(System.currentTimeMillis());
 
     public ExecutorAvailabilityListener(RedisMessageListenerContainer redisMessageListenerContainer,
-            JobRepository jobRepository, ScheduleJobService scheduleJobService, MeterRegistry meterRegistry,
-            io.terrakube.api.plugin.scheduler.reconciliation.ReconciliationProperties reconciliationProperties,
-            io.terrakube.api.plugin.scheduler.dispatchretry.DispatchRetryProperties dispatchRetryProperties) {
+            ScheduleJobService scheduleJobService, MeterRegistry meterRegistry) {
         this.redisMessageListenerContainer = redisMessageListenerContainer;
-        this.jobRepository = jobRepository;
         this.scheduleJobService = scheduleJobService;
-        this.reconciliationProperties = reconciliationProperties;
-        this.dispatchRetryProperties = dispatchRetryProperties;
         Gauge.builder("executor.availability.age.seconds", lastSignalEpochMillis,
                         signal -> (System.currentTimeMillis() - signal.get()) / 1000.0)
                 .description("Seconds since the executor module last signalled it has capacity available")
@@ -57,19 +46,6 @@ public class ExecutorAvailabilityListener implements MessageListener {
     @Override
     public void onMessage(Message message, byte[] pattern) {
         lastSignalEpochMillis.set(System.currentTimeMillis());
-        try {
-            boolean admissionGuard = reconciliationProperties.isAdmissionGuardEnabled();
-            boolean deferralGuard = dispatchRetryProperties.isAdmissionDeferralActive(admissionGuard);
-            Integer nextJobId = deferralGuard
-                    ? jobRepository.findNextDispatchableExecutableNotDeferredJobId()
-                    : admissionGuard
-                        ? jobRepository.findNextDispatchableExecutableJobId()
-                        : jobRepository.findNextDispatchableJobId();
-            if (nextJobId != null) {
-                scheduleJobService.createJobContextNow(jobRepository.getReferenceById(nextJobId));
-            }
-        } catch (DataAccessException | SchedulerException e) {
-            log.warn("Could not react to executor-available signal: {}", e.getMessage());
-        }
+        scheduleJobService.wakeQueueHead();
     }
 }

@@ -100,4 +100,13 @@ class SchedulerQueueMetricsTest {
 
         assertThat(registry.get("terrakube.scheduler.executor.queue.head.job").gauge().value()).isEqualTo(7.0);
     }
+
+    @Test
+    void exposesJobsHeldOutOfTheQueueByLockedWorkspaces() {
+        doReturn(2).when(jobRepository).countJobsHeldByLockedWorkspace();
+
+        new SchedulerQueueMetrics(jobRepository, registry, dispatchRetryProperties).registerGauges();
+
+        assertThat(registry.get("terrakube.scheduler.executor.queue.locked.skipped").gauge().value()).isEqualTo(2.0);
+    }
 }

@@ -7,6 +7,7 @@ import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.agent.Agent;
 import io.terrakube.api.rs.collection.Reference;
 import io.terrakube.api.rs.hooks.workspace.WorkspaceManageHook;
+import io.terrakube.api.rs.hooks.workspace.WorkspaceUnlockHook;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.notification.NotificationConfiguration;
@@ -79,6 +80,8 @@ public class Workspace extends GenericAuditFields {
     @Column(name = "last_job_date")
     private Date lastJobDate;
 
+    @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.PRECOMMIT, hook = WorkspaceUnlockHook.class)
+    @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.POSTCOMMIT, hook = WorkspaceUnlockHook.class)
     @Column(name = "locked")
     private boolean locked;
 

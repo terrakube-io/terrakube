@@ -1166,8 +1166,18 @@ public class RemoteTfeService {
                     "User does not have permission to lock/unlock this workspace");
         }
 
+        boolean wasLocked = workspace.isLocked();
         workspace.setLocked(locked);
+        if (!locked) {
+            // A PR apply lock's description must not outlive the lock (see JobRepository.JOB_NOT_LOCKED_OUT).
+            workspace.setLockDescription(null);
+        }
         workspaceRepository.save(workspace);
+        if (wasLocked && !locked) {
+            // This path does not go through Elide, so WorkspaceUnlockHook never sees it (#3728).
+            log.info("Workspace {} unlocked, waking the job queue", workspace.getName());
+            scheduleJobService.wakeQueueHead();
+        }
         String organizationName = workspace.getOrganization().getName();
         Map<String, Object> otherAttributes = new HashMap<>();
 

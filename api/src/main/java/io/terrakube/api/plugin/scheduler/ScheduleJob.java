@@ -63,8 +63,8 @@ import static io.terrakube.api.plugin.scheduler.ScheduleJobService.PREFIX_JOB_CO
 // @DisallowConcurrentExecution only stops Quartz from running the SAME JobDetail key concurrently
 // with itself. It gives no protection across DIFFERENT JobDetails for the same job id - and
 // ScheduleJobService.createJobContextNow mints a brand-new, uniquely-suffixed JobDetail on every
-// call (used by JobManageHook on every job update, plus wakeNextDispatchableJob and
-// ExecutorAvailabilityListener below), so a job's long-lived 30s recurring trigger can easily
+// call (used by JobManageHook on every job update, plus ScheduleJobService.wakeQueueHead,
+// which ExecutorAvailabilityListener also uses), so a job's long-lived 30s recurring trigger can easily
 // overlap one or more of these one-shot triggers. The EXECUTION_LOCK_PREFIX Redis lock in
 // runExecution is what actually guarantees only one worker processes a given job id at a time.
 @DisallowConcurrentExecution
@@ -124,7 +124,7 @@ public class ScheduleJob implements org.quartz.Job {
 
     // Shared routine that reconciles a job with no remaining executable step to its real terminal
     // status (see reconcileOutOfSteps). ReconciliationProperties gates the guarded FIFO-admission
-    // queries used by isNextInDispatchOrder / wakeNextDispatchableJob.
+    // queries used by isNextInDispatchOrder and ScheduleJobService.wakeQueueHead.
     JobReconciliationService jobReconciliationService;
     ReconciliationProperties reconciliationProperties;
 
@@ -242,7 +242,10 @@ public class ScheduleJob implements org.quartz.Job {
         // isOwnPrApplyLock() exempting that same job, this guard would block it from ever progressing,
         // so the workspace would stay locked forever since only postPrCommentIfNeeded() unlocks it.
         if (job.getWorkspace().isLocked() && !isOwnPrApplyLock(job)) {
-            log.warn("Job {}, Workspace is locked. It must be unlocked before Terrakube can execute it.", jobId);
+            // debug, not warn: this repeats every 30s per job for as long as the lock is held and the job
+            // no longer holds up the FIFO queue; terrakube.scheduler.executor.queue.locked.skipped counts it.
+            log.debug("Job {}, Workspace {} is locked. It must be unlocked before Terrakube can execute it.", jobId,
+                    job.getWorkspace().getName());
             return false;
         }
 
@@ -583,7 +586,7 @@ public class ScheduleJob implements org.quartz.Job {
         try {
             executorService.execute(job, stepId, flow);
             onDispatchSucceeded(job);
-            wakeNextDispatchableJob();
+            scheduleJobService.wakeQueueHead();
         } catch (ExecutorUnavailableException e) {
             log.warn("No executor available for Job {} Step {}, will retry: {}", job.getId(), stepId, e.getMessage());
             return false;
@@ -664,25 +667,6 @@ public class ScheduleJob implements org.quartz.Job {
         } catch (DataAccessException e) {
             log.warn("Could not determine dispatch order for Job {} Step {}, will retry: {}", job.getId(), stepId, e.getMessage());
             return false;
-        }
-    }
-
-    // Best-effort: wakes the next-in-line job immediately. If this fails, its own 30s recurring
-    // trigger still covers it.
-    private void wakeNextDispatchableJob() {
-        try {
-            boolean admissionGuard = reconciliationProperties.isAdmissionGuardEnabled();
-            boolean deferralGuard = dispatchRetryProperties.isAdmissionDeferralActive(admissionGuard);
-            Integer nextJobId = deferralGuard
-                    ? jobRepository.findNextDispatchableExecutableNotDeferredJobId()
-                    : admissionGuard
-                        ? jobRepository.findNextDispatchableExecutableJobId()
-                        : jobRepository.findNextDispatchableJobId();
-            if (nextJobId != null) {
-                scheduleJobService.createJobContextNow(jobRepository.getReferenceById(nextJobId));
-            }
-        } catch (DataAccessException | SchedulerException e) {
-            log.warn("Could not wake the next dispatchable job: {}", e.getMessage());
         }
     }
 

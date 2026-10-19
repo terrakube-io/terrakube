@@ -147,7 +147,7 @@ public class ScheduleJobTest {
         // Default to "next in line, no one to wake" so non-FIFO tests behave as before; the
         // ordering tests below override these.
         lenient().doReturn(true).when(jobRepository).isJobNextInDispatchOrder(anyInt());
-        lenient().doReturn(null).when(jobRepository).findNextDispatchableJobId();
+        lenient().doNothing().when(scheduleJobService).wakeQueueHead();
 
         jobReconciliationService = mock(
                 io.terrakube.api.plugin.scheduler.reconciliation.JobReconciliationService.class,
@@ -760,14 +760,11 @@ public class ScheduleJobTest {
         doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
         doReturn(job).when(jobRepository).save(any());
         doNothing().when(executorService).execute(any(), any(), any());
-        doReturn(nextJob.getId()).when(jobRepository).findNextDispatchableJobId();
-        doReturn(nextJob).when(jobRepository).getReferenceById(nextJob.getId());
-        doNothing().when(scheduleJobService).createJobContextNow(nextJob);
 
         Assert.assertTrue(subject().runExecution(job));
 
         verify(executorService, times(1)).execute(any(), any(), any());
-        verify(scheduleJobService, times(1)).createJobContextNow(nextJob);
+        verify(scheduleJobService, times(1)).wakeQueueHead();
         Assertions.assertEquals(JobStatus.queue, job.getStatus());
     }
 
