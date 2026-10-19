@@ -810,3 +810,410 @@ describe("run actions", () => {
     await waitFor(() => expect(screen.queryByText("Cancel this run?")).not.toBeInTheDocument());
   });
 });
+
+describe("DetailsJob run diagnostics and output completeness (#3693)", () => {
+  beforeEach(() => {
+    useStructuredOutputStreamMock.mockReturnValue(null);
+  });
+
+  const stepEntry = (id: string, name: string, number: string, extra: Record<string, unknown> = {}) => ({
+    id,
+    type: "step",
+    attributes: { name, status: "completed", stepNumber: number, ...extra },
+  });
+
+  const jobResponse = (steps: unknown[]) => ({
+    data: { data: { id: "1", attributes: { status: "completed" } }, included: steps },
+  });
+
+  const mockRun = (context: Record<string, unknown>, steps: unknown[]) => {
+    getMock.mockImplementation((url: string) => {
+      if (url.includes("/context/v1/")) return Promise.resolve({ data: context });
+      if (url.includes("/step/")) return Promise.resolve({ data: "log line", headers: {} });
+      return Promise.resolve(jobResponse(steps));
+    });
+  };
+
+  const planRows = {
+    "plan-1": [
+      {
+        address: "aws_instance.web",
+        action: "create",
+        actions: ["create"],
+        after: { id: "i-1" },
+        diagnostics: [{ severity: "warning", summary: "Deprecated argument", detail: "Use 'x'." }],
+      },
+      {
+        address: "aws_s3_bucket.logs",
+        action: "no-op",
+        actions: ["no-op"],
+        diagnostics: [{ severity: "error", summary: "Bucket ACL is not supported", location: "s3.tf:12" }],
+      },
+    ],
+  };
+
+  it("lists every captured diagnostic in the run view while its resource rows are collapsed", async () => {
+    mockRun(
+      {
+        structuredOutputStatus: { state: "PERSISTED", stepId: "plan-1", phase: "plan", finalSnapshot: true },
+        planStructuredOutput: planRows,
+      },
+      [stepEntry("plan-1", "Terraform Plan", "1", { deliveryState: "ACKED" })]
+    );
+
+    render(<DetailsJob jobId="1" />);
+
+    const panel = await screen.findByTestId("run-diagnostics");
+    // The rows are collapsed (nothing expanded them), yet both diagnostics are readable.
+    expect(panel).toHaveTextContent("aws_instance.web");
+    expect(panel).toHaveTextContent("Deprecated argument");
+    expect(panel).toHaveTextContent("aws_s3_bucket.logs");
+    expect(panel).toHaveTextContent("Bucket ACL is not supported");
+    expect(panel).toHaveTextContent("(s3.tf:12)");
+    expect(panel).toHaveTextContent("1 error");
+    expect(panel).toHaveTextContent("1 warning");
+  });
+
+  it("keeps the run view complete when a resource filter hides the rows", async () => {
+    mockRun(
+      {
+        structuredOutputStatus: { state: "PERSISTED", stepId: "plan-1", phase: "plan", finalSnapshot: true },
+        planStructuredOutput: planRows,
+      },
+      [stepEntry("plan-1", "Terraform Plan", "1", { deliveryState: "ACKED" })]
+    );
+
+    render(<DetailsJob jobId="1" />);
+    await screen.findByTestId("run-diagnostics");
+
+    fireEvent.change(screen.getByLabelText("Filter resources by address"), { target: { value: "no-such-resource" } });
+
+    await waitFor(() => expect(screen.getByText("No resources match the current filters.")).toBeInTheDocument());
+    const diagnostics = screen.getAllByTestId("run-diagnostic");
+    expect(diagnostics).toHaveLength(2);
+  });
+
+  it("shows diagnostics for a plan that produced no rows, and does not call it 'no changes'", async () => {
+    mockRun(
+      {
+        structuredOutputStatus: { state: "PERSISTED", stepId: "plan-1", phase: "plan", finalSnapshot: true },
+        planStructuredOutput: { "plan-1": [] },
+        jobDiagnostics: {
+          "plan-1": [{ severity: "error", summary: "Invalid provider configuration", location: "providers.tf:4" }],
+        },
+      },
+      [stepEntry("plan-1", "Terraform Plan", "1", { status: "failed", deliveryState: "ACKED" })]
+    );
+
+    render(<DetailsJob jobId="1" />);
+
+    const panel = await screen.findByTestId("run-diagnostics");
+    expect(panel).toHaveTextContent("Invalid provider configuration");
+    expect(panel).toHaveTextContent("(providers.tf:4)");
+    expect(
+      screen.queryByText("Your infrastructure matches the configuration — no changes needed.")
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not show a diagnostics view when the run captured none", async () => {
+    mockRun(
+      {
+        structuredOutputStatus: { state: "PERSISTED", stepId: "plan-1", phase: "plan", finalSnapshot: true },
+        planStructuredOutput: { "plan-1": [] },
+        noChangePlan: { planStepId: "plan-1" },
+      },
+      [stepEntry("plan-1", "Terraform Plan", "1", { deliveryState: "ACKED" })]
+    );
+
+    render(<DetailsJob jobId="1" />);
+
+    await screen.findByText("Your infrastructure matches the configuration — no changes needed.");
+    expect(screen.queryByTestId("run-diagnostics")).not.toBeInTheDocument();
+  });
+
+  it("marks a step whose final output was acknowledged as final", async () => {
+    mockRun(
+      {
+        structuredOutputStatus: { state: "PERSISTED", stepId: "plan-1", phase: "plan", finalSnapshot: true },
+        planStructuredOutput: planRows,
+      },
+      [stepEntry("plan-1", "Terraform Plan", "1", { deliveryState: "ACKED" })]
+    );
+
+    render(<DetailsJob jobId="1" />);
+
+    const notice = await screen.findByTestId("output-completeness");
+    expect(notice).toHaveAttribute("data-state", "final");
+  });
+
+  it("shows output that is still being recovered as recovering, not final, even though rows exist", async () => {
+    mockRun(
+      {
+        structuredOutputStatus: { state: "PERSISTED", stepId: "plan-1", phase: "plan", finalSnapshot: false },
+        planStructuredOutput: planRows,
+      },
+      [stepEntry("plan-1", "Terraform Plan", "1", { deliveryState: "SPOOLED" })]
+    );
+
+    render(<DetailsJob jobId="1" />);
+
+    const notice = await screen.findByTestId("output-completeness");
+    expect(notice).toHaveAttribute("data-state", "recovering");
+    expect(notice).toHaveTextContent("Recovering final output");
+  });
+
+  it("shows output that could not be recovered as lost, with the last progress still visible", async () => {
+    mockRun(
+      {
+        structuredOutputStatus: { state: "PERSISTED", stepId: "plan-1", phase: "plan", finalSnapshot: false },
+        planStructuredOutput: planRows,
+      },
+      [stepEntry("plan-1", "Terraform Plan", "1", { deliveryState: "EXPIRED" })]
+    );
+
+    render(<DetailsJob jobId="1" />);
+
+    const notice = await screen.findByTestId("output-completeness");
+    expect(notice).toHaveAttribute("data-state", "expired");
+    expect(screen.getByRole("button", { name: /aws_instance\.web/i })).toBeInTheDocument();
+  });
+
+  it("does not treat a persisted progress snapshot as complete: it waits for the final output", async () => {
+    mockRun(
+      {
+        structuredOutputStatus: { state: "PERSISTED", stepId: "plan-1", phase: "plan", finalSnapshot: false },
+        planStructuredOutput: planRows,
+      },
+      [stepEntry("plan-1", "Terraform Plan", "1", { deliveryState: "NOT_DURABLE" })]
+    );
+
+    render(<DetailsJob jobId="1" />);
+
+    const notice = await screen.findByTestId("output-completeness");
+    expect(notice).toHaveAttribute("data-state", "awaiting-final");
+  });
+
+  it("settles on 'partial' once the re-checking window ends without a final output", async () => {
+    mockRun(
+      {
+        structuredOutputStatus: { state: "PERSISTED", stepId: "plan-1", phase: "plan", finalSnapshot: false },
+        planStructuredOutput: planRows,
+      },
+      [stepEntry("plan-1", "Terraform Plan", "1", { deliveryState: "NOT_DURABLE" })]
+    );
+    const realNow = Date.now.bind(Date);
+    let offset = 0;
+    const nowSpy = jest.spyOn(Date, "now").mockImplementation(() => realNow() + offset);
+
+    try {
+      render(<DetailsJob jobId="1" />);
+      await waitFor(() =>
+        expect(screen.getByTestId("output-completeness")).toHaveAttribute("data-state", "awaiting-final")
+      );
+
+      offset = 61_000; // the 60s window has now passed
+
+      await waitFor(() => expect(screen.getByTestId("output-completeness")).toHaveAttribute("data-state", "partial"), {
+        timeout: 6000,
+      });
+      expect(screen.getByRole("button", { name: /aws_instance\.web/i })).toBeInTheDocument();
+    } finally {
+      nowSpy.mockRestore();
+    }
+  }, 12000);
+
+  it("does not treat the empty snapshot of a plan that is still running as 'no changes' for the apply", async () => {
+    mockRun(
+      {
+        structuredOutputStatus: { state: "PERSISTED", stepId: "plan-1", phase: "plan", finalSnapshot: false },
+        planStructuredOutput: { "plan-1": [] },
+      },
+      [
+        stepEntry("plan-1", "Terraform Plan", "1", { status: "running", deliveryState: "NOT_DURABLE" }),
+        stepEntry("apply-1", "Terraform Apply", "2", { status: "completed", deliveryState: "NOT_DURABLE" }),
+      ]
+    );
+
+    render(<DetailsJob jobId="1" />);
+
+    await screen.findByText("Terraform Apply");
+    expect(screen.queryByText(/Apply completed with no changes/)).not.toBeInTheDocument();
+  });
+
+  it("stops saying that it is recovering once the page gave up checking", async () => {
+    mockRun(
+      {
+        structuredOutputStatus: { state: "PERSISTED", stepId: "plan-1", phase: "plan", finalSnapshot: false },
+        planStructuredOutput: planRows,
+      },
+      [stepEntry("plan-1", "Terraform Plan", "1", { deliveryState: "SPOOLED" })]
+    );
+    const realNow = Date.now.bind(Date);
+    let offset = 0;
+    const nowSpy = jest.spyOn(Date, "now").mockImplementation(() => realNow() + offset);
+
+    try {
+      render(<DetailsJob jobId="1" />);
+      await waitFor(() =>
+        expect(screen.getByTestId("output-completeness")).toHaveAttribute("data-state", "recovering")
+      );
+
+      offset = 6 * 60_000; // past the 60s window and the extra time for output that is being recovered
+
+      await waitFor(
+        () => expect(screen.getByTestId("output-completeness")).toHaveAttribute("data-state", "recovery-stalled"),
+        { timeout: 6000 }
+      );
+      expect(screen.getByTestId("output-completeness")).toHaveTextContent("reload it to check again");
+    } finally {
+      nowSpy.mockRestore();
+    }
+  }, 12000);
+
+  describe("steps the template did not name", () => {
+    // Without a `name:` in the template a step is called "Running Step100", which says nothing
+    // about being a plan, so the delivery state has to be enough.
+    const unnamedPlan = (extra: Record<string, unknown>) => [stepEntry("plan-1", "Running Step100", "100", extra)];
+
+    it.each([
+      ["ACKED", "final"],
+      ["SPOOLED", "recovering"],
+      ["EXPIRED", "expired"],
+    ])("shows a step in delivery state %s as %s", async (deliveryState, expected) => {
+      mockRun(
+        {
+          structuredOutputStatus: { state: "PERSISTED", stepId: "plan-1", phase: "plan", finalSnapshot: false },
+          planStructuredOutput: planRows,
+        },
+        unnamedPlan({ deliveryState })
+      );
+
+      render(<DetailsJob jobId="1" />);
+
+      expect(await screen.findByTestId("output-completeness")).toHaveAttribute("data-state", expected);
+    });
+
+    it("settles on 'partial' for an unnamed step whose last stored write was a progress snapshot", async () => {
+      mockRun(
+        {
+          structuredOutputStatus: { state: "PERSISTED", stepId: "plan-1", phase: "plan", finalSnapshot: false },
+          planStructuredOutput: planRows,
+        },
+        unnamedPlan({ deliveryState: "NOT_DURABLE" })
+      );
+      const realNow = Date.now.bind(Date);
+      let offset = 0;
+      const nowSpy = jest.spyOn(Date, "now").mockImplementation(() => realNow() + offset);
+
+      try {
+        render(<DetailsJob jobId="1" />);
+        await waitFor(() =>
+          expect(screen.getByTestId("output-completeness")).toHaveAttribute("data-state", "awaiting-final")
+        );
+        offset = 61_000;
+        await waitFor(
+          () => expect(screen.getByTestId("output-completeness")).toHaveAttribute("data-state", "partial"),
+          { timeout: 6000 }
+        );
+      } finally {
+        nowSpy.mockRestore();
+      }
+    }, 12000);
+
+    it("says nothing for an unnamed step that never recorded a delivery outcome", async () => {
+      mockRun(
+        {
+          structuredOutputStatus: { state: "PERSISTED", stepId: "other", phase: "plan", finalSnapshot: true },
+          planStructuredOutput: planRows,
+        },
+        unnamedPlan({ deliveryState: "NOT_DURABLE" })
+      );
+
+      render(<DetailsJob jobId="1" />);
+
+      await screen.findByRole("button", { name: /aws_instance\.web/i });
+      expect(screen.queryByTestId("output-completeness")).not.toBeInTheDocument();
+    });
+  });
+
+  it("keeps re-checking until the final output is acknowledged, then stops", async () => {
+    let delivered = false;
+    let contextCalls = 0;
+    getMock.mockImplementation((url: string) => {
+      if (url.includes("/context/v1/")) {
+        contextCalls += 1;
+        return Promise.resolve({
+          data: {
+            structuredOutputStatus: { state: "PERSISTED", stepId: "plan-1", phase: "plan", finalSnapshot: delivered },
+            planStructuredOutput: planRows,
+          },
+        });
+      }
+      if (url.includes("/step/")) return Promise.resolve({ data: "log line", headers: {} });
+      return Promise.resolve(
+        jobResponse([
+          stepEntry("plan-1", "Terraform Plan", "1", { deliveryState: delivered ? "ACKED" : "NOT_DURABLE" }),
+        ])
+      );
+    });
+
+    render(<DetailsJob jobId="1" />);
+    await waitFor(() =>
+      expect(screen.getByTestId("output-completeness")).toHaveAttribute("data-state", "awaiting-final")
+    );
+
+    // Several re-checks that find nothing new must not end the re-checking.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 3500));
+    });
+    expect(screen.getByTestId("output-completeness")).toHaveAttribute("data-state", "awaiting-final");
+
+    delivered = true; // the executor's delayed final delivery lands
+
+    await waitFor(() => expect(screen.getByTestId("output-completeness")).toHaveAttribute("data-state", "final"), {
+      timeout: 9000,
+    });
+
+    // Confirmed final: the re-checking has stopped.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+    });
+    const callsAfterSettling = contextCalls;
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 3500));
+    });
+    expect(contextCalls).toBe(callsAfterSettling);
+  }, 30000);
+
+  it("does not claim 'no changes' for an empty progress snapshot whose final output has not arrived", async () => {
+    mockRun(
+      {
+        structuredOutputStatus: { state: "PERSISTED", stepId: "plan-1", phase: "plan", finalSnapshot: false },
+        planStructuredOutput: { "plan-1": [] },
+      },
+      [stepEntry("plan-1", "Terraform Plan", "1", { deliveryState: "NOT_DURABLE" })]
+    );
+
+    render(<DetailsJob jobId="1" />);
+
+    await screen.findByText(/This is not confirmed as "no changes"/);
+    expect(
+      screen.queryByText("Your infrastructure matches the configuration — no changes needed.")
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows a run from before delivery was tracked exactly as it was: no completeness notice", async () => {
+    mockRun(
+      {
+        structuredOutputStatus: { state: "PERSISTED", stepId: "apply-1", phase: "apply", finalSnapshot: true },
+        planStructuredOutput: planRows,
+      },
+      [stepEntry("plan-1", "Terraform Plan", "1")]
+    );
+
+    render(<DetailsJob jobId="1" />);
+
+    await screen.findByRole("button", { name: /aws_instance\.web/i });
+    expect(screen.queryByTestId("output-completeness")).not.toBeInTheDocument();
+  });
+});

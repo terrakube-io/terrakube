@@ -2,6 +2,7 @@ import {
   getReconciliationCounts,
   parseContextAvailability,
   parseNoChangePlanStepId,
+  parseStructuredOutputMarker,
   recordReconciliationResult,
   resetReconciliationCounts,
 } from "../contextAvailability";
@@ -54,5 +55,22 @@ describe("reconciliation counters", () => {
     recordReconciliationResult("persisted");
     recordReconciliationResult("expired");
     expect(getReconciliationCounts()).toEqual({ persisted: 2, unavailable: 0, expired: 1 });
+  });
+});
+
+describe("parseStructuredOutputMarker", () => {
+  it("reads the step and whether the last write was final", () => {
+    expect(
+      parseStructuredOutputMarker({
+        structuredOutputStatus: { state: "PERSISTED", stepId: "s1", phase: "plan", finalSnapshot: false },
+      })
+    ).toEqual({ stepId: "s1", phase: "plan", finalSnapshot: false });
+  });
+
+  it("returns nothing when the executor wrote no usable marker", () => {
+    expect(parseStructuredOutputMarker({})).toBeUndefined();
+    expect(parseStructuredOutputMarker({ structuredOutputStatus: { state: "PENDING" } })).toBeUndefined();
+    expect(parseStructuredOutputMarker({ structuredOutputStatus: { stepId: "s1" } })).toBeUndefined();
+    expect(parseStructuredOutputMarker(undefined)).toBeUndefined();
   });
 });

@@ -69,3 +69,24 @@ export const resetReconciliationCounts = (): void => {
   reconciliationCounts.unavailable = 0;
   reconciliationCounts.expired = 0;
 };
+
+/**
+ * What the executor last wrote to `structuredOutputStatus`. The marker is a single slot per run,
+ * so it only describes the step that wrote last: use it for that step, never for the others.
+ */
+export type StructuredOutputMarker = {
+  stepId: string;
+  phase?: "plan" | "apply";
+  finalSnapshot: boolean;
+};
+
+export const parseStructuredOutputMarker = (data: unknown): StructuredOutputMarker | undefined => {
+  if (!isRecord(data) || !isRecord(data.structuredOutputStatus)) {
+    return undefined;
+  }
+  const { stepId, phase, finalSnapshot } = data.structuredOutputStatus;
+  if (typeof stepId !== "string" || stepId.length === 0 || typeof finalSnapshot !== "boolean") {
+    return undefined;
+  }
+  return { stepId, phase: phase === "plan" || phase === "apply" ? phase : undefined, finalSnapshot };
+};

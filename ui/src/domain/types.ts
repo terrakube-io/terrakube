@@ -184,6 +184,9 @@ export type JobAttributes = {
   cascadeDepth?: number;
 } & AuditFieldBase;
 
+/** Output-delivery outcome of a step, tracked apart from whether the step itself succeeded. */
+export type StepDeliveryState = "ACKED" | "SPOOLED" | "RECOVERED" | "EXPIRED" | "NOT_DURABLE";
+
 export type JobStep = {
   id: string;
   name: string;
@@ -191,6 +194,11 @@ export type JobStep = {
   status: JobStatus;
   output: string;
   outputLog: string;
+  /**
+   * Whether this step's final structured output reached durable storage (#3692). Absent when the
+   * API predates the field.
+   */
+  deliveryState?: StepDeliveryState;
 };
 export type FlatJob = {
   id: string;

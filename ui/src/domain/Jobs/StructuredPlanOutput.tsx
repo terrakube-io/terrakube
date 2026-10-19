@@ -43,6 +43,8 @@ type Props = {
   applyMode?: boolean;
   outputs?: TerraformOutputValue[];
   jobDiagnostics?: Diagnostic[];
+  /** The step is over but its final output is not confirmed, so an empty list proves nothing. */
+  resultUnconfirmed?: boolean;
   // Whether the owning step is still executing. An empty `changes` array is indistinguishable
   // from "plan finished, nothing differs" while the step is running - the backend just hasn't
   // streamed any resource changes yet. Defaults to false (finished) so existing call sites that
@@ -1369,6 +1371,7 @@ export const StructuredPlanOutput = ({
   outputs,
   jobDiagnostics,
   isStepRunning = false,
+  resultUnconfirmed = false,
 }: Props) => {
   const [expandedRowKeys, setExpandedRowKeys] = useState<string[]>([]);
   const [expandedAttributeKeys, setExpandedAttributeKeys] = useState<string[]>([]);
@@ -1585,6 +1588,14 @@ export const StructuredPlanOutput = ({
         <div className="structured-plan-noChanges structured-plan-inProgress">
           <LoadingOutlined className="structured-plan-noChangesIcon" />
           <span>Plan is running — waiting for results…</span>
+        </div>
+      );
+    }
+
+    if (resultUnconfirmed) {
+      return (
+        <div className="structured-plan-noChanges structured-plan-inProgress">
+          <span>No resource changes have been recorded yet. This is not confirmed as "no changes".</span>
         </div>
       );
     }
