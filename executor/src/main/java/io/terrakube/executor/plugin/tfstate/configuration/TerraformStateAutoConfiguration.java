@@ -26,6 +26,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.util.StringUtils;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
@@ -143,17 +144,26 @@ public class TerraformStateAutoConfiguration {
                     break;
                 case GcpTerraformStateImpl:
                     try {
-                        log.info("GCP Credentials Base64 {} length", gcpTerraformStateProperties.getCredentials().length());
-                        Credentials gcpCredentials = GoogleCredentials.fromStream(
-                                new ByteArrayInputStream(
-                                        Base64.decodeBase64(gcpTerraformStateProperties.getCredentials())
-                                )
-                        );
-                        Storage gcpStorage = StorageOptions.newBuilder()
-                                .setCredentials(gcpCredentials)
-                                .setProjectId(gcpTerraformStateProperties.getProjectId())
-                                .build()
-                                .getService();
+                        Credentials gcpCredentials;
+                        if (StringUtils.hasText(gcpTerraformStateProperties.getCredentials())) {
+                            log.info("Creating GCP Terraform State with custom credentials (Base64 length: {})", gcpTerraformStateProperties.getCredentials().length());
+                            gcpCredentials = GoogleCredentials.fromStream(
+                                    new ByteArrayInputStream(
+                                            Base64.decodeBase64(gcpTerraformStateProperties.getCredentials())
+                                    )
+                            );
+                        } else {
+                            log.info("Creating GCP Terraform State with Application Default Credentials (ADC)");
+                            gcpCredentials = GoogleCredentials.getApplicationDefault();
+                        }
+
+                        StorageOptions.Builder storageOptionsBuilder = StorageOptions.newBuilder()
+                                .setCredentials(gcpCredentials);
+                        if (StringUtils.hasText(gcpTerraformStateProperties.getProjectId())) {
+                            storageOptionsBuilder.setProjectId(gcpTerraformStateProperties.getProjectId());
+                        }
+
+                        Storage gcpStorage = storageOptionsBuilder.build().getService();
 
                         terraformState = GcpTerraformStateImpl.builder().storage(gcpStorage)
                                 .terraformStatePathService(terraformStatePathService)

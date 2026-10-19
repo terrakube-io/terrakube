@@ -81,6 +81,72 @@ class GcpTerraformStateImplTest {
     }
 
     @Test
+    void testGetBackendStateFileWithAdc(@TempDir Path tempDir) throws IOException {
+        GcpTerraformStateImpl adcState = GcpTerraformStateImpl.builder()
+                .bucketName(bucketName)
+                .credentials(null)
+                .storage(storage)
+                .terrakubeClient(terrakubeClient)
+                .terraformOutputPathService(terraformOutputPathService)
+                .terraformStatePathService(terraformStatePathService)
+                .storageRetryMetrics(new io.terrakube.executor.plugin.tfstate.StorageRetryMetrics(
+                        new io.micrometer.core.instrument.simple.SimpleMeterRegistry()))
+                .build();
+
+        String organizationId = "org1";
+        String workspaceId = "ws1";
+        String terraformVersion = "1.5.0";
+        File workingDirectory = tempDir.toFile();
+
+        String result = adcState.getBackendStateFile(organizationId, workspaceId, workingDirectory, terraformVersion);
+
+        assertEquals("gcp_backend_override.tf", result);
+
+        File credentialsFile = new File(workingDirectory, "GCP_CREDENTIALS_FILE.json");
+        assertFalse(credentialsFile.exists());
+
+        File backendFile = new File(workingDirectory, "gcp_backend_override.tf");
+        assertTrue(backendFile.exists());
+        String content = FileUtils.readFileToString(backendFile, Charset.defaultCharset());
+        assertTrue(content.contains("bucket      = \"test-bucket\""));
+        assertTrue(content.contains("prefix      = \"tfstate/org1/ws1/terraform.tfstate\""));
+        assertFalse(content.contains("credentials = \"GCP_CREDENTIALS_FILE.json\""));
+    }
+
+    @Test
+    void testGetBackendStateFileWithEmptyCredentials(@TempDir Path tempDir) throws IOException {
+        GcpTerraformStateImpl adcState = GcpTerraformStateImpl.builder()
+                .bucketName(bucketName)
+                .credentials("   ")
+                .storage(storage)
+                .terrakubeClient(terrakubeClient)
+                .terraformOutputPathService(terraformOutputPathService)
+                .terraformStatePathService(terraformStatePathService)
+                .storageRetryMetrics(new io.terrakube.executor.plugin.tfstate.StorageRetryMetrics(
+                        new io.micrometer.core.instrument.simple.SimpleMeterRegistry()))
+                .build();
+
+        String organizationId = "org1";
+        String workspaceId = "ws1";
+        String terraformVersion = "1.5.0";
+        File workingDirectory = tempDir.toFile();
+
+        String result = adcState.getBackendStateFile(organizationId, workspaceId, workingDirectory, terraformVersion);
+
+        assertEquals("gcp_backend_override.tf", result);
+
+        File credentialsFile = new File(workingDirectory, "GCP_CREDENTIALS_FILE.json");
+        assertFalse(credentialsFile.exists());
+
+        File backendFile = new File(workingDirectory, "gcp_backend_override.tf");
+        assertTrue(backendFile.exists());
+        String content = FileUtils.readFileToString(backendFile, Charset.defaultCharset());
+        assertTrue(content.contains("bucket      = \"test-bucket\""));
+        assertTrue(content.contains("prefix      = \"tfstate/org1/ws1/terraform.tfstate\""));
+        assertFalse(content.contains("credentials = \"GCP_CREDENTIALS_FILE.json\""));
+    }
+
+    @Test
     void testSaveTerraformPlan(@TempDir Path tempDir) throws IOException {
         String organizationId = "org1";
         String workspaceId = "ws1";
