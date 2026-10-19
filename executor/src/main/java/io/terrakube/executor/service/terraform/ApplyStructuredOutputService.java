@@ -194,8 +194,10 @@ public class ApplyStructuredOutputService {
                 "phase", "apply",
                 "finalSnapshot", true));
 
-        int attempt = 1;
-        while (attempt <= 3) {
+        boolean retry = true;
+        int attemptsMade = 0;
+        for (int attempt = 1; attempt <= 3 && retry; attempt++) {
+            attemptsMade = attempt;
             JobContextService.PatchResult patchResult = jobContextService.patchContext(organizationId, jobId, deliveryRevision, patch);
             if (patchResult == JobContextService.PatchResult.APPLIED) {
                 log.info("Synchronous final apply snapshot persisted and ACKed for job {} step {}", jobId, stepId);
@@ -206,26 +208,19 @@ public class ApplyStructuredOutputService {
                 if (attempt == 1) {
                     log.warn("Context patch for job {} entries {} was skipped on initial attempt: an equal or newer revision already landed",
                             jobId, patch.keySet());
-                    break;
+                    retry = false;
                 } else {
                     log.info("Context patch retry for job {} entries {} was skipped: earlier attempt most likely landed, treating as ACKED",
                             jobId, patch.keySet());
                     pushLiveUpdate("apply", jobId, stepId, changes, jobDiagnostics);
                     return "ACKED";
                 }
+            } else if (!sleepBackoff(attempt)) {
+                retry = false;
             }
-            if (attempt < 3) {
-                try {
-                    Thread.sleep(200L * attempt);
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                    break;
-                }
-            }
-            attempt++;
         }
         log.warn("Failed to obtain synchronous ACK for final apply snapshot for job {} step {} after {} attempt(s)",
-                jobId, stepId, attempt - 1);
+                jobId, stepId, attemptsMade);
 
         if (contextSpoolService != null) {
             String spooledPath = contextSpoolService.spoolContextPatch(organizationId, jobId, stepId, "apply", deliveryRevision, patch);
@@ -236,6 +231,18 @@ public class ApplyStructuredOutputService {
         }
 
         return "NOT_DURABLE";
+    }
+
+    private boolean sleepBackoff(int attempt) {
+        if (attempt < 3) {
+            try {
+                Thread.sleep(200L * attempt);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                return false;
+            }
+        }
+        return true;
     }
 
     private void pushLiveUpdate(String phase, String jobId, String stepId, List<Map<String, Object>> changes, List<Map<String, Object>> jobDiagnostics) {

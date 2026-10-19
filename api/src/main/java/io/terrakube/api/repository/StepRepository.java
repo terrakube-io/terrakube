@@ -41,9 +41,10 @@ public interface StepRepository extends JpaRepository<Step, UUID> {
     @Query("UPDATE step s SET s.leaseOwner = null, s.leaseUntil = null WHERE s.id = :stepId AND (:owner IS NULL OR s.leaseOwner = :owner)")
     int releaseLease(@Param("stepId") UUID stepId, @Param("owner") String owner);
 
-    default int releaseLease(UUID stepId) {
-        return releaseLease(stepId, null);
-    }
+    @Transactional
+    @Modifying(clearAutomatically = true)
+    @Query("UPDATE step s SET s.leaseOwner = null, s.leaseUntil = null WHERE s.id = :stepId")
+    int releaseLease(@Param("stepId") UUID stepId);
 
     @Transactional
     @Modifying(clearAutomatically = true)
@@ -53,8 +54,11 @@ public interface StepRepository extends JpaRepository<Step, UUID> {
             @Param("newState") DeliveryState newState,
             @Param("owner") String owner);
 
-    default int updateDeliveryState(UUID stepId, DeliveryState newState) {
-        return updateDeliveryState(stepId, newState, null);
-    }
+    @Transactional
+    @Modifying(clearAutomatically = true)
+    @Query("UPDATE step s SET s.deliveryState = :newState, s.leaseOwner = null, s.leaseUntil = null WHERE s.id = :stepId")
+    int updateDeliveryState(
+            @Param("stepId") UUID stepId,
+            @Param("newState") DeliveryState newState);
 }
 

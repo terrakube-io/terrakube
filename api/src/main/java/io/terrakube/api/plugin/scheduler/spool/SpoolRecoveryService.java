@@ -31,6 +31,10 @@ import java.util.UUID;
 @Service
 public class SpoolRecoveryService {
 
+    private static final String CONTEXT_REVISIONS = "contextRevisions";
+    private static final String STRUCTURED_OUTPUT_STATUS = "structuredOutputStatus";
+    private static final String NO_CHANGE_PLAN = "noChangePlan";
+
     private final StepRepository stepRepository;
     private final JobRepository jobRepository;
     private final StorageTypeService storageTypeService;
@@ -366,64 +370,98 @@ public class SpoolRecoveryService {
         mergeContextMaps(target, 0L, patch);
     }
 
-    @SuppressWarnings("unchecked")
     public void mergeContextMaps(Map<String, Object> target, long deliveryRevision, Map<String, Object> patch) {
-        Map<String, Object> revisions;
-        Object revisionsObj = target.get("contextRevisions");
-        if (revisionsObj instanceof Map<?, ?> map) {
-            revisions = (Map<String, Object>) map;
-        } else {
-            revisions = new LinkedHashMap<>();
-            target.put("contextRevisions", revisions);
-        }
+        Map<String, Object> revisions = resolveRevisionsMap(target);
 
         for (Map.Entry<String, Object> entry : patch.entrySet()) {
-            String key = entry.getKey();
-            Object patchVal = entry.getValue();
+            mergeEntry(target, revisions, entry.getKey(), entry.getValue(), deliveryRevision);
+        }
+    }
 
-            long existingRevision = extractEpoch(revisions.get(key));
-            if (deliveryRevision > 0 && existingRevision > 0 && deliveryRevision <= existingRevision) {
-                log.info("Skipping recovery patch entry {} because existing revision {} >= spooled revision {}",
-                        key, existingRevision, deliveryRevision);
-                continue;
-            }
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> resolveRevisionsMap(Map<String, Object> target) {
+        Object revisionsObj = target.get(CONTEXT_REVISIONS);
+        if (revisionsObj instanceof Map<?, ?> map) {
+            return (Map<String, Object>) map;
+        }
+        Map<String, Object> revisions = new LinkedHashMap<>();
+        target.put(CONTEXT_REVISIONS, revisions);
+        return revisions;
+    }
 
-            if ("structuredOutputStatus".equals(key)) {
-                if (shouldSkipStructuredOutputStatus(target.get("structuredOutputStatus"), patchVal)) {
-                    log.info("Skipping structuredOutputStatus merge because target is newer or higher priority");
-                    continue;
-                }
-                target.put(key, patchVal);
-                if (deliveryRevision > 0) {
-                    revisions.put(key, deliveryRevision);
-                }
-                continue;
-            }
+    private void mergeEntry(Map<String, Object> target, Map<String, Object> revisions,
+                            String key, Object patchVal, long deliveryRevision) {
+        if (isStaleRevision(revisions, key, deliveryRevision)) {
+            return;
+        }
 
-            if ("noChangePlan".equals(key)) {
-                if (target.containsKey("applyStructuredOutput") || target.containsKey("terraformApply") || isApplyPhase(target.get("structuredOutputStatus"))) {
-                    log.info("Skipping noChangePlan merge because apply already executed");
-                    continue;
-                }
-                target.put(key, patchVal);
-                if (deliveryRevision > 0) {
-                    revisions.put(key, deliveryRevision);
-                }
-                continue;
-            }
+        if (STRUCTURED_OUTPUT_STATUS.equals(key)) {
+            mergeStructuredOutputStatus(target, revisions, patchVal, deliveryRevision);
+            return;
+        }
 
-            if (patchVal instanceof Map<?, ?> patchMap && target.get(key) instanceof Map<?, ?> targetMap) {
-                Map<String, Object> mergedSubMap = new LinkedHashMap<>((Map<String, Object>) targetMap);
-                mergedSubMap.putAll((Map<String, Object>) patchMap);
-                target.put(key, mergedSubMap);
-            } else {
-                target.put(key, patchVal);
-            }
+        if (NO_CHANGE_PLAN.equals(key)) {
+            mergeNoChangePlan(target, revisions, patchVal, deliveryRevision);
+            return;
+        }
 
-            if (deliveryRevision > 0) {
-                revisions.put(key, deliveryRevision);
-                revisions.entrySet().removeIf(e -> e.getKey().startsWith(key + "/") && extractEpoch(e.getValue()) <= deliveryRevision);
-            }
+        applyValueAndRecordRevision(target, revisions, key, patchVal, deliveryRevision);
+    }
+
+    private boolean isStaleRevision(Map<String, Object> revisions, String key, long deliveryRevision) {
+        long existingRevision = extractEpoch(revisions.get(key));
+        if (deliveryRevision > 0 && existingRevision > 0 && deliveryRevision <= existingRevision) {
+            log.info("Skipping recovery patch entry {} because existing revision {} >= spooled revision {}",
+                    key, existingRevision, deliveryRevision);
+            return true;
+        }
+        return false;
+    }
+
+    private void mergeStructuredOutputStatus(Map<String, Object> target, Map<String, Object> revisions,
+                                             Object patchVal, long deliveryRevision) {
+        if (shouldSkipStructuredOutputStatus(target.get(STRUCTURED_OUTPUT_STATUS), patchVal)) {
+            log.info("Skipping structuredOutputStatus merge because target is newer or higher priority");
+            return;
+        }
+        target.put(STRUCTURED_OUTPUT_STATUS, patchVal);
+        if (deliveryRevision > 0) {
+            revisions.put(STRUCTURED_OUTPUT_STATUS, deliveryRevision);
+        }
+    }
+
+    private void mergeNoChangePlan(Map<String, Object> target, Map<String, Object> revisions,
+                                   Object patchVal, long deliveryRevision) {
+        if (shouldSkipNoChangePlan(target)) {
+            log.info("Skipping noChangePlan merge because apply already executed");
+            return;
+        }
+        target.put(NO_CHANGE_PLAN, patchVal);
+        if (deliveryRevision > 0) {
+            revisions.put(NO_CHANGE_PLAN, deliveryRevision);
+        }
+    }
+
+    private boolean shouldSkipNoChangePlan(Map<String, Object> target) {
+        return target.containsKey("applyStructuredOutput")
+                || target.containsKey("terraformApply")
+                || isApplyPhase(target.get(STRUCTURED_OUTPUT_STATUS));
+    }
+
+    @SuppressWarnings("unchecked")
+    private void applyValueAndRecordRevision(Map<String, Object> target, Map<String, Object> revisions,
+                                             String key, Object patchVal, long deliveryRevision) {
+        if (patchVal instanceof Map<?, ?> patchMap && target.get(key) instanceof Map<?, ?> targetMap) {
+            Map<String, Object> mergedSubMap = new LinkedHashMap<>((Map<String, Object>) targetMap);
+            mergedSubMap.putAll((Map<String, Object>) patchMap);
+            target.put(key, mergedSubMap);
+        } else {
+            target.put(key, patchVal);
+        }
+
+        if (deliveryRevision > 0) {
+            revisions.put(key, deliveryRevision);
+            revisions.entrySet().removeIf(e -> e.getKey().startsWith(key + "/") && extractEpoch(e.getValue()) <= deliveryRevision);
         }
     }
 

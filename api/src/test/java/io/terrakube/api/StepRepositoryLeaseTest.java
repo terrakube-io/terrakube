@@ -165,4 +165,27 @@ class StepRepositoryLeaseTest extends ServerApplicationTests {
         assertThat(reloaded.getLeaseOwner()).isNull();
         assertThat(reloaded.getLeaseUntil()).isNull();
     }
+
+    @Test
+    void releaseLeaseClearsLease() {
+        Job job = createTestJob();
+        Date now = new Date();
+
+        Step step = new Step();
+        step.setJob(job);
+        step.setStepNumber(1);
+        step.setName("step-release");
+        step.setStatus(JobStatus.completed);
+        step.setDeliveryState(DeliveryState.SPOOLED);
+        step.setLeaseOwner("worker-pod");
+        step.setLeaseUntil(new Date(now.getTime() + 60_000));
+        step = stepRepository.saveAndFlush(step);
+
+        int released = stepRepository.releaseLease(step.getId());
+        assertThat(released).isEqualTo(1);
+
+        Step reloaded = stepRepository.findById(step.getId()).orElseThrow();
+        assertThat(reloaded.getLeaseOwner()).isNull();
+        assertThat(reloaded.getLeaseUntil()).isNull();
+    }
 }

@@ -20,7 +20,7 @@ public class StepDeliveryStateHook implements LifeCycleHook<Step> {
     public void execute(Operation operation, TransactionPhase phase, Step step, RequestScope requestScope,
             Optional<ChangeSpec> changes) {
         if (operation == Operation.UPDATE || operation == Operation.CREATE) {
-            if (changes != null && changes.isPresent()) {
+            if (changes.isPresent()) {
                 Object modified = changes.get().getModified();
                 if (isIllegalExternalState(modified)) {
                     log.warn("Attempt to set illegal deliveryState {} externally on step {}", modified, step != null ? step.getId() : "null");

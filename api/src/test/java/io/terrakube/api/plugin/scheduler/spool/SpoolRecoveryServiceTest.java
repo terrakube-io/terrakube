@@ -661,7 +661,7 @@ class SpoolRecoveryServiceTest {
                 metricsMock);
 
         // Simulate updateDeliveryState returning 0 (lease owner changed / lost lease)
-        when(stepRepository.updateDeliveryState(eq(stepId), eq(DeliveryState.RECOVERED), eq("my-worker"))).thenReturn(0);
+        when(stepRepository.updateDeliveryState(stepId, DeliveryState.RECOVERED, "my-worker")).thenReturn(0);
 
         Map<String, Object> envelope = Map.of(
                 "organizationId", orgId.toString(),
