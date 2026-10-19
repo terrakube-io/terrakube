@@ -685,6 +685,39 @@ describe("plan approval attribution", () => {
   });
 });
 
+describe("run closed by Terrakube", () => {
+  const mockJob = (output?: string) => {
+    useStructuredOutputStreamMock.mockReturnValue(null);
+    sessionStorage.setItem("ORGANIZATION_ARCHIVE", "org-1");
+    getMock.mockImplementation((url: string) =>
+      Promise.resolve({
+        data: url.includes("/context/v1/")
+          ? {}
+          : {
+              data: { id: "7", attributes: { status: "cancelled", createdBy: "author@example.com", output } },
+              included: [],
+            },
+      })
+    );
+  };
+
+  it("shows why Terrakube closed the run", async () => {
+    mockJob("Closed by Terrakube: Approval was not given within 48 hours, the run was cancelled.");
+    render(<DetailsJob jobId="7" />);
+
+    expect(await screen.findByText("Run closed by Terrakube")).toBeInTheDocument();
+    expect(screen.getByText("Approval was not given within 48 hours, the run was cancelled.")).toBeInTheDocument();
+  });
+
+  it("shows no notice for a run that was closed some other way", async () => {
+    mockJob("Step 1 completed");
+    render(<DetailsJob jobId="7" />);
+
+    await waitFor(() => expect(screen.getByText("Run #7")).toBeInTheDocument());
+    expect(screen.queryByText("Run closed by Terrakube")).not.toBeInTheDocument();
+  });
+});
+
 describe("run actions", () => {
   it("asks before approving, states what the plan destroys, then approves", async () => {
     useStructuredOutputStreamMock.mockReturnValue(null);

@@ -1,9 +1,10 @@
 package io.terrakube.api.plugin.scheduler.reconciliation;
 
+import io.terrakube.api.plugin.scheduler.JobStatusChangeService;
 import io.terrakube.api.plugin.scheduler.ScheduleJobService;
 import io.terrakube.api.repository.JobRepository;
 import io.terrakube.api.repository.StepRepository;
-import io.terrakube.api.plugin.workspace.WorkspaceJobStatusService;
+import io.terrakube.api.repository.WorkspaceRepository;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.job.step.Step;
@@ -21,6 +22,7 @@ import org.quartz.SchedulerException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataAccessException;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Component;
@@ -31,6 +33,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Date;
 import java.util.List;
+import java.util.Optional;
 import java.util.Properties;
 import java.util.UUID;
 
@@ -61,6 +64,9 @@ public class JobReconciliationSweep implements org.quartz.Job {
     // re-populate before trusting a missing key means the executor is actually dead.
     private static final Duration REDIS_WARMUP_PERIOD = Duration.ofSeconds(90);
 
+    // Workspaces corrected per sweep, so a large backlog is worked off over a few sweeps.
+    private static final int STALE_WORKSPACE_BATCH = 100;
+
     // Same key ScheduleJob's withExecutionLock uses, so a sweep-driven reconcile and a live
     // ScheduleJob firing for the same job id never run concurrently across replicas.
     private static final String EXECUTION_LOCK_PREFIX = "job-execution-lock:";
@@ -68,13 +74,14 @@ public class JobReconciliationSweep implements org.quartz.Job {
 
     JobRepository jobRepository;
     StepRepository stepRepository;
-    WorkspaceJobStatusService workspaceJobStatusService;
+    WorkspaceRepository workspaceRepository;
     Scheduler scheduler;
     ScheduleJobService scheduleJobService;
     RedisTemplate<String, Object> redisTemplate;
     ReconciliationProperties properties;
     JobReconciliationService reconciliationService;
     JobReconciliationMetrics metrics;
+    JobStatusChangeService jobStatusChangeService;
     Duration heartbeatGracePeriod;
     StorageTypeService storageTypeService;
     SpoolRecoveryService spoolRecoveryService;
@@ -83,25 +90,27 @@ public class JobReconciliationSweep implements org.quartz.Job {
     public JobReconciliationSweep(
             JobRepository jobRepository,
             StepRepository stepRepository,
-            WorkspaceJobStatusService workspaceJobStatusService,
+            WorkspaceRepository workspaceRepository,
             Scheduler scheduler,
             ScheduleJobService scheduleJobService,
             RedisTemplate<String, Object> redisTemplate,
             ReconciliationProperties properties,
             JobReconciliationService reconciliationService,
             JobReconciliationMetrics metrics,
+            JobStatusChangeService jobStatusChangeService,
             @Value("${io.terrakube.scheduler.reconciliation.heartbeat-grace-period-seconds:${ReconciliationHeartbeatGracePeriodSeconds:300}}") long heartbeatGracePeriodSeconds,
             StorageTypeService storageTypeService,
             SpoolRecoveryService spoolRecoveryService) {
         this.jobRepository = jobRepository;
         this.stepRepository = stepRepository;
-        this.workspaceJobStatusService = workspaceJobStatusService;
+        this.workspaceRepository = workspaceRepository;
         this.scheduler = scheduler;
         this.scheduleJobService = scheduleJobService;
         this.redisTemplate = redisTemplate;
         this.properties = properties;
         this.reconciliationService = reconciliationService;
         this.metrics = metrics;
+        this.jobStatusChangeService = jobStatusChangeService;
         this.heartbeatGracePeriod = Duration.ofSeconds(heartbeatGracePeriodSeconds);
         this.storageTypeService = storageTypeService;
         this.spoolRecoveryService = spoolRecoveryService;
@@ -127,6 +136,38 @@ public class JobReconciliationSweep implements org.quartz.Job {
             reconcileTrigger(job);
             if (isExecutorOwnedStatus(job.getStatus())) {
                 failIfExecutorHeartbeatExpired(job, redisRecentlyRestarted);
+            }
+        }
+        if (properties.isSweepEnabled()) {
+            repairStaleWorkspaceStatus();
+        }
+    }
+
+    // A workspace whose last job status says "waiting approval", "running" etc. although none of its
+    // runs is active has been left behind by a status change made without Elide's hooks (#3727).
+    // Correct it from the workspace's newest run. Only that stale-active shape is repaired: the
+    // status otherwise legitimately follows whichever run changed last, so comparing it with the
+    // newest run in general would flip it back and forth.
+    private void repairStaleWorkspaceStatus() {
+        List<Workspace> stale = workspaceRepository.findWithStaleActiveJobStatus(
+                ACTIVE_STATUSES, PageRequest.of(0, STALE_WORKSPACE_BATCH));
+        for (Workspace workspace : stale) {
+            try {
+                Optional<Job> newest = jobRepository.findFirstByWorkspaceOrderByIdDesc(workspace);
+                JobStatus actual = newest.map(Job::getStatus).orElse(JobStatus.NeverExecuted);
+                JobStatus previous = workspace.getLastJobStatus();
+                log.warn("Workspace {} shows {} but has no active run, setting it to {}",
+                        workspace.getId(), previous, actual);
+                if (!properties.isAutoRemediate()) {
+                    continue;
+                }
+                workspace.setLastJobStatus(actual);
+                workspace.setLastJobDate(newest.map(Job::getUpdatedDate).orElse(new Date(System.currentTimeMillis())));
+                workspaceRepository.save(workspace);
+                metrics.workspaceStatusRepaired(previous);
+            } catch (RuntimeException e) {
+                log.warn("Could not repair the status of workspace {}, will retry next sweep",
+                        workspace.getId(), e);
             }
         }
     }
@@ -280,11 +321,10 @@ public class JobReconciliationSweep implements org.quartz.Job {
                 stepRepository.save(step);
             }
         }
-        // updateStatusById is a bulk JPQL update - it bypasses Elide's JobManageHook (which
-        // normally keeps workspace.lastJobStatus in sync on every entity-managed job update), so
-        // without this the workspace list UI would keep showing the job's previous status
-        // (typically "running") forever after this sweep fails it.
-        workspaceJobStatusService.refresh(job);
+        // updateStatusByIdAndStatusIn is a bulk JPQL update that bypasses Elide's hooks, so do what
+        // they would have done: keep workspace.lastJobStatus in sync, publish the live status event
+        // and send the notifications.
+        jobStatusChangeService.afterStatusChanged(job);
         try {
             scheduler.deleteJob(new JobKey(PREFIX_JOB_CONTEXT + job.getId()));
         } catch (SchedulerException e) {

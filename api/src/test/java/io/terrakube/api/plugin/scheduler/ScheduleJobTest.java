@@ -54,6 +54,7 @@ import io.terrakube.api.plugin.scheduler.job.tcl.model.Command;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.Flow;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.FlowType;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.ScheduleTemplate;
+import io.terrakube.api.plugin.scheduler.inactive.InactiveJobsProperties;
 import io.terrakube.api.plugin.softdelete.SoftDeleteService;
 import io.terrakube.api.plugin.variable.IncompleteVariableException;
 import io.terrakube.api.plugin.variable.InvalidVariableCategoryException;
@@ -113,6 +114,8 @@ public class ScheduleJobTest {
     DispatchRetryProperties dispatchRetryProperties;
     DispatchRetryCalculator dispatchRetryCalculator;
     DispatchRetryMetrics dispatchRetryMetrics;
+    InactiveJobsProperties inactiveJobsProperties = new InactiveJobsProperties();
+    JobStatusChangeService jobStatusChangeService = mock(JobStatusChangeService.class);
 
     UUID stepId = UUID.randomUUID();
 
@@ -203,7 +206,9 @@ public class ScheduleJobTest {
                 reconciliationProperties,
                 dispatchRetryProperties,
                 dispatchRetryCalculator,
-                dispatchRetryMetrics);
+                dispatchRetryMetrics,
+                inactiveJobsProperties,
+                jobStatusChangeService);
     }
 
     private Job job(JobStatus status) {
@@ -248,6 +253,42 @@ public class ScheduleJobTest {
 
         verify(gitLabWebhookService, times(1)).sendCommitStatus(job, JobStatus.unknown, null);
         Assertions.assertEquals(JobStatus.failed, job.getStatus());
+    }
+
+    @Test
+    public void expiredJobsRunTheStatusChangeFollowUpAndRecordWhy() {
+        Job job = job(JobStatus.pending);
+        job.setCreatedDate(DateUtils.addDays(new Date(System.currentTimeMillis()), -1));
+
+        doReturn(job).when(jobRepository).save(any());
+        doReturn(job.getStep()).when(stepRepository).findByJobId(anyInt());
+        doReturn(null).when(stepRepository).save(any());
+        doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any(), any());
+
+        Assertions.assertTrue(subject().runExecution(job));
+
+        verify(jobStatusChangeService, times(1)).afterStatusChanged(job);
+        Assertions.assertTrue(job.getOutput().contains("Closed by Terrakube: The run did not finish within 6 hours"));
+    }
+
+    @Test
+    public void aRunWaitingForApprovalIsNotClosedByTheSixHourLimit() {
+        Job job = job(JobStatus.waitingApproval);
+        job.setCreatedDate(DateUtils.addDays(new Date(System.currentTimeMillis()), -2));
+
+        org.mockito.Mockito.lenient().doReturn(Optional.of(Collections.emptyList()))
+                .when(jobRepository)
+                .findByWorkspaceAndStatusNotInAndIdLessThan(any(Workspace.class), anyList(), anyInt());
+        org.mockito.Mockito.lenient().doReturn(Collections.emptyList()).when(globalVarRepository).findByOrganization(any());
+        org.mockito.Mockito.lenient().doReturn(Optional.of(Collections.emptyList())).when(variableRepository).findByWorkspace(any());
+        org.mockito.Mockito.lenient().doReturn(false).when(tclService).isTemplatePlanOnly(any());
+        org.mockito.Mockito.lenient().doReturn(job.getStep()).when(stepRepository).findByJobId(anyInt());
+        org.mockito.Mockito.lenient().doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
+
+        subject().runExecution(job);
+
+        Assertions.assertEquals(JobStatus.waitingApproval, job.getStatus());
+        verify(jobStatusChangeService, never()).afterStatusChanged(any());
     }
 
     @Test

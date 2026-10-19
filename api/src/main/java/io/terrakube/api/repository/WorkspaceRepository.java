@@ -1,6 +1,7 @@
 package io.terrakube.api.repository;
 
 import io.terrakube.api.rs.Organization;
+import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.workspace.Workspace;
 import jakarta.persistence.LockModeType;
 import jakarta.persistence.QueryHint;
@@ -23,6 +24,16 @@ public interface WorkspaceRepository extends JpaRepository<Workspace, UUID> {
      * rather than an unguarded findAll() that loads the entire table into memory.
      */
     Page<Workspace> findAll(Pageable pageable);
+
+    /**
+     * Workspaces whose last job status says a run is still active although none of their runs is.
+     * That is what a status change made without Elide's hooks leaves behind (#3727): the run
+     * finished or was closed, but the workspace list keeps showing "Waiting approval" or "Running".
+     */
+    @Query("SELECT w FROM workspace w WHERE w.deleted = false AND w.lastJobStatus IN :activeStatuses" +
+            " AND NOT EXISTS (SELECT 1 FROM job j WHERE j.workspace = w AND j.status IN :activeStatuses)")
+    List<Workspace> findWithStaleActiveJobStatus(@Param("activeStatuses") List<JobStatus> activeStatuses,
+                                                 Pageable pageable);
 
     Workspace getByOrganizationNameAndName(String organizationName, String workspaceName);
 

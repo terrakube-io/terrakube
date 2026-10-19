@@ -1,11 +1,11 @@
 package io.terrakube.api.plugin.scheduler.inactive;
 
 import io.terrakube.api.plugin.vcs.provider.azdevops.AzDevOpsWebhookService;
+import io.terrakube.api.plugin.scheduler.JobStatusChangeService;
 import io.terrakube.api.plugin.vcs.provider.gitlab.GitLabWebhookService;
 import io.terrakube.api.rs.vcs.Vcs;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.time.DateUtils;
 import org.quartz.JobExecutionContext;
 import org.quartz.JobExecutionException;
 import org.quartz.JobKey;
@@ -22,6 +22,7 @@ import io.terrakube.api.rs.job.step.Step;
 
 import java.util.Arrays;
 import java.util.Date;
+import java.util.Optional;
 
 import static io.terrakube.api.plugin.scheduler.ScheduleJobService.PREFIX_JOB_CONTEXT;
 
@@ -36,6 +37,8 @@ public class InactiveJobs implements org.quartz.Job {
     private final GitHubWebhookService gitHubWebhookService;
     private final AzDevOpsWebhookService azDevOpsWebhookService;
     private final StepRepository stepRepository;
+    private final InactiveJobsProperties properties;
+    private final JobStatusChangeService jobStatusChangeService;
 
     @Transactional
     @Override
@@ -50,29 +53,27 @@ public class InactiveJobs implements org.quartz.Job {
                 continue;
             }
 
-            Date currentTime = new Date(System.currentTimeMillis());
-            Date jobExpirationDate = DateUtils.addHours(job.getCreatedDate(), 6);
-            log.info("Inactive Job {} should be completed before {}, current time {}", job.getId(), jobExpirationDate, currentTime);
-            if (!currentTime.after(jobExpirationDate)) {
+            Optional<InactiveJobsProperties.Expiry> expiry = properties.expiryOf(job, new Date(System.currentTimeMillis()));
+            if (expiry.isEmpty()) {
                 continue;
             }
 
+            log.warn("Closing Job {} as {}: {}", job.getId(), expiry.get().finalStatus(), expiry.get().reason());
             try {
-                closeExpiredJob(job, jobExecutionContext);
+                closeExpiredJob(job, expiry.get(), jobExecutionContext);
             } catch (Exception e) {
                 log.error("Failed to close inactive job {}", job.getId(), e);
             }
-
-            log.warn("Closing Job {}", job.getId());
         }
     }
 
-    private void closeExpiredJob(Job job, JobExecutionContext jobExecutionContext) throws Exception {
-        log.error("Job has been running for more than 6 hours, cancelling running job {}", job.getId());
-        jobRepository.updateStatusById(JobStatus.failed, job.getId());
+    private void closeExpiredJob(Job job, InactiveJobsProperties.Expiry expiry, JobExecutionContext jobExecutionContext) throws Exception {
+        expiry.applyTo(job);
+        jobRepository.save(job);
         redisTemplate.delete(String.valueOf(job.getId()));
+        jobStatusChangeService.afterStatusChanged(job);
 
-        failPendingSteps(job);
+        failPendingSteps(job, expiry.finalStatus());
 
         if (job.getWorkspace() == null) {
             log.warn("Job {} belongs to a deleted or filtered workspace, skipping VCS status update", job.getId());
@@ -115,11 +116,11 @@ public class InactiveJobs implements org.quartz.Job {
         jobExecutionContext.getScheduler().deleteJob(new JobKey(PREFIX_JOB_CONTEXT + job.getId()));
     }
 
-    private void failPendingSteps(Job job) {
-        log.warn("Cancelling pending steps");
+    private void failPendingSteps(Job job, JobStatus finalStatus) {
+        log.warn("Closing pending steps as {}", finalStatus);
         for (Step step : stepRepository.findByJobId(job.getId())) {
             if (step.getStatus().equals(JobStatus.pending) || step.getStatus().equals(JobStatus.running)) {
-                step.setStatus(JobStatus.failed);
+                step.setStatus(finalStatus);
                 stepRepository.save(step);
             }
         }

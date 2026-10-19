@@ -436,4 +436,140 @@ class JobDispatchOrderRepositoryIntegrationTest {
 
         assertThat(jobRepository.countJobsHeldByLockedWorkspace()).isEqualTo(1);
     }
+
+    // --- Stale workspace status (#3727) ----------------------------------------------------
+
+    private Workspace workspaceShowing(JobStatus lastJobStatus) {
+        Workspace workspace = newWorkspace();
+        workspace.setLastJobStatus(lastJobStatus);
+        return workspaceRepository.saveAndFlush(workspace);
+    }
+
+    private static final java.util.List<JobStatus> ACTIVE = java.util.List.of(JobStatus.pending, JobStatus.approved,
+            JobStatus.waitingApproval, JobStatus.queue, JobStatus.running);
+
+    private java.util.List<UUID> staleIds() {
+        return workspaceRepository.findWithStaleActiveJobStatus(ACTIVE, org.springframework.data.domain.PageRequest.of(0, 100))
+                .stream().map(Workspace::getId).toList();
+    }
+
+    @Test
+    void aWorkspaceShowingWaitingApprovalWithOnlyFinishedRunsIsStale() {
+        Workspace stale = workspaceShowing(JobStatus.waitingApproval);
+        newJob(stale, JobStatus.completed);
+        newJob(stale, JobStatus.failed);
+
+        assertThat(staleIds()).contains(stale.getId());
+    }
+
+    @Test
+    void aWorkspaceShowingAnActiveStatusWithNoRunsAtAllIsStale() {
+        Workspace stale = workspaceShowing(JobStatus.running);
+
+        assertThat(staleIds()).contains(stale.getId());
+    }
+
+    @Test
+    void aWorkspaceWithAnActiveRunIsNotStaleWhateverItsLastStatusSays() {
+        Workspace hasWaiting = workspaceShowing(JobStatus.pending);
+        newJob(hasWaiting, JobStatus.waitingApproval);
+        newJob(hasWaiting, JobStatus.pending);
+
+        assertThat(staleIds()).doesNotContain(hasWaiting.getId());
+    }
+
+    @Test
+    void aWorkspaceShowingAFinishedStatusIsNeverReportedAsStale() {
+        Workspace finished = workspaceShowing(JobStatus.failed);
+        newJob(finished, JobStatus.failed);
+        Workspace neverRun = workspaceShowing(JobStatus.NeverExecuted);
+
+        assertThat(staleIds()).doesNotContain(finished.getId(), neverRun.getId());
+    }
+
+    @Test
+    void aDeletedWorkspaceIsNotReportedAsStale() {
+        Workspace deleted = workspaceShowing(JobStatus.waitingApproval);
+        deleted.setDeleted(true);
+        workspaceRepository.saveAndFlush(deleted);
+
+        assertThat(staleIds()).doesNotContain(deleted.getId());
+    }
+
+    // The reproduction from #3727, against a real database.
+    @Autowired
+    private io.terrakube.api.plugin.scheduler.inactive.InactiveJobs inactiveJobs;
+    @Autowired
+    private io.terrakube.api.plugin.scheduler.inactive.InactiveJobsProperties inactiveJobsProperties;
+
+    private void runInactiveJobs() throws Exception {
+        org.quartz.JobExecutionContext context = org.mockito.Mockito.mock(org.quartz.JobExecutionContext.class);
+        org.mockito.Mockito.doReturn(org.mockito.Mockito.mock(org.quartz.Scheduler.class)).when(context).getScheduler();
+        inactiveJobs.execute(context);
+    }
+
+    private Job oldJob(Workspace workspace, JobStatus status, int hoursOld) {
+        Job job = newJob(workspace, status);
+        jobRepository.flush();
+        java.sql.Timestamp created = new java.sql.Timestamp(System.currentTimeMillis() - hoursOld * 3_600_000L);
+        jdbcTemplate.update("update job set created_date = ?, updated_date = ? where id = ?", created, created, job.getId());
+        jobRepository.flush();
+        entityManager.clear();
+        return jobRepository.findById(job.getId()).orElseThrow();
+    }
+
+    @Autowired
+    private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
+    @jakarta.persistence.PersistenceContext
+    private jakarta.persistence.EntityManager entityManager;
+
+    @Test
+    void aRunWaitingForApprovalForSevenHoursIsNotClosedByDefault() throws Exception {
+        Workspace workspace = workspaceShowing(JobStatus.waitingApproval);
+        Job job = oldJob(workspace, JobStatus.waitingApproval, 7);
+
+        runInactiveJobs();
+
+        entityManager.flush();
+        entityManager.clear();
+        assertThat(jobRepository.findById(job.getId()).orElseThrow().getStatus()).isEqualTo(JobStatus.waitingApproval);
+        assertThat(workspaceRepository.findById(workspace.getId()).orElseThrow().getLastJobStatus())
+                .isEqualTo(JobStatus.waitingApproval);
+    }
+
+    @Test
+    void aRunClosedByTheLimitUpdatesTheWorkspaceAndRecordsWhy() throws Exception {
+        Workspace workspace = workspaceShowing(JobStatus.running);
+        Job job = oldJob(workspace, JobStatus.running, 7);
+
+        runInactiveJobs();
+
+        entityManager.flush();
+        entityManager.clear();
+        Job closed = jobRepository.findById(job.getId()).orElseThrow();
+        assertThat(closed.getStatus()).isEqualTo(JobStatus.failed);
+        assertThat(closed.getOutput()).contains("Closed by Terrakube: The run did not finish within 6 hours");
+        Workspace reloaded = workspaceRepository.findById(workspace.getId()).orElseThrow();
+        assertThat(reloaded.getLastJobStatus()).isEqualTo(JobStatus.failed);
+        assertThat(reloaded.getLastJobDate()).isNotNull();
+    }
+
+    @Test
+    void anApprovalClosedByTheOptInTimeoutCancelsTheRunAndUpdatesTheWorkspace() throws Exception {
+        inactiveJobsProperties.setWaitingApprovalTimeoutHours(48);
+        try {
+            Workspace workspace = workspaceShowing(JobStatus.waitingApproval);
+            Job job = oldJob(workspace, JobStatus.waitingApproval, 72);
+
+            runInactiveJobs();
+
+            entityManager.flush();
+            entityManager.clear();
+            assertThat(jobRepository.findById(job.getId()).orElseThrow().getStatus()).isEqualTo(JobStatus.cancelled);
+            assertThat(workspaceRepository.findById(workspace.getId()).orElseThrow().getLastJobStatus())
+                    .isEqualTo(JobStatus.cancelled);
+        } finally {
+            inactiveJobsProperties.setWaitingApprovalTimeoutHours(0);
+        }
+    }
 }
