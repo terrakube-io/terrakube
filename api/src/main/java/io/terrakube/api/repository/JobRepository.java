@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.transaction.annotation.Transactional;
 import io.terrakube.api.rs.workspace.Workspace;
 
 import java.util.List;
@@ -60,6 +61,13 @@ public interface JobRepository extends JpaRepository<Job, Integer> {
      */
     Optional<Job> findFirstByWorkspaceAndPrNumberAndIdNotAndAutoApplyFalseAndPrCommentIdIsNotNullOrderByIdDesc(
             Workspace workspace, Integer prNumber, int id);
+
+    // Only the PR comment columns, so a service that holds an old copy of the job cannot write the rest of
+    // it back, and a job that was pruned meanwhile is not written again (0 rows, not a new row).
+    @Transactional
+    @Modifying(flushAutomatically = true)
+    @Query("update job j set j.prCommentId = :commentId, j.prCommentError = :error where j.id = :jobId")
+    int updatePrComment(@Param("jobId") int jobId, @Param("commentId") String commentId, @Param("error") String error);
 
     @Modifying(flushAutomatically = true)
     @Query("update job j set j.status = :status where j.id = :jobId")
