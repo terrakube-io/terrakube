@@ -92,4 +92,92 @@ describe("WorkspaceDetails", () => {
 
     expect(screen.getByText("Remote")).toBeInTheDocument();
   });
+
+  const renderOverviewWithRuns = async (runs: Array<{ id: string; status: string }>) => {
+    getMock.mockImplementation((url: string) => {
+      if (url.includes("/workspace/ws-1")) {
+        return Promise.resolve({
+          data: {
+            data: {
+              id: "ws-1",
+              type: "workspace",
+              attributes: {
+                name: "sample-workspace",
+                description: "Test workspace",
+                source: "https://github.com/example/repo.git",
+                branch: "main",
+                executionMode: "remote",
+                terraformVersion: "1.5.0",
+                iacType: "terraform",
+                folder: "/",
+              },
+              relationships: { organization: { data: { id: "org-1" } } },
+            },
+            included: [
+              { id: "org-1", type: "organization", attributes: { name: "test-org" } },
+              ...runs.map((run) => ({
+                id: run.id,
+                type: "job",
+                attributes: {
+                  status: run.status,
+                  createdBy: "someone",
+                  createdDate: "2026-10-19T10:00:00Z",
+                  updatedDate: "2026-10-19T10:05:00Z",
+                  via: "UI",
+                },
+              })),
+            ],
+          },
+        });
+      }
+      return Promise.resolve({ data: { data: [] } });
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/organizations/org-1/workspaces/ws-1"]}>
+        <Routes>
+          <Route
+            path="/organizations/:orgid/workspaces/:id"
+            element={<WorkspaceDetails setOrganizationName={jest.fn()} setWorkspaceManageState={jest.fn()} />}
+          />
+        </Routes>
+      </MemoryRouter>
+    );
+  };
+
+  it("keeps the run waiting for approval in the card when newer runs queue behind it", async () => {
+    await renderOverviewWithRuns([
+      { id: "1", status: "completed" },
+      { id: "2", status: "waitingApproval" },
+      { id: "3", status: "pending" },
+      { id: "4", status: "pending" },
+    ]);
+
+    const card = await screen.findByRole("article", { name: "Current run" });
+    expect(card).toHaveTextContent("#2");
+    expect(card).toHaveTextContent("2 more runs queued behind this one");
+    expect(screen.getByRole("heading", { name: "Current run" })).toBeInTheDocument();
+  });
+
+  it("does not let a newer finished run replace the run waiting for approval", async () => {
+    await renderOverviewWithRuns([
+      { id: "2", status: "waitingApproval" },
+      { id: "3", status: "completed" },
+    ]);
+
+    const card = await screen.findByRole("article", { name: "Current run" });
+    expect(card).toHaveTextContent("#2");
+    expect(card).not.toHaveTextContent("queued behind");
+  });
+
+  it("shows the newest run as the latest run when every run is finished", async () => {
+    await renderOverviewWithRuns([
+      { id: "1", status: "failed" },
+      { id: "2", status: "completed" },
+    ]);
+
+    const card = await screen.findByRole("article", { name: "Latest run" });
+    expect(card).toHaveTextContent("#2");
+    expect(screen.getByRole("heading", { name: "Latest run" })).toBeInTheDocument();
+  });
 });

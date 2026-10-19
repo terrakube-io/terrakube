@@ -31,6 +31,7 @@ import {
   recordReconciliationResult,
 } from "./contextAvailability";
 import { getPublicApiOrigin } from "./outputUrl";
+import { hasBlockingPolicyViolations } from "./policyViolations";
 import { shouldStepBeCollapsible, shouldStepBeExpandedByDefault } from "./stepExpansion";
 import { isTerminalStatus } from "./stepStatus";
 import { StepConsole } from "./StepConsole";
@@ -39,7 +40,8 @@ import {
   StructuredApplyOutputByStep,
   StructuredOutputsByStep,
   StructuredPlanOutputByStep,
-  getPlanChangeActionLabel,
+  computePlanTotals,
+  formatPlanSummary,
   normalizeJobDiagnostics,
   normalizeStructuredApplyOutput,
   normalizeStructuredOutputs,
@@ -137,11 +139,7 @@ export const DetailsJob = ({ jobId, workspaceName, canApprove = false }: Props) 
   const [terraformOutputs, setTerraformOutputs] = useState<StructuredOutputsByStep>({});
   const [jobDiagnostics, setJobDiagnostics] = useState<JobDiagnosticsByStep>({});
   const [policyEvaluation, setPolicyEvaluation] = useState<PolicyEvaluationContext | undefined>(undefined);
-  const hasPolicySoftViolations = useMemo(() => {
-    if (!policyEvaluation) return false;
-    if ((policyEvaluation.softMandatoryViolations ?? 0) > 0) return true;
-    return Boolean(policyEvaluation.results?.some((r) => (r.softMandatoryViolations ?? 0) > 0));
-  }, [policyEvaluation]);
+  const hasPolicyBlockingViolations = useMemo(() => hasBlockingPolicyViolations(policyEvaluation), [policyEvaluation]);
   const [contextAvailability, setContextAvailability] = useState<ContextAvailability>("pending");
   // Sticky: once a persisted context has been seen, a later transient 503 does not un-see it.
   const [contextEverPersisted, setContextEverPersisted] = useState(false);
@@ -645,23 +643,9 @@ export const DetailsJob = ({ jobId, workspaceName, canApprove = false }: Props) 
   }, [liveStructuredOutput, loadContext]);
 
   // What the approver is signing off on, from the structured plan of every plan step on this run.
-  const planTotals = useMemo(() => {
-    const totals = { create: 0, update: 0, delete: 0, replace: 0 };
-    let seen = false;
-    for (const changes of Object.values(planStructuredOutput)) {
-      for (const change of changes) {
-        seen = true;
-        const label = getPlanChangeActionLabel(change.actions, change.action);
-        if (label in totals) totals[label as keyof typeof totals] += 1;
-      }
-    }
-    return seen ? totals : null;
-  }, [planStructuredOutput]);
+  const planTotals = useMemo(() => computePlanTotals(planStructuredOutput), [planStructuredOutput]);
 
-  const planSummary = planTotals
-    ? `${planTotals.create} to add, ${planTotals.update} to change, ${planTotals.delete} to destroy` +
-      (planTotals.replace ? `, ${planTotals.replace} to replace` : "")
-    : null;
+  const planSummary = planTotals ? formatPlanSummary(planTotals) : null;
 
   // Approve, discard and cancel all ask first, and say what will happen to the infrastructure.
   const [confirmAction, setConfirmAction] = useState<"approve" | "discard" | "cancel" | null>(null);
@@ -707,7 +691,7 @@ export const DetailsJob = ({ jobId, workspaceName, canApprove = false }: Props) 
   const isConfirmActionAllowed = (action: "approve" | "discard" | "cancel") =>
     action === "cancel"
       ? currentStatus === "running" || currentStatus === "pending"
-      : currentStatus === "waitingApproval" && !hasPolicySoftViolations && canApprove;
+      : currentStatus === "waitingApproval" && !hasPolicyBlockingViolations && canApprove;
   const confirmActionAllowed = confirmAction != null && isConfirmActionAllowed(confirmAction);
   const pendingConfirm = confirmAction && confirmActionAllowed ? confirmCopy[confirmAction] : null;
 
@@ -726,7 +710,7 @@ export const DetailsJob = ({ jobId, workspaceName, canApprove = false }: Props) 
     const status = job?.data?.attributes.status;
     const approvalTeam = job?.data?.attributes.approvalTeam;
 
-    if (status === "waitingApproval" && !hasPolicySoftViolations) {
+    if (status === "waitingApproval" && !hasPolicyBlockingViolations) {
       return (
         <div className="job-action-bar" role="region" aria-label="Run approval">
           <div className="job-action-bar-text">

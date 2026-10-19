@@ -201,6 +201,7 @@ export type FlatJob = {
   createdBy: string;
   approvedBy?: string | null;
   approvedAt?: string | null;
+  approvalTeam?: string | null;
   via?: JobVia;
   prNumber?: number;
   prCommentError?: string;
