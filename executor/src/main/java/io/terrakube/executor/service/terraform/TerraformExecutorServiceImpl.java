@@ -157,10 +157,10 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         List<Map<String, Object>> liveChanges = new ArrayList<>();
         List<Map<String, Object>> jobDiagnostics = new ArrayList<>();
         TerraformJsonEventParser eventParser = new TerraformJsonEventParser(objectMapper);
+        boolean planCommandExecuted = false;
         try {
             File terraformWorkingDir = getTerraformWorkingDir(terraformJob, executorTempDirectory);
             boolean executionPlan = false;
-            boolean planCommandExecuted = false;
             int exitCode = 0;
             boolean hasSoftViolations = false;
             String overrideTeam = null;
@@ -322,7 +322,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             logsService.flush();
             drainStructuredOutputQueue(terraformJob.getJobId());
 
-            long planRevision = System.currentTimeMillis();
+            long planRevision = ContextRevision.next(terraformJob.getJobId());
             terraformJob.setDeliveryRevision(planRevision);
             // Synchronous authoritative final snapshot delivery with explicit ACK from the API.
             String planDeliveryState = "NOT_DURABLE";
@@ -349,12 +349,14 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             // UI needs - publish what was parsed before it broke, then let it drain.
             logsService.flush();
             String failureDeliveryState = "NOT_DURABLE";
-            long failureRevision = System.currentTimeMillis();
+            long failureRevision = ContextRevision.next(terraformJob.getJobId());
             try {
                 drainStructuredOutputQueue(terraformJob.getJobId());
-                failureDeliveryState = planStructuredOutputService.publishFinalPlanSnapshotSynchronous(
-                        terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), failureRevision,
-                        liveChanges, jobDiagnostics);
+                if (planCommandExecuted || (jobDiagnostics != null && !jobDiagnostics.isEmpty()) || (liveChanges != null && !liveChanges.isEmpty())) {
+                    failureDeliveryState = planStructuredOutputService.publishFinalPlanSnapshotSynchronous(
+                            terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), failureRevision,
+                            liveChanges, jobDiagnostics);
+                }
             } catch (Exception e) {
                 log.warn("Unable to publish final plan snapshot after failure for job {}", terraformJob.getJobId(), e);
             }
@@ -478,7 +480,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             logsService.flush();
             drainStructuredOutputQueue(terraformJob.getJobId());
 
-            long applyRevision = System.currentTimeMillis();
+            long applyRevision = ContextRevision.next(terraformJob.getJobId());
             // Synchronous authoritative final apply snapshot delivery with explicit ACK from the API.
             String applyDeliveryState = applyStructuredOutputService.publishFinalApplySynchronous(
                     terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), applyRevision,
@@ -491,12 +493,14 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         } catch (IOException | ExecutionException | InterruptedException exception) {
             logsService.flush();
             String failureDeliveryState = "NOT_DURABLE";
-            long failureRevision = System.currentTimeMillis();
+            long failureRevision = ContextRevision.next(terraformJob.getJobId());
             try {
                 drainStructuredOutputQueue(terraformJob.getJobId());
-                failureDeliveryState = applyStructuredOutputService.publishFinalApplySynchronous(
-                        terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), failureRevision,
-                        terraformJob.getLiveChanges(), terraformJob.getJobDiagnostics());
+                if ((terraformJob.getJobDiagnostics() != null && !terraformJob.getJobDiagnostics().isEmpty()) || (terraformJob.getLiveChanges() != null && !terraformJob.getLiveChanges().isEmpty())) {
+                    failureDeliveryState = applyStructuredOutputService.publishFinalApplySynchronous(
+                            terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), failureRevision,
+                            terraformJob.getLiveChanges(), terraformJob.getJobDiagnostics());
+                }
             } catch (Exception e) {
                 log.warn("Unable to publish final apply snapshot after failure for job {}", terraformJob.getJobId(), e);
             }
@@ -780,7 +784,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             logsService.flush();
             drainStructuredOutputQueue(terraformJob.getJobId());
 
-            long destroyRevision = System.currentTimeMillis();
+            long destroyRevision = ContextRevision.next(terraformJob.getJobId());
             String destroyDeliveryState = applyStructuredOutputService.publishFinalApplySynchronous(
                     terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), destroyRevision,
                     terraformJob.getLiveChanges(), terraformJob.getJobDiagnostics());
@@ -792,12 +796,14 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         } catch (IOException | ExecutionException | InterruptedException exception) {
             logsService.flush();
             String failureDeliveryState = "NOT_DURABLE";
-            long failureRevision = System.currentTimeMillis();
+            long failureRevision = ContextRevision.next(terraformJob.getJobId());
             try {
                 drainStructuredOutputQueue(terraformJob.getJobId());
-                failureDeliveryState = applyStructuredOutputService.publishFinalApplySynchronous(
-                        terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), failureRevision,
-                        terraformJob.getLiveChanges(), terraformJob.getJobDiagnostics());
+                if ((terraformJob.getJobDiagnostics() != null && !terraformJob.getJobDiagnostics().isEmpty()) || (terraformJob.getLiveChanges() != null && !terraformJob.getLiveChanges().isEmpty())) {
+                    failureDeliveryState = applyStructuredOutputService.publishFinalApplySynchronous(
+                            terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), failureRevision,
+                            terraformJob.getLiveChanges(), terraformJob.getJobDiagnostics());
+                }
             } catch (Exception e) {
                 log.warn("Unable to publish final apply snapshot after destroy failure for job {}", terraformJob.getJobId(), e);
             }

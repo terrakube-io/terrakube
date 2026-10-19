@@ -58,6 +58,12 @@ public class LocalTerraformStateImpl implements TerraformState {
     @NonNull
     TerraformStatePathService terraformStatePathService;
 
+    @Builder.Default
+    private String sharedDirectory = System.getProperty("terrakube.local.shared.directory", System.getenv("TERRAKUBE_LOCAL_SHARED_DIRECTORY"));
+
+    @Builder.Default
+    private boolean sharedStorage = Boolean.parseBoolean(System.getProperty("terrakube.local.shared", System.getenv().getOrDefault("TERRAKUBE_LOCAL_SHARED", "false")));
+
     @NonNull
     StorageRetryMetrics storageRetryMetrics;
 
@@ -335,10 +341,16 @@ public class LocalTerraformStateImpl implements TerraformState {
 
     @Override
     public String spoolContextPatch(String organizationId, String jobId, String stepId, String phase, byte[] data) {
+        boolean hasSharedDir = sharedDirectory != null && !sharedDirectory.isBlank();
+        if (!sharedStorage && !hasSharedDir) {
+            log.warn("Local storage has no shared path configured across containers; spooling is not durable");
+            return null;
+        }
+        String basePath = hasSharedDir ? sharedDirectory : FileUtils.getUserDirectoryPath();
         String relativePath = String.format(LOCAL_CONTEXT_SPOOL_DIRECTORY, organizationId, jobId, stepId, phase);
         log.info("Spooling context patch to local storage: {}", relativePath);
         try {
-            File targetFile = resolveSafeFile(FileUtils.getUserDirectoryPath(), relativePath);
+            File targetFile = resolveSafeFile(basePath, relativePath);
             storageRetryMetrics.withRetry("local", "spool-write", () -> {
                 FileUtils.forceMkdir(targetFile.getParentFile());
                 File tempFile = new File(targetFile.getParentFile(), targetFile.getName() + ".tmp." + UUID.randomUUID());

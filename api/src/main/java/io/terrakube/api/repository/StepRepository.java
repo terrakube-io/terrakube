@@ -8,6 +8,8 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import org.springframework.transaction.annotation.Transactional;
+
 import java.util.Date;
 import java.util.List;
 import java.util.Optional;
@@ -25,6 +27,7 @@ public interface StepRepository extends JpaRepository<Step, UUID> {
             @Param("now") Date now,
             Pageable pageable);
 
+    @Transactional
     @Modifying(clearAutomatically = true)
     @Query("UPDATE step s SET s.leaseOwner = :owner, s.leaseUntil = :leaseUntil WHERE s.id = :stepId AND s.deliveryState = io.terrakube.api.rs.job.step.DeliveryState.SPOOLED AND (s.leaseUntil IS NULL OR s.leaseUntil < :now)")
     int acquireLease(
@@ -33,14 +36,25 @@ public interface StepRepository extends JpaRepository<Step, UUID> {
             @Param("leaseUntil") Date leaseUntil,
             @Param("now") Date now);
 
+    @Transactional
     @Modifying(clearAutomatically = true)
-    @Query("UPDATE step s SET s.leaseOwner = null, s.leaseUntil = null WHERE s.id = :stepId")
-    int releaseLease(@Param("stepId") UUID stepId);
+    @Query("UPDATE step s SET s.leaseOwner = null, s.leaseUntil = null WHERE s.id = :stepId AND (:owner IS NULL OR s.leaseOwner = :owner)")
+    int releaseLease(@Param("stepId") UUID stepId, @Param("owner") String owner);
 
+    default int releaseLease(UUID stepId) {
+        return releaseLease(stepId, null);
+    }
+
+    @Transactional
     @Modifying(clearAutomatically = true)
-    @Query("UPDATE step s SET s.deliveryState = :newState, s.leaseOwner = null, s.leaseUntil = null WHERE s.id = :stepId")
+    @Query("UPDATE step s SET s.deliveryState = :newState, s.leaseOwner = null, s.leaseUntil = null WHERE s.id = :stepId AND (:owner IS NULL OR s.leaseOwner = :owner)")
     int updateDeliveryState(
             @Param("stepId") UUID stepId,
-            @Param("newState") DeliveryState newState);
+            @Param("newState") DeliveryState newState,
+            @Param("owner") String owner);
+
+    default int updateDeliveryState(UUID stepId, DeliveryState newState) {
+        return updateDeliveryState(stepId, newState, null);
+    }
 }
 

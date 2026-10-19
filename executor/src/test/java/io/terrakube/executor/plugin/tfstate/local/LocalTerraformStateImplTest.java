@@ -38,6 +38,7 @@ class LocalTerraformStateImplTest {
                 .terrakubeClient(terrakubeClient)
                 .terraformOutputPathService(terraformOutputPathService)
                 .terraformStatePathService(terraformStatePathService)
+                .sharedStorage(true)
                 .storageRetryMetrics(new io.terrakube.executor.plugin.tfstate.StorageRetryMetrics(
                         new io.micrometer.core.instrument.simple.SimpleMeterRegistry()))
                 .build();
@@ -299,6 +300,21 @@ class LocalTerraformStateImplTest {
     @Test
     void testSpoolContextPatchPathTraversalRejected() {
         String result = localTerraformState.spoolContextPatch("../../etc", "job1", "step1", "plan", "data".getBytes());
+        assertNull(result);
+    }
+
+    @Test
+    void testSpoolContextPatchReturnsNullWhenNoSharedPath() {
+        LocalTerraformStateImpl unsharedState = LocalTerraformStateImpl.builder()
+                .terrakubeClient(terrakubeClient)
+                .terraformOutputPathService(terraformOutputPathService)
+                .terraformStatePathService(terraformStatePathService)
+                .sharedStorage(false)
+                .sharedDirectory(null)
+                .storageRetryMetrics(new io.terrakube.executor.plugin.tfstate.StorageRetryMetrics(
+                        new io.micrometer.core.instrument.simple.SimpleMeterRegistry()))
+                .build();
+        String result = unsharedState.spoolContextPatch("org1", "job1", "step1", "plan", "data".getBytes());
         assertNull(result);
     }
 }

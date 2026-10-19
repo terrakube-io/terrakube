@@ -9,8 +9,14 @@
             <column name="delivery_revision" type="bigint"/>
             <column name="delivery_timestamp" type="bigint"/>
             <column name="lease_owner" type="varchar(255)"/>
-            <column name="lease_until" type="timestamp"/>
+            <column name="lease_until" type="datetime"/>
         </addColumn>
+    </changeSet>
+
+    <changeSet id="2-34-0-step-delivery-state-index" author="terrakube">
+        <preConditions onFail="MARK_RAN">
+            <not><indexExists indexName="idx_step_delivery_state" tableName="step"/></not>
+        </preConditions>
         <createIndex tableName="step" indexName="idx_step_delivery_state">
             <column name="delivery_state"/>
             <column name="lease_until"/>

@@ -3,6 +3,9 @@ package io.terrakube.api.plugin.scheduler.spool;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.terrakube.api.plugin.context.ContextReadService;
+import io.terrakube.api.plugin.context.ContextSanitizer;
+import io.terrakube.api.plugin.context.ContextUnavailableException;
+import io.terrakube.api.plugin.context.ContextWriteLock;
 import io.terrakube.api.plugin.policy.PolicyEvaluationService;
 import io.terrakube.api.plugin.storage.StorageTypeService;
 import io.terrakube.api.repository.JobRepository;
@@ -13,30 +16,20 @@ import io.terrakube.api.rs.job.step.Step;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
-import org.springframework.data.redis.core.RedisTemplate;
-
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.time.Duration;
 import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.zip.GZIPInputStream;
-
-import io.terrakube.api.plugin.context.ContextSanitizer;
 
 @Slf4j
 @Service
 public class SpoolRecoveryService {
-
-    private static final String CONTEXT_LOCK_PREFIX = "job-context-lock:";
-    private static final Duration CONTEXT_LOCK_TTL = Duration.ofSeconds(30);
 
     private final StepRepository stepRepository;
     private final JobRepository jobRepository;
@@ -46,7 +39,8 @@ public class SpoolRecoveryService {
     private final ContextReadService contextReadService;
     private final PolicyEvaluationService policyEvaluationService;
     private final ContextSanitizer contextSanitizer;
-    private final RedisTemplate<String, Object> redisTemplate;
+    private final ContextWriteLock contextWriteLock;
+    private final SpoolRecoveryMetrics metrics;
 
     @Autowired
     public SpoolRecoveryService(
@@ -58,7 +52,8 @@ public class SpoolRecoveryService {
             @Autowired(required = false) ContextReadService contextReadService,
             @Autowired(required = false) PolicyEvaluationService policyEvaluationService,
             @Autowired(required = false) ContextSanitizer contextSanitizer,
-            @Autowired(required = false) RedisTemplate<String, Object> redisTemplate) {
+            @Autowired(required = false) ContextWriteLock contextWriteLock,
+            @Autowired(required = false) SpoolRecoveryMetrics metrics) {
         this.stepRepository = stepRepository;
         this.jobRepository = jobRepository;
         this.storageTypeService = storageTypeService;
@@ -67,7 +62,19 @@ public class SpoolRecoveryService {
         this.contextReadService = contextReadService;
         this.policyEvaluationService = policyEvaluationService;
         this.contextSanitizer = contextSanitizer;
-        this.redisTemplate = redisTemplate;
+        this.contextWriteLock = contextWriteLock;
+        this.metrics = metrics;
+    }
+
+    public SpoolRecoveryService(
+            StepRepository stepRepository,
+            JobRepository jobRepository,
+            StorageTypeService storageTypeService,
+            ObjectMapper objectMapper,
+            SpoolRecoveryProperties properties,
+            ContextReadService contextReadService,
+            PolicyEvaluationService policyEvaluationService) {
+        this(stepRepository, jobRepository, storageTypeService, objectMapper, properties, contextReadService, policyEvaluationService, null, null, null);
     }
 
     public SpoolRecoveryService(
@@ -79,7 +86,7 @@ public class SpoolRecoveryService {
             ContextReadService contextReadService,
             PolicyEvaluationService policyEvaluationService,
             ContextSanitizer contextSanitizer) {
-        this(stepRepository, jobRepository, storageTypeService, objectMapper, properties, contextReadService, policyEvaluationService, contextSanitizer, null);
+        this(stepRepository, jobRepository, storageTypeService, objectMapper, properties, contextReadService, policyEvaluationService, contextSanitizer, null, null);
     }
 
     public SpoolRecoveryService(
@@ -89,8 +96,24 @@ public class SpoolRecoveryService {
             ObjectMapper objectMapper,
             SpoolRecoveryProperties properties,
             ContextReadService contextReadService,
-            PolicyEvaluationService policyEvaluationService) {
-        this(stepRepository, jobRepository, storageTypeService, objectMapper, properties, contextReadService, policyEvaluationService, null, null);
+            PolicyEvaluationService policyEvaluationService,
+            ContextSanitizer contextSanitizer,
+            ContextWriteLock contextWriteLock) {
+        this(stepRepository, jobRepository, storageTypeService, objectMapper, properties, contextReadService, policyEvaluationService, contextSanitizer, contextWriteLock, null);
+    }
+
+    public SpoolRecoveryService(
+            StepRepository stepRepository,
+            JobRepository jobRepository,
+            StorageTypeService storageTypeService,
+            ObjectMapper objectMapper,
+            SpoolRecoveryProperties properties,
+            ContextReadService contextReadService,
+            PolicyEvaluationService policyEvaluationService,
+            ContextSanitizer contextSanitizer,
+            RedisTemplate<String, Object> redisTemplate) {
+        this(stepRepository, jobRepository, storageTypeService, objectMapper, properties, contextReadService, policyEvaluationService, contextSanitizer,
+                redisTemplate != null ? new ContextWriteLock(redisTemplate) : null, null);
     }
 
     public int recoverPendingSpooledSteps() {
@@ -116,6 +139,7 @@ public class SpoolRecoveryService {
                 log.debug("Step {} already leased by another worker", step.getId());
                 continue;
             }
+            step.setLeaseOwner(workerId);
             try {
                 if (recoverStep(step)) {
                     recoveredCount++;
@@ -128,11 +152,15 @@ public class SpoolRecoveryService {
     }
 
     public boolean recoverStep(Step step) {
+        String leaseOwner = step.getLeaseOwner();
         Job job = step.getJob();
         if (job == null && step.getId() != null) {
             Optional<Step> freshStep = stepRepository.findById(step.getId());
             if (freshStep.isPresent()) {
                 step = freshStep.get();
+                if (leaseOwner != null) {
+                    step.setLeaseOwner(leaseOwner);
+                }
                 job = step.getJob();
             }
         }
@@ -153,7 +181,16 @@ public class SpoolRecoveryService {
         if (timestamp > 0 && (System.currentTimeMillis() - timestamp > properties.getRetentionHours() * 3600_000L)) {
             log.warn("Spooled output for step {} job {} expired (> {} hours), marking EXPIRED and cleaning up",
                     stepId, jobId, properties.getRetentionHours());
-            stepRepository.updateDeliveryState(step.getId(), DeliveryState.EXPIRED);
+            int updated = stepRepository.updateDeliveryState(step.getId(), DeliveryState.EXPIRED, leaseOwner);
+            if (updated == 0 && leaseOwner != null) {
+                log.warn("Lost lease while marking step {} expired", stepId);
+                if (metrics != null) {
+                    metrics.leaseLost();
+                }
+            }
+            if (metrics != null) {
+                metrics.stepExpired();
+            }
             for (String phase : List.of("plan", "apply")) {
                 storageTypeService.deleteSpooledContextPatch(orgId, jobId, stepId, phase);
             }
@@ -170,18 +207,24 @@ public class SpoolRecoveryService {
                             stepId, jobId, phase, spooledBytes.length, properties.getMaxCompressedBytes());
                     storageTypeService.deleteSpooledContextPatch(orgId, jobId, stepId, phase);
                     anyCorruptedOrInvalid = true;
+                    if (metrics != null) {
+                        metrics.spoolCorrupted();
+                    }
                     continue;
                 }
 
                 Map<String, Object> payload;
                 try {
-                    byte[] uncompressed = gunzip(spooledBytes, properties.getMaxUncompressedBytes());
+                    byte[] uncompressed = SpoolCompressionUtil.gunzip(spooledBytes, properties.getMaxUncompressedBytes());
                     payload = objectMapper.readValue(uncompressed, new TypeReference<Map<String, Object>>() {});
                 } catch (Exception e) {
                     log.error("Failed to decompress or parse spooled patch for step {} job {} phase {}: {}. Deleting corrupted spool.",
                             stepId, jobId, phase, e.getMessage(), e);
                     storageTypeService.deleteSpooledContextPatch(orgId, jobId, stepId, phase);
                     anyCorruptedOrInvalid = true;
+                    if (metrics != null) {
+                        metrics.spoolCorrupted();
+                    }
                     continue;
                 }
 
@@ -192,7 +235,15 @@ public class SpoolRecoveryService {
                             stepId, jobId, phase, orgId, jobId, stepId, phase, envelope);
                     storageTypeService.deleteSpooledContextPatch(orgId, jobId, stepId, phase);
                     anyCorruptedOrInvalid = true;
+                    if (metrics != null) {
+                        metrics.spoolCorrupted();
+                    }
                     continue;
+                }
+
+                long deliveryRevision = extractEpoch(envelope.get("deliveryRevision"));
+                if (deliveryRevision <= 0 && step.getDeliveryRevision() != null) {
+                    deliveryRevision = step.getDeliveryRevision();
                 }
 
                 @SuppressWarnings("unchecked")
@@ -200,7 +251,7 @@ public class SpoolRecoveryService {
                 if (patch != null && !patch.isEmpty()) {
                     boolean merged;
                     try {
-                        merged = mergeAndSaveContext(job.getId(), patch);
+                        merged = mergeAndSaveContext(job.getId(), deliveryRevision, patch);
                     } catch (Exception e) {
                         log.warn("Transient error applying spooled patch for step {} job {} phase {}: {}. Will retry next sweep.",
                                 stepId, jobId, phase, e.getMessage(), e);
@@ -213,18 +264,36 @@ public class SpoolRecoveryService {
                         return false;
                     }
                     anyRecovered = true;
+                    if (metrics != null) {
+                        metrics.stepRecovered(phase);
+                    }
                 }
                 storageTypeService.deleteSpooledContextPatch(orgId, jobId, stepId, phase);
             }
         }
 
         if (anyRecovered) {
-            stepRepository.updateDeliveryState(step.getId(), DeliveryState.RECOVERED);
+            int updated = stepRepository.updateDeliveryState(step.getId(), DeliveryState.RECOVERED, leaseOwner);
+            if (updated == 0 && leaseOwner != null) {
+                log.warn("Lost lease while marking step {} recovered", stepId);
+                if (metrics != null) {
+                    metrics.leaseLost();
+                }
+            }
             log.info("Successfully recovered spooled structured output for step {} job {}", stepId, jobId);
             return true;
         } else if (anyCorruptedOrInvalid) {
             log.warn("Spooled output for step {} job {} was corrupted or invalid, marking EXPIRED", stepId, jobId);
-            stepRepository.updateDeliveryState(step.getId(), DeliveryState.EXPIRED);
+            int updated = stepRepository.updateDeliveryState(step.getId(), DeliveryState.EXPIRED, leaseOwner);
+            if (updated == 0 && leaseOwner != null) {
+                log.warn("Lost lease while marking corrupted step {} expired", stepId);
+                if (metrics != null) {
+                    metrics.leaseLost();
+                }
+            }
+            if (metrics != null) {
+                metrics.stepExpired();
+            }
             return false;
         } else {
             log.debug("No spooled context patch found for step {} job {}", stepId, jobId);
@@ -249,10 +318,18 @@ public class SpoolRecoveryService {
     }
 
     public boolean mergeAndSaveContext(int jobId, Map<String, Object> patch) throws IOException {
-        String lockToken = acquireContextLock(jobId);
-        if (lockToken == null) {
-            log.warn("Could not acquire context lock for job {}, aborting concurrent context merge", jobId);
-            return false;
+        return mergeAndSaveContext(jobId, 0L, patch);
+    }
+
+    public boolean mergeAndSaveContext(int jobId, long deliveryRevision, Map<String, Object> patch) throws IOException {
+        String lockToken = null;
+        if (contextWriteLock != null) {
+            try {
+                lockToken = contextWriteLock.acquire(jobId);
+            } catch (ContextUnavailableException e) {
+                log.warn("Could not acquire context lock for job {}: {}", jobId, e.getMessage());
+                return false;
+            }
         }
         try {
             String currentContextJson = storageTypeService.getContext(jobId);
@@ -265,7 +342,7 @@ public class SpoolRecoveryService {
                     currentContext = new LinkedHashMap<>();
                 }
             }
-            mergeContextMaps(currentContext, patch);
+            mergeContextMaps(currentContext, deliveryRevision, patch);
             String updatedContextJson = objectMapper.writeValueAsString(currentContext);
             if (contextSanitizer != null) {
                 updatedContextJson = contextSanitizer.sanitize(updatedContextJson);
@@ -279,44 +356,37 @@ public class SpoolRecoveryService {
             }
             return true;
         } finally {
-            releaseContextLock(jobId, lockToken);
-        }
-    }
-
-    private String acquireContextLock(int jobId) {
-        if (redisTemplate == null) {
-            return "NO_REDIS";
-        }
-        String token = UUID.randomUUID().toString();
-        try {
-            Boolean acquired = redisTemplate.opsForValue()
-                    .setIfAbsent(CONTEXT_LOCK_PREFIX + jobId, token, CONTEXT_LOCK_TTL);
-            return Boolean.TRUE.equals(acquired) ? token : null;
-        } catch (Exception e) {
-            log.warn("Could not reach Redis to acquire context lock for Job {}: {}", jobId, e.getMessage());
-            return null;
-        }
-    }
-
-    private void releaseContextLock(int jobId, String lockToken) {
-        if (redisTemplate == null || lockToken == null || "NO_REDIS".equals(lockToken)) {
-            return;
-        }
-        try {
-            Object current = redisTemplate.opsForValue().get(CONTEXT_LOCK_PREFIX + jobId);
-            if (lockToken.equals(current)) {
-                redisTemplate.delete(CONTEXT_LOCK_PREFIX + jobId);
+            if (contextWriteLock != null && lockToken != null) {
+                contextWriteLock.release(jobId, lockToken);
             }
-        } catch (Exception e) {
-            log.warn("Could not reach Redis to release context lock for Job {}: {}", jobId, e.getMessage());
         }
+    }
+
+    public void mergeContextMaps(Map<String, Object> target, Map<String, Object> patch) {
+        mergeContextMaps(target, 0L, patch);
     }
 
     @SuppressWarnings("unchecked")
-    private void mergeContextMaps(Map<String, Object> target, Map<String, Object> patch) {
+    public void mergeContextMaps(Map<String, Object> target, long deliveryRevision, Map<String, Object> patch) {
+        Map<String, Object> revisions;
+        Object revisionsObj = target.get("contextRevisions");
+        if (revisionsObj instanceof Map<?, ?> map) {
+            revisions = (Map<String, Object>) map;
+        } else {
+            revisions = new LinkedHashMap<>();
+            target.put("contextRevisions", revisions);
+        }
+
         for (Map.Entry<String, Object> entry : patch.entrySet()) {
             String key = entry.getKey();
             Object patchVal = entry.getValue();
+
+            long existingRevision = extractEpoch(revisions.get(key));
+            if (deliveryRevision > 0 && existingRevision > 0 && deliveryRevision <= existingRevision) {
+                log.info("Skipping recovery patch entry {} because existing revision {} >= spooled revision {}",
+                        key, existingRevision, deliveryRevision);
+                continue;
+            }
 
             if ("structuredOutputStatus".equals(key)) {
                 if (shouldSkipStructuredOutputStatus(target.get("structuredOutputStatus"), patchVal)) {
@@ -324,6 +394,9 @@ public class SpoolRecoveryService {
                     continue;
                 }
                 target.put(key, patchVal);
+                if (deliveryRevision > 0) {
+                    revisions.put(key, deliveryRevision);
+                }
                 continue;
             }
 
@@ -333,6 +406,9 @@ public class SpoolRecoveryService {
                     continue;
                 }
                 target.put(key, patchVal);
+                if (deliveryRevision > 0) {
+                    revisions.put(key, deliveryRevision);
+                }
                 continue;
             }
 
@@ -342,6 +418,11 @@ public class SpoolRecoveryService {
                 target.put(key, mergedSubMap);
             } else {
                 target.put(key, patchVal);
+            }
+
+            if (deliveryRevision > 0) {
+                revisions.put(key, deliveryRevision);
+                revisions.entrySet().removeIf(e -> e.getKey().startsWith(key + "/") && extractEpoch(e.getValue()) <= deliveryRevision);
             }
         }
     }
@@ -382,31 +463,21 @@ public class SpoolRecoveryService {
 
     private void clearLease(Step step) {
         if (step != null && step.getId() != null) {
-            stepRepository.releaseLease(step.getId());
+            int released = stepRepository.releaseLease(step.getId(), step.getLeaseOwner());
+            if (released == 0 && step.getLeaseOwner() != null) {
+                log.debug("Lease for step {} already expired or held by another owner", step.getId());
+                if (metrics != null) {
+                    metrics.leaseLost();
+                }
+            }
         }
     }
 
     public static byte[] gunzip(byte[] compressed) throws IOException {
-        return gunzip(compressed, 15 * 1024 * 1024);
+        return SpoolCompressionUtil.gunzip(compressed);
     }
 
     public static byte[] gunzip(byte[] compressed, int maxUncompressedBytes) throws IOException {
-        if (compressed == null) {
-            return new byte[0];
-        }
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        try (GZIPInputStream gzis = new GZIPInputStream(new ByteArrayInputStream(compressed))) {
-            byte[] buffer = new byte[8192];
-            int total = 0;
-            int read;
-            while ((read = gzis.read(buffer)) != -1) {
-                total += read;
-                if (total > maxUncompressedBytes) {
-                    throw new IOException("Uncompressed spool payload exceeds maximum size of " + maxUncompressedBytes + " bytes");
-                }
-                baos.write(buffer, 0, read);
-            }
-        }
-        return baos.toByteArray();
+        return SpoolCompressionUtil.gunzip(compressed, maxUncompressedBytes);
     }
 }

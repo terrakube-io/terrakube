@@ -22,7 +22,7 @@ class StepDeliveryStateMigrationTest {
         assertTrue(xml.contains("<column name=\"delivery_revision\" type=\"bigint\"/>"));
         assertTrue(xml.contains("<column name=\"delivery_timestamp\" type=\"bigint\"/>"));
         assertTrue(xml.contains("<column name=\"lease_owner\" type=\"varchar(255)\"/>"));
-        assertTrue(xml.contains("<column name=\"lease_until\" type=\"timestamp\"/>"));
+        assertTrue(xml.contains("<column name=\"lease_until\" type=\"datetime\"/>"));
         assertTrue(xml.contains("indexName=\"idx_step_delivery_state\""));
     }
 

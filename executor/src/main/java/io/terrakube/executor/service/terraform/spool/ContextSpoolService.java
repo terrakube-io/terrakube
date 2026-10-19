@@ -54,14 +54,14 @@ public class ContextSpoolService {
             payload.put("patch", patch);
 
             byte[] jsonBytes = objectMapper.writeValueAsBytes(payload);
-            if (jsonBytes.length > MAX_UNCOMPRESSED_BYTES) {
-                log.warn("Uncompressed spool payload exceeds limit of {} bytes for job {} step {}", MAX_UNCOMPRESSED_BYTES, jobId, stepId);
+            if (jsonBytes.length > SpoolCompressionUtil.MAX_UNCOMPRESSED_BYTES) {
+                log.warn("Uncompressed spool payload exceeds limit of {} bytes for job {} step {}", SpoolCompressionUtil.MAX_UNCOMPRESSED_BYTES, jobId, stepId);
                 return null;
             }
 
-            byte[] gzippedBytes = gzip(jsonBytes);
-            if (gzippedBytes.length > MAX_COMPRESSED_BYTES) {
-                log.warn("Compressed spool payload exceeds limit of {} bytes for job {} step {}", MAX_COMPRESSED_BYTES, jobId, stepId);
+            byte[] gzippedBytes = SpoolCompressionUtil.gzip(jsonBytes);
+            if (gzippedBytes.length > SpoolCompressionUtil.MAX_COMPRESSED_BYTES) {
+                log.warn("Compressed spool payload exceeds limit of {} bytes for job {} step {}", SpoolCompressionUtil.MAX_COMPRESSED_BYTES, jobId, stepId);
                 return null;
             }
 
@@ -74,38 +74,15 @@ public class ContextSpoolService {
     }
 
     public static byte[] gzip(byte[] input) throws IOException {
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        try (GZIPOutputStream gzos = new GZIPOutputStream(baos)) {
-            gzos.write(input);
-        }
-        return baos.toByteArray();
+        return SpoolCompressionUtil.gzip(input);
     }
 
     public static byte[] gunzip(byte[] compressed) throws IOException {
-        return gunzip(compressed, MAX_UNCOMPRESSED_BYTES);
+        return SpoolCompressionUtil.gunzip(compressed);
     }
 
     public static byte[] gunzip(byte[] compressed, int maxUncompressedBytes) throws IOException {
-        if (compressed == null) {
-            return new byte[0];
-        }
-        if (compressed.length > MAX_COMPRESSED_BYTES) {
-            throw new IOException("Compressed spool payload exceeds maximum size of " + MAX_COMPRESSED_BYTES + " bytes");
-        }
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        try (GZIPInputStream gzis = new GZIPInputStream(new ByteArrayInputStream(compressed))) {
-            byte[] buffer = new byte[8192];
-            int total = 0;
-            int read;
-            while ((read = gzis.read(buffer)) != -1) {
-                total += read;
-                if (total > maxUncompressedBytes) {
-                    throw new IOException("Uncompressed spool payload exceeds maximum size of " + maxUncompressedBytes + " bytes");
-                }
-                baos.write(buffer, 0, read);
-            }
-        }
-        return baos.toByteArray();
+        return SpoolCompressionUtil.gunzip(compressed, maxUncompressedBytes);
     }
 
     public Map<String, Object> deserializePayload(byte[] gzippedBytes) throws IOException {

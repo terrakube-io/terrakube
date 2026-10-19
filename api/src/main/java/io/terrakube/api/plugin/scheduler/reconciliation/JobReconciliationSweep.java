@@ -177,7 +177,6 @@ public class JobReconciliationSweep implements org.quartz.Job {
             return null; // a live ScheduleJob firing (or another replica's sweep) owns this job now
         }
         try {
-            probeAndRecoverSpooledSteps(job);
             return reconciliationService.reconcile(job.getId(), !properties.isAutoRemediate());
         } catch (RuntimeException e) {
             log.warn("Reconciliation of zero-pending job {} failed this sweep, will retry: {}",
@@ -355,6 +354,7 @@ public class JobReconciliationSweep implements org.quartz.Job {
                         String owner = "reconciliation-probe-" + UUID.randomUUID();
                         int leased = stepRepository.acquireLease(step.getId(), owner, leaseUntil, now);
                         if (leased > 0 && spoolRecoveryService != null) {
+                            step.setLeaseOwner(owner);
                             spoolRecoveryService.recoverStep(step);
                         }
                         break;

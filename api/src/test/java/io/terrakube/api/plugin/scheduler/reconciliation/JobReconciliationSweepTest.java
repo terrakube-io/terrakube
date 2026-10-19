@@ -468,7 +468,7 @@ class JobReconciliationSweepTest {
     }
 
     @Test
-    void zeroPendingJobProbesAndRecoversSpooledSteps() throws Exception {
+    void zeroPendingJob_DoesNotProbeStorage_WhenExecutorAlive() throws Exception {
         io.terrakube.api.plugin.storage.StorageTypeService storageTypeService = mock(io.terrakube.api.plugin.storage.StorageTypeService.class);
         io.terrakube.api.plugin.scheduler.spool.SpoolRecoveryService spoolRecoveryService = mock(io.terrakube.api.plugin.scheduler.spool.SpoolRecoveryService.class);
 
@@ -488,12 +488,6 @@ class JobReconciliationSweepTest {
         doReturn(true).when(scheduler).checkExists(new JobKey("TerrakubeV2_Job_55"));
         doReturn(true).when(redisTemplate).hasKey("executor-job-heartbeat:55");
         doReturn(List.of(completedStep)).when(stepRepository).findByJobId(55);
-        doReturn(completedStep).when(stepRepository).save(any(Step.class));
-        doReturn(1).when(stepRepository).acquireLease(eq(stepId), anyString(), any(Date.class), any(Date.class));
-
-        doReturn(true).when(storageTypeService).hasSpooledContextPatch(org.getId().toString(), "55", stepId.toString(), "apply");
-        doReturn(false).when(storageTypeService).hasSpooledContextPatch(org.getId().toString(), "55", stepId.toString(), "plan");
-        doReturn(true).when(spoolRecoveryService).recoverStep(any(Step.class));
 
         ReconciliationResult reconResult = new ReconciliationResult(55, JobStatus.running, DerivedOutcome.COMPLETED,
                 JobStatus.completed, ReconciliationResult.ReconciliationDisposition.APPLIED, List.of());
@@ -506,8 +500,8 @@ class JobReconciliationSweepTest {
 
         sweepWithSpool.execute(null);
 
-        verify(storageTypeService).hasSpooledContextPatch(org.getId().toString(), "55", stepId.toString(), "apply");
-        verify(stepRepository).acquireLease(eq(stepId), anyString(), any(Date.class), any(Date.class));
-        verify(spoolRecoveryService).recoverStep(completedStep);
+        verify(storageTypeService, never()).hasSpooledContextPatch(anyString(), anyString(), anyString(), anyString());
+        verify(spoolRecoveryService, never()).recoverStep(any(Step.class));
+        verify(reconciliationService).reconcile(eq(55), anyBoolean());
     }
 }

@@ -46,22 +46,22 @@ class StructuredOutputSpoolFallbackTest {
 
     @Test
     void planFallbackToSpoolOnApiFailure() {
-        when(jobContextService.getCurrentContext("org1", "job1")).thenReturn(new HashMap<>());
-        when(jobContextService.saveContextChecked(eq("org1"), eq("job1"), any())).thenReturn(false);
+        when(jobContextService.patchContext(eq("org1"), eq("job1"), anyLong(), any()))
+                .thenReturn(JobContextService.PatchResult.FAILED);
         when(terraformState.spoolContextPatch(eq("org1"), eq("job1"), eq("step1"), eq("plan"), any()))
                 .thenReturn("context-spool/org1/job1/step1-plan.json.gz");
 
         String state = planService.publishFinalPlanSnapshotSynchronous("org1", "job1", "step1", List.of(), List.of());
 
         assertEquals("SPOOLED", state);
-        verify(jobContextService, times(3)).saveContextChecked(eq("org1"), eq("job1"), any());
+        verify(jobContextService, times(3)).patchContext(eq("org1"), eq("job1"), anyLong(), any());
         verify(terraformState).spoolContextPatch(eq("org1"), eq("job1"), eq("step1"), eq("plan"), any());
     }
 
     @Test
     void planNotDurableWhenBothApiAndStorageFail() {
-        when(jobContextService.getCurrentContext("org1", "job1")).thenReturn(new HashMap<>());
-        when(jobContextService.saveContextChecked(eq("org1"), eq("job1"), any())).thenReturn(false);
+        when(jobContextService.patchContext(eq("org1"), eq("job1"), anyLong(), any()))
+                .thenReturn(JobContextService.PatchResult.FAILED);
         when(terraformState.spoolContextPatch(eq("org1"), eq("job1"), eq("step1"), eq("plan"), any()))
                 .thenReturn(null);
 
@@ -72,22 +72,22 @@ class StructuredOutputSpoolFallbackTest {
 
     @Test
     void applyFallbackToSpoolOnApiFailure() {
-        when(jobContextService.getCurrentContext("org1", "job1")).thenReturn(new HashMap<>());
-        when(jobContextService.saveContextChecked(eq("org1"), eq("job1"), any())).thenReturn(false);
+        when(jobContextService.patchContext(eq("org1"), eq("job1"), anyLong(), any()))
+                .thenReturn(JobContextService.PatchResult.FAILED);
         when(terraformState.spoolContextPatch(eq("org1"), eq("job1"), eq("step1"), eq("apply"), any()))
                 .thenReturn("context-spool/org1/job1/step1-apply.json.gz");
 
         String state = applyService.publishFinalApplySynchronous("org1", "job1", "step1", List.of(), List.of());
 
         assertEquals("SPOOLED", state);
-        verify(jobContextService, times(3)).saveContextChecked(eq("org1"), eq("job1"), any());
+        verify(jobContextService, times(3)).patchContext(eq("org1"), eq("job1"), anyLong(), any());
         verify(terraformState).spoolContextPatch(eq("org1"), eq("job1"), eq("step1"), eq("apply"), any());
     }
 
     @Test
     void applyNotDurableWhenBothApiAndStorageFail() {
-        when(jobContextService.getCurrentContext("org1", "job1")).thenReturn(new HashMap<>());
-        when(jobContextService.saveContextChecked(eq("org1"), eq("job1"), any())).thenReturn(false);
+        when(jobContextService.patchContext(eq("org1"), eq("job1"), anyLong(), any()))
+                .thenReturn(JobContextService.PatchResult.FAILED);
         when(terraformState.spoolContextPatch(eq("org1"), eq("job1"), eq("step1"), eq("apply"), any()))
                 .thenReturn(null);
 

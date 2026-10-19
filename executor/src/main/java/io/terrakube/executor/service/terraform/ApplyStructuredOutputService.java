@@ -178,58 +178,57 @@ public class ApplyStructuredOutputService {
 
     public String publishFinalApplySynchronous(String organizationId, String jobId, String stepId,
                                                List<Map<String, Object>> changes, List<Map<String, Object>> jobDiagnostics) {
-        return publishFinalApplySynchronous(organizationId, jobId, stepId, 1L, changes, jobDiagnostics);
+        return publishFinalApplySynchronous(organizationId, jobId, stepId, ContextRevision.next(jobId), changes, jobDiagnostics);
     }
 
     public String publishFinalApplySynchronous(String organizationId, String jobId, String stepId, long deliveryRevision,
                                                List<Map<String, Object>> changes, List<Map<String, Object>> jobDiagnostics) {
-        Map<String, Object> updatedContext = null;
-        try {
-            Map<String, Object> context = getCurrentContext(organizationId, jobId);
-            updatedContext = updateApplyContext(context, stepId, changes, jobDiagnostics);
-            updatedContext.put("structuredOutputStatus", Map.of(
-                    "state", "PERSISTED",
-                    "updatedAtEpochMs", System.currentTimeMillis(),
-                    "stepId", stepId,
-                    "phase", "apply",
-                    "finalSnapshot", true));
+        if (deliveryRevision <= 0) {
+            deliveryRevision = ContextRevision.next(jobId);
+        }
+        Map<String, Object> patch = buildApplyPatch(stepId, changes, jobDiagnostics);
+        patch.put("structuredOutputStatus", Map.of(
+                "state", "PERSISTED",
+                "updatedAtEpochMs", System.currentTimeMillis(),
+                "stepId", stepId,
+                "phase", "apply",
+                "finalSnapshot", true));
 
-            for (int attempt = 1; attempt <= 3; attempt++) {
-                boolean saved = jobContextService.saveContextChecked(organizationId, jobId, updatedContext);
-                if (saved) {
-                    log.info("Synchronous final apply snapshot persisted and ACKed for job {} step {}", jobId, stepId);
+        int attempt = 1;
+        while (attempt <= 3) {
+            JobContextService.PatchResult patchResult = jobContextService.patchContext(organizationId, jobId, deliveryRevision, patch);
+            if (patchResult == JobContextService.PatchResult.APPLIED) {
+                log.info("Synchronous final apply snapshot persisted and ACKed for job {} step {}", jobId, stepId);
+                pushLiveUpdate("apply", jobId, stepId, changes, jobDiagnostics);
+                return "ACKED";
+            }
+            if (patchResult == JobContextService.PatchResult.SKIPPED) {
+                if (attempt == 1) {
+                    log.warn("Context patch for job {} entries {} was skipped on initial attempt: an equal or newer revision already landed",
+                            jobId, patch.keySet());
+                    break;
+                } else {
+                    log.info("Context patch retry for job {} entries {} was skipped: earlier attempt most likely landed, treating as ACKED",
+                            jobId, patch.keySet());
                     pushLiveUpdate("apply", jobId, stepId, changes, jobDiagnostics);
                     return "ACKED";
                 }
-                if (attempt < 3) {
-                    try {
-                        Thread.sleep(200L * attempt);
-                    } catch (InterruptedException ie) {
-                        Thread.currentThread().interrupt();
-                        break;
-                    }
+            }
+            if (attempt < 3) {
+                try {
+                    Thread.sleep(200L * attempt);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    break;
                 }
             }
-            log.warn("Failed to obtain synchronous ACK for final apply snapshot for job {} step {} after 3 attempts", jobId, stepId);
-        } catch (Exception e) {
-            log.warn("Error publishing synchronous final apply snapshot for job {} step {}: {}", jobId, stepId, e.getMessage());
-            if (updatedContext == null) {
-                updatedContext = new LinkedHashMap<>();
-                updatedContext.put(CONTEXT_APPLY_KEY, Map.of(stepId, changes != null ? changes : List.of()));
-                if (jobDiagnostics != null && !jobDiagnostics.isEmpty()) {
-                    updatedContext.put(CONTEXT_JOB_DIAGNOSTICS_KEY, Map.of(stepId, jobDiagnostics));
-                }
-                updatedContext.put("structuredOutputStatus", Map.of(
-                        "state", "PERSISTED",
-                        "updatedAtEpochMs", System.currentTimeMillis(),
-                        "stepId", stepId,
-                        "phase", "apply",
-                        "finalSnapshot", true));
-            }
+            attempt++;
         }
+        log.warn("Failed to obtain synchronous ACK for final apply snapshot for job {} step {} after {} attempt(s)",
+                jobId, stepId, attempt - 1);
 
-        if (contextSpoolService != null && updatedContext != null) {
-            String spooledPath = contextSpoolService.spoolContextPatch(organizationId, jobId, stepId, "apply", deliveryRevision, updatedContext);
+        if (contextSpoolService != null) {
+            String spooledPath = contextSpoolService.spoolContextPatch(organizationId, jobId, stepId, "apply", deliveryRevision, patch);
             if (spooledPath != null) {
                 log.info("Successfully spooled final apply snapshot to storage at {} for job {} step {}", spooledPath, jobId, stepId);
                 return "SPOOLED";
