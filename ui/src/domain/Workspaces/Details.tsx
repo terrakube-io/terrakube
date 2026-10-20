@@ -58,6 +58,8 @@ import { setupWorkspaceIncludes, isValidUrl, fixSshURL, StateOutputVariableWithN
 import VcsLogo from "@/components/display/VcsLogo";
 import { formatDateTime, formatDuration, relativeTime } from "@/modules/utils/dates";
 import { computeWorkspaceMetrics, FINISHED_JOB_STATUSES } from "./workspaceMetrics";
+import { selectCurrentRun } from "./currentRun";
+import { CurrentRunApproval } from "./components/CurrentRunApproval";
 const DetailsJob = lazy(() => import("../Jobs/Details").then((m) => ({ default: m.DetailsJob })));
 const States = lazy(() => import("../Workspaces/States").then((m) => ({ default: m.States })));
 const WorkspaceSettings = lazy(() =>
@@ -119,6 +121,7 @@ export const WorkspaceDetails = ({
   const [manageState, setManageState] = useState(false);
   const [planJob, setPlanJob] = useState(false);
   const [approveJob, setApproveJob] = useState(false);
+  const [permissionsLoaded, setPermissionsLoaded] = useState(false);
   const [variables, setVariables] = useState<FlatVariable[]>([]);
   const [collectionVariables, setCollectionVariables] = useState<any[]>([]);
   const [collectionEnvVariables, setCollectionEnvVariables] = useState<any[]>([]);
@@ -410,6 +413,7 @@ export const WorkspaceDetails = ({
         setPlanJob(response.data.planJob);
         setApproveJob(response.data.approveJob);
 
+        if (id === undefined || id === null) setPermissionsLoaded(true);
         if (id !== undefined && id !== null) {
           const urlWorkspaceAccess = `${
             new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin
@@ -421,14 +425,17 @@ export const WorkspaceDetails = ({
               setManageWorkspace(response.data.manageWorkspace);
               setPlanJob(response.data.planJob);
               setApproveJob(response.data.approveJob);
+              setPermissionsLoaded(true);
             })
             .catch((err) => {
               console.error("Failed to load workspace permissions:", err);
+              setPermissionsLoaded(true);
             });
         }
       })
       .catch((err) => {
         console.error("Failed to load org permissions:", err);
+        setPermissionsLoaded(true);
       });
   };
 
@@ -561,7 +568,9 @@ export const WorkspaceDetails = ({
       });
   };
 
-  const latestJob = jobs.length > 0 ? [...jobs].sort((a: any, b: any) => b.id - a.id)[0] : undefined;
+  const currentRun = selectCurrentRun(jobs);
+  const latestJob = currentRun?.job;
+  const runCardTitle = currentRun?.active ? "Current run" : "Latest run";
   const metrics = computeWorkspaceMetrics(jobs);
 
   const renderSection = (workspace: Workspace) => {
@@ -577,7 +586,7 @@ export const WorkspaceDetails = ({
               ) : (
                 <div>
                   <div className="latest-run-header">
-                    <Typography.Title level={3}>Latest run</Typography.Title>
+                    <Typography.Title level={3}>{runCardTitle}</Typography.Title>
                     {jobs.length > 0 && (
                       <Link to={`/organizations/${organizationId}/workspaces/${id}/runs`}>
                         View all runs <ArrowRightOutlined aria-hidden />
@@ -585,7 +594,7 @@ export const WorkspaceDetails = ({
                     )}
                   </div>
                   {latestJob ? (
-                    <article className="latest-run" aria-label="Latest run">
+                    <article className="latest-run" aria-label={runCardTitle}>
                       <div className="latest-run-title">
                         <Typography.Title level={4}>
                           <Link to={runLink(latestJob.id)} onClick={() => changeJob(latestJob.id)}>
@@ -642,6 +651,28 @@ export const WorkspaceDetails = ({
                           </dd>
                         </div>
                       </dl>
+                      {currentRun && currentRun.queuedBehind.length > 0 && (
+                        <p className="latest-run-queued">
+                          <Link to={`/organizations/${organizationId}/workspaces/${id}/runs`}>
+                            {currentRun.queuedBehind.length === 1
+                              ? "1 more run queued behind this one"
+                              : `${currentRun.queuedBehind.length} more runs queued behind this one`}
+                          </Link>
+                        </p>
+                      )}
+                      {currentRun?.active && (
+                        <div className="latest-run-approval">
+                          <CurrentRunApproval
+                            organizationId={organizationId}
+                            jobId={latestJob.id}
+                            status={latestJob.status}
+                            canApprove={approveJob}
+                            permissionsLoaded={permissionsLoaded}
+                            approvalTeam={latestJob.approvalTeam}
+                            onChanged={() => loadWorkspace(false)}
+                          />
+                        </div>
+                      )}
                       <div className="latest-run-actions">
                         <LinkButton to={runLink(latestJob.id)} onClick={() => changeJob(latestJob.id)}>
                           See details
@@ -721,9 +752,7 @@ export const WorkspaceDetails = ({
                     <ThunderboltOutlined aria-hidden />
                     <span className="workspace-rail-label">Execution mode:</span>
                     <Link to={`/organizations/${organizationId}/workspaces/${id}/settings/general`}>
-                      {executionMode === "..."
-                        ? "..."
-                        : executionMode.charAt(0).toUpperCase() + executionMode.slice(1)}
+                      {executionMode === "..." ? "..." : executionMode.charAt(0).toUpperCase() + executionMode.slice(1)}
                     </Link>
                   </li>
                   {workspace.attributes.folder && (
@@ -831,7 +860,7 @@ export const WorkspaceDetails = ({
       case "7":
         return (
           <RunTriggers
-            organizationId={organizationId!}
+            organizationId={organizationId}
             workspaceId={id!}
             workspaceName={workspaceName}
             manageWorkspace={manageWorkspace}

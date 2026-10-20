@@ -165,7 +165,11 @@ function workspaceFilter(
     status && status !== "All"
       ? status === "NeverExecuted"
         ? "(lastJobStatus=isnull=true,lastJobStatus==NeverExecuted)"
-        : `lastJobStatus==${quoteRsql(status)}`
+        : status === "waitingApproval"
+          ? // lastJobStatus is the status of whichever run changed last, so a run waiting for approval is
+            // hidden by a newer pending or completed run. Look at the runs themselves too.
+            `(lastJobStatus==${quoteRsql(status)},job.status==${quoteRsql(status)})`
+          : `lastJobStatus==${quoteRsql(status)}`
       : undefined,
     policyStatus && policyStatus !== "All"
       ? policyStatus === "UNKNOWN"

@@ -113,6 +113,23 @@ describe("workspaceService.listWorkspacePage", () => {
     expect(variables.policyAll).toBeUndefined();
   });
 
+  it("finds workspaces with a run waiting for approval even when a newer run changed lastJobStatus", async () => {
+    mockApiPost.mockResolvedValue({ isError: false, responseCode: 200, data: {} });
+    await workspaceService.listWorkspacePage({
+      organizationId: "org-1",
+      first: 20,
+      after: 0,
+      sort: "name_asc",
+      status: "waitingApproval",
+    });
+    const { variables } = JSON.parse(JSON.stringify(mockApiPost.mock.calls[0][1]));
+    const waiting = '(lastJobStatus=="waitingApproval",job.status=="waitingApproval")';
+    expect(variables.filter).toBe(waiting);
+    expect(variables.status_waitingApproval).toBe(waiting);
+    // Every other status still filters on lastJobStatus alone.
+    expect(variables.status_pending).toBe('lastJobStatus=="pending"');
+  });
+
   it("omits status count queries during polling but keeps the page total", async () => {
     mockApiPost.mockResolvedValue({ isError: false, responseCode: 200, data: {} });
     await workspaceService.listWorkspacePage({ organizationId: "org-1", first: 20, after: 0, sort: "status" }, false);
