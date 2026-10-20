@@ -7,13 +7,19 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.MockitoAnnotations;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 
 import graphql.AssertException;
+import io.terrakube.api.repository.PolicyEvaluationRepository;
+import io.terrakube.api.repository.PolicyOverrideRepository;
 import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.job.step.Step;
+import io.terrakube.api.rs.policy.PolicyEvaluation;
+import io.terrakube.api.rs.policy.PolicyEvaluationStatus;
+import io.terrakube.api.rs.policy.PolicyOverride;
 import io.terrakube.api.rs.team.Team;
 import io.terrakube.api.rs.template.Template;
 import io.terrakube.api.rs.workspace.Workspace;
@@ -34,6 +40,12 @@ import static org.mockito.Mockito.when;
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
 
 class JobTests extends ServerApplicationTests {
+
+    @Autowired
+    PolicyEvaluationRepository policyEvaluationRepository;
+
+    @Autowired
+    PolicyOverrideRepository policyOverrideRepository;
 
     Workspace workspace;
     Organization organization;
@@ -366,6 +378,121 @@ class JobTests extends ServerApplicationTests {
                     .post("/api/v1/organization/" + organization.getId() + "/job")
                     .then().statusCode(HttpStatus.FORBIDDEN.value());
         }
+    }
+
+    @Test
+    public void approvalIsRefusedWhileASoftPolicyViolationIsNotOverridden() throws InterruptedException {
+        Template template = createTemplate("flow:\n- name: Approve\n  type: approval\n  team: TERRAKUBE_DEVELOPERS\n");
+
+        devsManageJobs(true);
+        String jobId = createJob(jobDefinition(template.getId().toString()));
+        devsManageJobs(false);
+        awaitJobStatus(jobId, JobStatus.waitingApproval, Duration.ofSeconds(10));
+        Job job = jobRepository.findById(Integer.parseInt(jobId)).orElseThrow();
+        PolicyEvaluation evaluation = new PolicyEvaluation();
+        evaluation.setJob(job);
+        evaluation.setStep(stepRepository.findFirstByJobIdOrderByStepNumber(job.getId()).orElseThrow());
+        evaluation.setStatus(PolicyEvaluationStatus.PASSED);
+        evaluation.setSoftMandatoryViolations(1);
+        evaluation = policyEvaluationRepository.save(evaluation);
+
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
+                .body(statusChangePayload(jobId, JobStatus.approved))
+                .when()
+                .patch("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/job/" + jobId)
+                .then()
+                .assertThat()
+                .statusCode(HttpStatus.CONFLICT.value());
+        Job refused = jobRepository.findById(Integer.parseInt(jobId)).orElseThrow();
+        assertEquals(JobStatus.waitingApproval, refused.getStatus());
+        assertNull(refused.getApprovedBy());
+
+        PolicyOverride override = new PolicyOverride();
+        override.setEvaluation(evaluation);
+        override.setOverriddenBy("test@terrakube.io");
+        override.setOverriddenAt(new Date());
+        override.setJustification("accepted risk");
+        policyOverrideRepository.save(override);
+
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
+                .body(statusChangePayload(jobId, JobStatus.approved))
+                .when()
+                .patch("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/job/" + jobId)
+                .then()
+                .assertThat()
+                .statusCode(HttpStatus.NO_CONTENT.value());
+    }
+
+    @Test
+    public void approvalIsRefusedForAHardPolicyViolationEvenWithAnOverride() throws InterruptedException {
+        Template template = createTemplate("flow:\n- name: Approve\n  type: approval\n  team: TERRAKUBE_DEVELOPERS\n");
+
+        devsManageJobs(true);
+        String jobId = createJob(jobDefinition(template.getId().toString()));
+        devsManageJobs(false);
+        awaitJobStatus(jobId, JobStatus.waitingApproval, Duration.ofSeconds(10));
+        Job job = jobRepository.findById(Integer.parseInt(jobId)).orElseThrow();
+        PolicyEvaluation evaluation = new PolicyEvaluation();
+        evaluation.setJob(job);
+        evaluation.setStep(stepRepository.findFirstByJobIdOrderByStepNumber(job.getId()).orElseThrow());
+        evaluation.setStatus(PolicyEvaluationStatus.FAILED);
+        evaluation.setHardMandatoryViolations(1);
+        evaluation = policyEvaluationRepository.save(evaluation);
+        PolicyOverride override = new PolicyOverride();
+        override.setEvaluation(evaluation);
+        override.setOverriddenBy("test@terrakube.io");
+        override.setOverriddenAt(new Date());
+        override.setJustification("not allowed to count");
+        policyOverrideRepository.save(override);
+
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
+                .body(statusChangePayload(jobId, JobStatus.approved))
+                .when()
+                .patch("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/job/" + jobId)
+                .then()
+                .assertThat()
+                .statusCode(HttpStatus.CONFLICT.value());
+    }
+
+    @Test
+    public void approvalIsRefusedForAJobThatIsNotWaitingForApproval() {
+        devsManageJobs(true);
+        String jobId = createJob(jobDefinition("2db36f7c-f549-4341-a789-315d47eb061d"));
+        Job job = jobRepository.findById(Integer.parseInt(jobId)).orElseThrow();
+        job.setStatus(JobStatus.running);
+        jobRepository.save(job);
+
+        // The approve permission of the team is enough for Elide, so only the hook stops this.
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
+                .body(statusChangePayload(jobId, JobStatus.approved))
+                .when()
+                .patch("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/job/" + jobId)
+                .then()
+                .assertThat()
+                .statusCode(HttpStatus.CONFLICT.value());
+
+        Job refused = jobRepository.findById(Integer.parseInt(jobId)).orElseThrow();
+        assertEquals(JobStatus.running, refused.getStatus());
+        assertNull(refused.getApprovedBy());
+        assertNull(refused.getApprovedAt());
+    }
+
+    @Test
+    public void aJobCannotBeCreatedAsApproved() {
+        devsManageJobs(true);
+        String body = jobDefinition("2db36f7c-f549-4341-a789-315d47eb061d")
+                .replace("\"templateReference\":", "\"status\":\"approved\",\"templateReference\":");
+
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
+                .body(body)
+                .post("/api/v1/organization/" + organization.getId() + "/job")
+                .then()
+                .statusCode(HttpStatus.CONFLICT.value());
     }
 
     @Test

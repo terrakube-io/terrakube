@@ -39,6 +39,7 @@ import org.quartz.Scheduler;
 import graphql.Assert;
 import io.terrakube.api.helpers.FailUnkownMethod;
 import io.terrakube.api.plugin.notification.JobNotificationTrigger;
+import io.terrakube.api.plugin.policy.PolicyApprovalGuard;
 import io.terrakube.api.plugin.scheduler.dispatchretry.DispatchRetryCalculator;
 import io.terrakube.api.plugin.scheduler.dispatchretry.DispatchRetryMetrics;
 import io.terrakube.api.plugin.scheduler.dispatchretry.DispatchRetryProperties;
@@ -102,6 +103,7 @@ public class ScheduleJobTest {
     GlobalVarRepository globalVarRepository;
     VariableRepository variableRepository;
     WorkspaceVariableValidationService workspaceVariableValidationService;
+    PolicyApprovalGuard policyApprovalGuard;
     RedisTemplate<String, Object> redisTemplate;
     ValueOperations<String, Object> valueOperations;
     JobNotificationTrigger jobNotificationTrigger;
@@ -133,6 +135,7 @@ public class ScheduleJobTest {
                 WorkspaceVariableValidationService.class,
                 new FailUnkownMethod<WorkspaceVariableValidationService>());
         lenient().doNothing().when(workspaceVariableValidationService).validateWorkspaceVariables(any());
+        policyApprovalGuard = mock(PolicyApprovalGuard.class);
         lenient().doReturn(Optional.empty()).when(prCommentService).extractRunSummary(any());
 
         redisTemplate = mock(RedisTemplate.class, new FailUnkownMethod<RedisTemplate>());
@@ -190,6 +193,7 @@ public class ScheduleJobTest {
                 globalVarRepository,
                 variableRepository,
                 workspaceVariableValidationService,
+                policyApprovalGuard,
                 jobNotificationTrigger,
                 jobReconciliationService,
                 reconciliationProperties,
@@ -860,6 +864,63 @@ public class ScheduleJobTest {
         verify(executorService, times(1)).execute(any(), any(), any());
         Assertions.assertEquals(JobStatus.queue, job.getStatus());
         Assertions.assertEquals("", job.getApprovalTeam());
+    }
+
+    @Test
+    public void autoApplyJobWaitsForApprovalWhilePolicyBlocksIt() throws Exception {
+        Job job = job(JobStatus.pending);
+        job.setAutoApply(true);
+
+        Flow flow = new Flow();
+        flow.setType(FlowType.approval.name());
+        flow.setTeam("ze-team");
+
+        doReturn(false).when(tclService).isTemplatePlanOnly(any());
+        doReturn(Optional.of(Collections.emptyList()))
+                .when(jobRepository)
+                .findByWorkspaceAndStatusNotInAndIdLessThan(
+                        any(Workspace.class),
+                        anyList(),
+                        anyInt());
+        doReturn(job).when(tclService).initJobConfiguration(any(Job.class));
+        doReturn(flow).when(tclService).getNextFlow(any());
+        doReturn(stepId.toString()).when(tclService).getCurrentStepId(any());
+        doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
+        doReturn(job).when(jobRepository).save(any());
+        doReturn(Optional.of("Job 1 cannot be approved: policy")).when(policyApprovalGuard).blockingReason(any());
+
+        Assert.assertTrue(subject().runExecution(job));
+
+        verify(executorService, never()).execute(any(), any(), any());
+        Assertions.assertEquals(JobStatus.waitingApproval, job.getStatus());
+        Assertions.assertEquals("ze-team", job.getApprovalTeam());
+    }
+
+    @Test
+    public void jobThatIsNotAutoAppliedDoesNotAskThePolicyGuardBeforeWaiting() throws Exception {
+        Job job = job(JobStatus.pending);
+
+        Flow flow = new Flow();
+        flow.setType(FlowType.approval.name());
+        flow.setTeam("ze-team");
+
+        doReturn(false).when(tclService).isTemplatePlanOnly(any());
+        doReturn(Optional.of(Collections.emptyList()))
+                .when(jobRepository)
+                .findByWorkspaceAndStatusNotInAndIdLessThan(
+                        any(Workspace.class),
+                        anyList(),
+                        anyInt());
+        doReturn(job).when(tclService).initJobConfiguration(any(Job.class));
+        doReturn(flow).when(tclService).getNextFlow(any());
+        doReturn(stepId.toString()).when(tclService).getCurrentStepId(any());
+        doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
+        doReturn(job).when(jobRepository).save(any());
+
+        Assert.assertTrue(subject().runExecution(job));
+
+        verify(policyApprovalGuard, never()).blockingReason(any());
+        Assertions.assertEquals(JobStatus.waitingApproval, job.getStatus());
     }
 
     @Test

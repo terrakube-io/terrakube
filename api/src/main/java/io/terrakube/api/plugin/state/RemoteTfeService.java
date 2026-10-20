@@ -65,6 +65,7 @@ import io.terrakube.api.rs.workspace.parameters.Category;
 import io.terrakube.api.rs.workspace.parameters.Variable;
 import io.terrakube.api.rs.workspace.tag.WorkspaceTag;
 import io.terrakube.api.plugin.notification.JobNotificationTrigger;
+import io.terrakube.api.plugin.policy.PolicyApprovalGuard;
 import io.terrakube.api.plugin.security.audit.JobApprovalService;
 import io.terrakube.api.plugin.state.model.policy.PolicyCheckData;
 import io.terrakube.api.plugin.state.model.policy.PolicyCheckList;
@@ -150,6 +151,9 @@ public class RemoteTfeService {
     @Autowired(required = false)
     private PolicyEvaluationRepository policyEvaluationRepository;
 
+    @Autowired
+    private PolicyApprovalGuard policyApprovalGuard;
+
     @Autowired(required = false)
     private PolicyOverrideRepository policyOverrideRepository;
 
@@ -165,6 +169,10 @@ public class RemoteTfeService {
 
     public void setPolicyEvaluationRepository(PolicyEvaluationRepository policyEvaluationRepository) {
         this.policyEvaluationRepository = policyEvaluationRepository;
+    }
+
+    public void setPolicyApprovalGuard(PolicyApprovalGuard policyApprovalGuard) {
+        this.policyApprovalGuard = policyApprovalGuard;
     }
 
     public void setPolicyOverrideRepository(PolicyOverrideRepository policyOverrideRepository) {
@@ -1976,6 +1984,22 @@ public class RemoteTfeService {
         return runsDataList;
     }
 
+    /**
+     * Same rule as approving the job through the API: policy results that still block it keep it waiting.
+     */
+    private void rejectIfPolicyBlocks(Job job) {
+        if (policyApprovalGuard == null) {
+            // A guard that is not there must not mean that nothing blocks the approval.
+            log.error("PolicyApprovalGuard is not configured, refusing to approve job {}", job.getId());
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
+                    "Policy validation is not available, the run cannot be approved.");
+        }
+        Optional<String> blockingReason = policyApprovalGuard.blockingReason(job);
+        if (blockingReason.isPresent()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, blockingReason.get());
+        }
+    }
+
     RunsData runApply(int runId, JwtAuthenticationToken currentUser) {
 
         Job job = jobRepository.getReferenceById(Integer.valueOf(runId));
@@ -1994,6 +2018,7 @@ public class RemoteTfeService {
             List<Step> steps = job.getStep();
             if (job.getStatus().equals(JobStatus.completed) && steps.size() == 1
                     && steps.get(0).getStepNumber() == 100) {
+                rejectIfPolicyBlocks(job);
                 log.warn("Only a plan was executed, adding apply steps to job execution");
                 Step approvalStep = new Step();
                 approvalStep.setStatus(JobStatus.pending);
@@ -2026,6 +2051,15 @@ public class RemoteTfeService {
                     if (step.getStatus() == JobStatus.completed) {
                         break;
                     }
+                    // The approval step exists from the start of the job, so without this a run that is
+                    // still planning could be approved before any policy result is there to block it.
+                    // A run that was already approved is left alone, so repeating the request stays harmless.
+                    if (job.getApprovedAt() == null && job.getStatus() != JobStatus.waitingApproval) {
+                        throw new ResponseStatusException(HttpStatus.CONFLICT, String.format(
+                                "Job %d is %s and cannot be approved yet, wait for the plan and the policy checks to finish.",
+                                job.getId(), job.getStatus()));
+                    }
+                    rejectIfPolicyBlocks(job);
                     if (job.getApprovedAt() == null) {
                         jobApprovalService.recordApproval(job, currentUser);
                     }

@@ -1,5 +1,6 @@
 package io.terrakube.api.plugin.state;
 
+import io.terrakube.api.plugin.policy.PolicyApprovalGuard;
 import io.terrakube.api.plugin.security.audit.JobApprovalService;
 import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.template.Template;
@@ -51,6 +52,8 @@ import io.terrakube.api.rs.workspace.tag.WorkspaceTag;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
+import org.springframework.web.server.ResponseStatusException;
+import org.springframework.http.HttpStatus;
 import org.springframework.data.redis.connection.stream.MapRecord;
 import org.springframework.data.redis.connection.stream.StreamOffset;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -388,6 +391,99 @@ class RemoteTfeServiceTest {
         } finally {
             TransactionSynchronizationManager.clearSynchronization();
         }
+    }
+
+    @ParameterizedTest
+    @CsvSource({"false", "true"})
+    void cliApprovalIsRefusedWhilePolicyBlocksTheJob(boolean planOnly) {
+        RemoteTfeService service = Mockito.spy(remoteTfeService());
+        PolicyApprovalGuard guard = Mockito.mock(PolicyApprovalGuard.class);
+        service.setPolicyApprovalGuard(guard);
+        JwtAuthenticationToken user = new JwtAuthenticationToken(Jwt.withTokenValue("token")
+                .header("alg", "none").issuer("issuer").subject("cli-user-id").build());
+        Organization org = organization("sample-org");
+        Team approvers = team("approvers");
+        org.setTeam(List.of(approvers));
+        when(teamTokenService.getCurrentGroups(user)).thenReturn(List.of("approvers"));
+        when(rbacService.canApproveJob(approvers)).thenReturn(true);
+        Job job = new Job();
+        job.setId(3554);
+        job.setOrganization(org);
+        job.setWorkspace(workspace("sample", org));
+        job.setStatus(planOnly ? JobStatus.completed : JobStatus.waitingApproval);
+        Step step = new Step();
+        step.setId(UUID.randomUUID());
+        step.setStepNumber(planOnly ? 100 : 150);
+        step.setStatus(JobStatus.pending);
+        job.setStep(new ArrayList<>(List.of(step)));
+        when(jobRepository.getReferenceById(3554)).thenReturn(job);
+        when(guard.blockingReason(job)).thenReturn(Optional.of("Job 3554 cannot be approved: policy"));
+
+        ResponseStatusException thrown = assertThrows(ResponseStatusException.class, () -> service.runApply(3554, user));
+
+        assertEquals(HttpStatus.CONFLICT, thrown.getStatusCode());
+        assertNull(job.getApprovedAt());
+        verify(stepRepository, never()).save(any(Step.class));
+        verify(jobRepository, never()).save(any(Job.class));
+    }
+
+    @ParameterizedTest
+    @CsvSource({"pending", "queue", "running"})
+    void cliApprovalIsRefusedWhileTheRunIsStillPlanning(JobStatus status) {
+        RemoteTfeService service = Mockito.spy(remoteTfeService());
+        PolicyApprovalGuard guard = Mockito.mock(PolicyApprovalGuard.class);
+        service.setPolicyApprovalGuard(guard);
+        Job job = jobWaitingAtTheApprovalStep(status);
+        JwtAuthenticationToken user = approverOf(job);
+
+        ResponseStatusException thrown = assertThrows(ResponseStatusException.class, () -> service.runApply(3554, user));
+
+        // No policy result exists yet while the plan runs, so the guard could not block anything.
+        assertEquals(HttpStatus.CONFLICT, thrown.getStatusCode());
+        assertNull(job.getApprovedAt());
+        verify(guard, never()).blockingReason(any());
+        verify(stepRepository, never()).save(any(Step.class));
+        verify(jobRepository, never()).save(any(Job.class));
+    }
+
+    @Test
+    void cliApprovalFailsClosedWhenThereIsNoPolicyGuard() {
+        RemoteTfeService service = Mockito.spy(remoteTfeServiceWithoutPolicyGuard());
+        Job job = jobWaitingAtTheApprovalStep(JobStatus.waitingApproval);
+        JwtAuthenticationToken user = approverOf(job);
+
+        ResponseStatusException thrown = assertThrows(ResponseStatusException.class, () -> service.runApply(3554, user));
+
+        assertEquals(HttpStatus.INTERNAL_SERVER_ERROR, thrown.getStatusCode());
+        assertNull(job.getApprovedAt());
+        verify(jobRepository, never()).save(any(Job.class));
+    }
+
+    private Job jobWaitingAtTheApprovalStep(JobStatus status) {
+        Organization org = organization("sample-org");
+        Team approvers = team("approvers");
+        org.setTeam(List.of(approvers));
+        Job job = new Job();
+        job.setId(3554);
+        job.setOrganization(org);
+        job.setWorkspace(workspace("sample", org));
+        job.setStatus(status);
+        Step step = new Step();
+        step.setId(UUID.randomUUID());
+        step.setStepNumber(150);
+        step.setStatus(JobStatus.pending);
+        job.setStep(new ArrayList<>(List.of(step)));
+        when(jobRepository.getReferenceById(3554)).thenReturn(job);
+        return job;
+    }
+
+    private JwtAuthenticationToken approverOf(Job job) {
+        JwtAuthenticationToken user = new JwtAuthenticationToken(Jwt.withTokenValue("token")
+                .header("alg", "none").issuer("issuer").subject("cli-user-id").build());
+        Team approvers = job.getOrganization().getTeam().get(0);
+        when(teamTokenService.getCurrentGroups(user)).thenReturn(List.of("approvers"));
+        when(rbacService.canApproveJob(approvers)).thenReturn(true);
+        return user;
     }
 
     // --- key/value tags (tag bindings) ---
@@ -1029,6 +1125,13 @@ class RemoteTfeServiceTest {
     }
 
     private RemoteTfeService remoteTfeService() {
+        RemoteTfeService service = remoteTfeServiceWithoutPolicyGuard();
+        // A guard that blocks nothing (the default of a mock), so tests that are not about policy go through.
+        service.setPolicyApprovalGuard(Mockito.mock(PolicyApprovalGuard.class));
+        return service;
+    }
+
+    private RemoteTfeService remoteTfeServiceWithoutPolicyGuard() {
         return new RemoteTfeService(jobRepository, contentRepository, organizationRepository, workspaceRepository,
                 historyRepository, templateRepository, scheduleJobService, "localhost", storageTypeService,
                 stepRepository, redisTemplate, 1, tagRepository, workspaceTagRepository, teamTokenService,
