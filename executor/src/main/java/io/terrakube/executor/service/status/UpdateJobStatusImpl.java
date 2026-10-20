@@ -14,6 +14,7 @@ import io.terrakube.client.model.organization.job.step.StepRequest;
 import io.terrakube.executor.configuration.ExecutorFlagsProperties;
 import io.terrakube.executor.plugin.tfstate.TerraformOutputPathService;
 import io.terrakube.executor.plugin.tfstate.TerraformState;
+import io.terrakube.executor.service.artifact.ArtifactPackagingService;
 import io.terrakube.executor.service.mode.TerraformJob;
 
 @Slf4j
@@ -81,7 +82,7 @@ public class UpdateJobStatusImpl implements UpdateJobStatus {
             if (rejected || currentJobStatus.equals("cancelled"))
                 log.warn("Job {} was {} when running executor, skipping job status update", terraformJob.getJobId(), currentJobStatus);
             else
-                updateJobStatus(successful, isPlan, exitCode, terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), jobOutput, jobErrorOutput, jobPlan, commitId, hasSoftMandatoryViolations, approvalTeam);
+                updateJobStatus(successful, isPlan, exitCode, terraformJob, jobOutput, jobErrorOutput, jobPlan, commitId, hasSoftMandatoryViolations, approvalTeam);
         }
     }
 
@@ -90,7 +91,10 @@ public class UpdateJobStatusImpl implements UpdateJobStatus {
                 .getData().getAttributes().getStatus();
     }
 
-    private void updateJobStatus(boolean successful, boolean isPlan, int exitCode, String organizationId, String jobId, String stepId, String jobOutput, String jobErrorOutput, String jobPlan, String commitId, boolean hasSoftMandatoryViolations, String approvalTeam) {
+    private void updateJobStatus(boolean successful, boolean isPlan, int exitCode, TerraformJob terraformJob, String jobOutput, String jobErrorOutput, String jobPlan, String commitId, boolean hasSoftMandatoryViolations, String approvalTeam) {
+        String organizationId = terraformJob.getOrganizationId();
+        String jobId = terraformJob.getJobId();
+        String stepId = terraformJob.getStepId();
         Job job = terrakubeClient.getJobById(organizationId, jobId).getData();
         String status = "";
         boolean planChanges = true;
@@ -150,6 +154,14 @@ public class UpdateJobStatusImpl implements UpdateJobStatus {
         updateAttributes.setPlanChanges(planChanges);
         updateAttributes.setOutput(stepOutput);
         updateAttributes.setTerraformPlan(jobPlan);
+        // Plan artifacts are recorded together with the plan file, in the one update that completes
+        // the plan step. Only sent when the feature is in use, so every other job is unaffected (an
+        // API from before this field existed would refuse an unknown attribute). When a plan in such
+        // a job has no artifacts, an empty value replaces the earlier plan's.
+        if (isPlan && (terraformJob.getArtifactsUrl() != null || ArtifactPackagingService.isConfigured(terraformJob))) {
+            updateAttributes.setTerraformPlanArtifacts(terraformJob.getArtifactsUrl() == null ? "" : terraformJob.getArtifactsUrl());
+            updateAttributes.setTerraformPlanArtifactsChecksum(terraformJob.getArtifactsChecksum() == null ? "" : terraformJob.getArtifactsChecksum());
+        }
         updateAttributes.setCommitId(commitId);
         if (hasSoftMandatoryViolations && exitCode != 1 && approvalTeam != null && !approvalTeam.isBlank()) {
             updateAttributes.setApprovalTeam(approvalTeam);

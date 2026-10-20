@@ -16,6 +16,8 @@ import java.util.List;
 public class ExecutorContext {
     private List<Command> commandList;
     private List<Command> onFailureList;
+    private List<String> artifactPatterns;
+    private boolean multiStepJob;
     private String type;
     private String organizationId;
     private String workspaceId;

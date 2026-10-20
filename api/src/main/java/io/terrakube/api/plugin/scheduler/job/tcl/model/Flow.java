@@ -21,6 +21,7 @@ public class Flow {
     List<Command> commands;
     List<Command> onFailure;
     List<Command> onReject;
+    List<String> artifacts;
 
     List<ScheduleTemplate> templates;
 

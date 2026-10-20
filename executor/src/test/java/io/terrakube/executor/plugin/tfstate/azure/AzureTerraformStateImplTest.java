@@ -250,4 +250,110 @@ class AzureTerraformStateImplTest {
         assertEquals("context-spool/org1/job1/step1-plan.json.gz", result);
         verify(blobClient).upload(any(BinaryData.class), eq(true));
     }
+
+    // ----- plan artifacts
+
+    private static final String ARTIFACT_BLOB = "plan-artifacts/org1/ws1/job1/step1/plan-artifacts.tar.gz";
+
+    private io.terrakube.client.model.organization.job.JobAttributes recordedArtifacts(String location, String checksum) {
+        io.terrakube.client.model.organization.job.JobAttributes attributes = new io.terrakube.client.model.organization.job.JobAttributes();
+        attributes.setTerraformPlanArtifacts(location);
+        attributes.setTerraformPlanArtifactsChecksum(checksum);
+        when(terrakubeClient.getJobById("org1", "job1").getData().getAttributes()).thenReturn(attributes);
+        return attributes;
+    }
+
+    @Test
+    void savingArtifactsUploadsTheBundleIntoTheStateContainerUnderItsOwnPrefix(@TempDir Path tempDir) throws Exception {
+        File bundle = new File(tempDir.toFile(), "bundle.tar.gz");
+        FileUtils.writeStringToFile(bundle, "tar-gz-bytes", Charset.defaultCharset());
+        when(blobContainerClient.exists()).thenReturn(true);
+        when(blobClient.getBlobUrl()).thenReturn("https://test-account.blob.core.windows.net/tfstate/" + ARTIFACT_BLOB);
+
+        String location = azureTerraformState.saveArtifacts("org1", "ws1", "job1", "step1", bundle);
+
+        assertEquals("https://test-account.blob.core.windows.net/tfstate/" + ARTIFACT_BLOB, location);
+        verify(blobServiceClient, atLeastOnce()).getBlobContainerClient("tfstate");
+        verify(blobContainerClient).getBlobClient(ARTIFACT_BLOB);
+        verify(blobClient).uploadFromFile(bundle.getAbsolutePath(), true);
+    }
+
+    @Test
+    void savingArtifactsRetriesATransientFailure(@TempDir Path tempDir) throws Exception {
+        File bundle = new File(tempDir.toFile(), "bundle.tar.gz");
+        FileUtils.writeStringToFile(bundle, "x", Charset.defaultCharset());
+        when(blobContainerClient.exists()).thenReturn(true);
+        doThrow(new RuntimeException("503")).doNothing().when(blobClient).uploadFromFile(anyString(), eq(true));
+
+        assertDoesNotThrow(() -> azureTerraformState.saveArtifacts("org1", "ws1", "job1", "step1", bundle));
+
+        verify(blobClient, times(2)).uploadFromFile(anyString(), eq(true));
+    }
+
+    @Test
+    void downloadingArtifactsWritesTheBundleAndReturnsTheRecordedChecksum(@TempDir Path tempDir) throws Exception {
+        recordedArtifacts("https://test-account.blob.core.windows.net/tfstate/" + ARTIFACT_BLOB, "abc123");
+        File target = new File(tempDir.toFile(), "downloaded.tar.gz");
+        doAnswer(invocation -> {
+            FileUtils.writeStringToFile(new File((String) invocation.getArgument(0)), "bundle-bytes", Charset.defaultCharset());
+            return null;
+        }).when(blobClient).downloadToFile(anyString(), eq(true));
+
+        assertEquals("abc123", azureTerraformState.downloadArtifacts("org1", "ws1", "job1", target));
+
+        assertEquals("bundle-bytes", FileUtils.readFileToString(target, Charset.defaultCharset()));
+        verify(blobContainerClient).getBlobClient(ARTIFACT_BLOB);
+    }
+
+    @Test
+    void aJobWithoutArtifactsHasNothingToDownload(@TempDir Path tempDir) {
+        recordedArtifacts(null, null);
+
+        assertNull(azureTerraformState.downloadArtifacts("org1", "ws1", "job1", new File(tempDir.toFile(), "x")));
+
+        verifyNoInteractions(blobClient);
+    }
+
+    @Test
+    void aRecordedLocationInAnotherJobOrTenantIsRefusedWithoutTouchingTheContainer(@TempDir Path tempDir) {
+        recordedArtifacts("https://test-account.blob.core.windows.net/tfstate/plan-artifacts/org1/ws1/other-job/step1/plan-artifacts.tar.gz", "abc");
+
+        assertThrows(io.terrakube.executor.plugin.tfstate.ArtifactVerificationException.class,
+                () -> azureTerraformState.downloadArtifacts("org1", "ws1", "job1", new File(tempDir.toFile(), "x")));
+        verifyNoInteractions(blobClient);
+    }
+
+    @Test
+    void aBlobMissingFromTheContainerIsReportedAsMissingNotAsAnOutage(@TempDir Path tempDir) {
+        recordedArtifacts("https://test-account.blob.core.windows.net/tfstate/" + ARTIFACT_BLOB, "abc123");
+        com.azure.storage.blob.models.BlobStorageException notFound = mock(com.azure.storage.blob.models.BlobStorageException.class);
+        when(notFound.getStatusCode()).thenReturn(404);
+        doThrow(notFound).when(blobClient).downloadToFile(anyString(), eq(true));
+
+        io.terrakube.executor.plugin.tfstate.ArtifactVerificationException thrown = assertThrows(
+                io.terrakube.executor.plugin.tfstate.ArtifactVerificationException.class,
+                () -> azureTerraformState.downloadArtifacts("org1", "ws1", "job1", new File(tempDir.toFile(), "x")));
+        assertTrue(thrown.getMessage().contains("missing"));
+    }
+
+    @Test
+    void anOutageWhileDownloadingIsNotMistakenForNoArtifacts(@TempDir Path tempDir) {
+        recordedArtifacts("https://test-account.blob.core.windows.net/tfstate/" + ARTIFACT_BLOB, "abc123");
+        doThrow(new RuntimeException("503")).when(blobClient).downloadToFile(anyString(), eq(true));
+
+        assertThrows(io.terrakube.executor.plugin.tfstate.TerraformStateUnavailableException.class,
+                () -> azureTerraformState.downloadArtifacts("org1", "ws1", "job1", new File(tempDir.toFile(), "x")));
+    }
+
+    @Test
+    void deletingArtifactsRemovesTheRecordedBlobAndNeverFailsTheCaller() {
+        recordedArtifacts("https://test-account.blob.core.windows.net/tfstate/" + ARTIFACT_BLOB, "abc123");
+
+        azureTerraformState.deleteArtifacts("org1", "ws1", "job1");
+
+        verify(blobClient).deleteIfExists();
+
+        when(blobClient.deleteIfExists()).thenThrow(new RuntimeException("denied"));
+        assertDoesNotThrow(() -> azureTerraformState.deleteArtifacts("org1", "ws1", "job1"));
+    }
 }

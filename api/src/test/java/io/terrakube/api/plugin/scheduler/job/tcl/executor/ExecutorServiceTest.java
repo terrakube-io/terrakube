@@ -96,6 +96,32 @@ class ExecutorServiceTest {
     }
 
     @Test
+    void planArtifactsComeFromTheTemplateWhenTheWorkspaceDoesNotSetThem() {
+        assertThat(ExecutorService.resolveArtifactPatterns(List.of("build/**"), Map.of("AWS_REGION", "eu-west-1")))
+                .containsExactly("build/**");
+        assertThat(ExecutorService.resolveArtifactPatterns(null, Map.of())).isNull();
+    }
+
+    @Test
+    void aWorkspaceVariableReplacesTheTemplateArtifacts() {
+        assertThat(ExecutorService.resolveArtifactPatterns(List.of("build/**"),
+                Map.of("TERRAKUBE_PLAN_ARTIFACTS", "dist/*.zip\nlayers/**")))
+                .containsExactly("dist/*.zip\nlayers/**");
+    }
+
+    @Test
+    void aWorkspaceVariableWorksWithoutAnyTemplateArtifacts() {
+        assertThat(ExecutorService.resolveArtifactPatterns(null, Map.of("TERRAKUBE_PLAN_ARTIFACTS", "build/**")))
+                .containsExactly("build/**");
+    }
+
+    @Test
+    void anEmptyWorkspaceVariableSwitchesTheTemplateArtifactsOff() {
+        assertThat(ExecutorService.resolveArtifactPatterns(List.of("build/**"), Map.of("TERRAKUBE_PLAN_ARTIFACTS", "  ")))
+                .isEmpty();
+    }
+
+    @Test
     void shouldRouteTerraformAndEnvVariablesToTheirRespectiveMaps() throws ExecutionException {
         Variable terraformVariable = new Variable();
         terraformVariable.setKey("instance_type");

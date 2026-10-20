@@ -35,6 +35,12 @@ public interface StorageTypeService {
 
     void deleteWorkspaceStateData(String organizationId, String workspaceId);
 
+    /**
+     * Removes what a plan step stored for its apply step (plan-artifacts/), once the job is over.
+     * Best effort and safe to repeat; deleting a workspace removes all of its jobs' artifacts too.
+     */
+    void deleteJobArtifacts(String organizationId, String workspaceId, int jobId);
+
     boolean migrateToOrganization(String organizationId, String workspaceId, String migrateToOrganizationId);
 
     void uploadPolicyEvaluation(String storageUri, String policyEvaluationJson);

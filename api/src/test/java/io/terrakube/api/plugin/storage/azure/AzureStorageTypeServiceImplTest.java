@@ -244,4 +244,44 @@ class AzureStorageTypeServiceImplTest {
         when(blobClient.exists()).thenReturn(false);
         assertFalse(azureStorageTypeService.hasSpooledContextPatch(orgId, jobId, stepId, phase));
     }
+
+    // ----- plan artifacts (same container as state, under plan-artifacts/)
+
+    private void containerListsBlobs(String container, String... names) {
+        when(blobServiceClient.getBlobContainerClient(container)).thenReturn(containerClient);
+        com.azure.core.http.rest.PagedIterable<BlobItem> paged = mock(com.azure.core.http.rest.PagedIterable.class);
+        java.util.List<BlobItem> items = new java.util.ArrayList<>();
+        for (String name : names) {
+            BlobItem item = mock(BlobItem.class);
+            when(item.getName()).thenReturn(name);
+            items.add(item);
+            when(containerClient.getBlobClient(name)).thenReturn(blobClient);
+        }
+        when(paged.iterator()).thenReturn(items.iterator());
+        when(containerClient.listBlobs(any(ListBlobsOptions.class), any())).thenReturn(paged);
+    }
+
+    @Test
+    void deletingAJobsArtifactsRemovesOnlyThatJobsPrefixInTheStateContainer() {
+        containerListsBlobs("tfstate", "plan-artifacts/org1/ws1/12/step-a/plan-artifacts.tar.gz");
+
+        azureStorageTypeService.deleteJobArtifacts("org1", "ws1", 12);
+
+        org.mockito.ArgumentCaptor<ListBlobsOptions> options = org.mockito.ArgumentCaptor.forClass(ListBlobsOptions.class);
+        verify(containerClient).listBlobs(options.capture(), any());
+        assertEquals("plan-artifacts/org1/ws1/12/", options.getValue().getPrefix());
+        verify(blobClient).delete();
+    }
+
+    @Test
+    void deletingAWorkspaceAlsoRemovesItsArtifacts() {
+        containerListsBlobs("tfstate");
+
+        azureStorageTypeService.deleteWorkspaceStateData("org1", "ws1");
+
+        org.mockito.ArgumentCaptor<ListBlobsOptions> options = org.mockito.ArgumentCaptor.forClass(ListBlobsOptions.class);
+        verify(containerClient, times(2)).listBlobs(options.capture(), any());
+        assertEquals(java.util.List.of("org1/ws1", "plan-artifacts/org1/ws1/"),
+                options.getAllValues().stream().map(ListBlobsOptions::getPrefix).toList());
+    }
 }

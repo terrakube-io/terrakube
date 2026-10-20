@@ -19,6 +19,8 @@ public interface StepRepository extends JpaRepository<Step, UUID> {
 
     List<Step> findByJobId(int jobId);
 
+    long countByJobId(int jobId);
+
     Optional<Step> findFirstByJobIdOrderByStepNumber(int jobId);
 
     @Query("SELECT s FROM step s WHERE s.deliveryState = :state AND (s.leaseUntil IS NULL OR s.leaseUntil < :now)")

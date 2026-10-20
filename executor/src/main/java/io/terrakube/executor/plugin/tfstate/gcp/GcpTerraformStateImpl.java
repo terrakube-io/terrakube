@@ -12,9 +12,12 @@ import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.text.TextStringBuilder;
 import io.terrakube.client.TerrakubeClient;
+import io.terrakube.client.model.organization.job.JobAttributes;
 import io.terrakube.client.model.organization.workspace.history.History;
 import io.terrakube.client.model.organization.workspace.history.HistoryAttributes;
 import io.terrakube.client.model.organization.workspace.history.HistoryRequest;
+import io.terrakube.executor.plugin.tfstate.ArtifactStorageKeys;
+import io.terrakube.executor.plugin.tfstate.ArtifactVerificationException;
 import io.terrakube.executor.plugin.tfstate.StorageRetryMetrics;
 import io.terrakube.executor.plugin.tfstate.TerraformOutputPathService;
 import io.terrakube.executor.plugin.tfstate.TerraformState;
@@ -156,6 +159,54 @@ public class GcpTerraformStateImpl implements TerraformState {
                     planGcExist.set(true);
                 });
         return planGcExist.get();
+    }
+
+    @Override
+    public String saveArtifacts(String organizationId, String workspaceId, String jobId, String stepId, File bundle) {
+        String blobKey = ArtifactStorageKeys.key(organizationId, workspaceId, jobId, stepId);
+        log.info("terraformGcpArtifactsFile: {}", blobKey);
+        BlobInfo blobInfo = BlobInfo.newBuilder(BlobId.of(bucketName, blobKey)).build();
+        // createFrom streams the file in chunks (resumable upload) instead of reading it into memory,
+        // and replaces any earlier attempt.
+        storageRetryMetrics.withRetry("gcp", "artifacts-write", () -> storage.createFrom(blobInfo, bundle.toPath()));
+        return String.format("https://storage.cloud.google.com/%s/%s", bucketName, blobKey);
+    }
+
+    @Override
+    public String downloadArtifacts(String organizationId, String workspaceId, String jobId, File target)
+            throws ArtifactVerificationException {
+        JobAttributes attributes = terrakubeClient.getJobById(organizationId, jobId).getData().getAttributes();
+        String location = attributes.getTerraformPlanArtifacts();
+        if (location == null || location.isBlank()) {
+            return null;
+        }
+        String blobKey = ArtifactStorageKeys.keyFromLocation(location, organizationId, workspaceId, jobId);
+
+        log.info("Downloading plan artifacts from bucket {} object {}", bucketName, blobKey);
+        com.google.cloud.storage.Blob blob = storageRetryMetrics.withRetry("gcp", "artifacts-read", () -> storage.get(BlobId.of(bucketName, blobKey)));
+        if (blob == null) {
+            throw new ArtifactVerificationException("The plan artifacts bundle " + blobKey + " is missing from the bucket");
+        }
+        storageRetryMetrics.withRetry("gcp", "artifacts-read", () -> {
+            blob.downloadTo(target.toPath());
+            return null;
+        });
+        return attributes.getTerraformPlanArtifactsChecksum() == null ? "" : attributes.getTerraformPlanArtifactsChecksum();
+    }
+
+    @Override
+    public void deleteArtifacts(String organizationId, String workspaceId, String jobId) {
+        try {
+            String location = terrakubeClient.getJobById(organizationId, jobId).getData().getAttributes().getTerraformPlanArtifacts();
+            if (location == null || location.isBlank()) {
+                return;
+            }
+            String blobKey = ArtifactStorageKeys.keyFromLocation(location, organizationId, workspaceId, jobId);
+            storage.delete(BlobId.of(bucketName, blobKey));
+        } catch (RuntimeException e) {
+            // The bucket's lifecycle rule for plan-artifacts/ is the backstop.
+            log.warn("Could not delete the plan artifacts of job {}: {}", jobId, e.getMessage());
+        }
     }
 
     @Override

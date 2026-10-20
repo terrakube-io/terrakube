@@ -30,6 +30,7 @@ import io.terrakube.api.repository.GlobalVarRepository;
 import io.terrakube.api.repository.JobRepository;
 import io.terrakube.api.repository.ReferenceRepository;
 import io.terrakube.api.repository.SshRepository;
+import io.terrakube.api.repository.StepRepository;
 import io.terrakube.api.repository.VariableRepository;
 import io.terrakube.api.repository.VcsRepository;
 import io.terrakube.api.repository.WorkspaceRepository;
@@ -53,6 +54,7 @@ import lombok.extern.slf4j.Slf4j;
 public class ExecutorService {
 
     private static final String EPHEMERAL_EXECUTOR_FLAG = "TERRAKUBE_ENABLE_EPHEMERAL_EXECUTOR";
+    static final String PLAN_ARTIFACTS_VARIABLE = "TERRAKUBE_PLAN_ARTIFACTS";
 
     @Value("${io.terrakube.hostname}")
     String hostname;
@@ -84,6 +86,8 @@ public class ExecutorService {
     WorkspaceRepository workspaceRepository;
     @Autowired
     JobRepository jobRepository;
+    @Autowired
+    StepRepository stepRepository;
     @Autowired
     private VariableRepository variableRepository;
     @Autowired
@@ -160,6 +164,8 @@ public class ExecutorService {
 
         executorContext.setCommandList(flow.getCommands());
         executorContext.setOnFailureList(flow.getOnFailure());
+        executorContext.setArtifactPatterns(resolveArtifactPatterns(flow.getArtifacts(), environmentVariables));
+        executorContext.setMultiStepJob(stepRepository.countByJobId(job.getId()) > 1);
         executorContext.setType(flow.getType());
         executorContext.setIgnoreError(flow.isIgnoreError());
         executorContext.setRequireSavedPlan(flow.isRequireSavedPlan());
@@ -231,6 +237,21 @@ public class ExecutorService {
         } else {
             persistentExecutorService.send(job, executorContext);
         }
+    }
+
+    /**
+     * The globs of files a plan step hands to its apply step. A workspace (or organization) can set
+     * the {@value #PLAN_ARTIFACTS_VARIABLE} environment variable to choose them without a template of
+     * its own: when it is present it replaces the template's {@code artifacts:} list, and an empty
+     * value switches the feature off for that workspace. The value is handed to the executor as one
+     * entry, which splits it into patterns (new lines, or commas outside braces).
+     */
+    static List<String> resolveArtifactPatterns(List<String> templatePatterns, Map<String, String> environmentVariables) {
+        if (environmentVariables == null || !environmentVariables.containsKey(PLAN_ARTIFACTS_VARIABLE)) {
+            return templatePatterns;
+        }
+        String value = environmentVariables.get(PLAN_ARTIFACTS_VARIABLE);
+        return value == null || value.isBlank() ? List.of() : List.of(value);
     }
 
     static boolean isEphemeralExecutorEnabled(Map<String, String> environmentVariables) {

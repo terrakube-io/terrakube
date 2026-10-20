@@ -274,4 +274,67 @@ public class UpdateJobStatusImplTest {
         Assertions.assertEquals("completed", requests.get(1).getData().getAttributes().getStatus());
         Assertions.assertEquals("output-url", requests.get(1).getData().getAttributes().getOutput());
     }
+
+    private JobAttributes updatedJobAttributes() {
+        ArgumentCaptor<JobRequest> captor = ArgumentCaptor.forClass(JobRequest.class);
+        verify(terrakubeClient).updateJob(captor.capture(), anyString(), anyString());
+        return captor.getValue().getData().getAttributes();
+    }
+
+    @Test
+    public void aPlanThatSavedArtifactsRecordsWhereAndTheirChecksumWithThePlan() {
+        stubJobWithStatus("queue", 2);
+        doReturn("output-url").when(terraformState).saveOutput(anyString(), anyString(), anyString(), anyString(), anyString());
+        TerraformJob terraformJob = terraformJob();
+        terraformJob.setArtifactPatterns(List.of("build/**"));
+        terraformJob.setArtifactsUrl("https://bucket/plan-artifacts/o/w/4711/ze-step/plan-artifacts.tar.gz");
+        terraformJob.setArtifactsChecksum("deadbeef");
+
+        subject().setCompletedStatus(true, true, 2, terraformJob, "plan output", "", "plan-file", "commit-1");
+
+        JobAttributes sent = updatedJobAttributes();
+        Assertions.assertEquals("https://bucket/plan-artifacts/o/w/4711/ze-step/plan-artifacts.tar.gz", sent.getTerraformPlanArtifacts());
+        Assertions.assertEquals("deadbeef", sent.getTerraformPlanArtifactsChecksum());
+        Assertions.assertEquals("plan-file", sent.getTerraformPlan());
+    }
+
+    @Test
+    public void aPlanWithArtifactsConfiguredButNoneSavedClearsWhatAnEarlierPlanRecorded() {
+        // A later plan in the same job must not leave the first plan's bundle for its apply to unpack.
+        stubJobWithStatus("queue", 2);
+        doReturn("output-url").when(terraformState).saveOutput(anyString(), anyString(), anyString(), anyString(), anyString());
+        TerraformJob terraformJob = terraformJob();
+        terraformJob.setArtifactPatterns(List.of("build/**"));
+
+        subject().setCompletedStatus(true, true, 2, terraformJob, "plan output", "", "plan-file", "commit-1");
+
+        JobAttributes sent = updatedJobAttributes();
+        Assertions.assertEquals("", sent.getTerraformPlanArtifacts());
+        Assertions.assertEquals("", sent.getTerraformPlanArtifactsChecksum());
+    }
+
+    @Test
+    public void aPlanWithoutArtifactsNeverMentionsThemSoAnOlderApiAcceptsTheUpdate() {
+        // An API from before the plan-artifacts fields refuses an unknown attribute.
+        stubJobWithStatus("queue", 2);
+        doReturn("output-url").when(terraformState).saveOutput(anyString(), anyString(), anyString(), anyString(), anyString());
+
+        subject().setCompletedStatus(true, true, 2, terraformJob(), "plan output", "", "plan-file", "commit-1");
+
+        JobAttributes sent = updatedJobAttributes();
+        Assertions.assertNull(sent.getTerraformPlanArtifacts());
+        Assertions.assertNull(sent.getTerraformPlanArtifactsChecksum());
+    }
+
+    @Test
+    public void anApplyLeavesTheRecordedArtifactsAlone() {
+        stubJobWithStatus("running", 2);
+        doReturn("output-url").when(terraformState).saveOutput(anyString(), anyString(), anyString(), anyString(), anyString());
+        TerraformJob terraformJob = terraformJob();
+        terraformJob.setArtifactPatterns(List.of("build/**"));
+
+        subject().setCompletedStatus(true, false, 0, terraformJob, "apply output", "", "", "commit-1");
+
+        Assertions.assertNull(updatedJobAttributes().getTerraformPlanArtifacts());
+    }
 }

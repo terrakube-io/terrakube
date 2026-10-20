@@ -214,4 +214,31 @@ class GcpStorageTypeServiceImplTest {
         assertFalse(gcpStorageTypeService.hasSpooledContextPatch(orgId, jobId, stepId, phase));
         assertNull(gcpStorageTypeService.getSpooledContextPatch(orgId, jobId, stepId, phase));
     }
+
+    // ----- plan artifacts (plan-artifacts/<organization>/<workspace>/<job>/...)
+
+    @Test
+    void deletingAJobsArtifactsRemovesOnlyThatJobsPrefix() {
+        Page<Blob> page = mock(Page.class);
+        when(page.iterateAll()).thenReturn(Collections.singletonList(blob));
+        when(blob.getName()).thenReturn("plan-artifacts/org1/ws1/12/step-a/plan-artifacts.tar.gz");
+        when(blob.getBlobId()).thenReturn(BlobId.of(bucketName, "plan-artifacts/org1/ws1/12/step-a/plan-artifacts.tar.gz"));
+        when(storage.list(eq(bucketName), any(), any())).thenReturn(page);
+
+        gcpStorageTypeService.deleteJobArtifacts("org1", "ws1", 12);
+
+        verify(storage).delete(BlobId.of(bucketName, "plan-artifacts/org1/ws1/12/step-a/plan-artifacts.tar.gz"));
+    }
+
+    @Test
+    void deletingAWorkspaceAlsoRemovesItsArtifacts() {
+        Page<Blob> empty = mock(Page.class);
+        when(empty.iterateAll()).thenReturn(Collections.emptyList());
+        when(storage.list(eq(bucketName), any(), any())).thenReturn(empty);
+
+        gcpStorageTypeService.deleteWorkspaceStateData("org1", "ws1");
+
+        // state, then plan artifacts
+        verify(storage, times(2)).list(eq(bucketName), any(), any());
+    }
 }
