@@ -56,7 +56,7 @@ public class ContextWriteLock {
      * @return the token to {@link #release} it with.
      * @throws ContextUnavailableException when it is still busy, Redis cannot be reached, or the wait is interrupted.
      */
-    String acquire(int jobId) {
+    public String acquire(int jobId) {
         String key = KEY_PREFIX + jobId;
         String token = UUID.randomUUID().toString();
         long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(acquireTimeoutMillis);
@@ -76,7 +76,7 @@ public class ContextWriteLock {
         return token;
     }
 
-    void release(int jobId, String token) {
+    public void release(int jobId, String token) {
         try {
             redisTemplate.execute(RELEASE_SCRIPT, List.of(KEY_PREFIX + jobId), token);
         } catch (DataAccessException e) {

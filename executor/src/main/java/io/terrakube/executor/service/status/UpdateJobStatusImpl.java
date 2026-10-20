@@ -2,6 +2,7 @@ package io.terrakube.executor.service.status;
 
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import feign.FeignException;
 import org.springframework.stereotype.Service;
 import io.terrakube.client.TerrakubeClient;
 import io.terrakube.client.model.organization.job.Job;
@@ -70,13 +71,13 @@ public class UpdateJobStatusImpl implements UpdateJobStatus {
     }
 
     @Override
-    public void setCompletedStatus(boolean successful, boolean isPlan, int exitCode, TerraformJob terraformJob, String jobOutput, String jobErrorOutput, String jobPlan, String commitId, boolean hasSoftMandatoryViolations, String approvalTeam) {
+    public void setCompletedStatus(boolean successful, boolean isPlan, int exitCode, TerraformJob terraformJob, String jobOutput, String jobErrorOutput, String jobPlan, String commitId, boolean hasSoftMandatoryViolations, String approvalTeam, String deliveryState, Long deliveryRevision) {
         if (!executorFlagsProperties.isDisableAcknowledge()) {
             String currentJobStatus = getCurrentJobStatus(terraformJob);
             // A rejected run keeps showing its approval step as failed: onReject command
             // output is still saved, but its success must not repaint the step as completed.
             boolean rejected = currentJobStatus.equals("rejected");
-            updateStepStatus(successful && !rejected, terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), jobOutput, jobErrorOutput);
+            updateStepStatus(successful && !rejected, terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), jobOutput, jobErrorOutput, deliveryState, deliveryRevision);
             if (rejected || currentJobStatus.equals("cancelled"))
                 log.warn("Job {} was {} when running executor, skipping job status update", terraformJob.getJobId(), currentJobStatus);
             else
@@ -161,10 +162,18 @@ public class UpdateJobStatusImpl implements UpdateJobStatus {
         terrakubeClient.updateJob(jobRequest, job.getRelationships().getOrganization().getData().getId(), job.getId());
     }
 
-    private void updateStepStatus(boolean status, String organizationId, String jobId, String stepId, String jobOutput, String jobErrorOutput) {
-        StepAttributes stepAttributes = new StepAttributes();
-        stepAttributes.setOutput(this.terraformOutput.saveOutput(organizationId, jobId, stepId, jobOutput, jobErrorOutput));
-        stepAttributes.setStatus(status ? "completed": "failed");
+    private void updateStepStatus(boolean status, String organizationId, String jobId, String stepId, String jobOutput, String jobErrorOutput, String deliveryState, Long deliveryRevision) {
+        String output = this.terraformOutput.saveOutput(organizationId, jobId, stepId, jobOutput, jobErrorOutput);
+        String stepStatus = status ? "completed" : "failed";
+
+        StepDeliveryAttributes stepAttributes = new StepDeliveryAttributes();
+        stepAttributes.setOutput(output);
+        stepAttributes.setStatus(stepStatus);
+        if (deliveryState != null) {
+            stepAttributes.setDeliveryState(deliveryState);
+            stepAttributes.setDeliveryTimestamp(System.currentTimeMillis());
+            stepAttributes.setDeliveryRevision(deliveryRevision);
+        }
 
         Step step = new Step();
         step.setId(stepId);
@@ -173,7 +182,29 @@ public class UpdateJobStatusImpl implements UpdateJobStatus {
         StepRequest stepRequest = new StepRequest();
         stepRequest.setData(step);
 
-        terrakubeClient.updateStep(stepRequest, organizationId, jobId, stepId);
+        try {
+            terrakubeClient.updateStep(stepRequest, organizationId, jobId, stepId);
+        } catch (FeignException e) {
+            if (deliveryState != null && (e.status() == 400 || e.status() == 404)) {
+                log.warn("Step PATCH with delivery attributes rejected (status {}) by API for step {}, retrying without delivery attributes (older API compatibility)",
+                        e.status(), stepId);
+                StepAttributes fallbackAttributes = new StepAttributes();
+                fallbackAttributes.setOutput(output);
+                fallbackAttributes.setStatus(stepStatus);
+
+                Step fallbackStep = new Step();
+                fallbackStep.setId(stepId);
+                fallbackStep.setType("step");
+                fallbackStep.setAttributes(fallbackAttributes);
+
+                StepRequest fallbackRequest = new StepRequest();
+                fallbackRequest.setData(fallbackStep);
+
+                terrakubeClient.updateStep(fallbackRequest, organizationId, jobId, stepId);
+            } else {
+                throw e;
+            }
+        }
     }
 
     private void updateStepLogs(String organizationId, String jobId, String stepId) {

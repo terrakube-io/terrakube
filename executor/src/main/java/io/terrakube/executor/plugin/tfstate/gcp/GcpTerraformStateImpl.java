@@ -41,6 +41,7 @@ public class GcpTerraformStateImpl implements TerraformState {
     private static final String TERRAFORM_PLAN_FILE = "terraformLibrary.tfPlan";
     private static final String GCP_CREDENTIALS_FILE = "GCP_CREDENTIALS_FILE.json";
     private static final String BACKEND_FILE_NAME = "gcp_backend_override.tf";
+    private static final String CONTEXT_SPOOL_LOCATION = "context-spool/%s/%s/%s-%s.json.gz";
 
     @NonNull
     TerraformOutputPathService terraformOutputPathService;
@@ -305,6 +306,24 @@ public class GcpTerraformStateImpl implements TerraformState {
         } catch (Exception e) {
             log.warn("Failed to restore OPA binary version {} ({}_{}) from GCS: {}", version, os, arch, e.getMessage());
             return false;
+        }
+    }
+
+    @Override
+    public String spoolContextPatch(String organizationId, String jobId, String stepId, String phase, byte[] data) {
+        String blobKey = String.format(CONTEXT_SPOOL_LOCATION, organizationId, jobId, stepId, phase);
+        log.info("Spooling context patch to GCS: {}", blobKey);
+        try {
+            BlobId blobId = BlobId.of(bucketName, blobKey);
+            BlobInfo blobInfo = BlobInfo.newBuilder(blobId)
+                    .setContentType("application/gzip")
+                    .build();
+            storageRetryMetrics.withRetry("gcp", "spool-write", () -> storage.create(blobInfo, data));
+            log.info("Successfully spooled context patch for job {} step {} phase {} to GCS", jobId, stepId, phase);
+            return blobKey;
+        } catch (Exception e) {
+            log.error("Failed to spool context patch to GCS: {}", e.getMessage(), e);
+            return null;
         }
     }
 }

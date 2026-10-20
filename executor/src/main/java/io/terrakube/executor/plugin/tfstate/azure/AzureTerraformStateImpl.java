@@ -48,6 +48,7 @@ public class AzureTerraformStateImpl implements TerraformState {
     private static final String BACKEND_FILE_NAME = "azure_backend_override.tf";
     private static final String CONTAINER_OUTPUT_NAME = "tfoutput";
     private static final String CONTAINER_BINARY_NAME = "tfbinary";
+    private static final String CONTEXT_SPOOL_LOCATION = "context-spool/%s/%s/%s-%s.json.gz";
 
     private String resourceGroupName;
     private String storageAccountName;
@@ -338,6 +339,28 @@ public class AzureTerraformStateImpl implements TerraformState {
         } catch (Exception e) {
             log.warn("Failed to restore OPA binary version {} ({}_{}) from Azure Blob: {}", version, os, arch, e.getMessage());
             return false;
+        }
+    }
+
+    @Override
+    public String spoolContextPatch(String organizationId, String jobId, String stepId, String phase, byte[] gzippedPatch) {
+        String blobName = String.format(CONTEXT_SPOOL_LOCATION, organizationId, jobId, stepId, phase);
+        log.info("Spooling context patch to Azure Blob: {}", blobName);
+        try {
+            BlobContainerClient blobContainerClient = blobServiceClient.getBlobContainerClient(CONTAINER_OUTPUT_NAME);
+            if (!blobContainerClient.exists()) {
+                blobContainerClient.create();
+            }
+            BlobClient blobClient = blobContainerClient.getBlobClient(blobName);
+            storageRetryMetrics.withRetry("azure", "spool-write", () -> {
+                blobClient.upload(BinaryData.fromBytes(gzippedPatch), true);
+                return null;
+            });
+            log.info("Successfully spooled context patch for job {} step {} phase {} to Azure Blob", jobId, stepId, phase);
+            return blobName;
+        } catch (Exception e) {
+            log.error("Failed to spool context patch to Azure Blob: {}", e.getMessage(), e);
+            return null;
         }
     }
 }

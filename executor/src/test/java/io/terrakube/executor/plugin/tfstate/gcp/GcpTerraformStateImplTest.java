@@ -20,6 +20,7 @@ import java.io.File;
 import java.io.IOException;
 import java.net.URL;
 import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.concurrent.TimeUnit;
 
@@ -211,5 +212,24 @@ class GcpTerraformStateImplTest {
 
         assertEquals("https://api/output", result);
         verify(storage).create(any(BlobInfo.class), eq("output-contenterror-content".getBytes()));
+    }
+
+    @Test
+    void testSpoolContextPatch() {
+        String organizationId = "org1";
+        String jobId = "job1";
+        String stepId = "step1";
+        String phase = "plan";
+        byte[] gzippedPatch = "dummy-gzipped-bytes".getBytes(StandardCharsets.UTF_8);
+
+        String result = gcpTerraformState.spoolContextPatch(organizationId, jobId, stepId, phase, gzippedPatch);
+
+        assertEquals("context-spool/org1/job1/step1-plan.json.gz", result);
+        verify(storage).create(
+                argThat((BlobInfo info) -> info != null
+                        && info.getBlobId().getName().equals("context-spool/org1/job1/step1-plan.json.gz")
+                        && "application/gzip".equals(info.getContentType())
+                        && info.getContentEncoding() == null),
+                eq(gzippedPatch));
     }
 }

@@ -42,4 +42,42 @@ public interface StorageTypeService {
     String getPolicyEvaluation(String storageUri);
 
     void deletePolicyEvaluation(String storageUri);
+
+    /**
+     * Retrieve a spooled context patch envelope from object storage.
+     * Path: context-spool/<organizationId>/<jobId>/<stepId>-<phase>.json.gz
+     *
+     * @param organizationId the organization ID
+     * @param jobId          the job ID
+     * @param stepId         the step ID
+     * @param phase          the execution phase ("plan" or "apply")
+     * @return raw gzipped bytes of the spooled patch, or null if not found
+     */
+    default byte[] getSpooledContextPatch(String organizationId, String jobId, String stepId, String phase) {
+        return null;
+    }
+
+    /**
+     * Delete a spooled context patch from object storage after successful recovery.
+     *
+     * @param organizationId the organization ID
+     * @param jobId          the job ID
+     * @param stepId         the step ID
+     * @param phase          the execution phase ("plan" or "apply")
+     */
+    default void deleteSpooledContextPatch(String organizationId, String jobId, String stepId, String phase) {
+    }
+
+    /**
+     * Probe whether a spooled context patch exists in object storage.
+     *
+     * @param organizationId the organization ID
+     * @param jobId          the job ID
+     * @param stepId         the step ID
+     * @param phase          the execution phase ("plan" or "apply")
+     * @return true if the spool object exists in storage
+     */
+    default boolean hasSpooledContextPatch(String organizationId, String jobId, String stepId, String phase) {
+        return false;
+    }
 }

@@ -54,6 +54,7 @@ public class TerraformJob {
     private List<Map<String, Object>> jobDiagnostics;
     private List<PolicyContext> policyList;
     private List<PolicyExemptionContext> policyExemptionList;
+    private Long deliveryRevision;
 
 }
 

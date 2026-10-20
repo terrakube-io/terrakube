@@ -109,12 +109,77 @@ class ContextWriteServiceTest {
                 org.springframework.transaction.annotation.Transactional.class, jakarta.transaction.Transactional.class);
         List<AnnotatedElement> elements = List.of(ContextWriteService.class,
                 ContextWriteService.class.getMethod("patch", int.class, ContextPatchApplier.Patch.class),
+                ContextWriteService.class.getMethod("patchRecovery", int.class, long.class, java.util.Map.class),
                 ContextWriteService.class.getMethod("replace", int.class, ObjectNode.class));
         for (AnnotatedElement element : elements) {
             for (Class<? extends Annotation> annotation : transactional) {
                 assertFalse(element.isAnnotationPresent(annotation), element + " is " + annotation.getName());
             }
         }
+    }
+
+    @Test
+    void patchRecovery_AppliesSlashPathEntriesAndNestsObject() throws Exception {
+        InMemoryContextWriteLock.stub(redisTemplate, valueOperations);
+        AtomicReference<String> stored = new AtomicReference<>();
+        when(storageTypeService.getContext(1)).thenAnswer(invocation -> stored.get());
+        when(storageTypeService.saveContext(Mockito.eq(1), Mockito.anyString())).thenAnswer(invocation -> {
+            stored.set(invocation.getArgument(1));
+            return stored.get();
+        });
+        ContextWriteService service = writeService();
+
+        java.util.Map<String, Object> set = java.util.Map.of(
+                "planStructuredOutput/step-1", List.of(java.util.Map.of("resource", "aws_s3_bucket.test")),
+                "terrakubeUI/step-1", "marker",
+                "structuredOutputStatus", java.util.Map.of("state", "PERSISTED")
+        );
+
+        ContextWriteService.PatchResult result = service.patchRecovery(1, 100L, set);
+        assertEquals(3, result.applied().size());
+        assertEquals(0, result.skipped());
+
+        ObjectNode doc = (ObjectNode) objectMapper.readTree(stored.get());
+        assertFalse(doc.has("planStructuredOutput/step-1"));
+        assertTrue(doc.has("planStructuredOutput"));
+        assertEquals("aws_s3_bucket.test", doc.at("/planStructuredOutput/step-1/0/resource").asText());
+        assertEquals("marker", doc.at("/terrakubeUI/step-1").asText());
+        assertEquals(100L, doc.at("/contextRevisions/planStructuredOutput~1step-1").asLong());
+    }
+
+    @Test
+    void patchRecovery_RespectsRevisionOrderingAgainstLiveWrites() throws Exception {
+        InMemoryContextWriteLock.stub(redisTemplate, valueOperations);
+        AtomicReference<String> stored = new AtomicReference<>(
+                "{\"planStructuredOutput\":{\"step-1\":[{\"resource\":\"live-new\"}]},\"contextRevisions\":{\"planStructuredOutput/step-1\":200}}"
+        );
+        when(storageTypeService.getContext(1)).thenAnswer(invocation -> stored.get());
+        when(storageTypeService.saveContext(Mockito.eq(1), Mockito.anyString())).thenAnswer(invocation -> {
+            stored.set(invocation.getArgument(1));
+            return stored.get();
+        });
+        ContextWriteService service = writeService();
+
+        // 1. Spooled patch with lower revision (150 <= 200) -> skipped, live remains untouched
+        java.util.Map<String, Object> staleSet = java.util.Map.of(
+                "planStructuredOutput/step-1", List.of(java.util.Map.of("resource", "stale-spool"))
+        );
+        ContextWriteService.PatchResult staleResult = service.patchRecovery(1, 150L, staleSet);
+        assertEquals(0, staleResult.applied().size());
+        assertEquals(1, staleResult.skipped());
+        ObjectNode docAfterStale = (ObjectNode) objectMapper.readTree(stored.get());
+        assertEquals("live-new", docAfterStale.at("/planStructuredOutput/step-1/0/resource").asText());
+
+        // 2. Spooled patch with higher revision (300 > 200) -> applied
+        java.util.Map<String, Object> newerSet = java.util.Map.of(
+                "planStructuredOutput/step-1", List.of(java.util.Map.of("resource", "newer-spool"))
+        );
+        ContextWriteService.PatchResult newerResult = service.patchRecovery(1, 300L, newerSet);
+        assertEquals(1, newerResult.applied().size());
+        assertEquals(0, newerResult.skipped());
+        ObjectNode docAfterNewer = (ObjectNode) objectMapper.readTree(stored.get());
+        assertEquals("newer-spool", docAfterNewer.at("/planStructuredOutput/step-1/0/resource").asText());
+        assertEquals(300L, docAfterNewer.at("/contextRevisions/planStructuredOutput~1step-1").asLong());
     }
 
     @Test

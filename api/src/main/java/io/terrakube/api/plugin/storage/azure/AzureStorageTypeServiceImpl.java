@@ -36,6 +36,7 @@ public class AzureStorageTypeServiceImpl implements StorageTypeService {
     private static final String CONTEXT_FILE = "context/%s/context.json";
 
     private static final String TERRAFORM_TAR_GZ = "content/%s/terraformContent.tar.gz";
+    private static final String CONTEXT_SPOOL_LOCATION = "context-spool/%s/%s/%s-%s.json.gz";
 
     @NonNull
     BlobServiceClient blobServiceClient;
@@ -200,6 +201,8 @@ public class AzureStorageTypeServiceImpl implements StorageTypeService {
         for (Integer jobId : jobList) {
             String workspaceOutputFolder = String.format("%s/%s", organizationId, jobId);
             deleteFolderFromContainer(CONTAINER_NAME_OUTPUT, workspaceOutputFolder);
+            String contextSpoolFolder = String.format("context-spool/%s/%s", organizationId, jobId);
+            deleteFolderFromContainer(CONTAINER_NAME_OUTPUT, contextSpoolFolder);
         }
     }
 
@@ -289,6 +292,43 @@ public class AzureStorageTypeServiceImpl implements StorageTypeService {
             }
         } catch (Exception e) {
             log.warn("Failed to delete policy evaluation {} from Azure: {}", storageUri, e.getMessage());
+        }
+    }
+
+    @Override
+    public byte[] getSpooledContextPatch(String organizationId, String jobId, String stepId, String phase) {
+        String blobName = String.format(CONTEXT_SPOOL_LOCATION, organizationId, jobId, stepId, phase);
+        byte[] bytes = downloadBlob(CONTAINER_NAME_OUTPUT, blobName);
+        return (bytes != null && bytes.length > 0) ? bytes : null;
+    }
+
+    @Override
+    public void deleteSpooledContextPatch(String organizationId, String jobId, String stepId, String phase) {
+        String blobName = String.format(CONTEXT_SPOOL_LOCATION, organizationId, jobId, stepId, phase);
+        log.info("Deleting spooled context patch from Azure Blob: {}", blobName);
+        storageRetryMetrics.withRetry("azure", "delete", () -> {
+            try {
+                BlobContainerClient containerClient = blobServiceClient.getBlobContainerClient(CONTAINER_NAME_OUTPUT);
+                BlobClient blobClient = containerClient.getBlobClient(blobName);
+                blobClient.deleteIfExists();
+                log.info("Successfully deleted spooled context patch {}", blobName);
+            } catch (Exception e) {
+                log.warn("Error deleting spooled context patch from Azure Blob: {}", e.getMessage());
+            }
+            return null;
+        });
+    }
+
+    @Override
+    public boolean hasSpooledContextPatch(String organizationId, String jobId, String stepId, String phase) {
+        String blobName = String.format(CONTEXT_SPOOL_LOCATION, organizationId, jobId, stepId, phase);
+        try {
+            BlobContainerClient containerClient = blobServiceClient.getBlobContainerClient(CONTAINER_NAME_OUTPUT);
+            BlobClient blobClient = containerClient.getBlobClient(blobName);
+            return Boolean.TRUE.equals(blobClient.exists());
+        } catch (Exception e) {
+            log.warn("Error probing spooled context patch in Azure Blob: {}", e.getMessage());
+            return false;
         }
     }
 }

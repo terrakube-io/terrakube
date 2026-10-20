@@ -232,4 +232,22 @@ class AzureTerraformStateImplTest {
         assertEquals("https://api/output", result);
         verify(blobClient).upload(any(BinaryData.class), eq(true));
     }
+
+    @Test
+    void testSpoolContextPatch() {
+        String organizationId = "org1";
+        String jobId = "job1";
+        String stepId = "step1";
+        String phase = "plan";
+        byte[] gzippedPatch = "dummy-gzipped-bytes".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+
+        when(blobServiceClient.getBlobContainerClient("tfoutput")).thenReturn(blobContainerClient);
+        when(blobContainerClient.exists()).thenReturn(true);
+        when(blobContainerClient.getBlobClient("context-spool/org1/job1/step1-plan.json.gz")).thenReturn(blobClient);
+
+        String result = azureTerraformState.spoolContextPatch(organizationId, jobId, stepId, phase, gzippedPatch);
+
+        assertEquals("context-spool/org1/job1/step1-plan.json.gz", result);
+        verify(blobClient).upload(any(BinaryData.class), eq(true));
+    }
 }

@@ -14,4 +14,7 @@ public class ExecutorJobResult {
     boolean isPlan;
     boolean hasSoftMandatoryViolations;
     String approvalTeam;
+    String deliveryState;
+    Long deliveryRevision;
+    Long deliveryTimestamp;
 }

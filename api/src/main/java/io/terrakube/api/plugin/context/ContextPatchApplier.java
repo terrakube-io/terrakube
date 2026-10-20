@@ -17,16 +17,16 @@ import java.util.Set;
  * revision applied for it, so a retried, duplicated or reordered write can never replace newer
  * data. A deleted entry keeps its revision as a tombstone.
  */
-final class ContextPatchApplier {
+public final class ContextPatchApplier {
 
-    static final String REVISIONS_KEY = "contextRevisions";
+    public static final String REVISIONS_KEY = "contextRevisions";
 
-    static final int MAX_ENTRIES = 64;
+    public static final int MAX_ENTRIES = 64;
 
     // A revision is executionEpoch * REVISION_EPOCH_SCALE + seq. The epoch is the API's own clock
     // when it dispatched the step (ExecutorContext.executionEpoch) and seq counts up inside that
     // execution, so a re-dispatched step always outranks the execution it replaces.
-    static final long REVISION_EPOCH_SCALE = 1_000_000L;
+    public static final long REVISION_EPOCH_SCALE = 1_000_000L;
 
     // The epoch is minted by an API pod, so this only covers clock skew between API pods. An epoch
     // further ahead is forged and must not outrank the next dispatched execution for long.
@@ -34,7 +34,7 @@ final class ContextPatchApplier {
     // pod whose clock lags the previous dispatcher's by more than the gap between them loses.
     private static final long MAX_CLOCK_SKEW_MILLIS = 10_000;
 
-    record Patch(long revision, ObjectNode set) {
+    public record Patch(long revision, ObjectNode set) {
     }
 
     private ContextPatchApplier() {
@@ -45,7 +45,7 @@ final class ContextPatchApplier {
      *
      * @throws InvalidContextPatchException for an invalid revision, set or path.
      */
-    static Patch parse(JsonNode body, long nowMillis) {
+    public static Patch parse(JsonNode body, long nowMillis) {
         JsonNode revision = body.get("revision");
         if (revision == null || !revision.isIntegralNumber() || !revision.canConvertToLong()
                 || revision.asLong() <= 0 || revision.asLong() / REVISION_EPOCH_SCALE > nowMillis + MAX_CLOCK_SKEW_MILLIS) {
@@ -70,7 +70,7 @@ final class ContextPatchApplier {
      *
      * @return the applied paths; the other entries were stale and left untouched.
      */
-    static List<String> apply(ObjectNode stored, Patch patch) {
+    public static List<String> apply(ObjectNode stored, Patch patch) {
         ObjectNode revisions = stored.get(REVISIONS_KEY) instanceof ObjectNode existing ? existing : stored.putObject(REVISIONS_KEY);
         Map<String, Set<String>> children = new HashMap<>();
         Map<String, Long> maxChildRevision = new HashMap<>();
@@ -117,7 +117,7 @@ final class ContextPatchApplier {
      * revisions are dropped, and every stored revisioned entry keeps its stored value (or stays
      * deleted) along with its revision.
      */
-    static void protectRevisions(ObjectNode stored, ObjectNode incoming) {
+    public static void protectRevisions(ObjectNode stored, ObjectNode incoming) {
         incoming.remove(REVISIONS_KEY);
         if (!(stored.get(REVISIONS_KEY) instanceof ObjectNode storedRevisions)) {
             return;
