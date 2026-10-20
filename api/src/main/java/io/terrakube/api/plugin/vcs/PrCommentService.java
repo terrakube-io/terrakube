@@ -90,6 +90,19 @@ public class PrCommentService {
     public void postPlanResult(Job job) {
         if (job.getPrNumber() == null || job.getPrNumber() == 0) return;
 
+        try {
+            publishPlanComment(job);
+        } finally {
+            // The commit status is keyed by commit and context, so sending it again is harmless, and
+            // it must go out whether or not the comment was (re)published by this pass: a status that
+            // failed once would otherwise never be retried and the check would stay pending.
+            sendPolicyCommitStatus(job);
+        }
+    }
+
+    private void publishPlanComment(Job job) {
+        if (alreadyPublished(job)) return;
+
         String planOutput = fetchPlanDiffText(job);
         String markdownComment = formatPlanComment(job, planOutput);
 
@@ -100,8 +113,32 @@ public class PrCommentService {
         if (commentId != null) {
             job.setPrCommentId(commentId);
         }
-        jobRepository.save(job);
-        sendPolicyCommitStatus(job);
+        recordCommentOutcome(job);
+    }
+
+    /**
+     * A job whose result is already on the pull request is not published again (#3729). The scheduler
+     * processes a completed job more than once (the status change triggers an immediate run and the
+     * recurring trigger fires another, possibly on a different API replica), and each pass used to post
+     * a new comment. The job is read fresh at the start of every pass, under the per-job execution lock,
+     * so its {@code prCommentId} is what the last pass recorded.
+     */
+    private boolean alreadyPublished(Job job) {
+        boolean published = job.getPrCommentId() != null && !job.getPrCommentId().isBlank();
+        if (published) {
+            log.info("Result of job {} was already published to PR #{} (comment {}), skipping", job.getId(),
+                    job.getPrNumber(), job.getPrCommentId());
+        }
+        return published;
+    }
+
+    /**
+     * Stores only the two columns this service changes. Saving the whole job would write back every field
+     * of an instance that was read before the comment request, which can take seconds: it would overwrite
+     * anything changed in the meantime and, if the job was pruned in that time, write the row again.
+     */
+    private void recordCommentOutcome(Job job) {
+        jobRepository.updatePrComment(job.getId(), job.getPrCommentId(), job.getPrCommentError());
     }
 
     /**
@@ -119,10 +156,17 @@ public class PrCommentService {
     public void postApplyResult(Job job) {
         if (job.getPrNumber() == null || job.getPrNumber() == 0) return;
 
+        if (alreadyPublished(job)) return;
+
         String output = fetchStepOutputText(job);
         String markdownComment = formatApplyComment(job, output);
-        attemptPostComment(job, markdownComment);
-        jobRepository.save(job);
+        String commentId = attemptPostComment(job, markdownComment);
+        // Remembered only so a repeated completion pass does not post the apply result again.
+        // Plan replans never reuse an apply job's comment (see findReusablePlanCommentId).
+        if (commentId != null) {
+            job.setPrCommentId(commentId);
+        }
+        recordCommentOutcome(job);
     }
 
     private String attemptPostComment(Job job, String markdownComment) {

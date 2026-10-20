@@ -1,5 +1,9 @@
 package io.terrakube.api.plugin.vcs;
 
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.contains;
+import static org.mockito.Mockito.spy;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
@@ -218,7 +222,6 @@ public class PrCommentServiceTest {
         stubStepOutput("Plan: 3 to add, 0 to change, 1 to destroy.");
 
         doReturn("12345").when(gitHubWebhookService).postPrComment(any(), any());
-        doReturn(job).when(jobRepository).save(any());
 
         subject.postPlanResult(job);
 
@@ -233,7 +236,7 @@ public class PrCommentServiceTest {
         assertTrue(markdown.contains("terrakube plan"));
 
         assertEquals("12345", job.getPrCommentId());
-        verify(jobRepository, times(1)).save(job);
+        verify(jobRepository, times(1)).updatePrComment(eq(job.getId()), any(), any());
     }
 
     // #3673: when the executor has persisted the rendered diff separately, the comment must use
@@ -245,7 +248,6 @@ public class PrCommentServiceTest {
                 + "  # aws_instance.foo will be created\\n\\nPlan: 3 to add, 0 to change, 1 to destroy.\"}}";
         doReturn(contextJson).when(storageTypeService).getContext(job.getId());
         doReturn("12345").when(gitHubWebhookService).postPrComment(any(), any());
-        doReturn(job).when(jobRepository).save(any());
 
         subject.postPlanResult(job);
 
@@ -264,7 +266,6 @@ public class PrCommentServiceTest {
         stubStepOutput("Plan: 3 to add, 0 to change, 1 to destroy.");
         doReturn(null).when(storageTypeService).getContext(job.getId());
         doReturn("12345").when(gitHubWebhookService).postPrComment(any(), any());
-        doReturn(job).when(jobRepository).save(any());
 
         subject.postPlanResult(job);
 
@@ -279,7 +280,6 @@ public class PrCommentServiceTest {
         stubStepOutput("No changes.");
 
         doReturn("note-99").when(gitLabWebhookService).postMergeRequestNote(any(), any());
-        doReturn(job).when(jobRepository).save(any());
 
         subject.postPlanResult(job);
 
@@ -293,7 +293,6 @@ public class PrCommentServiceTest {
         stubStepOutput("Some plan output");
 
         doReturn("bb-123").when(bitBucketWebhookService).postPrComment(any(), any());
-        doReturn(job).when(jobRepository).save(any());
 
         subject.postPlanResult(job);
 
@@ -307,7 +306,6 @@ public class PrCommentServiceTest {
         stubStepOutput(null);
 
         doReturn("12345").when(gitHubWebhookService).postPrComment(any(), any());
-        doReturn(job).when(jobRepository).save(any());
 
         subject.postPlanResult(job);
 
@@ -324,7 +322,6 @@ public class PrCommentServiceTest {
         stubStepOutput(null);
 
         doReturn("12345").when(gitHubWebhookService).postPrComment(any(), any());
-        doReturn(job).when(jobRepository).save(any());
 
         subject.postPlanResult(job);
 
@@ -371,7 +368,6 @@ public class PrCommentServiceTest {
         stubStepOutput(longPlan.toString());
 
         doReturn("12345").when(gitHubWebhookService).postPrComment(any(), any());
-        doReturn(job).when(jobRepository).save(any());
 
         subject.postPlanResult(job);
 
@@ -388,11 +384,10 @@ public class PrCommentServiceTest {
         stubStepOutput("Some plan");
 
         doReturn(null).when(gitHubWebhookService).postPrComment(any(), any());
-        doReturn(job).when(jobRepository).save(any());
 
         subject.postPlanResult(job);
 
-        verify(jobRepository, times(1)).save(job);
+        verify(jobRepository, times(1)).updatePrComment(eq(job.getId()), any(), any());
         assertNull(job.getPrCommentId());
         assertNotNull(job.getPrCommentError());
         assertTrue(job.getPrCommentError().contains("#5"));
@@ -405,11 +400,10 @@ public class PrCommentServiceTest {
 
         doThrow(new RuntimeException("403 Forbidden"))
                 .when(gitHubWebhookService).postPrComment(any(), any());
-        doReturn(job).when(jobRepository).save(any());
 
         subject.postPlanResult(job);
 
-        verify(jobRepository, times(1)).save(job);
+        verify(jobRepository, times(1)).updatePrComment(eq(job.getId()), any(), any());
         assertNull(job.getPrCommentId());
         assertNotNull(job.getPrCommentError());
     }
@@ -421,7 +415,6 @@ public class PrCommentServiceTest {
         job.setPrCommentError("Failed to post comment on pull request #5. Verify permissions.");
 
         doReturn("12345").when(gitHubWebhookService).postPrComment(any(), any());
-        doReturn(job).when(jobRepository).save(any());
 
         subject.postPlanResult(job);
 
@@ -435,11 +428,10 @@ public class PrCommentServiceTest {
         job.setOutput("Apply complete!");
 
         doReturn(null).when(gitHubWebhookService).postPrComment(any(), any());
-        doReturn(job).when(jobRepository).save(any());
 
         subject.postApplyResult(job);
 
-        verify(jobRepository, times(1)).save(job);
+        verify(jobRepository, times(1)).updatePrComment(eq(job.getId()), any(), any());
         assertNotNull(job.getPrCommentError());
     }
 
@@ -448,7 +440,6 @@ public class PrCommentServiceTest {
         Job job = createJob(VcsType.AZURE_DEVOPS, 5, JobStatus.completed);
         job.setTerraformPlan("Some plan");
 
-        doReturn(job).when(jobRepository).save(any());
 
         subject.postPlanResult(job);
 
@@ -464,7 +455,6 @@ public class PrCommentServiceTest {
         stubStepOutput(stepOutput);
 
         doReturn("12345").when(gitHubWebhookService).postPrComment(any(), any());
-        doReturn(job).when(jobRepository).save(any());
 
         subject.postPlanResult(job);
 
@@ -494,7 +484,6 @@ public class PrCommentServiceTest {
         stubStepOutput(null);
 
         doReturn("12345").when(gitHubWebhookService).postPrComment(any(), any());
-        doReturn(job).when(jobRepository).save(any());
 
         subject.postPlanResult(job);
 
@@ -537,7 +526,6 @@ public class PrCommentServiceTest {
         stubStepOutput("[32m+ resource \"aws_instance\" \"example\"[0m");
 
         doReturn("12345").when(gitHubWebhookService).postPrComment(any(), any());
-        doReturn(job).when(jobRepository).save(any());
 
         subject.postPlanResult(job);
 
@@ -555,7 +543,6 @@ public class PrCommentServiceTest {
         doReturn("Plan: 1 to add, 0 to change, 0 to destroy.").when(streamingService).getCurrentLogs(any(), any());
 
         doReturn("12345").when(gitHubWebhookService).postPrComment(any(), any());
-        doReturn(job).when(jobRepository).save(any());
 
         subject.postPlanResult(job);
 
@@ -591,7 +578,6 @@ public class PrCommentServiceTest {
                 .when(storageTypeService).getStepOutput(any(), any(), eq(notifyStep.getId().toString()));
 
         doReturn("12345").when(gitHubWebhookService).postPrComment(any(), any());
-        doReturn(job).when(jobRepository).save(any());
 
         subject.postPlanResult(job);
 
@@ -624,7 +610,6 @@ public class PrCommentServiceTest {
                 .when(storageTypeService).getStepOutput(any(), any(), eq(erroredStep.getId().toString()));
 
         doReturn("12345").when(gitHubWebhookService).postPrComment(any(), any());
-        doReturn(job).when(jobRepository).save(any());
 
         subject.postPlanResult(job);
 
@@ -647,7 +632,6 @@ public class PrCommentServiceTest {
         doReturn(contextJson).when(storageTypeService).getContext(job.getId());
 
         doReturn("12345").when(gitHubWebhookService).postPrComment(any(), any());
-        doReturn(job).when(jobRepository).save(any());
 
         subject.postPlanResult(job);
 
@@ -689,7 +673,6 @@ public class PrCommentServiceTest {
         doReturn("{}").when(storageTypeService).getContext(job.getId());
 
         doReturn("12345").when(gitHubWebhookService).postPrComment(any(), any());
-        doReturn(job).when(jobRepository).save(any());
 
         subject.postPlanResult(job);
 
@@ -707,7 +690,6 @@ public class PrCommentServiceTest {
         doReturn("{ not valid json").when(storageTypeService).getContext(job.getId());
 
         doReturn("12345").when(gitHubWebhookService).postPrComment(any(), any());
-        doReturn(job).when(jobRepository).save(any());
 
         subject.postPlanResult(job);
 
@@ -725,7 +707,6 @@ public class PrCommentServiceTest {
         setSteps(job, List.of());
 
         doReturn("12345").when(gitHubWebhookService).postPrComment(any(), any());
-        doReturn(job).when(jobRepository).save(any());
 
         subject.postPlanResult(job);
 
@@ -778,7 +759,6 @@ public class PrCommentServiceTest {
         stubStepOutput("Plan: 1 to add, 0 to change, 0 to destroy.");
 
         doReturn("12345").when(gitHubWebhookService).postPrComment(any(), any());
-        doReturn(job).when(jobRepository).save(any());
 
         subject.postPlanResult(job);
 
@@ -799,7 +779,6 @@ public class PrCommentServiceTest {
         stubStepOutput("Plan: 1 to add, 0 to change, 0 to destroy.");
 
         doReturn("12345").when(gitHubWebhookService).postPrComment(any(), any());
-        doReturn(job).when(jobRepository).save(any());
 
         subject.postPlanResult(job);
 
@@ -824,7 +803,6 @@ public class PrCommentServiceTest {
                 .findFirstByWorkspaceAndPrNumberAndIdNotAndAutoApplyFalseAndPrCommentIdIsNotNullOrderByIdDesc(
                         job.getWorkspace(), 5, 99);
         doReturn(true).when(gitHubWebhookService).updatePrComment(eq(job), eq("existing-comment-1"), any());
-        doReturn(job).when(jobRepository).save(any());
 
         subject.postPlanResult(job);
 
@@ -849,7 +827,6 @@ public class PrCommentServiceTest {
                         job.getWorkspace(), 5, 99);
         doReturn(false).when(gitHubWebhookService).updatePrComment(eq(job), eq("stale-comment-1"), any());
         doReturn("new-comment-1").when(gitHubWebhookService).postPrComment(any(), any());
-        doReturn(job).when(jobRepository).save(any());
 
         subject.postPlanResult(job);
 
@@ -867,7 +844,6 @@ public class PrCommentServiceTest {
         stubStepOutput("Plan: 1 to add, 0 to change, 0 to destroy.");
 
         doReturn("12345").when(gitHubWebhookService).postPrComment(any(), any());
-        doReturn(job).when(jobRepository).save(any());
 
         subject.postPlanResult(job);
 
@@ -885,7 +861,6 @@ public class PrCommentServiceTest {
         stubStepOutput("Plan: 1 to add, 0 to change, 0 to destroy.");
 
         doReturn("12345").when(gitHubWebhookService).postPrComment(any(), any());
-        doReturn(job).when(jobRepository).save(any());
 
         subject.postPlanResult(job);
 
@@ -1001,5 +976,125 @@ public class PrCommentServiceTest {
 
         verify(bitBucketWebhookService, never()).postPrComment(any(), any());
         verify(bitBucketWebhookService, never()).updatePrComment(any(), any(), any());
+    }
+
+    // --- #3729: a completed job's result is published once, however many passes see it ----------
+
+    @Test
+    public void postPlanResultSkipsTheCommentWhenTheJobAlreadyHasOne() {
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
+        job.setPrCommentId("999");
+
+        subject.postPlanResult(job);
+
+        verify(gitHubWebhookService, never()).postPrComment(any(), any());
+        verify(gitHubWebhookService, never()).updatePrComment(any(), any(), any());
+        verify(jobRepository, never()).updatePrComment(anyInt(), any(), any());
+        assertEquals("999", job.getPrCommentId());
+    }
+
+    @Test
+    public void processingACompletedPlanJobTwicePostsOneComment() {
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
+        stubStepOutput("Plan: 1 to add, 0 to change, 0 to destroy.");
+        doReturn("12345").when(gitHubWebhookService).postPrComment(any(), any());
+
+        subject.postPlanResult(job);
+        subject.postPlanResult(job);
+
+        verify(gitHubWebhookService, times(1)).postPrComment(any(), any());
+        assertEquals("12345", job.getPrCommentId());
+    }
+
+    @Test
+    public void processingACompletedApplyJobTwicePostsOneComment() {
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
+        job.setAutoApply(true);
+        stubStepOutput("Apply complete! Resources: 1 added, 0 changed, 0 destroyed.");
+        doReturn("555").when(gitHubWebhookService).postPrComment(any(), any());
+
+        subject.postApplyResult(job);
+        subject.postApplyResult(job);
+
+        verify(gitHubWebhookService, times(1)).postPrComment(any(), any());
+        assertEquals("555", job.getPrCommentId());
+    }
+
+    @Test
+    public void thePostedCommentIdAndNoOtherColumnIsWrittenBack() {
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
+        stubStepOutput("Plan: 1 to add, 0 to change, 0 to destroy.");
+        doReturn("12345").when(gitHubWebhookService).postPrComment(any(), any());
+
+        subject.postPlanResult(job);
+
+        // the job in hand may be seconds old by now, so only the two comment columns are stored
+        verify(jobRepository).updatePrComment(job.getId(), "12345", null);
+        verify(jobRepository, never()).save(any());
+    }
+
+    @Test
+    public void aFailedPostRecordsTheErrorLeavesNoCommentIdAndIsTriedAgainByTheNextPass() {
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
+        stubStepOutput("Plan: 1 to add, 0 to change, 0 to destroy.");
+        doReturn(null).doReturn("777").when(gitHubWebhookService).postPrComment(any(), any());
+
+        subject.postPlanResult(job);
+        assertNull(job.getPrCommentId());
+        verify(jobRepository).updatePrComment(eq(job.getId()), eq(null), contains("Failed to post comment on pull request #5"));
+
+        subject.postPlanResult(job);
+        assertEquals("777", job.getPrCommentId());
+        verify(gitHubWebhookService, times(2)).postPrComment(any(), any());
+    }
+
+    @Test
+    public void thePolicyStatusIsStillSentWhenTheCommentWasPublishedByAnEarlierPass() {
+        PrCommentService spied = spy(subject);
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
+        job.setPrCommentId("999");
+
+        spied.postPlanResult(job);
+
+        // a status that failed on the first pass must be retried, and a status is safe to send again
+        verify(spied).sendPolicyCommitStatus(job);
+    }
+
+    @Test
+    public void thePolicyStatusIsSentAfterAPublishedCommentToo() {
+        PrCommentService spied = spy(subject);
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
+        stubStepOutput("Plan: 1 to add, 0 to change, 0 to destroy.");
+        doReturn("12345").when(gitHubWebhookService).postPrComment(any(), any());
+
+        spied.postPlanResult(job);
+
+        verify(spied).sendPolicyCommitStatus(job);
+    }
+
+    @Test
+    public void thePolicyStatusIsSentEvenWhenPreparingTheCommentFails() {
+        PrCommentService spied = spy(subject);
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
+        stubStepOutput("Plan: 1 to add, 0 to change, 0 to destroy.");
+        doThrow(new IllegalStateException("database down")).when(jobRepository)
+                .findFirstByWorkspaceAndPrNumberAndIdNotAndAutoApplyFalseAndPrCommentIdIsNotNullOrderByIdDesc(any(), any(), anyInt());
+
+        assertThrows(IllegalStateException.class, () -> spied.postPlanResult(job));
+
+        verify(spied).sendPolicyCommitStatus(job);
+    }
+
+    @Test
+    public void anApplyResultSendsNoPolicyStatus() {
+        PrCommentService spied = spy(subject);
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
+        job.setAutoApply(true);
+        stubStepOutput("Apply complete! Resources: 1 added, 0 changed, 0 destroyed.");
+        doReturn("555").when(gitHubWebhookService).postPrComment(any(), any());
+
+        spied.postApplyResult(job);
+
+        verify(spied, never()).sendPolicyCommitStatus(any());
     }
 }
