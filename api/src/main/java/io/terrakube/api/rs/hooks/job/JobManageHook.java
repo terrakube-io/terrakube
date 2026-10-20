@@ -7,7 +7,7 @@ import com.yahoo.elide.core.security.RequestScope;
 import io.terrakube.api.plugin.subscription.JobStatusEvent;
 import io.terrakube.api.plugin.subscription.JobStatusPublisher;
 import io.terrakube.api.repository.AddressRepository;
-import io.terrakube.api.repository.WorkspaceRepository;
+import io.terrakube.api.plugin.workspace.WorkspaceJobStatusService;
 import io.terrakube.api.rs.job.address.Address;
 import io.terrakube.api.rs.job.address.AddressType;
 import lombok.AllArgsConstructor;
@@ -18,7 +18,6 @@ import io.terrakube.api.rs.job.JobStatus;
 import org.quartz.SchedulerException;
 
 import java.text.ParseException;
-import java.util.Date;
 import java.util.List;
 import java.util.Optional;
 
@@ -27,7 +26,7 @@ import java.util.Optional;
 public class JobManageHook implements LifeCycleHook<Job> {
 
     private ScheduleJobService scheduleJobService;
-    private WorkspaceRepository workspaceRepository;
+    private WorkspaceJobStatusService workspaceJobStatusService;
     private JobStatusPublisher jobStatusPublisher;
     private AddressRepository addressRepository;
 
@@ -94,9 +93,6 @@ public class JobManageHook implements LifeCycleHook<Job> {
     }
 
     private void updateWorkspaceStatus(Job job) {
-        log.info("Updating last status for workspace {} to {}", job.getWorkspace().getName(), job.getStatus());
-        job.getWorkspace().setLastJobStatus(job.getStatus());
-        job.getWorkspace().setLastJobDate(new Date(System.currentTimeMillis()));
-        workspaceRepository.save(job.getWorkspace());
+        workspaceJobStatusService.refresh(job);
     }
 }

@@ -33,6 +33,7 @@ import java.util.UUID;
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.matchesPattern;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
@@ -571,5 +572,30 @@ class JobTests extends ServerApplicationTests {
                 .post("/api/v1/organization/" + organization.getId() + "/job")
                 .then()
                 .statusCode(HttpStatus.NOT_FOUND.value());
+    }
+
+    @Test
+    public void aNewRunBehindARunWaitingForApprovalKeepsTheWorkspaceWaiting() throws InterruptedException {
+        Template template = createTemplate("flow:\n- name: Approve\n  type: approval\n  team: TERRAKUBE_DEVELOPERS\n");
+
+        devsManageJobs(true);
+        String first = createJob(jobDefinition(template.getId().toString()));
+        awaitJobStatus(first, JobStatus.waitingApproval, Duration.ofSeconds(10));
+        String second = createJob(jobDefinition(template.getId().toString()));
+        devsManageJobs(false);
+
+        assertEquals(JobStatus.pending, jobRepository.findById(Integer.parseInt(second)).orElseThrow().getStatus());
+        assertEquals(JobStatus.waitingApproval,
+                workspaceRepository.findById(workspace.getId()).orElseThrow().getLastJobStatus());
+
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
+                .body(statusChangePayload(first, JobStatus.rejected))
+                .patch("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/job/" + first)
+                .then().statusCode(HttpStatus.NO_CONTENT.value());
+
+        // the rejected run no longer holds the queue, so the workspace shows the run behind it
+        JobStatus shown = workspaceRepository.findById(workspace.getId()).orElseThrow().getLastJobStatus();
+        assertNotEquals(JobStatus.rejected, shown);
     }
 }

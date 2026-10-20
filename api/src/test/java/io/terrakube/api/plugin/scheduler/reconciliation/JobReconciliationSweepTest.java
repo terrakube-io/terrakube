@@ -1,5 +1,7 @@
 package io.terrakube.api.plugin.scheduler.reconciliation;
 
+import java.util.Optional;
+import io.terrakube.api.plugin.workspace.WorkspaceJobStatusService;
 import io.terrakube.api.helpers.FailUnkownMethod;
 import io.terrakube.api.plugin.scheduler.ScheduleJobService;
 import io.terrakube.api.plugin.scheduler.spool.SpoolRecoveryService;
@@ -72,6 +74,7 @@ class JobReconciliationSweepTest {
         spoolRecoveryService = mock(SpoolRecoveryService.class);
         lenient().doReturn(valueOperations).when(redisTemplate).opsForValue();
         lenient().doAnswer(invocation -> invocation.getArgument(0)).when(workspaceRepository).save(any());
+        lenient().doReturn(Optional.empty()).when(jobRepository).findFirstByWorkspaceAndIdNotAndStatusInOrderByIdAsc(any(), anyInt(), any());
         // Default: jobs have no steps, so the zero-pending reconciliation pass is a no-op unless a
         // test says otherwise (existing trigger/heartbeat tests are unaffected by this feature).
         lenient().doReturn(List.of()).when(stepRepository).findByJobId(anyInt());
@@ -89,7 +92,7 @@ class JobReconciliationSweepTest {
     }
 
     private JobReconciliationSweep subject() {
-        return new JobReconciliationSweep(jobRepository, stepRepository, workspaceRepository, scheduler,
+        return new JobReconciliationSweep(jobRepository, stepRepository, new WorkspaceJobStatusService(jobRepository, workspaceRepository), scheduler,
                 scheduleJobService, redisTemplate, properties, reconciliationService, metrics, 300L, storageTypeService, spoolRecoveryService);
     }
 
@@ -221,7 +224,7 @@ class JobReconciliationSweepTest {
     @Test
     void respectsCustomConfiguredHeartbeatGracePeriod() throws Exception {
         JobReconciliationSweep customSweep = new JobReconciliationSweep(
-                jobRepository, stepRepository, workspaceRepository, scheduler, scheduleJobService, redisTemplate,
+                jobRepository, stepRepository, new WorkspaceJobStatusService(jobRepository, workspaceRepository), scheduler, scheduleJobService, redisTemplate,
                 properties, reconciliationService, metrics, 600L, storageTypeService, spoolRecoveryService);
 
         Job running = job(30, JobStatus.running);
@@ -461,7 +464,7 @@ class JobReconciliationSweepTest {
         doReturn(true).when(spoolRecoveryService).recoverStep(any(Step.class));
 
         JobReconciliationSweep sweepWithSpool = new JobReconciliationSweep(
-                jobRepository, stepRepository, workspaceRepository, scheduler,
+                jobRepository, stepRepository, new WorkspaceJobStatusService(jobRepository, workspaceRepository), scheduler,
                 scheduleJobService, redisTemplate, properties, reconciliationService, metrics,
                 300L, storageTypeService, spoolRecoveryService);
 
@@ -500,7 +503,7 @@ class JobReconciliationSweepTest {
         doReturn(reconResult).when(reconciliationService).reconcile(eq(55), anyBoolean());
 
         JobReconciliationSweep sweepWithSpool = new JobReconciliationSweep(
-                jobRepository, stepRepository, workspaceRepository, scheduler,
+                jobRepository, stepRepository, new WorkspaceJobStatusService(jobRepository, workspaceRepository), scheduler,
                 scheduleJobService, redisTemplate, properties, reconciliationService, metrics,
                 300L, storageTypeService, spoolRecoveryService);
 

@@ -1,5 +1,6 @@
 package io.terrakube.api.plugin.scheduler;
 
+import io.terrakube.api.plugin.workspace.WorkspaceJobStatusService;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
@@ -136,6 +137,7 @@ public class ScheduleJobTest {
                 new FailUnkownMethod<WorkspaceVariableValidationService>());
         lenient().doNothing().when(workspaceVariableValidationService).validateWorkspaceVariables(any());
         policyApprovalGuard = mock(PolicyApprovalGuard.class);
+        lenient().doReturn(Optional.empty()).when(jobRepository).findFirstByWorkspaceAndIdNotAndStatusInOrderByIdAsc(any(), anyInt(), any());
         lenient().doReturn(Optional.empty()).when(prCommentService).extractRunSummary(any());
 
         redisTemplate = mock(RedisTemplate.class, new FailUnkownMethod<RedisTemplate>());
@@ -195,6 +197,7 @@ public class ScheduleJobTest {
                 workspaceVariableValidationService,
                 policyApprovalGuard,
                 jobNotificationTrigger,
+                new WorkspaceJobStatusService(jobRepository, workspaceRepository),
                 jobReconciliationService,
                 reconciliationProperties,
                 dispatchRetryProperties,

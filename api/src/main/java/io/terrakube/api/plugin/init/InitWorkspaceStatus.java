@@ -1,5 +1,6 @@
 package io.terrakube.api.plugin.init;
 
+import io.terrakube.api.plugin.workspace.WorkspaceJobStatusService;
 import io.terrakube.api.repository.JobRepository;
 import io.terrakube.api.repository.OrganizationRepository;
 import io.terrakube.api.repository.WorkspaceRepository;
@@ -24,6 +25,7 @@ public class InitWorkspaceStatus {
     private final OrganizationRepository organizationRepository;
     private final WorkspaceRepository workspaceRepository;
     private final JobRepository jobRepository;
+    private final WorkspaceJobStatusService workspaceJobStatusService;
 
     @EventListener(ApplicationReadyEvent.class)
     @Transactional
@@ -34,7 +36,7 @@ public class InitWorkspaceStatus {
                 Optional<Job> lastJob = jobRepository.findFirstByWorkspaceOrderByIdDesc(workspace);
                 if( lastJob.isPresent()){
                     Job job = lastJob.get();
-                    workspace.setLastJobStatus(job.getStatus());
+                    workspace.setLastJobStatus(workspaceJobStatusService.statusFor(job));
                     workspace.setLastJobDate(job.getUpdatedDate());
                     workspaceRepository.save(workspace);
                 } else {

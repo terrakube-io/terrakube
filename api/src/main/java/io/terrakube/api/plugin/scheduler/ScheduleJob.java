@@ -6,6 +6,7 @@ import io.terrakube.api.plugin.scheduler.dispatchretry.DispatchRetryDecision;
 import io.terrakube.api.plugin.scheduler.dispatchretry.DispatchRetryMetrics;
 import io.terrakube.api.plugin.scheduler.dispatchretry.DispatchRetryProperties;
 import io.terrakube.api.plugin.scheduler.job.tcl.TclService;
+import io.terrakube.api.plugin.workspace.WorkspaceJobStatusService;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.DispatchRetryableException;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutionException;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutorService;
@@ -123,6 +124,7 @@ public class ScheduleJob implements org.quartz.Job {
     // this so status-change notifications actually fire for real runs, not just for a job
     // updated via a direct API PATCH.
     JobNotificationTrigger jobNotificationTrigger;
+    WorkspaceJobStatusService workspaceJobStatusService;
 
     // Shared routine that reconciles a job with no remaining executable step to its real terminal
     // status (see reconcileOutOfSteps). ReconciliationProperties gates the guarded FIFO-admission
@@ -385,10 +387,7 @@ public class ScheduleJob implements org.quartz.Job {
     }
 
     private void updateWorkspaceStatus(Job job) {
-        log.info("Updating last status for workspace {} to {}", job.getWorkspace().getName(), job.getStatus());
-        job.getWorkspace().setLastJobStatus(job.getStatus());
-        job.getWorkspace().setLastJobDate(new Date(System.currentTimeMillis()));
-        workspaceRepository.save(job.getWorkspace());
+        workspaceJobStatusService.refresh(job);
     }
 
     // Returns whether the job's Quartz trigger should be descheduled. False keeps it alive so
