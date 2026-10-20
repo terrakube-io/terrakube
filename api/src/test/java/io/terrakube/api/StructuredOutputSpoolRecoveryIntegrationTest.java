@@ -74,9 +74,12 @@ class StructuredOutputSpoolRecoveryIntegrationTest extends ServerApplicationTest
     @AfterEach
     void cleanupSpoolDirectory() {
         try {
-            File spoolDir = new File(FileUtils.getUserDirectoryPath(), "/.terraform-spring-boot/local/context-spool");
-            if (spoolDir.exists()) {
-                FileUtils.deleteDirectory(spoolDir);
+            if (organization != null) {
+                File orgSpoolDir = new File(FileUtils.getUserDirectoryPath(),
+                        "/.terraform-spring-boot/local/context-spool/" + organization.getId());
+                if (orgSpoolDir.exists()) {
+                    FileUtils.deleteDirectory(orgSpoolDir);
+                }
             }
         } catch (Exception ignored) {
         }

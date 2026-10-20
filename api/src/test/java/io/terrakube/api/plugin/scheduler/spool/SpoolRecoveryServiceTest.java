@@ -2,6 +2,7 @@ package io.terrakube.api.plugin.scheduler.spool;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.terrakube.api.plugin.context.ContextWriteService;
+import io.terrakube.api.plugin.context.InvalidContextPatchException;
 import io.terrakube.api.plugin.policy.PolicyEvaluationService;
 import io.terrakube.api.plugin.storage.StorageTypeService;
 import io.terrakube.api.repository.JobRepository;
@@ -620,5 +621,55 @@ class SpoolRecoveryServiceTest {
 
         assertThat(recovered).isTrue();
         verify(metricsMock).leaseLost();
+    }
+
+    @Test
+    void invalidContextPatch_DeletesSpoolAndMarksExpired() throws Exception {
+        UUID orgId = UUID.randomUUID();
+        UUID stepId = UUID.randomUUID();
+        int jobId = 100;
+
+        Organization org = new Organization();
+        org.setId(orgId);
+
+        Job job = new Job();
+        job.setId(jobId);
+        job.setOrganization(org);
+
+        Step step = new Step();
+        step.setId(stepId);
+        step.setJob(job);
+        step.setDeliveryState(DeliveryState.SPOOLED);
+        step.setDeliveryTimestamp(System.currentTimeMillis() - 60_000L);
+
+        when(stepRepository.findByDeliveryStateAndLeaseUntilBefore(eq(DeliveryState.SPOOLED), any(Date.class), any(Pageable.class)))
+                .thenReturn(List.of(step));
+        when(stepRepository.acquireLease(eq(stepId), anyString(), any(Date.class), any(Date.class)))
+                .thenReturn(1);
+
+        Map<String, Object> envelope = Map.of(
+                "organizationId", orgId.toString(),
+                "jobId", String.valueOf(jobId),
+                "stepId", stepId.toString(),
+                "phase", "plan"
+        );
+        Map<String, Object> patch = Map.of("invalid/three/segments/path", "val");
+        Map<String, Object> payload = Map.of("envelope", envelope, "patch", patch);
+        byte[] gzippedBytes = createGzippedPayload(payload);
+
+        when(storageTypeService.getSpooledContextPatch(orgId.toString(), String.valueOf(jobId), stepId.toString(), "plan"))
+                .thenReturn(gzippedBytes);
+        when(contextWriteService.patchRecovery(eq(jobId), anyLong(), any()))
+                .thenThrow(new InvalidContextPatchException("set contains an invalid path"));
+
+        int recovered = spoolRecoveryService.recoverPendingSpooledSteps();
+
+        assertThat(recovered).isEqualTo(0);
+        // Spool MUST be deleted on invalid patch
+        verify(storageTypeService).deleteSpooledContextPatch(orgId.toString(), String.valueOf(jobId), stepId.toString(), "plan");
+        // Step MUST be marked EXPIRED so it does not retry every sweep
+        verify(stepRepository).updateDeliveryState(eq(stepId), eq(DeliveryState.EXPIRED), any());
+        verify(metrics).spoolCorrupted();
+        verify(metrics).stepExpired();
     }
 }

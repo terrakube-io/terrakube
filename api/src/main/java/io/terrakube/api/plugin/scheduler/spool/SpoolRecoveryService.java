@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.terrakube.api.plugin.context.ContextUnavailableException;
 import io.terrakube.api.plugin.context.ContextWriteService;
+import io.terrakube.api.plugin.context.InvalidContextPatchException;
 import io.terrakube.api.plugin.policy.PolicyEvaluationService;
 import io.terrakube.api.plugin.storage.StorageTypeService;
 import io.terrakube.api.repository.JobRepository;
@@ -20,6 +21,7 @@ import java.io.IOException;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -46,14 +48,14 @@ public class SpoolRecoveryService {
             ContextWriteService contextWriteService,
             PolicyEvaluationService policyEvaluationService,
             SpoolRecoveryMetrics metrics) {
-        this.stepRepository = stepRepository;
-        this.jobRepository = jobRepository;
-        this.storageTypeService = storageTypeService;
-        this.objectMapper = objectMapper;
-        this.properties = properties;
-        this.contextWriteService = contextWriteService;
-        this.policyEvaluationService = policyEvaluationService;
-        this.metrics = metrics;
+        this.stepRepository = Objects.requireNonNull(stepRepository);
+        this.jobRepository = Objects.requireNonNull(jobRepository);
+        this.storageTypeService = Objects.requireNonNull(storageTypeService);
+        this.objectMapper = Objects.requireNonNull(objectMapper);
+        this.properties = Objects.requireNonNull(properties);
+        this.contextWriteService = Objects.requireNonNull(contextWriteService);
+        this.policyEvaluationService = Objects.requireNonNull(policyEvaluationService);
+        this.metrics = Objects.requireNonNull(metrics);
     }
 
     public int recoverPendingSpooledSteps() {
@@ -124,13 +126,9 @@ public class SpoolRecoveryService {
             int updated = stepRepository.updateDeliveryState(step.getId(), DeliveryState.EXPIRED, leaseOwner);
             if (updated == 0 && leaseOwner != null) {
                 log.warn("Lost lease while marking step {} expired", stepId);
-                if (metrics != null) {
-                    metrics.leaseLost();
-                }
+                metrics.leaseLost();
             }
-            if (metrics != null) {
-                metrics.stepExpired();
-            }
+            metrics.stepExpired();
             for (String phase : List.of("plan", "apply")) {
                 storageTypeService.deleteSpooledContextPatch(orgId, jobId, stepId, phase);
             }
@@ -147,9 +145,7 @@ public class SpoolRecoveryService {
                             stepId, jobId, phase, spooledBytes.length, properties.getMaxCompressedBytes());
                     storageTypeService.deleteSpooledContextPatch(orgId, jobId, stepId, phase);
                     anyCorruptedOrInvalid = true;
-                    if (metrics != null) {
-                        metrics.spoolCorrupted();
-                    }
+                    metrics.spoolCorrupted();
                     continue;
                 }
 
@@ -162,9 +158,7 @@ public class SpoolRecoveryService {
                             stepId, jobId, phase, e.getMessage(), e);
                     storageTypeService.deleteSpooledContextPatch(orgId, jobId, stepId, phase);
                     anyCorruptedOrInvalid = true;
-                    if (metrics != null) {
-                        metrics.spoolCorrupted();
-                    }
+                    metrics.spoolCorrupted();
                     continue;
                 }
 
@@ -175,9 +169,7 @@ public class SpoolRecoveryService {
                             stepId, jobId, phase, orgId, jobId, stepId, phase, envelope);
                     storageTypeService.deleteSpooledContextPatch(orgId, jobId, stepId, phase);
                     anyCorruptedOrInvalid = true;
-                    if (metrics != null) {
-                        metrics.spoolCorrupted();
-                    }
+                    metrics.spoolCorrupted();
                     continue;
                 }
 
@@ -192,6 +184,13 @@ public class SpoolRecoveryService {
                     boolean merged;
                     try {
                         merged = mergeAndSaveContext(job.getId(), deliveryRevision, patch);
+                    } catch (InvalidContextPatchException e) {
+                        log.error("Invalid spooled patch for step {} job {} phase {}: {}. Deleting invalid spool.",
+                                stepId, jobId, phase, e.getMessage(), e);
+                        storageTypeService.deleteSpooledContextPatch(orgId, jobId, stepId, phase);
+                        anyCorruptedOrInvalid = true;
+                        metrics.spoolCorrupted();
+                        continue;
                     } catch (Exception e) {
                         log.warn("Transient error applying spooled patch for step {} job {} phase {}: {}. Will retry next sweep.",
                                 stepId, jobId, phase, e.getMessage(), e);
@@ -204,9 +203,7 @@ public class SpoolRecoveryService {
                         return false;
                     }
                     anyRecovered = true;
-                    if (metrics != null) {
-                        metrics.stepRecovered(phase);
-                    }
+                    metrics.stepRecovered(phase);
                 }
                 storageTypeService.deleteSpooledContextPatch(orgId, jobId, stepId, phase);
             }
@@ -216,9 +213,7 @@ public class SpoolRecoveryService {
             int updated = stepRepository.updateDeliveryState(step.getId(), DeliveryState.RECOVERED, leaseOwner);
             if (updated == 0 && leaseOwner != null) {
                 log.warn("Lost lease while marking step {} recovered", stepId);
-                if (metrics != null) {
-                    metrics.leaseLost();
-                }
+                metrics.leaseLost();
             }
             log.info("Successfully recovered spooled structured output for step {} job {}", stepId, jobId);
             return true;
@@ -227,13 +222,9 @@ public class SpoolRecoveryService {
             int updated = stepRepository.updateDeliveryState(step.getId(), DeliveryState.EXPIRED, leaseOwner);
             if (updated == 0 && leaseOwner != null) {
                 log.warn("Lost lease while marking corrupted step {} expired", stepId);
-                if (metrics != null) {
-                    metrics.leaseLost();
-                }
+                metrics.leaseLost();
             }
-            if (metrics != null) {
-                metrics.stepExpired();
-            }
+            metrics.stepExpired();
             return false;
         } else {
             log.debug("No spooled context patch found for step {} job {}", stepId, jobId);
@@ -264,7 +255,7 @@ public class SpoolRecoveryService {
     public boolean mergeAndSaveContext(int jobId, long deliveryRevision, Map<String, Object> patch) throws IOException {
         try {
             ContextWriteService.PatchResult result = contextWriteService.patchRecovery(jobId, deliveryRevision, patch);
-            if (result.context() != null && policyEvaluationService != null) {
+            if (result.context() != null) {
                 policyEvaluationService.processPolicyEvaluationContext(jobId, result.context());
             }
             return true;
@@ -291,9 +282,7 @@ public class SpoolRecoveryService {
             int released = stepRepository.releaseLease(step.getId(), step.getLeaseOwner());
             if (released == 0 && step.getLeaseOwner() != null) {
                 log.debug("Lease for step {} already expired or held by another owner", step.getId());
-                if (metrics != null) {
-                    metrics.leaseLost();
-                }
+                metrics.leaseLost();
             }
         }
     }

@@ -84,9 +84,12 @@ class StructuredOutputSpoolRecoveryNonTransactionalIntegrationTest extends Serve
         }
 
         try {
-            File spoolDir = new File(FileUtils.getUserDirectoryPath(), "/.terraform-spring-boot/local/context-spool");
-            if (spoolDir.exists()) {
-                FileUtils.deleteDirectory(spoolDir);
+            if (organization != null && job != null) {
+                File jobSpoolDir = new File(FileUtils.getUserDirectoryPath(),
+                        String.format("/.terraform-spring-boot/local/context-spool/%s/%s", organization.getId(), job.getId()));
+                if (jobSpoolDir.exists()) {
+                    FileUtils.deleteDirectory(jobSpoolDir);
+                }
             }
         } catch (Exception ignored) {
         }
