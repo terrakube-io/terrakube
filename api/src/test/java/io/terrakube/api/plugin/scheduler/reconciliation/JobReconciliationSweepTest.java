@@ -2,6 +2,8 @@ package io.terrakube.api.plugin.scheduler.reconciliation;
 
 import io.terrakube.api.helpers.FailUnkownMethod;
 import io.terrakube.api.plugin.scheduler.ScheduleJobService;
+import io.terrakube.api.plugin.scheduler.spool.SpoolRecoveryService;
+import io.terrakube.api.plugin.storage.StorageTypeService;
 import io.terrakube.api.repository.JobRepository;
 import io.terrakube.api.repository.StepRepository;
 import io.terrakube.api.repository.WorkspaceRepository;
@@ -51,6 +53,8 @@ class JobReconciliationSweepTest {
     ReconciliationProperties properties;
     JobReconciliationService reconciliationService;
     JobReconciliationMetrics metrics;
+    StorageTypeService storageTypeService;
+    SpoolRecoveryService spoolRecoveryService;
 
     @BeforeEach
     void setup() {
@@ -64,6 +68,8 @@ class JobReconciliationSweepTest {
         reconciliationService = mock(JobReconciliationService.class, new FailUnkownMethod<JobReconciliationService>());
         properties = new ReconciliationProperties();
         metrics = new JobReconciliationMetrics(new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
+        storageTypeService = mock(StorageTypeService.class);
+        spoolRecoveryService = mock(SpoolRecoveryService.class);
         lenient().doReturn(valueOperations).when(redisTemplate).opsForValue();
         lenient().doAnswer(invocation -> invocation.getArgument(0)).when(workspaceRepository).save(any());
         // Default: jobs have no steps, so the zero-pending reconciliation pass is a no-op unless a
@@ -84,7 +90,7 @@ class JobReconciliationSweepTest {
 
     private JobReconciliationSweep subject() {
         return new JobReconciliationSweep(jobRepository, stepRepository, workspaceRepository, scheduler,
-                scheduleJobService, redisTemplate, properties, reconciliationService, metrics);
+                scheduleJobService, redisTemplate, properties, reconciliationService, metrics, 300L, storageTypeService, spoolRecoveryService);
     }
 
     private Job job(int id, JobStatus status) {
@@ -216,7 +222,7 @@ class JobReconciliationSweepTest {
     void respectsCustomConfiguredHeartbeatGracePeriod() throws Exception {
         JobReconciliationSweep customSweep = new JobReconciliationSweep(
                 jobRepository, stepRepository, workspaceRepository, scheduler, scheduleJobService, redisTemplate,
-                properties, reconciliationService, metrics, 600);
+                properties, reconciliationService, metrics, 600L, storageTypeService, spoolRecoveryService);
 
         Job running = job(30, JobStatus.running);
         running.setUpdatedDate(new Date(System.currentTimeMillis() - 450_000)); // 450s old (< 600s)

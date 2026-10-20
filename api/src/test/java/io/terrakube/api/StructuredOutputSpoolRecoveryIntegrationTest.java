@@ -128,7 +128,8 @@ class StructuredOutputSpoolRecoveryIntegrationTest extends ServerApplicationTest
         String stepId = step.getId().toString();
 
         Map<String, Object> planPatch = Map.of(
-                "planStructuredOutput", Map.of(stepId, List.of(Map.of("resource", "aws_s3_bucket.integration_test"))),
+                "planStructuredOutput/" + stepId, List.of(Map.of("resource", "aws_s3_bucket.integration_test")),
+                "terrakubeUI/" + stepId, "marker",
                 "structuredOutputStatus", Map.of("state", "PERSISTED")
         );
         writeLocalSpooledFile(orgId, jobId, stepId, "plan", planPatch);
@@ -145,7 +146,94 @@ class StructuredOutputSpoolRecoveryIntegrationTest extends ServerApplicationTest
         assertThat(storageTypeService.hasSpooledContextPatch(orgId, jobId, stepId, "plan")).isFalse();
 
         String savedContext = storageTypeService.getContext(job.getId());
-        assertThat(savedContext).isNotNull().contains("aws_s3_bucket.integration_test");
+        assertThat(savedContext).isNotNull();
+
+        var root = objectMapper.readTree(savedContext);
+        // Verify path keys were converted to nested structure, not stored as literal keys with slashes
+        assertThat(root.has("planStructuredOutput/" + stepId)).isFalse();
+        assertThat(root.path("planStructuredOutput").path(stepId).isArray()).isTrue();
+        assertThat(root.path("planStructuredOutput").path(stepId).get(0).path("resource").asText())
+                .isEqualTo("aws_s3_bucket.integration_test");
+        assertThat(root.path("terrakubeUI").path(stepId).asText()).isEqualTo("marker");
+        assertThat(root.path("structuredOutputStatus").path("state").asText()).isEqualTo("PERSISTED");
+    }
+
+    @Test
+    void testSpoolRecovery_RespectsRevisionsAgainstExistingLiveContext() throws IOException {
+        Job job = new Job();
+        job.setStatus(JobStatus.completed);
+        job.setOrganization(organization);
+        job.setWorkspace(workspace);
+        job = jobRepository.saveAndFlush(job);
+
+        Step step = new Step();
+        step.setJob(job);
+        step.setStepNumber(1);
+        step.setName("terraformPlan");
+        step.setStatus(JobStatus.completed);
+        step.setDeliveryState(DeliveryState.SPOOLED);
+        step.setDeliveryTimestamp(System.currentTimeMillis() - 60_000L);
+        step = stepRepository.saveAndFlush(step);
+
+        String orgId = organization.getId().toString();
+        String jobId = String.valueOf(job.getId());
+        String stepId = step.getId().toString();
+        String otherStepId = UUID.randomUUID().toString();
+
+        // Prepopulate existing context with live entries at revision 50 and 200
+        String existingContext = "{\n" +
+                "  \"contextRevisions\": {\n" +
+                "    \"planStructuredOutput/" + stepId + "\": 50,\n" +
+                "    \"planStructuredOutput/" + otherStepId + "\": 200\n" +
+                "  },\n" +
+                "  \"planStructuredOutput\": {\n" +
+                "    \"" + stepId + "\": [{\"resource\": \"aws_s3_bucket.old_live\"}],\n" +
+                "    \"" + otherStepId + "\": [{\"resource\": \"aws_s3_bucket.newer_live\"}]\n" +
+                "  }\n" +
+                "}";
+        storageTypeService.saveContext(job.getId(), existingContext);
+
+        // Spool has deliveryRevision 100:
+        // - planStructuredOutput/<stepId> (100 > 50 -> should update)
+        // - planStructuredOutput/<otherStepId> (100 < 200 -> should skip)
+        Map<String, Object> envelope = Map.of(
+                "organizationId", orgId,
+                "jobId", jobId,
+                "stepId", stepId,
+                "phase", "plan",
+                "deliveryRevision", 100L,
+                "timestamp", System.currentTimeMillis()
+        );
+        Map<String, Object> patch = Map.of(
+                "planStructuredOutput/" + stepId, List.of(Map.of("resource", "aws_s3_bucket.spooled_recovered")),
+                "planStructuredOutput/" + otherStepId, List.of(Map.of("resource", "aws_s3_bucket.stale_spool"))
+        );
+        Map<String, Object> payload = Map.of("envelope", envelope, "patch", patch);
+        byte[] jsonBytes = objectMapper.writeValueAsBytes(payload);
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        try (GZIPOutputStream gzos = new GZIPOutputStream(baos)) {
+            gzos.write(jsonBytes);
+        }
+        String relativePath = String.format("/.terraform-spring-boot/local/context-spool/%s/%s/%s-plan.json.gz", orgId, jobId, stepId);
+        File targetFile = new File(FileUtils.getUserDirectoryPath().concat(relativePath));
+        targetFile.getParentFile().mkdirs();
+        FileUtils.writeByteArrayToFile(targetFile, baos.toByteArray());
+
+        int recoveredCount = spoolRecoveryService.recoverPendingSpooledSteps();
+        assertThat(recoveredCount).isEqualTo(1);
+
+        String savedContext = storageTypeService.getContext(job.getId());
+        var root = objectMapper.readTree(savedContext);
+
+        // Newer spool revision applied
+        assertThat(root.path("planStructuredOutput").path(stepId).get(0).path("resource").asText())
+                .isEqualTo("aws_s3_bucket.spooled_recovered");
+        assertThat(root.path("contextRevisions").path("planStructuredOutput/" + stepId).asLong()).isEqualTo(100L);
+
+        // Stale spool revision skipped in favor of existing higher revision
+        assertThat(root.path("planStructuredOutput").path(otherStepId).get(0).path("resource").asText())
+                .isEqualTo("aws_s3_bucket.newer_live");
+        assertThat(root.path("contextRevisions").path("planStructuredOutput/" + otherStepId).asLong()).isEqualTo(200L);
     }
 
     @Test
@@ -170,7 +258,7 @@ class StructuredOutputSpoolRecoveryIntegrationTest extends ServerApplicationTest
         String stepId = step.getId().toString();
 
         Map<String, Object> applyPatch = Map.of(
-                "jobDiagnostics", Map.of(stepId, List.of(Map.of("summary", "Resource creation timed out"))),
+                "jobDiagnostics/" + stepId, List.of(Map.of("summary", "Resource creation timed out")),
                 "structuredOutputStatus", Map.of("state", "PERSISTED")
         );
         writeLocalSpooledFile(orgId, jobId, stepId, "apply", applyPatch);
@@ -183,7 +271,10 @@ class StructuredOutputSpoolRecoveryIntegrationTest extends ServerApplicationTest
         assertThat(updatedStep.getDeliveryState()).isEqualTo(DeliveryState.RECOVERED);
 
         String savedContext = storageTypeService.getContext(job.getId());
-        assertThat(savedContext).contains("Resource creation timed out");
+        var root = objectMapper.readTree(savedContext);
+        assertThat(root.has("jobDiagnostics/" + stepId)).isFalse();
+        assertThat(root.path("jobDiagnostics").path(stepId).get(0).path("summary").asText())
+                .isEqualTo("Resource creation timed out");
     }
 
     @Test
@@ -208,7 +299,7 @@ class StructuredOutputSpoolRecoveryIntegrationTest extends ServerApplicationTest
         String jobId = String.valueOf(job.getId());
         String stepId = step.getId().toString();
 
-        Map<String, Object> planPatch = Map.of("planStructuredOutput", Map.of(stepId, List.of()));
+        Map<String, Object> planPatch = Map.of("planStructuredOutput/" + stepId, List.of());
         writeLocalSpooledFile(orgId, jobId, stepId, "plan", planPatch);
 
         int processed = spoolRecoveryService.recoverPendingSpooledSteps();
@@ -256,7 +347,7 @@ class StructuredOutputSpoolRecoveryIntegrationTest extends ServerApplicationTest
         String stepId = step.getId().toString();
 
         Map<String, Object> planPatch = Map.of(
-                "planStructuredOutput", Map.of(stepId, List.of(Map.of("resource", "aws_iam_role.dead_executor_recovered"))),
+                "planStructuredOutput/" + stepId, List.of(Map.of("resource", "aws_iam_role.dead_executor_recovered")),
                 "structuredOutputStatus", Map.of("state", "PERSISTED")
         );
         writeLocalSpooledFile(orgId, jobId, stepId, "plan", planPatch);
@@ -272,9 +363,12 @@ class StructuredOutputSpoolRecoveryIntegrationTest extends ServerApplicationTest
         assertThat(recoveredStep.getDeliveryState()).isEqualTo(DeliveryState.RECOVERED);
         assertThat(storageTypeService.hasSpooledContextPatch(orgId, jobId, stepId, "plan")).isFalse();
 
-        // Verify context has the recovered output
+        // Verify context has the recovered output nested correctly
         String context = storageTypeService.getContext(job.getId());
-        assertThat(context).contains("aws_iam_role.dead_executor_recovered");
+        var root = objectMapper.readTree(context);
+        assertThat(root.has("planStructuredOutput/" + stepId)).isFalse();
+        assertThat(root.path("planStructuredOutput").path(stepId).get(0).path("resource").asText())
+                .isEqualTo("aws_iam_role.dead_executor_recovered");
 
         // Verify job was failed due to heartbeat expiry
         Job failedJob = jobRepository.findById(job.getId()).orElseThrow();

@@ -1,7 +1,7 @@
 package io.terrakube.api.plugin.scheduler.spool;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.terrakube.api.plugin.context.ContextReadService;
+import io.terrakube.api.plugin.context.ContextWriteService;
 import io.terrakube.api.plugin.policy.PolicyEvaluationService;
 import io.terrakube.api.plugin.storage.StorageTypeService;
 import io.terrakube.api.repository.JobRepository;
@@ -27,8 +27,10 @@ import java.util.zip.GZIPOutputStream;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -39,19 +41,21 @@ class SpoolRecoveryServiceTest {
     private StepRepository stepRepository;
     private JobRepository jobRepository;
     private StorageTypeService storageTypeService;
-    private ContextReadService contextReadService;
+    private ContextWriteService contextWriteService;
     private PolicyEvaluationService policyEvaluationService;
+    private SpoolRecoveryMetrics metrics;
     private ObjectMapper objectMapper;
     private SpoolRecoveryProperties properties;
     private SpoolRecoveryService spoolRecoveryService;
 
     @BeforeEach
-    void setup() {
+    void setup() throws Exception {
         stepRepository = mock(StepRepository.class);
         jobRepository = mock(JobRepository.class);
         storageTypeService = mock(StorageTypeService.class);
-        contextReadService = mock(ContextReadService.class);
+        contextWriteService = mock(ContextWriteService.class);
         policyEvaluationService = mock(PolicyEvaluationService.class);
+        metrics = mock(SpoolRecoveryMetrics.class);
         objectMapper = new ObjectMapper();
         properties = new SpoolRecoveryProperties();
         properties.setEnabled(true);
@@ -59,14 +63,18 @@ class SpoolRecoveryServiceTest {
         properties.setRetentionHours(24);
         properties.setLeaseDurationSeconds(60);
 
+        lenient().doReturn(new ContextWriteService.PatchResult(List.of("planStructuredOutput"), 0, "{}"))
+                .when(contextWriteService).patchRecovery(anyInt(), anyLong(), any());
+
         spoolRecoveryService = new SpoolRecoveryService(
                 stepRepository,
                 jobRepository,
                 storageTypeService,
                 objectMapper,
                 properties,
-                contextReadService,
-                policyEvaluationService);
+                contextWriteService,
+                policyEvaluationService,
+                metrics);
     }
 
     private byte[] createGzippedPayload(Map<String, Object> payload) throws IOException {
@@ -123,20 +131,14 @@ class SpoolRecoveryServiceTest {
         int recovered = spoolRecoveryService.recoverPendingSpooledSteps();
 
         assertThat(recovered).isEqualTo(1);
-        ArgumentCaptor<String> savedContextCaptor = ArgumentCaptor.forClass(String.class);
-        verify(storageTypeService).saveContext(eq(jobId), savedContextCaptor.capture());
-
-        String savedJson = savedContextCaptor.getValue();
-        assertThat(savedJson).contains("existing").contains("aws_s3_bucket.b");
-
-        verify(contextReadService).invalidate(eq(jobId), anyString());
+        verify(contextWriteService).patchRecovery(eq(jobId), anyLong(), any());
         verify(policyEvaluationService).processPolicyEvaluationContext(eq(jobId), anyString());
         verify(stepRepository).updateDeliveryState(eq(stepId), eq(DeliveryState.RECOVERED), any());
         verify(storageTypeService).deleteSpooledContextPatch(orgId.toString(), String.valueOf(jobId), stepId.toString(), "plan");
     }
 
     @Test
-    void recoverPendingSpooledSteps_Expired() {
+    void recoverPendingSpooledSteps_Expired() throws Exception {
         UUID orgId = UUID.randomUUID();
         UUID stepId = UUID.randomUUID();
         int jobId = 100;
@@ -166,7 +168,7 @@ class SpoolRecoveryServiceTest {
         verify(stepRepository).updateDeliveryState(eq(stepId), eq(DeliveryState.EXPIRED), any());
         verify(storageTypeService).deleteSpooledContextPatch(orgId.toString(), String.valueOf(jobId), stepId.toString(), "plan");
         verify(storageTypeService).deleteSpooledContextPatch(orgId.toString(), String.valueOf(jobId), stepId.toString(), "apply");
-        verify(storageTypeService, never()).saveContext(anyInt(), anyString());
+        verify(contextWriteService, never()).patchRecovery(anyInt(), anyLong(), any());
     }
 
     @Test
@@ -246,11 +248,11 @@ class SpoolRecoveryServiceTest {
         // Should delete corrupted spool and mark step EXPIRED
         verify(storageTypeService).deleteSpooledContextPatch(orgId.toString(), String.valueOf(jobId), stepId.toString(), "plan");
         verify(stepRepository).updateDeliveryState(eq(stepId), eq(DeliveryState.EXPIRED), any());
-        verify(storageTypeService, never()).saveContext(anyInt(), anyString());
+        verify(contextWriteService, never()).patchRecovery(anyInt(), anyLong(), any());
     }
 
     @Test
-    void compressedPayloadExceedsLimit_RejectsAndPurges() {
+    void compressedPayloadExceedsLimit_RejectsAndPurges() throws Exception {
         UUID orgId = UUID.randomUUID();
         UUID stepId = UUID.randomUUID();
         int jobId = 100;
@@ -287,7 +289,7 @@ class SpoolRecoveryServiceTest {
         assertThat(recovered).isEqualTo(0);
         verify(storageTypeService).deleteSpooledContextPatch(orgId.toString(), String.valueOf(jobId), stepId.toString(), "plan");
         verify(stepRepository).updateDeliveryState(eq(stepId), eq(DeliveryState.EXPIRED), any());
-        verify(storageTypeService, never()).saveContext(anyInt(), anyString());
+        verify(contextWriteService, never()).patchRecovery(anyInt(), anyLong(), any());
     }
 
     @Test
@@ -335,7 +337,7 @@ class SpoolRecoveryServiceTest {
         assertThat(recovered).isEqualTo(0);
         verify(storageTypeService).deleteSpooledContextPatch(orgId.toString(), String.valueOf(jobId), stepId.toString(), "plan");
         verify(stepRepository).updateDeliveryState(eq(stepId), eq(DeliveryState.EXPIRED), any());
-        verify(storageTypeService, never()).saveContext(anyInt(), anyString());
+        verify(contextWriteService, never()).patchRecovery(anyInt(), anyLong(), any());
     }
 
     @Test
@@ -357,17 +359,6 @@ class SpoolRecoveryServiceTest {
         step.setDeliveryState(DeliveryState.SPOOLED);
         step.setDeliveryTimestamp(System.currentTimeMillis() - 60_000L);
 
-        io.terrakube.api.plugin.context.ContextSanitizer contextSanitizer = new io.terrakube.api.plugin.context.ContextSanitizer(objectMapper);
-        spoolRecoveryService = new SpoolRecoveryService(
-                stepRepository,
-                jobRepository,
-                storageTypeService,
-                objectMapper,
-                properties,
-                contextReadService,
-                policyEvaluationService,
-                contextSanitizer);
-
         when(stepRepository.findByDeliveryStateAndLeaseUntilBefore(eq(DeliveryState.SPOOLED), any(Date.class), any(Pageable.class)))
                 .thenReturn(List.of(step));
         when(stepRepository.acquireLease(eq(stepId), anyString(), any(Date.class), any(Date.class)))
@@ -380,13 +371,11 @@ class SpoolRecoveryServiceTest {
                 "phase", "plan"
         );
         Map<String, Object> patch = Map.of(
-                "planStructuredOutput", Map.of(
-                        stepId.toString(), List.of(
-                                Map.of(
-                                        "resource", "vault_secret.s",
-                                        "after", "secret-password",
-                                        "afterSensitive", true
-                                )
+                "planStructuredOutput/" + stepId, List.of(
+                        Map.of(
+                                "resource", "vault_secret.s",
+                                "after", "secret-password",
+                                "afterSensitive", true
                         )
                 )
         );
@@ -397,18 +386,11 @@ class SpoolRecoveryServiceTest {
                 .thenReturn(gzippedBytes);
         when(storageTypeService.getSpooledContextPatch(orgId.toString(), String.valueOf(jobId), stepId.toString(), "apply"))
                 .thenReturn(null);
-        when(storageTypeService.getContext(jobId)).thenReturn("{}");
 
         int recovered = spoolRecoveryService.recoverPendingSpooledSteps();
 
         assertThat(recovered).isEqualTo(1);
-        ArgumentCaptor<String> savedContextCaptor = ArgumentCaptor.forClass(String.class);
-        verify(storageTypeService).saveContext(eq(jobId), savedContextCaptor.capture());
-
-        String savedJson = savedContextCaptor.getValue();
-        // The sensitive value must be redacted (null)
-        assertThat(savedJson).doesNotContain("secret-password");
-        assertThat(savedJson).contains("\"after\":null");
+        verify(contextWriteService).patchRecovery(eq(jobId), anyLong(), eq(patch));
     }
 
     @Test
@@ -447,40 +429,38 @@ class SpoolRecoveryServiceTest {
         verify(stepRepository, never()).save(any());
     }
 
+
     @Test
-    void mergeAndSaveContext_SkipsOverwritingNewerStructuredOutputStatus() throws IOException {
+    void mergeAndSaveContext_DelegatesToContextWriteService() throws Exception {
         int jobId = 200;
-        String existingContext = "{\"structuredOutputStatus\":{\"updatedAtEpochMs\":2000,\"phase\":\"apply\",\"state\":\"PERSISTED\"}}";
-        when(storageTypeService.getContext(jobId)).thenReturn(existingContext);
-
+        long revision = 500L;
         Map<String, Object> patch = Map.of(
-                "structuredOutputStatus", Map.of("updatedAtEpochMs", 1000, "phase", "plan", "state", "PERSISTED")
+                "planStructuredOutput/step-1", List.of(Map.of("resource", "aws_s3_bucket.test")),
+                "structuredOutputStatus", Map.of("state", "PERSISTED")
         );
+        when(contextWriteService.patchRecovery(eq(jobId), eq(revision), eq(patch)))
+                .thenReturn(new ContextWriteService.PatchResult(List.of("planStructuredOutput/step-1"), 0, "{\"saved\":true}"));
 
-        boolean saved = spoolRecoveryService.mergeAndSaveContext(jobId, patch);
+        boolean saved = spoolRecoveryService.mergeAndSaveContext(jobId, revision, patch);
 
         assertThat(saved).isTrue();
-        ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
-        verify(storageTypeService).saveContext(eq(jobId), captor.capture());
-        assertThat(captor.getValue()).contains("\"phase\":\"apply\"").contains("\"updatedAtEpochMs\":2000");
+        verify(contextWriteService).patchRecovery(eq(jobId), eq(revision), eq(patch));
+        verify(policyEvaluationService).processPolicyEvaluationContext(eq(jobId), eq("{\"saved\":true}"));
     }
 
     @Test
-    void mergeAndSaveContext_SkipsNoChangePlanIfApplyExists() throws IOException {
+    void mergeAndSaveContext_WhenLockBusy_ReturnsFalse() throws Exception {
         int jobId = 201;
-        String existingContext = "{\"structuredOutputStatus\":{\"updatedAtEpochMs\":2000,\"phase\":\"apply\",\"state\":\"PERSISTED\"}}";
-        when(storageTypeService.getContext(jobId)).thenReturn(existingContext);
+        long revision = 500L;
+        Map<String, Object> patch = Map.of("planStructuredOutput/step-1", List.of());
+        when(contextWriteService.patchRecovery(eq(jobId), eq(revision), eq(patch)))
+                .thenThrow(new io.terrakube.api.plugin.context.ContextUnavailableException("lock busy", null));
 
-        Map<String, Object> patch = Map.of(
-                "noChangePlan", Map.of("planStepId", "old-step")
-        );
+        boolean saved = spoolRecoveryService.mergeAndSaveContext(jobId, revision, patch);
 
-        boolean saved = spoolRecoveryService.mergeAndSaveContext(jobId, patch);
-
-        assertThat(saved).isTrue();
-        ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
-        verify(storageTypeService).saveContext(eq(jobId), captor.capture());
-        assertThat(captor.getValue()).doesNotContain("noChangePlan");
+        assertThat(saved).isFalse();
+        verify(contextWriteService).patchRecovery(eq(jobId), eq(revision), eq(patch));
+        verify(policyEvaluationService, never()).processPolicyEvaluationContext(anyInt(), anyString());
     }
 
     @Test
@@ -503,19 +483,8 @@ class SpoolRecoveryServiceTest {
         step.setDeliveryState(DeliveryState.SPOOLED);
         step.setDeliveryTimestamp(System.currentTimeMillis() - 60_000L);
 
-        io.terrakube.api.plugin.context.ContextWriteLock writeLockMock = mock(io.terrakube.api.plugin.context.ContextWriteLock.class);
-        when(writeLockMock.acquire(jobId)).thenThrow(new io.terrakube.api.plugin.context.ContextUnavailableException("lock busy", null));
-
-        spoolRecoveryService = new SpoolRecoveryService(
-                stepRepository,
-                jobRepository,
-                storageTypeService,
-                objectMapper,
-                properties,
-                contextReadService,
-                policyEvaluationService,
-                null,
-                writeLockMock);
+        when(contextWriteService.patchRecovery(eq(jobId), anyLong(), any()))
+                .thenThrow(new io.terrakube.api.plugin.context.ContextUnavailableException("lock busy", null));
 
         when(stepRepository.findByDeliveryStateAndLeaseUntilBefore(eq(DeliveryState.SPOOLED), any(Date.class), any(Pageable.class)))
                 .thenReturn(List.of(step));
@@ -580,7 +549,8 @@ class SpoolRecoveryServiceTest {
 
         when(storageTypeService.getSpooledContextPatch(orgId.toString(), String.valueOf(jobId), stepId.toString(), "plan"))
                 .thenReturn(gzippedBytes);
-        when(storageTypeService.getContext(jobId)).thenThrow(new RuntimeException("503 Service Unavailable / Transient storage failure"));
+        when(contextWriteService.patchRecovery(eq(jobId), anyLong(), any()))
+                .thenThrow(new RuntimeException("503 Service Unavailable / Transient storage failure"));
 
         int recovered = spoolRecoveryService.recoverPendingSpooledSteps();
 
@@ -591,40 +561,6 @@ class SpoolRecoveryServiceTest {
         verify(stepRepository, never()).updateDeliveryState(any(), eq(DeliveryState.EXPIRED), any());
         // Lease released so next sweep retries
         verify(stepRepository).releaseLease(eq(stepId), any());
-    }
-
-    @Test
-    void mergeAndSaveContext_SkipsStaleRevisionInContextRevisions() throws IOException {
-        int jobId = 300;
-        String existingContext = "{\"key\":\"newerValue\",\"contextRevisions\":{\"key\":200}}";
-        when(storageTypeService.getContext(jobId)).thenReturn(existingContext);
-
-        Map<String, Object> patch = Map.of("key", "staleValue");
-
-        // deliveryRevision 100 <= existingRevision 200 -> should skip
-        boolean saved = spoolRecoveryService.mergeAndSaveContext(jobId, 100L, patch);
-
-        assertThat(saved).isTrue();
-        ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
-        verify(storageTypeService).saveContext(eq(jobId), captor.capture());
-        assertThat(captor.getValue()).contains("newerValue").doesNotContain("staleValue");
-    }
-
-    @Test
-    void mergeAndSaveContext_AppliesNewerRevisionAndUpdatesContextRevisions() throws IOException {
-        int jobId = 301;
-        String existingContext = "{\"key\":\"oldValue\",\"contextRevisions\":{\"key\":100}}";
-        when(storageTypeService.getContext(jobId)).thenReturn(existingContext);
-
-        Map<String, Object> patch = Map.of("key", "newValue");
-
-        // deliveryRevision 300 > existingRevision 100 -> should apply and update revisions
-        boolean saved = spoolRecoveryService.mergeAndSaveContext(jobId, 300L, patch);
-
-        assertThat(saved).isTrue();
-        ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
-        verify(storageTypeService).saveContext(eq(jobId), captor.capture());
-        assertThat(captor.getValue()).contains("newValue").contains("\"key\":300");
     }
 
     @Test
@@ -654,10 +590,8 @@ class SpoolRecoveryServiceTest {
                 storageTypeService,
                 objectMapper,
                 properties,
-                contextReadService,
+                contextWriteService,
                 policyEvaluationService,
-                null,
-                (io.terrakube.api.plugin.context.ContextWriteLock) null,
                 metricsMock);
 
         // Simulate updateDeliveryState returning 0 (lease owner changed / lost lease)
@@ -681,7 +615,6 @@ class SpoolRecoveryServiceTest {
 
         when(storageTypeService.getSpooledContextPatch(orgId.toString(), String.valueOf(jobId), stepId.toString(), "plan"))
                 .thenReturn(gzippedBytes);
-        when(storageTypeService.getContext(jobId)).thenReturn("{}");
 
         boolean recovered = spoolRecoveryService.recoverStep(step);
 

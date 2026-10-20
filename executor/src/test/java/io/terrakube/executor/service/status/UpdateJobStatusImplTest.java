@@ -245,4 +245,33 @@ public class UpdateJobStatusImplTest {
         Assertions.assertEquals(42L, attrs.getDeliveryRevision());
         Assertions.assertNotNull(attrs.getDeliveryTimestamp());
     }
+
+    @Test
+    public void setCompletedStatus_WhenApiRejectsDeliveryAttributesWith400_RetriesWithPlainStepAttributes() {
+        stubJobWithStatus("queue", 1);
+        doReturn("output-url").when(terraformState).saveOutput(anyString(), anyString(), anyString(), anyString(), anyString());
+
+        feign.Request feignRequest = feign.Request.create(
+                feign.Request.HttpMethod.PATCH, "/step", java.util.Collections.emptyMap(), null, java.nio.charset.StandardCharsets.UTF_8, null);
+        feign.FeignException badRequest = new feign.FeignException.BadRequest("Unknown attribute: deliveryState", feignRequest, null, null);
+
+        ArgumentCaptor<StepRequest> captor = ArgumentCaptor.forClass(StepRequest.class);
+        org.mockito.Mockito.doThrow(badRequest)
+                .doNothing()
+                .when(terrakubeClient).updateStep(captor.capture(), anyString(), anyString(), anyString());
+
+        subject().setCompletedStatus(true, false, 0, terraformJob(), "output", "", "", "commit-1", false, null, "ACKED", 42L);
+
+        verify(terrakubeClient, times(2)).updateStep(any(), anyString(), anyString(), anyString());
+        List<StepRequest> requests = captor.getAllValues();
+        Assertions.assertEquals(2, requests.size());
+
+        // First attempt sent StepDeliveryAttributes
+        Assertions.assertTrue(requests.get(0).getData().getAttributes() instanceof StepDeliveryAttributes);
+
+        // Second fallback attempt sent plain StepAttributes without delivery fields
+        Assertions.assertFalse(requests.get(1).getData().getAttributes() instanceof StepDeliveryAttributes);
+        Assertions.assertEquals("completed", requests.get(1).getData().getAttributes().getStatus());
+        Assertions.assertEquals("output-url", requests.get(1).getData().getAttributes().getOutput());
+    }
 }

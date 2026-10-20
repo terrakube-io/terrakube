@@ -2,10 +2,8 @@ package io.terrakube.api.plugin.scheduler.spool;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.terrakube.api.plugin.context.ContextReadService;
-import io.terrakube.api.plugin.context.ContextSanitizer;
 import io.terrakube.api.plugin.context.ContextUnavailableException;
-import io.terrakube.api.plugin.context.ContextWriteLock;
+import io.terrakube.api.plugin.context.ContextWriteService;
 import io.terrakube.api.plugin.policy.PolicyEvaluationService;
 import io.terrakube.api.plugin.storage.StorageTypeService;
 import io.terrakube.api.repository.JobRepository;
@@ -16,12 +14,10 @@ import io.terrakube.api.rs.job.step.Step;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.PageRequest;
-import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 import java.util.Date;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -31,19 +27,13 @@ import java.util.UUID;
 @Service
 public class SpoolRecoveryService {
 
-    private static final String CONTEXT_REVISIONS = "contextRevisions";
-    private static final String STRUCTURED_OUTPUT_STATUS = "structuredOutputStatus";
-    private static final String NO_CHANGE_PLAN = "noChangePlan";
-
     private final StepRepository stepRepository;
     private final JobRepository jobRepository;
     private final StorageTypeService storageTypeService;
     private final ObjectMapper objectMapper;
     private final SpoolRecoveryProperties properties;
-    private final ContextReadService contextReadService;
+    private final ContextWriteService contextWriteService;
     private final PolicyEvaluationService policyEvaluationService;
-    private final ContextSanitizer contextSanitizer;
-    private final ContextWriteLock contextWriteLock;
     private final SpoolRecoveryMetrics metrics;
 
     @Autowired
@@ -53,71 +43,17 @@ public class SpoolRecoveryService {
             StorageTypeService storageTypeService,
             ObjectMapper objectMapper,
             SpoolRecoveryProperties properties,
-            @Autowired(required = false) ContextReadService contextReadService,
-            @Autowired(required = false) PolicyEvaluationService policyEvaluationService,
-            @Autowired(required = false) ContextSanitizer contextSanitizer,
-            @Autowired(required = false) ContextWriteLock contextWriteLock,
-            @Autowired(required = false) SpoolRecoveryMetrics metrics) {
+            ContextWriteService contextWriteService,
+            PolicyEvaluationService policyEvaluationService,
+            SpoolRecoveryMetrics metrics) {
         this.stepRepository = stepRepository;
         this.jobRepository = jobRepository;
         this.storageTypeService = storageTypeService;
         this.objectMapper = objectMapper;
         this.properties = properties;
-        this.contextReadService = contextReadService;
+        this.contextWriteService = contextWriteService;
         this.policyEvaluationService = policyEvaluationService;
-        this.contextSanitizer = contextSanitizer;
-        this.contextWriteLock = contextWriteLock;
         this.metrics = metrics;
-    }
-
-    public SpoolRecoveryService(
-            StepRepository stepRepository,
-            JobRepository jobRepository,
-            StorageTypeService storageTypeService,
-            ObjectMapper objectMapper,
-            SpoolRecoveryProperties properties,
-            ContextReadService contextReadService,
-            PolicyEvaluationService policyEvaluationService) {
-        this(stepRepository, jobRepository, storageTypeService, objectMapper, properties, contextReadService, policyEvaluationService, null, null, null);
-    }
-
-    public SpoolRecoveryService(
-            StepRepository stepRepository,
-            JobRepository jobRepository,
-            StorageTypeService storageTypeService,
-            ObjectMapper objectMapper,
-            SpoolRecoveryProperties properties,
-            ContextReadService contextReadService,
-            PolicyEvaluationService policyEvaluationService,
-            ContextSanitizer contextSanitizer) {
-        this(stepRepository, jobRepository, storageTypeService, objectMapper, properties, contextReadService, policyEvaluationService, contextSanitizer, null, null);
-    }
-
-    public SpoolRecoveryService(
-            StepRepository stepRepository,
-            JobRepository jobRepository,
-            StorageTypeService storageTypeService,
-            ObjectMapper objectMapper,
-            SpoolRecoveryProperties properties,
-            ContextReadService contextReadService,
-            PolicyEvaluationService policyEvaluationService,
-            ContextSanitizer contextSanitizer,
-            ContextWriteLock contextWriteLock) {
-        this(stepRepository, jobRepository, storageTypeService, objectMapper, properties, contextReadService, policyEvaluationService, contextSanitizer, contextWriteLock, null);
-    }
-
-    public SpoolRecoveryService(
-            StepRepository stepRepository,
-            JobRepository jobRepository,
-            StorageTypeService storageTypeService,
-            ObjectMapper objectMapper,
-            SpoolRecoveryProperties properties,
-            ContextReadService contextReadService,
-            PolicyEvaluationService policyEvaluationService,
-            ContextSanitizer contextSanitizer,
-            RedisTemplate<String, Object> redisTemplate) {
-        this(stepRepository, jobRepository, storageTypeService, objectMapper, properties, contextReadService, policyEvaluationService, contextSanitizer,
-                redisTemplate != null ? new ContextWriteLock(redisTemplate) : null, null);
     }
 
     public int recoverPendingSpooledSteps() {
@@ -326,165 +262,16 @@ public class SpoolRecoveryService {
     }
 
     public boolean mergeAndSaveContext(int jobId, long deliveryRevision, Map<String, Object> patch) throws IOException {
-        String lockToken = null;
-        if (contextWriteLock != null) {
-            try {
-                lockToken = contextWriteLock.acquire(jobId);
-            } catch (ContextUnavailableException e) {
-                log.warn("Could not acquire context lock for job {}: {}", jobId, e.getMessage());
-                return false;
-            }
-        }
         try {
-            String currentContextJson = storageTypeService.getContext(jobId);
-            Map<String, Object> currentContext = new LinkedHashMap<>();
-            if (currentContextJson != null && !currentContextJson.isBlank()) {
-                try {
-                    currentContext = objectMapper.readValue(currentContextJson, new TypeReference<Map<String, Object>>() {});
-                } catch (Exception e) {
-                    log.warn("Unable to parse current context JSON for job {}, starting with fresh context", jobId, e);
-                    currentContext = new LinkedHashMap<>();
-                }
-            }
-            mergeContextMaps(currentContext, deliveryRevision, patch);
-            String updatedContextJson = objectMapper.writeValueAsString(currentContext);
-            if (contextSanitizer != null) {
-                updatedContextJson = contextSanitizer.sanitize(updatedContextJson);
-            }
-            storageTypeService.saveContext(jobId, updatedContextJson);
-            if (contextReadService != null) {
-                contextReadService.invalidate(jobId, updatedContextJson);
-            }
-            if (policyEvaluationService != null) {
-                policyEvaluationService.processPolicyEvaluationContext(jobId, updatedContextJson);
+            ContextWriteService.PatchResult result = contextWriteService.patchRecovery(jobId, deliveryRevision, patch);
+            if (result.context() != null && policyEvaluationService != null) {
+                policyEvaluationService.processPolicyEvaluationContext(jobId, result.context());
             }
             return true;
-        } finally {
-            if (contextWriteLock != null && lockToken != null) {
-                contextWriteLock.release(jobId, lockToken);
-            }
-        }
-    }
-
-    public void mergeContextMaps(Map<String, Object> target, Map<String, Object> patch) {
-        mergeContextMaps(target, 0L, patch);
-    }
-
-    public void mergeContextMaps(Map<String, Object> target, long deliveryRevision, Map<String, Object> patch) {
-        Map<String, Object> revisions = resolveRevisionsMap(target);
-
-        for (Map.Entry<String, Object> entry : patch.entrySet()) {
-            mergeEntry(target, revisions, entry.getKey(), entry.getValue(), deliveryRevision);
-        }
-    }
-
-    @SuppressWarnings("unchecked")
-    private Map<String, Object> resolveRevisionsMap(Map<String, Object> target) {
-        Object revisionsObj = target.get(CONTEXT_REVISIONS);
-        if (revisionsObj instanceof Map<?, ?> map) {
-            return (Map<String, Object>) map;
-        }
-        Map<String, Object> revisions = new LinkedHashMap<>();
-        target.put(CONTEXT_REVISIONS, revisions);
-        return revisions;
-    }
-
-    private void mergeEntry(Map<String, Object> target, Map<String, Object> revisions,
-                            String key, Object patchVal, long deliveryRevision) {
-        if (isStaleRevision(revisions, key, deliveryRevision)) {
-            return;
-        }
-
-        if (STRUCTURED_OUTPUT_STATUS.equals(key)) {
-            mergeStructuredOutputStatus(target, revisions, patchVal, deliveryRevision);
-            return;
-        }
-
-        if (NO_CHANGE_PLAN.equals(key)) {
-            mergeNoChangePlan(target, revisions, patchVal, deliveryRevision);
-            return;
-        }
-
-        applyValueAndRecordRevision(target, revisions, key, patchVal, deliveryRevision);
-    }
-
-    private boolean isStaleRevision(Map<String, Object> revisions, String key, long deliveryRevision) {
-        long existingRevision = extractEpoch(revisions.get(key));
-        if (deliveryRevision > 0 && existingRevision > 0 && deliveryRevision <= existingRevision) {
-            log.info("Skipping recovery patch entry {} because existing revision {} >= spooled revision {}",
-                    key, existingRevision, deliveryRevision);
-            return true;
-        }
-        return false;
-    }
-
-    private void mergeStructuredOutputStatus(Map<String, Object> target, Map<String, Object> revisions,
-                                             Object patchVal, long deliveryRevision) {
-        if (shouldSkipStructuredOutputStatus(target.get(STRUCTURED_OUTPUT_STATUS), patchVal)) {
-            log.info("Skipping structuredOutputStatus merge because target is newer or higher priority");
-            return;
-        }
-        target.put(STRUCTURED_OUTPUT_STATUS, patchVal);
-        if (deliveryRevision > 0) {
-            revisions.put(STRUCTURED_OUTPUT_STATUS, deliveryRevision);
-        }
-    }
-
-    private void mergeNoChangePlan(Map<String, Object> target, Map<String, Object> revisions,
-                                   Object patchVal, long deliveryRevision) {
-        if (shouldSkipNoChangePlan(target)) {
-            log.info("Skipping noChangePlan merge because apply already executed");
-            return;
-        }
-        target.put(NO_CHANGE_PLAN, patchVal);
-        if (deliveryRevision > 0) {
-            revisions.put(NO_CHANGE_PLAN, deliveryRevision);
-        }
-    }
-
-    private boolean shouldSkipNoChangePlan(Map<String, Object> target) {
-        return target.containsKey("applyStructuredOutput")
-                || target.containsKey("terraformApply")
-                || isApplyPhase(target.get(STRUCTURED_OUTPUT_STATUS));
-    }
-
-    @SuppressWarnings("unchecked")
-    private void applyValueAndRecordRevision(Map<String, Object> target, Map<String, Object> revisions,
-                                             String key, Object patchVal, long deliveryRevision) {
-        if (patchVal instanceof Map<?, ?> patchMap && target.get(key) instanceof Map<?, ?> targetMap) {
-            Map<String, Object> mergedSubMap = new LinkedHashMap<>((Map<String, Object>) targetMap);
-            mergedSubMap.putAll((Map<String, Object>) patchMap);
-            target.put(key, mergedSubMap);
-        } else {
-            target.put(key, patchVal);
-        }
-
-        if (deliveryRevision > 0) {
-            revisions.put(key, deliveryRevision);
-            revisions.entrySet().removeIf(e -> e.getKey().startsWith(key + "/") && extractEpoch(e.getValue()) <= deliveryRevision);
-        }
-    }
-
-    private boolean shouldSkipStructuredOutputStatus(Object existingVal, Object patchVal) {
-        if (!(existingVal instanceof Map<?, ?> existingMap) || !(patchVal instanceof Map<?, ?> patchMap)) {
+        } catch (ContextUnavailableException e) {
+            log.warn("Context lock busy for job {}: {}", jobId, e.getMessage());
             return false;
         }
-        long existingTime = extractEpoch(existingMap.get("updatedAtEpochMs"));
-        long patchTime = extractEpoch(patchMap.get("updatedAtEpochMs"));
-        if (existingTime > patchTime) {
-            return true;
-        }
-        if ("apply".equals(existingMap.get("phase")) && "plan".equals(patchMap.get("phase"))) {
-            return true;
-        }
-        return false;
-    }
-
-    private boolean isApplyPhase(Object status) {
-        if (status instanceof Map<?, ?> map) {
-            return "apply".equals(map.get("phase"));
-        }
-        return false;
     }
 
     private long extractEpoch(Object val) {

@@ -481,10 +481,14 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             drainStructuredOutputQueue(terraformJob.getJobId());
 
             long applyRevision = ContextRevision.next(terraformJob.getJobId());
-            // Synchronous authoritative final apply snapshot delivery with explicit ACK from the API.
-            String applyDeliveryState = applyStructuredOutputService.publishFinalApplySynchronous(
-                    terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), applyRevision,
-                    terraformJob.getLiveChanges(), terraformJob.getJobDiagnostics());
+            String applyDeliveryState = "NOT_DURABLE";
+            boolean hasApplyOutput = (terraformJob.getLiveChanges() != null && !terraformJob.getLiveChanges().isEmpty())
+                    || (terraformJob.getJobDiagnostics() != null && !terraformJob.getJobDiagnostics().isEmpty());
+            if (execution || hasApplyOutput) {
+                applyDeliveryState = applyStructuredOutputService.publishFinalApplySynchronous(
+                        terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), applyRevision,
+                        terraformJob.getLiveChanges(), terraformJob.getJobDiagnostics());
+            }
 
             result = generateJobResult(scriptAfterSuccess, terraformOutput.toString(), terraformErrorOutput.toString());
             result.setDeliveryState(applyDeliveryState);
@@ -785,9 +789,14 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             drainStructuredOutputQueue(terraformJob.getJobId());
 
             long destroyRevision = ContextRevision.next(terraformJob.getJobId());
-            String destroyDeliveryState = applyStructuredOutputService.publishFinalApplySynchronous(
-                    terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), destroyRevision,
-                    terraformJob.getLiveChanges(), terraformJob.getJobDiagnostics());
+            String destroyDeliveryState = "NOT_DURABLE";
+            boolean hasDestroyOutput = (terraformJob.getLiveChanges() != null && !terraformJob.getLiveChanges().isEmpty())
+                    || (terraformJob.getJobDiagnostics() != null && !terraformJob.getJobDiagnostics().isEmpty());
+            if (execution || hasDestroyOutput) {
+                destroyDeliveryState = applyStructuredOutputService.publishFinalApplySynchronous(
+                        terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), destroyRevision,
+                        terraformJob.getLiveChanges(), terraformJob.getJobDiagnostics());
+            }
 
             result = generateJobResult(scriptAfterSuccess, jobOutput.toString(), jobErrorOutput.toString());
             result.setDeliveryState(destroyDeliveryState);

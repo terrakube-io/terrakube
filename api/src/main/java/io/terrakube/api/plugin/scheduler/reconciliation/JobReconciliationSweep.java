@@ -92,8 +92,8 @@ public class JobReconciliationSweep implements org.quartz.Job {
             JobReconciliationService reconciliationService,
             JobReconciliationMetrics metrics,
             @Value("${io.terrakube.scheduler.reconciliation.heartbeat-grace-period-seconds:${ReconciliationHeartbeatGracePeriodSeconds:300}}") long heartbeatGracePeriodSeconds,
-            @Autowired(required = false) StorageTypeService storageTypeService,
-            @Autowired(required = false) SpoolRecoveryService spoolRecoveryService) {
+            StorageTypeService storageTypeService,
+            SpoolRecoveryService spoolRecoveryService) {
         this.jobRepository = jobRepository;
         this.stepRepository = stepRepository;
         this.workspaceRepository = workspaceRepository;
@@ -106,33 +106,6 @@ public class JobReconciliationSweep implements org.quartz.Job {
         this.heartbeatGracePeriod = Duration.ofSeconds(heartbeatGracePeriodSeconds);
         this.storageTypeService = storageTypeService;
         this.spoolRecoveryService = spoolRecoveryService;
-    }
-
-    public JobReconciliationSweep(
-            JobRepository jobRepository,
-            StepRepository stepRepository,
-            WorkspaceRepository workspaceRepository,
-            Scheduler scheduler,
-            ScheduleJobService scheduleJobService,
-            RedisTemplate<String, Object> redisTemplate,
-            ReconciliationProperties properties,
-            JobReconciliationService reconciliationService,
-            JobReconciliationMetrics metrics,
-            long heartbeatGracePeriodSeconds) {
-        this(jobRepository, stepRepository, workspaceRepository, scheduler, scheduleJobService, redisTemplate, properties, reconciliationService, metrics, heartbeatGracePeriodSeconds, null, null);
-    }
-
-    public JobReconciliationSweep(
-            JobRepository jobRepository,
-            StepRepository stepRepository,
-            WorkspaceRepository workspaceRepository,
-            Scheduler scheduler,
-            ScheduleJobService scheduleJobService,
-            RedisTemplate<String, Object> redisTemplate,
-            ReconciliationProperties properties,
-            JobReconciliationService reconciliationService,
-            JobReconciliationMetrics metrics) {
-        this(jobRepository, stepRepository, workspaceRepository, scheduler, scheduleJobService, redisTemplate, properties, reconciliationService, metrics, 300, null, null);
     }
 
     @Transactional
@@ -323,6 +296,9 @@ public class JobReconciliationSweep implements org.quartz.Job {
         } catch (SchedulerException e) {
             log.warn("Could not delete Quartz context for failed Job {}: {}", job.getId(), e.getMessage());
         }
+        // After failing a dead executor's job, probe storage for any spooled final output
+        // that could not be delivered before the executor died. This runs inside the sweep's
+        // open transaction, but is rare (only on dead executors whose heartbeat expired).
         probeAndRecoverSpooledSteps(job);
     }
 

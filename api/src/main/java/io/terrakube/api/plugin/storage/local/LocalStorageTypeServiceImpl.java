@@ -209,7 +209,7 @@ public class LocalStorageTypeServiceImpl implements StorageTypeService {
                     FileUtils.cleanDirectory(outputDir);
                 }
 
-                String contextSpoolFolder = String.format("%s/.terraform-spring-boot/local/context-spool/%s/%s", FileUtils.getUserDirectoryPath(), organizationId, jobId);
+                String contextSpoolFolder = String.format("%s/.terraform-spring-boot/local/context-spool/%s/%s", getLocalBasePath(), organizationId, jobId);
                 File spoolDir = new File(contextSpoolFolder);
                 if (spoolDir.exists()) {
                     log.warn("Delete workspace context spool folder: {}", contextSpoolFolder);
@@ -315,14 +315,19 @@ public class LocalStorageTypeServiceImpl implements StorageTypeService {
         return target.toFile();
     }
 
+    private String getLocalBasePath() {
+        String sharedDir = System.getProperty("terrakube.local.shared.directory", System.getenv("TERRAKUBE_LOCAL_SHARED_DIRECTORY"));
+        return (sharedDir != null && !sharedDir.isBlank()) ? sharedDir : FileUtils.getUserDirectoryPath();
+    }
+
     @Override
     public byte[] getSpooledContextPatch(String organizationId, String jobId, String stepId, String phase) {
         String path = String.format(CONTEXT_SPOOL_DIRECTORY, organizationId, jobId, stepId, phase);
-        File file = resolveSafeFile(FileUtils.getUserDirectoryPath(), path);
+        File file = resolveSafeFile(getLocalBasePath(), path);
         if (!file.exists()) {
             return null;
         }
-        byte[] bytes = readFile(path);
+        byte[] bytes = storageRetryMetrics.withRetry("local", "spool-read", () -> java.nio.file.Files.readAllBytes(file.toPath()));
         return (bytes != null && bytes.length > 0) ? bytes : null;
     }
 
@@ -332,7 +337,7 @@ public class LocalStorageTypeServiceImpl implements StorageTypeService {
         log.info("Deleting spooled context patch from local storage: {}", path);
         storageRetryMetrics.withRetry("local", "delete", () -> {
             try {
-                File file = resolveSafeFile(FileUtils.getUserDirectoryPath(), path);
+                File file = resolveSafeFile(getLocalBasePath(), path);
                 if (file.exists()) {
                     FileUtils.deleteQuietly(file);
                     log.info("Successfully deleted spooled context patch {}", path);
@@ -348,7 +353,7 @@ public class LocalStorageTypeServiceImpl implements StorageTypeService {
     public boolean hasSpooledContextPatch(String organizationId, String jobId, String stepId, String phase) {
         try {
             String path = String.format(CONTEXT_SPOOL_DIRECTORY, organizationId, jobId, stepId, phase);
-            File file = resolveSafeFile(FileUtils.getUserDirectoryPath(), path);
+            File file = resolveSafeFile(getLocalBasePath(), path);
             return file.exists() && file.isFile();
         } catch (Exception e) {
             log.warn("Error probing spooled context patch in local storage: {}", e.getMessage());
