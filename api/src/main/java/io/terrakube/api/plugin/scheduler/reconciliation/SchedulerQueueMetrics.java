@@ -43,6 +43,10 @@ public class SchedulerQueueMetrics {
                         SchedulerQueueMetrics::dispatchDeferredCount)
                 .description("Pending/approved jobs currently excluded from dispatch purely by dispatch-retry backoff")
                 .register(meterRegistry);
+        Gauge.builder("terrakube.scheduler.executor.queue.locked.skipped", jobRepository,
+                        JobRepository::countJobsHeldByLockedWorkspace)
+                .description("Pending/approved jobs excluded from the FIFO queue because their workspace is locked")
+                .register(meterRegistry);
     }
 
     // These gauges already always use the guarded (step-aware) query regardless of

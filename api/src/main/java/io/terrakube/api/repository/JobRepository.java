@@ -22,6 +22,18 @@ public interface JobRepository extends JpaRepository<Job, Integer> {
     String ACTIVE_JOB_STATUSES = "io.terrakube.api.rs.job.JobStatus.pending, io.terrakube.api.rs.job.JobStatus.approved";
     String TERMINAL_JOB_STATUSES = "io.terrakube.api.rs.job.JobStatus.failed, io.terrakube.api.rs.job.JobStatus.completed, io.terrakube.api.rs.job.JobStatus.rejected, io.terrakube.api.rs.job.JobStatus.cancelled, io.terrakube.api.rs.job.JobStatus.noChanges";
 
+    // A job in a locked workspace cannot be dispatched (ScheduleJob.doRunExecution returns early), so
+    // it must not hold a place in the global FIFO queue: it would otherwise block every later job
+    // in every other workspace until someone unlocks it. The one exception mirrors
+    // ScheduleJob.isOwnPrApplyLock: an auto-apply job whose workspace was locked by its own PR
+    // "apply" comment (WebhookService.buildPrApplyLockDescription) is still allowed to run.
+    String EARLIER_NOT_LOCKED_OUT = "( earlier.workspace.locked = false" +
+            " OR ( earlier.autoApply = true AND earlier.prNumber IS NOT NULL" +
+            "      AND earlier.workspace.lockDescription = CONCAT('Locked by PR #', CAST(earlier.prNumber AS string), ' apply') ) )";
+    String JOB_NOT_LOCKED_OUT = "( j.workspace.locked = false" +
+            " OR ( j.autoApply = true AND j.prNumber IS NOT NULL" +
+            "      AND j.workspace.lockDescription = CONCAT('Locked by PR #', CAST(j.prNumber AS string), ' apply') ) )";
+
     List<Job> findAllByOrganizationAndStatusNotInOrderByIdAsc(Organization organization, List<JobStatus> status);
     List<Job> findAllByStatusInOrderByIdAsc(List<JobStatus> status);
     List<Job> findAllByOrganizationNameAndStatusInOrderByIdAsc(String organizationName, List<JobStatus> status);
@@ -125,6 +137,7 @@ public interface JobRepository extends JpaRepository<Job, Integer> {
             "    AND earlier.status IN (" + ACTIVE_JOB_STATUSES + ")" +
             "    AND earlier.deleted = false" +
             "    AND earlier.workspace.deleted = false" +
+            "    AND " + EARLIER_NOT_LOCKED_OUT +
             "    AND NOT EXISTS (" +
             "      SELECT 1 FROM job blocker" +
             "      WHERE blocker.workspace = earlier.workspace" +
@@ -143,6 +156,7 @@ public interface JobRepository extends JpaRepository<Job, Integer> {
             " WHERE j.status IN (" + ACTIVE_JOB_STATUSES + ")" +
             "   AND j.deleted = false" +
             "   AND j.workspace.deleted = false" +
+            "   AND " + JOB_NOT_LOCKED_OUT +
             "   AND NOT EXISTS (" +
             "     SELECT 1 FROM job earlier" +
             "     WHERE earlier.workspace = j.workspace" +
@@ -151,6 +165,18 @@ public interface JobRepository extends JpaRepository<Job, Integer> {
             "       AND earlier.status NOT IN (" + TERMINAL_JOB_STATUSES + ")" +
             "   )")
     Integer findNextDispatchableJobId();
+
+    /** Pending/approved jobs with an executable step that are held out of the FIFO queue only because
+     *  their workspace is locked (ScheduleJob will not dispatch them until it is unlocked). Visibility
+     *  gauge for #3728. */
+    @Query("SELECT COUNT(j) FROM job j" +
+            " WHERE j.status IN (" + ACTIVE_JOB_STATUSES + ")" +
+            "   AND j.deleted = false" +
+            "   AND j.workspace.deleted = false" +
+            "   AND NOT " + JOB_NOT_LOCKED_OUT +
+            "   AND ( NOT EXISTS (SELECT 1 FROM step s WHERE s.job = j)" +
+            "         OR EXISTS (SELECT 1 FROM step s WHERE s.job = j AND s.status = io.terrakube.api.rs.job.JobStatus.pending) )")
+    int countJobsHeldByLockedWorkspace();
 
     // --- Guarded variants (design doc 2026-09-02 §3.6) --------------------------------------
     // An earlier pending/approved job only blocks the FIFO queue when it still has an executable
@@ -166,6 +192,7 @@ public interface JobRepository extends JpaRepository<Job, Integer> {
             "    AND earlier.status IN (" + ACTIVE_JOB_STATUSES + ")" +
             "    AND earlier.deleted = false" +
             "    AND earlier.workspace.deleted = false" +
+            "    AND " + EARLIER_NOT_LOCKED_OUT +
             "    AND ( NOT EXISTS (SELECT 1 FROM step s WHERE s.job = earlier)" +
             "          OR EXISTS (SELECT 1 FROM step s WHERE s.job = earlier AND s.status = io.terrakube.api.rs.job.JobStatus.pending) )" +
             "    AND NOT EXISTS (" +
@@ -183,6 +210,7 @@ public interface JobRepository extends JpaRepository<Job, Integer> {
             " WHERE j.status IN (" + ACTIVE_JOB_STATUSES + ")" +
             "   AND j.deleted = false" +
             "   AND j.workspace.deleted = false" +
+            "   AND " + JOB_NOT_LOCKED_OUT +
             "   AND ( NOT EXISTS (SELECT 1 FROM step s WHERE s.job = j)" +
             "         OR EXISTS (SELECT 1 FROM step s WHERE s.job = j AND s.status = io.terrakube.api.rs.job.JobStatus.pending) )" +
             "   AND NOT EXISTS (" +
@@ -203,6 +231,7 @@ public interface JobRepository extends JpaRepository<Job, Integer> {
             " WHERE j.status IN (" + ACTIVE_JOB_STATUSES + ")" +
             "   AND j.deleted = false" +
             "   AND j.workspace.deleted = false" +
+            "   AND " + JOB_NOT_LOCKED_OUT +
             "   AND ( NOT EXISTS (SELECT 1 FROM step s WHERE s.job = j)" +
             "         OR EXISTS (SELECT 1 FROM step s WHERE s.job = j AND s.status = io.terrakube.api.rs.job.JobStatus.pending) )")
     int countDispatchEligibleJobs();
@@ -225,6 +254,7 @@ public interface JobRepository extends JpaRepository<Job, Integer> {
             "    AND earlier.status IN (" + ACTIVE_JOB_STATUSES + ")" +
             "    AND earlier.deleted = false" +
             "    AND earlier.workspace.deleted = false" +
+            "    AND " + EARLIER_NOT_LOCKED_OUT +
             "    AND ( NOT EXISTS (SELECT 1 FROM step s WHERE s.job = earlier)" +
             "          OR EXISTS (SELECT 1 FROM step s WHERE s.job = earlier AND s.status = io.terrakube.api.rs.job.JobStatus.pending) )" +
             "    AND ( earlier.workspace = (SELECT c.workspace FROM job c WHERE c.id = :candidateJobId)" +
@@ -244,6 +274,7 @@ public interface JobRepository extends JpaRepository<Job, Integer> {
             " WHERE j.status IN (" + ACTIVE_JOB_STATUSES + ")" +
             "   AND j.deleted = false" +
             "   AND j.workspace.deleted = false" +
+            "   AND " + JOB_NOT_LOCKED_OUT +
             "   AND ( NOT EXISTS (SELECT 1 FROM step s WHERE s.job = j)" +
             "         OR EXISTS (SELECT 1 FROM step s WHERE s.job = j AND s.status = io.terrakube.api.rs.job.JobStatus.pending) )" +
             "   AND ( j.dispatchNextRetryAt IS NULL OR j.dispatchNextRetryAt <= CURRENT_TIMESTAMP )" +
@@ -265,6 +296,7 @@ public interface JobRepository extends JpaRepository<Job, Integer> {
             " WHERE j.status IN (" + ACTIVE_JOB_STATUSES + ")" +
             "   AND j.deleted = false" +
             "   AND j.workspace.deleted = false" +
+            "   AND " + JOB_NOT_LOCKED_OUT +
             "   AND ( NOT EXISTS (SELECT 1 FROM step s WHERE s.job = j)" +
             "         OR EXISTS (SELECT 1 FROM step s WHERE s.job = j AND s.status = io.terrakube.api.rs.job.JobStatus.pending) )" +
             "   AND ( j.dispatchNextRetryAt IS NULL OR j.dispatchNextRetryAt <= CURRENT_TIMESTAMP )")

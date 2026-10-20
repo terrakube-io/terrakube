@@ -59,7 +59,7 @@ public class DispatchRetryProperties {
     private boolean admissionDeferralEnabled = true;
 
     // Shared by every FIFO call site that needs the 3-way admission-guard ladder
-    // (ScheduleJob.isNextInDispatchOrder/wakeNextDispatchableJob, ExecutorAvailabilityListener)
+    // (ScheduleJob.isNextInDispatchOrder, ScheduleJobService.wakeQueueHead)
     // so the "admissionGuardEnabled && dispatch-retry.enabled && admissionDeferralEnabled"
     // computation lives in one place instead of being repeated at each call site.
     public boolean isAdmissionDeferralActive(boolean admissionGuardEnabled) {

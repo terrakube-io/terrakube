@@ -20,6 +20,7 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
+import io.terrakube.api.plugin.vcs.WebhookService;
 import io.terrakube.api.repository.JobRepository;
 import io.terrakube.api.repository.OrganizationRepository;
 import io.terrakube.api.repository.StepRepository;
@@ -335,5 +336,104 @@ class JobDispatchOrderRepositoryIntegrationTest {
 
         assertThat(jobRepository.countDispatchEligibleJobs()).isEqualTo(2);
         assertThat(jobRepository.countDispatchEligibleNotDeferredJobs()).isEqualTo(1);
+    }
+
+    // --- Locked workspaces (#3728) ---------------------------------------------------------
+
+    private Workspace lock(Workspace workspace, String description) {
+        workspace.setLocked(true);
+        workspace.setLockDescription(description);
+        return workspaceRepository.saveAndFlush(workspace);
+    }
+
+    @Test
+    void aPendingJobInALockedWorkspaceDoesNotBlockJobsInOtherWorkspaces() {
+        Workspace locked = lock(newWorkspace(), "manual lock");
+        Workspace other = newWorkspace();
+        Job inLocked = newJob(locked, JobStatus.pending);
+        Job inOther = newJob(other, JobStatus.pending);
+
+        assertThat(jobRepository.isJobNextInDispatchOrder(inOther.getId())).isTrue();
+        assertThat(jobRepository.isJobNextInDispatchOrderExecutable(inOther.getId())).isTrue();
+        assertThat(jobRepository.isJobNextInDispatchOrderExecutableNotDeferred(inOther.getId())).isTrue();
+        assertThat(jobRepository.findNextDispatchableJobId()).isEqualTo(inOther.getId());
+        assertThat(jobRepository.findNextDispatchableExecutableJobId()).isEqualTo(inOther.getId());
+        assertThat(jobRepository.findNextDispatchableExecutableNotDeferredJobId()).isEqualTo(inOther.getId());
+        assertThat(jobRepository.countDispatchEligibleJobs()).isEqualTo(1);
+        assertThat(jobRepository.countDispatchEligibleNotDeferredJobs()).isEqualTo(1);
+        assertThat(inLocked.getId()).isLessThan(inOther.getId());
+    }
+
+    @Test
+    void unlockingAWorkspaceRestoresItsOriginalPlaceInTheQueue() {
+        Workspace workspace = lock(newWorkspace(), "manual lock");
+        Workspace other = newWorkspace();
+        Job inWorkspace = newJob(workspace, JobStatus.pending);
+        Job inOther = newJob(other, JobStatus.pending);
+
+        assertThat(jobRepository.isJobNextInDispatchOrderExecutable(inOther.getId())).isTrue();
+
+        workspace.setLocked(false);
+        workspace.setLockDescription(null);
+        workspaceRepository.saveAndFlush(workspace);
+
+        assertThat(jobRepository.isJobNextInDispatchOrderExecutable(inOther.getId())).isFalse();
+        assertThat(jobRepository.findNextDispatchableExecutableJobId()).isEqualTo(inWorkspace.getId());
+    }
+
+    @Test
+    void aJobWhoseWorkspaceWasLockedByItsOwnPrApplyStaysEligible() {
+        Workspace workspace = lock(newWorkspace(), WebhookService.buildPrApplyLockDescription(42));
+        Workspace other = newWorkspace();
+        Job prApply = newJob(workspace, JobStatus.pending);
+        prApply.setAutoApply(true);
+        prApply.setPrNumber(42);
+        jobRepository.saveAndFlush(prApply);
+        Job inOther = newJob(other, JobStatus.pending);
+
+        assertThat(jobRepository.isJobNextInDispatchOrderExecutable(inOther.getId())).isFalse();
+        assertThat(jobRepository.findNextDispatchableExecutableJobId()).isEqualTo(prApply.getId());
+    }
+
+    @Test
+    void aPrApplyJobDoesNotGetTheExceptionWhenTheLockIsSomeoneElses() {
+        Workspace workspace = lock(newWorkspace(), "Locked by PR #7 apply");
+        Workspace other = newWorkspace();
+        Job prApply = newJob(workspace, JobStatus.pending);
+        prApply.setAutoApply(true);
+        prApply.setPrNumber(42); // lock belongs to PR 7, not this job
+        jobRepository.saveAndFlush(prApply);
+        Job inOther = newJob(other, JobStatus.pending);
+
+        assertThat(jobRepository.isJobNextInDispatchOrderExecutable(inOther.getId())).isTrue();
+        assertThat(jobRepository.findNextDispatchableExecutableJobId()).isEqualTo(inOther.getId());
+    }
+
+    @Test
+    void countsOnlyJobsHeldOutOfTheQueueByALockedWorkspace() {
+        Workspace locked = lock(newWorkspace(), "manual lock");
+        Workspace prLocked = lock(newWorkspace(), WebhookService.buildPrApplyLockDescription(9));
+        Workspace other = newWorkspace();
+        newJob(locked, JobStatus.pending);
+        newJob(locked, JobStatus.approved);
+        newJob(locked, JobStatus.running); // not pending/approved, not counted
+        Job prApply = newJob(prLocked, JobStatus.pending);
+        prApply.setAutoApply(true);
+        prApply.setPrNumber(9);
+        jobRepository.saveAndFlush(prApply); // own PR apply lock, not held out
+        newJob(other, JobStatus.pending);
+
+        assertThat(jobRepository.countJobsHeldByLockedWorkspace()).isEqualTo(2);
+    }
+
+    @Test
+    void doesNotCountALockedJobWithNoExecutableStep() {
+        Workspace locked = lock(newWorkspace(), "manual lock");
+        Job zombie = newJob(locked, JobStatus.approved);
+        newStep(zombie, 100, JobStatus.completed); // unlocking would not make it dispatchable
+        Job genuine = newJob(locked, JobStatus.pending);
+        newStep(genuine, 100, JobStatus.pending);
+
+        assertThat(jobRepository.countJobsHeldByLockedWorkspace()).isEqualTo(1);
     }
 }

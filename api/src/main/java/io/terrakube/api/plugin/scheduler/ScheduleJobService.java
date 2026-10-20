@@ -18,6 +18,9 @@ import org.quartz.Trigger;
 import org.quartz.TriggerBuilder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import io.terrakube.api.plugin.scheduler.dispatchretry.DispatchRetryProperties;
+import io.terrakube.api.plugin.scheduler.reconciliation.ReconciliationProperties;
+import io.terrakube.api.repository.JobRepository;
 import io.terrakube.api.repository.StepRepository;
 import io.terrakube.api.repository.WorkspaceRepository;
 import io.terrakube.api.rs.job.Job;
@@ -42,6 +45,13 @@ public class ScheduleJobService {
     StepRepository stepRepository;
 
     WorkspaceRepository workspaceRepository;
+
+    JobRepository jobRepository;
+
+    // Pick which FIFO query wakeQueueHead uses; the same flags gate ScheduleJob's admission check.
+    ReconciliationProperties reconciliationProperties;
+
+    DispatchRetryProperties dispatchRetryProperties;
 
     public void createJobTrigger(String cronExpression, String triggerId) throws ParseException, SchedulerException {
 
@@ -95,6 +105,30 @@ public class ScheduleJobService {
         }
         scheduler.scheduleJob(jobDetail, trigger);
         scheduler.triggerJob(jobDetail.getKey());
+    }
+
+    /**
+     * Immediately wakes the job at the front of the FIFO dispatch queue instead of waiting for its
+     * next 30s trigger. Called when capacity frees up (a job was dispatched, an executor signalled)
+     * and when a locked workspace is unlocked. Best effort and never throws: the job's own
+     * recurring trigger still covers it if this fails, and callers may be post-commit hooks that
+     * must not fail an already committed request.
+     */
+    public void wakeQueueHead() {
+        try {
+            boolean admissionGuard = reconciliationProperties.isAdmissionGuardEnabled();
+            boolean deferralGuard = dispatchRetryProperties.isAdmissionDeferralActive(admissionGuard);
+            Integer nextJobId = deferralGuard
+                    ? jobRepository.findNextDispatchableExecutableNotDeferredJobId()
+                    : admissionGuard
+                        ? jobRepository.findNextDispatchableExecutableJobId()
+                        : jobRepository.findNextDispatchableJobId();
+            if (nextJobId != null) {
+                createJobContextNow(jobRepository.getReferenceById(nextJobId));
+            }
+        } catch (RuntimeException | SchedulerException e) {
+            log.warn("Could not wake the next dispatchable job: {}", e.getMessage());
+        }
     }
 
     public void createJobContextNow(Job job) throws SchedulerException {
