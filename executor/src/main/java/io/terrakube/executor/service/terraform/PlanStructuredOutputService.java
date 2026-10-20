@@ -97,6 +97,9 @@ public class PlanStructuredOutputService {
     }
 
     public void publishPlanSummary(TerraformJob terraformJob, File terraformWorkingDir, List<Map<String, Object>> liveChanges, List<Map<String, Object>> jobDiagnostics) {
+        if (terraformJob == null) {
+            return;
+        }
         try {
             String planJson = getPlanAsJson(terraformJob, terraformWorkingDir);
             if (planJson == null || planJson.isBlank()) {
@@ -125,6 +128,9 @@ public class PlanStructuredOutputService {
     }
 
     public String publishFinalPlanSynchronous(TerraformJob terraformJob, File terraformWorkingDir, List<Map<String, Object>> liveChanges, List<Map<String, Object>> jobDiagnostics) {
+        if (terraformJob == null) {
+            return "NOT_DURABLE";
+        }
         long revision = resolveDeliveryRevision(terraformJob);
         return publishFinalPlanSynchronous(terraformJob, terraformWorkingDir, revision, liveChanges, jobDiagnostics);
     }
@@ -140,6 +146,9 @@ public class PlanStructuredOutputService {
     }
 
     public String publishFinalPlanSynchronous(TerraformJob terraformJob, File terraformWorkingDir, long deliveryRevision, List<Map<String, Object>> liveChanges, List<Map<String, Object>> jobDiagnostics) {
+        if (terraformJob == null) {
+            return "NOT_DURABLE";
+        }
         try {
             String planJson = getPlanAsJson(terraformJob, terraformWorkingDir);
             List<Map<String, Object>> changes;
@@ -310,6 +319,9 @@ public class PlanStructuredOutputService {
     }
 
     String getPlanAsJson(TerraformJob terraformJob, File terraformWorkingDir) throws IOException, InterruptedException, ExecutionException {
+        if (terraformJob == null) {
+            return null;
+        }
         TextStringBuilder planOutput = new TextStringBuilder();
         TextStringBuilder planErrorOutput = new TextStringBuilder();
 
@@ -345,6 +357,9 @@ public class PlanStructuredOutputService {
     // depend on it - PrCommentService.fetchStepOutputText in particular reads this same step's
     // console output expecting exactly this content.
     String getPlanAsHumanText(TerraformJob terraformJob, File terraformWorkingDir) throws IOException, InterruptedException, ExecutionException {
+        if (terraformJob == null) {
+            return null;
+        }
         TextStringBuilder planOutput = new TextStringBuilder();
         TextStringBuilder planErrorOutput = new TextStringBuilder();
 

@@ -17,6 +17,7 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -747,5 +748,19 @@ class PlanStructuredOutputServiceTest {
 
         String state = service.publishFinalPlanSnapshotSynchronous("o", "1", "step-1", List.of(), List.of());
         assertEquals("NOT_DURABLE", state);
+    }
+
+    @Test
+    void nullTerraformJobIsHandledSafelyAcrossAllPlanMethods() throws Exception {
+        PlanStructuredOutputService service = new PlanStructuredOutputService(
+                Mockito.mock(JobContextService.class),
+                new ObjectMapper(),
+                Mockito.mock(TerraformClient.class));
+
+        assertEquals("NOT_DURABLE", service.publishFinalPlanSynchronous(null, new File("/tmp"), List.of(), List.of()));
+        assertEquals("NOT_DURABLE", service.publishFinalPlanSynchronous(null, new File("/tmp"), 1L, List.of(), List.of()));
+        assertNull(service.getPlanAsJson(null, new File("/tmp")));
+        assertNull(service.getPlanAsHumanText(null, new File("/tmp")));
+        assertDoesNotThrow(() -> service.publishPlanSummary(null, new File("/tmp"), List.of(), List.of()));
     }
 }
