@@ -12,6 +12,8 @@ import java.util.Map;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 
+import com.fasterxml.jackson.core.io.JsonStringEncoder;
+
 import io.terrakube.api.rs.job.JobStatus;
 
 import org.apache.commons.lang3.function.TriFunction;
@@ -171,11 +173,7 @@ public class WebhookServiceBase {
     }
 
     protected String escapeJsonString(String input) {
-        return input.replace("\\", "\\\\")
-                .replace("\"", "\\\"")
-                .replace("\n", "\\n")
-                .replace("\r", "\\r")
-                .replace("\t", "\\t");
+        return new String(JsonStringEncoder.getInstance().quoteAsString(input));
     }
 
     protected WebhookResult handleWebhook(String jsonPayload, Map<String, String> headers, String token,
