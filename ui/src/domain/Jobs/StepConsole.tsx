@@ -4,6 +4,8 @@ import parse from "html-react-parser";
 import { useStepLog } from "../../hooks";
 import { JobStep } from "../types";
 import { ContextAvailability } from "./contextAvailability";
+import { OutputCompleteness } from "./outputDelivery";
+import { OutputCompletenessNotice } from "./OutputCompletenessNotice";
 import { parseConsolePlanSummary } from "./consolePlanSummary";
 import { LiveTerminalOutput } from "./LiveTerminalOutput";
 import { isRunningStatus, isTerminalStatus } from "./stepStatus";
@@ -25,6 +27,8 @@ type StructuredData = {
   hasStructuredView: boolean;
   /** A persisted context (with a real snapshot, even an empty one) has been seen at least once. */
   contextEverPersisted?: boolean;
+  /** How far this step's structured result can be trusted; absent for steps with no structured result. */
+  completeness?: OutputCompleteness;
   /** The associated plan is explicitly a no-change plan (marker or confirmed all-empty). */
   associatedPlanIsNoChange?: boolean;
   /** Some plan step has resource rows - a standard apply here is expected to produce apply rows. */
@@ -196,22 +200,34 @@ export const StepConsole = ({
     return renderConsole();
   }
 
+  // Until the final output is confirmed, an empty list is not evidence of "no changes".
+  const resultUnconfirmed =
+    structured.completeness != null && !["final", "unknown", "in-progress"].includes(structured.completeness);
+
   const structuredContent = structured.structuredApplyChanges ? (
-    <StructuredPlanOutput
-      changes={structured.structuredApplyChanges}
-      outputLog={logText}
-      applyMode
-      outputs={structured.stepOutputs}
-      jobDiagnostics={structured.stepJobDiagnostics}
-      isStepRunning={!terminal}
-    />
+    <>
+      <OutputCompletenessNotice completeness={structured.completeness ?? "unknown"} />
+      <StructuredPlanOutput
+        changes={structured.structuredApplyChanges}
+        outputLog={logText}
+        applyMode
+        outputs={structured.stepOutputs}
+        jobDiagnostics={structured.stepJobDiagnostics}
+        isStepRunning={!terminal}
+        resultUnconfirmed={resultUnconfirmed}
+      />
+    </>
   ) : structured.structuredChanges ? (
-    <StructuredPlanOutput
-      changes={structured.structuredChanges}
-      outputLog={logText}
-      jobDiagnostics={structured.stepJobDiagnostics}
-      isStepRunning={!terminal}
-    />
+    <>
+      <OutputCompletenessNotice completeness={structured.completeness ?? "unknown"} />
+      <StructuredPlanOutput
+        changes={structured.structuredChanges}
+        outputLog={logText}
+        jobDiagnostics={structured.stepJobDiagnostics}
+        isStepRunning={!terminal}
+        resultUnconfirmed={resultUnconfirmed}
+      />
+    </>
   ) : (
     <div>{parse(structured.template ?? "")}</div>
   );

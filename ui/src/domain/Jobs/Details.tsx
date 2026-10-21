@@ -26,10 +26,21 @@ import { getWorkspaceStatusText } from "../../modules/workspaces/utils/workspace
 import { formatJobVia, IncludedItem, Job, JobStep, Workspace } from "../types";
 import {
   ContextAvailability,
+  StructuredOutputMarker,
   parseContextAvailability,
   parseNoChangePlanStepId,
+  parseStructuredOutputMarker,
   recordReconciliationResult,
 } from "./contextAvailability";
+import {
+  OutputCompleteness,
+  getOutputCompleteness,
+  isOutputSettled,
+  producesStructuredOutput,
+  parseDeliveryState,
+} from "./outputDelivery";
+import { RunDiagnostics } from "./RunDiagnostics";
+import { collectRunDiagnostics } from "./collectDiagnostics";
 import { getPublicApiOrigin } from "./outputUrl";
 import { hasBlockingPolicyViolations } from "./policyViolations";
 import { shouldStepBeCollapsible, shouldStepBeExpandedByDefault } from "./stepExpansion";
@@ -53,6 +64,9 @@ import { PolicyChecksOutput } from "./PolicyChecksOutput";
 import { PolicyEvaluationContext } from "../types";
 import "./runTokens.css";
 import "./Details.css";
+
+// How much longer to keep re-checking while the API recovers a step's output from storage.
+const RECOVERY_RECONCILE_EXTRA_MS = 240_000;
 
 type Props = {
   jobId: string;
@@ -145,14 +159,22 @@ export const DetailsJob = ({ jobId, workspaceName, canApprove = false }: Props) 
   const [contextEverPersisted, setContextEverPersisted] = useState(false);
   // Plan step id of an explicitly persisted no-change plan (sticky once observed).
   const [noChangePlanStepId, setNoChangePlanStepId] = useState<string | undefined>(undefined);
+  // What the executor last wrote to the context; it only speaks for the step it names.
+  const [outputMarker, setOutputMarker] = useState<StructuredOutputMarker | undefined>(undefined);
   // Non-null while we keep polling context after a terminal job status (bounded reconciliation).
   const [reconcileUntil, setReconcileUntil] = useState<number | null>(null);
+  const [recoveryGaveUp, setRecoveryGaveUp] = useState(false);
   const reconcileAttemptRef = useRef(0);
+  // Bumped on every re-check so the effect below re-evaluates its deadline even when the re-check
+  // changed nothing; otherwise an unchanged answer would end the re-checking after one retry.
+  const [reconcileTick, setReconcileTick] = useState(0);
   const previousJobStatusRef = useRef<string | undefined>(undefined);
   const { getSignal: getJobSignal, abort: abortJobRequests } = useAbortController();
   const { getSignal: getContextSignal, abort: abortContextRequests } = useAbortController();
+  const { getSignal: getStepDeliverySignal, abort: abortStepDeliveryRequests } = useAbortController();
   const jobRequestRef = useRef(0);
   const contextRequestRef = useRef(0);
+  const stepDeliveryRequestRef = useRef(0);
   const pollRequestRef = useRef(0);
 
   const isAbortError = (error: unknown) => {
@@ -242,6 +264,50 @@ export const DetailsJob = ({ jobId, workspaceName, canApprove = false }: Props) 
     }
   };
 
+  // How far each plan/apply step's structured result can be trusted (#3693): rows being present
+  // does not make a snapshot final.
+  const completenessOf = (item: JobStep, isReconciling: boolean): OutputCompleteness =>
+    getOutputCompleteness({
+      stepId: item.id,
+      stepStatus: item.status,
+      deliveryState: item.deliveryState,
+      marker: outputMarker,
+      contextAvailability,
+      reconciling: isReconciling,
+      recoveryGaveUp,
+      explicitNoChange: noChangePlanStepId === item.id,
+    });
+  const outputCompleteness: Record<string, OutputCompleteness> = {};
+  steps.forEach((item) => {
+    if (producesStructuredOutput(item, outputMarker)) {
+      outputCompleteness[item.id] = completenessOf(item, reconcileUntil != null);
+    }
+  });
+  // Something the run is still expected to deliver, as opposed to a result that is final or that
+  // nothing says is unfinished.
+  const finalOutputStillExpected = steps.some(
+    (item) => producesStructuredOutput(item, outputMarker) && !isOutputSettled(completenessOf(item, true))
+  );
+  const anyOutputRecovering = steps.some((item) => item.deliveryState === "SPOOLED");
+  const planOutputUnconfirmed = steps.some(
+    (item) =>
+      (/\bplan\b/i.test(item.name) || item.id in planStructuredOutput) &&
+      // A plan that is still running has an empty snapshot until its changes arrive, so it is unconfirmed too.
+      ["in-progress", "awaiting-final", "recovering", "recovery-stalled", "unavailable", "partial", "expired"].includes(
+        outputCompleteness[item.id]
+      )
+  );
+  const runDiagnostics = useMemo(
+    () =>
+      collectRunDiagnostics({
+        steps,
+        planStructuredOutput,
+        applyStructuredOutput,
+        jobDiagnostics,
+      }),
+    [steps, planStructuredOutput, applyStructuredOutput, jobDiagnostics]
+  );
+
   // Phase/step-aware structured-output evidence, so a transient job-wide 503 does not turn a
   // no-op apply (whose Plan was explicitly empty) into a false "temporarily unavailable".
   const planEvidence = (() => {
@@ -250,8 +316,11 @@ export const DetailsJob = ({ jobId, workspaceName, canApprove = false }: Props) 
     const markedNoChange =
       noChangePlanStepId != null &&
       !(Array.isArray(planStructuredOutput[noChangePlanStepId]) && planStructuredOutput[noChangePlanStepId].length > 0);
+    // An empty snapshot only means "no changes" once the plan's final output is confirmed; an
+    // empty progress snapshot is also what a plan looks like before its changes arrive.
     const inferredNoChange =
       contextEverPersisted &&
+      !planOutputUnconfirmed &&
       planEntries.length > 0 &&
       planEntries.every((rows) => Array.isArray(rows) && rows.length === 0);
     return { anyPlanHasRows, associatedPlanIsNoChange: markedNoChange || inferredNoChange };
@@ -273,6 +342,7 @@ export const DetailsJob = ({ jobId, workspaceName, canApprove = false }: Props) 
       stepJobDiagnostics,
       hasStructuredView,
       contextEverPersisted,
+      completeness: outputCompleteness[item.id],
       associatedPlanIsNoChange: planEvidence.associatedPlanIsNoChange,
       anyPlanHasRows: planEvidence.anyPlanHasRows,
     };
@@ -424,6 +494,7 @@ export const DetailsJob = ({ jobId, workspaceName, canApprove = false }: Props) 
             incompleteVariableGuard != null && isIncompleteVariableGuardStep(stepItem.attributes.name)
               ? incompleteVariableGuard.rawMessage
               : "",
+          deliveryState: parseDeliveryState(stepItem.attributes.deliveryState),
         }))
       );
 
@@ -476,6 +547,38 @@ export const DetailsJob = ({ jobId, workspaceName, canApprove = false }: Props) 
     }
   }, [getJobSignal, jobId, organizationId]);
 
+  // Only the per-step status and delivery state, for the re-checks after a run ends: the full job
+  // reload also fetches the workspace and its VCS, which is wasted work on every retry.
+  const loadStepDelivery = useCallback(async () => {
+    if (!organizationId || !jobId) {
+      return;
+    }
+    // Its own request counter and signal: sharing the job reload's would cancel that one.
+    const requestId = ++stepDeliveryRequestRef.current;
+    const signal = getStepDeliverySignal();
+    try {
+      const response = await axiosInstance.get(`organization/${organizationId}/job/${jobId}?include=step`, { signal });
+      if (requestId !== stepDeliveryRequestRef.current) {
+        return;
+      }
+      const stepEntries: any[] = (response.data.included ?? []).filter((item: any) => item.type === "step");
+      setSteps((previous) =>
+        previous.map((step) => {
+          const entry = stepEntries.find((candidate) => candidate.id === step.id);
+          return entry
+            ? {
+                ...step,
+                status: entry.attributes.status,
+                deliveryState: parseDeliveryState(entry.attributes.deliveryState),
+              }
+            : step;
+        })
+      );
+    } catch {
+      // Best effort: the next re-check tries again, and the step list itself is untouched.
+    }
+  }, [getStepDeliverySignal, jobId, organizationId]);
+
   const loadContext = useCallback(async () => {
     const requestId = ++contextRequestRef.current;
     const signal = getContextSignal();
@@ -494,6 +597,7 @@ export const DetailsJob = ({ jobId, workspaceName, canApprove = false }: Props) 
       if (availability === "persisted") {
         setContextEverPersisted(true);
       }
+      setOutputMarker(parseStructuredOutputMarker(response?.data));
       const noChangeStepId = parseNoChangePlanStepId(response?.data);
       if (noChangeStepId != null) {
         setNoChangePlanStepId(noChangeStepId);
@@ -538,6 +642,8 @@ export const DetailsJob = ({ jobId, workspaceName, canApprove = false }: Props) 
     setLoading(true);
     abortJobRequests();
     abortContextRequests();
+    abortStepDeliveryRequests();
+    setRecoveryGaveUp(false);
 
     if (!jobId) {
       setLoading(false);
@@ -545,7 +651,7 @@ export const DetailsJob = ({ jobId, workspaceName, canApprove = false }: Props) 
     }
 
     void refreshJobDetails();
-  }, [abortContextRequests, abortJobRequests, jobId, refreshJobDetails]);
+  }, [abortContextRequests, abortJobRequests, abortStepDeliveryRequests, jobId, refreshJobDetails]);
 
   usePolling(
     () => {
@@ -573,11 +679,14 @@ export const DetailsJob = ({ jobId, workspaceName, canApprove = false }: Props) 
       return;
     }
     void loadContext();
-    if (becameTerminal && contextAvailability !== "persisted") {
+    // Whether the run is already settled is decided by the check below: persisted content alone
+    // does not prove the final output arrived.
+    if (becameTerminal) {
       reconcileAttemptRef.current = 0;
+      setRecoveryGaveUp(false);
       setReconcileUntil(Date.now() + 60_000);
     }
-  }, [job?.data?.attributes.status, contextAvailability, jobId, loadContext]);
+  }, [job?.data?.attributes.status, jobId, loadContext]);
 
   // Bounded exponential backoff while reconciling. Re-runs whenever loadContext updates
   // contextAvailability, so it schedules the next retry or stops.
@@ -585,23 +694,40 @@ export const DetailsJob = ({ jobId, workspaceName, canApprove = false }: Props) 
     if (reconcileUntil == null) {
       return;
     }
-    if (contextAvailability === "persisted") {
+    // Stop on a confirmed final delivery (or an explicit expiry), not on the first persisted content.
+    if (contextAvailability === "persisted" && !finalOutputStillExpected) {
       recordReconciliationResult("persisted");
       setReconcileUntil(null);
       return;
     }
-    if (Date.now() >= reconcileUntil) {
+    // Output the API is still recovering from storage gets a longer window than a plain delay.
+    const deadline = reconcileUntil + (anyOutputRecovering ? RECOVERY_RECONCILE_EXTRA_MS : 0);
+    if (Date.now() >= deadline) {
       recordReconciliationResult(contextAvailability === "unavailable" ? "unavailable" : "expired");
+      // Still recovering from storage when the page stops checking: say so, instead of a spinner.
+      if (anyOutputRecovering) {
+        setRecoveryGaveUp(true);
+      }
       setReconcileUntil(null);
       return;
     }
     const delay = Math.min(8000, 1000 * 2 ** reconcileAttemptRef.current);
     const timer = setTimeout(() => {
       reconcileAttemptRef.current += 1;
+      setReconcileTick((tick) => tick + 1);
       void loadContext();
+      void loadStepDelivery();
     }, delay);
     return () => clearTimeout(timer);
-  }, [reconcileUntil, contextAvailability, loadContext]);
+  }, [
+    reconcileUntil,
+    reconcileTick,
+    contextAvailability,
+    finalOutputStillExpected,
+    anyOutputRecovering,
+    loadContext,
+    loadStepDelivery,
+  ]);
 
   type LiveStructuredOutput = {
     phase: "plan" | "apply";
@@ -914,6 +1040,8 @@ export const DetailsJob = ({ jobId, workspaceName, canApprove = false }: Props) 
           ]}
         />
       )}
+
+      <RunDiagnostics diagnostics={runDiagnostics} />
 
       {steps.map((item) => {
         // Steps with nothing to show yet (e.g. a pending approval step) still render through

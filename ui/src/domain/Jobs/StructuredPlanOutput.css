@@ -1096,3 +1096,10 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.structured-plan-diagnostic-steps {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  opacity: 0.7;
+}
