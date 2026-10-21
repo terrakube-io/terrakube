@@ -1,5 +1,6 @@
 package io.terrakube.executor.plugin.tfstate.gcp;
 
+import io.terrakube.executor.service.logs.StepOutputBuffer;
 import com.google.cloud.storage.BlobId;
 import com.google.cloud.storage.BlobInfo;
 import com.google.cloud.storage.Storage;
@@ -257,6 +258,24 @@ public class GcpTerraformStateImpl implements TerraformState {
         BlobId blobId = BlobId.of(bucketName, blobKey);
         BlobInfo blobInfo = BlobInfo.newBuilder(blobId).build();
         storageRetryMetrics.withRetry("gcp", "output-write", () -> storage.create(blobInfo, utf8EncodedString.getBytes()));
+        log.info("File uploaded to bucket {} as {}", bucketName, blobKey);
+
+        return terraformOutputPathService.getOutputPath(organizationId, jobId, stepId);
+    }
+
+    @Override
+    public String saveBufferedOutput(String organizationId, String jobId, String stepId, StepOutputBuffer output, String outputError) {
+        String blobKey = String.format("tfoutput/%s/%s/%s.tfoutput", organizationId, jobId, stepId);
+        log.info("blobKey: {}", blobKey);
+
+        BlobInfo blobInfo = BlobInfo.newBuilder(BlobId.of(bucketName, blobKey)).build();
+        storageRetryMetrics.withRetry("gcp", "output-write", () -> {
+            try (java.io.InputStream data = output.openStream(outputError)) {
+                return storage.createFrom(blobInfo, data);
+            } catch (java.io.IOException e) {
+                throw new java.io.UncheckedIOException(e);
+            }
+        });
         log.info("File uploaded to bucket {} as {}", bucketName, blobKey);
 
         return terraformOutputPathService.getOutputPath(organizationId, jobId, stepId);

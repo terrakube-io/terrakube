@@ -318,10 +318,10 @@ class TerraformExecutorServiceImplTest {
 
         assertFalse(result.isSuccessfulExecution());
         assertEquals(1, result.getExitCode());
-        assertTrue(result.getOutputLog().contains("Could not fetch the OpenTofu releases list from "
-                + TerraformDownloader.TOFU_RELEASES_URL), result.getOutputLog());
-        assertTrue(result.getOutputLog().contains("GitHub may be rate limiting"), result.getOutputLog());
-        assertTrue(result.getOutputLog().contains("CustomTofuReleasesUrl"), result.getOutputLog());
+        assertTrue(outputOf(result).contains("Could not fetch the OpenTofu releases list from "
+                + TerraformDownloader.TOFU_RELEASES_URL), outputOf(result));
+        assertTrue(outputOf(result).contains("GitHub may be rate limiting"), outputOf(result));
+        assertTrue(outputOf(result).contains("CustomTofuReleasesUrl"), outputOf(result));
         verify(terraformClient, never()).init(any(TerraformProcessData.class), any(Consumer.class), any());
     }
 
@@ -434,7 +434,7 @@ class TerraformExecutorServiceImplTest {
 
         ExecutorJobResult result = subject.plan(terraformJob, tempDir.toFile(), false);
 
-        assertTrue(result.getOutputLog().contains("init stderr"));
+        assertTrue(outputOf(result).contains("init stderr"));
     }
 
     @Test
@@ -502,8 +502,8 @@ class TerraformExecutorServiceImplTest {
         ExecutorJobResult result = subject.apply(terraformJob, tempDir.toFile());
 
         assertTrue(result.isSuccessfulExecution());
-        assertTrue(result.getOutputLog().contains("Outputs:"));
-        assertTrue(result.getOutputLog().contains("foo = \"bar\""));
+        assertTrue(outputOf(result).contains("Outputs:"));
+        assertTrue(outputOf(result).contains("foo = \"bar\""));
     }
 
     // #3671 follow-up: the live Terraform state is already durably written by Terraform/OpenTofu's
@@ -528,8 +528,8 @@ class TerraformExecutorServiceImplTest {
         ExecutorJobResult result = subject.apply(terraformJob, tempDir.toFile());
 
         assertTrue(result.isSuccessfulExecution(), "a storage hiccup on the audit copy must not fail an apply that already succeeded");
-        assertTrue(result.getOutputLog().contains("WARNING"), "the degraded history snapshot must be visible in the job's own output");
-        assertTrue(result.getOutputLog().contains("storage unavailable"));
+        assertTrue(outputOf(result).contains("WARNING"), "the degraded history snapshot must be visible in the job's own output");
+        assertTrue(outputOf(result).contains("storage unavailable"));
     }
 
     @Test
@@ -637,7 +637,7 @@ class TerraformExecutorServiceImplTest {
 
         assertFalse(result.isSuccessfulExecution());
         assertEquals(1, result.getExitCode());
-        assertTrue(result.getOutputLog().contains("requireSavedPlan is enabled"));
+        assertTrue(outputOf(result).contains("requireSavedPlan is enabled"));
         verify(terraformClient, never()).apply(any(), any(), any());
         verify(terraformClient, never()).planDetailExitCode(any(), any(), any());
         verify(terraformState, never()).saveStateJson(any(), anyString(), anyString());
@@ -744,8 +744,8 @@ class TerraformExecutorServiceImplTest {
         ExecutorJobResult result = subject.apply(terraformJob, tempDir.toFile());
 
         assertTrue(result.isSuccessfulExecution());
-        assertTrue(result.getOutputLog().contains("-/+ resource \"random_pet\" \"this\" {"));
-        assertTrue(result.getOutputLog().contains("~ id = \"a\" -> (known after apply)"));
+        assertTrue(outputOf(result).contains("-/+ resource \"random_pet\" \"this\" {"));
+        assertTrue(outputOf(result).contains("~ id = \"a\" -> (known after apply)"));
     }
 
     // No plan file means apply ran directly against HCL (e.g. a Destroy-workflow-style apply with
@@ -805,7 +805,7 @@ class TerraformExecutorServiceImplTest {
         ExecutorJobResult result = subject.apply(terraformJob, tempDir.toFile());
 
         assertFalse(result.isSuccessfulExecution());
-        assertFalse(result.getOutputLog().contains("Outputs:"));
+        assertFalse(outputOf(result).contains("Outputs:"));
     }
 
     @Test
@@ -1386,9 +1386,9 @@ class TerraformExecutorServiceImplTest {
 
         ExecutorJobResult result = subject.apply(terraformJob, tempDir.toFile());
 
-        assertTrue(result.getOutputLog().contains("The argument \"triggers\" is required, but no definition was found."),
-                result.getOutputLog());
-        assertTrue(result.getOutputLog().contains("on main.tf line 5"), result.getOutputLog());
+        assertTrue(outputOf(result).contains("The argument \"triggers\" is required, but no definition was found."),
+                outputOf(result));
+        assertTrue(outputOf(result).contains("on main.tf line 5"), outputOf(result));
     }
 
     // Same regression on the destroy path.
@@ -1419,9 +1419,9 @@ class TerraformExecutorServiceImplTest {
 
         ExecutorJobResult result = subject.destroy(terraformJob, tempDir.toFile());
 
-        assertTrue(result.getOutputLog().contains(
+        assertTrue(outputOf(result).contains(
                 "To work with null_resource.fails its original provider configuration is required."),
-                result.getOutputLog());
+                outputOf(result));
     }
 
     // Regression test for the reported bug: a plan that fails late (a data source erroring after
@@ -1455,8 +1455,8 @@ class TerraformExecutorServiceImplTest {
 
         assertFalse(result.isSuccessfulExecution());
         assertEquals(1, result.getExitCode());
-        assertTrue(result.getOutputLog().contains("aws_instance.example: Plan to create"), result.getOutputLog());
-        assertTrue(result.getOutputLog().contains("Failed to capture process output stream"), result.getOutputLog());
+        assertTrue(outputOf(result).contains("aws_instance.example: Plan to create"), outputOf(result));
+        assertTrue(outputOf(result).contains("Failed to capture process output stream"), outputOf(result));
         assertTrue(result.getOutputErrorLog().contains("Failed to capture process output stream"));
     }
 
@@ -1491,7 +1491,7 @@ class TerraformExecutorServiceImplTest {
         ExecutorJobResult result = subject.plan(terraformJob, tempDir.toFile(), false);
 
         assertEquals(2, result.getExitCode());
-        assertTrue(result.getOutputLog().contains("aws_instance.example: Plan to create"), result.getOutputLog());
+        assertTrue(outputOf(result).contains("aws_instance.example: Plan to create"), outputOf(result));
     }
 
     @Test
@@ -1502,11 +1502,11 @@ class TerraformExecutorServiceImplTest {
         ExecutorJobResult result = subject.setError(
                 new RuntimeException("Failed to capture process output stream"), realDiagnostic);
 
-        int diagnosticIndex = result.getOutputLog().indexOf("undeclared input variable");
-        int captureIndex = result.getOutputLog().indexOf("Failed to capture process output stream");
-        assertTrue(diagnosticIndex >= 0, result.getOutputLog());
-        assertTrue(captureIndex > diagnosticIndex, "real diagnostic must precede the capture note: " + result.getOutputLog());
-        assertTrue(result.getOutputLog().contains("The Terraform/OpenTofu diagnostic above is the primary error."));
+        int diagnosticIndex = outputOf(result).indexOf("undeclared input variable");
+        int captureIndex = outputOf(result).indexOf("Failed to capture process output stream");
+        assertTrue(diagnosticIndex >= 0, outputOf(result));
+        assertTrue(captureIndex > diagnosticIndex, "real diagnostic must precede the capture note: " + outputOf(result));
+        assertTrue(outputOf(result).contains("The Terraform/OpenTofu diagnostic above is the primary error."));
         assertEquals(1.0, meterRegistry.get("terrakube.executor.process.stream.drain.timeouts").counter().count());
     }
 
@@ -1543,7 +1543,7 @@ class TerraformExecutorServiceImplTest {
         long planStart = System.nanoTime();
         ExecutorJobResult plan = subject.plan(createJob(), tempDir.toFile(), false);
         long planMs = (System.nanoTime() - planStart) / 1_000_000;
-        assertEquals(0, plan.getExitCode(), plan.getOutputLog());
+        assertEquals(0, plan.getExitCode(), outputOf(plan));
         assertTrue(planMs < 5000, "plan took " + planMs + " ms");
         assertEquals(List.of("flush"), logCalls.subList(logCalls.indexOf("flush"), logCalls.size()));
 
@@ -1551,7 +1551,7 @@ class TerraformExecutorServiceImplTest {
         long applyStart = System.nanoTime();
         ExecutorJobResult apply = subject.apply(createJob(), tempDir.toFile());
         long applyMs = (System.nanoTime() - applyStart) / 1_000_000;
-        assertTrue(apply.isSuccessfulExecution(), apply.getOutputLog());
+        assertTrue(apply.isSuccessfulExecution(), outputOf(apply));
         assertTrue(applyMs < 5000, "apply took " + applyMs + " ms");
         assertEquals(List.of("flush"), logCalls.subList(logCalls.indexOf("flush"), logCalls.size()));
         assertTrue(logCalls.size() > 1, "apply sent no log lines");
@@ -1665,10 +1665,10 @@ class TerraformExecutorServiceImplTest {
         assertEquals("https://bucket/plan-artifacts/org/workspace/42/1/plan-artifacts.tar.gz", terraformJob.getArtifactsUrl());
         assertEquals("deadbeef", terraformJob.getArtifactsChecksum());
         // the audit trail: how many files, how big, which checksum, which files
-        assertTrue(result.getOutputLog().contains("Saved 3 plan artifact file(s)"));
+        assertTrue(outputOf(result).contains("Saved 3 plan artifact file(s)"));
         verify(terraformState).saveTerraformPlan(any(), any(), any(), any(), any());
-        assertTrue(result.getOutputLog().contains("sha256 deadbeef"));
-        assertTrue(result.getOutputLog().contains("build/a.zip, build/b.zip, build/c.zip"));
+        assertTrue(outputOf(result).contains("sha256 deadbeef"));
+        assertTrue(outputOf(result).contains("build/a.zip, build/b.zip, build/c.zip"));
     }
 
     @Test
@@ -1686,8 +1686,8 @@ class TerraformExecutorServiceImplTest {
 
         ExecutorJobResult result = subject.plan(terraformJob, tempDir.toFile(), false);
 
-        assertTrue(result.getOutputLog().contains("build/f9 and 4 more"));
-        assertFalse(result.getOutputLog().contains("build/f10"));
+        assertTrue(outputOf(result).contains("build/f9 and 4 more"));
+        assertFalse(outputOf(result).contains("build/f10"));
     }
 
     @Test
@@ -1763,7 +1763,7 @@ class TerraformExecutorServiceImplTest {
         ExecutorJobResult result = subject.plan(terraformJob, tempDir.toFile(), false);
 
         assertFalse(result.isSuccessfulExecution());
-        assertTrue(result.getOutputLog().contains("could not save the plan artifacts"));
+        assertTrue(outputOf(result).contains("could not save the plan artifacts"));
         assertEquals(null, terraformJob.getArtifactsUrl());
         // the plan can never be applied, so its file is not uploaded either
         verify(terraformState, never()).saveTerraformPlan(any(), any(), any(), any(), any());
@@ -1779,7 +1779,7 @@ class TerraformExecutorServiceImplTest {
         ExecutorJobResult result = subject.plan(terraformJob, tempDir.toFile(), false);
 
         assertFalse(result.isSuccessfulExecution());
-        assertTrue(result.getOutputLog().contains("cannot store plan artifacts"));
+        assertTrue(outputOf(result).contains("cannot store plan artifacts"));
     }
 
     @Test
@@ -1792,7 +1792,7 @@ class TerraformExecutorServiceImplTest {
         ExecutorJobResult result = subject.plan(terraformJob, tempDir.toFile(), false);
 
         assertFalse(result.isSuccessfulExecution());
-        assertTrue(result.getOutputLog().contains("max-bytes"));
+        assertTrue(outputOf(result).contains("max-bytes"));
         verify(terraformState, never()).saveArtifacts(any(), any(), any(), any(), any());
     }
 
@@ -1806,7 +1806,7 @@ class TerraformExecutorServiceImplTest {
         ExecutorJobResult result = subject.plan(terraformJob, tempDir.toFile(), false);
 
         assertFalse(result.isSuccessfulExecution());
-        assertTrue(result.getOutputLog().contains("/etc/**"));
+        assertTrue(outputOf(result).contains("/etc/**"));
     }
 
     @Test
@@ -1820,7 +1820,7 @@ class TerraformExecutorServiceImplTest {
         ExecutorJobResult result = subject.plan(terraformJob, tempDir.toFile(), false);
 
         assertTrue(result.isSuccessfulExecution());
-        assertTrue(result.getOutputLog().contains("matched no files"));
+        assertTrue(outputOf(result).contains("matched no files"));
         verify(terraformState, never()).saveArtifacts(any(), any(), any(), any(), any());
         assertEquals(null, terraformJob.getArtifactsUrl());
     }
@@ -1836,7 +1836,7 @@ class TerraformExecutorServiceImplTest {
 
         ExecutorJobResult result = subject.plan(terraformJob, tempDir.toFile(), false);
 
-        assertTrue(result.getOutputLog().contains("build/link.zip"));
+        assertTrue(outputOf(result).contains("build/link.zip"));
     }
 
     private void stubArtifactApplyCollaborators() throws Exception {
@@ -1870,7 +1870,7 @@ class TerraformExecutorServiceImplTest {
         ExecutorJobResult result = subject.apply(createJob(), tempDir.toFile());
 
         assertTrue(result.isSuccessfulExecution());
-        assertTrue(result.getOutputLog().contains("Restored 3 plan artifact file(s) before apply (sha256 deadbeef)"));
+        assertTrue(outputOf(result).contains("Restored 3 plan artifact file(s) before apply (sha256 deadbeef)"));
         InOrder order = Mockito.inOrder(artifactRestoreService, terraformClient, terraformState);
         order.verify(artifactRestoreService).restore(any(TerraformJob.class), any(File.class), any(File.class));
         order.verify(terraformClient).init(any(TerraformProcessData.class), any(Consumer.class), any());
@@ -1961,5 +1961,10 @@ class TerraformExecutorServiceImplTest {
                 .thenThrow(new ArtifactVerificationException("checksum mismatch"));
         subject.apply(createJob(), tempDir.toFile());
         assertEquals(1, artifactCount("restore_failed"));
+    }
+
+    // Step output travels in a buffer that may have moved to a file, the String field is empty then.
+    private static String outputOf(ExecutorJobResult result) {
+        return result.getOutputBuffer() != null ? result.getOutputBuffer().toString() : result.getOutputLog();
     }
 }

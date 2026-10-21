@@ -3,7 +3,6 @@ package io.terrakube.executor.service.logs;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
-import org.apache.commons.text.TextStringBuilder;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -42,7 +41,7 @@ class LogsConsumerTest {
         consumerLog.detachAppender(serviceLog);
     }
 
-    private LogsConsumer consumer(ProcessLogs processLogs, TextStringBuilder saved) {
+    private LogsConsumer consumer(ProcessLogs processLogs, StepOutputBuffer saved) {
         return LogsConsumer.builder()
                 .jobId(42)
                 .stepId("step-1")
@@ -56,7 +55,7 @@ class LogsConsumerTest {
     void theOutputIsNotCopiedIntoTheServiceLogWhenItIsSwitchedOff() {
         ProcessLogs processLogs = mock(ProcessLogs.class);
         when(processLogs.echoToServiceLog()).thenReturn(false);
-        TextStringBuilder saved = new TextStringBuilder();
+        StepOutputBuffer saved = new StepOutputBuffer();
 
         consumer(processLogs, saved).accept("aws_instance.web: Creating...");
 
@@ -70,7 +69,7 @@ class LogsConsumerTest {
         ProcessLogs processLogs = mock(ProcessLogs.class);
         when(processLogs.echoToServiceLog()).thenReturn(true);
 
-        consumer(processLogs, new TextStringBuilder()).accept("aws_instance.web: Creating...");
+        consumer(processLogs, new StepOutputBuffer()).accept("aws_instance.web: Creating...");
 
         assertEquals(1, serviceLog.list.size());
         assertEquals("aws_instance.web: Creating...", serviceLog.list.get(0).getFormattedMessage());
@@ -84,7 +83,7 @@ class LogsConsumerTest {
         when(redisTemplate.opsForStream()).thenReturn(stream);
         ExecutorLogsProperties properties = new ExecutorLogsProperties();
         properties.setLiveLineMaxBytes(1_000);
-        TextStringBuilder saved = new TextStringBuilder();
+        StepOutputBuffer saved = new StepOutputBuffer();
         String line = "x".repeat(50_000);
 
         consumer(new LogsServiceRedis(redisTemplate, properties), saved).accept(line);

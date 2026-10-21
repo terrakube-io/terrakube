@@ -14,6 +14,7 @@ What the executor does with the output of a step (the lines Terraform or OpenTof
 |---|---|---|
 | `ExecutorLogsEchoToServiceLog` | `true` | Also write every output line to the executor's service log (what `kubectl logs` shows). On by default, as before. Set it to `false` to stop the cluster's log pipeline ingesting the output a second time; the job's Console and the download are not affected. |
 | `ExecutorLogsLiveLineMaxBytes` | `65536` | The largest line, in bytes, sent to the live stream. A longer line is cut and ends with `... [N bytes left out of the live view, the saved output has the whole line]`. The saved output keeps the whole line. `0` turns the limit off. |
+| `ExecutorLogsStepOutputMemoryBytes` | `4194304` | How much of a plan, apply or destroy step's output the executor keeps in memory for the saved output. Past it the output moves to a temporary file in the executor's temp directory, and the upload to storage reads from that file, so a step that prints hundreds of megabytes does not need that much heap. The file is deleted when the output has been saved. The saved output is the same object as before and still has every line. `0` keeps everything in memory. |
 | `ExecutorLogsRedisMaxLen` | `200000` | The number of entries kept in a job's live stream in Redis. With the line limit above, the stream cannot hold more than `ExecutorLogsRedisMaxLen` times `ExecutorLogsLiveLineMaxBytes` bytes of lines. |
 
 ## When the API or Redis cannot keep up

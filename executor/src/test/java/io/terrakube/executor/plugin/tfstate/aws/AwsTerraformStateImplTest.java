@@ -338,6 +338,30 @@ class AwsTerraformStateImplTest {
     }
 
     @Test
+    void testSaveBufferedOutputStreamsToStorage() throws Exception {
+        when(terraformOutputPathService.getOutputPath("org1", "job1", "step1")).thenReturn("http://api/output");
+        java.io.ByteArrayOutputStream uploaded = new java.io.ByteArrayOutputStream();
+        long[] declaredLength = new long[1];
+        when(s3Client.putObject(any(PutObjectRequest.class), any(RequestBody.class))).thenAnswer(invocation -> {
+            RequestBody body = invocation.getArgument(1);
+            declaredLength[0] = body.contentLength();
+            try (java.io.InputStream in = body.contentStreamProvider().newStream()) {
+                in.transferTo(uploaded);
+            }
+            return PutObjectResponse.builder().build();
+        });
+
+        try (io.terrakube.executor.service.logs.StepOutputBuffer buffer = new io.terrakube.executor.service.logs.StepOutputBuffer(4, null)) {
+            buffer.appendln("output-content");
+            String result = awsTerraformState.saveBufferedOutput("org1", "job1", "step1", buffer, "error-content");
+
+            assertEquals("http://api/output", result);
+        }
+        assertEquals("output-content\nerror-content", uploaded.toString(java.nio.charset.StandardCharsets.UTF_8));
+        assertEquals(uploaded.size(), declaredLength[0]);
+    }
+
+    @Test
     void testSpoolContextPatch() {
         String orgId = "org1";
         String jobId = "job1";

@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.text.TextStringBuilder;
+import io.terrakube.executor.service.logs.StepOutputBuffer;
 import io.terrakube.executor.configuration.ExecutorFlagsProperties;
 import io.terrakube.executor.service.mode.TerraformJob;
 import io.terrakube.executor.service.scripts.ScriptEngineService;
@@ -250,7 +251,7 @@ public class ExecutorJobImpl implements ExecutorJob {
             case "customScripts":
             case "approval":
                 log.info("Execute Groovy Script for Organization {} Workspace {} ", terraformJob.getOrganizationId(), terraformJob.getWorkspaceId());
-                TextStringBuilder scriptOutput = new TextStringBuilder();
+                StepOutputBuffer scriptOutput = new StepOutputBuffer();
                 TextStringBuilder scriptErrorOutput = new TextStringBuilder();
                 Consumer<String> output;
                 if (logsService != null) {
@@ -267,8 +268,15 @@ public class ExecutorJobImpl implements ExecutorJob {
                         scriptOutput.appendln(outputScripts);
                     };
                 }
-                boolean executionSuccess = scriptEngineService.execute(terraformJob, terraformJob.getCommandList(), terraformWorkingDir, output);
-                terraformResult.setOutputLog(scriptOutput.toString());
+                boolean executionSuccess;
+                try {
+                    executionSuccess = scriptEngineService.execute(terraformJob, terraformJob.getCommandList(), terraformWorkingDir, output);
+                } catch (RuntimeException e) {
+                    scriptOutput.close();
+                    throw e;
+                }
+                terraformResult.setOutputLog("");
+                terraformResult.setOutputBuffer(scriptOutput);
                 terraformResult.setOutputErrorLog(scriptErrorOutput.toString());
                 terraformResult.setSuccessfulExecution(executionSuccess);
                 break;
@@ -281,7 +289,18 @@ public class ExecutorJobImpl implements ExecutorJob {
         }
 
         boolean executionSuccess = terraformResult.isSuccessfulExecution();
-        updateJobStatus.setCompletedStatus(executionSuccess, terraformResult.isPlan, terraformResult.getExitCode(), terraformJob, terraformResult.getOutputLog(), terraformResult.getOutputErrorLog(), terraformResult.getPlanFile(), commitId, terraformResult.isHasSoftMandatoryViolations(), terraformResult.getApprovalTeam(), terraformResult.getDeliveryState(), terraformResult.getDeliveryRevision());
+        StepOutputBuffer outputBuffer = terraformResult.getOutputBuffer();
+        try {
+            if (outputBuffer != null) {
+                updateJobStatus.setCompletedStatusWithOutput(executionSuccess, terraformResult.isPlan, terraformResult.getExitCode(), terraformJob, outputBuffer, terraformResult.getOutputErrorLog(), terraformResult.getPlanFile(), commitId, terraformResult.isHasSoftMandatoryViolations(), terraformResult.getApprovalTeam(), terraformResult.getDeliveryState(), terraformResult.getDeliveryRevision());
+            } else {
+                updateJobStatus.setCompletedStatus(executionSuccess, terraformResult.isPlan, terraformResult.getExitCode(), terraformJob, terraformResult.getOutputLog(), terraformResult.getOutputErrorLog(), terraformResult.getPlanFile(), commitId, terraformResult.isHasSoftMandatoryViolations(), terraformResult.getApprovalTeam(), terraformResult.getDeliveryState(), terraformResult.getDeliveryRevision());
+            }
+        } finally {
+            if (outputBuffer != null) {
+                outputBuffer.close();
+            }
+        }
     }
 
     private static String getCommitId(File workspaceFolder) {

@@ -13,6 +13,7 @@ import io.terrakube.executor.service.artifact.ArtifactRestoreService;
 import io.terrakube.executor.service.executor.ExecutorJobResult;
 import io.terrakube.executor.service.logs.LogsConsumer;
 import io.terrakube.executor.service.logs.ProcessLogs;
+import io.terrakube.executor.service.logs.StepOutputBuffer;
 import io.terrakube.executor.service.mode.TerraformJob;
 import io.terrakube.executor.service.scripts.ScriptEngineService;
 import io.terrakube.executor.service.terraform.cache.BinaryCacheRecoveryException;
@@ -99,6 +100,9 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         this.artifactPackagingService = artifactPackagingService;
         this.artifactRestoreService = artifactRestoreService;
     }
+    // Console output of a step stays in memory up to this size, then moves to a temporary file.
+    @org.springframework.beans.factory.annotation.Value("${io.terrakube.executor.logs.stepOutputMemoryBytes:4194304}")
+    private long stepOutputMemoryBytes = StepOutputBuffer.DEFAULT_MEMORY_LIMIT_BYTES;
     TerraformOutputsService terraformOutputsService;
     ObjectMapper objectMapper;
     StructuredOutputPersistenceQueue structuredOutputPersistenceQueue;
@@ -164,7 +168,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         logsService.setupConsumerGroups(terraformJob.getJobId());
         ExecutorJobResult result;
 
-        TextStringBuilder jobOutput = new TextStringBuilder();
+        StepOutputBuffer jobOutput = newStepOutput();
         TextStringBuilder jobErrorOutput = new TextStringBuilder();
         // Method-scoped so a mid-stream failure (see the catch below) can still publish a final
         // structured snapshot carrying whatever changes/diagnostics were parsed before it broke.
@@ -352,7 +356,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                         terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), planRevision,
                         terraformJob.getLiveChanges(), terraformJob.getJobDiagnostics());
             }
-            result = generateJobResult(scriptAfterSuccessPlan && artifactsSaved, jobOutput.toString(), jobErrorOutput.toString());
+            result = generateJobResult(scriptAfterSuccessPlan && artifactsSaved, jobOutput, jobErrorOutput.toString());
             result.setDeliveryState(planDeliveryState);
             result.setDeliveryTimestamp(System.currentTimeMillis());
             result.setDeliveryRevision(planRevision);
@@ -380,7 +384,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             } catch (Exception e) {
                 log.warn("Unable to publish final plan snapshot after failure for job {}", terraformJob.getJobId(), e);
             }
-            result = setError(exception, jobOutput.toString());
+            result = setError(exception, jobOutput);
             result.setDeliveryState(failureDeliveryState);
             result.setDeliveryTimestamp(System.currentTimeMillis());
             result.setDeliveryRevision(failureRevision);
@@ -505,7 +509,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         logsService.setupConsumerGroups(terraformJob.getJobId());
         ExecutorJobResult result;
 
-        TextStringBuilder terraformOutput = new TextStringBuilder();
+        StepOutputBuffer terraformOutput = newStepOutput();
         TextStringBuilder terraformErrorOutput = new TextStringBuilder();
         try {
             File terraformWorkingDir = getTerraformWorkingDir(terraformJob, executorTempDirectory);
@@ -614,7 +618,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                         terraformJob.getLiveChanges(), terraformJob.getJobDiagnostics());
             }
 
-            result = generateJobResult(scriptAfterSuccess, terraformOutput.toString(), terraformErrorOutput.toString());
+            result = generateJobResult(scriptAfterSuccess, terraformOutput, terraformErrorOutput.toString());
             result.setDeliveryState(applyDeliveryState);
             result.setDeliveryTimestamp(System.currentTimeMillis());
             result.setDeliveryRevision(applyRevision);
@@ -638,7 +642,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             } catch (Exception e) {
                 log.warn("Unable to publish final apply snapshot after failure for job {}", terraformJob.getJobId(), e);
             }
-            result = setError(exception, terraformOutput.toString());
+            result = setError(exception, terraformOutput);
             result.setDeliveryState(failureDeliveryState);
             result.setDeliveryTimestamp(System.currentTimeMillis());
             result.setDeliveryRevision(failureRevision);
@@ -878,7 +882,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         logsService.setupConsumerGroups(terraformJob.getJobId());
         ExecutorJobResult result;
 
-        TextStringBuilder jobOutput = new TextStringBuilder();
+        StepOutputBuffer jobOutput = newStepOutput();
         TextStringBuilder jobErrorOutput = new TextStringBuilder();
         try {
             File terraformWorkingDir = getTerraformWorkingDir(terraformJob, executorTempDirectory);
@@ -928,7 +932,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                         terraformJob.getLiveChanges(), terraformJob.getJobDiagnostics());
             }
 
-            result = generateJobResult(scriptAfterSuccess, jobOutput.toString(), jobErrorOutput.toString());
+            result = generateJobResult(scriptAfterSuccess, jobOutput, jobErrorOutput.toString());
             result.setDeliveryState(destroyDeliveryState);
             result.setDeliveryTimestamp(System.currentTimeMillis());
             result.setDeliveryRevision(destroyRevision);
@@ -946,7 +950,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             } catch (Exception e) {
                 log.warn("Unable to publish final apply snapshot after destroy failure for job {}", terraformJob.getJobId(), e);
             }
-            result = setError(exception, jobOutput.toString());
+            result = setError(exception, jobOutput);
             result.setDeliveryState(failureDeliveryState);
             result.setDeliveryTimestamp(System.currentTimeMillis());
             result.setDeliveryRevision(failureRevision);
@@ -966,6 +970,18 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         applyStructuredOutputService.publishFinalApplySnapshot(
                 terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(),
                 changes, jobDiagnostics);
+    }
+
+    private StepOutputBuffer newStepOutput() {
+        return new StepOutputBuffer(stepOutputMemoryBytes, null);
+    }
+
+    // The buffer travels with the result and is closed by whoever saves it (ExecutorJobImpl), once the
+    // output has been uploaded.
+    private ExecutorJobResult generateJobResult(boolean scriptAfterSuccess, StepOutputBuffer jobOutput, String jobErrorOutput) {
+        ExecutorJobResult jobResult = generateJobResult(scriptAfterSuccess, "", jobErrorOutput);
+        jobResult.setOutputBuffer(jobOutput);
+        return jobResult;
     }
 
     private ExecutorJobResult generateJobResult(boolean scriptAfterSuccess, String jobOutput, String jobErrorOutput) {
@@ -1188,6 +1204,20 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
     // output stream" with none of the real Terraform output, and none of the real error (the
     // "Error: External Program Lookup Failed" / missing-python diagnostic, in the reported case)
     // that actually caused it.
+    ExecutorJobResult setError(Exception exception, StepOutputBuffer partialConsoleOutput) {
+        ExecutorJobResult error = setError(exception, "");
+        // The text version built the trailer on its own; put it after what was already streamed.
+        if (partialConsoleOutput.sizeInBytes() > 0) {
+            partialConsoleOutput.appendln("");
+        }
+        for (String line : error.getOutputLog().split("\n")) {
+            partialConsoleOutput.appendln(line);
+        }
+        error.setOutputLog("");
+        error.setOutputBuffer(partialConsoleOutput);
+        return error;
+    }
+
     ExecutorJobResult setError(Exception exception, String partialConsoleOutput) {
         String message = exception.getMessage() != null ? exception.getMessage() : exception.toString();
         log.error("Terraform operation failed: {}", message, exception);
