@@ -30,4 +30,15 @@ public class ExecutorLogsProperties {
      * {@link #redisMaxLen} this bounds what the live stream can hold. 0 or less turns the limit off.
      */
     private int liveLineMaxBytes = 65_536;
+
+    /**
+     * With {@code io.executor.log-via-api=true}: the most bytes of lines the executor keeps while the API
+     * cannot take them. Beyond it the oldest lines are dropped from the live view (counted in
+     * {@code terrakube.executor.logs.dropped}), never the saved output and never the run. Before, the queue
+     * kept growing for as long as the API was away.
+     */
+    private long apiQueueMaxBytes = 16_777_216L;
+
+    /** With {@code io.executor.log-via-api=true}: the most bytes of lines sent to the API in one request. */
+    private long apiBatchMaxBytes = 1_048_576L;
 }

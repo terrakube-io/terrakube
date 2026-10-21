@@ -47,6 +47,8 @@ public final class StructuredSnapshot {
     private final long createdAtEpochMs;
     private final List<Map<String, Object>> changes;
     private final List<Map<String, Object>> jobDiagnostics;
+    /** An estimate of what it holds in memory, for the byte budget of the queue; not an exact size. */
+    private final long estimatedBytes;
 
     private StructuredSnapshot(String organizationId, String jobId, String stepId, Phase phase, long sequence,
                               boolean finalSnapshot, long createdAtEpochMs, List<Map<String, Object>> changes,
@@ -60,6 +62,33 @@ public final class StructuredSnapshot {
         this.createdAtEpochMs = createdAtEpochMs;
         this.changes = changes;
         this.jobDiagnostics = jobDiagnostics;
+        this.estimatedBytes = estimateBytes(changes) + estimateBytes(jobDiagnostics);
+    }
+
+    // Counts the text and a small cost per node. It is cheaper than serializing the snapshot, and the
+    // queue only needs an order of magnitude to stay within its budget.
+    static long estimateBytes(Object value) {
+        if (value == null) {
+            return 0;
+        }
+        if (value instanceof CharSequence text) {
+            return 16L + text.length();
+        }
+        if (value instanceof Map<?, ?> map) {
+            long bytes = 32L;
+            for (Map.Entry<?, ?> entry : map.entrySet()) {
+                bytes += 16L + estimateBytes(entry.getKey()) + estimateBytes(entry.getValue());
+            }
+            return bytes;
+        }
+        if (value instanceof Iterable<?> items) {
+            long bytes = 24L;
+            for (Object item : items) {
+                bytes += 8L + estimateBytes(item);
+            }
+            return bytes;
+        }
+        return 16L;
     }
 
     public static StructuredSnapshot copyOf(String organizationId, String jobId, String stepId, Phase phase,
