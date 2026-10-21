@@ -146,13 +146,12 @@ public class GcpTerraformStateImpl implements TerraformState {
                     storageRetryMetrics.withRetry("gcp", "plan-read", () -> {
                         String buketNamePath = String.format("/%s/", bucketName);
                         String blobPath = new URL(stateUrl).getPath().replace(buketNamePath, "");
-                        log.info("Generating pre-signed URL. {}", blobPath);
-                        BlobInfo blobInfo = BlobInfo.newBuilder(BlobId.of(bucketName, blobPath)).build();
+                        log.info("Downloading plan from GCS blob {}", blobPath);
+                        BlobId blobId = BlobId.of(bucketName, blobPath);
                         File targetFile = new File(FilenameUtils.concat(workingDirectory.getAbsolutePath(), TERRAFORM_PLAN_FILE));
 
-                        URL signedUrl = storage.signUrl(blobInfo, 5, TimeUnit.MINUTES);
-                        log.info("Pre-Signed URL: " + signedUrl.toString());
-                        FileUtils.copyURLToFile(signedUrl, targetFile, 30000, 30000);
+                        byte[] content = storage.readAllBytes(blobId);
+                        FileUtils.writeByteArrayToFile(targetFile, content);
                         return null;
                     });
                     planGcExist.set(true);
