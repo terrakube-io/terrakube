@@ -174,25 +174,32 @@ public class StructuredOutputPersistenceQueue {
         meterRegistry.counter("terrakube.executor.structured.output.dropped", "reason", "serialization").increment();
     }
 
+    // Admission and eviction look at the total size of what is queued and retained, then change it. Reader
+    // threads of different jobs submit at the same time, and without this two of them could both see room
+    // and both be admitted. Only counting and map updates happen inside, nothing blocks.
+    private final Object admissionLock = new Object();
+
     /** Non-blocking, never-throwing hand-off. Safe to call from a Terraform reader thread. */
     public void submit(StructuredSnapshot snapshot) {
         try {
             Key key = snapshot.key();
-            // A newer snapshot supersedes anything retained for delayed recovery for this key.
-            RetainedSnapshot alreadyRetained = retained.get(key);
-            if (alreadyRetained != null && snapshot.getSequence() > alreadyRetained.snapshot.get().getSequence()) {
-                alreadyRetained.snapshot.set(snapshot);
-                alreadyRetained.nextAttemptAtEpochMs.set(System.currentTimeMillis());
+            synchronized (admissionLock) {
+                // A newer snapshot supersedes anything retained for delayed recovery for this key.
+                RetainedSnapshot alreadyRetained = retained.get(key);
+                if (alreadyRetained != null && snapshot.getSequence() > alreadyRetained.snapshot.get().getSequence()) {
+                    replaceRetained(key, alreadyRetained, snapshot);
+                    alreadyRetained.nextAttemptAtEpochMs.set(System.currentTimeMillis());
+                }
+                if (!pending.containsKey(key) && pending.size() >= capacity) {
+                    evictOne(key, "capacity");
+                }
+                // The snapshot that replaces the one with the same key does not count twice.
+                while (queueMaxBytes > 0 && pendingBytesExcept(key) + snapshot.getEstimatedBytes() > queueMaxBytes
+                        && evictOne(key, "bytes")) {
+                    // evicts until it fits or nothing else is left: a single snapshot is always accepted
+                }
+                pending.put(key, snapshot);
             }
-            if (!pending.containsKey(key) && pending.size() >= capacity) {
-                evictOne(key, "capacity");
-            }
-            // The snapshot that replaces the one with the same key does not count twice.
-            while (queueMaxBytes > 0 && pendingBytesExcept(key) + snapshot.getEstimatedBytes() > queueMaxBytes
-                    && evictOne(key, "bytes")) {
-                // evicts until it fits or nothing else is left: a single snapshot is always accepted
-            }
-            pending.put(key, snapshot);
             signal.release();
         } catch (Throwable t) {
             log.warn("Dropping structured-output snapshot for job {} step {}: {}",
@@ -362,26 +369,30 @@ public class StructuredOutputPersistenceQueue {
         return false;
     }
 
-    // Only ever called from the single persistence-worker thread (persistWithRetry), so the
-    // size-check-then-put below is not racing another retain().
     private void retain(StructuredSnapshot snapshot) {
         if (!recoveryEnabled) {
             return;
         }
+        synchronized (admissionLock) {
+            retainLocked(snapshot);
+        }
+    }
+
+    private void retainLocked(StructuredSnapshot snapshot) {
         Key key = snapshot.key();
         RetainedSnapshot existing = retained.get(key);
         if (existing != null) {
             if (snapshot.getSequence() >= existing.snapshot.get().getSequence()) {
-                existing.snapshot.set(snapshot);
+                replaceRetained(key, existing, snapshot);
             }
             return;
         }
         if (retained.size() >= recoveryMaxRetained) {
-            evictRetained();
+            evictRetained(null);
         }
         while (recoveryMaxRetainedBytes > 0 && !retained.isEmpty()
                 && retainedBytes() + snapshot.getEstimatedBytes() > recoveryMaxRetainedBytes
-                && evictRetained()) {
+                && evictRetained(null)) {
             // evicts until it fits or nothing else is left: a single snapshot is always retained
         }
         log.info("Retaining {} structured snapshot for job {} step {} phase {} for delayed recovery (ts={})",
@@ -390,10 +401,24 @@ public class StructuredOutputPersistenceQueue {
         retained.put(key, new RetainedSnapshot(snapshot, System.currentTimeMillis(), recoveryInitialDelayMs));
     }
 
-    /** @return whether a snapshot was evicted. */
-    private boolean evictRetained() {
+    // A newer snapshot for a key that is already retained still has to fit in the byte budget: it can be
+    // much larger than the one it replaces, so the others make room, never the snapshot itself.
+    private void replaceRetained(Key key, RetainedSnapshot existing, StructuredSnapshot snapshot) {
+        existing.snapshot.set(snapshot);
+        while (recoveryMaxRetainedBytes > 0 && retained.size() > 1 && retainedBytes() > recoveryMaxRetainedBytes
+                && evictRetained(key)) {
+            // evicts the others until it fits or only this key is left
+        }
+    }
+
+    /**
+     * @param keep a key that must not be evicted, or null.
+     * @return whether a snapshot was evicted.
+     */
+    private boolean evictRetained(Key keep) {
         int before = retained.size();
         retained.entrySet().stream()
+                .filter(e -> !e.getKey().equals(keep))
                 // prefer evicting non-final (rank 1) over final (rank 0), then the oldest
                 .min(Comparator
                         .<Map.Entry<Key, RetainedSnapshot>>comparingInt(e -> e.getValue().snapshot.get().isFinalSnapshot() ? 1 : 0)

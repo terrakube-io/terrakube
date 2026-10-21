@@ -34,6 +34,11 @@ public class LogsServiceApi implements ProcessLogs {
     }
 
     private final LinkedBlockingDeque<Queued> logQueue = new LinkedBlockingDeque<>();
+    // Adding, taking, requeueing and dropping change the queue and its byte count together. Without one
+    // lock, a producer thread could drop lines from the front while a failed batch is being put back
+    // there, and drop the newest of that batch before its older lines are back. Nothing slow is done
+    // while it is held: the request to the API is made outside of it.
+    private final Object queueLock = new Object();
     private final AtomicLong queuedBytes = new AtomicLong();
     private final AtomicLong lastDropWarning = new AtomicLong();
     // Held while a batch is in flight, so flush() can't return while a scheduled batch it never
@@ -64,9 +69,11 @@ public class LogsServiceApi implements ProcessLogs {
         logEntry.setOutput(LiveLogLine.cap(output, properties.getLiveLineMaxBytes()));
 
         long bytes = sizeOf(logEntry);
-        logQueue.addLast(new Queued(logEntry, bytes));
-        queuedBytes.addAndGet(bytes);
-        dropOldestBeyondTheBudget();
+        synchronized (queueLock) {
+            logQueue.addLast(new Queued(logEntry, bytes));
+            queuedBytes.addAndGet(bytes);
+            dropOldestBeyondTheBudget();
+        }
     }
 
     @Override
@@ -140,34 +147,39 @@ public class LogsServiceApi implements ProcessLogs {
         List<Queued> batch = new ArrayList<>();
         long bytes = 0;
         long maxBytes = Math.max(1, properties.getApiBatchMaxBytes());
-        Queued next;
-        while ((next = logQueue.peekFirst()) != null) {
-            // A batch always takes at least one line, however large, so a line can never get stuck.
-            if (!batch.isEmpty() && bytes + next.bytes() > maxBytes) {
-                break;
+        synchronized (queueLock) {
+            Queued next;
+            while ((next = logQueue.peekFirst()) != null) {
+                // A batch always takes at least one line, however large, so a line can never get stuck.
+                if (!batch.isEmpty() && bytes + next.bytes() > maxBytes) {
+                    break;
+                }
+                Queued taken = logQueue.pollFirst();
+                if (taken == null) {
+                    break;
+                }
+                queuedBytes.addAndGet(-taken.bytes());
+                batch.add(taken);
+                bytes += taken.bytes();
             }
-            Queued taken = logQueue.pollFirst();
-            if (taken == null) {
-                break;
-            }
-            queuedBytes.addAndGet(-taken.bytes());
-            batch.add(taken);
-            bytes += taken.bytes();
         }
         return batch;
     }
 
     private void requeueLogs(List<Queued> failedBatch) {
-        for (int i = failedBatch.size() - 1; i >= 0; i--) {
-            Queued line = failedBatch.get(i);
-            logQueue.addFirst(line);
-            queuedBytes.addAndGet(line.bytes());
+        synchronized (queueLock) {
+            for (int i = failedBatch.size() - 1; i >= 0; i--) {
+                Queued line = failedBatch.get(i);
+                logQueue.addFirst(line);
+                queuedBytes.addAndGet(line.bytes());
+            }
+            dropOldestBeyondTheBudget();
         }
-        dropOldestBeyondTheBudget();
     }
 
     // The oldest lines go first: a viewer follows the end of the output, and the saved output is not
     // built from this queue, so nothing that is dropped here is lost for good.
+    // Called with queueLock held.
     private void dropOldestBeyondTheBudget() {
         long maxBytes = properties.getApiQueueMaxBytes();
         if (maxBytes <= 0) {
@@ -194,7 +206,7 @@ public class LogsServiceApi implements ProcessLogs {
 
     private static long sizeOf(Log line) {
         String output = line.getOutput();
-        return LINE_OVERHEAD_BYTES + (output == null ? 0 : output.getBytes(StandardCharsets.UTF_8).length);
+        return LINE_OVERHEAD_BYTES + LiveLogLine.utf8Length(output);
     }
 
     // For tests.

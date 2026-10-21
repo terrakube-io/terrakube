@@ -29,6 +29,7 @@ import java.io.*;
 import java.nio.charset.Charset;
 import java.util.function.Consumer;
 
+import io.terrakube.executor.service.logs.ExecutorLogsProperties;
 import io.terrakube.executor.service.logs.LogsConsumer;
 import io.terrakube.executor.service.logs.ProcessLogs;
 import io.terrakube.executor.service.opa.OpaExecutorService;
@@ -53,6 +54,12 @@ public class ExecutorJobImpl implements ExecutorJob {
     OpaExecutorService opaExecutorService;
     ProcessLogs logsService;
     WorkspaceSecurity workspaceSecurity;
+    private ExecutorLogsProperties logsProperties = new ExecutorLogsProperties();
+
+    @Autowired(required = false)
+    void setLogsProperties(ExecutorLogsProperties logsProperties) {
+        this.logsProperties = logsProperties;
+    }
 
     public ExecutorJobImpl(
             SetupWorkspace setupWorkspace,
@@ -251,7 +258,7 @@ public class ExecutorJobImpl implements ExecutorJob {
             case "customScripts":
             case "approval":
                 log.info("Execute Groovy Script for Organization {} Workspace {} ", terraformJob.getOrganizationId(), terraformJob.getWorkspaceId());
-                StepOutputBuffer scriptOutput = new StepOutputBuffer();
+                StepOutputBuffer scriptOutput = StepOutputBuffer.forStep(logsProperties.getStepOutputMemoryBytes(), terraformWorkingDir);
                 TextStringBuilder scriptErrorOutput = new TextStringBuilder();
                 Consumer<String> output;
                 if (logsService != null) {
@@ -264,19 +271,25 @@ public class ExecutorJobImpl implements ExecutorJob {
                             .build();
                 } else {
                     output = outputScripts -> {
-                        log.info(outputScripts);
+                        if (logsProperties.isEchoToServiceLog()) {
+                            log.info(outputScripts);
+                        }
                         scriptOutput.appendln(outputScripts);
                     };
                 }
                 boolean executionSuccess;
+                boolean handedOver = false;
                 try {
                     executionSuccess = scriptEngineService.execute(terraformJob, terraformJob.getCommandList(), terraformWorkingDir, output);
-                } catch (RuntimeException e) {
-                    scriptOutput.close();
-                    throw e;
+                    terraformResult.setOutputLog("");
+                    terraformResult.setOutputBuffer(scriptOutput);
+                    handedOver = true;
+                } finally {
+                    // Also for an Error: the buffer may already be a file on the scratch disk.
+                    if (!handedOver) {
+                        scriptOutput.close();
+                    }
                 }
-                terraformResult.setOutputLog("");
-                terraformResult.setOutputBuffer(scriptOutput);
                 terraformResult.setOutputErrorLog(scriptErrorOutput.toString());
                 terraformResult.setSuccessfulExecution(executionSuccess);
                 break;

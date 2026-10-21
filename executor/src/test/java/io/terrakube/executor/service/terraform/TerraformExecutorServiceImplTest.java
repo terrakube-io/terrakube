@@ -1460,6 +1460,76 @@ class TerraformExecutorServiceImplTest {
         assertTrue(result.getOutputErrorLog().contains("Failed to capture process output stream"));
     }
 
+    // The step output may already be a file on the scratch disk when something unchecked is thrown. The
+    // result never existed, so nobody else could close the buffer.
+    @Test
+    void planClosesTheSpilledOutputWhenAnUncheckedExceptionEscapes() throws Exception {
+        TerraformExecutorServiceImpl subject = spy(subject());
+        io.terrakube.executor.service.logs.ExecutorLogsProperties logsProperties = new io.terrakube.executor.service.logs.ExecutorLogsProperties();
+        logsProperties.setStepOutputMemoryBytes(1);
+        subject.setLogsProperties(logsProperties);
+        TerraformJob terraformJob = createJob();
+        java.io.File workingDirectory = java.nio.file.Files.createDirectory(tempDir.resolve("work")).toFile();
+
+        when(terraformClient.init(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenAnswer(invocation -> {
+                    Consumer<String> lineConsumer = invocation.getArgument(1);
+                    lineConsumer.accept("a line that is more than one byte");
+                    return CompletableFuture.completedFuture(true);
+                });
+        TerraformClient jsonPlanClient = Mockito.mock(TerraformClient.class);
+        when(jsonPlanClient.planDetailExitCode(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenThrow(new IllegalStateException("not an IOException"));
+        doReturn(jsonPlanClient).when(subject).buildJsonEnabledPlanClient();
+
+        try {
+            subject.plan(terraformJob, workingDirectory, false);
+        } catch (RuntimeException expected) {
+            // either it escapes or it is turned into a result, the file must be gone in both cases
+        }
+
+        assertEquals(0, spooledOutputFiles(), "a step output file was left on the scratch disk");
+    }
+
+    // The spill goes next to the working directory (the executor's scratch disk), and the file lives as
+    // long as the result that carries it.
+    @Test
+    void theOutputOfALargeStepSpillsNextToTheWorkingDirectoryAndIsDeletedWhenClosed() throws Exception {
+        TerraformExecutorServiceImpl subject = spy(subject());
+        io.terrakube.executor.service.logs.ExecutorLogsProperties logsProperties = new io.terrakube.executor.service.logs.ExecutorLogsProperties();
+        logsProperties.setStepOutputMemoryBytes(1);
+        subject.setLogsProperties(logsProperties);
+        TerraformJob terraformJob = createJob();
+        java.io.File workingDirectory = java.nio.file.Files.createDirectory(tempDir.resolve("work")).toFile();
+
+        when(terraformClient.init(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenAnswer(invocation -> {
+                    Consumer<String> lineConsumer = invocation.getArgument(1);
+                    lineConsumer.accept("init output line");
+                    return CompletableFuture.completedFuture(true);
+                });
+        TerraformClient jsonPlanClient = Mockito.mock(TerraformClient.class);
+        when(jsonPlanClient.planDetailExitCode(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(0));
+        doReturn(jsonPlanClient).when(subject).buildJsonEnabledPlanClient();
+
+        ExecutorJobResult result = subject.plan(terraformJob, workingDirectory, false);
+
+        try {
+            assertEquals(1, spooledOutputFiles());
+            assertTrue(outputOf(result).contains("init output line"), outputOf(result));
+        } finally {
+            result.getOutputBuffer().close();
+        }
+        assertEquals(0, spooledOutputFiles());
+    }
+
+    private long spooledOutputFiles() throws java.io.IOException {
+        try (java.util.stream.Stream<java.nio.file.Path> files = java.nio.file.Files.list(tempDir)) {
+            return files.filter(path -> path.getFileName().toString().startsWith("step-output-")).count();
+        }
+    }
+
     // A failure inside the -json line consumer (here: the live structured-update push blowing up)
     // must not propagate into terraform-spring-boot's process-output reader loop - that kills the
     // reader and fails the whole run with "Failed to capture process output stream", losing the

@@ -199,4 +199,43 @@ class LogsServiceApiTest {
         assertFalse(sent.isEmpty());
         assertFalse(sent.contains(1), "the refused batch is not sent again");
     }
+
+    // A batch that fails is put back at the front of the queue while newer lines were added behind it. The
+    // lines that go when the budget is exceeded are the oldest ones, which are the ones of the failed batch.
+    @Test
+    void aFailedBatchPutBackBeyondTheBudgetLosesItsOwnOldestLinesFirst() throws Exception {
+        TerrakubeClient terrakubeClient = Mockito.mock(TerrakubeClient.class);
+        ExecutorLogsProperties properties = new ExecutorLogsProperties();
+        properties.setApiQueueMaxBytes(300); // three one-character lines, 97 bytes each
+        LogsServiceApi service = new LogsServiceApi(terrakubeClient, properties, new SimpleMeterRegistry());
+        List<Integer> sentLines = new ArrayList<>();
+        AtomicInteger calls = new AtomicInteger();
+        CountDownLatch inFlight = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            if (calls.getAndIncrement() == 0) {
+                inFlight.countDown();
+                release.await(5, TimeUnit.SECONDS);
+                throw new RuntimeException("API down");
+            }
+            LogsRequest request = invocation.getArgument(0);
+            request.getData().forEach(line -> sentLines.add(line.getLineNumber()));
+            return null;
+        }).when(terrakubeClient).appendLogs(any());
+
+        for (int line = 1; line <= 3; line++) {
+            service.sendLogs(42, "1", line, "x");
+        }
+        CompletableFuture<Void> failingRun = CompletableFuture.runAsync(service::sendBatchedLogs);
+        assertTrue(inFlight.await(5, TimeUnit.SECONDS));
+        for (int line = 4; line <= 6; line++) {
+            service.sendLogs(42, "1", line, "x");
+        }
+        release.countDown();
+        failingRun.get(5, TimeUnit.SECONDS);
+
+        assertTrue(service.queuedBytes() <= 300, "queued " + service.queuedBytes());
+        service.flush();
+        assertEquals(List.of(4, 5, 6), sentLines);
+    }
 }

@@ -62,4 +62,17 @@ class LiveLogLineTest {
     void aMissingLineStaysMissing() {
         assertNull(LiveLogLine.cap(null, 100));
     }
+
+    @Test
+    void utf8LengthMatchesTheEncodedSize() {
+        String[] samples = {
+                "", "plain ascii", "\u00e9\u00e8", "\u4e2d\u6587", "emoji \uD83D\uDE00 pair",
+                "lone high \uD83D end", "lone low \uDE00 end", "mixed \u00e9\u4e2d\uD83D\uDE00 text\n"
+        };
+        for (String sample : samples) {
+            org.junit.jupiter.api.Assertions.assertEquals(
+                    sample.getBytes(java.nio.charset.StandardCharsets.UTF_8).length, LiveLogLine.utf8Length(sample), sample);
+        }
+        org.junit.jupiter.api.Assertions.assertEquals(0, LiveLogLine.utf8Length(null));
+    }
 }

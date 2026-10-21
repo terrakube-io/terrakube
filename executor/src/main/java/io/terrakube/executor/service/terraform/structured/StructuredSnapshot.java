@@ -65,24 +65,35 @@ public final class StructuredSnapshot {
         this.estimatedBytes = estimateBytes(changes) + estimateBytes(jobDiagnostics);
     }
 
-    // Counts the text and a small cost per node. It is cheaper than serializing the snapshot, and the
-    // queue only needs an order of magnitude to stay within its budget.
+    // Counts the text and the cost of the objects around it (the String and the map node), a bit above what
+    // they take on the heap. It is cheaper than serializing the snapshot, and the queue only needs an order
+    // of magnitude to stay within its budget.
     static long estimateBytes(Object value) {
         if (value == null) {
             return 0;
         }
         if (value instanceof CharSequence text) {
-            return 16L + text.length();
+            return 40L + text.length();
+        }
+        if (value instanceof byte[] bytes) {
+            return 16L + bytes.length;
+        }
+        if (value instanceof Object[] items) {
+            long bytes = 16L;
+            for (Object item : items) {
+                bytes += 8L + estimateBytes(item);
+            }
+            return bytes;
         }
         if (value instanceof Map<?, ?> map) {
-            long bytes = 32L;
+            long bytes = 64L;
             for (Map.Entry<?, ?> entry : map.entrySet()) {
-                bytes += 16L + estimateBytes(entry.getKey()) + estimateBytes(entry.getValue());
+                bytes += 48L + estimateBytes(entry.getKey()) + estimateBytes(entry.getValue());
             }
             return bytes;
         }
         if (value instanceof Iterable<?> items) {
-            long bytes = 24L;
+            long bytes = 40L;
             for (Object item : items) {
                 bytes += 8L + estimateBytes(item);
             }

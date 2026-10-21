@@ -16,10 +16,10 @@ final class LogLine {
         if (line == null || maxBytes <= 0 || (long) line.length() * 3 <= maxBytes) {
             return line;
         }
-        byte[] bytes = line.getBytes(StandardCharsets.UTF_8);
-        if (bytes.length <= maxBytes) {
+        if (bytesOf(line) <= maxBytes) {
             return line;
         }
+        byte[] bytes = line.getBytes(StandardCharsets.UTF_8);
         int end = maxBytes;
         while (end > 0 && (bytes[end] & 0xC0) == 0x80) {
             end--;
@@ -28,7 +28,31 @@ final class LogLine {
                 + " ... [" + (bytes.length - end) + " bytes left out of the live view, the saved output has the whole line]";
     }
 
-    static long bytesOf(String line) {
-        return line == null ? 0 : line.getBytes(StandardCharsets.UTF_8).length;
+    /** What a line costs in a request besides its text: the object, the ids and the line number. */
+    static final int LINE_OVERHEAD_BYTES = 96;
+
+    /** The size of the line in UTF-8 bytes, without encoding it into a new array. */
+    static long bytesOf(String text) {
+        if (text == null) {
+            return 0;
+        }
+        long bytes = 0;
+        int length = text.length();
+        for (int i = 0; i < length; i++) {
+            char c = text.charAt(i);
+            if (c < 0x80) {
+                bytes += 1;
+            } else if (c < 0x800) {
+                bytes += 2;
+            } else if (Character.isHighSurrogate(c) && i + 1 < length && Character.isLowSurrogate(text.charAt(i + 1))) {
+                bytes += 4;
+                i++;
+            } else if (Character.isSurrogate(c)) {
+                bytes += 1; // a lone surrogate is encoded as '?'
+            } else {
+                bytes += 3;
+            }
+        }
+        return bytes;
     }
 }

@@ -34,9 +34,14 @@ class LogsControllerTest {
         return request;
     }
 
+    // A line counts its text plus a fixed overhead.
+    private static long cost(int lines, int textBytes) {
+        return (long) lines * LogLine.LINE_OVERHEAD_BYTES + textBytes;
+    }
+
     @Test
-    void aRequestWithinTheLimitIsAppended() {
-        properties.setAppendMaxBytes(100);
+    void aRequestExactlyAtTheLimitIsAppended() {
+        properties.setAppendMaxBytes(cost(2, 100));
 
         controller.appendLogs(request("a".repeat(50), "b".repeat(50)));
 
@@ -45,7 +50,7 @@ class LogsControllerTest {
 
     @Test
     void aRequestOneByteOverTheLimitIsRefusedWith413AndNothingIsWritten() {
-        properties.setAppendMaxBytes(100);
+        properties.setAppendMaxBytes(cost(2, 100));
 
         ResponseStatusException thrown = assertThrows(ResponseStatusException.class,
                 () -> controller.appendLogs(request("a".repeat(50), "b".repeat(51))));
@@ -56,10 +61,24 @@ class LogsControllerTest {
 
     @Test
     void theLimitCountsBytesNotCharacters() {
-        properties.setAppendMaxBytes(100);
+        properties.setAppendMaxBytes(cost(1, 100));
 
         // 60 characters of two bytes each are 120 bytes.
         assertThrows(ResponseStatusException.class, () -> controller.appendLogs(request("é".repeat(60))));
+    }
+
+    @Test
+    void manyEmptyLinesAreStillRefused() {
+        properties.setAppendMaxBytes(cost(10, 0));
+
+        String[] empty = new String[11];
+        java.util.Arrays.fill(empty, "");
+
+        ResponseStatusException thrown = assertThrows(ResponseStatusException.class,
+                () -> controller.appendLogs(request(empty)));
+
+        assertEquals(HttpStatus.PAYLOAD_TOO_LARGE, thrown.getStatusCode());
+        verify(logsService, never()).appendLogs(any());
     }
 
     @Test
@@ -72,9 +91,18 @@ class LogsControllerTest {
     }
 
     @Test
-    void anEmptyRequestIsStillAccepted() {
-        controller.appendLogs(request());
+    void anEmptyRequestIsAcceptedAndWritesNothing() {
+        assertEquals(HttpStatus.OK, controller.appendLogs(request()).getStatusCode());
 
-        verify(logsService).appendLogs(List.of());
+        verify(logsService, never()).appendLogs(any());
+    }
+
+    @Test
+    void aRequestWithoutDataIsAcceptedInsteadOfFailingWithAnError() {
+        // The body {} has no data list.
+        assertEquals(HttpStatus.OK, controller.appendLogs(new LogsRequest()).getStatusCode());
+        assertEquals(HttpStatus.OK, controller.appendLogs(null).getStatusCode());
+
+        verify(logsService, never()).appendLogs(any());
     }
 }

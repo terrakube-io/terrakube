@@ -447,4 +447,67 @@ class StructuredOutputPersistenceQueueTest {
         assertTrue(persistedSteps.contains("final-step"), "final snapshot must survive eviction: " + persistedSteps);
         queue.stop();
     }
+
+    @Test
+    void aLargerSnapshotForAKeyThatIsAlreadyRetainedStillFitsTheRecoveryBudget() throws Exception {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        StructuredSnapshotPersister alwaysFailing = s -> false;
+        long oneSnapshot = bigSnap("probe", 1, false, 10_000).getEstimatedBytes();
+        StructuredOutputPersistenceQueue queue =
+                startedWithByteBudgets(alwaysFailing, registry, 0, oneSnapshot * 2 + 100, true);
+
+        queue.submit(bigSnap("step-a", 1, false, 10_000));
+        queue.submit(bigSnap("step-b", 2, false, 10_000));
+        assertTrue(queue.awaitDrain(Duration.ofSeconds(5)));
+        assertEquals(2, queue.retainedDepth());
+
+        // The next snapshot of step-a is half as big again: it does not fit next to step-b.
+        queue.submit(bigSnap("step-a", 3, false, 15_000));
+        assertTrue(queue.awaitDrain(Duration.ofSeconds(5)));
+
+        assertEquals(1, queue.retainedDepth(), "the other retained snapshot has to make room");
+        assertTrue(registry.get("terrakube.executor.structured.output.recovery.evictions").counter().count() >= 1);
+        queue.stop();
+    }
+
+    @Test
+    void snapshotsSubmittedFromManyThreadsStayWithinTheQueueByteBudget() throws Exception {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        CountDownLatch block = new CountDownLatch(1);
+        StructuredSnapshotPersister blocked = s -> {
+            try {
+                block.await(10, java.util.concurrent.TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            return true;
+        };
+        long oneSnapshot = bigSnap("probe", 1, false, 10_000).getEstimatedBytes();
+        long budget = oneSnapshot * 5 + 100;
+        StructuredOutputPersistenceQueue queue = startedWithByteBudgets(blocked, registry, budget, 0, false);
+
+        int threads = 8;
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(threads);
+        CountDownLatch start = new CountDownLatch(1);
+        List<java.util.concurrent.Future<?>> done = new java.util.ArrayList<>();
+        for (int t = 0; t < threads; t++) {
+            int thread = t;
+            done.add(pool.submit(() -> {
+                start.await();
+                for (int i = 0; i < 25; i++) {
+                    queue.submit(bigSnap("t" + thread + "-" + i, 10L + i, false, 10_000));
+                }
+                return null;
+            }));
+        }
+        start.countDown();
+        for (java.util.concurrent.Future<?> future : done) {
+            future.get(10, java.util.concurrent.TimeUnit.SECONDS);
+        }
+
+        assertTrue(queue.pendingBytes() <= budget, "pending " + queue.pendingBytes() + " budget " + budget);
+        block.countDown();
+        pool.shutdownNow();
+        queue.stop();
+    }
 }

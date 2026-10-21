@@ -41,4 +41,11 @@ public class ExecutorLogsProperties {
 
     /** With {@code io.executor.log-via-api=true}: the most bytes of lines sent to the API in one request. */
     private long apiBatchMaxBytes = 1_048_576L;
+
+    /**
+     * How much of a step's console output is kept in memory for the saved output. Past it the output
+     * moves to a temporary file next to the step's working directory, and is uploaded from there when the
+     * step ends. 0 or less keeps everything in memory.
+     */
+    private long stepOutputMemoryBytes = 4L * 1024 * 1024;
 }

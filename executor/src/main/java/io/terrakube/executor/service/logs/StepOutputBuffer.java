@@ -3,6 +3,7 @@ package io.terrakube.executor.service.logs;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -34,6 +35,19 @@ public class StepOutputBuffer implements AutoCloseable {
     private OutputStream fileOut;
     private long bytes;
     private boolean closed;
+
+    /**
+     * A buffer that spills next to {@code workingDirectory} (the executor's scratch disk, the same place
+     * the plan artifacts are staged), not in the JVM temp directory, which can be memory backed.
+     */
+    public static StepOutputBuffer forStep(long memoryLimitBytes, File workingDirectory) {
+        Path spool = null;
+        File parent = workingDirectory == null ? null : workingDirectory.getAbsoluteFile().getParentFile();
+        if (parent != null && parent.isDirectory()) {
+            spool = parent.toPath();
+        }
+        return new StepOutputBuffer(memoryLimitBytes, spool);
+    }
 
     public StepOutputBuffer() {
         this(DEFAULT_MEMORY_LIMIT_BYTES, null);
