@@ -191,6 +191,8 @@ function generateExecutorVars() {
 
 	ExecutorFlagBatch=false
 	ExecutorFlagDisableAcknowledge=false
+	ExecutorPidIsolation="best-effort"
+	ExecutorCleanEnvironment="true"
 	TerrakubeToolsRepository=https://github.com/terrakube-io/terrakube-extensions.git
 	TerrakubeToolsBranch=main
 	IO_TERRAKUBE_TERRAFORM_FLAGS_PID_ISOLATION="best-effort"
@@ -230,6 +232,8 @@ function generateExecutorVars() {
 	echo "AzBuilderApiUrl=$AzBuilderApiUrl" >>.envExecutor
 	echo "ExecutorFlagBatch=$ExecutorFlagBatch" >>.envExecutor
 	echo "ExecutorFlagDisableAcknowledge=$ExecutorFlagDisableAcknowledge" >>.envExecutor
+	echo "ExecutorPidIsolation=$ExecutorPidIsolation" >>.envExecutor
+	echo "ExecutorCleanEnvironment=$ExecutorCleanEnvironment" >>.envExecutor
 	echo "TerrakubeToolsRepository=$TerrakubeToolsRepository" >>.envExecutor
 	echo "TerrakubeToolsBranch=$TerrakubeToolsBranch" >>.envExecutor
 	echo "TerrakubeRegistryDomain=$TerrakubeRegistryDomain" >>.envExecutor
