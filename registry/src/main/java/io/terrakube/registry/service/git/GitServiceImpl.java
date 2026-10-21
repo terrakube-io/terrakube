@@ -96,8 +96,11 @@ public class GitServiceImpl implements GitService {
         return gitCloneRepository;
     }
 
-    private CredentialsProvider setupCredentials(String vcsType, String vcsConnectionType, String accessToken) {
+    CredentialsProvider setupCredentials(String vcsType, String vcsConnectionType, String accessToken) {
         CredentialsProvider credentialsProvider = null;
+        // AZURE_SP_MI never stores an access token; it mints one from the environment on every call
+        if ("AZURE_SP_MI".equals(vcsType))
+            return new UsernamePasswordCredentialsProvider("dummy", getAzureDefaultToken());
         if (accessToken == null || accessToken.isEmpty())
             return null;
         switch (vcsType) {
@@ -115,9 +118,6 @@ public class GitServiceImpl implements GitService {
                 break;
             case "AZURE_DEVOPS":
                 credentialsProvider = new UsernamePasswordCredentialsProvider("dummy", accessToken);
-                break;
-            case "AZURE_SP_MI":
-                credentialsProvider = new UsernamePasswordCredentialsProvider("dummy", getAzureDefaultToken());
                 break;
             default:
                 credentialsProvider = null;
