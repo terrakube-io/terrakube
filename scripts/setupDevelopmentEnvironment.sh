@@ -193,6 +193,8 @@ function generateExecutorVars() {
 	ExecutorFlagDisableAcknowledge=false
 	TerrakubeToolsRepository=https://github.com/terrakube-io/terrakube-extensions.git
 	TerrakubeToolsBranch=main
+	IO_TERRAKUBE_TERRAFORM_FLAGS_PID_ISOLATION="best-effort"
+	IO_TERRAKUBE_TERRAFORM_FLAGS_CLEAN_ENVIRONMENT="true"
 
 	rm -f .envExecutor
 
@@ -234,6 +236,8 @@ function generateExecutorVars() {
 	echo "TerrakubeApiUrl=$TerrakubeApiUrl" >>.envExecutor
 	echo "CustomTerraformReleasesUrl=\"https://releases.hashicorp.com/terraform/index.json\"" >>.envExecutor
 	echo "CustomTofuReleasesUrl=\"https://api.github.com/repos/opentofu/opentofu/releases\"" >>.envExecutor
+	echo "IO_TERRAKUBE_TERRAFORM_FLAGS_PID_ISOLATION=$IO_TERRAKUBE_TERRAFORM_FLAGS_PID_ISOLATION" >>.envExecutor
+	echo "IO_TERRAKUBE_TERRAFORM_FLAGS_CLEAN_ENVIRONMENT=$IO_TERRAKUBE_TERRAFORM_FLAGS_CLEAN_ENVIRONMENT" >>.envExecutor
 	echo "TerrakubeRedisHostname=$TerrakubeRedisHostname" >>.envExecutor
 	echo "TerrakubeRedisPort=6379" >>.envExecutor
 	echo "TerrakubeRedisSSL=false" >>.envExecutor
