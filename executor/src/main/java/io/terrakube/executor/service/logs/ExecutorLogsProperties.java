@@ -19,10 +19,11 @@ public class ExecutorLogsProperties {
 
     /**
      * Also write every line of a step's output to the executor's own service log, so it can be read with
-     * {@code kubectl logs}. On by default, as before. The output already goes to the job's log and to its
-     * saved output, so turning this off avoids ingesting it a second time in the cluster's log pipeline.
+     * {@code kubectl logs}. Off by default: the output already goes to the job's log and to its saved output,
+     * so a copy here is ingested a second time by the cluster's log pipeline, and it lands in a log with
+     * different access rules from the job's.
      */
-    private boolean echoToServiceLog = true;
+    private boolean echoToServiceLog = false;
 
     /**
      * Largest line, in bytes, sent to the live stream (Redis, or the API). A longer line is cut with a

@@ -73,13 +73,13 @@ class LogsServiceApiTest {
     }
 
     @Test
-    void theServiceLogEchoIsOnUnlessConfiguredOff() {
+    void theServiceLogEchoIsOffUnlessConfiguredOn() {
         ExecutorLogsProperties properties = new ExecutorLogsProperties();
         TerrakubeClient terrakubeClient = Mockito.mock(TerrakubeClient.class);
-        assertTrue(new LogsServiceApi(terrakubeClient, properties, new SimpleMeterRegistry()).echoToServiceLog());
-
-        properties.setEchoToServiceLog(false);
         assertFalse(new LogsServiceApi(terrakubeClient, properties, new SimpleMeterRegistry()).echoToServiceLog());
+
+        properties.setEchoToServiceLog(true);
+        assertTrue(new LogsServiceApi(terrakubeClient, properties, new SimpleMeterRegistry()).echoToServiceLog());
     }
 
     // While the API cannot take lines the queue must not grow with the length of the outage.

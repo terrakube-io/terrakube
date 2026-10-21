@@ -103,7 +103,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
     }
     // Console output of a step stays in memory up to this size, then moves to a temporary file.
     private long stepOutputMemoryBytes = StepOutputBuffer.DEFAULT_MEMORY_LIMIT_BYTES;
-    private boolean echoToServiceLog = true;
+    private boolean echoToServiceLog = false;
 
     @Autowired(required = false)
     void setLogsProperties(ExecutorLogsProperties logsProperties) {

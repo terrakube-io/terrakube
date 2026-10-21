@@ -15,6 +15,6 @@ public interface ProcessLogs {
 
     // Whether the lines of a step are also written to the executor's own service log.
     default boolean echoToServiceLog() {
-        return true;
+        return false;
     }
 }

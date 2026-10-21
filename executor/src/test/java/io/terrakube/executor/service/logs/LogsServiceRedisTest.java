@@ -80,11 +80,11 @@ class LogsServiceRedisTest {
     }
 
     @Test
-    void theServiceLogEchoIsOnUnlessConfiguredOff() {
+    void theServiceLogEchoIsOffUnlessConfiguredOn() {
         ExecutorLogsProperties props = new ExecutorLogsProperties();
-        assertEquals(true, new LogsServiceRedis(redisTemplate, props).echoToServiceLog());
-
-        props.setEchoToServiceLog(false);
         assertEquals(false, new LogsServiceRedis(redisTemplate, props).echoToServiceLog());
+
+        props.setEchoToServiceLog(true);
+        assertEquals(true, new LogsServiceRedis(redisTemplate, props).echoToServiceLog());
     }
 }
