@@ -35,6 +35,7 @@ public class LocalStorageTypeServiceImpl implements StorageTypeService {
     private static final String NO_CONTEXT_FOUND = "{}";
     private static final String LOCAL_BACKEND_DIRECTORY = "/.terraform-spring-boot/local/backend/%s/%s/terraform.tfstate";
     private static final String LOCAL_HISTORY_BACKEND_DIRECTORY = "/.terraform-spring-boot/local/state/%s/%s/state/%s.raw.json";
+    private static final String CONTEXT_SPOOL_DIRECTORY = "/.terraform-spring-boot/local/context-spool/%s/%s/%s-%s.json.gz";
 
     @NonNull
     private StorageRetryMetrics storageRetryMetrics;
@@ -202,8 +203,18 @@ public class LocalStorageTypeServiceImpl implements StorageTypeService {
         try {
             for (Integer jobId : jobList) {
                 String workspaceOutputFolder = String.format("%s/.terraform-spring-boot/local/output/%s/%s", FileUtils.getUserDirectoryPath(), organizationId, jobId);
-                log.warn("Delete workspace output folder: {}", workspaceOutputFolder);
-                FileUtils.cleanDirectory(new File(workspaceOutputFolder));
+                File outputDir = new File(workspaceOutputFolder);
+                if (outputDir.exists()) {
+                    log.warn("Delete workspace output folder: {}", workspaceOutputFolder);
+                    FileUtils.cleanDirectory(outputDir);
+                }
+
+                String contextSpoolFolder = String.format("%s/.terraform-spring-boot/local/context-spool/%s/%s", getLocalBasePath(), organizationId, jobId);
+                File spoolDir = new File(contextSpoolFolder);
+                if (spoolDir.exists()) {
+                    log.warn("Delete workspace context spool folder: {}", contextSpoolFolder);
+                    FileUtils.deleteQuietly(spoolDir);
+                }
             }
         } catch (IOException e) {
             log.error(e.getMessage());
@@ -212,6 +223,7 @@ public class LocalStorageTypeServiceImpl implements StorageTypeService {
 
     @Override
     public void deleteWorkspaceStateData(String organizationId, String workspaceId) {
+        FileUtils.deleteQuietly(artifactsDirectory(organizationId, workspaceId, null));
         try {
             String statePath = String.format("%s/.terraform-spring-boot/local/state/%s/%s", FileUtils.getUserDirectoryPath(), organizationId, workspaceId);
             log.warn("Delete workspace state folder: {}", statePath);
@@ -223,6 +235,16 @@ public class LocalStorageTypeServiceImpl implements StorageTypeService {
         } catch (IOException e) {
             log.error(e.getMessage());
         }
+    }
+
+    @Override
+    public void deleteJobArtifacts(String organizationId, String workspaceId, int jobId) {
+        FileUtils.deleteQuietly(artifactsDirectory(organizationId, workspaceId, jobId));
+    }
+
+    private File artifactsDirectory(String organizationId, String workspaceId, Integer jobId) {
+        String path = String.format("%s/.terraform-spring-boot/local/plan-artifacts/%s/%s", FileUtils.getUserDirectoryPath(), organizationId, workspaceId);
+        return new File(jobId == null ? path : path + "/" + jobId);
     }
 
     @Override
@@ -291,6 +313,62 @@ public class LocalStorageTypeServiceImpl implements StorageTypeService {
             }
         } catch (Exception e) {
             log.warn("Failed to delete policy evaluation from local storage: {}", e.getMessage());
+        }
+    }
+
+    private File resolveSafeFile(String basePath, String relativePath) throws SecurityException {
+        java.nio.file.Path base = java.nio.file.Paths.get(basePath, ".terraform-spring-boot/local/context-spool").toAbsolutePath().normalize();
+        String rel = FilenameUtils.separatorsToSystem(relativePath.startsWith("/") ? relativePath.substring(1) : relativePath);
+        java.nio.file.Path target = java.nio.file.Paths.get(basePath, rel).toAbsolutePath().normalize();
+        if (!target.startsWith(base)) {
+            throw new SecurityException("Potential path traversal attempt detected for path: " + relativePath);
+        }
+        return target.toFile();
+    }
+
+    private String getLocalBasePath() {
+        String sharedDir = System.getProperty("terrakube.local.shared.directory", System.getenv("TERRAKUBE_LOCAL_SHARED_DIRECTORY"));
+        return (sharedDir != null && !sharedDir.isBlank()) ? sharedDir : FileUtils.getUserDirectoryPath();
+    }
+
+    @Override
+    public byte[] getSpooledContextPatch(String organizationId, String jobId, String stepId, String phase) {
+        String path = String.format(CONTEXT_SPOOL_DIRECTORY, organizationId, jobId, stepId, phase);
+        File file = resolveSafeFile(getLocalBasePath(), path);
+        if (!file.exists()) {
+            return null;
+        }
+        byte[] bytes = storageRetryMetrics.withRetry("local", "spool-read", () -> java.nio.file.Files.readAllBytes(file.toPath()));
+        return (bytes != null && bytes.length > 0) ? bytes : null;
+    }
+
+    @Override
+    public void deleteSpooledContextPatch(String organizationId, String jobId, String stepId, String phase) {
+        String path = String.format(CONTEXT_SPOOL_DIRECTORY, organizationId, jobId, stepId, phase);
+        log.info("Deleting spooled context patch from local storage: {}", path);
+        storageRetryMetrics.withRetry("local", "delete", () -> {
+            try {
+                File file = resolveSafeFile(getLocalBasePath(), path);
+                if (file.exists()) {
+                    FileUtils.deleteQuietly(file);
+                    log.info("Successfully deleted spooled context patch {}", path);
+                }
+            } catch (Exception e) {
+                log.warn("Error deleting spooled context patch from local storage: {}", e.getMessage());
+            }
+            return null;
+        });
+    }
+
+    @Override
+    public boolean hasSpooledContextPatch(String organizationId, String jobId, String stepId, String phase) {
+        try {
+            String path = String.format(CONTEXT_SPOOL_DIRECTORY, organizationId, jobId, stepId, phase);
+            File file = resolveSafeFile(getLocalBasePath(), path);
+            return file.exists() && file.isFile();
+        } catch (Exception e) {
+            log.warn("Error probing spooled context patch in local storage: {}", e.getMessage());
+            return false;
         }
     }
 }

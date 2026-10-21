@@ -264,4 +264,122 @@ class AwsStorageTypeServiceImplTest {
         verify(s3Client).deleteObject(argThat((DeleteObjectRequest req) ->
                 req.bucket().equals(bucketName) && req.key().equals(uri)));
     }
+
+    @Test
+    void testSpooledContextPatchLifecycle() {
+        String orgId = "org1";
+        String jobId = "job1";
+        String stepId = "step1";
+        String phase = "plan";
+        String key = "context-spool/org1/job1/step1-plan.json.gz";
+        byte[] data = "dummy-gzipped-bytes".getBytes(StandardCharsets.UTF_8);
+
+        // 1. Get
+        ResponseBytes<GetObjectResponse> responseBytes = mock(ResponseBytes.class);
+        when(responseBytes.asByteArray()).thenReturn(data);
+        when(s3Client.getObject(argThat((GetObjectRequest req) -> req != null && key.equals(req.key())), any(ResponseTransformer.class)))
+                .thenReturn(responseBytes);
+
+        byte[] retrieved = awsStorageTypeService.getSpooledContextPatch(orgId, jobId, stepId, phase);
+        assertArrayEquals(data, retrieved);
+
+        // 2. Has
+        when(s3Client.headObject(argThat((HeadObjectRequest req) -> req != null && key.equals(req.key()))))
+                .thenReturn(HeadObjectResponse.builder().build());
+        assertTrue(awsStorageTypeService.hasSpooledContextPatch(orgId, jobId, stepId, phase));
+
+        // 3. Delete
+        awsStorageTypeService.deleteSpooledContextPatch(orgId, jobId, stepId, phase);
+        verify(s3Client).deleteObject(argThat((DeleteObjectRequest req) -> req != null && key.equals(req.key())));
+
+        // 4. Missing key returns null / false
+        when(s3Client.headObject(argThat((HeadObjectRequest req) -> req != null && key.equals(req.key()))))
+                .thenThrow(NoSuchKeyException.builder().message("not found").build());
+        assertFalse(awsStorageTypeService.hasSpooledContextPatch(orgId, jobId, stepId, phase));
+    }
+
+    // ----- plan artifacts (plan-artifacts/<organization>/<workspace>/<job>/<step>/plan-artifacts.tar.gz)
+
+    private ListObjectsV2Response page(boolean truncated, String token, String... keys) {
+        return ListObjectsV2Response.builder()
+                .contents(java.util.Arrays.stream(keys).map(key -> S3Object.builder().key(key).build()).toList())
+                .isTruncated(truncated)
+                .nextContinuationToken(token)
+                .build();
+    }
+
+    private static boolean deletesExactly(DeleteObjectsRequest request, String... keys) {
+        return request.delete().objects().stream().map(ObjectIdentifier::key).toList().equals(List.of(keys));
+    }
+
+    @Test
+    void deletingAJobsArtifactsRemovesOnlyThatJobsPrefix() {
+        when(s3Client.listObjectsV2(any(ListObjectsV2Request.class)))
+                .thenReturn(page(false, null, "plan-artifacts/org1/ws1/12/step-a/plan-artifacts.tar.gz"));
+        when(s3Client.deleteObjects(any(DeleteObjectsRequest.class))).thenReturn(DeleteObjectsResponse.builder().build());
+
+        awsStorageTypeService.deleteJobArtifacts("org1", "ws1", 12);
+
+        ArgumentCaptor<ListObjectsV2Request> listed = ArgumentCaptor.forClass(ListObjectsV2Request.class);
+        verify(s3Client).listObjectsV2(listed.capture());
+        // the trailing slash stops job 12 from also matching job 120
+        assertEquals("plan-artifacts/org1/ws1/12/", listed.getValue().prefix());
+        verify(s3Client).deleteObjects(argThat((DeleteObjectsRequest request) ->
+                deletesExactly(request, "plan-artifacts/org1/ws1/12/step-a/plan-artifacts.tar.gz")));
+    }
+
+    @Test
+    void deletingAJobsArtifactsWhenThereAreNoneIsHarmless() {
+        when(s3Client.listObjectsV2(any(ListObjectsV2Request.class))).thenReturn(page(false, null));
+
+        awsStorageTypeService.deleteJobArtifacts("org1", "ws1", 12);
+
+        verify(s3Client, never()).deleteObjects(any(DeleteObjectsRequest.class));
+    }
+
+    @Test
+    void aPageOfArtifactsIsDeletedWithOneBatchRequest() {
+        when(s3Client.listObjectsV2(any(ListObjectsV2Request.class))).thenReturn(page(false, null,
+                "plan-artifacts/org1/ws1/1/a/plan-artifacts.tar.gz",
+                "plan-artifacts/org1/ws1/2/a/plan-artifacts.tar.gz",
+                "plan-artifacts/org1/ws1/3/a/plan-artifacts.tar.gz"));
+        when(s3Client.deleteObjects(any(DeleteObjectsRequest.class))).thenReturn(DeleteObjectsResponse.builder().build());
+
+        awsStorageTypeService.deleteJobArtifacts("org1", "ws1", 1);
+
+        verify(s3Client, times(1)).deleteObjects(any(DeleteObjectsRequest.class));
+        verify(s3Client, never()).deleteObject(any(DeleteObjectRequest.class));
+    }
+
+    @Test
+    void aBatchDeleteThatReportsErrorsIsNotTreatedAsDeleted() {
+        when(s3Client.listObjectsV2(any(ListObjectsV2Request.class)))
+                .thenReturn(page(false, null, "plan-artifacts/org1/ws1/1/a/plan-artifacts.tar.gz"));
+        when(s3Client.deleteObjects(any(DeleteObjectsRequest.class))).thenReturn(DeleteObjectsResponse.builder()
+                .errors(S3Error.builder().key("plan-artifacts/org1/ws1/1/a/plan-artifacts.tar.gz").code("AccessDenied").message("denied").build())
+                .build());
+
+        assertThrows(IllegalStateException.class, () -> awsStorageTypeService.deleteJobArtifacts("org1", "ws1", 1));
+    }
+
+    @Test
+    void deletingAWorkspaceAlsoRemovesItsArtifactsAcrossEveryPage() {
+        when(s3Client.listObjectsV2(any(ListObjectsV2Request.class))).thenAnswer(invocation -> {
+            ListObjectsV2Request request = invocation.getArgument(0);
+            if (request.prefix().equals("tfstate/org1/ws1/")) {
+                return page(false, null);
+            }
+            return request.continuationToken() == null
+                    ? page(true, "next", "plan-artifacts/org1/ws1/1/s/plan-artifacts.tar.gz")
+                    : page(false, null, "plan-artifacts/org1/ws1/2/s/plan-artifacts.tar.gz");
+        });
+
+        when(s3Client.deleteObjects(any(DeleteObjectsRequest.class))).thenReturn(DeleteObjectsResponse.builder().build());
+
+        awsStorageTypeService.deleteWorkspaceStateData("org1", "ws1");
+
+        verify(s3Client).deleteObjects(argThat((DeleteObjectsRequest request) -> deletesExactly(request, "plan-artifacts/org1/ws1/1/s/plan-artifacts.tar.gz")));
+        verify(s3Client).deleteObjects(argThat((DeleteObjectsRequest request) -> deletesExactly(request, "plan-artifacts/org1/ws1/2/s/plan-artifacts.tar.gz")));
+        verify(s3Client).listObjectsV2(argThat((ListObjectsV2Request request) -> "plan-artifacts/org1/ws1/".equals(request.prefix()) && "next".equals(request.continuationToken())));
+    }
 }

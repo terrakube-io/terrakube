@@ -12,6 +12,39 @@ public interface TerraformState {
 
     boolean downloadTerraformPlan(String organizationId, String workspaceId, String jobId, String stepId, File workingDirectory);
 
+    /**
+     * Stores the plan artifacts bundle of a plan step, under its own prefix (plan-artifacts/), apart
+     * from state and plan history so a lifecycle rule can expire it independently. The bundle is
+     * streamed from {@code bundle}, not read into memory.
+     *
+     * @return where it was stored (recorded on the job so the apply step can find it), or
+     *         {@code null} when this backend does not support plan artifacts.
+     * @throws TerraformStateUnavailableException when the storage could not be written after retries.
+     */
+    default String saveArtifacts(String organizationId, String workspaceId, String jobId, String stepId, File bundle) {
+        return null;
+    }
+
+    /**
+     * Streams the plan artifacts bundle recorded on the job into {@code target}. The location is
+     * only used if it is inside this job's own artifacts prefix, so an edited job record cannot point
+     * an apply at another job's or tenant's files.
+     *
+     * @return the sha256 the plan step recorded for the bundle, or {@code null} when the job has no
+     *         plan artifacts (nothing to restore).
+     * @throws ArtifactVerificationException      when artifacts are recorded but cannot be found or are not
+     *                                           this job's.
+     * @throws TerraformStateUnavailableException when the storage could not be read after retries.
+     */
+    default String downloadArtifacts(String organizationId, String workspaceId, String jobId, File target)
+            throws ArtifactVerificationException {
+        return null;
+    }
+
+    /** Best-effort removal of the job's plan artifacts once its apply has finished. */
+    default void deleteArtifacts(String organizationId, String workspaceId, String jobId) {
+    }
+
     void saveStateJson(TerraformJob terraformJob, String applyJSON, String rawState);
 
     String saveOutput(String organizationId, String jobId, String stepId, String output, String outputError);
@@ -66,6 +99,21 @@ public interface TerraformState {
      */
     default boolean downloadOpaBinary(String version, String os, String arch, File targetFile) {
         return false;
+    }
+
+    /**
+     * Spool a gzipped structured output patch envelope directly to object storage when API is unavailable.
+     * Stored at deterministic path: context-spool/<organizationId>/<jobId>/<stepId>-<phase>.json.gz
+     *
+     * @param organizationId the organization ID
+     * @param jobId          the job ID
+     * @param stepId         the step ID
+     * @param phase          the execution phase ("plan" or "apply")
+     * @param data           the gzipped JSON patch envelope bytes
+     * @return storage path or URI where spooled, or null if write failed
+     */
+    default String spoolContextPatch(String organizationId, String jobId, String stepId, String phase, byte[] data) {
+        return null;
     }
 }
 

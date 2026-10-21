@@ -4,8 +4,10 @@ import com.yahoo.elide.annotation.CreatePermission;
 import com.yahoo.elide.annotation.DeletePermission;
 import com.yahoo.elide.annotation.Exclude;
 import com.yahoo.elide.annotation.Include;
+import com.yahoo.elide.annotation.LifeCycleHookBinding;
 import com.yahoo.elide.annotation.ReadPermission;
 import com.yahoo.elide.annotation.UpdatePermission;
+import io.terrakube.api.rs.hooks.step.StepDeliveryStateHook;
 import lombok.Getter;
 import lombok.Setter;
 import org.hibernate.annotations.JdbcTypeCode;
@@ -50,6 +52,26 @@ public class Step {
 
     @Column(name = "output")
     private String output;
+
+    @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.CREATE, phase = LifeCycleHookBinding.TransactionPhase.PRECOMMIT, hook = StepDeliveryStateHook.class)
+    @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.PRECOMMIT, hook = StepDeliveryStateHook.class)
+    @Column(name = "delivery_state")
+    @Enumerated(EnumType.STRING)
+    private DeliveryState deliveryState = DeliveryState.NOT_DURABLE;
+
+    @Column(name = "delivery_revision")
+    private Long deliveryRevision;
+
+    @Column(name = "delivery_timestamp")
+    private Long deliveryTimestamp;
+
+    @Exclude
+    @Column(name = "lease_owner")
+    private String leaseOwner;
+
+    @Exclude
+    @Column(name = "lease_until")
+    private java.util.Date leaseUntil;
 
     @ManyToOne
     private Job job;

@@ -2,6 +2,8 @@ package io.terrakube.api.plugin.scheduler.reconciliation;
 
 import io.terrakube.api.helpers.FailUnkownMethod;
 import io.terrakube.api.plugin.scheduler.ScheduleJobService;
+import io.terrakube.api.plugin.scheduler.spool.SpoolRecoveryService;
+import io.terrakube.api.plugin.storage.StorageTypeService;
 import io.terrakube.api.repository.JobRepository;
 import io.terrakube.api.repository.StepRepository;
 import io.terrakube.api.repository.WorkspaceRepository;
@@ -22,6 +24,7 @@ import org.springframework.data.redis.core.ValueOperations;
 import java.util.Date;
 import java.util.List;
 import java.util.Properties;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -50,6 +53,8 @@ class JobReconciliationSweepTest {
     ReconciliationProperties properties;
     JobReconciliationService reconciliationService;
     JobReconciliationMetrics metrics;
+    StorageTypeService storageTypeService;
+    SpoolRecoveryService spoolRecoveryService;
 
     @BeforeEach
     void setup() {
@@ -63,6 +68,8 @@ class JobReconciliationSweepTest {
         reconciliationService = mock(JobReconciliationService.class, new FailUnkownMethod<JobReconciliationService>());
         properties = new ReconciliationProperties();
         metrics = new JobReconciliationMetrics(new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
+        storageTypeService = mock(StorageTypeService.class);
+        spoolRecoveryService = mock(SpoolRecoveryService.class);
         lenient().doReturn(valueOperations).when(redisTemplate).opsForValue();
         lenient().doAnswer(invocation -> invocation.getArgument(0)).when(workspaceRepository).save(any());
         // Default: jobs have no steps, so the zero-pending reconciliation pass is a no-op unless a
@@ -83,7 +90,7 @@ class JobReconciliationSweepTest {
 
     private JobReconciliationSweep subject() {
         return new JobReconciliationSweep(jobRepository, stepRepository, workspaceRepository, scheduler,
-                scheduleJobService, redisTemplate, properties, reconciliationService, metrics);
+                scheduleJobService, redisTemplate, properties, reconciliationService, metrics, 300L, storageTypeService, spoolRecoveryService);
     }
 
     private Job job(int id, JobStatus status) {
@@ -215,7 +222,7 @@ class JobReconciliationSweepTest {
     void respectsCustomConfiguredHeartbeatGracePeriod() throws Exception {
         JobReconciliationSweep customSweep = new JobReconciliationSweep(
                 jobRepository, stepRepository, workspaceRepository, scheduler, scheduleJobService, redisTemplate,
-                properties, reconciliationService, metrics, 600);
+                properties, reconciliationService, metrics, 600L, storageTypeService, spoolRecoveryService);
 
         Job running = job(30, JobStatus.running);
         running.setUpdatedDate(new Date(System.currentTimeMillis() - 450_000)); // 450s old (< 600s)
@@ -419,5 +426,88 @@ class JobReconciliationSweepTest {
         verify(stepRepository, never()).save(any());
         verify(workspaceRepository, never()).save(any());
         verify(scheduler, never()).deleteJob(any());
+    }
+
+    @Test
+    void sweepProbesStorageAndRecoversSpooledOutputWhenExecutorHeartbeatExpires() throws Exception {
+        io.terrakube.api.plugin.storage.StorageTypeService storageTypeService = mock(io.terrakube.api.plugin.storage.StorageTypeService.class);
+        io.terrakube.api.plugin.scheduler.spool.SpoolRecoveryService spoolRecoveryService = mock(io.terrakube.api.plugin.scheduler.spool.SpoolRecoveryService.class);
+
+        Job running = job(43, JobStatus.running);
+        running.setUpdatedDate(new Date(System.currentTimeMillis() - 350_000));
+        io.terrakube.api.rs.Organization org = new io.terrakube.api.rs.Organization();
+        org.setId(UUID.randomUUID());
+        running.setOrganization(org);
+
+        UUID stepId = UUID.randomUUID();
+        Step step = new Step();
+        step.setId(stepId);
+        step.setStatus(JobStatus.running);
+        step.setJob(running);
+
+        doReturn(List.of(running)).when(jobRepository)
+                .findAllByStatusInOrderByIdAsc(JobReconciliationSweep.ACTIVE_STATUSES);
+        doReturn(true).when(scheduler).checkExists(new JobKey("TerrakubeV2_Job_43"));
+        doReturn(false).when(redisTemplate).hasKey("executor-job-heartbeat:43");
+        doReturn(List.of(step)).when(stepRepository).findByJobId(43);
+        doReturn(step).when(stepRepository).save(any(Step.class));
+        doReturn(1).when(stepRepository).acquireLease(eq(stepId), anyString(), any(Date.class), any(Date.class));
+        doReturn(1).when(jobRepository).updateStatusByIdAndStatusIn(
+                JobStatus.failed, 43, List.of(JobStatus.queue, JobStatus.running));
+        doReturn(true).when(scheduler).deleteJob(any(JobKey.class));
+
+        doReturn(true).when(storageTypeService).hasSpooledContextPatch(org.getId().toString(), "43", stepId.toString(), "plan");
+        doReturn(false).when(storageTypeService).hasSpooledContextPatch(org.getId().toString(), "43", stepId.toString(), "apply");
+        doReturn(true).when(spoolRecoveryService).recoverStep(any(Step.class));
+
+        JobReconciliationSweep sweepWithSpool = new JobReconciliationSweep(
+                jobRepository, stepRepository, workspaceRepository, scheduler,
+                scheduleJobService, redisTemplate, properties, reconciliationService, metrics,
+                300L, storageTypeService, spoolRecoveryService);
+
+        sweepWithSpool.execute(null);
+
+        verify(storageTypeService).hasSpooledContextPatch(org.getId().toString(), "43", stepId.toString(), "plan");
+        verify(stepRepository).acquireLease(eq(stepId), anyString(), any(Date.class), any(Date.class));
+        verify(spoolRecoveryService).recoverStep(step);
+        verify(jobRepository).updateStatusByIdAndStatusIn(JobStatus.failed, 43, List.of(JobStatus.queue, JobStatus.running));
+    }
+
+    @Test
+    void zeroPendingJob_DoesNotProbeStorage_WhenExecutorAlive() throws Exception {
+        io.terrakube.api.plugin.storage.StorageTypeService storageTypeService = mock(io.terrakube.api.plugin.storage.StorageTypeService.class);
+        io.terrakube.api.plugin.scheduler.spool.SpoolRecoveryService spoolRecoveryService = mock(io.terrakube.api.plugin.scheduler.spool.SpoolRecoveryService.class);
+
+        Job stuck = job(55, JobStatus.running);
+        io.terrakube.api.rs.Organization org = new io.terrakube.api.rs.Organization();
+        org.setId(UUID.randomUUID());
+        stuck.setOrganization(org);
+
+        UUID stepId = UUID.randomUUID();
+        Step completedStep = new Step();
+        completedStep.setId(stepId);
+        completedStep.setStatus(JobStatus.completed);
+        completedStep.setJob(stuck);
+
+        doReturn(List.of(stuck)).when(jobRepository)
+                .findAllByStatusInOrderByIdAsc(JobReconciliationSweep.ACTIVE_STATUSES);
+        doReturn(true).when(scheduler).checkExists(new JobKey("TerrakubeV2_Job_55"));
+        doReturn(true).when(redisTemplate).hasKey("executor-job-heartbeat:55");
+        doReturn(List.of(completedStep)).when(stepRepository).findByJobId(55);
+
+        ReconciliationResult reconResult = new ReconciliationResult(55, JobStatus.running, DerivedOutcome.COMPLETED,
+                JobStatus.completed, ReconciliationResult.ReconciliationDisposition.APPLIED, List.of());
+        doReturn(reconResult).when(reconciliationService).reconcile(eq(55), anyBoolean());
+
+        JobReconciliationSweep sweepWithSpool = new JobReconciliationSweep(
+                jobRepository, stepRepository, workspaceRepository, scheduler,
+                scheduleJobService, redisTemplate, properties, reconciliationService, metrics,
+                300L, storageTypeService, spoolRecoveryService);
+
+        sweepWithSpool.execute(null);
+
+        verify(storageTypeService, never()).hasSpooledContextPatch(anyString(), anyString(), anyString(), anyString());
+        verify(spoolRecoveryService, never()).recoverStep(any(Step.class));
+        verify(reconciliationService).reconcile(eq(55), anyBoolean());
     }
 }

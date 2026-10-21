@@ -7,7 +7,7 @@
     "first": "20",
     "after": "0",
     "sort": "name,id",
-    "status_waitingApproval": "lastJobStatus==\"waitingApproval\"",
+    "status_waitingApproval": "(lastJobStatus==\"waitingApproval\",job.status==\"waitingApproval\")",
     "status_failed": "lastJobStatus==\"failed\"",
     "status_pending": "lastJobStatus==\"pending\"",
     "status_queue": "lastJobStatus==\"queue\"",

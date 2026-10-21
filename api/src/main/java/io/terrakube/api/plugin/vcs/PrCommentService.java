@@ -278,7 +278,7 @@ public class PrCommentService {
                 if (context.get("planRenderedText") instanceof Map<?, ?> byStep) {
                     for (Object value : byStep.values()) {
                         if (value instanceof String text && !text.isBlank()) {
-                            return text;
+                            return stepOutputReader.stripAnsi(text);
                         }
                     }
                 }

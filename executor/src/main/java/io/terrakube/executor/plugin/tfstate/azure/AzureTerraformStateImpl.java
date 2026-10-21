@@ -4,6 +4,7 @@ import com.azure.core.util.BinaryData;
 import com.azure.storage.blob.BlobClient;
 import com.azure.storage.blob.BlobContainerClient;
 import com.azure.storage.blob.BlobServiceClient;
+import com.azure.storage.blob.models.BlobStorageException;
 import com.azure.storage.blob.sas.BlobSasPermission;
 import com.azure.storage.blob.sas.BlobServiceSasSignatureValues;
 import com.azure.storage.common.sas.SasProtocol;
@@ -17,15 +18,19 @@ import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.text.TextStringBuilder;
 import io.terrakube.client.TerrakubeClient;
+import io.terrakube.client.model.organization.job.JobAttributes;
 import io.terrakube.client.model.organization.workspace.history.History;
 import io.terrakube.client.model.organization.workspace.history.HistoryAttributes;
 import io.terrakube.client.model.organization.workspace.history.HistoryRequest;
+import io.terrakube.executor.plugin.tfstate.ArtifactStorageKeys;
+import io.terrakube.executor.plugin.tfstate.ArtifactVerificationException;
 import io.terrakube.executor.plugin.tfstate.StorageRetryMetrics;
 import io.terrakube.executor.plugin.tfstate.TerraformOutputPathService;
 import io.terrakube.executor.plugin.tfstate.TerraformState;
 import io.terrakube.executor.plugin.tfstate.TerraformStateMetadata;
 import io.terrakube.executor.plugin.tfstate.TerraformStateMetadataService;
 import io.terrakube.executor.plugin.tfstate.TerraformStatePathService;
+import io.terrakube.executor.plugin.tfstate.TerraformStateUnavailableException;
 import io.terrakube.executor.service.mode.TerraformJob;
 
 import java.io.File;
@@ -48,6 +53,7 @@ public class AzureTerraformStateImpl implements TerraformState {
     private static final String BACKEND_FILE_NAME = "azure_backend_override.tf";
     private static final String CONTAINER_OUTPUT_NAME = "tfoutput";
     private static final String CONTAINER_BINARY_NAME = "tfbinary";
+    private static final String CONTEXT_SPOOL_LOCATION = "context-spool/%s/%s/%s-%s.json.gz";
 
     private String resourceGroupName;
     private String storageAccountName;
@@ -124,6 +130,68 @@ public class AzureTerraformStateImpl implements TerraformState {
             return blobClient.getBlobUrl();
         } else {
             return null;
+        }
+    }
+
+    // Plan artifacts live in the same container as the plan file (under their own plan-artifacts/
+    // prefix): no extra container to create, so no extra permission to grant.
+    @Override
+    public String saveArtifacts(String organizationId, String workspaceId, String jobId, String stepId, File bundle) {
+        BlobContainerClient blobContainerClient = blobServiceClient.getBlobContainerClient(CONTAINER_NAME);
+        if (!blobContainerClient.exists()) {
+            blobContainerClient.create();
+        }
+        String blobName = ArtifactStorageKeys.key(organizationId, workspaceId, jobId, stepId);
+        log.info("terraformArtifactsFile: {}", blobName);
+        BlobClient blobClient = blobContainerClient.getBlobClient(blobName);
+
+        // Streamed from the file; overwrite=true keeps a retry idempotent if a prior attempt landed
+        // but its response was lost.
+        storageRetryMetrics.withRetry("azure", "artifacts-write", () -> {
+            blobClient.uploadFromFile(bundle.getAbsolutePath(), true);
+            return null;
+        });
+        return blobClient.getBlobUrl();
+    }
+
+    @Override
+    public String downloadArtifacts(String organizationId, String workspaceId, String jobId, File target)
+            throws ArtifactVerificationException {
+        JobAttributes attributes = terrakubeClient.getJobById(organizationId, jobId).getData().getAttributes();
+        String location = attributes.getTerraformPlanArtifacts();
+        if (location == null || location.isBlank()) {
+            return null;
+        }
+        String blobName = ArtifactStorageKeys.keyFromLocation(location, organizationId, workspaceId, jobId);
+
+        log.info("Downloading plan artifacts from container {} blob {}", CONTAINER_NAME, blobName);
+        BlobClient blobClient = blobServiceClient.getBlobContainerClient(CONTAINER_NAME).getBlobClient(blobName);
+        try {
+            storageRetryMetrics.withRetry("azure", "artifacts-read", () -> {
+                blobClient.downloadToFile(target.getAbsolutePath(), true);
+                return null;
+            });
+        } catch (TerraformStateUnavailableException e) {
+            if (e.getCause() instanceof BlobStorageException storageException && storageException.getStatusCode() == 404) {
+                throw new ArtifactVerificationException("The plan artifacts bundle " + blobName + " is missing from the container");
+            }
+            throw e;
+        }
+        return attributes.getTerraformPlanArtifactsChecksum() == null ? "" : attributes.getTerraformPlanArtifactsChecksum();
+    }
+
+    @Override
+    public void deleteArtifacts(String organizationId, String workspaceId, String jobId) {
+        try {
+            String location = terrakubeClient.getJobById(organizationId, jobId).getData().getAttributes().getTerraformPlanArtifacts();
+            if (location == null || location.isBlank()) {
+                return;
+            }
+            String blobName = ArtifactStorageKeys.keyFromLocation(location, organizationId, workspaceId, jobId);
+            blobServiceClient.getBlobContainerClient(CONTAINER_NAME).getBlobClient(blobName).deleteIfExists();
+        } catch (RuntimeException e) {
+            // The container's lifecycle rule for the plan-artifacts/ prefix is the backstop.
+            log.warn("Could not delete the plan artifacts of job {}: {}", jobId, e.getMessage());
         }
     }
 
@@ -338,6 +406,28 @@ public class AzureTerraformStateImpl implements TerraformState {
         } catch (Exception e) {
             log.warn("Failed to restore OPA binary version {} ({}_{}) from Azure Blob: {}", version, os, arch, e.getMessage());
             return false;
+        }
+    }
+
+    @Override
+    public String spoolContextPatch(String organizationId, String jobId, String stepId, String phase, byte[] gzippedPatch) {
+        String blobName = String.format(CONTEXT_SPOOL_LOCATION, organizationId, jobId, stepId, phase);
+        log.info("Spooling context patch to Azure Blob: {}", blobName);
+        try {
+            BlobContainerClient blobContainerClient = blobServiceClient.getBlobContainerClient(CONTAINER_OUTPUT_NAME);
+            if (!blobContainerClient.exists()) {
+                blobContainerClient.create();
+            }
+            BlobClient blobClient = blobContainerClient.getBlobClient(blobName);
+            storageRetryMetrics.withRetry("azure", "spool-write", () -> {
+                blobClient.upload(BinaryData.fromBytes(gzippedPatch), true);
+                return null;
+            });
+            log.info("Successfully spooled context patch for job {} step {} phase {} to Azure Blob", jobId, stepId, phase);
+            return blobName;
+        } catch (Exception e) {
+            log.error("Failed to spool context patch to Azure Blob: {}", e.getMessage(), e);
+            return null;
         }
     }
 }

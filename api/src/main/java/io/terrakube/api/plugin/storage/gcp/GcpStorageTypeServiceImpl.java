@@ -33,6 +33,7 @@ public class GcpStorageTypeServiceImpl implements StorageTypeService {
     private static final String CONTEXT_JSON = "tfoutput/context/%s/context.json";
 
     private static final String TERRAFORM_TAR_GZ = "content/%s/terraformContent.tar.gz";
+    private static final String CONTEXT_SPOOL_LOCATION = "context-spool/%s/%s/%s-%s.json.gz";
 
     @NonNull
     private String bucketName;
@@ -203,6 +204,8 @@ public class GcpStorageTypeServiceImpl implements StorageTypeService {
         for (Integer jobId : jobList) {
             String outputPath = String.format("tfoutput/%s/%s/", organizationId, jobId);
             deleteFolderFromBucket(outputPath);
+            String contextSpoolFolder = String.format("context-spool/%s/%s/", organizationId, jobId);
+            deleteFolderFromBucket(contextSpoolFolder);
         }
     }
 
@@ -210,6 +213,12 @@ public class GcpStorageTypeServiceImpl implements StorageTypeService {
     public void deleteWorkspaceStateData(String organizationId, String workspaceId) {
         String outputPath = String.format("tfstate/%s/%s/", organizationId, workspaceId);
         deleteFolderFromBucket(outputPath);
+        deleteFolderFromBucket(String.format("plan-artifacts/%s/%s/", organizationId, workspaceId));
+    }
+
+    @Override
+    public void deleteJobArtifacts(String organizationId, String workspaceId, int jobId) {
+        deleteFolderFromBucket(String.format("plan-artifacts/%s/%s/%d/", organizationId, workspaceId, jobId));
     }
 
     @Override
@@ -289,6 +298,41 @@ public class GcpStorageTypeServiceImpl implements StorageTypeService {
             storage.delete(blobId);
         } catch (Exception e) {
             log.warn("Failed to delete policy evaluation {} from GCP: {}", storageUri, e.getMessage());
+        }
+    }
+
+    @Override
+    public byte[] getSpooledContextPatch(String organizationId, String jobId, String stepId, String phase) {
+        String key = String.format(CONTEXT_SPOOL_LOCATION, organizationId, jobId, stepId, phase);
+        byte[] bytes = downloadBlob(key);
+        return (bytes != null && bytes.length > 0) ? bytes : null;
+    }
+
+    @Override
+    public void deleteSpooledContextPatch(String organizationId, String jobId, String stepId, String phase) {
+        String key = String.format(CONTEXT_SPOOL_LOCATION, organizationId, jobId, stepId, phase);
+        log.info("Deleting spooled context patch from GCP: {}", key);
+        storageRetryMetrics.withRetry("gcp", "delete", () -> {
+            try {
+                BlobId blobId = BlobId.of(bucketName, key);
+                storage.delete(blobId);
+                log.info("Successfully deleted spooled context patch {}", key);
+            } catch (Exception e) {
+                log.warn("Error deleting spooled context patch from GCP: {}", e.getMessage());
+            }
+            return null;
+        });
+    }
+
+    @Override
+    public boolean hasSpooledContextPatch(String organizationId, String jobId, String stepId, String phase) {
+        String key = String.format(CONTEXT_SPOOL_LOCATION, organizationId, jobId, stepId, phase);
+        try {
+            Blob blob = storage.get(BlobId.of(bucketName, key));
+            return blob != null && blob.exists();
+        } catch (Exception e) {
+            log.warn("Error probing spooled context patch in GCP: {}", e.getMessage());
+            return false;
         }
     }
 }

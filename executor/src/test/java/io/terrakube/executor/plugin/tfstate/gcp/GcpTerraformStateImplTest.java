@@ -20,6 +20,7 @@ import java.io.File;
 import java.io.IOException;
 import java.net.URL;
 import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.concurrent.TimeUnit;
 
@@ -211,5 +212,129 @@ class GcpTerraformStateImplTest {
 
         assertEquals("https://api/output", result);
         verify(storage).create(any(BlobInfo.class), eq("output-contenterror-content".getBytes()));
+    }
+
+    @Test
+    void testSpoolContextPatch() {
+        String organizationId = "org1";
+        String jobId = "job1";
+        String stepId = "step1";
+        String phase = "plan";
+        byte[] gzippedPatch = "dummy-gzipped-bytes".getBytes(StandardCharsets.UTF_8);
+
+        String result = gcpTerraformState.spoolContextPatch(organizationId, jobId, stepId, phase, gzippedPatch);
+
+        assertEquals("context-spool/org1/job1/step1-plan.json.gz", result);
+        verify(storage).create(
+                argThat((BlobInfo info) -> info != null
+                        && info.getBlobId().getName().equals("context-spool/org1/job1/step1-plan.json.gz")
+                        && "application/gzip".equals(info.getContentType())
+                        && info.getContentEncoding() == null),
+                eq(gzippedPatch));
+    }
+
+    // ----- plan artifacts
+
+    private static final String ARTIFACT_OBJECT = "plan-artifacts/org1/ws1/job1/step1/plan-artifacts.tar.gz";
+
+    private io.terrakube.client.model.organization.job.JobAttributes recordedArtifacts(String location, String checksum) {
+        io.terrakube.client.model.organization.job.JobAttributes attributes = new io.terrakube.client.model.organization.job.JobAttributes();
+        attributes.setTerraformPlanArtifacts(location);
+        attributes.setTerraformPlanArtifactsChecksum(checksum);
+        when(terrakubeClient.getJobById("org1", "job1").getData().getAttributes()).thenReturn(attributes);
+        return attributes;
+    }
+
+    @Test
+    void savingArtifactsStreamsTheBundleToItsOwnPrefix(@TempDir Path tempDir) throws Exception {
+        File bundle = new File(tempDir.toFile(), "bundle.tar.gz");
+        FileUtils.writeStringToFile(bundle, "tar-gz-bytes", Charset.defaultCharset());
+
+        String location = gcpTerraformState.saveArtifacts("org1", "ws1", "job1", "step1", bundle);
+
+        assertEquals("https://storage.cloud.google.com/" + bucketName + "/" + ARTIFACT_OBJECT, location);
+        org.mockito.ArgumentCaptor<BlobInfo> info = org.mockito.ArgumentCaptor.forClass(BlobInfo.class);
+        verify(storage).createFrom(info.capture(), eq(bundle.toPath()));
+        assertEquals(bucketName, info.getValue().getBucket());
+        assertEquals(ARTIFACT_OBJECT, info.getValue().getName());
+    }
+
+    @Test
+    void savingArtifactsRetriesATransientFailure(@TempDir Path tempDir) throws Exception {
+        File bundle = new File(tempDir.toFile(), "bundle.tar.gz");
+        FileUtils.writeStringToFile(bundle, "x", Charset.defaultCharset());
+        when(storage.createFrom(any(BlobInfo.class), any(Path.class)))
+                .thenThrow(new RuntimeException("503"))
+                .thenReturn(mock(com.google.cloud.storage.Blob.class));
+
+        assertDoesNotThrow(() -> gcpTerraformState.saveArtifacts("org1", "ws1", "job1", "step1", bundle));
+
+        verify(storage, times(2)).createFrom(any(BlobInfo.class), any(Path.class));
+    }
+
+    @Test
+    void downloadingArtifactsWritesTheBundleAndReturnsTheRecordedChecksum(@TempDir Path tempDir) throws Exception {
+        recordedArtifacts("https://storage.cloud.google.com/" + bucketName + "/" + ARTIFACT_OBJECT, "abc123");
+        com.google.cloud.storage.Blob blob = mock(com.google.cloud.storage.Blob.class);
+        when(storage.get(BlobId.of(bucketName, ARTIFACT_OBJECT))).thenReturn(blob);
+        File target = new File(tempDir.toFile(), "downloaded.tar.gz");
+        doAnswer(invocation -> {
+            FileUtils.writeStringToFile(((Path) invocation.getArgument(0)).toFile(), "bundle-bytes", Charset.defaultCharset());
+            return null;
+        }).when(blob).downloadTo(any(Path.class));
+
+        assertEquals("abc123", gcpTerraformState.downloadArtifacts("org1", "ws1", "job1", target));
+
+        assertEquals("bundle-bytes", FileUtils.readFileToString(target, Charset.defaultCharset()));
+    }
+
+    @Test
+    void aJobWithoutArtifactsHasNothingToDownload(@TempDir Path tempDir) {
+        recordedArtifacts(null, null);
+
+        assertNull(gcpTerraformState.downloadArtifacts("org1", "ws1", "job1", new File(tempDir.toFile(), "x")));
+
+        verifyNoInteractions(storage);
+    }
+
+    @Test
+    void aRecordedLocationInAnotherJobOrTenantIsRefusedWithoutTouchingTheBucket(@TempDir Path tempDir) {
+        recordedArtifacts("https://storage.cloud.google.com/" + bucketName + "/plan-artifacts/other-org/ws1/job1/step1/plan-artifacts.tar.gz", "abc");
+
+        assertThrows(io.terrakube.executor.plugin.tfstate.ArtifactVerificationException.class,
+                () -> gcpTerraformState.downloadArtifacts("org1", "ws1", "job1", new File(tempDir.toFile(), "x")));
+        verifyNoInteractions(storage);
+    }
+
+    @Test
+    void anObjectMissingFromTheBucketIsReportedAsMissingNotAsAnOutage(@TempDir Path tempDir) {
+        recordedArtifacts("https://storage.cloud.google.com/" + bucketName + "/" + ARTIFACT_OBJECT, "abc123");
+        when(storage.get(any(BlobId.class))).thenReturn(null);
+
+        io.terrakube.executor.plugin.tfstate.ArtifactVerificationException thrown = assertThrows(
+                io.terrakube.executor.plugin.tfstate.ArtifactVerificationException.class,
+                () -> gcpTerraformState.downloadArtifacts("org1", "ws1", "job1", new File(tempDir.toFile(), "x")));
+        assertTrue(thrown.getMessage().contains("missing"));
+    }
+
+    @Test
+    void anOutageWhileDownloadingIsNotMistakenForNoArtifacts(@TempDir Path tempDir) {
+        recordedArtifacts("https://storage.cloud.google.com/" + bucketName + "/" + ARTIFACT_OBJECT, "abc123");
+        when(storage.get(any(BlobId.class))).thenThrow(new RuntimeException("503"));
+
+        assertThrows(io.terrakube.executor.plugin.tfstate.TerraformStateUnavailableException.class,
+                () -> gcpTerraformState.downloadArtifacts("org1", "ws1", "job1", new File(tempDir.toFile(), "x")));
+    }
+
+    @Test
+    void deletingArtifactsRemovesTheRecordedObjectAndNeverFailsTheCaller() {
+        recordedArtifacts("https://storage.cloud.google.com/" + bucketName + "/" + ARTIFACT_OBJECT, "abc123");
+
+        gcpTerraformState.deleteArtifacts("org1", "ws1", "job1");
+
+        verify(storage).delete(BlobId.of(bucketName, ARTIFACT_OBJECT));
+
+        when(storage.delete(any(BlobId.class))).thenThrow(new RuntimeException("denied"));
+        assertDoesNotThrow(() -> gcpTerraformState.deleteArtifacts("org1", "ws1", "job1"));
     }
 }

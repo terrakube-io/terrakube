@@ -94,7 +94,7 @@ class ExecutorJobImplTest {
 
         InOrder inOrder = inOrder(jobExecutionWatchdog, updateJobStatus, executorCapacityGate);
         inOrder.verify(jobExecutionWatchdog).markBusy(job);
-        inOrder.verify(updateJobStatus).setCompletedStatus(eq(true), anyBoolean(), anyInt(), eq(job), any(), any(), any(), any(), anyBoolean(), any());
+        inOrder.verify(updateJobStatus).setCompletedStatus(eq(true), anyBoolean(), anyInt(), eq(job), any(), any(), any(), any(), anyBoolean(), any(), any(), any());
         inOrder.verify(jobExecutionWatchdog).markFree();
         inOrder.verify(executorCapacityGate).release();
     }
@@ -181,7 +181,7 @@ class ExecutorJobImplTest {
         verify(jobExecutionWatchdog).markBusy(job);
         verify(jobExecutionWatchdog).markFree();
         verify(executorCapacityGate).release();
-        verify(updateJobStatus).setCompletedStatus(eq(true), anyBoolean(), anyInt(), eq(job), any(), any(), any(), any(), anyBoolean(), any());
+        verify(updateJobStatus).setCompletedStatus(eq(true), anyBoolean(), anyInt(), eq(job), any(), any(), any(), any(), anyBoolean(), any(), any(), any());
     }
 
     @Test
@@ -251,7 +251,7 @@ class ExecutorJobImplTest {
         verify(mockProcessLogs).sendLogs(eq(42), eq("1"), eq(2), eq("line 2 of script"));
         verify(updateJobStatus).setCompletedStatus(
                 eq(true), eq(false), eq(0), eq(job),
-                org.mockito.ArgumentMatchers.contains("line 1 of script"), any(), any(), any(), anyBoolean(), any());
+                org.mockito.ArgumentMatchers.contains("line 1 of script"), any(), any(), any(), anyBoolean(), any(), any(), any());
     }
 
     @Test

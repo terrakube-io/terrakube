@@ -261,6 +261,27 @@ public class PrCommentServiceTest {
     }
 
     @Test
+    public void postPlanResultStripsAnsiFromPersistedRenderedPlanText() throws Exception {
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
+        String renderedPlan = "\u001b[32m+ aws_instance.foo\u001b[0m\n"
+                + "Plan: 1 to add, 0 to change, 0 to destroy.";
+        String contextJson = objectMapper.writeValueAsString(
+                Map.of("planRenderedText", Map.of("step-1", renderedPlan)));
+        doReturn(contextJson).when(storageTypeService).getContext(job.getId());
+        doReturn("12345").when(gitHubWebhookService).postPrComment(any(), any());
+
+        subject.postPlanResult(job);
+
+        ArgumentCaptor<String> markdownCaptor = ArgumentCaptor.forClass(String.class);
+        verify(gitHubWebhookService).postPrComment(eq(job), markdownCaptor.capture());
+        String markdown = markdownCaptor.getValue();
+        assertFalse(markdown.contains("\u001b"));
+        assertTrue(markdown.contains("+ aws_instance.foo"));
+        assertTrue(markdown.contains("Plan: 1 to add, 0 to change, 0 to destroy."));
+        verify(storageTypeService, never()).getStepOutput(any(), any(), any());
+    }
+
+    @Test
     public void postPlanResultFallsBackToRawStepOutputWhenNoRenderedPlanTextInContext() {
         Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
         stubStepOutput("Plan: 3 to add, 0 to change, 1 to destroy.");

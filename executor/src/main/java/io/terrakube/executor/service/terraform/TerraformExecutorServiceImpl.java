@@ -6,7 +6,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.terrakube.executor.configuration.ExecutorFlagsProperties;
 import io.terrakube.executor.configuration.StructuredOutputProperties;
+import io.terrakube.executor.plugin.tfstate.ArtifactVerificationException;
 import io.terrakube.executor.plugin.tfstate.TerraformState;
+import io.terrakube.executor.service.artifact.ArtifactPackagingService;
+import io.terrakube.executor.service.artifact.ArtifactRestoreService;
 import io.terrakube.executor.service.executor.ExecutorJobResult;
 import io.terrakube.executor.service.logs.LogsConsumer;
 import io.terrakube.executor.service.logs.ProcessLogs;
@@ -85,6 +88,17 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
     void setJobVersionPinner(JobVersionPinner jobVersionPinner) {
         this.jobVersionPinner = jobVersionPinner;
     }
+
+    // Plan artifacts (the files a plan step hands to its apply step). Set by setter for the same
+    // reason: the constructors stay as they are, and unit tests that do not use artifacts skip them.
+    private ArtifactPackagingService artifactPackagingService;
+    private ArtifactRestoreService artifactRestoreService;
+
+    @Autowired(required = false)
+    void setArtifactServices(ArtifactPackagingService artifactPackagingService, ArtifactRestoreService artifactRestoreService) {
+        this.artifactPackagingService = artifactPackagingService;
+        this.artifactRestoreService = artifactRestoreService;
+    }
     TerraformOutputsService terraformOutputsService;
     ObjectMapper objectMapper;
     StructuredOutputPersistenceQueue structuredOutputPersistenceQueue;
@@ -157,10 +171,10 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         List<Map<String, Object>> liveChanges = new ArrayList<>();
         List<Map<String, Object>> jobDiagnostics = new ArrayList<>();
         TerraformJsonEventParser eventParser = new TerraformJsonEventParser(objectMapper);
+        boolean planCommandExecuted = false;
         try {
             File terraformWorkingDir = getTerraformWorkingDir(terraformJob, executorTempDirectory);
             boolean executionPlan = false;
-            boolean planCommandExecuted = false;
             int exitCode = 0;
             boolean hasSoftViolations = false;
             String overrideTeam = null;
@@ -319,19 +333,31 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
 
             scriptAfterSuccessPlan = executePostOperationScripts(terraformJob, terraformWorkingDir, planOutput, executionPlan);
 
-            // The show -json summary is the authoritative structured result for this step. Publish
-            // it before draining so its write goes through the retrying queue while the job is still
-            // running - context writes are refused once it is not, so a single failed POST after
-            // the drain used to leave a stale (often empty, "no changes") snapshot in place.
-            if (executionPlan) {
-                planStructuredOutputService.publishPlanSummary(terraformJob, terraformWorkingDir, terraformJob.getLiveChanges(), terraformJob.getJobDiagnostics());
-            }
+            // Hand the files this plan built to the apply step. Failing here fails the plan: a plan
+            // that cannot be applied is worse than one that says so now.
+            boolean artifactsSaved = !executionPlan
+                    || savePlanArtifacts(terraformJob, terraformWorkingDir, executorTempDirectory, planOutput, isDestroy, exitCode);
 
             logsService.flush();
             drainStructuredOutputQueue(terraformJob.getJobId());
 
-            result = generateJobResult(scriptAfterSuccessPlan, jobOutput.toString(), jobErrorOutput.toString());
-            result.setPlanFile(executionPlan ? terraformState.saveTerraformPlan(terraformJob.getOrganizationId(),
+            long planRevision = ContextRevision.next(terraformJob.getJobId());
+            terraformJob.setDeliveryRevision(planRevision);
+            // Synchronous authoritative final snapshot delivery with explicit ACK from the API.
+            String planDeliveryState = "NOT_DURABLE";
+            if (executionPlan) {
+                planDeliveryState = planStructuredOutputService.publishFinalPlanSynchronous(terraformJob, terraformWorkingDir, terraformJob.getLiveChanges(), terraformJob.getJobDiagnostics());
+            } else if (planCommandExecuted || (terraformJob.getJobDiagnostics() != null && !terraformJob.getJobDiagnostics().isEmpty())) {
+                planDeliveryState = planStructuredOutputService.publishFinalPlanSnapshotSynchronous(
+                        terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), planRevision,
+                        terraformJob.getLiveChanges(), terraformJob.getJobDiagnostics());
+            }
+            result = generateJobResult(scriptAfterSuccessPlan && artifactsSaved, jobOutput.toString(), jobErrorOutput.toString());
+            result.setDeliveryState(planDeliveryState);
+            result.setDeliveryTimestamp(System.currentTimeMillis());
+            result.setDeliveryRevision(planRevision);
+            // A plan that failed because its artifacts could not be saved can never be applied, so its file is not uploaded.
+            result.setPlanFile(executionPlan && artifactsSaved ? terraformState.saveTerraformPlan(terraformJob.getOrganizationId(),
                     terraformJob.getWorkspaceId(), terraformJob.getJobId(), terraformJob.getStepId(), terraformWorkingDir)
                     : "");
             result.setPlan(true);
@@ -342,17 +368,108 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             // A stream-drain failure or late exception must not swallow the plan diagnostics the
             // UI needs - publish what was parsed before it broke, then let it drain.
             logsService.flush();
+            String failureDeliveryState = "NOT_DURABLE";
+            long failureRevision = ContextRevision.next(terraformJob.getJobId());
             try {
-                publishFinalPlanSnapshotIfStreamed(terraformJob, eventParser, liveChanges, jobDiagnostics);
                 drainStructuredOutputQueue(terraformJob.getJobId());
+                if (planCommandExecuted || (jobDiagnostics != null && !jobDiagnostics.isEmpty()) || (liveChanges != null && !liveChanges.isEmpty())) {
+                    failureDeliveryState = planStructuredOutputService.publishFinalPlanSnapshotSynchronous(
+                            terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), failureRevision,
+                            liveChanges, jobDiagnostics);
+                }
             } catch (Exception e) {
                 log.warn("Unable to publish final plan snapshot after failure for job {}", terraformJob.getJobId(), e);
             }
             result = setError(exception, jobOutput.toString());
+            result.setDeliveryState(failureDeliveryState);
+            result.setDeliveryTimestamp(System.currentTimeMillis());
+            result.setDeliveryRevision(failureRevision);
             result.setPlan(true);
             result.setExitCode(1);
         }
         return result;
+    }
+
+    /**
+     * Packages the files matching the template's or workspace's artifact globs and stores them for the
+     * apply step, which unpacks them into its own fresh clone before applying the saved plan.
+     *
+     * <p>Only a plan with changes that is followed by another step is packaged: a plan with no changes
+     * completes the job, a destroy plan is applied by destroy() (which never reads artifacts back), and
+     * a plan that is a job's only step has no apply to consume them.
+     *
+     * @return false when artifacts were asked for but could not be saved (the reason is in the plan output).
+     */
+    private boolean savePlanArtifacts(TerraformJob terraformJob, File terraformWorkingDir, File executorTempDirectory,
+                                      Consumer<String> planOutput, boolean isDestroy, int exitCode) {
+        if (artifactPackagingService == null || isDestroy || exitCode != 2 || !terraformJob.isMultiStepJob()
+                || !ArtifactPackagingService.isConfigured(terraformJob)) {
+            return true;
+        }
+        File bundle = null;
+        try {
+            // Outside the clone, so the bundle can never match its own globs.
+            bundle = Files.createTempFile(scratchDirectory(executorTempDirectory), "plan-artifacts-", ".tar.gz").toFile();
+            ArtifactPackagingService.Result packaged = artifactPackagingService.packageArtifacts(terraformJob, terraformWorkingDir, bundle);
+            if (!packaged.skippedLinks().isEmpty()) {
+                planOutput.accept("WARNING: " + packaged.skippedLinks().size() + " symbolic link(s) matched the plan artifacts patterns and were not saved: " + packaged.skippedLinks());
+            }
+            switch (packaged.status()) {
+                case NO_PATTERNS_RESOLVED -> planOutput.accept("WARNING: the plan artifacts patterns reference variables that are not set, so no artifacts were saved for the apply step.");
+                case NO_FILES_MATCHED -> planOutput.accept("WARNING: the plan artifacts patterns " + packaged.patterns() + " matched no files, so no artifacts were saved for the apply step.");
+                case PACKAGED -> {
+                    String location = terraformState.saveArtifacts(terraformJob.getOrganizationId(), terraformJob.getWorkspaceId(),
+                            terraformJob.getJobId(), terraformJob.getStepId(), packaged.bundle());
+                    if (location == null) {
+                        planOutput.accept("ERROR: the storage backend in use cannot store plan artifacts, so the apply step would not have the files this plan built.");
+                        return false;
+                    }
+                    terraformJob.setArtifactsUrl(location);
+                    terraformJob.setArtifactsChecksum(packaged.sha256());
+                    recordArtifactMetrics("saved", packaged.bytes());
+                    planOutput.accept("Saved " + packaged.files() + " plan artifact file(s) for the apply step ("
+                            + packaged.bytes() + " bytes compressed, sha256 " + packaged.sha256() + "): "
+                            + describeFiles(packaged.fileNames()));
+                }
+                default -> { }
+            }
+            return true;
+        } catch (IOException | RuntimeException e) {
+            log.error("Failed to save plan artifacts for job {} step {}", terraformJob.getJobId(), terraformJob.getStepId(), e);
+            planOutput.accept("ERROR: could not save the plan artifacts for the apply step: " + e.getMessage());
+            recordArtifactMetrics("save_failed", 0);
+            return false;
+        } finally {
+            if (bundle != null && !bundle.delete() && bundle.exists()) {
+                log.warn("Could not remove the temporary plan artifacts bundle {}", bundle);
+            }
+        }
+    }
+
+    // How much the plan-artifacts/ prefix is being fed: a count and the compressed size of what was
+    // stored (apply deletes it again after success; the API when the job ends).
+    private void recordArtifactMetrics(String outcome, long bytes) {
+        if (meterRegistry == null) {
+            return;
+        }
+        meterRegistry.counter("terrakube.executor.artifacts", "outcome", outcome).increment();
+        if (bytes > 0) {
+            meterRegistry.summary("terrakube.executor.artifacts.bytes", "outcome", outcome).record(bytes);
+        }
+    }
+
+    private static String describeFiles(List<String> names) {
+        int shown = Math.min(names.size(), 10);
+        String list = String.join(", ", names.subList(0, shown));
+        return names.size() > shown ? list + " and " + (names.size() - shown) + " more" : list;
+    }
+
+    // Next to the clone rather than inside it, on the same disk as the rest of the executor's work.
+    private static Path scratchDirectory(File executorTempDirectory) throws IOException {
+        File parent = executorTempDirectory.getAbsoluteFile().getParentFile();
+        Path scratch = parent != null ? parent.toPath() : Files.createTempDirectory("terrakube-artifacts");
+        Files.createDirectories(scratch);
+        return scratch;
     }
 
     private void publishFinalPlanSnapshotIfStreamed(TerraformJob terraformJob, TerraformJsonEventParser eventParser,
@@ -392,6 +509,21 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         TextStringBuilder terraformErrorOutput = new TextStringBuilder();
         try {
             File terraformWorkingDir = getTerraformWorkingDir(terraformJob, executorTempDirectory);
+
+            // Put back the files the plan step built (the saved plan refers to them, and nothing in
+            // this fresh clone regenerates them) before anything else runs in the clone.
+            ArtifactRestoreService.Result artifactsRestoration = ArtifactRestoreService.Result.NOTHING;
+            if (artifactRestoreService != null) {
+                try {
+                    artifactsRestoration = artifactRestoreService.restore(terraformJob, terraformWorkingDir, scratchDirectory(executorTempDirectory).toFile());
+                } catch (ArtifactVerificationException e) {
+                    log.error("Plan artifacts could not be restored for job {} step {}: {}",
+                            terraformJob.getJobId(), terraformJob.getStepId(), e.getMessage());
+                    recordArtifactMetrics("restore_failed", 0);
+                    return generateJobResult(false, "", "Plan artifacts could not be restored: " + e.getMessage());
+                }
+            }
+
             Consumer<String> applyOutput = LogsConsumer.builder()
                     .jobId(Integer.valueOf(terraformJob.getJobId()))
                     .lineNumber(new AtomicInteger(0))
@@ -399,6 +531,13 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                     .stepId(terraformJob.getStepId())
                     .processLogs(logsService)
                     .build();
+
+            if (artifactsRestoration.restored()) {
+                recordArtifactMetrics("restored", 0);
+                // The audit trail for "apply used exactly what its plan built": the same sha256 the plan step printed.
+                applyOutput.accept("Restored " + artifactsRestoration.files() + " plan artifact file(s) before apply (sha256 "
+                        + artifactsRestoration.sha256() + ").");
+            }
 
             HashMap<String, String> terraformParameters = getWorkspaceParameters(terraformJob.getVariables());
 
@@ -464,11 +603,45 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
 
             logsService.flush();
             drainStructuredOutputQueue(terraformJob.getJobId());
+
+            long applyRevision = ContextRevision.next(terraformJob.getJobId());
+            String applyDeliveryState = "NOT_DURABLE";
+            boolean hasApplyOutput = (terraformJob.getLiveChanges() != null && !terraformJob.getLiveChanges().isEmpty())
+                    || (terraformJob.getJobDiagnostics() != null && !terraformJob.getJobDiagnostics().isEmpty());
+            if (execution || hasApplyOutput) {
+                applyDeliveryState = applyStructuredOutputService.publishFinalApplySynchronous(
+                        terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), applyRevision,
+                        terraformJob.getLiveChanges(), terraformJob.getJobDiagnostics());
+            }
+
             result = generateJobResult(scriptAfterSuccess, terraformOutput.toString(), terraformErrorOutput.toString());
+            result.setDeliveryState(applyDeliveryState);
+            result.setDeliveryTimestamp(System.currentTimeMillis());
+            result.setDeliveryRevision(applyRevision);
+            if (execution && artifactsRestoration.restored()) {
+                // The apply is done, so the bundle is no longer needed (a failed apply keeps it: the
+                // step can be dispatched again and would need it). Best effort; the bucket's lifecycle
+                // rule for plan-artifacts/ is the backstop.
+                terraformState.deleteArtifacts(terraformJob.getOrganizationId(), terraformJob.getWorkspaceId(), terraformJob.getJobId());
+            }
         } catch (IOException | ExecutionException | InterruptedException exception) {
             logsService.flush();
-            drainStructuredOutputQueue(terraformJob.getJobId());
+            String failureDeliveryState = "NOT_DURABLE";
+            long failureRevision = ContextRevision.next(terraformJob.getJobId());
+            try {
+                drainStructuredOutputQueue(terraformJob.getJobId());
+                if ((terraformJob.getJobDiagnostics() != null && !terraformJob.getJobDiagnostics().isEmpty()) || (terraformJob.getLiveChanges() != null && !terraformJob.getLiveChanges().isEmpty())) {
+                    failureDeliveryState = applyStructuredOutputService.publishFinalApplySynchronous(
+                            terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), failureRevision,
+                            terraformJob.getLiveChanges(), terraformJob.getJobDiagnostics());
+                }
+            } catch (Exception e) {
+                log.warn("Unable to publish final apply snapshot after failure for job {}", terraformJob.getJobId(), e);
+            }
             result = setError(exception, terraformOutput.toString());
+            result.setDeliveryState(failureDeliveryState);
+            result.setDeliveryTimestamp(System.currentTimeMillis());
+            result.setDeliveryRevision(failureRevision);
             result.setExitCode(1);
         }
         return result;
@@ -535,6 +708,8 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                 }
             }
             applyStructuredOutputService.finalizeResourceStatuses(changes, execution, wasInterrupted);
+            terraformJob.setLiveChanges(changes);
+            terraformJob.setJobDiagnostics(jobDiagnostics);
             publishFinalApplySnapshotIfStreamed(terraformJob, eventParser, changes, jobDiagnostics);
         }
 
@@ -585,6 +760,8 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             release(jsonDestroyClient);
             boolean wasInterrupted = interrupted || (!execution && shuttingDown.get());
             applyStructuredOutputService.finalizeResourceStatuses(changes, execution, wasInterrupted);
+            terraformJob.setLiveChanges(changes);
+            terraformJob.setJobDiagnostics(jobDiagnostics);
             publishFinalApplySnapshotIfStreamed(terraformJob, eventParser, changes, jobDiagnostics);
         }
 
@@ -740,11 +917,39 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
 
             logsService.flush();
             drainStructuredOutputQueue(terraformJob.getJobId());
+
+            long destroyRevision = ContextRevision.next(terraformJob.getJobId());
+            String destroyDeliveryState = "NOT_DURABLE";
+            boolean hasDestroyOutput = (terraformJob.getLiveChanges() != null && !terraformJob.getLiveChanges().isEmpty())
+                    || (terraformJob.getJobDiagnostics() != null && !terraformJob.getJobDiagnostics().isEmpty());
+            if (execution || hasDestroyOutput) {
+                destroyDeliveryState = applyStructuredOutputService.publishFinalApplySynchronous(
+                        terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), destroyRevision,
+                        terraformJob.getLiveChanges(), terraformJob.getJobDiagnostics());
+            }
+
             result = generateJobResult(scriptAfterSuccess, jobOutput.toString(), jobErrorOutput.toString());
+            result.setDeliveryState(destroyDeliveryState);
+            result.setDeliveryTimestamp(System.currentTimeMillis());
+            result.setDeliveryRevision(destroyRevision);
         } catch (IOException | ExecutionException | InterruptedException exception) {
             logsService.flush();
-            drainStructuredOutputQueue(terraformJob.getJobId());
+            String failureDeliveryState = "NOT_DURABLE";
+            long failureRevision = ContextRevision.next(terraformJob.getJobId());
+            try {
+                drainStructuredOutputQueue(terraformJob.getJobId());
+                if ((terraformJob.getJobDiagnostics() != null && !terraformJob.getJobDiagnostics().isEmpty()) || (terraformJob.getLiveChanges() != null && !terraformJob.getLiveChanges().isEmpty())) {
+                    failureDeliveryState = applyStructuredOutputService.publishFinalApplySynchronous(
+                            terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), failureRevision,
+                            terraformJob.getLiveChanges(), terraformJob.getJobDiagnostics());
+                }
+            } catch (Exception e) {
+                log.warn("Unable to publish final apply snapshot after destroy failure for job {}", terraformJob.getJobId(), e);
+            }
             result = setError(exception, jobOutput.toString());
+            result.setDeliveryState(failureDeliveryState);
+            result.setDeliveryTimestamp(System.currentTimeMillis());
+            result.setDeliveryRevision(failureRevision);
             result.setExitCode(1);
         }
         return result;

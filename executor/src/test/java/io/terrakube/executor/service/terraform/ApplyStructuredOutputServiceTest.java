@@ -871,4 +871,92 @@ class ApplyStructuredOutputServiceTest {
         assertEquals("pending", updateChange.get("status"), "Pending update already in state must NOT be promoted to applied");
         assertEquals("pending", deleteChange.get("status"), "Pending delete still in state must NOT be promoted to applied");
     }
+
+    @Test
+    void publishFinalApplySynchronous_returnsAckedOnSuccess() {
+        JobContextService jobContextService = Mockito.mock(JobContextService.class);
+        Mockito.when(jobContextService.patchContext(Mockito.eq("o"), Mockito.eq("1"), Mockito.anyLong(), Mockito.any()))
+                .thenReturn(JobContextService.PatchResult.APPLIED);
+
+        ApplyStructuredOutputService service = new ApplyStructuredOutputService(
+                jobContextService, new ObjectMapper());
+
+        String state = service.publishFinalApplySynchronous("o", "1", "step-1", List.of(), List.of());
+        assertEquals("ACKED", state);
+        Mockito.verify(jobContextService, Mockito.times(1))
+                .patchContext(Mockito.eq("o"), Mockito.eq("1"), Mockito.anyLong(), Mockito.any());
+    }
+
+    @Test
+    void publishFinalApplySynchronous_subsequentAttemptSkipped_returnsAcked() {
+        JobContextService jobContextService = Mockito.mock(JobContextService.class);
+        Mockito.when(jobContextService.patchContext(Mockito.eq("o"), Mockito.eq("1"), Mockito.anyLong(), Mockito.any()))
+                .thenReturn(JobContextService.PatchResult.FAILED)
+                .thenReturn(JobContextService.PatchResult.SKIPPED);
+
+        ApplyStructuredOutputService service = new ApplyStructuredOutputService(
+                jobContextService, new ObjectMapper());
+
+        String state = service.publishFinalApplySynchronous("o", "1", "step-1", List.of(), List.of());
+        assertEquals("ACKED", state);
+        Mockito.verify(jobContextService, Mockito.times(2))
+                .patchContext(Mockito.eq("o"), Mockito.eq("1"), Mockito.anyLong(), Mockito.any());
+    }
+
+    @Test
+    void publishFinalApplySynchronous_spoolsOnFailureWhenSpoolerAvailable() {
+        JobContextService jobContextService = Mockito.mock(JobContextService.class);
+        Mockito.when(jobContextService.patchContext(Mockito.eq("o"), Mockito.eq("1"), Mockito.anyLong(), Mockito.any()))
+                .thenReturn(JobContextService.PatchResult.FAILED);
+
+        io.terrakube.executor.service.terraform.spool.ContextSpoolService contextSpoolService = Mockito.mock(io.terrakube.executor.service.terraform.spool.ContextSpoolService.class);
+        Mockito.when(contextSpoolService.spoolContextPatch(Mockito.eq("o"), Mockito.eq("1"), Mockito.eq("step-1"), Mockito.eq("apply"), Mockito.anyLong(), Mockito.any()))
+                .thenReturn("context-spool/o/1/step-1-apply.json.gz");
+
+        ApplyStructuredOutputService service = new ApplyStructuredOutputService(
+                jobContextService, new ObjectMapper(), null, null, contextSpoolService);
+
+        String state = service.publishFinalApplySynchronous("o", "1", "step-1", List.of(), List.of());
+        assertEquals("SPOOLED", state);
+        Mockito.verify(jobContextService, Mockito.times(3))
+                .patchContext(Mockito.eq("o"), Mockito.eq("1"), Mockito.anyLong(), Mockito.any());
+        Mockito.verify(contextSpoolService).spoolContextPatch(Mockito.eq("o"), Mockito.eq("1"), Mockito.eq("step-1"), Mockito.eq("apply"), Mockito.anyLong(), Mockito.any());
+    }
+
+    @Test
+    void publishFinalApplySynchronous_initialAttemptSkipped_spoolsWhenSpoolerAvailable() {
+        JobContextService jobContextService = Mockito.mock(JobContextService.class);
+        Mockito.when(jobContextService.patchContext(Mockito.eq("o"), Mockito.eq("1"), Mockito.anyLong(), Mockito.any()))
+                .thenReturn(JobContextService.PatchResult.SKIPPED);
+
+        io.terrakube.executor.service.terraform.spool.ContextSpoolService contextSpoolService = Mockito.mock(io.terrakube.executor.service.terraform.spool.ContextSpoolService.class);
+        Mockito.when(contextSpoolService.spoolContextPatch(Mockito.eq("o"), Mockito.eq("1"), Mockito.eq("step-1"), Mockito.eq("apply"), Mockito.anyLong(), Mockito.any()))
+                .thenReturn("context-spool/o/1/step-1-apply.json.gz");
+
+        ApplyStructuredOutputService service = new ApplyStructuredOutputService(
+                jobContextService, new ObjectMapper(), null, null, contextSpoolService);
+
+        String state = service.publishFinalApplySynchronous("o", "1", "step-1", List.of(), List.of());
+        assertEquals("SPOOLED", state);
+        Mockito.verify(jobContextService, Mockito.times(1))
+                .patchContext(Mockito.eq("o"), Mockito.eq("1"), Mockito.anyLong(), Mockito.any());
+        Mockito.verify(contextSpoolService).spoolContextPatch(Mockito.eq("o"), Mockito.eq("1"), Mockito.eq("step-1"), Mockito.eq("apply"), Mockito.anyLong(), Mockito.any());
+    }
+
+    @Test
+    void publishFinalApplySynchronous_returnsNotDurableWhenSpoolerFails() {
+        JobContextService jobContextService = Mockito.mock(JobContextService.class);
+        Mockito.when(jobContextService.patchContext(Mockito.eq("o"), Mockito.eq("1"), Mockito.anyLong(), Mockito.any()))
+                .thenReturn(JobContextService.PatchResult.FAILED);
+
+        io.terrakube.executor.service.terraform.spool.ContextSpoolService contextSpoolService = Mockito.mock(io.terrakube.executor.service.terraform.spool.ContextSpoolService.class);
+        Mockito.when(contextSpoolService.spoolContextPatch(Mockito.eq("o"), Mockito.eq("1"), Mockito.eq("step-1"), Mockito.eq("apply"), Mockito.anyLong(), Mockito.any()))
+                .thenReturn(null);
+
+        ApplyStructuredOutputService service = new ApplyStructuredOutputService(
+                jobContextService, new ObjectMapper(), null, null, contextSpoolService);
+
+        String state = service.publishFinalApplySynchronous("o", "1", "step-1", List.of(), List.of());
+        assertEquals("NOT_DURABLE", state);
+    }
 }

@@ -7,6 +7,9 @@ import io.terrakube.api.repository.WorkspaceRepository;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.job.step.Step;
+import io.terrakube.api.plugin.scheduler.spool.SpoolRecoveryService;
+import io.terrakube.api.plugin.storage.StorageTypeService;
+import io.terrakube.api.rs.job.step.DeliveryState;
 import io.terrakube.api.rs.workspace.Workspace;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -30,6 +33,7 @@ import java.time.Instant;
 import java.util.Date;
 import java.util.List;
 import java.util.Properties;
+import java.util.UUID;
 
 import static io.terrakube.api.plugin.scheduler.ScheduleJobService.PREFIX_JOB_CONTEXT;
 
@@ -73,6 +77,8 @@ public class JobReconciliationSweep implements org.quartz.Job {
     JobReconciliationService reconciliationService;
     JobReconciliationMetrics metrics;
     Duration heartbeatGracePeriod;
+    StorageTypeService storageTypeService;
+    SpoolRecoveryService spoolRecoveryService;
 
     @Autowired
     public JobReconciliationSweep(
@@ -85,7 +91,9 @@ public class JobReconciliationSweep implements org.quartz.Job {
             ReconciliationProperties properties,
             JobReconciliationService reconciliationService,
             JobReconciliationMetrics metrics,
-            @Value("${io.terrakube.scheduler.reconciliation.heartbeat-grace-period-seconds:${ReconciliationHeartbeatGracePeriodSeconds:300}}") long heartbeatGracePeriodSeconds) {
+            @Value("${io.terrakube.scheduler.reconciliation.heartbeat-grace-period-seconds:${ReconciliationHeartbeatGracePeriodSeconds:300}}") long heartbeatGracePeriodSeconds,
+            StorageTypeService storageTypeService,
+            SpoolRecoveryService spoolRecoveryService) {
         this.jobRepository = jobRepository;
         this.stepRepository = stepRepository;
         this.workspaceRepository = workspaceRepository;
@@ -96,19 +104,8 @@ public class JobReconciliationSweep implements org.quartz.Job {
         this.reconciliationService = reconciliationService;
         this.metrics = metrics;
         this.heartbeatGracePeriod = Duration.ofSeconds(heartbeatGracePeriodSeconds);
-    }
-
-    public JobReconciliationSweep(
-            JobRepository jobRepository,
-            StepRepository stepRepository,
-            WorkspaceRepository workspaceRepository,
-            Scheduler scheduler,
-            ScheduleJobService scheduleJobService,
-            RedisTemplate<String, Object> redisTemplate,
-            ReconciliationProperties properties,
-            JobReconciliationService reconciliationService,
-            JobReconciliationMetrics metrics) {
-        this(jobRepository, stepRepository, workspaceRepository, scheduler, scheduleJobService, redisTemplate, properties, reconciliationService, metrics, 300);
+        this.storageTypeService = storageTypeService;
+        this.spoolRecoveryService = spoolRecoveryService;
     }
 
     @Transactional
@@ -298,6 +295,50 @@ public class JobReconciliationSweep implements org.quartz.Job {
             scheduler.deleteJob(new JobKey(PREFIX_JOB_CONTEXT + job.getId()));
         } catch (SchedulerException e) {
             log.warn("Could not delete Quartz context for failed Job {}: {}", job.getId(), e.getMessage());
+        }
+        // After failing a dead executor's job, probe storage for any spooled final output
+        // that could not be delivered before the executor died. This runs inside the sweep's
+        // open transaction, but is rare (only on dead executors whose heartbeat expired).
+        probeAndRecoverSpooledSteps(job);
+    }
+
+    private void probeAndRecoverSpooledSteps(Job job) {
+        if (storageTypeService == null || job.getOrganization() == null) {
+            return;
+        }
+        try {
+            String orgId = job.getOrganization().getId().toString();
+            String jobId = String.valueOf(job.getId());
+            for (Step step : stepRepository.findByJobId(job.getId())) {
+                if (step.getId() == null) {
+                    continue;
+                }
+                DeliveryState state = step.getDeliveryState();
+                if (state == DeliveryState.ACKED || state == DeliveryState.RECOVERED || state == DeliveryState.EXPIRED) {
+                    continue;
+                }
+                String stepId = step.getId().toString();
+                for (String phase : List.of("plan", "apply")) {
+                    if (storageTypeService.hasSpooledContextPatch(orgId, jobId, stepId, phase)) {
+                        log.info("Dead executor probe found spooled context patch for step {} job {} phase {}", stepId, jobId, phase);
+                        if (step.getDeliveryState() != DeliveryState.SPOOLED) {
+                            step.setDeliveryState(DeliveryState.SPOOLED);
+                            stepRepository.save(step);
+                        }
+                        Date now = new Date();
+                        Date leaseUntil = new Date(now.getTime() + 60_000L);
+                        String owner = "reconciliation-probe-" + UUID.randomUUID();
+                        int leased = stepRepository.acquireLease(step.getId(), owner, leaseUntil, now);
+                        if (leased > 0 && spoolRecoveryService != null) {
+                            step.setLeaseOwner(owner);
+                            spoolRecoveryService.recoverStep(step);
+                        }
+                        break;
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Error probing spooled output for dead executor of job {}: {}", job.getId(), e.getMessage());
         }
     }
 }

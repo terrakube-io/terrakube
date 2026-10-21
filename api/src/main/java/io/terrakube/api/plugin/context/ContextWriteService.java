@@ -17,6 +17,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.io.IOException;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
@@ -71,6 +72,37 @@ public class ContextWriteService {
             ObjectNode stored = readStored(jobId);
             if (stored == null) {
                 throw new ContextUnavailableException("stored context for job " + jobId + " is malformed", null);
+            }
+            List<String> applied = ContextPatchApplier.apply(stored, patch);
+            int skipped = patch.set().size() - applied.size();
+            if (applied.isEmpty()) {
+                return new PatchResult(applied, skipped, null);
+            }
+            return new PatchResult(applied, skipped, save(jobId, stored));
+        } finally {
+            contextWriteLock.release(jobId, token);
+        }
+    }
+
+    /**
+     * Applies a recovery patch from spooled storage under the job's {@link ContextWriteLock}.
+     * Unlike {@link #patch}, this does not require the job to be in an active writable status
+     * (e.g. dead-executor recovery sweeps run on failed jobs), and repairs malformed context
+     * rather than rejecting the patch.
+     */
+    public PatchResult patchRecovery(int jobId, long revision, Map<String, Object> set) throws IOException {
+        long effectiveRevision = revision > 0 ? revision : 1L;
+        ObjectNode body = objectMapper.createObjectNode();
+        body.put("revision", effectiveRevision);
+        body.set("set", objectMapper.valueToTree(set));
+        ContextPatchApplier.Patch patch = ContextPatchApplier.parse(body, System.currentTimeMillis());
+
+        String token = contextWriteLock.acquire(jobId);
+        try {
+            ObjectNode stored = readStored(jobId);
+            if (stored == null) {
+                log.warn("Repairing malformed stored context for job {}", jobId);
+                stored = objectMapper.createObjectNode();
             }
             List<String> applied = ContextPatchApplier.apply(stored, patch);
             int skipped = patch.set().size() - applied.size();

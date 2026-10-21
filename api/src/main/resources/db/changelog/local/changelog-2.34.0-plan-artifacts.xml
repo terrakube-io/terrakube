@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+            http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+
+    <!-- Where a plan step stored the files it produced for the apply step (nullable: only set when
+         the template or workspace asks for plan artifacts), and the sha256 of that bundle. Additive
+         and nullable, so API pods on the previous version keep working during a rolling upgrade. -->
+    <changeSet id="2-34-0-job-plan-artifacts" author="terrakube">
+        <addColumn tableName="job">
+            <column name="terraform_plan_artifacts" type="varchar(1024)"/>
+            <column name="terraform_plan_artifacts_checksum" type="varchar(64)"/>
+        </addColumn>
+    </changeSet>
+</databaseChangeLog>

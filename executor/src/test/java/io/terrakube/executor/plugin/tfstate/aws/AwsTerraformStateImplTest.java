@@ -336,4 +336,200 @@ class AwsTerraformStateImplTest {
         assertEquals("http://api/output", result);
         verify(s3Client, times(1)).putObject(any(PutObjectRequest.class), any(RequestBody.class));
     }
+
+    @Test
+    void testSpoolContextPatch() {
+        String orgId = "org1";
+        String jobId = "job1";
+        String stepId = "step1";
+        String phase = "plan";
+        byte[] gzippedData = "dummy-data".getBytes();
+
+        org.mockito.ArgumentCaptor<PutObjectRequest> putCaptor = org.mockito.ArgumentCaptor.forClass(PutObjectRequest.class);
+
+        String result = awsTerraformState.spoolContextPatch(orgId, jobId, stepId, phase, gzippedData);
+
+        assertEquals("context-spool/org1/job1/step1-plan.json.gz", result);
+        verify(s3Client).putObject(putCaptor.capture(), any(RequestBody.class));
+        PutObjectRequest captured = putCaptor.getValue();
+        assertEquals("test-bucket", captured.bucket());
+        assertEquals("context-spool/org1/job1/step1-plan.json.gz", captured.key());
+        assertEquals("application/gzip", captured.contentType());
+        assertNull(captured.contentEncoding());
+    }
+
+    @Test
+    void testSpoolContextPatch_RetriesOnFailure() {
+        String orgId = "org1";
+        String jobId = "job1";
+        String stepId = "step1";
+        String phase = "plan";
+        byte[] gzippedData = "dummy-data".getBytes();
+
+        when(s3Client.putObject(any(PutObjectRequest.class), any(RequestBody.class)))
+                .thenThrow(S3Exception.builder().message("503 Service Unavailable").build());
+
+        String result = awsTerraformState.spoolContextPatch(orgId, jobId, stepId, phase, gzippedData);
+
+        assertNull(result);
+        verify(s3Client, times(3)).putObject(any(PutObjectRequest.class), any(RequestBody.class));
+    }
+
+    // ----- plan artifacts
+
+    private static final String ARTIFACT_KEY = "plan-artifacts/org1/ws1/job1/step1/plan-artifacts.tar.gz";
+
+    private io.terrakube.client.model.organization.job.JobAttributes recordedArtifacts(String location, String checksum) {
+        io.terrakube.client.model.organization.job.JobAttributes attributes = new io.terrakube.client.model.organization.job.JobAttributes();
+        attributes.setTerraformPlanArtifacts(location);
+        attributes.setTerraformPlanArtifactsChecksum(checksum);
+        when(terrakubeClient.getJobById("org1", "job1").getData().getAttributes()).thenReturn(attributes);
+        return attributes;
+    }
+
+    private GetObjectResponse respondWith(org.mockito.invocation.InvocationOnMock invocation, byte[] bytes) throws Exception {
+        ResponseTransformer<GetObjectResponse, GetObjectResponse> transformer = invocation.getArgument(1);
+        return transformer.transform(GetObjectResponse.builder().build(),
+                software.amazon.awssdk.http.AbortableInputStream.create(new java.io.ByteArrayInputStream(bytes)));
+    }
+
+    @Test
+    void savingArtifactsStreamsTheBundleToItsOwnPrefixAndReturnsWhereItIs(@TempDir Path tempDir) throws Exception {
+        File bundle = new File(tempDir.toFile(), "bundle.tar.gz");
+        FileUtils.writeStringToFile(bundle, "tar-gz-bytes", Charset.defaultCharset());
+        S3Utilities s3Utilities = mock(S3Utilities.class);
+        when(s3Client.utilities()).thenReturn(s3Utilities);
+        when(s3Utilities.getUrl(any(GetUrlRequest.class))).thenReturn(new URL("https://s3.amazonaws.com/test-bucket/" + ARTIFACT_KEY));
+
+        String location = awsTerraformState.saveArtifacts("org1", "ws1", "job1", "step1", bundle);
+
+        assertEquals("https://s3.amazonaws.com/test-bucket/" + ARTIFACT_KEY, location);
+        org.mockito.ArgumentCaptor<PutObjectRequest> request = org.mockito.ArgumentCaptor.forClass(PutObjectRequest.class);
+        verify(s3Client).putObject(request.capture(), any(RequestBody.class));
+        assertEquals("test-bucket", request.getValue().bucket());
+        assertEquals(ARTIFACT_KEY, request.getValue().key());
+    }
+
+    @Test
+    void savingArtifactsRetriesATransientFailure(@TempDir Path tempDir) throws Exception {
+        File bundle = new File(tempDir.toFile(), "bundle.tar.gz");
+        FileUtils.writeStringToFile(bundle, "x", Charset.defaultCharset());
+        S3Utilities s3Utilities = mock(S3Utilities.class);
+        when(s3Client.utilities()).thenReturn(s3Utilities);
+        when(s3Utilities.getUrl(any(GetUrlRequest.class))).thenReturn(new URL("https://s3.amazonaws.com/test-bucket/" + ARTIFACT_KEY));
+        when(s3Client.putObject(any(PutObjectRequest.class), any(RequestBody.class)))
+                .thenThrow(S3Exception.builder().message("503 slow down").build())
+                .thenReturn(PutObjectResponse.builder().build());
+
+        assertNotNull(awsTerraformState.saveArtifacts("org1", "ws1", "job1", "step1", bundle));
+
+        verify(s3Client, times(2)).putObject(any(PutObjectRequest.class), any(RequestBody.class));
+    }
+
+    @Test
+    void savingArtifactsFailsLoudlyWhenTheBucketStaysDown(@TempDir Path tempDir) throws Exception {
+        File bundle = new File(tempDir.toFile(), "bundle.tar.gz");
+        FileUtils.writeStringToFile(bundle, "x", Charset.defaultCharset());
+        when(s3Client.putObject(any(PutObjectRequest.class), any(RequestBody.class)))
+                .thenThrow(S3Exception.builder().message("down").build());
+
+        assertThrows(io.terrakube.executor.plugin.tfstate.TerraformStateUnavailableException.class,
+                () -> awsTerraformState.saveArtifacts("org1", "ws1", "job1", "step1", bundle));
+    }
+
+    @Test
+    void downloadingArtifactsWritesTheBundleToTheTargetAndReturnsTheRecordedChecksum(@TempDir Path tempDir) throws Exception {
+        recordedArtifacts("https://s3.amazonaws.com/test-bucket/" + ARTIFACT_KEY, "abc123");
+        when(s3Client.getObject(any(GetObjectRequest.class), any(ResponseTransformer.class)))
+                .thenAnswer(invocation -> respondWith(invocation, "bundle-bytes".getBytes()));
+        File target = new File(tempDir.toFile(), "downloaded.tar.gz");
+
+        String checksum = awsTerraformState.downloadArtifacts("org1", "ws1", "job1", target);
+
+        assertEquals("abc123", checksum);
+        assertEquals("bundle-bytes", FileUtils.readFileToString(target, Charset.defaultCharset()));
+        org.mockito.ArgumentCaptor<GetObjectRequest> request = org.mockito.ArgumentCaptor.forClass(GetObjectRequest.class);
+        verify(s3Client).getObject(request.capture(), any(ResponseTransformer.class));
+        assertEquals(ARTIFACT_KEY, request.getValue().key());
+    }
+
+    @Test
+    void aRetriedDownloadReplacesAHalfWrittenFile(@TempDir Path tempDir) throws Exception {
+        recordedArtifacts("https://s3.amazonaws.com/test-bucket/" + ARTIFACT_KEY, "abc123");
+        File target = new File(tempDir.toFile(), "downloaded.tar.gz");
+        when(s3Client.getObject(any(GetObjectRequest.class), any(ResponseTransformer.class)))
+                .thenAnswer(invocation -> {
+                    FileUtils.writeStringToFile(target, "partial", Charset.defaultCharset());
+                    throw S3Exception.builder().message("connection reset").build();
+                })
+                .thenAnswer(invocation -> respondWith(invocation, "complete".getBytes()));
+
+        awsTerraformState.downloadArtifacts("org1", "ws1", "job1", target);
+
+        assertEquals("complete", FileUtils.readFileToString(target, Charset.defaultCharset()));
+    }
+
+    @Test
+    void aJobWithoutArtifactsHasNothingToDownload(@TempDir Path tempDir) {
+        recordedArtifacts(null, null);
+        assertNull(awsTerraformState.downloadArtifacts("org1", "ws1", "job1", new File(tempDir.toFile(), "x")));
+        recordedArtifacts("  ", null);
+        assertNull(awsTerraformState.downloadArtifacts("org1", "ws1", "job1", new File(tempDir.toFile(), "x")));
+
+        verifyNoInteractions(s3Client);
+    }
+
+    @Test
+    void artifactsRecordedWithoutAChecksumAreReportedAsAnEmptyChecksum(@TempDir Path tempDir) {
+        recordedArtifacts("https://s3.amazonaws.com/test-bucket/" + ARTIFACT_KEY, null);
+        when(s3Client.getObject(any(GetObjectRequest.class), any(ResponseTransformer.class)))
+                .thenAnswer(invocation -> respondWith(invocation, "x".getBytes()));
+
+        assertEquals("", awsTerraformState.downloadArtifacts("org1", "ws1", "job1", new File(tempDir.toFile(), "x")));
+    }
+
+    @Test
+    void aRecordedLocationInAnotherJobOrTenantIsRefusedWithoutTouchingTheBucket(@TempDir Path tempDir) {
+        recordedArtifacts("https://s3.amazonaws.com/test-bucket/plan-artifacts/other-org/ws1/job1/step1/plan-artifacts.tar.gz", "abc");
+
+        assertThrows(io.terrakube.executor.plugin.tfstate.ArtifactVerificationException.class,
+                () -> awsTerraformState.downloadArtifacts("org1", "ws1", "job1", new File(tempDir.toFile(), "x")));
+        verifyNoInteractions(s3Client);
+    }
+
+    @Test
+    void aBundleMissingFromTheBucketIsReportedAsMissingNotAsAnOutage(@TempDir Path tempDir) {
+        recordedArtifacts("https://s3.amazonaws.com/test-bucket/" + ARTIFACT_KEY, "abc123");
+        when(s3Client.getObject(any(GetObjectRequest.class), any(ResponseTransformer.class)))
+                .thenThrow(NoSuchKeyException.builder().message("no such key").build());
+
+        io.terrakube.executor.plugin.tfstate.ArtifactVerificationException thrown = assertThrows(
+                io.terrakube.executor.plugin.tfstate.ArtifactVerificationException.class,
+                () -> awsTerraformState.downloadArtifacts("org1", "ws1", "job1", new File(tempDir.toFile(), "x")));
+        assertTrue(thrown.getMessage().contains("missing"));
+    }
+
+    @Test
+    void aBucketOutageWhileDownloadingIsNotMistakenForNoArtifacts(@TempDir Path tempDir) {
+        recordedArtifacts("https://s3.amazonaws.com/test-bucket/" + ARTIFACT_KEY, "abc123");
+        when(s3Client.getObject(any(GetObjectRequest.class), any(ResponseTransformer.class)))
+                .thenThrow(S3Exception.builder().message("503").build());
+
+        assertThrows(io.terrakube.executor.plugin.tfstate.TerraformStateUnavailableException.class,
+                () -> awsTerraformState.downloadArtifacts("org1", "ws1", "job1", new File(tempDir.toFile(), "x")));
+    }
+
+    @Test
+    void deletingArtifactsRemovesTheRecordedBundleAndNeverFailsTheCaller() {
+        recordedArtifacts("https://s3.amazonaws.com/test-bucket/" + ARTIFACT_KEY, "abc123");
+
+        awsTerraformState.deleteArtifacts("org1", "ws1", "job1");
+
+        org.mockito.ArgumentCaptor<DeleteObjectRequest> request = org.mockito.ArgumentCaptor.forClass(DeleteObjectRequest.class);
+        verify(s3Client).deleteObject(request.capture());
+        assertEquals(ARTIFACT_KEY, request.getValue().key());
+
+        when(s3Client.deleteObject(any(DeleteObjectRequest.class))).thenThrow(S3Exception.builder().message("denied").build());
+        assertDoesNotThrow(() -> awsTerraformState.deleteArtifacts("org1", "ws1", "job1"));
+    }
 }

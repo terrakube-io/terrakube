@@ -219,4 +219,115 @@ class LocalStorageTypeServiceImplTest {
             assertEquals("{}", afterDelete);
         }
     }
+
+    @Test
+    void testSpooledContextPatchLifecycle() throws IOException {
+        try (MockedStatic<FileUtils> mockedFileUtils = mockStatic(FileUtils.class, CALLS_REAL_METHODS)) {
+            mockedFileUtils.when(FileUtils::getUserDirectoryPath).thenReturn(tempDir.toString());
+
+            String orgId = "org1";
+            String jobId = "job1";
+            String stepId = "step1";
+            String phase = "plan";
+            byte[] data = "dummy-gzipped-bytes".getBytes(StandardCharsets.UTF_8);
+
+            // 1. Initially absent
+            assertFalse(localStorageTypeService.hasSpooledContextPatch(orgId, jobId, stepId, phase));
+            assertNull(localStorageTypeService.getSpooledContextPatch(orgId, jobId, stepId, phase));
+
+            // Write test file directly
+            File spooledFile = tempDir.resolve(".terraform-spring-boot/local/context-spool/org1/job1/step1-plan.json.gz").toFile();
+            spooledFile.getParentFile().mkdirs();
+            java.nio.file.Files.write(spooledFile.toPath(), data);
+
+            // 2. Has & Get
+            assertTrue(localStorageTypeService.hasSpooledContextPatch(orgId, jobId, stepId, phase));
+            byte[] retrieved = localStorageTypeService.getSpooledContextPatch(orgId, jobId, stepId, phase);
+            assertArrayEquals(data, retrieved);
+
+            // 3. Delete
+            localStorageTypeService.deleteSpooledContextPatch(orgId, jobId, stepId, phase);
+            assertFalse(localStorageTypeService.hasSpooledContextPatch(orgId, jobId, stepId, phase));
+            assertNull(localStorageTypeService.getSpooledContextPatch(orgId, jobId, stepId, phase));
+    }
+    }
+
+    // ----- plan artifacts, with the home directory pointed at a temp directory
+
+    private String originalHome;
+
+    private File bundle(String organizationId, String workspaceId, String jobId, String stepId) throws IOException {
+        File file = new File(tempDir.toFile(), ".terraform-spring-boot/local/plan-artifacts/" + organizationId + "/" + workspaceId + "/" + jobId + "/" + stepId + "/plan-artifacts.tar.gz");
+        file.getParentFile().mkdirs();
+        java.nio.file.Files.writeString(file.toPath(), "bundle");
+        return file;
+    }
+
+    private void withHome(Runnable test) {
+        String original = System.getProperty("user.home");
+        System.setProperty("user.home", tempDir.toString());
+        try {
+            test.run();
+        } finally {
+            System.setProperty("user.home", original);
+        }
+    }
+
+    @Test
+    void testSpooledContextPatchPathTraversalRejected() {
+        try (MockedStatic<FileUtils> mockedFileUtils = mockStatic(FileUtils.class, CALLS_REAL_METHODS)) {
+            mockedFileUtils.when(FileUtils::getUserDirectoryPath).thenReturn(tempDir.toString());
+
+            assertThrows(SecurityException.class, () ->
+                    localStorageTypeService.getSpooledContextPatch("../../etc", "job", "step", "plan"));
+        }
+    }
+
+    @Test
+    void testDeleteWorkspaceOutputDataCleansSpooledFolder() throws IOException {
+        try (MockedStatic<FileUtils> mockedFileUtils = mockStatic(FileUtils.class, CALLS_REAL_METHODS)) {
+            mockedFileUtils.when(FileUtils::getUserDirectoryPath).thenReturn(tempDir.toString());
+
+            File spoolFile = tempDir.resolve(".terraform-spring-boot/local/context-spool/org1/100/step1-plan.json.gz").toFile();
+            spoolFile.getParentFile().mkdirs();
+            java.nio.file.Files.write(spoolFile.toPath(), "test".getBytes(StandardCharsets.UTF_8));
+            assertTrue(spoolFile.exists());
+
+            localStorageTypeService.deleteWorkspaceOutputData("org1", java.util.List.of(100));
+
+            assertFalse(spoolFile.exists());
+        }
+    }
+
+    @Test
+    void deletingAJobsArtifactsLeavesOtherJobsAndWorkspacesAlone() throws IOException {
+        File mine = bundle("org1", "ws1", "12", "a");
+        File sameWorkspaceOtherJob = bundle("org1", "ws1", "120", "a");
+        File otherWorkspace = bundle("org1", "ws2", "12", "a");
+
+        withHome(() -> localStorageTypeService.deleteJobArtifacts("org1", "ws1", 12));
+
+        assertFalse(mine.exists());
+        assertFalse(mine.getParentFile().getParentFile().exists(), "the job's directory is removed");
+        assertTrue(sameWorkspaceOtherJob.exists(), "job 120 is not job 12");
+        assertTrue(otherWorkspace.exists());
+    }
+
+    @Test
+    void deletingAJobsArtifactsWhenThereAreNoneIsHarmless() {
+        assertDoesNotThrow(() -> withHome(() -> localStorageTypeService.deleteJobArtifacts("org1", "ws1", 99)));
+    }
+
+    @Test
+    void deletingAWorkspaceRemovesItsArtifactsEvenWhenItHasNoStateYet() throws IOException {
+        File first = bundle("org1", "ws1", "1", "a");
+        File second = bundle("org1", "ws1", "2", "a");
+        File otherWorkspace = bundle("org1", "ws2", "1", "a");
+
+        withHome(() -> localStorageTypeService.deleteWorkspaceStateData("org1", "ws1"));
+
+        assertFalse(first.exists());
+        assertFalse(second.exists());
+        assertTrue(otherWorkspace.exists());
+    }
 }

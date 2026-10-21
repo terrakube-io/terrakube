@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+
+    <changeSet id="2-34-0-step-delivery-state" author="terrakube">
+        <addColumn tableName="step">
+            <column name="delivery_state" type="varchar(32)" defaultValue="NOT_DURABLE"/>
+            <column name="delivery_revision" type="bigint"/>
+            <column name="delivery_timestamp" type="bigint"/>
+            <column name="lease_owner" type="varchar(255)"/>
+            <column name="lease_until" type="datetime"/>
+        </addColumn>
+    </changeSet>
+
+    <changeSet id="2-34-0-step-delivery-state-index" author="terrakube">
+        <preConditions onFail="MARK_RAN">
+            <not><indexExists indexName="idx_step_delivery_state" tableName="step"/></not>
+        </preConditions>
+        <createIndex tableName="step" indexName="idx_step_delivery_state">
+            <column name="delivery_state"/>
+            <column name="lease_until"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>

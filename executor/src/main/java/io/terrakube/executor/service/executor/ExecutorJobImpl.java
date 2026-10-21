@@ -281,7 +281,7 @@ public class ExecutorJobImpl implements ExecutorJob {
         }
 
         boolean executionSuccess = terraformResult.isSuccessfulExecution();
-        updateJobStatus.setCompletedStatus(executionSuccess, terraformResult.isPlan, terraformResult.getExitCode(), terraformJob, terraformResult.getOutputLog(), terraformResult.getOutputErrorLog(), terraformResult.getPlanFile(), commitId, terraformResult.isHasSoftMandatoryViolations(), terraformResult.getApprovalTeam());
+        updateJobStatus.setCompletedStatus(executionSuccess, terraformResult.isPlan, terraformResult.getExitCode(), terraformJob, terraformResult.getOutputLog(), terraformResult.getOutputErrorLog(), terraformResult.getPlanFile(), commitId, terraformResult.isHasSoftMandatoryViolations(), terraformResult.getApprovalTeam(), terraformResult.getDeliveryState(), terraformResult.getDeliveryRevision());
     }
 
     private static String getCommitId(File workspaceFolder) {

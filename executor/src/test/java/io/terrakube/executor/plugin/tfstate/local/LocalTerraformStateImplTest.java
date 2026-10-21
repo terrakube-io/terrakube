@@ -38,6 +38,7 @@ class LocalTerraformStateImplTest {
                 .terrakubeClient(terrakubeClient)
                 .terraformOutputPathService(terraformOutputPathService)
                 .terraformStatePathService(terraformStatePathService)
+                .sharedStorage(true)
                 .storageRetryMetrics(new io.terrakube.executor.plugin.tfstate.StorageRetryMetrics(
                         new io.micrometer.core.instrument.simple.SimpleMeterRegistry()))
                 .build();
@@ -273,6 +274,48 @@ class LocalTerraformStateImplTest {
 
         // Cleanup
         FileUtils.deleteQuietly(new File(FileUtils.getUserDirectoryPath(), ".terraform-spring-boot"));
+    }
+
+    @Test
+    void testSpoolContextPatch() throws IOException {
+        String organizationId = "org1";
+        String jobId = "job1";
+        String stepId = "step1";
+        String phase = "plan";
+        byte[] gzippedPatch = "dummy-gzipped-bytes".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+
+        String result = localTerraformState.spoolContextPatch(organizationId, jobId, stepId, phase, gzippedPatch);
+
+        assertNotNull(result);
+        assertTrue(result.contains(".terraform-spring-boot/local/context-spool/org1/job1/step1-plan.json.gz"));
+
+        File spooledFile = new File(FileUtils.getUserDirectoryPath(), result);
+        assertTrue(spooledFile.exists());
+        assertArrayEquals(gzippedPatch, FileUtils.readFileToByteArray(spooledFile));
+
+        // Cleanup
+        FileUtils.deleteQuietly(new File(FileUtils.getUserDirectoryPath(), ".terraform-spring-boot"));
+    }
+
+    @Test
+    void testSpoolContextPatchPathTraversalRejected() {
+        String result = localTerraformState.spoolContextPatch("../../etc", "job1", "step1", "plan", "data".getBytes());
+        assertNull(result);
+    }
+
+    @Test
+    void testSpoolContextPatchReturnsNullWhenNoSharedPath() {
+        LocalTerraformStateImpl unsharedState = LocalTerraformStateImpl.builder()
+                .terrakubeClient(terrakubeClient)
+                .terraformOutputPathService(terraformOutputPathService)
+                .terraformStatePathService(terraformStatePathService)
+                .sharedStorage(false)
+                .sharedDirectory(null)
+                .storageRetryMetrics(new io.terrakube.executor.plugin.tfstate.StorageRetryMetrics(
+                        new io.micrometer.core.instrument.simple.SimpleMeterRegistry()))
+                .build();
+        String result = unsharedState.spoolContextPatch("org1", "job1", "step1", "plan", "data".getBytes());
+        assertNull(result);
     }
 }
 

@@ -183,4 +183,62 @@ class GcpStorageTypeServiceImplTest {
         gcpStorageTypeService.deletePolicyEvaluation(uri);
         verify(storage).delete(BlobId.of(bucketName, uri));
     }
+
+    @Test
+    void testSpooledContextPatchLifecycle() {
+        String orgId = "org1";
+        String jobId = "job1";
+        String stepId = "step1";
+        String phase = "plan";
+        String key = "context-spool/org1/job1/step1-plan.json.gz";
+        byte[] data = "dummy-gzipped-bytes".getBytes(StandardCharsets.UTF_8);
+
+        // 1. Get
+        Blob blobMock = mock(Blob.class);
+        when(storage.get(BlobId.of(bucketName, key))).thenReturn(blobMock);
+        when(blobMock.getContent()).thenReturn(data);
+
+        byte[] retrieved = gcpStorageTypeService.getSpooledContextPatch(orgId, jobId, stepId, phase);
+        assertArrayEquals(data, retrieved);
+
+        // 2. Has
+        when(blobMock.exists()).thenReturn(true);
+        assertTrue(gcpStorageTypeService.hasSpooledContextPatch(orgId, jobId, stepId, phase));
+
+        // 3. Delete
+        gcpStorageTypeService.deleteSpooledContextPatch(orgId, jobId, stepId, phase);
+        verify(storage).delete(BlobId.of(bucketName, key));
+
+        // 4. Missing key returns null / false
+        when(storage.get(BlobId.of(bucketName, key))).thenReturn(null);
+        assertFalse(gcpStorageTypeService.hasSpooledContextPatch(orgId, jobId, stepId, phase));
+        assertNull(gcpStorageTypeService.getSpooledContextPatch(orgId, jobId, stepId, phase));
+    }
+
+    // ----- plan artifacts (plan-artifacts/<organization>/<workspace>/<job>/...)
+
+    @Test
+    void deletingAJobsArtifactsRemovesOnlyThatJobsPrefix() {
+        Page<Blob> page = mock(Page.class);
+        when(page.iterateAll()).thenReturn(Collections.singletonList(blob));
+        when(blob.getName()).thenReturn("plan-artifacts/org1/ws1/12/step-a/plan-artifacts.tar.gz");
+        when(blob.getBlobId()).thenReturn(BlobId.of(bucketName, "plan-artifacts/org1/ws1/12/step-a/plan-artifacts.tar.gz"));
+        when(storage.list(eq(bucketName), any(), any())).thenReturn(page);
+
+        gcpStorageTypeService.deleteJobArtifacts("org1", "ws1", 12);
+
+        verify(storage).delete(BlobId.of(bucketName, "plan-artifacts/org1/ws1/12/step-a/plan-artifacts.tar.gz"));
+    }
+
+    @Test
+    void deletingAWorkspaceAlsoRemovesItsArtifacts() {
+        Page<Blob> empty = mock(Page.class);
+        when(empty.iterateAll()).thenReturn(Collections.emptyList());
+        when(storage.list(eq(bucketName), any(), any())).thenReturn(empty);
+
+        gcpStorageTypeService.deleteWorkspaceStateData("org1", "ws1");
+
+        // state, then plan artifacts
+        verify(storage, times(2)).list(eq(bucketName), any(), any());
+    }
 }

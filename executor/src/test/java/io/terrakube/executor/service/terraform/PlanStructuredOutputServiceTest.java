@@ -17,6 +17,7 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -658,5 +659,108 @@ class PlanStructuredOutputServiceTest {
                 && s.getChanges().size() == 1
                 && "aws_instance.example".equals(s.getChanges().get(0).get("address"))));
         Mockito.verify(jobContextService, Mockito.never()).patchContextFresh(Mockito.any(), Mockito.any(), Mockito.any());
+    }
+
+    @Test
+    void publishFinalPlanSnapshotSynchronous_returnsAckedOnSuccess() {
+        JobContextService jobContextService = Mockito.mock(JobContextService.class);
+        Mockito.when(jobContextService.patchContext(Mockito.eq("o"), Mockito.eq("1"), Mockito.anyLong(), Mockito.any()))
+                .thenReturn(JobContextService.PatchResult.APPLIED);
+
+        PlanStructuredOutputService service = new PlanStructuredOutputService(
+                jobContextService, new ObjectMapper(), new TerraformClient());
+
+        String state = service.publishFinalPlanSnapshotSynchronous("o", "1", "step-1", List.of(), List.of());
+        assertEquals("ACKED", state);
+        Mockito.verify(jobContextService, Mockito.times(1))
+                .patchContext(Mockito.eq("o"), Mockito.eq("1"), Mockito.anyLong(), Mockito.any());
+    }
+
+    @Test
+    void publishFinalPlanSnapshotSynchronous_subsequentAttemptSkipped_returnsAcked() {
+        JobContextService jobContextService = Mockito.mock(JobContextService.class);
+        Mockito.when(jobContextService.patchContext(Mockito.eq("o"), Mockito.eq("1"), Mockito.anyLong(), Mockito.any()))
+                .thenReturn(JobContextService.PatchResult.FAILED)
+                .thenReturn(JobContextService.PatchResult.SKIPPED);
+
+        PlanStructuredOutputService service = new PlanStructuredOutputService(
+                jobContextService, new ObjectMapper(), new TerraformClient());
+
+        String state = service.publishFinalPlanSnapshotSynchronous("o", "1", "step-1", List.of(), List.of());
+        assertEquals("ACKED", state);
+        Mockito.verify(jobContextService, Mockito.times(2))
+                .patchContext(Mockito.eq("o"), Mockito.eq("1"), Mockito.anyLong(), Mockito.any());
+    }
+
+    @Test
+    void publishFinalPlanSnapshotSynchronous_spoolsOnFailureWhenSpoolerAvailable() {
+        JobContextService jobContextService = Mockito.mock(JobContextService.class);
+        Mockito.when(jobContextService.patchContext(Mockito.eq("o"), Mockito.eq("1"), Mockito.anyLong(), Mockito.any()))
+                .thenReturn(JobContextService.PatchResult.FAILED);
+
+        io.terrakube.executor.service.terraform.spool.ContextSpoolService contextSpoolService = Mockito.mock(io.terrakube.executor.service.terraform.spool.ContextSpoolService.class);
+        Mockito.when(contextSpoolService.spoolContextPatch(Mockito.eq("o"), Mockito.eq("1"), Mockito.eq("step-1"), Mockito.eq("plan"), Mockito.anyLong(), Mockito.any()))
+                .thenReturn("context-spool/o/1/step-1-plan.json.gz");
+
+        PlanStructuredOutputService service = new PlanStructuredOutputService(
+                jobContextService, new ObjectMapper(), new TerraformClient(), null, null, contextSpoolService);
+
+        String state = service.publishFinalPlanSnapshotSynchronous("o", "1", "step-1", List.of(), List.of());
+        assertEquals("SPOOLED", state);
+        Mockito.verify(jobContextService, Mockito.times(3))
+                .patchContext(Mockito.eq("o"), Mockito.eq("1"), Mockito.anyLong(), Mockito.any());
+        Mockito.verify(contextSpoolService).spoolContextPatch(Mockito.eq("o"), Mockito.eq("1"), Mockito.eq("step-1"), Mockito.eq("plan"), Mockito.anyLong(), Mockito.any());
+    }
+
+    @Test
+    void publishFinalPlanSnapshotSynchronous_initialAttemptSkipped_spoolsWhenSpoolerAvailable() {
+        JobContextService jobContextService = Mockito.mock(JobContextService.class);
+        Mockito.when(jobContextService.patchContext(Mockito.eq("o"), Mockito.eq("1"), Mockito.anyLong(), Mockito.any()))
+                .thenReturn(JobContextService.PatchResult.SKIPPED);
+
+        io.terrakube.executor.service.terraform.spool.ContextSpoolService contextSpoolService = Mockito.mock(io.terrakube.executor.service.terraform.spool.ContextSpoolService.class);
+        Mockito.when(contextSpoolService.spoolContextPatch(Mockito.eq("o"), Mockito.eq("1"), Mockito.eq("step-1"), Mockito.eq("plan"), Mockito.anyLong(), Mockito.any()))
+                .thenReturn("context-spool/o/1/step-1-plan.json.gz");
+
+        PlanStructuredOutputService service = new PlanStructuredOutputService(
+                jobContextService, new ObjectMapper(), new TerraformClient(), null, null, contextSpoolService);
+
+        String state = service.publishFinalPlanSnapshotSynchronous("o", "1", "step-1", List.of(), List.of());
+        assertEquals("SPOOLED", state);
+        // Only 1 attempt because attempt 1 SKIPPED breaks immediately without retrying the same revision
+        Mockito.verify(jobContextService, Mockito.times(1))
+                .patchContext(Mockito.eq("o"), Mockito.eq("1"), Mockito.anyLong(), Mockito.any());
+        Mockito.verify(contextSpoolService).spoolContextPatch(Mockito.eq("o"), Mockito.eq("1"), Mockito.eq("step-1"), Mockito.eq("plan"), Mockito.anyLong(), Mockito.any());
+    }
+
+    @Test
+    void publishFinalPlanSnapshotSynchronous_returnsNotDurableWhenSpoolerFails() {
+        JobContextService jobContextService = Mockito.mock(JobContextService.class);
+        Mockito.when(jobContextService.patchContext(Mockito.eq("o"), Mockito.eq("1"), Mockito.anyLong(), Mockito.any()))
+                .thenReturn(JobContextService.PatchResult.FAILED);
+
+        io.terrakube.executor.service.terraform.spool.ContextSpoolService contextSpoolService = Mockito.mock(io.terrakube.executor.service.terraform.spool.ContextSpoolService.class);
+        Mockito.when(contextSpoolService.spoolContextPatch(Mockito.eq("o"), Mockito.eq("1"), Mockito.eq("step-1"), Mockito.eq("plan"), Mockito.anyLong(), Mockito.any()))
+                .thenReturn(null);
+
+        PlanStructuredOutputService service = new PlanStructuredOutputService(
+                jobContextService, new ObjectMapper(), new TerraformClient(), null, null, contextSpoolService);
+
+        String state = service.publishFinalPlanSnapshotSynchronous("o", "1", "step-1", List.of(), List.of());
+        assertEquals("NOT_DURABLE", state);
+    }
+
+    @Test
+    void nullTerraformJobIsHandledSafelyAcrossAllPlanMethods() throws Exception {
+        PlanStructuredOutputService service = new PlanStructuredOutputService(
+                Mockito.mock(JobContextService.class),
+                new ObjectMapper(),
+                Mockito.mock(TerraformClient.class));
+
+        assertEquals("NOT_DURABLE", service.publishFinalPlanSynchronous(null, new File("/tmp"), List.of(), List.of()));
+        assertEquals("NOT_DURABLE", service.publishFinalPlanSynchronous(null, new File("/tmp"), 1L, List.of(), List.of()));
+        assertNull(service.getPlanAsJson(null, new File("/tmp")));
+        assertNull(service.getPlanAsHumanText(null, new File("/tmp")));
+        assertDoesNotThrow(() -> service.publishPlanSummary(null, new File("/tmp"), List.of(), List.of()));
     }
 }

@@ -394,6 +394,18 @@
   background: var(--tk-bg-container);
 }
 
+.latest-run-queued {
+  margin: 16px 0 0;
+}
+
+.latest-run-approval {
+  margin-top: 16px;
+}
+
+.latest-run-approval-note {
+  display: block;
+}
+
 .latest-run--empty {
   padding: 32px 24px;
 }

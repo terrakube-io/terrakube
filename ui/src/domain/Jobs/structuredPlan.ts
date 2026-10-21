@@ -383,3 +383,23 @@ export const normalizeUITemplates = (value: unknown): Record<string, string> => 
 
   return normalizedTemplates;
 };
+
+export type PlanTotals = { create: number; update: number; delete: number; replace: number };
+
+/** What an approver signs off on: the planned changes of every plan step, or null when no plan was read. */
+export const computePlanTotals = (planByStep: StructuredPlanOutputByStep): PlanTotals | null => {
+  const totals: PlanTotals = { create: 0, update: 0, delete: 0, replace: 0 };
+  let seen = false;
+  for (const changes of Object.values(planByStep)) {
+    for (const change of changes) {
+      seen = true;
+      const label = getPlanChangeActionLabel(change.actions, change.action);
+      if (label in totals) totals[label as keyof PlanTotals] += 1;
+    }
+  }
+  return seen ? totals : null;
+};
+
+export const formatPlanSummary = (totals: PlanTotals): string =>
+  `${totals.create} to add, ${totals.update} to change, ${totals.delete} to destroy` +
+  (totals.replace ? `, ${totals.replace} to replace` : "");

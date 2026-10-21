@@ -1,6 +1,7 @@
 package io.terrakube.api.plugin.vcs.provider.github;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
+import static com.github.tomakehurst.wiremock.client.WireMock.patch;
 import static com.github.tomakehurst.wiremock.client.WireMock.post;
 import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathMatching;
@@ -19,6 +20,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
 import org.springframework.web.client.RestTemplate;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -173,6 +175,79 @@ public class GitHubWebhookServiceTest {
         @Test
         void returnsNullForBlankHeader() {
             assertNull(subject.extractNextPageUrl("   "));
+        }
+    }
+
+    @Nested
+    class PrCommentJson {
+
+        WireMockServer wireMockServer;
+        GitHubWebhookService subjectWithRestTemplate;
+        Job job;
+
+        @BeforeEach
+        void setUp() throws Exception {
+            wireMockServer = new WireMockServer(options().dynamicPort());
+            wireMockServer.start();
+            TokenService tokenService = mock(TokenService.class);
+            when(tokenService.getAccessToken(any(String[].class), any())).thenReturn("test-token");
+            subjectWithRestTemplate = new GitHubWebhookService(new ObjectMapper(), tokenService);
+            subjectWithRestTemplate.setWebhookRestTemplate(
+                    new RestTemplate(new HttpComponentsClientHttpRequestFactory()));
+
+            Vcs vcs = new Vcs();
+            vcs.setApiUrl("http://localhost:" + wireMockServer.port());
+            Workspace workspace = new Workspace();
+            workspace.setSource("https://github.com/owner/repo");
+            workspace.setVcs(vcs);
+            workspace.setName("test-ws");
+            job = new Job();
+            job.setWorkspace(workspace);
+            job.setPrNumber(42);
+        }
+
+        @AfterEach
+        void tearDown() {
+            wireMockServer.stop();
+        }
+
+        @Test
+        void createsCommentWithValidJsonForAnsiAndControlCharacters() throws Exception {
+            wireMockServer.stubFor(post(urlPathMatching("/repos/owner/repo/issues/42/comments"))
+                    .willReturn(aResponse().withStatus(201)
+                            .withHeader("Content-Type", "application/json")
+                            .withBody("{\"id\":12345}")));
+            String markdown = commentWithControlCharacters();
+
+            assertEquals("12345", subjectWithRestTemplate.postPrComment(job, markdown));
+
+            assertCommentBody(markdown);
+        }
+
+        @Test
+        void updatesCommentWithValidJsonForAnsiAndControlCharacters() throws Exception {
+            wireMockServer.stubFor(patch(urlPathMatching("/repos/owner/repo/issues/comments/12345"))
+                    .willReturn(aResponse().withStatus(200)));
+            String markdown = commentWithControlCharacters();
+
+            assertTrue(subjectWithRestTemplate.updatePrComment(job, "12345", markdown));
+
+            assertCommentBody(markdown);
+        }
+
+        private String commentWithControlCharacters() {
+            StringBuilder markdown = new StringBuilder(
+                    "\u001b[32m+ resource\u001b[0m\nPlan: 1 to add, 0 to change, 0 to destroy.\n\"quoted\" \\ path\n");
+            for (char control = 0; control < 0x20; control++) {
+                markdown.append(control);
+            }
+            return markdown.toString();
+        }
+
+        private void assertCommentBody(String markdown) throws Exception {
+            assertEquals(1, wireMockServer.getAllServeEvents().size());
+            String body = wireMockServer.getAllServeEvents().getFirst().getRequest().getBodyAsString();
+            assertEquals(markdown, new ObjectMapper().readTree(body).path("body").asText());
         }
     }
 
