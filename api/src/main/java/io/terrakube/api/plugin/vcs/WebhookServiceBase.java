@@ -22,6 +22,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
@@ -125,6 +126,9 @@ public class WebhookServiceBase {
     }
 
     protected ResponseEntity<String> makeApiRequest(HttpHeaders headers, String body, String apiUrl, HttpMethod method) {
+        if (body != null && !body.isEmpty() && headers.getContentType() == null) {
+            headers.setContentType(MediaType.APPLICATION_JSON);
+        }
         HttpEntity<String> entity = new HttpEntity<>(body, headers);
         try {
             return webhookRestTemplate.exchange(apiUrl, method, entity, String.class);
