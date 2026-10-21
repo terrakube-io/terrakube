@@ -126,7 +126,9 @@ class JobPlanArtifactsPermissionTest extends ServerApplicationTests {
         job.setTerraformPlanArtifacts(LOCATION);
         job = jobRepository.saveAndFlush(job);
 
-        int status = patch(generateExecutorToken(), "{\"status\":\"approved\"}");
+        // Any status that is not final. "approved" cannot be used: a job can only be approved while it
+        // waits for approval, and this one is pending.
+        int status = patch(generateExecutorToken(), "{\"status\":\"running\"}");
 
         assertThat(status).isEqualTo(HttpStatus.NO_CONTENT.value());
         org.mockito.Mockito.verify(storageTypeService, org.mockito.Mockito.never())
