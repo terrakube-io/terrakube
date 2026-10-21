@@ -1,6 +1,7 @@
 package io.terrakube.api.plugin.state;
 
 import io.terrakube.api.plugin.notification.JobNotificationTrigger;
+import io.terrakube.api.plugin.policy.PolicyApprovalGuard;
 import io.terrakube.api.plugin.scheduler.ScheduleJobService;
 import io.terrakube.api.plugin.security.encryption.EncryptionService;
 import io.terrakube.api.plugin.security.rbac.RbacService;
@@ -85,6 +86,7 @@ class RemoteTfePolicyChecksTest {
                 archiveRepository, accessRepository, encryptionService, addressRepository, projectRepository,
                 variableRepository, globalVarRepository, rbacService, jobNotificationTrigger
         );
+        remoteTfeService.setPolicyApprovalGuard(Mockito.mock(PolicyApprovalGuard.class));
         remoteTfeService.setPolicyEvaluationRepository(policyEvaluationRepository);
         remoteTfeService.setPolicyOverrideRepository(policyOverrideRepository);
         remoteTfeService.setPolicySetRepository(policySetRepository);

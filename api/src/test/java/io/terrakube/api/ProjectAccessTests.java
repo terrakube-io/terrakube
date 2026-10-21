@@ -1,5 +1,7 @@
 package io.terrakube.api;
 
+import io.terrakube.api.rs.job.Job;
+import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.team.Team;
 import org.hamcrest.Matchers;
 import org.hamcrest.core.IsEqual;
@@ -1376,7 +1378,11 @@ public class ProjectAccessTests extends ServerApplicationTests {
                 .statusCode(HttpStatus.CREATED.value())
                 .extract().path("data.id");
 
-        // Write role can approve a job (canApproveJob=true)
+        // Write role can approve a job (canApproveJob=true). A job can only be approved while it
+        // waits for approval, which is where the approval step of a flow leaves it.
+        Job waitingJob = jobRepository.findById(Integer.parseInt(jobId)).orElseThrow();
+        waitingJob.setStatus(JobStatus.waitingApproval);
+        jobRepository.save(waitingJob);
         given()
                 .headers("Authorization", "Bearer " + generatePAT("PROJECT_WRITE_MEMBER"), "Content-Type", "application/vnd.api+json")
                 .body("{\"data\": {\"type\": \"job\", \"id\": \"" + jobId + "\", \"attributes\": {\"status\": \"approved\"}}}")

@@ -1,5 +1,6 @@
 package io.terrakube.api.plugin.scheduler;
 
+import io.terrakube.api.plugin.policy.PolicyApprovalGuard;
 import io.terrakube.api.plugin.scheduler.dispatchretry.DispatchRetryCalculator;
 import io.terrakube.api.plugin.scheduler.dispatchretry.DispatchRetryDecision;
 import io.terrakube.api.plugin.scheduler.dispatchretry.DispatchRetryMetrics;
@@ -115,6 +116,7 @@ public class ScheduleJob implements org.quartz.Job {
     GlobalVarRepository globalVarRepository;
     VariableRepository variableRepository;
     WorkspaceVariableValidationService workspaceVariableValidationService;
+    PolicyApprovalGuard policyApprovalGuard;
     // Real job status transitions happen here via plain jobRepository.save(), never through an
     // Elide JSON:API/GraphQL request - JobNotificationHook (an Elide LifeCycleHook) never sees
     // them. Every save below that follows a job.setStatus(...) call is followed by a call to
@@ -412,7 +414,13 @@ public class ScheduleJob implements org.quartz.Job {
                 case policyEvaluation:
                     return dispatchStepOrDefer(job, stepId, flow.get());
                 case approval:
-                    if (!job.isAutoApply()) {
+                    // Auto-apply skips the approval, not the policy: a violation that has not been
+                    // overridden keeps the job waiting, as it would for a person who approves.
+                    Optional<String> blockingReason = job.isAutoApply() ? policyApprovalGuard.blockingReason(job) : Optional.empty();
+                    if (blockingReason.isPresent()) {
+                        log.warn("Job {} is not auto-approved: {}", job.getId(), blockingReason.get());
+                    }
+                    if (!job.isAutoApply() || blockingReason.isPresent()) {
                         job.setStatus(JobStatus.waitingApproval);
                         job.setApprovalTeam(flow.get().getTeam());
                         jobRepository.save(job);
