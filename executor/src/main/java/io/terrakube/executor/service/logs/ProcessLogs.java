@@ -12,4 +12,9 @@ public interface ProcessLogs {
     // step can publish its completion without racing its own output. Best effort: a transport that
     // still can't deliver after its own retries keeps the lines for later and returns anyway.
     public void flush();
+
+    // Whether the lines of a step are also written to the executor's own service log.
+    default boolean echoToServiceLog() {
+        return true;
+    }
 }

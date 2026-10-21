@@ -20,6 +20,7 @@ import java.util.concurrent.locks.ReentrantLock;
 @ConditionalOnProperty(name = "io.executor.log-via-api", havingValue = "true", matchIfMissing = false)
 public class LogsServiceApi implements ProcessLogs {
     private TerrakubeClient terrakubeClient;
+    private ExecutorLogsProperties properties;
     private final LinkedBlockingDeque<Log> logQueue = new LinkedBlockingDeque<>();
     // Held while a batch is in flight, so flush() can't return while a scheduled batch it never
     // saw is still being sent.
@@ -37,7 +38,7 @@ public class LogsServiceApi implements ProcessLogs {
         logEntry.setJobId(jobId);
         logEntry.setStepId(stepId);
         logEntry.setLineNumber(lineNumber);
-        logEntry.setOutput(output);
+        logEntry.setOutput(LiveLogLine.cap(output, properties.getLiveLineMaxBytes()));
 
         try {
             logQueue.put(logEntry);
@@ -45,6 +46,11 @@ public class LogsServiceApi implements ProcessLogs {
             log.error("Failed to add log to queue", addLogException);
             Thread.currentThread().interrupt();
         }
+    }
+
+    @Override
+    public boolean echoToServiceLog() {
+        return properties.isEchoToServiceLog();
     }
 
     @Override

@@ -25,7 +25,7 @@ class LogsServiceApiTest {
     @Test
     void flushReturnsOnlyOnceEveryQueuedLineHasBeenSent() throws Exception {
         TerrakubeClient terrakubeClient = Mockito.mock(TerrakubeClient.class);
-        LogsServiceApi service = new LogsServiceApi(terrakubeClient);
+        LogsServiceApi service = new LogsServiceApi(terrakubeClient, new ExecutorLogsProperties());
         List<Integer> sentLines = new ArrayList<>();
         AtomicInteger calls = new AtomicInteger();
         CountDownLatch scheduledBatchInFlight = new CountDownLatch(1);
@@ -53,5 +53,31 @@ class LogsServiceApiTest {
         flush.get(5, TimeUnit.SECONDS);
         scheduledRun.get(5, TimeUnit.SECONDS);
         assertEquals(List.of(1, 2), sentLines);
+    }
+
+    @Test
+    void aLineLongerThanTheLimitIsCutInTheBatchSentToTheApi() {
+        TerrakubeClient terrakubeClient = Mockito.mock(TerrakubeClient.class);
+        ExecutorLogsProperties properties = new ExecutorLogsProperties();
+        properties.setLiveLineMaxBytes(100);
+        LogsServiceApi service = new LogsServiceApi(terrakubeClient, properties);
+
+        service.sendLogs(42, "1", 1, "z".repeat(150));
+        service.flush();
+
+        org.mockito.ArgumentCaptor<LogsRequest> sent = org.mockito.ArgumentCaptor.forClass(LogsRequest.class);
+        Mockito.verify(terrakubeClient).appendLogs(sent.capture());
+        String output = sent.getValue().getData().get(0).getOutput();
+        assertTrue(output.startsWith("z".repeat(100) + " ... [50 bytes left out"));
+    }
+
+    @Test
+    void theServiceLogEchoIsOnUnlessConfiguredOff() {
+        ExecutorLogsProperties properties = new ExecutorLogsProperties();
+        TerrakubeClient terrakubeClient = Mockito.mock(TerrakubeClient.class);
+        assertTrue(new LogsServiceApi(terrakubeClient, properties).echoToServiceLog());
+
+        properties.setEchoToServiceLog(false);
+        assertFalse(new LogsServiceApi(terrakubeClient, properties).echoToServiceLog());
     }
 }

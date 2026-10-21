@@ -30,7 +30,9 @@ public class LogsConsumer implements Consumer<String> {
     @Override
     public void accept(String logs) {
         int line = lineNumber.addAndGet(1);
-        log.info(logs);
+        if (processLogs.echoToServiceLog()) {
+            log.info(logs);
+        }
         terraformOutput.appendln(logs);
         processLogs.sendLogs(jobId, stepId, line, logs);
     }
