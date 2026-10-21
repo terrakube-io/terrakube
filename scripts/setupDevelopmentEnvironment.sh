@@ -197,6 +197,7 @@ function generateExecutorVars() {
 	TerrakubeToolsBranch=main
 	IO_TERRAKUBE_TERRAFORM_FLAGS_PID_ISOLATION="best-effort"
 	IO_TERRAKUBE_TERRAFORM_FLAGS_CLEAN_ENVIRONMENT="true"
+	IO_TERRAKUBE_TERRAFORM_FLAGS_INHERITED_ENVIRONMENT_VARIABLES="PATH,HOME,USER,SHELL,TMPDIR,LANG,LC_ALL,TERM"
 
 	rm -f .envExecutor
 
@@ -242,6 +243,8 @@ function generateExecutorVars() {
 	echo "CustomTofuReleasesUrl=\"https://api.github.com/repos/opentofu/opentofu/releases\"" >>.envExecutor
 	echo "IO_TERRAKUBE_TERRAFORM_FLAGS_PID_ISOLATION=$IO_TERRAKUBE_TERRAFORM_FLAGS_PID_ISOLATION" >>.envExecutor
 	echo "IO_TERRAKUBE_TERRAFORM_FLAGS_CLEAN_ENVIRONMENT=$IO_TERRAKUBE_TERRAFORM_FLAGS_CLEAN_ENVIRONMENT" >>.envExecutor
+	echo "IO_TERRAKUBE_TERRAFORM_FLAGS_INHERITED_ENVIRONMENT_VARIABLES=$IO_TERRAKUBE_TERRAFORM_FLAGS_INHERITED_ENVIRONMENT_VARIABLES" >>.envExecutor
+	echo "ExecutorInheritedEnvironmentVariables=$IO_TERRAKUBE_TERRAFORM_FLAGS_INHERITED_ENVIRONMENT_VARIABLES" >>.envExecutor
 	echo "TerrakubeRedisHostname=$TerrakubeRedisHostname" >>.envExecutor
 	echo "TerrakubeRedisPort=6379" >>.envExecutor
 	echo "TerrakubeRedisSSL=false" >>.envExecutor

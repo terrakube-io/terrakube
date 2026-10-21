@@ -823,39 +823,57 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
     // Package-private (not private) so tests can spy/stub this one seam instead of letting
     // runJsonApply construct a real TerraformClient that would launch an actual OS process.
     TerraformClient buildJsonEnabledApplyClient() {
-        return TerraformClient.builder()
+        TerraformClient.TerraformClientBuilder builder = (terraformClient != null && terraformClient.toBuilder() != null)
+                ? terraformClient.toBuilder()
+                : TerraformClient.builder()
+                        .pidIsolation(terraformClient != null ? terraformClient.getPidIsolation() : null)
+                        .cleanEnvironment(terraformClient != null && terraformClient.isCleanEnvironment())
+                        .inheritedEnvironmentVariables(terraformClient != null ? terraformClient.getInheritedEnvironmentVariables() : null);
+        return builder
                 .jsonOutput(true)
                 .showColor(false)
                 // The normal client merges stderr before every Terraform operation. Keep that
                 // behaviour for the JSON client too: runJsonApply has no separate stderr
                 // listener, so otherwise diagnostics are silently discarded.
                 .redirectErrorStream(true)
-                .terraformReleasesUrl(terraformClient.getTerraformReleasesUrl())
-                .tofuReleasesUrl(terraformClient.getTofuReleasesUrl())
+                .terraformReleasesUrl(terraformClient != null ? terraformClient.getTerraformReleasesUrl() : null)
+                .tofuReleasesUrl(terraformClient != null ? terraformClient.getTofuReleasesUrl() : null)
                 .build();
     }
 
     // Package-private (not private) so tests can spy/stub this one seam, same reasoning as
     // buildJsonEnabledApplyClient.
     TerraformClient buildJsonEnabledPlanClient() {
-        return TerraformClient.builder()
+        TerraformClient.TerraformClientBuilder builder = (terraformClient != null && terraformClient.toBuilder() != null)
+                ? terraformClient.toBuilder()
+                : TerraformClient.builder()
+                        .pidIsolation(terraformClient != null ? terraformClient.getPidIsolation() : null)
+                        .cleanEnvironment(terraformClient != null && terraformClient.isCleanEnvironment())
+                        .inheritedEnvironmentVariables(terraformClient != null ? terraformClient.getInheritedEnvironmentVariables() : null);
+        return builder
                 .jsonOutput(true)
                 .showColor(false)
                 .redirectErrorStream(true)
-                .terraformReleasesUrl(terraformClient.getTerraformReleasesUrl())
-                .tofuReleasesUrl(terraformClient.getTofuReleasesUrl())
+                .terraformReleasesUrl(terraformClient != null ? terraformClient.getTerraformReleasesUrl() : null)
+                .tofuReleasesUrl(terraformClient != null ? terraformClient.getTofuReleasesUrl() : null)
                 .build();
     }
 
     // Package-private (not private) so tests can spy/stub this one seam, same reasoning as
     // buildJsonEnabledApplyClient.
     TerraformClient buildJsonEnabledDestroyClient() {
-        return TerraformClient.builder()
+        TerraformClient.TerraformClientBuilder builder = (terraformClient != null && terraformClient.toBuilder() != null)
+                ? terraformClient.toBuilder()
+                : TerraformClient.builder()
+                        .pidIsolation(terraformClient != null ? terraformClient.getPidIsolation() : null)
+                        .cleanEnvironment(terraformClient != null && terraformClient.isCleanEnvironment())
+                        .inheritedEnvironmentVariables(terraformClient != null ? terraformClient.getInheritedEnvironmentVariables() : null);
+        return builder
                 .jsonOutput(true)
                 .showColor(false)
                 .redirectErrorStream(true)
-                .terraformReleasesUrl(terraformClient.getTerraformReleasesUrl())
-                .tofuReleasesUrl(terraformClient.getTofuReleasesUrl())
+                .terraformReleasesUrl(terraformClient != null ? terraformClient.getTerraformReleasesUrl() : null)
+                .tofuReleasesUrl(terraformClient != null ? terraformClient.getTofuReleasesUrl() : null)
                 .build();
     }
 
