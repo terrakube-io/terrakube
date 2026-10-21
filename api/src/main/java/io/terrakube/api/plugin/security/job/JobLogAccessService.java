@@ -1,5 +1,7 @@
 package io.terrakube.api.plugin.security.job;
 
+import com.yahoo.elide.core.security.User;
+import io.terrakube.api.plugin.security.groups.GroupService;
 import io.terrakube.api.plugin.security.rbac.RbacService;
 import io.terrakube.api.repository.JobRepository;
 import io.terrakube.api.repository.StepRepository;
@@ -19,6 +21,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Collections;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -36,6 +39,7 @@ public class JobLogAccessService {
     private final StepRepository stepRepository;
     private final TeamRepository teamRepository;
     private final RbacService rbacService;
+    private final GroupService groupService;
     private final String instanceOwner;
 
     public JobLogAccessService(
@@ -43,11 +47,13 @@ public class JobLogAccessService {
             StepRepository stepRepository,
             TeamRepository teamRepository,
             RbacService rbacService,
+            GroupService groupService,
             @Value("${io.terrakube.owner:}") String instanceOwner) {
         this.jobRepository = jobRepository;
         this.stepRepository = stepRepository;
         this.teamRepository = teamRepository;
         this.rbacService = rbacService;
+        this.groupService = groupService;
         this.instanceOwner = instanceOwner;
     }
 
@@ -111,7 +117,7 @@ public class JobLogAccessService {
             return LogAccessResult.ALLOWED;
         }
 
-        List<String> groups = extractGroups(jwt);
+        List<String> groups = effectiveGroups(jwt);
 
         // Instance superuser has access across all organizations and jobs
         if (instanceOwner != null && !instanceOwner.isBlank() && groups.contains(instanceOwner)) {
@@ -179,7 +185,7 @@ public class JobLogAccessService {
             return LogAccessResult.ALLOWED;
         }
 
-        List<String> groups = extractGroups(jwt);
+        List<String> groups = effectiveGroups(jwt);
 
         // Instance superuser has access across all organizations and jobs
         if (instanceOwner != null && !instanceOwner.isBlank()) {
@@ -250,6 +256,15 @@ public class JobLogAccessService {
         return false;
     }
 
+    // Same groups the Elide checks use: the token's own groups plus the team of every federated
+    // credential the token matches. A GitHub OIDC token has no groups claim, so reading the claim
+    // alone denied an identity that JSON:API had already authorized for the same job.
+    private List<String> effectiveGroups(JwtAuthenticationToken jwt) {
+        return new ArrayList<>(groupService.getEffectiveGroups(new User(jwt)));
+    }
+
+    // Token groups only. Writing the context stays limited to the instance owner and the job's own
+    // internal token, so a federated team never gets write access from this check.
     @SuppressWarnings("unchecked")
     private List<String> extractGroups(JwtAuthenticationToken jwt) {
         Object groupsObj = jwt.getTokenAttributes().get("groups");

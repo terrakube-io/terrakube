@@ -1,5 +1,6 @@
 package io.terrakube.api.plugin.security.job;
 
+import io.terrakube.api.plugin.security.groups.GroupService;
 import io.terrakube.api.plugin.security.rbac.RbacService;
 import io.terrakube.api.repository.JobRepository;
 import io.terrakube.api.repository.StepRepository;
@@ -26,6 +27,9 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -39,6 +43,8 @@ class JobLogAccessServiceTest {
     private TeamRepository teamRepository;
     @Mock
     private RbacService rbacService;
+    @Mock
+    private GroupService groupService;
     @Mock
     private JwtAuthenticationToken jwt;
 
@@ -55,7 +61,12 @@ class JobLogAccessServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new JobLogAccessService(jobRepository, stepRepository, teamRepository, rbacService, instanceOwner);
+        service = new JobLogAccessService(jobRepository, stepRepository, teamRepository, rbacService, groupService, instanceOwner);
+        // A regular token: the effective groups are the groups claim. Tests for federated tokens override it.
+        lenient().when(groupService.getEffectiveGroups(any())).thenAnswer(invocation -> {
+            Object claim = jwt.getTokenAttributes().get("groups");
+            return claim instanceof List<?> list ? new LinkedHashSet<>(list.stream().map(Object::toString).toList()) : new LinkedHashSet<String>();
+        });
 
         organization = new Organization();
         organization.setId(orgId);
@@ -299,5 +310,118 @@ class JobLogAccessServiceTest {
         ));
 
         assertFalse(service.canWriteContext(jwt, jobId));
+    }
+
+    // A GitHub OIDC token has no groups claim. Its team comes from the federated credential it matches,
+    // which GroupService adds to the effective groups.
+    private void federatedToken(String... teamNames) {
+        when(jwt.getTokenAttributes()).thenReturn(Map.of(
+                "iss", "https://token.actions.githubusercontent.com",
+                "aud", "terrakube",
+                "sub", "repo:acme/infra:environment:production"
+        ));
+        lenient().when(groupService.getEffectiveGroups(any())).thenReturn(new LinkedHashSet<>(List.of(teamNames)));
+    }
+
+    @Test
+    void testCheckAccess_FederatedTeamInTheJobsOrganization_ReturnsAllowed() {
+        when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
+        when(stepRepository.findById(stepId)).thenReturn(Optional.of(step));
+        federatedToken("GITHUB_PLANNERS");
+        Team team = new Team();
+        team.setName("GITHUB_PLANNERS");
+        when(teamRepository.findAllByOrganizationIdAndNameIn(eq(orgId), eq(List.of("GITHUB_PLANNERS"))))
+                .thenReturn(List.of(team));
+
+        assertEquals(JobLogAccessService.LogAccessResult.ALLOWED,
+                service.checkAccess(jwt, orgId.toString(), String.valueOf(jobId), stepId.toString()));
+    }
+
+    @Test
+    void testCheckAccess_FederatedTeamWithoutATeamInTheJobsOrganization_ReturnsForbidden() {
+        when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
+        when(stepRepository.findById(stepId)).thenReturn(Optional.of(step));
+        federatedToken("GITHUB_PLANNERS");
+        when(teamRepository.findAllByOrganizationIdAndNameIn(eq(orgId), any())).thenReturn(List.of());
+        workspace.setAccess(List.of());
+
+        assertEquals(JobLogAccessService.LogAccessResult.FORBIDDEN,
+                service.checkAccess(jwt, orgId.toString(), String.valueOf(jobId), stepId.toString()));
+    }
+
+    @Test
+    void testCheckAccess_FederatedTeamWithWorkspaceAccess_ReturnsAllowed() {
+        when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
+        when(stepRepository.findById(stepId)).thenReturn(Optional.of(step));
+        federatedToken("GITHUB_PLANNERS");
+        when(teamRepository.findAllByOrganizationIdAndNameIn(eq(orgId), any())).thenReturn(List.of());
+        Access wsAccess = new Access();
+        wsAccess.setName("GITHUB_PLANNERS");
+        workspace.setAccess(List.of(wsAccess));
+
+        assertEquals(JobLogAccessService.LogAccessResult.ALLOWED,
+                service.checkAccess(jwt, orgId.toString(), String.valueOf(jobId), stepId.toString()));
+    }
+
+    @Test
+    void testCheckJobAccess_FederatedTeamInTheJobsOrganization_ReturnsAllowed() {
+        when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
+        federatedToken("GITHUB_PLANNERS");
+        Team team = new Team();
+        team.setName("GITHUB_PLANNERS");
+        when(teamRepository.findAllByOrganizationIdAndNameIn(eq(orgId), eq(List.of("GITHUB_PLANNERS"))))
+                .thenReturn(List.of(team));
+
+        assertEquals(JobLogAccessService.LogAccessResult.ALLOWED, service.checkJobAccess(jwt, jobId));
+    }
+
+    @Test
+    void testCheckJobAccess_FederatedTeamWithProjectAccess_ReturnsAllowed() {
+        when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
+        federatedToken("GITHUB_PLANNERS");
+        when(teamRepository.findAllByOrganizationIdAndNameIn(eq(orgId), any())).thenReturn(List.of());
+        Project project = new Project();
+        ProjectAccess pa = new ProjectAccess();
+        pa.setName("GITHUB_PLANNERS");
+        project.setProjectAccess(List.of(pa));
+        workspace.setProject(project);
+
+        assertEquals(JobLogAccessService.LogAccessResult.ALLOWED, service.checkJobAccess(jwt, jobId));
+    }
+
+    @Test
+    void testCheckJobAccess_FederatedTeamWithNoAccessToTheJob_ReturnsForbidden() {
+        when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
+        federatedToken("OTHER_TEAM");
+        when(teamRepository.findAllByOrganizationIdAndNameIn(eq(orgId), any())).thenReturn(List.of());
+        workspace.setAccess(List.of());
+
+        assertEquals(JobLogAccessService.LogAccessResult.FORBIDDEN, service.checkJobAccess(jwt, jobId));
+    }
+
+    @Test
+    void testCheckJobAccess_NoGroupsAndNoFederatedCredential_ReturnsForbidden() {
+        when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
+        when(jwt.getTokenAttributes()).thenReturn(Map.of("iss", "https://token.actions.githubusercontent.com"));
+        when(groupService.getEffectiveGroups(any())).thenReturn(new LinkedHashSet<>());
+        when(teamRepository.findAllByOrganizationIdAndNameIn(eq(orgId), any())).thenReturn(List.of());
+
+        assertEquals(JobLogAccessService.LogAccessResult.FORBIDDEN, service.checkJobAccess(jwt, jobId));
+    }
+
+    @Test
+    void testCanWriteContext_FederatedTeamIsNotAllowedToWrite() {
+        federatedToken("GITHUB_PLANNERS", instanceOwner);
+
+        assertFalse(service.canWriteContext(jwt, jobId));
+    }
+
+    @Test
+    void testCheckJobAccess_InternalTokenDoesNotResolveGroups() {
+        when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
+        when(jwt.getTokenAttributes()).thenReturn(Map.of("iss", "TerrakubeInternal", "jobId", String.valueOf(jobId)));
+
+        assertEquals(JobLogAccessService.LogAccessResult.ALLOWED, service.checkJobAccess(jwt, jobId));
+        verify(groupService, never()).getEffectiveGroups(any());
     }
 }
