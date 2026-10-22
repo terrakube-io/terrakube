@@ -36,6 +36,13 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
+import org.mockito.ArgumentCaptor;
+import io.terrakube.api.plugin.execution.JobVariablesService;
+import io.terrakube.api.plugin.scheduler.job.tcl.executor.persistent.PersistentExecutorService;
+import io.terrakube.api.repository.GlobalVarRepository;
+import io.terrakube.api.repository.ReferenceRepository;
+import io.terrakube.api.repository.StepRepository;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 @ExtendWith(MockitoExtension.class)
@@ -55,6 +62,18 @@ class ExecutorServiceTest {
 
     @Mock
     private TokenService tokenService;
+
+    @Mock private GlobalVarRepository globalVarRepository;
+    @Mock private ReferenceRepository referenceRepository;
+    @Mock private StepRepository stepRepository;
+    @Mock private PersistentExecutorService persistentExecutorService;
+    @Spy private JobVariablesService jobVariablesService = new JobVariablesService(encryption());
+
+    private static io.terrakube.api.plugin.security.encryption.EncryptionService encryption() {
+        var encryption = new io.terrakube.api.plugin.security.encryption.EncryptionService();
+        org.springframework.test.util.ReflectionTestUtils.setField(encryption, "internalToken", "test-key-for-job-variable-encryption");
+        return encryption;
+    }
 
     @InjectMocks
     private ExecutorService executorService;
@@ -558,5 +577,59 @@ class ExecutorServiceTest {
                 .isInstanceOf(DispatchRetryableException.class)
                 .extracting(thrown -> ((DispatchRetryableException) thrown).getRetryAfter())
                 .isEqualTo(retryAfter);
+    }
+    @Test
+    void jobVariablesOverrideWorkspaceInputsAndReachPlanAndSavedApplyWithoutMutation() throws Exception {
+        Organization organization = new Organization();
+        organization.setId(UUID.randomUUID());
+        organization.setName("test");
+        job.setOrganization(organization);
+        workspace.setId(UUID.randomUUID());
+        workspace.setOrganization(organization);
+        workspace.setBranch("main");
+        workspace.setSource("https://github.com/example/repo.git");
+        workspace.setTerraformVersion("1.14.0");
+        workspace.setIacType("terraform");
+        Variable old = new Variable();
+        old.setKey("key");
+        old.setValue("workspace-default");
+        old.setCategory(Category.TERRAFORM);
+        when(variableRepository.findByWorkspace(workspace)).thenReturn(Optional.of(List.of(old)));
+        job.setEncryptedVariables(jobVariablesService.encrypt(
+                Map.of("key", "private-key-first\nprivate-key-second\n", "empty", "")));
+        executorService.execute(job, "plan-step", flow(FlowType.terraformPlan));
+        job.setTerraformPlan("saved-plan");
+        Flow apply = flow(FlowType.terraformApply);
+        apply.setRequireSavedPlan(true);
+        executorService.execute(job, "apply-step", apply);
+        var contexts = ArgumentCaptor.forClass(ExecutorContext.class);
+        verify(persistentExecutorService, org.mockito.Mockito.times(2)).send(org.mockito.ArgumentMatchers.eq(job), contexts.capture());
+        for (ExecutorContext context : contexts.getAllValues()) {
+            assertThat(context.getEnvironmentVariables()).containsEntry("TF_VAR_key", "private-key-first\nprivate-key-second\n");
+            assertThat(context.getEnvironmentVariables()).containsEntry("TF_VAR_empty", "");
+            assertThat(context.getVariables()).doesNotContainKey("key");
+            assertThat(context.toString()).doesNotContain("private-key");
+        }
+        assertThat(contexts.getValue().isRequireSavedPlan()).isTrue();
+        assertThat(old.getValue()).isEqualTo("workspace-default");
+        verify(variableRepository, never()).save(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void unreadableJobVariablesFailTheDispatchWithoutLeakingCiphertext() {
+        Organization organization = new Organization();
+        organization.setId(UUID.randomUUID());
+        organization.setName("test");
+        job.setOrganization(organization);
+        workspace.setId(UUID.randomUUID());
+        workspace.setOrganization(organization);
+        workspace.setBranch("main");
+        workspace.setSource("https://github.com/example/repo.git");
+        workspace.setTerraformVersion("1.14.0");
+        workspace.setIacType("terraform");
+        job.setEncryptedVariables("private-invalid-ciphertext");
+        assertThatThrownBy(() -> executorService.execute(job, "plan-step", flow(FlowType.terraformPlan)))
+                .isInstanceOf(ExecutionException.class)
+                .hasMessageNotContaining("private-invalid-ciphertext");
     }
 }

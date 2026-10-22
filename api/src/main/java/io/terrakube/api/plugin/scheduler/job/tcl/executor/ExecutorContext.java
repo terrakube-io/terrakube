@@ -41,7 +41,9 @@ public class ExecutorContext {
     private String moduleSshKey;
     private String commitId;
     private boolean tofu;
+    @ToString.Exclude
     private HashMap<String, String> environmentVariables;
+    @ToString.Exclude
     private HashMap<String, String> variables;
     private List<io.terrakube.api.plugin.scheduler.job.tcl.executor.model.PolicyContext> policyList;
     private List<io.terrakube.api.plugin.scheduler.job.tcl.executor.model.PolicyExemptionContext> policyExemptionList;

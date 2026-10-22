@@ -255,6 +255,22 @@ export const DetailsJob = ({ jobId, workspaceName, canApprove = false }: Props) 
     );
   };
 
+  const renderJobVariables = (names: string[]) => (
+    <details className="run-variables">
+      <summary>
+        {names.length} run {names.length === 1 ? "variable" : "variables"}
+      </summary>
+      <p>Provided for this run only. Overrides workspace variables with matching names. Values are hidden.</p>
+      <ul className="run-variable-names" aria-label="Run variable names">
+        {names.map((name) => (
+          <li key={name}>
+            <code>{name}</code>
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+
   const onChange = (e: RadioChangeEvent) => {
     const nextUIType = e.target.value as "structured" | "console";
     setUIType(nextUIType);
@@ -989,6 +1005,9 @@ export const DetailsJob = ({ jobId, workspaceName, canApprove = false }: Props) 
           </span>
         </p>
         {renderSourceFacts(attributes)}
+        {attributes.variableNames && attributes.variableNames.length > 0
+          ? renderJobVariables(attributes.variableNames)
+          : null}
       </header>
       {renderActionBar()}
       {triggeredBy && (

@@ -763,4 +763,16 @@ class PlanStructuredOutputServiceTest {
         assertNull(service.getPlanAsHumanText(null, new File("/tmp")));
         assertDoesNotThrow(() -> service.publishPlanSummary(null, new File("/tmp"), List.of(), List.of()));
     }
+
+    @Test
+    void structuredPlanOutputDoesNotCarryTheInputVariablesSection() throws Exception {
+        String json = """
+                {"format_version":"1.2",
+                 "variables":{"password":{"value":"private-variable-value"}},
+                 "resource_changes":[],
+                 "output_changes":{}}
+                """;
+        List<Map<String, Object>> changes = subject().buildChangesFromPlanJson(json);
+        assertFalse(new ObjectMapper().writeValueAsString(changes).contains("private-variable-value"));
+    }
 }
