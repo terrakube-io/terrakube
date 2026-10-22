@@ -75,6 +75,7 @@ class JobReconciliationSweepTest {
         lenient().doReturn(valueOperations).when(redisTemplate).opsForValue();
         lenient().doAnswer(invocation -> invocation.getArgument(0)).when(workspaceRepository).save(any());
         lenient().doReturn(Optional.empty()).when(jobRepository).findFirstByWorkspaceAndIdNotAndStatusInOrderByIdAsc(any(), anyInt(), any());
+        lenient().doReturn(Optional.empty()).when(jobRepository).findFirstByWorkspaceOrderByIdDesc(any());
         // Default: jobs have no steps, so the zero-pending reconciliation pass is a no-op unless a
         // test says otherwise (existing trigger/heartbeat tests are unaffected by this feature).
         lenient().doReturn(List.of()).when(stepRepository).findByJobId(anyInt());

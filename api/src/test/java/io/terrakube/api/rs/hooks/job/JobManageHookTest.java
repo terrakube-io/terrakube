@@ -206,4 +206,25 @@ class JobManageHookTest {
         verify(scheduleJobService).createJobContext(job);
         verify(jobStatusPublisher).publish(new JobStatusEvent(47, workspaceId.toString(), "pending"), organizationId.toString());
     }
+
+    @Test
+    void aFailureToWriteTheWorkspaceStatusDoesNotStopTheJobFromBeingScheduled() throws Exception {
+        Workspace workspace = new Workspace();
+        workspace.setId(UUID.randomUUID());
+        workspace.setOrganization(new Organization());
+        Organization organization = new Organization();
+        organization.setId(UUID.randomUUID());
+        Job job = new Job();
+        job.setId(43);
+        job.setWorkspace(workspace);
+        job.setOrganization(organization);
+        job.setStatus(JobStatus.pending);
+        when(workspaceRepository.save(any())).thenThrow(new org.springframework.dao.QueryTimeoutException("lock timeout"));
+
+        JobManageHook hook = new JobManageHook(scheduleJobService, new WorkspaceJobStatusService(jobRepository, workspaceRepository), jobStatusPublisher, addressRepository);
+        hook.execute(LifeCycleHookBinding.Operation.CREATE, LifeCycleHookBinding.TransactionPhase.POSTCOMMIT, job, null, Optional.empty());
+
+        verify(scheduleJobService).createJobContext(job);
+        verify(jobStatusPublisher).publish(any(), any());
+    }
 }

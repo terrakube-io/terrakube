@@ -56,6 +56,7 @@ class JobReconciliationServiceTest {
         lenient().doAnswer(i -> i.getArgument(0)).when(workspaceRepository).save(any());
         lenient().doReturn(null).when(jobRepository).findNextDispatchableExecutableJobId();
         lenient().doReturn(Optional.empty()).when(jobRepository).findFirstByWorkspaceAndIdNotAndStatusInOrderByIdAsc(any(), anyInt(), any());
+        lenient().doReturn(Optional.empty()).when(jobRepository).findFirstByWorkspaceOrderByIdDesc(any());
         runTriggerEventWriter = mock(RunTriggerEventWriter.class);
         subject = new JobReconciliationService(jobRepository, stepRepository, new WorkspaceJobStatusService(jobRepository, workspaceRepository),
                 new JobTerminalStateDeriver(), jobNotificationTrigger, scheduleJobService,

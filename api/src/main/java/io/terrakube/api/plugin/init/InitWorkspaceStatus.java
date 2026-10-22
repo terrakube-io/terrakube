@@ -14,7 +14,9 @@ import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.util.Date;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 
 @AllArgsConstructor
@@ -36,12 +38,20 @@ public class InitWorkspaceStatus {
                 Optional<Job> lastJob = jobRepository.findFirstByWorkspaceOrderByIdDesc(workspace);
                 if( lastJob.isPresent()){
                     Job job = lastJob.get();
-                    workspace.setLastJobStatus(workspaceJobStatusService.statusFor(job));
-                    workspace.setLastJobDate(job.getUpdatedDate());
-                    workspaceRepository.save(workspace);
+                    WorkspaceJobStatusService.Shown shown = workspaceJobStatusService.shownFor(job);
+                    Date date = shown.date();
+                    // Only the rows that are not right yet are written: on a database that is already
+                    // correct, a restart changes nothing.
+                    if (workspace.getLastJobStatus() != shown.status() || !Objects.equals(workspace.getLastJobDate(), date)) {
+                        workspace.setLastJobStatus(shown.status());
+                        workspace.setLastJobDate(date);
+                        workspaceRepository.save(workspace);
+                    }
                 } else {
-                    workspace.setLastJobStatus(JobStatus.NeverExecuted);
-                    workspaceRepository.save(workspace);
+                    if (workspace.getLastJobStatus() != JobStatus.NeverExecuted) {
+                        workspace.setLastJobStatus(JobStatus.NeverExecuted);
+                        workspaceRepository.save(workspace);
+                    }
                     log.warn("Workspace {} has no jobs to update status", workspace.getName());
                 }
             }));

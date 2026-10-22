@@ -138,6 +138,7 @@ public class ScheduleJobTest {
         lenient().doNothing().when(workspaceVariableValidationService).validateWorkspaceVariables(any());
         policyApprovalGuard = mock(PolicyApprovalGuard.class);
         lenient().doReturn(Optional.empty()).when(jobRepository).findFirstByWorkspaceAndIdNotAndStatusInOrderByIdAsc(any(), anyInt(), any());
+        lenient().doReturn(Optional.empty()).when(jobRepository).findFirstByWorkspaceOrderByIdDesc(any());
         lenient().doReturn(Optional.empty()).when(prCommentService).extractRunSummary(any());
 
         redisTemplate = mock(RedisTemplate.class, new FailUnkownMethod<RedisTemplate>());

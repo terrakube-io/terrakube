@@ -92,7 +92,13 @@ public class JobManageHook implements LifeCycleHook<Job> {
                 job.getOrganization().getId().toString());
     }
 
+    // What the workspace shows is secondary to the job itself: if it cannot be written now (a lock, a lost
+    // connection) the next change of any job of the workspace writes it again, but the job must still be scheduled.
     private void updateWorkspaceStatus(Job job) {
-        workspaceJobStatusService.refresh(job);
+        try {
+            workspaceJobStatusService.refresh(job);
+        } catch (RuntimeException e) {
+            log.warn("Could not update the status of the workspace of job {}: {}", job.getId(), e.toString());
+        }
     }
 }

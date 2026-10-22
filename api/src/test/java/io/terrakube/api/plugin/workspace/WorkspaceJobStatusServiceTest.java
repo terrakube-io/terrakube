@@ -11,10 +11,12 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.util.Date;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
@@ -96,6 +98,65 @@ class WorkspaceJobStatusServiceTest {
                 .thenReturn(Optional.empty());
 
         assertEquals(JobStatus.failed, service.statusFor(failed));
+    }
+
+    @Test
+    void anUpdateOfAnOlderFinishedRunDoesNotBringBackItsStatus() {
+        Job oldFailed = job(1, JobStatus.failed);
+        Job latestCompleted = job(2, JobStatus.completed);
+        when(jobRepository.findFirstByWorkspaceAndIdNotAndStatusInOrderByIdAsc(any(), anyInt(), any()))
+                .thenReturn(Optional.empty());
+        when(jobRepository.findFirstByWorkspaceOrderByIdDesc(workspace)).thenReturn(Optional.of(latestCompleted));
+
+        assertEquals(JobStatus.completed, service.statusFor(oldFailed));
+    }
+
+    @Test
+    void theLatestFinishedRunDecidesWhenItIsTheOneThatChanged() {
+        Job latest = job(2, JobStatus.failed);
+        when(jobRepository.findFirstByWorkspaceAndIdNotAndStatusInOrderByIdAsc(any(), anyInt(), any()))
+                .thenReturn(Optional.empty());
+        // the row in the database can still hold the status from before this change
+        Job stored = job(2, JobStatus.running);
+        when(jobRepository.findFirstByWorkspaceOrderByIdDesc(workspace)).thenReturn(Optional.of(stored));
+
+        assertEquals(JobStatus.failed, service.statusFor(latest));
+    }
+
+    @Test
+    void theDateOfARunWaitingBehindNothingNewIsTheDateOfTheRunThatHoldsTheQueue() {
+        Job waiting = job(1, JobStatus.waitingApproval);
+        Date monday = new Date(1_000_000_000L);
+        waiting.setUpdatedDate(monday);
+        Job created = job(2, JobStatus.pending);
+        olderActiveJob(waiting, created);
+
+        WorkspaceJobStatusService.Shown shown = service.shownFor(created);
+
+        assertEquals(JobStatus.waitingApproval, shown.status());
+        assertEquals(monday, shown.date());
+    }
+
+    @Test
+    void theDateIsNowWhenTheRunThatChangedIsTheOneShown() {
+        Job running = job(1, JobStatus.running);
+        running.setUpdatedDate(new Date(1_000_000_000L));
+        when(jobRepository.findFirstByWorkspaceAndIdNotAndStatusInOrderByIdAsc(any(), anyInt(), any()))
+                .thenReturn(Optional.empty());
+        long before = System.currentTimeMillis();
+
+        WorkspaceJobStatusService.Shown shown = service.shownFor(running);
+
+        assertTrue(shown.date().getTime() >= before);
+    }
+
+    @Test
+    void aRunWithoutAnUpdatedDateFallsBackToNow() {
+        Job waiting = job(1, JobStatus.waitingApproval);
+        Job created = job(2, JobStatus.pending);
+        olderActiveJob(waiting, created);
+
+        assertNotNull(service.shownFor(created).date());
     }
 
     @Test

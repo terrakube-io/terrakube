@@ -33,7 +33,7 @@ import java.util.UUID;
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.matchesPattern;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
@@ -594,8 +594,9 @@ class JobTests extends ServerApplicationTests {
                 .patch("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/job/" + first)
                 .then().statusCode(HttpStatus.NO_CONTENT.value());
 
-        // the rejected run no longer holds the queue, so the workspace shows the run behind it
+        // the rejected run no longer holds the queue, so the workspace shows the run behind it. That run is
+        // dispatched at once and can already be further along, so any status that holds the queue is right.
         JobStatus shown = workspaceRepository.findById(workspace.getId()).orElseThrow().getLastJobStatus();
-        assertNotEquals(JobStatus.rejected, shown);
+        assertTrue(JobStatus.holdingTheQueue().contains(shown), "the workspace shows " + shown);
     }
 }
