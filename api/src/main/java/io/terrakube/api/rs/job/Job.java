@@ -1,6 +1,9 @@
 package io.terrakube.api.rs.job;
 
 import java.util.List;
+import java.util.Map;
+import io.terrakube.api.plugin.execution.JobVariablesConverter;
+import io.terrakube.api.rs.hooks.job.JobVariablesHook;
 import java.util.Date;
 
 import io.terrakube.api.plugin.security.audit.GenericAuditFields;
@@ -36,6 +39,7 @@ import jakarta.persistence.OneToMany;
 import lombok.Getter;
 import lombok.Setter;
 
+@LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.CREATE, phase = LifeCycleHookBinding.TransactionPhase.PREFLUSH, hook = JobVariablesHook.class)
 @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.CREATE, phase = LifeCycleHookBinding.TransactionPhase.POSTCOMMIT, hook = JobManageHook.class)
 @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.POSTCOMMIT, hook = JobManageHook.class)
 @ReadPermission(expression = "team view job OR team project limited view job OR team limited view job OR executor read job OR user is an executor service")
@@ -51,6 +55,13 @@ public class Job extends GenericAuditFields {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private int id;
+
+    // Write-only and immutable through the API. Values are encrypted in the database.
+    @ReadPermission(expression = "NONE")
+    @UpdatePermission(expression = "NONE")
+    @Convert(converter = JobVariablesConverter.class)
+    @Column(name = "encrypted_variables", columnDefinition = "text")
+    private Map<String, String> variables;
 
     @Column(name = "comments")
     private String comments;
