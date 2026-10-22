@@ -254,6 +254,27 @@ export const DetailsJob = ({ jobId, workspaceName, canApprove = false }: Props) 
     );
   };
 
+  const renderJobVariablesAlert = (names: string[]) => {
+    return (
+      <Alert
+        type="info"
+        showIcon
+        title="This run used job variables"
+        description={
+          <>
+            {names.map((name, index) => (
+              <span key={name}>
+                {index > 0 ? ", " : ""}
+                <code>{name}</code>
+              </span>
+            ))}
+            . They replace workspace variables of the same name for this run only. Their values are not shown.
+          </>
+        }
+      />
+    );
+  };
+
   const onChange = (e: RadioChangeEvent) => {
     const nextUIType = e.target.value as "structured" | "console";
     setUIType(nextUIType);
@@ -959,6 +980,9 @@ export const DetailsJob = ({ jobId, workspaceName, canApprove = false }: Props) 
     <div className="run-detail">
       {guard != null && renderIncompleteVariableAlert(guard)}
       {attributes.prCommentError ? renderPrCommentErrorAlert(attributes.prCommentError, attributes.prNumber) : null}
+      {attributes.variableNames && attributes.variableNames.length > 0
+        ? renderJobVariablesAlert(attributes.variableNames)
+        : null}
       <header className="run-header">
         <div className="job-headline">
           <WorkspaceStatusTag status={attributes.status} />

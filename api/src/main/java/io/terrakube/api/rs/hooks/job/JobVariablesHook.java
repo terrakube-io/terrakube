@@ -6,6 +6,8 @@ import com.yahoo.elide.core.lifecycle.LifeCycleHook;
 import com.yahoo.elide.core.exceptions.BadRequestException;
 import com.yahoo.elide.core.security.ChangeSpec;
 import com.yahoo.elide.core.security.RequestScope;
+import io.terrakube.api.plugin.execution.JobVariablesAccess;
+import io.terrakube.api.plugin.execution.JobVariablesForbiddenException;
 import io.terrakube.api.plugin.execution.JobVariablesService;
 import io.terrakube.api.rs.job.Job;
 import lombok.RequiredArgsConstructor;
@@ -16,11 +18,15 @@ import java.util.Optional;
 @RequiredArgsConstructor
 public class JobVariablesHook implements LifeCycleHook<Job> {
     private final JobVariablesService variables;
+    private final JobVariablesAccess access;
 
     @Override
     public void execute(Operation operation, TransactionPhase phase, Job job, RequestScope scope,
                         Optional<ChangeSpec> changes) {
         if (operation == Operation.CREATE && phase == TransactionPhase.PREFLUSH) {
+            if (job.getVariables() != null && !job.getVariables().isEmpty() && !access.canSet(scope.getUser(), job)) {
+                throw new JobVariablesForbiddenException("Setting job variables requires permission to manage the workspace");
+            }
             try {
                 job.setEncryptedVariables(variables.encrypt(job.getVariables()));
                 job.setVariableNames(job.getVariables() == null || job.getVariables().isEmpty()

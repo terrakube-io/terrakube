@@ -1217,3 +1217,34 @@ describe("DetailsJob run diagnostics and output completeness (#3693)", () => {
     expect(screen.queryByTestId("output-completeness")).not.toBeInTheDocument();
   });
 });
+
+describe("DetailsJob job variables notice", () => {
+  beforeEach(() => {
+    useStructuredOutputStreamMock.mockReturnValue(null);
+  });
+
+  const mockJob = (attributes: Record<string, unknown>) => {
+    getMock.mockImplementation((url: string) => {
+      if (url.includes("/context/v1/")) {
+        return Promise.resolve({ data: {} });
+      }
+      return Promise.resolve({ data: { data: { id: "1", attributes }, included: [] } });
+    });
+  };
+
+  it("lists the names of the job variables a run was created with, and no values", async () => {
+    mockJob({ status: "completed", variableNames: ["image_tag", "region"] });
+    render(<DetailsJob jobId="1" />);
+    expect(await screen.findByText("This run used job variables")).toBeInTheDocument();
+    expect(screen.getByText("image_tag")).toBeInTheDocument();
+    expect(screen.getByText("region")).toBeInTheDocument();
+  });
+
+  it.each([[undefined], [null], [[]]])("shows nothing when the run has no job variables (%p)", async (names) => {
+    mockJob({ status: "completed", variableNames: names });
+    render(<DetailsJob jobId="1" />);
+    await waitFor(() => expect(getMock).toHaveBeenCalled());
+    await waitFor(() => expect(screen.queryByText(/Loading|loading/)).not.toBeInTheDocument());
+    expect(screen.queryByText("This run used job variables")).not.toBeInTheDocument();
+  });
+});

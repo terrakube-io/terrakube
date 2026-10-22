@@ -88,4 +88,31 @@ class JobVariablesApiTests extends ServerApplicationTests {
         assertEquals(200, response.statusCode());
         assertEquals(Boolean.TRUE, response.path("jobVariables"));
     }
+
+    @Test
+    void teamThatCannotManageTheWorkspaceCanRunJobsButNotSetVariables() {
+        Workspace workspace = new Workspace();
+        workspace.setName("job-variable-plan-only");
+        workspace.setSource("https://github.com/example/repo.git");
+        workspace.setBranch("main");
+        workspace.setTerraformVersion("1.14.0");
+        workspace.setOrganization(organizationRepository.findById(UUID.fromString(ORG)).orElseThrow());
+        workspace = workspaceRepository.save(workspace);
+        Team team = new Team();
+        team.setName("JOB_VARIABLE_PLAN_ONLY");
+        team.setRole("plan");
+        team.setOrganization(workspace.getOrganization());
+        teamRepository.save(team);
+        String token = generatePAT("JOB_VARIABLE_PLAN_ONLY");
+        var relationships = Map.of("workspace", Map.of("data", Map.of("type", "workspace", "id", workspace.getId().toString())));
+        var withVariables = Map.of("data", Map.of("type", "job",
+                "attributes", Map.of("variables", Map.of("key", "private-test-value")), "relationships", relationships));
+        long before = jobRepository.count();
+        var denied = given().auth().oauth2(token).contentType("application/vnd.api+json").body(withVariables).post(ROUTE);
+        assertEquals(403, denied.statusCode(), denied.asString());
+        assertFalse(denied.asString().contains("private-test-value"));
+        assertEquals(before, jobRepository.count());
+        var plain = Map.of("data", Map.of("type", "job", "relationships", relationships));
+        assertEquals(201, given().auth().oauth2(token).contentType("application/vnd.api+json").body(plain).post(ROUTE).statusCode());
+    }
 }
