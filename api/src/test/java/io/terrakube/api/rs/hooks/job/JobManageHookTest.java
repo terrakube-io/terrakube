@@ -4,7 +4,9 @@ import com.yahoo.elide.annotation.LifeCycleHookBinding;
 import io.terrakube.api.plugin.scheduler.ScheduleJobService;
 import io.terrakube.api.plugin.subscription.JobStatusEvent;
 import io.terrakube.api.plugin.subscription.JobStatusPublisher;
+import io.terrakube.api.plugin.workspace.WorkspaceJobStatusService;
 import io.terrakube.api.repository.AddressRepository;
+import io.terrakube.api.repository.JobRepository;
 import io.terrakube.api.repository.WorkspaceRepository;
 import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.job.Job;
@@ -40,6 +42,9 @@ class JobManageHookTest {
     WorkspaceRepository workspaceRepository;
 
     @Mock
+    JobRepository jobRepository;
+
+    @Mock
     JobStatusPublisher jobStatusPublisher;
 
     @Mock
@@ -62,7 +67,7 @@ class JobManageHookTest {
         job.setOrganization(organization);
         job.setStatus(JobStatus.running);
 
-        JobManageHook hook = new JobManageHook(scheduleJobService, workspaceRepository, jobStatusPublisher, addressRepository);
+        JobManageHook hook = new JobManageHook(scheduleJobService, new WorkspaceJobStatusService(jobRepository, workspaceRepository), jobStatusPublisher, addressRepository);
         hook.execute(LifeCycleHookBinding.Operation.UPDATE, LifeCycleHookBinding.TransactionPhase.POSTCOMMIT, job, null, Optional.empty());
 
         verify(jobStatusPublisher).publish(new JobStatusEvent(42, workspaceId.toString(), "running"), organizationId.toString());
@@ -85,7 +90,7 @@ class JobManageHookTest {
         job.setOrganization(organization);
         job.setStatus(JobStatus.pending);
 
-        JobManageHook hook = new JobManageHook(scheduleJobService, workspaceRepository, jobStatusPublisher, addressRepository);
+        JobManageHook hook = new JobManageHook(scheduleJobService, new WorkspaceJobStatusService(jobRepository, workspaceRepository), jobStatusPublisher, addressRepository);
         hook.execute(LifeCycleHookBinding.Operation.CREATE, LifeCycleHookBinding.TransactionPhase.POSTCOMMIT, job, null, Optional.empty());
 
         verify(jobStatusPublisher).publish(new JobStatusEvent(43, workspaceId.toString(), "pending"), organizationId.toString());
@@ -110,7 +115,7 @@ class JobManageHookTest {
         job.setTargetAddrs(List.of("aws_instance.foo"));
         job.setReplaceAddrs(List.of("aws_instance.bar", "module.baz.aws_instance.qux"));
 
-        JobManageHook hook = new JobManageHook(scheduleJobService, workspaceRepository, jobStatusPublisher, addressRepository);
+        JobManageHook hook = new JobManageHook(scheduleJobService, new WorkspaceJobStatusService(jobRepository, workspaceRepository), jobStatusPublisher, addressRepository);
         hook.execute(LifeCycleHookBinding.Operation.CREATE, LifeCycleHookBinding.TransactionPhase.POSTCOMMIT, job, null, Optional.empty());
 
         ArgumentCaptor<Address> captor = ArgumentCaptor.forClass(Address.class);
@@ -140,7 +145,7 @@ class JobManageHookTest {
         job.setOrganization(organization);
         job.setStatus(JobStatus.pending);
 
-        JobManageHook hook = new JobManageHook(scheduleJobService, workspaceRepository, jobStatusPublisher, addressRepository);
+        JobManageHook hook = new JobManageHook(scheduleJobService, new WorkspaceJobStatusService(jobRepository, workspaceRepository), jobStatusPublisher, addressRepository);
         hook.execute(LifeCycleHookBinding.Operation.CREATE, LifeCycleHookBinding.TransactionPhase.POSTCOMMIT, job, null, Optional.empty());
 
         verify(addressRepository, never()).save(any());
@@ -164,7 +169,7 @@ class JobManageHookTest {
         job.setStatus(JobStatus.pending);
         job.setTargetAddrs(Arrays.asList(" aws_instance.foo ", "", "   ", null));
 
-        JobManageHook hook = new JobManageHook(scheduleJobService, workspaceRepository, jobStatusPublisher, addressRepository);
+        JobManageHook hook = new JobManageHook(scheduleJobService, new WorkspaceJobStatusService(jobRepository, workspaceRepository), jobStatusPublisher, addressRepository);
         hook.execute(LifeCycleHookBinding.Operation.CREATE, LifeCycleHookBinding.TransactionPhase.POSTCOMMIT, job, null, Optional.empty());
 
         ArgumentCaptor<Address> captor = ArgumentCaptor.forClass(Address.class);
@@ -194,11 +199,32 @@ class JobManageHookTest {
                 .thenThrow(new RuntimeException("constraint violation"))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
-        JobManageHook hook = new JobManageHook(scheduleJobService, workspaceRepository, jobStatusPublisher, addressRepository);
+        JobManageHook hook = new JobManageHook(scheduleJobService, new WorkspaceJobStatusService(jobRepository, workspaceRepository), jobStatusPublisher, addressRepository);
         hook.execute(LifeCycleHookBinding.Operation.CREATE, LifeCycleHookBinding.TransactionPhase.POSTCOMMIT, job, null, Optional.empty());
 
         verify(addressRepository, times(2)).save(any());
         verify(scheduleJobService).createJobContext(job);
         verify(jobStatusPublisher).publish(new JobStatusEvent(47, workspaceId.toString(), "pending"), organizationId.toString());
+    }
+
+    @Test
+    void aFailureToWriteTheWorkspaceStatusDoesNotStopTheJobFromBeingScheduled() throws Exception {
+        Workspace workspace = new Workspace();
+        workspace.setId(UUID.randomUUID());
+        workspace.setOrganization(new Organization());
+        Organization organization = new Organization();
+        organization.setId(UUID.randomUUID());
+        Job job = new Job();
+        job.setId(43);
+        job.setWorkspace(workspace);
+        job.setOrganization(organization);
+        job.setStatus(JobStatus.pending);
+        when(workspaceRepository.save(any())).thenThrow(new org.springframework.dao.QueryTimeoutException("lock timeout"));
+
+        JobManageHook hook = new JobManageHook(scheduleJobService, new WorkspaceJobStatusService(jobRepository, workspaceRepository), jobStatusPublisher, addressRepository);
+        hook.execute(LifeCycleHookBinding.Operation.CREATE, LifeCycleHookBinding.TransactionPhase.POSTCOMMIT, job, null, Optional.empty());
+
+        verify(scheduleJobService).createJobContext(job);
+        verify(jobStatusPublisher).publish(any(), any());
     }
 }

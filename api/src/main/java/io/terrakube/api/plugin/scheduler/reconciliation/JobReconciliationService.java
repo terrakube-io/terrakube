@@ -7,11 +7,10 @@ import io.terrakube.api.plugin.scheduler.reconciliation.ReconciliationResult.Rec
 import io.terrakube.api.plugin.scheduler.reconciliation.ReconciliationResult.StepEvidence;
 import io.terrakube.api.repository.JobRepository;
 import io.terrakube.api.repository.StepRepository;
-import io.terrakube.api.repository.WorkspaceRepository;
+import io.terrakube.api.plugin.workspace.WorkspaceJobStatusService;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.job.step.Step;
-import io.terrakube.api.rs.workspace.Workspace;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.quartz.JobKey;
@@ -24,7 +23,6 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.Comparator;
-import java.util.Date;
 import java.util.List;
 import java.util.Objects;
 
@@ -53,7 +51,7 @@ public class JobReconciliationService {
 
     private final JobRepository jobRepository;
     private final StepRepository stepRepository;
-    private final WorkspaceRepository workspaceRepository;
+    private final WorkspaceJobStatusService workspaceJobStatusService;
     private final JobTerminalStateDeriver deriver;
     private final JobNotificationTrigger jobNotificationTrigger;
     private final ScheduleJobService scheduleJobService;
@@ -154,13 +152,7 @@ public class JobReconciliationService {
     // Same 3-line update JobManageHook and JobReconciliationSweep already do independently: keeps
     // workspace.lastJobStatus in sync since a plain jobRepository.save bypasses Elide's hooks.
     private void updateWorkspaceStatus(Job job) {
-        Workspace workspace = job.getWorkspace();
-        if (workspace == null) {
-            return;
-        }
-        workspace.setLastJobStatus(job.getStatus());
-        workspace.setLastJobDate(new Date(System.currentTimeMillis()));
-        workspaceRepository.save(workspace);
+        workspaceJobStatusService.refresh(job);
     }
 
     private void deleteTriggerAfterCommit(int jobId) {

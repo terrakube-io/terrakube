@@ -1,5 +1,7 @@
 package io.terrakube.api.plugin.scheduler.reconciliation;
 
+import java.util.Optional;
+import io.terrakube.api.plugin.workspace.WorkspaceJobStatusService;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import io.terrakube.api.helpers.FailUnkownMethod;
 import io.terrakube.api.plugin.notification.JobNotificationTrigger;
@@ -22,6 +24,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
@@ -52,8 +55,10 @@ class JobReconciliationServiceTest {
         lenient().doAnswer(i -> i.getArgument(0)).when(jobRepository).save(any());
         lenient().doAnswer(i -> i.getArgument(0)).when(workspaceRepository).save(any());
         lenient().doReturn(null).when(jobRepository).findNextDispatchableExecutableJobId();
+        lenient().doReturn(Optional.empty()).when(jobRepository).findFirstByWorkspaceAndIdNotAndStatusInOrderByIdAsc(any(), anyInt(), any());
+        lenient().doReturn(Optional.empty()).when(jobRepository).findFirstByWorkspaceOrderByIdDesc(any());
         runTriggerEventWriter = mock(RunTriggerEventWriter.class);
-        subject = new JobReconciliationService(jobRepository, stepRepository, workspaceRepository,
+        subject = new JobReconciliationService(jobRepository, stepRepository, new WorkspaceJobStatusService(jobRepository, workspaceRepository),
                 new JobTerminalStateDeriver(), jobNotificationTrigger, scheduleJobService,
                 scheduler, new JobReconciliationMetrics(new SimpleMeterRegistry()),
                 runTriggerEventWriter);

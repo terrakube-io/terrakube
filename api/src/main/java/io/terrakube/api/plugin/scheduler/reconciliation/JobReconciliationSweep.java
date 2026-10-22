@@ -3,14 +3,13 @@ package io.terrakube.api.plugin.scheduler.reconciliation;
 import io.terrakube.api.plugin.scheduler.ScheduleJobService;
 import io.terrakube.api.repository.JobRepository;
 import io.terrakube.api.repository.StepRepository;
-import io.terrakube.api.repository.WorkspaceRepository;
+import io.terrakube.api.plugin.workspace.WorkspaceJobStatusService;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.job.step.Step;
 import io.terrakube.api.plugin.scheduler.spool.SpoolRecoveryService;
 import io.terrakube.api.plugin.storage.StorageTypeService;
 import io.terrakube.api.rs.job.step.DeliveryState;
-import io.terrakube.api.rs.workspace.Workspace;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.quartz.JobExecutionContext;
@@ -69,7 +68,7 @@ public class JobReconciliationSweep implements org.quartz.Job {
 
     JobRepository jobRepository;
     StepRepository stepRepository;
-    WorkspaceRepository workspaceRepository;
+    WorkspaceJobStatusService workspaceJobStatusService;
     Scheduler scheduler;
     ScheduleJobService scheduleJobService;
     RedisTemplate<String, Object> redisTemplate;
@@ -84,7 +83,7 @@ public class JobReconciliationSweep implements org.quartz.Job {
     public JobReconciliationSweep(
             JobRepository jobRepository,
             StepRepository stepRepository,
-            WorkspaceRepository workspaceRepository,
+            WorkspaceJobStatusService workspaceJobStatusService,
             Scheduler scheduler,
             ScheduleJobService scheduleJobService,
             RedisTemplate<String, Object> redisTemplate,
@@ -96,7 +95,7 @@ public class JobReconciliationSweep implements org.quartz.Job {
             SpoolRecoveryService spoolRecoveryService) {
         this.jobRepository = jobRepository;
         this.stepRepository = stepRepository;
-        this.workspaceRepository = workspaceRepository;
+        this.workspaceJobStatusService = workspaceJobStatusService;
         this.scheduler = scheduler;
         this.scheduleJobService = scheduleJobService;
         this.redisTemplate = redisTemplate;
@@ -285,12 +284,7 @@ public class JobReconciliationSweep implements org.quartz.Job {
         // normally keeps workspace.lastJobStatus in sync on every entity-managed job update), so
         // without this the workspace list UI would keep showing the job's previous status
         // (typically "running") forever after this sweep fails it.
-        Workspace workspace = job.getWorkspace();
-        if (workspace != null) {
-            workspace.setLastJobStatus(JobStatus.failed);
-            workspace.setLastJobDate(new Date(System.currentTimeMillis()));
-            workspaceRepository.save(workspace);
-        }
+        workspaceJobStatusService.refresh(job);
         try {
             scheduler.deleteJob(new JobKey(PREFIX_JOB_CONTEXT + job.getId()));
         } catch (SchedulerException e) {

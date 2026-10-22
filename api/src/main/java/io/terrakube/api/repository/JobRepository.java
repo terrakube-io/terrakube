@@ -12,6 +12,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.transaction.annotation.Transactional;
 import io.terrakube.api.rs.workspace.Workspace;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -52,6 +53,7 @@ public interface JobRepository extends JpaRepository<Job, Integer> {
 
     Optional<Job> findFirstByWorkspaceAndStatusInOrderByIdDesc(Workspace workspace, List<JobStatus> jobStatuses);
     Optional<Job> findFirstByWorkspaceAndStatusInOrderByIdAsc(Workspace workspace, List<JobStatus> jobStatuses);
+    Optional<Job> findFirstByWorkspaceAndIdNotAndStatusInOrderByIdAsc(Workspace workspace, int jobId, Collection<JobStatus> jobStatuses);
     Optional<Job> findFirstByWorkspaceOrderByIdDesc(Workspace workspace);
 
     /**
