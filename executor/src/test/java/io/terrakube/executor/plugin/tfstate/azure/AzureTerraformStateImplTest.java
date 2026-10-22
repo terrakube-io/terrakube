@@ -234,6 +234,27 @@ class AzureTerraformStateImplTest {
     }
 
     @Test
+    void testSaveBufferedOutputStreamsToStorage() throws Exception {
+        when(blobContainerClient.exists()).thenReturn(true);
+        when(terraformOutputPathService.getOutputPath("org1", "job1", "step1")).thenReturn("https://api/output");
+        java.io.ByteArrayOutputStream uploaded = new java.io.ByteArrayOutputStream();
+        org.mockito.ArgumentCaptor<Long> length = org.mockito.ArgumentCaptor.forClass(Long.class);
+        doAnswer(invocation -> {
+            invocation.<java.io.InputStream>getArgument(0).transferTo(uploaded);
+            return null;
+        }).when(blobClient).upload(any(java.io.InputStream.class), length.capture(), eq(true));
+
+        try (io.terrakube.executor.service.logs.StepOutputBuffer buffer = new io.terrakube.executor.service.logs.StepOutputBuffer(4, null)) {
+            buffer.appendln("output-content");
+            String result = azureTerraformState.saveBufferedOutput("org1", "job1", "step1", buffer, "error-content");
+
+            assertEquals("https://api/output", result);
+        }
+        assertEquals("output-content\nerror-content", uploaded.toString(java.nio.charset.StandardCharsets.UTF_8));
+        assertEquals(uploaded.size(), length.getValue());
+    }
+
+    @Test
     void testSpoolContextPatch() {
         String organizationId = "org1";
         String jobId = "job1";

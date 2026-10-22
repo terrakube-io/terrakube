@@ -1,5 +1,6 @@
 package io.terrakube.executor.plugin.tfstate.aws;
 
+import io.terrakube.executor.service.logs.StepOutputBuffer;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NonNull;
@@ -381,6 +382,31 @@ public class AwsTerraformStateImpl implements TerraformState {
                 .build();
 
         storageRetryMetrics.withRetry("aws", "output-write", () -> s3client.putObject(putObjectRequest, RequestBody.fromString(utf8EncodedString)));
+        log.info("Upload Object {} completed", blobKey);
+
+        return terraformOutputPathService.getOutputPath(organizationId, jobId, stepId);
+    }
+
+    @Override
+    public String saveBufferedOutput(String organizationId, String jobId, String stepId, StepOutputBuffer output, String outputError) {
+        String blobKey = "tfoutput/" + organizationId + "/" + jobId + "/" + stepId + ".tfoutput";
+        log.info("blobKey: {}", blobKey);
+
+        PutObjectRequest putObjectRequest = PutObjectRequest.builder()
+                .bucket(bucketName)
+                .key(blobKey)
+                .build();
+        long length = StepOutputBuffer.sizeWith(output, outputError);
+
+        // The provider opens a new stream per attempt, so a retry re-reads the data from the start.
+        storageRetryMetrics.withRetry("aws", "output-write", () -> s3client.putObject(putObjectRequest,
+                RequestBody.fromContentProvider(() -> {
+                    try {
+                        return output.openStream(outputError);
+                    } catch (java.io.IOException e) {
+                        throw new java.io.UncheckedIOException(e);
+                    }
+                }, length, "text/plain")));
         log.info("Upload Object {} completed", blobKey);
 
         return terraformOutputPathService.getOutputPath(organizationId, jobId, stepId);

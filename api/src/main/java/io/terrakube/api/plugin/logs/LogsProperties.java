@@ -51,4 +51,8 @@ public class LogsProperties {
 
     /** Approximate cap on a job's live-log Redis stream when logs are ingested via the API. */
     private long redisMaxLen = 200_000L;
+    /** Largest request body, in bytes of output lines, accepted by the log append endpoint; a larger one gets 413. */
+    private long appendMaxBytes = 4_194_304L;
+    /** Largest line, in bytes, kept in the live stream when logs are ingested via the API; a longer one is cut. */
+    private int appendLineMaxBytes = 65_536;
 }

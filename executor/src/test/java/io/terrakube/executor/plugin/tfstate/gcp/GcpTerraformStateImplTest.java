@@ -215,6 +215,24 @@ class GcpTerraformStateImplTest {
     }
 
     @Test
+    void testSaveBufferedOutputStreamsToStorage() throws Exception {
+        when(terraformOutputPathService.getOutputPath("org1", "job1", "step1")).thenReturn("https://api/output");
+        java.io.ByteArrayOutputStream uploaded = new java.io.ByteArrayOutputStream();
+        when(storage.createFrom(any(BlobInfo.class), any(java.io.InputStream.class))).thenAnswer(invocation -> {
+            invocation.<java.io.InputStream>getArgument(1).transferTo(uploaded);
+            return null;
+        });
+
+        try (io.terrakube.executor.service.logs.StepOutputBuffer buffer = new io.terrakube.executor.service.logs.StepOutputBuffer(4, null)) {
+            buffer.appendln("output-content");
+            String result = gcpTerraformState.saveBufferedOutput("org1", "job1", "step1", buffer, "error-content");
+
+            assertEquals("https://api/output", result);
+        }
+        assertEquals("output-content\nerror-content", uploaded.toString(StandardCharsets.UTF_8));
+    }
+
+    @Test
     void testSpoolContextPatch() {
         String organizationId = "org1";
         String jobId = "job1";

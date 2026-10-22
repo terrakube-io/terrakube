@@ -46,6 +46,7 @@ public class LogsService {
     @SuppressWarnings("unchecked")
     private void addAll(StreamOperations streamOps, List<Log> logs, XAddOptions trim) {
         for (Log log : logs) {
+            log.setOutput(LogLine.cap(log.getOutput(), properties.getAppendLineMaxBytes()));
             streamOps.add(log.getJobId().toString(), log.toStrMap(), trim);
         }
     }

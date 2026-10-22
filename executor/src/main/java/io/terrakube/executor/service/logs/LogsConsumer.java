@@ -3,7 +3,6 @@ package io.terrakube.executor.service.logs;
 import lombok.Builder;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.text.TextStringBuilder;
 
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
@@ -19,7 +18,7 @@ public class LogsConsumer implements Consumer<String> {
     private String stepId;
 
     @NonNull
-    TextStringBuilder terraformOutput;
+    StepOutputBuffer terraformOutput;
 
     @NonNull
     ProcessLogs processLogs;
@@ -30,7 +29,9 @@ public class LogsConsumer implements Consumer<String> {
     @Override
     public void accept(String logs) {
         int line = lineNumber.addAndGet(1);
-        log.info(logs);
+        if (processLogs.echoToServiceLog()) {
+            log.info(logs);
+        }
         terraformOutput.appendln(logs);
         processLogs.sendLogs(jobId, stepId, line, logs);
     }

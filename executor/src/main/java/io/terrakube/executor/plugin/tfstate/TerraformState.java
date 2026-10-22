@@ -2,6 +2,8 @@ package io.terrakube.executor.plugin.tfstate;
 
 import io.terrakube.executor.service.mode.TerraformJob;
 
+import io.terrakube.executor.service.logs.StepOutputBuffer;
+
 import java.io.File;
 
 public interface TerraformState {
@@ -48,6 +50,14 @@ public interface TerraformState {
     void saveStateJson(TerraformJob terraformJob, String applyJSON, String rawState);
 
     String saveOutput(String organizationId, String jobId, String stepId, String output, String outputError);
+
+    /**
+     * Saves the output of a step held in a buffer that can be larger than memory. The backends stream it
+     * to the object store, so the upload does not need the output as one String.
+     */
+    default String saveBufferedOutput(String organizationId, String jobId, String stepId, StepOutputBuffer output, String outputError) {
+        return saveOutput(organizationId, jobId, stepId, output.toString(), outputError);
+    }
 
     /**
      * Upload a terraform/tofu binary to cloud storage for caching.

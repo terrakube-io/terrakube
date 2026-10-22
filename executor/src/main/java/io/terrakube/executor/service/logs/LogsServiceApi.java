@@ -1,6 +1,8 @@
 package io.terrakube.executor.service.logs;
 
-import lombok.AllArgsConstructor;
+import feign.FeignException;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
@@ -9,21 +11,48 @@ import io.terrakube.client.TerrakubeClient;
 import io.terrakube.client.model.organization.job.Log;
 import io.terrakube.client.model.organization.job.LogsRequest;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantLock;
 
 @Service
 @Slf4j
-@AllArgsConstructor
 @ConditionalOnProperty(name = "io.executor.log-via-api", havingValue = "true", matchIfMissing = false)
 public class LogsServiceApi implements ProcessLogs {
-    private TerrakubeClient terrakubeClient;
-    private final LinkedBlockingDeque<Log> logQueue = new LinkedBlockingDeque<>();
+    // What a line costs in the queue besides its text: the object, the ids and the line number.
+    private static final int LINE_OVERHEAD_BYTES = 96;
+    private static final long DROP_WARNING_INTERVAL_MILLIS = 10_000L;
+
+    private final TerrakubeClient terrakubeClient;
+    private final ExecutorLogsProperties properties;
+    private final Counter dropped;
+    // A line with its size, worked out once.
+    private record Queued(Log line, long bytes) {
+    }
+
+    private final LinkedBlockingDeque<Queued> logQueue = new LinkedBlockingDeque<>();
+    // Adding, taking, requeueing and dropping change the queue and its byte count together. Without one
+    // lock, a producer thread could drop lines from the front while a failed batch is being put back
+    // there, and drop the newest of that batch before its older lines are back. Nothing slow is done
+    // while it is held: the request to the API is made outside of it.
+    private final Object queueLock = new Object();
+    private final AtomicLong queuedBytes = new AtomicLong();
+    private final AtomicLong lastDropWarning = new AtomicLong();
     // Held while a batch is in flight, so flush() can't return while a scheduled batch it never
     // saw is still being sent.
     private final ReentrantLock sendLock = new ReentrantLock();
+
+    public LogsServiceApi(TerrakubeClient terrakubeClient, ExecutorLogsProperties properties, MeterRegistry meterRegistry) {
+        this.terrakubeClient = terrakubeClient;
+        this.properties = properties;
+        this.dropped = Counter.builder("terrakube.executor.logs.dropped")
+                .description("Output lines left out of the live view because the API could not take them in time")
+                .tag("transport", "api")
+                .register(meterRegistry);
+    }
 
     @Override
     public void setupConsumerGroups(String jobId) {
@@ -37,14 +66,19 @@ public class LogsServiceApi implements ProcessLogs {
         logEntry.setJobId(jobId);
         logEntry.setStepId(stepId);
         logEntry.setLineNumber(lineNumber);
-        logEntry.setOutput(output);
+        logEntry.setOutput(LiveLogLine.cap(output, properties.getLiveLineMaxBytes()));
 
-        try {
-            logQueue.put(logEntry);
-        } catch (InterruptedException addLogException) {
-            log.error("Failed to add log to queue", addLogException);
-            Thread.currentThread().interrupt();
+        long bytes = sizeOf(logEntry);
+        synchronized (queueLock) {
+            logQueue.addLast(new Queued(logEntry, bytes));
+            queuedBytes.addAndGet(bytes);
+            dropOldestBeyondTheBudget();
         }
+    }
+
+    @Override
+    public boolean echoToServiceLog() {
+        return properties.isEchoToServiceLog();
     }
 
     @Override
@@ -81,35 +115,106 @@ public class LogsServiceApi implements ProcessLogs {
         }
     }
 
+    // Sends the queue in requests of at most apiBatchMaxBytes, and stops at the first one the API does
+    // not take: what is left stays queued, within its byte budget, for the next round.
     private void sendQueuedLogs() {
-        List<Log> batch = new ArrayList<>();
-        logQueue.drainTo(batch);
+        while (true) {
+            List<Queued> batch = takeBatch();
+            if (batch.isEmpty()) {
+                return;
+            }
 
-        if (batch.isEmpty()) {
-            return;
-        }
-
-        log.info("Sending logs to Terrakube API");
-        LogsRequest logsRequest = new LogsRequest();
-        logsRequest.setData(batch);
-
-        try {
-            terrakubeClient.appendLogs(logsRequest);
-        } catch (Exception sendLogsException) {
-            log.error("Failed to send logs", sendLogsException);
-            requeueLogs(batch);
+            LogsRequest logsRequest = new LogsRequest();
+            logsRequest.setData(batch.stream().map(Queued::line).toList());
+            try {
+                terrakubeClient.appendLogs(logsRequest);
+            } catch (Exception sendLogsException) {
+                if (sendLogsException instanceof FeignException feign && feign.status() == 413) {
+                    // The API will never take this request. Sending it again would only block the lines
+                    // behind it, so it is dropped from the live view like any other overflow.
+                    log.error("The API refused a batch of {} log lines as too large, it is dropped from the live view", batch.size());
+                    dropped.increment(batch.size());
+                    continue;
+                }
+                log.error("Failed to send logs", sendLogsException);
+                requeueLogs(batch);
+                return;
+            }
         }
     }
 
-
-    private void requeueLogs(List<Log> failedBatch) {
-        for (int i = failedBatch.size() - 1; i >= 0; i--) {
-            try {
-                logQueue.putFirst(failedBatch.get(i));
-            } catch (InterruptedException e) {
-                log.error("Thread interrupted while re-queuing logs", e);
-                Thread.currentThread().interrupt();
+    private List<Queued> takeBatch() {
+        List<Queued> batch = new ArrayList<>();
+        long bytes = 0;
+        long maxBytes = Math.max(1, properties.getApiBatchMaxBytes());
+        synchronized (queueLock) {
+            Queued next;
+            while ((next = logQueue.peekFirst()) != null) {
+                // A batch always takes at least one line, however large, so a line can never get stuck.
+                if (!batch.isEmpty() && bytes + next.bytes() > maxBytes) {
+                    break;
+                }
+                Queued taken = logQueue.pollFirst();
+                if (taken == null) {
+                    break;
+                }
+                queuedBytes.addAndGet(-taken.bytes());
+                batch.add(taken);
+                bytes += taken.bytes();
             }
         }
+        return batch;
+    }
+
+    private void requeueLogs(List<Queued> failedBatch) {
+        synchronized (queueLock) {
+            for (int i = failedBatch.size() - 1; i >= 0; i--) {
+                Queued line = failedBatch.get(i);
+                logQueue.addFirst(line);
+                queuedBytes.addAndGet(line.bytes());
+            }
+            dropOldestBeyondTheBudget();
+        }
+    }
+
+    // The oldest lines go first: a viewer follows the end of the output, and the saved output is not
+    // built from this queue, so nothing that is dropped here is lost for good.
+    // Called with queueLock held.
+    private void dropOldestBeyondTheBudget() {
+        long maxBytes = properties.getApiQueueMaxBytes();
+        if (maxBytes <= 0) {
+            return;
+        }
+        long droppedNow = 0;
+        while (queuedBytes.get() > maxBytes) {
+            Queued oldest = logQueue.pollFirst();
+            if (oldest == null) {
+                break;
+            }
+            queuedBytes.addAndGet(-oldest.bytes());
+            droppedNow++;
+        }
+        if (droppedNow > 0) {
+            dropped.increment(droppedNow);
+            long now = System.currentTimeMillis();
+            long last = lastDropWarning.get();
+            if (now - last >= DROP_WARNING_INTERVAL_MILLIS && lastDropWarning.compareAndSet(last, now)) {
+                log.warn("The API did not take log lines fast enough: the oldest lines were left out of the live view to stay within {} bytes. The saved output has them all.", maxBytes);
+            }
+        }
+    }
+
+    private static long sizeOf(Log line) {
+        String output = line.getOutput();
+        return LINE_OVERHEAD_BYTES + LiveLogLine.utf8Length(output);
+    }
+
+    // For tests.
+    long queuedBytes() {
+        return queuedBytes.get();
+    }
+
+    int queuedLines() {
+        return logQueue.size();
     }
 }

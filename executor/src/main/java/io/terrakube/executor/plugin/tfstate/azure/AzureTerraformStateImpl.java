@@ -1,5 +1,6 @@
 package io.terrakube.executor.plugin.tfstate.azure;
 
+import io.terrakube.executor.service.logs.StepOutputBuffer;
 import com.azure.core.util.BinaryData;
 import com.azure.storage.blob.BlobClient;
 import com.azure.storage.blob.BlobContainerClient;
@@ -293,6 +294,30 @@ public class AzureTerraformStateImpl implements TerraformState {
         String utf8EncodedString = StringUtils.newStringUtf8(bytes);
         storageRetryMetrics.withRetry("azure", "output-write", () -> {
             blobClient.upload(BinaryData.fromString(utf8EncodedString), true);
+            return null;
+        });
+
+        return terraformOutputPathService.getOutputPath(organizationId, jobId, stepId);
+    }
+
+    @Override
+    public String saveBufferedOutput(String organizationId, String jobId, String stepId, StepOutputBuffer output, String outputError) {
+        BlobContainerClient blobContainerClient = blobServiceClient.getBlobContainerClient(CONTAINER_OUTPUT_NAME);
+
+        if (!blobContainerClient.exists()) {
+            blobContainerClient.create();
+        }
+        String blobName = organizationId + "/" + jobId + "/" + stepId + ".tfoutput";
+        log.info("blobName: {}", blobName);
+        BlobClient blobClient = blobContainerClient.getBlobClient(blobName);
+        long length = StepOutputBuffer.sizeWith(output, outputError);
+
+        storageRetryMetrics.withRetry("azure", "output-write", () -> {
+            try (java.io.InputStream data = output.openStream(outputError)) {
+                blobClient.upload(data, length, true);
+            } catch (java.io.IOException e) {
+                throw new java.io.UncheckedIOException(e);
+            }
             return null;
         });
 

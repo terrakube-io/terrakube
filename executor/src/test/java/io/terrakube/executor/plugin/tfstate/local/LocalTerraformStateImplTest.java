@@ -277,6 +277,25 @@ class LocalTerraformStateImplTest {
     }
 
     @Test
+    void testSaveBufferedOutputWritesTheWholeOutput() throws IOException {
+        when(terraformOutputPathService.getOutputPath("org1", "job1", "step1")).thenReturn("http://api/output");
+
+        try (io.terrakube.executor.service.logs.StepOutputBuffer buffer = new io.terrakube.executor.service.logs.StepOutputBuffer(4, null)) {
+            buffer.appendln("output-content");
+            String result = localTerraformState.saveBufferedOutput("org1", "job1", "step1", buffer, "error-content");
+
+            assertEquals("http://api/output", result);
+        }
+        File outputFile = new File(FileUtils.getUserDirectoryPath().concat(
+                FilenameUtils.separatorsToSystem("/.terraform-spring-boot/local/output/org1/job1/step1.tfoutput")));
+        try {
+            assertEquals("output-content\nerror-content", FileUtils.readFileToString(outputFile, java.nio.charset.StandardCharsets.UTF_8));
+        } finally {
+            FileUtils.deleteQuietly(new File(FileUtils.getUserDirectoryPath(), ".terraform-spring-boot"));
+        }
+    }
+
+    @Test
     void testSpoolContextPatch() throws IOException {
         String organizationId = "org1";
         String jobId = "job1";
