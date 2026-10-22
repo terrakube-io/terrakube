@@ -70,13 +70,26 @@ public final class ContextPatchApplier {
             if (segments.length > 2 || Arrays.asList(segments).contains("") || REVISIONS_KEY.equals(segments[0])) {
                 throw new InvalidContextPatchException("set contains an invalid path");
             }
-            if (RENDERED_PLAN_TEXT_KEY.equals(segments[0]) && segments.length == 2 && entry.getValue().isTextual()
-                    && entry.getValue().textValue().getBytes(StandardCharsets.UTF_8).length > MAX_RENDERED_PLAN_TEXT_BYTES) {
-                throw new InvalidContextPatchException(
-                        "the rendered plan text is larger than " + MAX_RENDERED_PLAN_TEXT_BYTES + " bytes");
+            if (RENDERED_PLAN_TEXT_KEY.equals(segments[0]) && !entry.getValue().isNull()) {
+                validateRenderedPlanText(segments, entry.getValue());
             }
         }
         return new Patch(revision.asLong(), set);
+    }
+
+    // Only planRenderedText/<stepId> holds text, and it is the one place a bounded value is promised, so a
+    // write to the key itself or of anything but a string cannot be used to get past the limit.
+    private static void validateRenderedPlanText(String[] segments, JsonNode value) {
+        if (segments.length != 2 || !value.isTextual()) {
+            throw new InvalidContextPatchException(RENDERED_PLAN_TEXT_KEY + "/<stepId> must be set to a string");
+        }
+        String text = value.textValue();
+        // A character is at least one byte, so a longer string is over the limit without encoding it.
+        if (text.length() > MAX_RENDERED_PLAN_TEXT_BYTES
+                || text.getBytes(StandardCharsets.UTF_8).length > MAX_RENDERED_PLAN_TEXT_BYTES) {
+            throw new InvalidContextPatchException(
+                    "the rendered plan text is larger than " + MAX_RENDERED_PLAN_TEXT_BYTES + " bytes");
+        }
     }
 
     /**

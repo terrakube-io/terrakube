@@ -81,4 +81,34 @@ class RenderedPlanTextTest {
 
         assertTrue(text.isBlank());
     }
+
+    @Test
+    void aFirstLineOverTheLimitStillCountsAsACutPlan() {
+        RenderedPlanText text = new RenderedPlanText(20);
+        text.accept("x".repeat(100));
+        text.accept("more");
+
+        assertTrue(text.isTruncated());
+        assertFalse(text.isBlank(), "a cut plan must be published, otherwise the comment reads the whole console");
+        assertTrue(text.text().contains("2 more lines"), text.text());
+    }
+
+    @Test
+    void theClosingSummaryLineSurvivesTheCut() {
+        RenderedPlanText text = new RenderedPlanText(13);
+        text.accept("first");
+        text.accept("second");
+        text.accept("third");
+        text.accept("Plan: 3 to add, 1 to change, 0 to destroy.");
+
+        assertTrue(text.text().trim().endsWith("Plan: 3 to add, 1 to change, 0 to destroy."), text.text());
+    }
+
+    @Test
+    void aPlanThatIsNotCutIsNotGivenASecondSummary() {
+        RenderedPlanText text = new RenderedPlanText(1000);
+        text.accept("Plan: 1 to add, 0 to change, 0 to destroy.");
+
+        assertEquals("Plan: 1 to add, 0 to change, 0 to destroy.\n", text.text());
+    }
 }

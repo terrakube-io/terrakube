@@ -1,6 +1,7 @@
 package io.terrakube.api.plugin.context;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;
 
@@ -153,15 +154,32 @@ class ContextPatchApplierTest {
                 "{\"revision\":1,\"set\":{\"planRenderedText/step-1\":\"" + atLimit + "\"}}"), NOW).revision());
 
         String above = atLimit + "x";
-        assertThrows(InvalidContextPatchException.class, () -> ContextPatchApplier.parse(json(
-                "{\"revision\":1,\"set\":{\"planRenderedText/step-1\":\"" + above + "\"}}"), NOW));
+        JsonNode aboveBody = json("{\"revision\":1,\"set\":{\"planRenderedText/step-1\":\"" + above + "\"}}");
+        assertThrows(InvalidContextPatchException.class, () -> ContextPatchApplier.parse(aboveBody, NOW));
         // The limit is in bytes: 2-byte characters count twice.
         String multibyte = "\u00e9".repeat(ContextPatchApplier.MAX_RENDERED_PLAN_TEXT_BYTES / 2 + 1);
-        assertThrows(InvalidContextPatchException.class, () -> ContextPatchApplier.parse(json(
-                "{\"revision\":1,\"set\":{\"planRenderedText/step-1\":\"" + multibyte + "\"}}"), NOW));
+        JsonNode multibyteBody = json("{\"revision\":1,\"set\":{\"planRenderedText/step-1\":\"" + multibyte + "\"}}");
+        assertThrows(InvalidContextPatchException.class, () -> ContextPatchApplier.parse(multibyteBody, NOW));
         // Other entries have no such limit.
         assertEquals(1L, ContextPatchApplier.parse(json(
                 "{\"revision\":1,\"set\":{\"terraformOutputs/step-1\":\"" + above + "\"}}"), NOW).revision());
+    }
+
+    @Test
+    void parseRefusesARenderedPlanTextThatSkipsTheStepOrIsNotAString() throws Exception {
+        String bigObject = "{\"step-1\":\"" + "x".repeat(ContextPatchApplier.MAX_RENDERED_PLAN_TEXT_BYTES + 1) + "\"}";
+        for (String set : new String[]{
+                "\"planRenderedText\":" + bigObject,
+                "\"planRenderedText\":\"text\"",
+                "\"planRenderedText/step-1\":{\"nested\":\"x\"}",
+                "\"planRenderedText/step-1\":[\"x\"]",
+                "\"planRenderedText/step-1\":7"}) {
+            JsonNode body = json("{\"revision\":1,\"set\":{" + set + "}}");
+            assertThrows(InvalidContextPatchException.class, () -> ContextPatchApplier.parse(body, NOW), set);
+        }
+        // Deleting the entry is still allowed.
+        assertEquals(1L, ContextPatchApplier.parse(json(
+                "{\"revision\":1,\"set\":{\"planRenderedText/step-1\":null,\"planRenderedText\":null}}"), NOW).revision());
     }
 
     @Test

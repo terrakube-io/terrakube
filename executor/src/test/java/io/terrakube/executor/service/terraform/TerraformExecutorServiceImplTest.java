@@ -1329,6 +1329,48 @@ class TerraformExecutorServiceImplTest {
     // "Error: Unsupported attribute" header with no file, line or explanation. Under `-json` the
     // diagnostic's detail lives in the structured event, not in @message - the executor must
     // reconstruct the full rendering into the console stream the CLI reads.
+    // The console keeps the whole rendered diff while the copy published for the pull request comment is
+    // bounded, says it was cut, and still ends with the plan's own summary line.
+    @Test
+    void planKeepsTheWholeDiffInTheConsoleAndPublishesABoundedCopy() throws Exception {
+        TerraformExecutorServiceImpl subject = spy(subject());
+        ExecutorLogsProperties logsProperties = new ExecutorLogsProperties();
+        logsProperties.setRenderedPlanContextMaxBytes(200);
+        subject.setLogsProperties(logsProperties);
+        TerraformJob terraformJob = createJob();
+
+        when(terraformClient.init(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(true));
+        TerraformClient jsonPlanClient = Mockito.mock(TerraformClient.class);
+        when(jsonPlanClient.planDetailExitCode(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(2));
+        doReturn(jsonPlanClient).when(subject).buildJsonEnabledPlanClient();
+        when(planStructuredOutputService.streamPlanAsHumanText(eq(terraformJob), any(File.class), any()))
+                .thenAnswer(invocation -> {
+                    Consumer<String> lines = invocation.getArgument(2);
+                    for (int i = 1; i <= 100; i++) {
+                        lines.accept("  + attribute_" + i + " = \"value\"");
+                    }
+                    lines.accept("Plan: 100 to add, 0 to change, 0 to destroy.");
+                    return true;
+                });
+
+        ExecutorJobResult result = subject.plan(terraformJob, tempDir.toFile(), false);
+
+        try {
+            assertTrue(outputOf(result).contains("attribute_100"), "the console keeps the whole diff");
+            assertTrue(outputOf(result).contains("Plan: 100 to add"), outputOf(result));
+        } finally {
+            result.getOutputBuffer().close();
+        }
+        ArgumentCaptor<String> published = ArgumentCaptor.forClass(String.class);
+        verify(planStructuredOutputService).publishRenderedPlanText(any(), any(), any(), published.capture());
+        assertTrue(published.getValue().contains("attribute_1 "), published.getValue());
+        assertFalse(published.getValue().contains("attribute_100"), published.getValue());
+        assertTrue(published.getValue().contains("of the plan are not shown here"), published.getValue());
+        assertTrue(published.getValue().trim().endsWith("Plan: 100 to add, 0 to change, 0 to destroy."), published.getValue());
+    }
+
     @Test
     void planForwardsTheFullDiagnosticRenderingToTheConsoleStream() throws Exception {
         TerraformExecutorServiceImpl subject = spy(subject());
