@@ -15,8 +15,15 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
+import java.util.HexFormat;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Stream;
+
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -24,6 +31,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
@@ -43,6 +51,66 @@ import io.terrakube.api.rs.workspace.Workspace;
 public class GitHubWebhookServiceTest {
 
     private final GitHubWebhookService subject = new GitHubWebhookService(new ObjectMapper(), null);
+
+    @Nested
+    class WebhookRunAuthor {
+
+        @ParameterizedTest
+        @ValueSource(strings = {
+                "{\"name\":\"Octo Cat\",\"email\":\"pusher@example.com\"}",
+                "{\"name\":\"Octo Cat\",\"email\":null}",
+                "{\"name\":\"Octo Cat\"}"
+        })
+        void pushUsesSenderLoginRegardlessOfPusherEmail(String pusher) throws Exception {
+            String payload = """
+                    {
+                      "ref": "refs/heads/main",
+                      "pusher": %s,
+                      "sender": {"login": "octocat"},
+                      "head_commit": {"id": "abc123"},
+                      "commits": []
+                    }
+                    """.formatted(pusher);
+
+            WebhookResult result = processWebhook("push", payload);
+
+            assertTrue(result.isValid());
+            assertEquals("octocat", result.getCreatedBy());
+        }
+
+        @Test
+        void pullRequestKeepsAuthorLoginWhenSenderDiffers() throws Exception {
+            String payload = """
+                    {
+                      "action": "synchronize",
+                      "number": 42,
+                      "repository": {"owner": {"login": "owner"}, "name": "repo"},
+                      "sender": {"login": "another-user"},
+                      "pull_request": {
+                        "user": {"login": "octocat"},
+                        "head": {"sha": "abc123", "ref": "feature"},
+                        "url": "https://api.github.com/repos/owner/repo/pulls/42"
+                      }
+                    }
+                    """;
+
+            WebhookResult result = processWebhook("pull_request", payload);
+
+            assertTrue(result.isValid());
+            assertEquals("octocat", result.getCreatedBy());
+        }
+
+        private WebhookResult processWebhook(String event, String payload) throws Exception {
+            String token = Base64.getEncoder().encodeToString("workspace-id".getBytes(StandardCharsets.UTF_8));
+            Mac mac = Mac.getInstance("HmacSHA256");
+            mac.init(new SecretKeySpec(token.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+            String signature = "sha256=" + HexFormat.of().formatHex(mac.doFinal(payload.getBytes(StandardCharsets.UTF_8)));
+
+            return subject.processWebhook(payload, Map.of(
+                    "x-github-event", event,
+                    "x-hub-signature-256", signature), token, null);
+        }
+    }
 
     @Test
     public void buildCommitStatusDescriptionAppendsRunSummaryOnSuccess() {
