@@ -386,6 +386,32 @@ public class GitHubWebhookServiceTest {
         }
 
         @Test
+        void failsInsteadOfKeepingTheStoredIdWhenNoTokenCanBeObtained() throws Exception {
+            TokenService failing = mock(TokenService.class);
+            when(failing.getAccessToken(any(String[].class), any()))
+                    .thenThrow(new io.terrakube.api.plugin.vcs.provider.exception.VcsTokenAcquisitionException("no token", null, false));
+            GitHubWebhookService noToken = new GitHubWebhookService(new ObjectMapper(), failing);
+            noToken.setWebhookRestTemplate(new RestTemplate(new HttpComponentsClientHttpRequestFactory()));
+            repoWebhook.setRemoteHookId("111");
+
+            org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class,
+                    () -> noToken.createOrUpdateRepoWebhook(repoWebhook, EnumSet.of(WebhookEventType.PUSH), false));
+            repoWebhook.setRemoteHookId(null);
+            org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class,
+                    () -> noToken.createOrUpdateRepoWebhook(repoWebhook, EnumSet.of(WebhookEventType.PUSH), false));
+        }
+
+        @Test
+        void doesNotKeepTheDeletedIdWhenTheNewHookHasNoId() {
+            repoWebhook.setRemoteHookId("111");
+            wireMockServer.stubFor(patch(urlEqualTo(HOOKS + "/111")).willReturn(aResponse().withStatus(404)));
+            wireMockServer.stubFor(post(urlEqualTo(HOOKS))
+                    .willReturn(aResponse().withStatus(201).withHeader("Content-Type", "application/json").withBody("{}")));
+
+            org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class, this::sync);
+        }
+
+        @Test
         void updatesTheStoredHookAndKeepsItsId() {
             repoWebhook.setRemoteHookId("111");
             wireMockServer.stubFor(patch(urlEqualTo(HOOKS + "/111")).willReturn(aResponse().withStatus(200)));

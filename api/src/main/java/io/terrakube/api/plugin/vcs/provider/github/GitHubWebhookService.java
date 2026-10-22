@@ -548,9 +548,11 @@ public class GitHubWebhookService extends WebhookServiceBase {
             String body = "{\"active\":true, \"events\":[" + events + "]}";
             try {
                 ResponseEntity<String> updated = callGitHubApi(repoWebhook.getVcs(), ownerAndRepo, body, hooksUrl + "/" + id, HttpMethod.PATCH);
-                if (updated != null) {
-                    log.info("GitHub repo webhook {} updated", id);
+                if (updated == null) {
+                    throw new IllegalStateException("The GitHub repository webhook of "
+                            + repoWebhook.getRepositoryUrl() + " was not updated: no access token for the repository");
                 }
+                log.info("GitHub repo webhook {} updated", id);
                 return id;
             } catch (HttpClientErrorException.NotFound _) {
                 // The hook was deleted on GitHub (or never existed under this id). Keeping the stored id
@@ -559,6 +561,7 @@ public class GitHubWebhookService extends WebhookServiceBase {
                 // too, and that one is raised for the caller to report.
                 log.warn("GitHub repo webhook {} of {} no longer exists, creating it again",
                         id, repoWebhook.getRepositoryUrl());
+                id = null;
             }
         }
 
@@ -573,6 +576,11 @@ public class GitHubWebhookService extends WebhookServiceBase {
                 log.error("Error parsing JSON response", e);
             }
             log.info("GitHub repo webhook created successfully with id {}", id);
+        }
+        if (id == null || id.isBlank()) {
+            // Without an id the stored (possibly deleted) one would be kept and the sync reported as done.
+            throw new IllegalStateException("The GitHub repository webhook of " + repoWebhook.getRepositoryUrl()
+                    + " was not created (" + (response == null ? "no access token for the repository" : "no id returned") + ")");
         }
 
         return id;

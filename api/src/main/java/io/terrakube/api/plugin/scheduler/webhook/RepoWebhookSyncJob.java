@@ -80,10 +80,10 @@ public class RepoWebhookSyncJob implements Job {
             repoWebhookService.createOrUpdateSharedWebhook(repoWebhook);
         } catch (RuntimeException e) {
             // Saved before the transaction rolls back, so the workspace settings can show it.
-            syncStatus.record(repositoryUrl, RepoWebhookSyncStatus.describe(e));
+            syncStatus.recordStatus(repositoryUrl, RepoWebhookSyncStatus.describe(e));
             throw e;
         }
-        syncStatus.record(repositoryUrl, null);
+        syncStatus.recordStatus(repositoryUrl, null);
         log.info("Synced shared webhook for {} across {} workspace(s)", repositoryUrl, workspaces.size());
     }
 

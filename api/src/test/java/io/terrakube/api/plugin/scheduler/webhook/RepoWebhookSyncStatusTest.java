@@ -45,12 +45,19 @@ class RepoWebhookSyncStatusTest {
     }
 
     @Test
+    void findsTheProviderErrorUnderAWrapper() {
+        Exception wrapped = new IllegalStateException("outer", new RuntimeException("middle", http(HttpStatus.FORBIDDEN)));
+        assertTrue(RepoWebhookSyncStatus.describe(wrapped).contains("permission"));
+        assertTrue(RepoWebhookSyncStatus.describe(new RuntimeException(new ResourceAccessException("x"))).contains("could not be reached"));
+    }
+
+    @Test
     void recordsTheMessageOnEveryWorkspaceSharingTheRepository() {
         Workspace first = workspaceWithWebhook(null);
         Workspace second = workspaceWithWebhook("old");
         doReturn(List.of(first, second)).when(workspaceRepository).findByNormalizedSourceWithMigratedWebhook(URL);
 
-        subject.record(URL, "new");
+        subject.recordStatus(URL, "new");
 
         assertEquals("new", first.getWebhook().getSyncError());
         assertEquals("new", second.getWebhook().getSyncError());
@@ -63,7 +70,7 @@ class RepoWebhookSyncStatusTest {
         Workspace workspace = workspaceWithWebhook("old");
         doReturn(List.of(workspace)).when(workspaceRepository).findByNormalizedSourceWithMigratedWebhook(URL);
 
-        subject.record(URL, null);
+        subject.recordStatus(URL, null);
 
         assertNull(workspace.getWebhook().getSyncError());
         verify(webhookRepository).save(workspace.getWebhook());
@@ -74,7 +81,7 @@ class RepoWebhookSyncStatusTest {
         Workspace workspace = workspaceWithWebhook(null);
         doReturn(List.of(workspace)).when(workspaceRepository).findByNormalizedSourceWithMigratedWebhook(URL);
 
-        subject.record(URL, null);
+        subject.recordStatus(URL, null);
 
         verify(webhookRepository, never()).save(any());
     }
@@ -84,7 +91,7 @@ class RepoWebhookSyncStatusTest {
         Workspace workspace = workspaceWithWebhook(null);
         doReturn(List.of(workspace)).when(workspaceRepository).findByNormalizedSourceWithMigratedWebhook(URL);
 
-        subject.record(URL, "x".repeat(5000));
+        subject.recordStatus(URL, "x".repeat(5000));
 
         assertEquals(RepoWebhookSyncStatus.MAX_LENGTH, workspace.getWebhook().getSyncError().length());
     }

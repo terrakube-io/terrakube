@@ -21,6 +21,7 @@ import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.options
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.spy;
 import org.springframework.web.reactive.function.client.WebClient;
 
@@ -208,6 +209,15 @@ public class GitLabWebhookServiceTest {
 
         private String sync() {
             return subject.createOrUpdateRepoWebhook(repoWebhook, EnumSet.of(WebhookEventType.PUSH), false);
+        }
+
+        @Test
+        void failsWhenTheProjectCannotBeResolved() throws Exception {
+            doThrow(new java.io.IOException("unreachable")).when(subject).getGitlabProjectId(anyString(), anyString(), anyString());
+            repoWebhook.setRemoteHookId("111");
+
+            org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class, this::sync);
+            wireMockServer.verify(0, postRequestedFor(urlEqualTo(HOOKS)));
         }
 
         @Test

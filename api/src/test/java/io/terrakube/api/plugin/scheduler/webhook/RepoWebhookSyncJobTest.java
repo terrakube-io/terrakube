@@ -3,9 +3,9 @@ package io.terrakube.api.plugin.scheduler.webhook;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -145,7 +145,7 @@ class RepoWebhookSyncJobTest {
 
         subject.execute(jobExecutionContext(repositoryUrl, null));
 
-        verify(syncStatus).record(repositoryUrl, null);
+        verify(syncStatus).recordStatus(repositoryUrl, null);
     }
 
     @Test
@@ -157,14 +157,15 @@ class RepoWebhookSyncJobTest {
                 new org.springframework.http.HttpHeaders(), "{\"message\":\"token ghp_secret\"}".getBytes(), null);
         doReturn(List.of(first)).when(workspaceRepository).findByNormalizedSourceWithMigratedWebhook(repositoryUrl);
         doReturn(repoWebhook).when(repoWebhookService).getOrCreateRepoWebhook(first);
-        org.mockito.Mockito.doThrow(forbidden).when(repoWebhookService).createOrUpdateSharedWebhook(repoWebhook);
+        doThrow(forbidden).when(repoWebhookService).createOrUpdateSharedWebhook(repoWebhook);
 
+        JobExecutionContext context = jobExecutionContext(repositoryUrl, null);
         HttpClientErrorException thrown = assertThrows(HttpClientErrorException.class,
-                () -> subject.execute(jobExecutionContext(repositoryUrl, null)));
+                () -> subject.execute(context));
 
         assertSame(forbidden, thrown);
         org.mockito.ArgumentCaptor<String> message = org.mockito.ArgumentCaptor.forClass(String.class);
-        verify(syncStatus).record(org.mockito.ArgumentMatchers.eq(repositoryUrl), message.capture());
+        verify(syncStatus).recordStatus(eq(repositoryUrl), message.capture());
         org.junit.jupiter.api.Assertions.assertTrue(message.getValue().contains("permission"), message.getValue());
         org.junit.jupiter.api.Assertions.assertFalse(message.getValue().contains("ghp_secret"));
     }

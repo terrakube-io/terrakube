@@ -36,7 +36,7 @@ public class RepoWebhookSyncStatus {
 
     /** Sets the message on the webhooks sharing the repository, or clears it when {@code error} is null. */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void record(String repositoryUrl, String error) {
+    public void recordStatus(String repositoryUrl, String error) {
         String message = error == null || error.length() <= MAX_LENGTH ? error : error.substring(0, MAX_LENGTH);
         for (Workspace workspace : workspaceRepository.findByNormalizedSourceWithMigratedWebhook(repositoryUrl)) {
             Webhook webhook = workspace.getWebhook();
@@ -49,6 +49,17 @@ public class RepoWebhookSyncStatus {
 
     /** A message a person can act on. It never carries the response of the provider, which can echo secrets. */
     static String describe(Throwable failure) {
+        // The provider error can sit under a wrapper (transaction, completion or scheduler exceptions).
+        for (Throwable current = failure; current != null; current = current.getCause()) {
+            String message = describeOne(current);
+            if (message != null) {
+                return message;
+            }
+        }
+        return "The webhook could not be synced. See the Terrakube API log for details.";
+    }
+
+    private static String describeOne(Throwable failure) {
         if (failure instanceof HttpStatusCodeException http) {
             int status = http.getStatusCode().value();
             if (status == HttpStatus.UNAUTHORIZED.value() || status == HttpStatus.FORBIDDEN.value()) {
@@ -56,7 +67,7 @@ public class RepoWebhookSyncStatus {
                         + "Check that it is allowed to manage webhooks.";
             }
             if (status == HttpStatus.NOT_FOUND.value()) {
-                return "The webhook could not be created again: the repository was not found, or the VCS connection "
+                return "The webhook could not be created or updated: the repository was not found, or the VCS connection "
                         + "cannot access it. Check the repository URL and the permissions of the VCS connection.";
             }
             return "The VCS provider refused the webhook update (HTTP " + status + ").";
@@ -64,6 +75,6 @@ public class RepoWebhookSyncStatus {
         if (failure instanceof ResourceAccessException) {
             return "The VCS provider could not be reached to update the webhook. It will be tried again on the next change.";
         }
-        return "The webhook could not be synced. See the Terrakube API log for details.";
+        return null;
     }
 }

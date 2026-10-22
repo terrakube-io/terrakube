@@ -1013,11 +1013,11 @@ public class GitLabWebhookService extends WebhookServiceBase {
             projectId = getGitlabProjectId(ownerAndRepo, token, vcs.getApiUrl());
         } catch (IOException e) {
             log.error("Error resolving GitLab project id for {}: {}", ownerAndRepo, e.getMessage());
-            return remoteHookId;
+            throw new IllegalStateException("Could not resolve the GitLab project of " + repoWebhook.getRepositoryUrl(), e);
         } catch (InterruptedException e) {
             log.error("Interrupted resolving GitLab project id for {}: {}", ownerAndRepo, e.getMessage());
             Thread.currentThread().interrupt();
-            return remoteHookId;
+            throw new IllegalStateException("Interrupted resolving the GitLab project of " + repoWebhook.getRepositoryUrl(), e);
         }
 
         if (remoteHookId != null && !remoteHookId.isEmpty()) {
@@ -1046,6 +1046,10 @@ public class GitLabWebhookService extends WebhookServiceBase {
                 log.error("Error parsing JSON response", e);
             }
             log.info("GitLab repo webhook created successfully with id {}", remoteHookId);
+        }
+        if (remoteHookId == null || remoteHookId.isBlank()) {
+            throw new IllegalStateException("The GitLab repository webhook of " + repoWebhook.getRepositoryUrl()
+                    + " was not created (" + (response == null ? "no response" : "no id returned") + ")");
         }
 
         return remoteHookId;
