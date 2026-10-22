@@ -113,4 +113,16 @@ class InactiveJobsPropertiesTest {
         assertThat(job.getOutput()).hasSizeLessThanOrEqualTo(1024);
         assertThat(job.getOutput()).endsWith("was closed.");
     }
+
+    @Test
+    void aReasonLongerThanTheColumnIsCutSoTheRunCanStillBeSaved() {
+        Job job = job(JobStatus.pending, 7);
+        job.setOutput("earlier output");
+
+        new InactiveJobsProperties.Expiry(JobStatus.failed, "r".repeat(2000)).applyTo(job);
+
+        assertThat(job.getOutput()).hasSize(1024);
+        assertThat(job.getOutput()).startsWith("Closed by Terrakube: rrr");
+        assertThat(job.getStatus()).isEqualTo(JobStatus.failed);
+    }
 }

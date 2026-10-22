@@ -207,35 +207,97 @@ class JobReconciliationSweepTest {
         verify(jobStatusChangeService, times(1)).afterStatusChanged(running);
     }
 
+    private void staleWorkspaces(Workspace... stale) {
+        doReturn(List.of()).when(jobRepository).findAllByStatusInOrderByIdAsc(JobReconciliationSweep.ACTIVE_STATUSES);
+        doReturn(List.of(stale)).when(workspaceRepository).findWithStaleActiveJobStatus(any(), any());
+    }
+
     @Test
     void repairsAWorkspaceThatShowsAnActiveStatusWithoutAnActiveRun() throws Exception {
         Workspace stale = new Workspace();
+        stale.setId(java.util.UUID.randomUUID());
         stale.setLastJobStatus(JobStatus.waitingApproval);
         Job newest = job(50, JobStatus.failed);
         Date finishedAt = new Date(System.currentTimeMillis() - 60_000);
         newest.setUpdatedDate(finishedAt);
-        doReturn(List.of()).when(jobRepository).findAllByStatusInOrderByIdAsc(JobReconciliationSweep.ACTIVE_STATUSES);
-        doReturn(List.of(stale)).when(workspaceRepository).findWithStaleActiveJobStatus(any(), any());
+        staleWorkspaces(stale);
         doReturn(java.util.Optional.of(newest)).when(jobRepository).findFirstByWorkspaceOrderByIdDesc(stale);
+        doReturn(1).when(workspaceRepository).repairStaleJobStatus(any(), any(), any(), any(), any());
 
         subject().execute(null);
 
-        assertThat(stale.getLastJobStatus()).isEqualTo(JobStatus.failed);
-        assertThat(stale.getLastJobDate()).isEqualTo(finishedAt);
-        verify(workspaceRepository, times(1)).save(stale);
+        // One conditional update of the two columns, never a save of the workspace read earlier.
+        verify(workspaceRepository, times(1)).repairStaleJobStatus(
+                eq(stale.getId()), eq(JobStatus.waitingApproval), eq(JobStatus.failed), eq(finishedAt), eq(JobReconciliationSweep.ACTIVE_STATUSES));
+        verify(workspaceRepository, never()).save(any());
+        // Open pages are told.
+        verify(jobStatusChangeService, times(1)).publishStatus(newest);
     }
 
     @Test
-    void repairsAStaleWorkspaceWithNoRunsAtAllToNeverExecuted() throws Exception {
+    void aWorkspaceThatChangedWhileItWasBeingRepairedIsLeftAlone() throws Exception {
         Workspace stale = new Workspace();
-        stale.setLastJobStatus(JobStatus.running);
-        doReturn(List.of()).when(jobRepository).findAllByStatusInOrderByIdAsc(JobReconciliationSweep.ACTIVE_STATUSES);
-        doReturn(List.of(stale)).when(workspaceRepository).findWithStaleActiveJobStatus(any(), any());
-        doReturn(java.util.Optional.empty()).when(jobRepository).findFirstByWorkspaceOrderByIdDesc(stale);
+        stale.setId(java.util.UUID.randomUUID());
+        stale.setLastJobStatus(JobStatus.waitingApproval);
+        Job newest = job(50, JobStatus.failed);
+        staleWorkspaces(stale);
+        doReturn(java.util.Optional.of(newest)).when(jobRepository).findFirstByWorkspaceOrderByIdDesc(stale);
+        // a run was created in the meantime, so the conditional update matches nothing
+        doReturn(0).when(workspaceRepository).repairStaleJobStatus(any(), any(), any(), any(), any());
 
         subject().execute(null);
 
-        assertThat(stale.getLastJobStatus()).isEqualTo(JobStatus.NeverExecuted);
+        verify(jobStatusChangeService, never()).publishStatus(any());
+    }
+
+    @Test
+    void aWorkspaceWhoseNewestRunIsActiveAfterAllIsNotTouched() throws Exception {
+        Workspace stale = new Workspace();
+        stale.setId(java.util.UUID.randomUUID());
+        stale.setLastJobStatus(JobStatus.waitingApproval);
+        // created after the stale workspaces were listed
+        Job created = job(51, JobStatus.pending);
+        staleWorkspaces(stale);
+        doReturn(java.util.Optional.of(created)).when(jobRepository).findFirstByWorkspaceOrderByIdDesc(stale);
+
+        subject().execute(null);
+
+        verify(workspaceRepository, never()).repairStaleJobStatus(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void theDateFallsBackToTheCreationDateOfTheRunWhenItWasNeverUpdated() throws Exception {
+        Workspace stale = new Workspace();
+        stale.setId(java.util.UUID.randomUUID());
+        stale.setLastJobStatus(JobStatus.running);
+        Job newest = job(52, JobStatus.completed);
+        newest.setUpdatedDate(null);
+        Date createdAt = new Date(System.currentTimeMillis() - 3_600_000);
+        newest.setCreatedDate(createdAt);
+        staleWorkspaces(stale);
+        doReturn(java.util.Optional.of(newest)).when(jobRepository).findFirstByWorkspaceOrderByIdDesc(stale);
+        doReturn(1).when(workspaceRepository).repairStaleJobStatus(any(), any(), any(), any(), any());
+
+        subject().execute(null);
+
+        verify(workspaceRepository).repairStaleJobStatus(
+                eq(stale.getId()), eq(JobStatus.running), eq(JobStatus.completed), eq(createdAt), any());
+    }
+
+    @Test
+    void repairsAStaleWorkspaceWithNoRunsAtAllToNeverExecutedWithoutADate() throws Exception {
+        Workspace stale = new Workspace();
+        stale.setId(java.util.UUID.randomUUID());
+        stale.setLastJobStatus(JobStatus.running);
+        staleWorkspaces(stale);
+        doReturn(java.util.Optional.empty()).when(jobRepository).findFirstByWorkspaceOrderByIdDesc(stale);
+        doReturn(1).when(workspaceRepository).repairStaleJobStatus(any(), any(), any(), any(), any());
+
+        subject().execute(null);
+
+        verify(workspaceRepository).repairStaleJobStatus(
+                eq(stale.getId()), eq(JobStatus.running), eq(JobStatus.NeverExecuted), eq(null), any());
+        verify(jobStatusChangeService, never()).publishStatus(any());
     }
 
     @Test
@@ -243,30 +305,33 @@ class JobReconciliationSweepTest {
         properties.setAutoRemediate(false);
         Workspace stale = new Workspace();
         stale.setLastJobStatus(JobStatus.waitingApproval);
-        doReturn(List.of()).when(jobRepository).findAllByStatusInOrderByIdAsc(JobReconciliationSweep.ACTIVE_STATUSES);
-        doReturn(List.of(stale)).when(workspaceRepository).findWithStaleActiveJobStatus(any(), any());
+        staleWorkspaces(stale);
         doReturn(java.util.Optional.empty()).when(jobRepository).findFirstByWorkspaceOrderByIdDesc(stale);
 
         subject().execute(null);
 
         assertThat(stale.getLastJobStatus()).isEqualTo(JobStatus.waitingApproval);
+        verify(workspaceRepository, never()).repairStaleJobStatus(any(), any(), any(), any(), any());
         verify(workspaceRepository, never()).save(any());
     }
 
     @Test
     void keepsRepairingTheNextWorkspaceWhenOneFails() throws Exception {
         Workspace broken = new Workspace();
+        broken.setId(java.util.UUID.randomUUID());
         broken.setLastJobStatus(JobStatus.running);
         Workspace fine = new Workspace();
+        fine.setId(java.util.UUID.randomUUID());
         fine.setLastJobStatus(JobStatus.waitingApproval);
-        doReturn(List.of()).when(jobRepository).findAllByStatusInOrderByIdAsc(JobReconciliationSweep.ACTIVE_STATUSES);
-        doReturn(List.of(broken, fine)).when(workspaceRepository).findWithStaleActiveJobStatus(any(), any());
+        staleWorkspaces(broken, fine);
         doThrow(new RuntimeException("db")).when(jobRepository).findFirstByWorkspaceOrderByIdDesc(broken);
         doReturn(java.util.Optional.empty()).when(jobRepository).findFirstByWorkspaceOrderByIdDesc(fine);
+        doReturn(1).when(workspaceRepository).repairStaleJobStatus(any(), any(), any(), any(), any());
 
         subject().execute(null);
 
-        assertThat(fine.getLastJobStatus()).isEqualTo(JobStatus.NeverExecuted);
+        verify(workspaceRepository).repairStaleJobStatus(
+                eq(fine.getId()), eq(JobStatus.waitingApproval), eq(JobStatus.NeverExecuted), eq(null), any());
     }
 
     @Test

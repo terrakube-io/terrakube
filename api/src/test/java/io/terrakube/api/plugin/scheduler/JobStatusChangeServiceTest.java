@@ -92,4 +92,25 @@ class JobStatusChangeServiceTest {
         verify(publisher, never()).publish(any(), any());
         verify(notificationTrigger).notifyStatusChanged(job);
     }
+
+    @Test
+    void publishStatusOnlySendsTheLiveEvent() {
+        Job job = closedJob(JobStatus.failed);
+
+        subject.publishStatus(job);
+
+        verify(publisher).publish(new JobStatusEvent(7, workspaceId.toString(), "failed"), organizationId.toString());
+        verify(workspaceRepository, never()).save(any());
+        verify(notificationTrigger, never()).notifyStatusChanged(any());
+    }
+
+    @Test
+    void publishStatusOfAJobWithoutAWorkspaceDoesNothing() {
+        Job job = closedJob(JobStatus.failed);
+        job.setWorkspace(null);
+
+        subject.publishStatus(job);
+
+        verify(publisher, never()).publish(any(), any());
+    }
 }

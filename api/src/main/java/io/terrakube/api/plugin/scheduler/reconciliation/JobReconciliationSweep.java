@@ -156,15 +156,28 @@ public class JobReconciliationSweep implements org.quartz.Job {
                 Optional<Job> newest = jobRepository.findFirstByWorkspaceOrderByIdDesc(workspace);
                 JobStatus actual = newest.map(Job::getStatus).orElse(JobStatus.NeverExecuted);
                 JobStatus previous = workspace.getLastJobStatus();
+                if (actual == previous || ACTIVE_STATUSES.contains(actual)) {
+                    continue;
+                }
                 log.warn("Workspace {} shows {} but has no active run, setting it to {}",
                         workspace.getId(), previous, actual);
                 if (!properties.isAutoRemediate()) {
                     continue;
                 }
-                workspace.setLastJobStatus(actual);
-                workspace.setLastJobDate(newest.map(Job::getUpdatedDate).orElse(new Date(System.currentTimeMillis())));
-                workspaceRepository.save(workspace);
+                // A workspace that never ran has no date; otherwise it is the date of the run it shows.
+                Date date = newest.map(job -> job.getUpdatedDate() != null ? job.getUpdatedDate() : job.getCreatedDate())
+                        .orElse(null);
+                // One conditional update, not a save of the workspace read a moment ago: a run created in
+                // between has set its own status, and a concurrent edit of the workspace is not overwritten.
+                int repaired = workspaceRepository.repairStaleJobStatus(
+                        workspace.getId(), previous, actual, date, ACTIVE_STATUSES);
+                if (repaired == 0) {
+                    log.info("Workspace {} changed while it was being repaired, leaving it", workspace.getId());
+                    continue;
+                }
                 metrics.workspaceStatusRepaired(previous);
+                // Open pages learn of the correction without a reload.
+                newest.ifPresent(jobStatusChangeService::publishStatus);
             } catch (RuntimeException e) {
                 log.warn("Could not repair the status of workspace {}, will retry next sweep",
                         workspace.getId(), e);

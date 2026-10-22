@@ -955,7 +955,11 @@ export const DetailsJob = ({ jobId, workspaceName, canApprove = false }: Props) 
   const attributes = job.data.attributes;
   const commitId = attributes.commitId && attributes.commitId !== "000000000" ? attributes.commitId : undefined;
   const guard = parseIncompleteVariableGuard(attributes.output);
-  const closedReason = parseClosedByTerrakube(attributes.output);
+  // Only a run that is over can have been closed by Terrakube; the line in the output means nothing on one that is not.
+  const closedReason =
+    attributes.status === "failed" || attributes.status === "cancelled"
+      ? parseClosedByTerrakube(attributes.output)
+      : null;
 
   return (
     <div className="run-detail">

@@ -45,20 +45,27 @@ public class JobStatusChangeService {
                 log.error("Could not update the last job status of workspace {} for job {}",
                         workspace.getId(), job.getId(), e);
             }
-            try {
-                if (job.getOrganization() != null) {
-                    jobStatusPublisher.publish(
-                            new JobStatusEvent(job.getId(), workspace.getId().toString(), job.getStatus().name()),
-                            job.getOrganization().getId().toString());
-                }
-            } catch (RuntimeException e) {
-                log.error("Could not publish the status of job {}", job.getId(), e);
-            }
+            publishStatus(job);
         }
         try {
             jobNotificationTrigger.notifyStatusChanged(job);
         } catch (RuntimeException e) {
             log.error("Could not send status notifications for job {}", job.getId(), e);
+        }
+    }
+
+    /** Only the live status event, for open pages: no workspace write and no notification. */
+    public void publishStatus(Job job) {
+        Workspace workspace = job.getWorkspace();
+        if (workspace == null || job.getOrganization() == null) {
+            return;
+        }
+        try {
+            jobStatusPublisher.publish(
+                    new JobStatusEvent(job.getId(), workspace.getId().toString(), job.getStatus().name()),
+                    job.getOrganization().getId().toString());
+        } catch (RuntimeException e) {
+            log.error("Could not publish the status of job {}", job.getId(), e);
         }
     }
 }

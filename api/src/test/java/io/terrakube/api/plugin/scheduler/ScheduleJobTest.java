@@ -244,6 +244,9 @@ public class ScheduleJobTest {
         Job job = job(JobStatus.pending);
         job.setCreatedDate(DateUtils.addDays(new Date(System.currentTimeMillis()), -1));
 
+        doReturn(Optional.of(Collections.emptyList())).when(jobRepository)
+                .findByWorkspaceAndStatusNotInAndIdLessThan(any(Workspace.class), anyList(), anyInt());
+        doReturn(Optional.empty()).when(jobRepository).findFirstByWorkspaceAndIdLessThanOrderByUpdatedDateDesc(any(), anyInt());
         doReturn(job).when(jobRepository).save(any());
         doReturn(job.getStep()).when(stepRepository).findByJobId(anyInt());
         doReturn(null).when(stepRepository).save(any());
@@ -251,7 +254,7 @@ public class ScheduleJobTest {
 
         Assertions.assertTrue(subject().runExecution(job));
 
-        verify(gitLabWebhookService, times(1)).sendCommitStatus(job, JobStatus.unknown, null);
+        verify(gitLabWebhookService, times(1)).sendCommitStatus(job, JobStatus.failed, null);
         Assertions.assertEquals(JobStatus.failed, job.getStatus());
     }
 
@@ -260,6 +263,9 @@ public class ScheduleJobTest {
         Job job = job(JobStatus.pending);
         job.setCreatedDate(DateUtils.addDays(new Date(System.currentTimeMillis()), -1));
 
+        doReturn(Optional.of(Collections.emptyList())).when(jobRepository)
+                .findByWorkspaceAndStatusNotInAndIdLessThan(any(Workspace.class), anyList(), anyInt());
+        doReturn(Optional.empty()).when(jobRepository).findFirstByWorkspaceAndIdLessThanOrderByUpdatedDateDesc(any(), anyInt());
         doReturn(job).when(jobRepository).save(any());
         doReturn(job.getStep()).when(stepRepository).findByJobId(anyInt());
         doReturn(null).when(stepRepository).save(any());
@@ -292,10 +298,34 @@ public class ScheduleJobTest {
     }
 
     @Test
+    public void aRunWaitingBehindAnUnfinishedRunIsNotClosedByTheSixHourLimit() {
+        Job job = job(JobStatus.pending);
+        job.setCreatedDate(DateUtils.addDays(new Date(System.currentTimeMillis()), -2));
+        Job inFront = job(JobStatus.waitingApproval);
+
+        org.mockito.Mockito.lenient().doReturn(Optional.of(List.of(inFront)))
+                .when(jobRepository)
+                .findByWorkspaceAndStatusNotInAndIdLessThan(any(Workspace.class), anyList(), anyInt());
+        org.mockito.Mockito.lenient().doReturn(Collections.emptyList()).when(globalVarRepository).findByOrganization(any());
+        org.mockito.Mockito.lenient().doReturn(Optional.of(Collections.emptyList())).when(variableRepository).findByWorkspace(any());
+        org.mockito.Mockito.lenient().doReturn(false).when(tclService).isTemplatePlanOnly(any());
+        org.mockito.Mockito.lenient().doReturn(job.getStep()).when(stepRepository).findByJobId(anyInt());
+        org.mockito.Mockito.lenient().doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
+
+        subject().runExecution(job);
+
+        Assertions.assertEquals(JobStatus.pending, job.getStatus());
+        verify(jobStatusChangeService, never()).afterStatusChanged(any());
+    }
+
+    @Test
     public void expiredJobsAreDescheduledEvenIfVcsIntegrationFails() {
         Job job = job(JobStatus.pending);
         job.setCreatedDate(DateUtils.addDays(new Date(System.currentTimeMillis()), -1));
 
+        doReturn(Optional.of(Collections.emptyList())).when(jobRepository)
+                .findByWorkspaceAndStatusNotInAndIdLessThan(any(Workspace.class), anyList(), anyInt());
+        doReturn(Optional.empty()).when(jobRepository).findFirstByWorkspaceAndIdLessThanOrderByUpdatedDateDesc(any(), anyInt());
         doReturn(job).when(jobRepository).save(any());
         doReturn(job.getStep()).when(stepRepository).findByJobId(anyInt());
         doReturn(null).when(stepRepository).save(any());

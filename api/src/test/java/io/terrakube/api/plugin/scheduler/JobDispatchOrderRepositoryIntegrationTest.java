@@ -505,6 +505,13 @@ class JobDispatchOrderRepositoryIntegrationTest {
     private void runInactiveJobs() throws Exception {
         org.quartz.JobExecutionContext context = org.mockito.Mockito.mock(org.quartz.JobExecutionContext.class);
         org.mockito.Mockito.doReturn(org.mockito.Mockito.mock(org.quartz.Scheduler.class)).when(context).getScheduler();
+        @SuppressWarnings("unchecked")
+        org.springframework.data.redis.core.ValueOperations<String, Object> valueOperations =
+                org.mockito.Mockito.mock(org.springframework.data.redis.core.ValueOperations.class);
+        org.mockito.Mockito.doReturn(valueOperations).when(redisTemplate).opsForValue();
+        org.mockito.Mockito.doReturn(true).when(valueOperations)
+                .setIfAbsent(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any(java.time.Duration.class));
         inactiveJobs.execute(context);
     }
 
@@ -571,5 +578,97 @@ class JobDispatchOrderRepositoryIntegrationTest {
         } finally {
             inactiveJobsProperties.setWaitingApprovalTimeoutHours(0);
         }
+    }
+
+    // A run behind an unfinished one has not started: it is not closed because it is old, and it gets its
+    // full time once the run in front of it has ended.
+    @Test
+    void aRunQueuedBehindAWaitingApprovalIsNotClosedHoweverOldItIs() throws Exception {
+        Workspace workspace = workspaceShowing(JobStatus.waitingApproval);
+        oldJob(workspace, JobStatus.waitingApproval, 31);
+        Job behind = oldJob(workspace, JobStatus.queue, 30);
+
+        runInactiveJobs();
+
+        entityManager.flush();
+        entityManager.clear();
+        assertThat(jobRepository.findById(behind.getId()).orElseThrow().getStatus()).isEqualTo(JobStatus.queue);
+    }
+
+    @Test
+    void aRunIsNotClosedTheMomentTheRunInFrontOfItEnds() throws Exception {
+        Workspace workspace = workspaceShowing(JobStatus.pending);
+        Job inFront = oldJob(workspace, JobStatus.completed, 31);
+        Job behind = oldJob(workspace, JobStatus.pending, 30);
+        jdbcTemplate.update("update job set updated_date = ? where id = ?",
+                new java.sql.Timestamp(System.currentTimeMillis() - 3_600_000L), inFront.getId());
+        entityManager.clear();
+
+        runInactiveJobs();
+
+        entityManager.flush();
+        entityManager.clear();
+        assertThat(jobRepository.findById(behind.getId()).orElseThrow().getStatus()).isEqualTo(JobStatus.pending);
+    }
+
+    // --- The conditional repair of a stale workspace status (#3727) ------------------------------
+
+    private Workspace reload(Workspace workspace) {
+        entityManager.flush();
+        entityManager.clear();
+        return workspaceRepository.findById(workspace.getId()).orElseThrow();
+    }
+
+    @Test
+    void theRepairCorrectsOnlyTheStatusAndDateOfAStaleWorkspace() {
+        Workspace stale = workspaceShowing(JobStatus.waitingApproval);
+        newJob(stale, JobStatus.failed);
+        Date when = new Date(System.currentTimeMillis() - 60_000);
+        String name = stale.getName();
+
+        int repaired = workspaceRepository.repairStaleJobStatus(
+                stale.getId(), JobStatus.waitingApproval, JobStatus.failed, when, ACTIVE);
+
+        assertThat(repaired).isEqualTo(1);
+        Workspace reloaded = reload(stale);
+        assertThat(reloaded.getLastJobStatus()).isEqualTo(JobStatus.failed);
+        assertThat(reloaded.getName()).isEqualTo(name);
+    }
+
+    @Test
+    void theRepairDoesNothingWhenARunBecameActiveInTheMeantime() {
+        Workspace workspace = workspaceShowing(JobStatus.waitingApproval);
+        newJob(workspace, JobStatus.failed);
+        newJob(workspace, JobStatus.pending); // created after the workspace was listed as stale
+
+        int repaired = workspaceRepository.repairStaleJobStatus(
+                workspace.getId(), JobStatus.waitingApproval, JobStatus.failed, new Date(), ACTIVE);
+
+        assertThat(repaired).isZero();
+        assertThat(reload(workspace).getLastJobStatus()).isEqualTo(JobStatus.waitingApproval);
+    }
+
+    @Test
+    void theRepairDoesNothingWhenTheStatusIsNoLongerTheOneThatWasSeen() {
+        Workspace workspace = workspaceShowing(JobStatus.pending);
+        newJob(workspace, JobStatus.failed);
+
+        int repaired = workspaceRepository.repairStaleJobStatus(
+                workspace.getId(), JobStatus.waitingApproval, JobStatus.failed, new Date(), ACTIVE);
+
+        assertThat(repaired).isZero();
+        assertThat(reload(workspace).getLastJobStatus()).isEqualTo(JobStatus.pending);
+    }
+
+    @Test
+    void staleWorkspacesAreListedInAStableOrder() {
+        Workspace a = workspaceShowing(JobStatus.running);
+        Workspace b = workspaceShowing(JobStatus.running);
+
+        java.util.List<UUID> ids = staleIds();
+
+        // the id is stored as text, so that is the order it is sorted in
+        assertThat(ids.stream().map(UUID::toString).toList()).isSorted();
+        assertThat(ids).contains(a.getId(), b.getId());
     }
 }

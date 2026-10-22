@@ -215,17 +215,18 @@ public class ScheduleJob implements org.quartz.Job {
 
     private boolean doRunExecution(Job job) {
         int jobId = job.getId();
-        Optional<InactiveJobsProperties.Expiry> expired = inactiveJobsProperties.expiryOf(job, new Date(System.currentTimeMillis()));
+        Optional<InactiveJobsProperties.Expiry> expired = inactiveJobsProperties.expiryOf(job, new Date(System.currentTimeMillis()), jobRepository);
         if (expired.isPresent()) {
             InactiveJobsProperties.Expiry expiry = expired.get();
             log.error("Job {} is past its limit, closing it as {}: {}", jobId, expiry.finalStatus(), expiry.reason());
             try {
                 expiry.applyTo(job);
                 jobRepository.save(job);
+                // Steps first: the failure summary in the notification is read from the step that failed.
+                updateJobStepsWithStatus(job.getId(), expiry.finalStatus());
                 jobStatusChangeService.afterStatusChanged(job);
                 log.warn("Deleting Job Context {} from Quartz", PREFIX_JOB_CONTEXT + job.getId());
-                updateJobStepsWithStatus(job.getId(), expiry.finalStatus());
-                updateJobStatusOnVcs(job, JobStatus.unknown);
+                updateJobStatusOnVcs(job, expiry.finalStatus());
             } catch (Exception e) {
                 log.error(e.getMessage());
             }
