@@ -4,12 +4,12 @@
                    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
     <changeSet id="2-34-0-job-variables" author="terrakube">
         <addColumn tableName="job">
-            <column name="encrypted_variables" type="clob"/>
+            <column name="encrypted_variables" type="text"/>
         </addColumn>
     </changeSet>
     <changeSet id="2-34-0-job-variable-names" author="terrakube">
         <addColumn tableName="job">
-            <column name="variable_names" type="clob"/>
+            <column name="variable_names" type="text"/>
         </addColumn>
     </changeSet>
 </databaseChangeLog>

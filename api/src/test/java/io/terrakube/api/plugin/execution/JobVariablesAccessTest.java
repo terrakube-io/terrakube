@@ -51,6 +51,12 @@ class JobVariablesAccessTest {
     }
 
     @Test
+    void organizationWithoutATeamListIsRefusedInsteadOfFailing() {
+        job.getWorkspace().getOrganization().setTeam(null);
+        assertFalse(access.canSet(user, job));
+    }
+
+    @Test
     void memberOfATeamThatCanOnlyPlanMayNot() {
         when(groupService.isMember(user, "TEAM")).thenReturn(true);
         when(rbacService.canManageWorkspace(team)).thenReturn(false);

@@ -32,23 +32,33 @@ public class JobVariablesAccess {
         Workspace workspace = job.getWorkspace();
         if (workspace == null) return false;
         if (authenticatedUser.isSuperUser(user)) return true;
+        return hasOrganizationAccess(user, workspace) || hasWorkspaceAccess(user, workspace)
+                || hasProjectAccess(user, workspace);
+    }
+
+    private boolean hasOrganizationAccess(User user, Workspace workspace) {
+        if (workspace.getOrganization() == null || workspace.getOrganization().getTeam() == null) return false;
         boolean service = authenticatedUser.isServiceAccount(user);
-        List<Team> teams = workspace.getOrganization() != null ? workspace.getOrganization().getTeam() : List.of();
-        for (Team team : teams) {
+        for (Team team : workspace.getOrganization().getTeam()) {
             if (isMember(user, service, team.getName()) && rbacService.canManageWorkspace(team)) return true;
         }
-        List<Access> access = workspace.getAccess();
-        if (access != null) {
-            for (Access team : access) {
-                if (isMember(user, service, team.getName()) && rbacService.canManageWorkspace(team)) return true;
-            }
-        }
-        Project project = workspace.getProject();
-        if (project != null && project.getProjectAccess() != null && !project.getProjectAccess().isEmpty()) {
-            return membershipService.checkProjectMembership(user, project.getProjectAccess(),
-                    pa -> rbacService.canManageWorkspace(pa));
+        return false;
+    }
+
+    private boolean hasWorkspaceAccess(User user, Workspace workspace) {
+        List<Access> accessList = workspace.getAccess();
+        if (accessList == null) return false;
+        boolean service = authenticatedUser.isServiceAccount(user);
+        for (Access access : accessList) {
+            if (isMember(user, service, access.getName()) && rbacService.canManageWorkspace(access)) return true;
         }
         return false;
+    }
+
+    private boolean hasProjectAccess(User user, Workspace workspace) {
+        Project project = workspace.getProject();
+        if (project == null || project.getProjectAccess() == null || project.getProjectAccess().isEmpty()) return false;
+        return membershipService.checkProjectMembership(user, project.getProjectAccess(), rbacService::canManageWorkspace);
     }
 
     private boolean isMember(User user, boolean service, String group) {

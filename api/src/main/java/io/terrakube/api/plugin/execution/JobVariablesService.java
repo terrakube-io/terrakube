@@ -16,6 +16,7 @@ import java.util.regex.Pattern;
 public class JobVariablesService {
     static final int MAX_VARIABLES = 100;
     static final int MAX_JSON_BYTES = 64 * 1024;
+    private static final String ENV_PREFIX = "TF_VAR_";
     private static final Pattern NAME = Pattern.compile("[A-Za-z_][A-Za-z0-9_-]*");
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private final EncryptionService encryptionService;
@@ -25,10 +26,15 @@ public class JobVariablesService {
         if (variables.size() > MAX_VARIABLES) {
             throw new IllegalArgumentException("At most " + MAX_VARIABLES + " job variables are allowed");
         }
-        for (Map.Entry<String, String> entry : variables.entrySet()) {
-            if (entry.getKey() == null || !NAME.matcher(entry.getKey()).matches()
-                    || entry.getValue() == null || entry.getValue().indexOf('\0') >= 0) {
+        // The generic types are erased at runtime, so a client sending a number or boolean can put a non-String in.
+        for (Map.Entry<?, ?> entry : ((Map<?, ?>) variables).entrySet()) {
+            if (!(entry.getKey() instanceof String key) || !NAME.matcher(key).matches()
+                    || !(entry.getValue() instanceof String value) || value.indexOf('\0') >= 0) {
                 throw new IllegalArgumentException("Job variables require valid Terraform names and string values without NUL characters");
+            }
+            if (key.startsWith(ENV_PREFIX)) {
+                throw new IllegalArgumentException("Job variable names must not start with " + ENV_PREFIX
+                        + ", give the Terraform variable name itself");
             }
         }
         if (json(variables).getBytes(StandardCharsets.UTF_8).length > MAX_JSON_BYTES) {
@@ -39,7 +45,7 @@ public class JobVariablesService {
     private String json(Map<String, String> variables) {
         try {
             return MAPPER.writeValueAsString(variables);
-        } catch (JsonProcessingException e) {
+        } catch (JsonProcessingException _) {
             throw new IllegalArgumentException("Could not encode job variables");
         }
     }
@@ -55,7 +61,7 @@ public class JobVariablesService {
         if (encrypted == null) return Map.of();
         try {
             return MAPPER.readValue(encryptionService.decrypt(encrypted), new TypeReference<>() {});
-        } catch (Exception e) {
+        } catch (Exception _) {
             // Parser errors can contain fragments of the secret JSON document.
             throw new IllegalStateException("Could not read encrypted job variables");
         }
@@ -70,7 +76,7 @@ public class JobVariablesService {
     public void merge(Map<String, String> variables, Map<String, String> terraform, Map<String, String> environment) {
         variables.forEach((name, value) -> {
             terraform.remove(name);
-            environment.put("TF_VAR_" + name, value);
+            environment.put(ENV_PREFIX + name, value);
         });
     }
 }

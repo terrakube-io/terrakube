@@ -50,7 +50,8 @@ class JobVariablesServiceTest {
         for (Map<String, String> inputs : java.util.List.of(
                 Map.of("bad name", "private-marker"), Map.of("key", "private-marker\0"),
                 Map.of("key", "private-marker".repeat(6000)))) {
-            Exception failure = assertThrows(IllegalArgumentException.class, () -> service().encrypt(inputs));
+            JobVariablesService service = service();
+            Exception failure = assertThrows(IllegalArgumentException.class, () -> service.encrypt(inputs));
             assertFalse(failure.getMessage().contains("private-marker"));
         }
     }
@@ -61,14 +62,41 @@ class JobVariablesServiceTest {
         for (int i = 0; i < JobVariablesService.MAX_VARIABLES; i++) atLimit.put("v" + i, "x");
         assertNotNull(service().encrypt(atLimit));
         atLimit.put("one_more", "x");
-        assertThrows(IllegalArgumentException.class, () -> service().encrypt(atLimit));
+        JobVariablesService service = service();
+        assertThrows(IllegalArgumentException.class, () -> service.encrypt(atLimit));
     }
 
     @Test
     void decryptionFailureStopsDispatchAndDoesNotLeakCiphertext() {
+        JobVariablesService service = service();
         Exception failure = assertThrows(IllegalStateException.class,
-                () -> service().decrypt("private-invalid-ciphertext"));
+                () -> service.decrypt("private-invalid-ciphertext"));
         assertEquals("Could not read encrypted job variables", failure.getMessage());
         assertNull(failure.getCause());
+    }
+
+    @Test
+    void rejectsNamesThatAlreadyCarryTheEnvironmentPrefix() {
+        JobVariablesService service = service();
+        Exception failure = assertThrows(IllegalArgumentException.class,
+                () -> service.encrypt(Map.of("TF_VAR_image_tag", "v2")));
+        assertTrue(failure.getMessage().contains("TF_VAR_"));
+        assertFalse(failure.getMessage().contains("v2"));
+    }
+
+    @Test
+    void rejectsNonStringValuesThatSlippedPastTheGenericType() {
+        Map<String, Object> raw = new HashMap<>();
+        raw.put("port", 8080);
+        @SuppressWarnings({"unchecked", "rawtypes"})
+        Map<String, String> inputs = (Map) raw;
+        JobVariablesService service = service();
+        assertThrows(IllegalArgumentException.class, () -> service.encrypt(inputs));
+    }
+
+    @Test
+    void acceptsHyphenatedNamesBecauseTerraformDoes() {
+        JobVariablesService service = service();
+        assertNotNull(service.encrypt(Map.of("my-var", "x")));
     }
 }
