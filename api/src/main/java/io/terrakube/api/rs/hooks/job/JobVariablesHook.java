@@ -23,6 +23,8 @@ public class JobVariablesHook implements LifeCycleHook<Job> {
         if (operation == Operation.CREATE && phase == TransactionPhase.PREFLUSH) {
             try {
                 job.setEncryptedVariables(variables.encrypt(job.getVariables()));
+                job.setVariableNames(job.getVariables() == null || job.getVariables().isEmpty()
+                        ? null : job.getVariables().keySet().stream().sorted().toList());
                 job.setVariables(null);
             } catch (IllegalArgumentException e) {
                 throw new BadRequestException(e.getMessage());

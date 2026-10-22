@@ -56,6 +56,8 @@ class JobVariablesApiTests extends ServerApplicationTests {
         assertFalse(read.asString().contains("private-test-value"));
         assertFalse(read.asString().contains("encryptedVariables"));
         assertFalse(read.jsonPath().getMap("data.attributes").containsKey("variables"));
+        assertEquals(java.util.List.of("empty", "key"), read.jsonPath().getList("data.attributes.variableNames"));
+        assertFalse(read.asString().contains("encryptedVariables"));
         var graphql = given().auth().oauth2(token).contentType("application/json")
                 .body(Map.of("query", "{ organization(ids: [\"" + ORG + "\"]) { edges { node { job(ids: [\"" + id + "\"]) { edges { node { id variables } } } } } } }"))
                 .post("/graphql/api/v1");

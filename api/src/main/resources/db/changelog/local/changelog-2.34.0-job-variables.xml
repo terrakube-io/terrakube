@@ -7,4 +7,9 @@
             <column name="encrypted_variables" type="clob"/>
         </addColumn>
     </changeSet>
+    <changeSet id="2-34-0-job-variable-names" author="terrakube">
+        <addColumn tableName="job">
+            <column name="variable_names" type="clob"/>
+        </addColumn>
+    </changeSet>
 </databaseChangeLog>

@@ -72,6 +72,14 @@ public class Job extends GenericAuditFields {
     @Column(name = "encrypted_variables", columnDefinition = "text")
     private String encryptedVariables;
 
+    // Names (never values) of the job variables, so the run details and audit trail can show that a run
+    // used them. Set by JobVariablesHook, read-only through the API.
+    @CreatePermission(expression = "NONE")
+    @UpdatePermission(expression = "NONE")
+    @Convert(converter = StringListConverter.class)
+    @Column(name = "variable_names", columnDefinition = "text")
+    private List<String> variableNames;
+
     @Column(name = "comments")
     private String comments;
 
