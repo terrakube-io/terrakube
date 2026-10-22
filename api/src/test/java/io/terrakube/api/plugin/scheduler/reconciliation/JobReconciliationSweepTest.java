@@ -1,8 +1,8 @@
 package io.terrakube.api.plugin.scheduler.reconciliation;
 
 import java.util.Optional;
-import io.terrakube.api.plugin.workspace.WorkspaceJobStatusService;
 import io.terrakube.api.helpers.FailUnkownMethod;
+import io.terrakube.api.plugin.scheduler.JobStatusChangeService;
 import io.terrakube.api.plugin.scheduler.ScheduleJobService;
 import io.terrakube.api.plugin.scheduler.spool.SpoolRecoveryService;
 import io.terrakube.api.plugin.storage.StorageTypeService;
@@ -57,6 +57,7 @@ class JobReconciliationSweepTest {
     JobReconciliationMetrics metrics;
     StorageTypeService storageTypeService;
     SpoolRecoveryService spoolRecoveryService;
+    JobStatusChangeService jobStatusChangeService = mock(JobStatusChangeService.class);
 
     @BeforeEach
     void setup() {
@@ -79,6 +80,7 @@ class JobReconciliationSweepTest {
         // Default: jobs have no steps, so the zero-pending reconciliation pass is a no-op unless a
         // test says otherwise (existing trigger/heartbeat tests are unaffected by this feature).
         lenient().doReturn(List.of()).when(stepRepository).findByJobId(anyInt());
+        lenient().doReturn(List.of()).when(workspaceRepository).findWithStaleActiveJobStatus(any(), any());
         lenient().doReturn(true).when(valueOperations).setIfAbsent(any(), any(), any(java.time.Duration.class));
         lenient().doReturn(true).when(redisTemplate).delete(anyString());
         // Default to "Redis has been comfortably up for a while" so existing tests aren't
@@ -93,8 +95,8 @@ class JobReconciliationSweepTest {
     }
 
     private JobReconciliationSweep subject() {
-        return new JobReconciliationSweep(jobRepository, stepRepository, new WorkspaceJobStatusService(jobRepository, workspaceRepository), scheduler,
-                scheduleJobService, redisTemplate, properties, reconciliationService, metrics, 300L, storageTypeService, spoolRecoveryService);
+        return new JobReconciliationSweep(jobRepository, stepRepository, workspaceRepository, scheduler,
+                scheduleJobService, redisTemplate, properties, reconciliationService, metrics, jobStatusChangeService, 300L, storageTypeService, spoolRecoveryService);
     }
 
     private Job job(int id, JobStatus status) {
@@ -199,11 +201,137 @@ class JobReconciliationSweepTest {
 
         verify(jobRepository, times(1)).updateStatusByIdAndStatusIn(JobStatus.failed, 21, List.of(JobStatus.queue, JobStatus.running));
         verify(scheduler, times(1)).deleteJob(new JobKey("TerrakubeV2_Job_21"));
-        // updateStatusById is a bulk update that bypasses Elide's JobManageHook, which normally
-        // keeps workspace.lastJobStatus in sync - without this explicit save the workspace list
-        // UI would keep showing the job's previous status (e.g. "running") forever.
-        org.junit.jupiter.api.Assertions.assertEquals(JobStatus.failed, running.getWorkspace().getLastJobStatus());
-        verify(workspaceRepository, times(1)).save(running.getWorkspace());
+        // The bulk update bypasses Elide's hooks, so the shared service keeps workspace.lastJobStatus in
+        // sync, publishes the live status event and sends the notifications.
+        org.junit.jupiter.api.Assertions.assertEquals(JobStatus.failed, running.getStatus());
+        verify(jobStatusChangeService, times(1)).afterStatusChanged(running);
+    }
+
+    private void staleWorkspaces(Workspace... stale) {
+        doReturn(List.of()).when(jobRepository).findAllByStatusInOrderByIdAsc(JobReconciliationSweep.ACTIVE_STATUSES);
+        doReturn(List.of(stale)).when(workspaceRepository).findWithStaleActiveJobStatus(any(), any());
+    }
+
+    @Test
+    void repairsAWorkspaceThatShowsAnActiveStatusWithoutAnActiveRun() throws Exception {
+        Workspace stale = new Workspace();
+        stale.setId(java.util.UUID.randomUUID());
+        stale.setLastJobStatus(JobStatus.waitingApproval);
+        Job newest = job(50, JobStatus.failed);
+        Date finishedAt = new Date(System.currentTimeMillis() - 60_000);
+        newest.setUpdatedDate(finishedAt);
+        staleWorkspaces(stale);
+        doReturn(java.util.Optional.of(newest)).when(jobRepository).findFirstByWorkspaceOrderByIdDesc(stale);
+        doReturn(1).when(workspaceRepository).repairStaleJobStatus(any(), any(), any(), any(), any());
+
+        subject().execute(null);
+
+        // One conditional update of the two columns, never a save of the workspace read earlier.
+        verify(workspaceRepository, times(1)).repairStaleJobStatus(
+                eq(stale.getId()), eq(JobStatus.waitingApproval), eq(JobStatus.failed), eq(finishedAt), eq(JobReconciliationSweep.ACTIVE_STATUSES));
+        verify(workspaceRepository, never()).save(any());
+        // Open pages are told.
+        verify(jobStatusChangeService, times(1)).publishStatus(newest);
+    }
+
+    @Test
+    void aWorkspaceThatChangedWhileItWasBeingRepairedIsLeftAlone() throws Exception {
+        Workspace stale = new Workspace();
+        stale.setId(java.util.UUID.randomUUID());
+        stale.setLastJobStatus(JobStatus.waitingApproval);
+        Job newest = job(50, JobStatus.failed);
+        staleWorkspaces(stale);
+        doReturn(java.util.Optional.of(newest)).when(jobRepository).findFirstByWorkspaceOrderByIdDesc(stale);
+        // a run was created in the meantime, so the conditional update matches nothing
+        doReturn(0).when(workspaceRepository).repairStaleJobStatus(any(), any(), any(), any(), any());
+
+        subject().execute(null);
+
+        verify(jobStatusChangeService, never()).publishStatus(any());
+    }
+
+    @Test
+    void aWorkspaceWhoseNewestRunIsActiveAfterAllIsNotTouched() throws Exception {
+        Workspace stale = new Workspace();
+        stale.setId(java.util.UUID.randomUUID());
+        stale.setLastJobStatus(JobStatus.waitingApproval);
+        // created after the stale workspaces were listed
+        Job created = job(51, JobStatus.pending);
+        staleWorkspaces(stale);
+        doReturn(java.util.Optional.of(created)).when(jobRepository).findFirstByWorkspaceOrderByIdDesc(stale);
+
+        subject().execute(null);
+
+        verify(workspaceRepository, never()).repairStaleJobStatus(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void theDateFallsBackToTheCreationDateOfTheRunWhenItWasNeverUpdated() throws Exception {
+        Workspace stale = new Workspace();
+        stale.setId(java.util.UUID.randomUUID());
+        stale.setLastJobStatus(JobStatus.running);
+        Job newest = job(52, JobStatus.completed);
+        newest.setUpdatedDate(null);
+        Date createdAt = new Date(System.currentTimeMillis() - 3_600_000);
+        newest.setCreatedDate(createdAt);
+        staleWorkspaces(stale);
+        doReturn(java.util.Optional.of(newest)).when(jobRepository).findFirstByWorkspaceOrderByIdDesc(stale);
+        doReturn(1).when(workspaceRepository).repairStaleJobStatus(any(), any(), any(), any(), any());
+
+        subject().execute(null);
+
+        verify(workspaceRepository).repairStaleJobStatus(
+                eq(stale.getId()), eq(JobStatus.running), eq(JobStatus.completed), eq(createdAt), any());
+    }
+
+    @Test
+    void repairsAStaleWorkspaceWithNoRunsAtAllToNeverExecutedWithoutADate() throws Exception {
+        Workspace stale = new Workspace();
+        stale.setId(java.util.UUID.randomUUID());
+        stale.setLastJobStatus(JobStatus.running);
+        staleWorkspaces(stale);
+        doReturn(java.util.Optional.empty()).when(jobRepository).findFirstByWorkspaceOrderByIdDesc(stale);
+        doReturn(1).when(workspaceRepository).repairStaleJobStatus(any(), any(), any(), any(), any());
+
+        subject().execute(null);
+
+        verify(workspaceRepository).repairStaleJobStatus(
+                eq(stale.getId()), eq(JobStatus.running), eq(JobStatus.NeverExecuted), eq(null), any());
+        verify(jobStatusChangeService, never()).publishStatus(any());
+    }
+
+    @Test
+    void onlyReportsAStaleWorkspaceWhenAutoRemediateIsOff() throws Exception {
+        properties.setAutoRemediate(false);
+        Workspace stale = new Workspace();
+        stale.setLastJobStatus(JobStatus.waitingApproval);
+        staleWorkspaces(stale);
+        doReturn(java.util.Optional.empty()).when(jobRepository).findFirstByWorkspaceOrderByIdDesc(stale);
+
+        subject().execute(null);
+
+        assertThat(stale.getLastJobStatus()).isEqualTo(JobStatus.waitingApproval);
+        verify(workspaceRepository, never()).repairStaleJobStatus(any(), any(), any(), any(), any());
+        verify(workspaceRepository, never()).save(any());
+    }
+
+    @Test
+    void keepsRepairingTheNextWorkspaceWhenOneFails() throws Exception {
+        Workspace broken = new Workspace();
+        broken.setId(java.util.UUID.randomUUID());
+        broken.setLastJobStatus(JobStatus.running);
+        Workspace fine = new Workspace();
+        fine.setId(java.util.UUID.randomUUID());
+        fine.setLastJobStatus(JobStatus.waitingApproval);
+        staleWorkspaces(broken, fine);
+        doThrow(new RuntimeException("db")).when(jobRepository).findFirstByWorkspaceOrderByIdDesc(broken);
+        doReturn(java.util.Optional.empty()).when(jobRepository).findFirstByWorkspaceOrderByIdDesc(fine);
+        doReturn(1).when(workspaceRepository).repairStaleJobStatus(any(), any(), any(), any(), any());
+
+        subject().execute(null);
+
+        verify(workspaceRepository).repairStaleJobStatus(
+                eq(fine.getId()), eq(JobStatus.waitingApproval), eq(JobStatus.NeverExecuted), eq(null), any());
     }
 
     @Test
@@ -225,8 +353,8 @@ class JobReconciliationSweepTest {
     @Test
     void respectsCustomConfiguredHeartbeatGracePeriod() throws Exception {
         JobReconciliationSweep customSweep = new JobReconciliationSweep(
-                jobRepository, stepRepository, new WorkspaceJobStatusService(jobRepository, workspaceRepository), scheduler, scheduleJobService, redisTemplate,
-                properties, reconciliationService, metrics, 600L, storageTypeService, spoolRecoveryService);
+                jobRepository, stepRepository, workspaceRepository, scheduler, scheduleJobService, redisTemplate,
+                properties, reconciliationService, metrics, jobStatusChangeService, 600L, storageTypeService, spoolRecoveryService);
 
         Job running = job(30, JobStatus.running);
         running.setUpdatedDate(new Date(System.currentTimeMillis() - 450_000)); // 450s old (< 600s)
@@ -465,9 +593,9 @@ class JobReconciliationSweepTest {
         doReturn(true).when(spoolRecoveryService).recoverStep(any(Step.class));
 
         JobReconciliationSweep sweepWithSpool = new JobReconciliationSweep(
-                jobRepository, stepRepository, new WorkspaceJobStatusService(jobRepository, workspaceRepository), scheduler,
+                jobRepository, stepRepository, workspaceRepository, scheduler,
                 scheduleJobService, redisTemplate, properties, reconciliationService, metrics,
-                300L, storageTypeService, spoolRecoveryService);
+                jobStatusChangeService, 300L, storageTypeService, spoolRecoveryService);
 
         sweepWithSpool.execute(null);
 
@@ -504,9 +632,9 @@ class JobReconciliationSweepTest {
         doReturn(reconResult).when(reconciliationService).reconcile(eq(55), anyBoolean());
 
         JobReconciliationSweep sweepWithSpool = new JobReconciliationSweep(
-                jobRepository, stepRepository, new WorkspaceJobStatusService(jobRepository, workspaceRepository), scheduler,
+                jobRepository, stepRepository, workspaceRepository, scheduler,
                 scheduleJobService, redisTemplate, properties, reconciliationService, metrics,
-                300L, storageTypeService, spoolRecoveryService);
+                jobStatusChangeService, 300L, storageTypeService, spoolRecoveryService);
 
         sweepWithSpool.execute(null);
 

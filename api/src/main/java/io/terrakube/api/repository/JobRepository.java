@@ -55,6 +55,8 @@ public interface JobRepository extends JpaRepository<Job, Integer> {
     Optional<Job> findFirstByWorkspaceAndStatusInOrderByIdAsc(Workspace workspace, List<JobStatus> jobStatuses);
     Optional<Job> findFirstByWorkspaceAndIdNotAndStatusInOrderByIdAsc(Workspace workspace, int jobId, Collection<JobStatus> jobStatuses);
     Optional<Job> findFirstByWorkspaceOrderByIdDesc(Workspace workspace);
+    // The run before this one that changed last: when it changed is when the workspace queue let this one start.
+    Optional<Job> findFirstByWorkspaceAndIdLessThanOrderByUpdatedDateDesc(Workspace workspace, int jobId);
 
     /**
      * Finds the most recent other job on the same PR with a posted plan comment, so replans can

@@ -685,6 +685,54 @@ describe("plan approval attribution", () => {
   });
 });
 
+describe("run closed by Terrakube", () => {
+  const mockJob = (output?: string, status = "cancelled") => {
+    useStructuredOutputStreamMock.mockReturnValue(null);
+    sessionStorage.setItem("ORGANIZATION_ARCHIVE", "org-1");
+    getMock.mockImplementation((url: string) =>
+      Promise.resolve({
+        data: url.includes("/context/v1/")
+          ? {}
+          : {
+              data: { id: "7", attributes: { status, createdBy: "author@example.com", output } },
+              included: [],
+            },
+      })
+    );
+  };
+
+  it("shows why Terrakube closed the run", async () => {
+    mockJob("Closed by Terrakube: Approval was not given within 48 hours, the run was cancelled.");
+    render(<DetailsJob jobId="7" />);
+
+    expect(await screen.findByText("Run closed by Terrakube")).toBeInTheDocument();
+    expect(screen.getByText("Approval was not given within 48 hours, the run was cancelled.")).toBeInTheDocument();
+  });
+
+  it("shows the notice for a run that failed", async () => {
+    mockJob("Closed by Terrakube: The run did not finish within 6 hours and was closed.", "failed");
+    render(<DetailsJob jobId="7" />);
+
+    expect(await screen.findByText("Run closed by Terrakube")).toBeInTheDocument();
+  });
+
+  it("shows no notice for a run that is not over, whatever its output says", async () => {
+    mockJob("Closed by Terrakube: The run did not finish within 6 hours and was closed.", "completed");
+    render(<DetailsJob jobId="7" />);
+
+    await waitFor(() => expect(screen.getByText("Run #7")).toBeInTheDocument());
+    expect(screen.queryByText("Run closed by Terrakube")).not.toBeInTheDocument();
+  });
+
+  it("shows no notice for a run that was closed some other way", async () => {
+    mockJob("Step 1 completed");
+    render(<DetailsJob jobId="7" />);
+
+    await waitFor(() => expect(screen.getByText("Run #7")).toBeInTheDocument());
+    expect(screen.queryByText("Run closed by Terrakube")).not.toBeInTheDocument();
+  });
+});
+
 describe("run actions", () => {
   it("asks before approving, states what the plan destroys, then approves", async () => {
     useStructuredOutputStreamMock.mockReturnValue(null);

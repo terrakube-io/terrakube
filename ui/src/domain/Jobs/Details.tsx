@@ -43,6 +43,7 @@ import { RunDiagnostics } from "./RunDiagnostics";
 import { collectRunDiagnostics } from "./collectDiagnostics";
 import { getPublicApiOrigin } from "./outputUrl";
 import { hasBlockingPolicyViolations } from "./policyViolations";
+import { parseClosedByTerrakube } from "./closedByTerrakube";
 import { shouldStepBeCollapsible, shouldStepBeExpandedByDefault } from "./stepExpansion";
 import { isTerminalStatus } from "./stepStatus";
 import { StepConsole } from "./StepConsole";
@@ -954,10 +955,18 @@ export const DetailsJob = ({ jobId, workspaceName, canApprove = false }: Props) 
   const attributes = job.data.attributes;
   const commitId = attributes.commitId && attributes.commitId !== "000000000" ? attributes.commitId : undefined;
   const guard = parseIncompleteVariableGuard(attributes.output);
+  // Only a run that is over can have been closed by Terrakube; the line in the output means nothing on one that is not.
+  const closedReason =
+    attributes.status === "failed" || attributes.status === "cancelled"
+      ? parseClosedByTerrakube(attributes.output)
+      : null;
 
   return (
     <div className="run-detail">
       {guard != null && renderIncompleteVariableAlert(guard)}
+      {closedReason != null && (
+        <Alert type="warning" showIcon title="Run closed by Terrakube" description={closedReason} />
+      )}
       {attributes.prCommentError ? renderPrCommentErrorAlert(attributes.prCommentError, attributes.prNumber) : null}
       <header className="run-header">
         <div className="job-headline">
