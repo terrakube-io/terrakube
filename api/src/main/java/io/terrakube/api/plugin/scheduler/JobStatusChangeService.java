@@ -1,13 +1,11 @@
 package io.terrakube.api.plugin.scheduler;
 
-import java.util.Date;
-
 import org.springframework.stereotype.Service;
 
 import io.terrakube.api.plugin.notification.JobNotificationTrigger;
 import io.terrakube.api.plugin.subscription.JobStatusEvent;
 import io.terrakube.api.plugin.subscription.JobStatusPublisher;
-import io.terrakube.api.repository.WorkspaceRepository;
+import io.terrakube.api.plugin.workspace.WorkspaceJobStatusService;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.workspace.Workspace;
 import lombok.AllArgsConstructor;
@@ -28,7 +26,7 @@ import lombok.extern.slf4j.Slf4j;
 @AllArgsConstructor
 public class JobStatusChangeService {
 
-    private final WorkspaceRepository workspaceRepository;
+    private final WorkspaceJobStatusService workspaceJobStatusService;
     private final JobStatusPublisher jobStatusPublisher;
     private final JobNotificationTrigger jobNotificationTrigger;
 
@@ -38,9 +36,7 @@ public class JobStatusChangeService {
             log.info("Job {} has no workspace, skipping workspace status and live update", job.getId());
         } else {
             try {
-                workspace.setLastJobStatus(job.getStatus());
-                workspace.setLastJobDate(new Date(System.currentTimeMillis()));
-                workspaceRepository.save(workspace);
+                workspaceJobStatusService.refresh(job);
             } catch (RuntimeException e) {
                 log.error("Could not update the last job status of workspace {} for job {}",
                         workspace.getId(), job.getId(), e);

@@ -15,7 +15,7 @@ import org.junit.jupiter.api.Test;
 import io.terrakube.api.plugin.notification.JobNotificationTrigger;
 import io.terrakube.api.plugin.subscription.JobStatusEvent;
 import io.terrakube.api.plugin.subscription.JobStatusPublisher;
-import io.terrakube.api.repository.WorkspaceRepository;
+import io.terrakube.api.plugin.workspace.WorkspaceJobStatusService;
 import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
@@ -23,11 +23,11 @@ import io.terrakube.api.rs.workspace.Workspace;
 
 class JobStatusChangeServiceTest {
 
-    private final WorkspaceRepository workspaceRepository = mock(WorkspaceRepository.class);
+    private final WorkspaceJobStatusService workspaceStatus = mock(WorkspaceJobStatusService.class);
     private final JobStatusPublisher publisher = mock(JobStatusPublisher.class);
     private final JobNotificationTrigger notificationTrigger = mock(JobNotificationTrigger.class);
     private final JobStatusChangeService subject =
-            new JobStatusChangeService(workspaceRepository, publisher, notificationTrigger);
+            new JobStatusChangeService(workspaceStatus, publisher, notificationTrigger);
 
     private final UUID workspaceId = UUID.randomUUID();
     private final UUID organizationId = UUID.randomUUID();
@@ -52,9 +52,7 @@ class JobStatusChangeServiceTest {
 
         subject.afterStatusChanged(job);
 
-        assertThat(job.getWorkspace().getLastJobStatus()).isEqualTo(JobStatus.failed);
-        assertThat(job.getWorkspace().getLastJobDate()).isNotNull();
-        verify(workspaceRepository).save(job.getWorkspace());
+        verify(workspaceStatus).refresh(job);
         verify(publisher).publish(new JobStatusEvent(7, workspaceId.toString(), "failed"), organizationId.toString());
         verify(notificationTrigger).notifyStatusChanged(job);
     }
@@ -62,7 +60,7 @@ class JobStatusChangeServiceTest {
     @Test
     void aFailingStepDoesNotStopTheOthers() {
         Job job = closedJob(JobStatus.cancelled);
-        doThrow(new RuntimeException("db")).when(workspaceRepository).save(any());
+        doThrow(new RuntimeException("db")).when(workspaceStatus).refresh(any());
         doThrow(new RuntimeException("redis")).when(publisher).publish(any(), any());
 
         subject.afterStatusChanged(job);
@@ -77,7 +75,7 @@ class JobStatusChangeServiceTest {
 
         subject.afterStatusChanged(job);
 
-        verify(workspaceRepository).save(job.getWorkspace());
+        verify(workspaceStatus).refresh(job);
         verify(publisher).publish(any(), eq(organizationId.toString()));
     }
 
@@ -88,7 +86,7 @@ class JobStatusChangeServiceTest {
 
         subject.afterStatusChanged(job);
 
-        verify(workspaceRepository, never()).save(any());
+        verify(workspaceStatus, never()).refresh(any());
         verify(publisher, never()).publish(any(), any());
         verify(notificationTrigger).notifyStatusChanged(job);
     }
@@ -100,7 +98,7 @@ class JobStatusChangeServiceTest {
         subject.publishStatus(job);
 
         verify(publisher).publish(new JobStatusEvent(7, workspaceId.toString(), "failed"), organizationId.toString());
-        verify(workspaceRepository, never()).save(any());
+        verify(workspaceStatus, never()).refresh(any());
         verify(notificationTrigger, never()).notifyStatusChanged(any());
     }
 

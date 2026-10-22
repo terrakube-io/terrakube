@@ -11,6 +11,7 @@ import io.terrakube.api.rs.job.step.Step;
 import io.terrakube.api.plugin.scheduler.spool.SpoolRecoveryService;
 import io.terrakube.api.plugin.storage.StorageTypeService;
 import io.terrakube.api.rs.job.step.DeliveryState;
+import io.terrakube.api.rs.workspace.Workspace;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.quartz.JobExecutionContext;
