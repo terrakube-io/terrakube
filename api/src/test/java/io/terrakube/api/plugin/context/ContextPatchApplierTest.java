@@ -147,6 +147,24 @@ class ContextPatchApplierTest {
     }
 
     @Test
+    void parseRefusesARenderedPlanTextAboveTheLimitButNotAtIt() throws Exception {
+        String atLimit = "x".repeat(ContextPatchApplier.MAX_RENDERED_PLAN_TEXT_BYTES);
+        assertEquals(1L, ContextPatchApplier.parse(json(
+                "{\"revision\":1,\"set\":{\"planRenderedText/step-1\":\"" + atLimit + "\"}}"), NOW).revision());
+
+        String above = atLimit + "x";
+        assertThrows(InvalidContextPatchException.class, () -> ContextPatchApplier.parse(json(
+                "{\"revision\":1,\"set\":{\"planRenderedText/step-1\":\"" + above + "\"}}"), NOW));
+        // The limit is in bytes: 2-byte characters count twice.
+        String multibyte = "\u00e9".repeat(ContextPatchApplier.MAX_RENDERED_PLAN_TEXT_BYTES / 2 + 1);
+        assertThrows(InvalidContextPatchException.class, () -> ContextPatchApplier.parse(json(
+                "{\"revision\":1,\"set\":{\"planRenderedText/step-1\":\"" + multibyte + "\"}}"), NOW));
+        // Other entries have no such limit.
+        assertEquals(1L, ContextPatchApplier.parse(json(
+                "{\"revision\":1,\"set\":{\"terraformOutputs/step-1\":\"" + above + "\"}}"), NOW).revision());
+    }
+
+    @Test
     void fullReplaceCannotChangeRevisionedEntries() throws Exception {
         ObjectNode stored = json("{\"custom\":0}");
         apply(stored, 5, "{\"planRenderedText/s1\":\"text\",\"noChangePlan\":null,\"terrakubeUI/s1\":\"v5\"}");

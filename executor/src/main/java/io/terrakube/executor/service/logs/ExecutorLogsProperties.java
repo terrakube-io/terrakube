@@ -49,4 +49,11 @@ public class ExecutorLogsProperties {
      * step ends. 0 or less keeps everything in memory.
      */
     private long stepOutputMemoryBytes = 4L * 1024 * 1024;
+
+    /**
+     * Most bytes of a plan's rendered text published to the job context, which is what the pull request
+     * comment shows. A longer plan is cut there with a note that says how much was left out; the step's
+     * output keeps the whole plan. 0 or less publishes all of it.
+     */
+    private long renderedPlanContextMaxBytes = 49_152L;
 }

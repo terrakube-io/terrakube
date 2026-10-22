@@ -23,6 +23,8 @@ import io.terrakube.executor.service.terraform.structured.StructuredOutputPersis
 import io.terrakube.terraform.TerraformClient;
 import io.terrakube.terraform.TerraformDownloader;
 import io.terrakube.terraform.TerraformProcessData;
+import io.terrakube.executor.service.logs.ExecutorLogsProperties;
+import org.mockito.ArgumentCaptor;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -467,7 +469,7 @@ class TerraformExecutorServiceImplTest {
     }
 
     // apply -json's event stream only ever forwards terse per-resource one-liners plus the final
-    // change-summary line - unlike plan(), which appends getPlanAsHumanText's rendered diff to
+    // change-summary line - unlike plan(), which appends the rendered diff to
     // the console, apply had nothing resembling a `terraform show`/CLI-style closing readout.
     // appendHumanReadableOutputs should append an Outputs: section mirroring what the real CLI
     // prints after a successful apply.
@@ -720,7 +722,7 @@ class TerraformExecutorServiceImplTest {
     // Real `terraform apply <planfile>` reprints the plan's classic HCL diff before executing it -
     // apply -json never does, since -json mode has no such event. When apply is running from a
     // downloaded plan file (the normal plan-then-apply workflow), the console should get that same
-    // diff back via getPlanAsHumanText, mirroring plan()'s own append.
+    // diff back via streamPlanAsHumanText, mirroring plan()'s own append.
     @Test
     void appendsHumanReadablePlanDiffWhenApplyingFromDownloadedPlanFile() throws Exception {
         TerraformExecutorServiceImpl subject = subjectSpy();
@@ -729,8 +731,14 @@ class TerraformExecutorServiceImplTest {
         when(applyStructuredOutputService.seedFromPlan("org", "42")).thenReturn(List.of());
         when(terraformState.downloadTerraformPlan(eq("org"), eq("workspace"), eq("42"), eq("1"), any(File.class)))
                 .thenReturn(true);
-        when(planStructuredOutputService.getPlanAsHumanText(eq(terraformJob), any(File.class)))
-                .thenReturn("-/+ resource \"random_pet\" \"this\" {\n      ~ id = \"a\" -> (known after apply)\n    }");
+        when(planStructuredOutputService.streamPlanAsHumanText(eq(terraformJob), any(File.class), any()))
+                .thenAnswer(invocation -> {
+                    Consumer<String> lines = invocation.getArgument(2);
+                    lines.accept("-/+ resource \"random_pet\" \"this\" {");
+                    lines.accept("      ~ id = \"a\" -> (known after apply)");
+                    lines.accept("    }");
+                    return true;
+                });
 
         when(terraformClient.init(any(TerraformProcessData.class), any(Consumer.class), any()))
                 .thenReturn(CompletableFuture.completedFuture(true));
@@ -749,7 +757,7 @@ class TerraformExecutorServiceImplTest {
     }
 
     // No plan file means apply ran directly against HCL (e.g. a Destroy-workflow-style apply with
-    // no prior plan step) - there's no saved plan for getPlanAsHumanText to render, so it must not
+    // no prior plan step) - there's no saved plan for streamPlanAsHumanText to render, so it must not
     // be called at all rather than rendering stale/empty content.
     @Test
     void doesNotRenderPlanDiffWhenNoPlanFileWasDownloaded() throws Exception {
@@ -771,7 +779,7 @@ class TerraformExecutorServiceImplTest {
 
         subject.apply(terraformJob, tempDir.toFile());
 
-        verify(planStructuredOutputService, never()).getPlanAsHumanText(any(), any());
+        verify(planStructuredOutputService, never()).streamPlanAsHumanText(any(), any(), any());
     }
 
     @Test
