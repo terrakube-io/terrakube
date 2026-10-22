@@ -1235,9 +1235,26 @@ describe("DetailsJob job variables notice", () => {
   it("lists the names of the job variables a run was created with, and no values", async () => {
     mockJob({ status: "completed", variableNames: ["image_tag", "region"] });
     render(<DetailsJob jobId="1" />);
-    expect(await screen.findByText("This run used job variables")).toBeInTheDocument();
+    const summary = await screen.findByText("2 run variables");
+    expect(summary.closest("details")).not.toHaveAttribute("open");
     expect(screen.getByText("image_tag")).toBeInTheDocument();
     expect(screen.getByText("region")).toBeInTheDocument();
+  });
+
+  it("keeps all 100 variable names available within the disclosure", async () => {
+    const names = Array.from({ length: 100 }, (_, index) => `service_${index}_deployment_region`);
+    mockJob({ status: "completed", variableNames: names });
+    render(<DetailsJob jobId="1" />);
+    const summary = await screen.findByText("100 run variables");
+    expect(summary.closest("details")).not.toHaveAttribute("open");
+    expect(screen.getByRole("list", { name: "Run variable names", hidden: true }).children).toHaveLength(100);
+    expect(screen.getByText(names[99])).toBeInTheDocument();
+  });
+
+  it("uses a singular label for one variable", async () => {
+    mockJob({ status: "completed", variableNames: ["region"] });
+    render(<DetailsJob jobId="1" />);
+    expect(await screen.findByText("1 run variable")).toBeInTheDocument();
   });
 
   it.each([[undefined], [null], [[]]])("shows nothing when the run has no job variables (%p)", async (names) => {
@@ -1245,6 +1262,6 @@ describe("DetailsJob job variables notice", () => {
     render(<DetailsJob jobId="1" />);
     await waitFor(() => expect(getMock).toHaveBeenCalled());
     await waitFor(() => expect(screen.queryByText(/Loading|loading/)).not.toBeInTheDocument());
-    expect(screen.queryByText("This run used job variables")).not.toBeInTheDocument();
+    expect(screen.queryByText(/run variables?/)).not.toBeInTheDocument();
   });
 });
