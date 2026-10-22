@@ -163,8 +163,14 @@ public class ExecutorService {
         environmentVariables = loadOtherEnvironmentVariables(job, flow, environmentVariables);
         terraformVariables = loadOtherTerraformVariables(job, flow, terraformVariables);
 
-        if (job.getVariables() != null) {
-            jobVariablesService.merge(job, terraformVariables, environmentVariables);
+        if (job.getEncryptedVariables() != null) {
+            try {
+                jobVariablesService.merge(jobVariablesService.decrypt(job.getEncryptedVariables()),
+                        terraformVariables, environmentVariables);
+            } catch (IllegalStateException e) {
+                throw new ExecutionException(String.format("Failed to read the variables of job %d: %s",
+                        job.getId(), e.getMessage()), e);
+            }
         }
 
         executorContext.setVariables(terraformVariables);

@@ -22,7 +22,8 @@ public class JobVariablesHook implements LifeCycleHook<Job> {
                         Optional<ChangeSpec> changes) {
         if (operation == Operation.CREATE && phase == TransactionPhase.PREFLUSH) {
             try {
-                variables.validate(job.getVariables());
+                job.setEncryptedVariables(variables.encrypt(job.getVariables()));
+                job.setVariables(null);
             } catch (IllegalArgumentException e) {
                 throw new BadRequestException(e.getMessage());
             }

@@ -20,6 +20,7 @@ class JobVariablesApiTests extends ServerApplicationTests {
     private static final String ROUTE = "/api/v1/organization/" + ORG + "/job";
     @MockitoBean ScheduleJobService scheduleJobService;
     @Autowired JdbcTemplate jdbc;
+    @Autowired io.terrakube.api.plugin.execution.JobVariablesService variablesService;
 
     @Test
     void acceptsCreateOnlyVariablesEncryptsBeforeCommitAndOmitsFromReads() {
@@ -48,7 +49,8 @@ class JobVariablesApiTests extends ServerApplicationTests {
         String encrypted = jdbc.queryForObject("select encrypted_variables from job where id = ?", String.class, Integer.parseInt(id));
         assertNotNull(encrypted);
         assertFalse(encrypted.contains("private-test-value"));
-        assertEquals("private-test-value\nsecond-line", stored.getVariables().get("key"));
+        assertNull(stored.getVariables());
+        assertEquals("private-test-value\nsecond-line", variablesService.decrypt(stored.getEncryptedVariables()).get("key"));
         var read = given().auth().oauth2(token).get(ROUTE + "/" + id);
         assertEquals(200, read.statusCode());
         assertFalse(read.asString().contains("private-test-value"));
@@ -58,12 +60,15 @@ class JobVariablesApiTests extends ServerApplicationTests {
                 .body(Map.of("query", "{ organization(ids: [\"" + ORG + "\"]) { edges { node { job(ids: [\"" + id + "\"]) { edges { node { id variables } } } } } } }"))
                 .post("/graphql/api/v1");
         assertFalse(graphql.asString().contains("private-test-value"));
+        jdbc.update("update job set encrypted_variables = ? where id = ?", "not-decryptable", Integer.parseInt(id));
+        assertEquals(200, given().auth().oauth2(token).get(ROUTE + "/" + id).statusCode());
+        jdbc.update("update job set encrypted_variables = ? where id = ?", encrypted, Integer.parseInt(id));
         var update = given().auth().oauth2(token).contentType("application/vnd.api+json")
                 .body(Map.of("data", Map.of("type", "job", "id", id,
                         "attributes", Map.of("variables", Map.of("key", "replacement")))))
                 .patch(ROUTE + "/" + id);
         assertTrue(update.statusCode() >= 400, update.asString());
-        assertEquals(stored.getVariables(), jobRepository.findById(Integer.parseInt(id)).orElseThrow().getVariables());
+        assertEquals(stored.getEncryptedVariables(), jobRepository.findById(Integer.parseInt(id)).orElseThrow().getEncryptedVariables());
         var invalid = Map.of("data", Map.of("type", "job",
                 "attributes", Map.of("variables", Map.of("bad name", "private-marker")),
                 "relationships", Map.of("workspace", Map.of("data", Map.of("type", "workspace", "id", workspace.getId().toString())))));

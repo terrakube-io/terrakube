@@ -1,43 +1,50 @@
 package io.terrakube.api.plugin.execution;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.terrakube.api.plugin.security.encryption.EncryptionService;
-import io.terrakube.api.rs.job.Job;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 @Service
 @RequiredArgsConstructor
 public class JobVariablesService {
+    static final int MAX_VARIABLES = 100;
+    static final int MAX_JSON_BYTES = 64 * 1024;
+    private static final Pattern NAME = Pattern.compile("[A-Za-z_][A-Za-z0-9_-]*");
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private final EncryptionService encryptionService;
 
     public void validate(Map<String, String> variables) {
         if (variables == null || variables.isEmpty()) return;
-        if (variables.size() > 100) throw new IllegalArgumentException("At most 100 job variables are allowed");
-        for (Map.Entry<?, ?> entry : variables.entrySet()) {
-            if (!(entry.getKey() instanceof String key) || !key.matches("[A-Za-z_][A-Za-z0-9_-]*")
-                    || !(entry.getValue() instanceof String value) || value.indexOf('\0') >= 0) {
+        if (variables.size() > MAX_VARIABLES) {
+            throw new IllegalArgumentException("At most " + MAX_VARIABLES + " job variables are allowed");
+        }
+        for (Map.Entry<String, String> entry : variables.entrySet()) {
+            if (entry.getKey() == null || !NAME.matcher(entry.getKey()).matches()
+                    || entry.getValue() == null || entry.getValue().indexOf('\0') >= 0) {
                 throw new IllegalArgumentException("Job variables require valid Terraform names and string values without NUL characters");
             }
         }
-        if (json(variables).getBytes(StandardCharsets.UTF_8).length > 65_536) {
-            throw new IllegalArgumentException("Job variables exceed 64 KiB");
+        if (json(variables).getBytes(StandardCharsets.UTF_8).length > MAX_JSON_BYTES) {
+            throw new IllegalArgumentException("Job variables exceed 64 KiB once encoded as JSON");
         }
     }
 
     private String json(Map<String, String> variables) {
         try {
             return MAPPER.writeValueAsString(variables);
-        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+        } catch (JsonProcessingException e) {
             throw new IllegalArgumentException("Could not encode job variables");
         }
     }
 
+    /** Validates and encrypts the variables. Returns null when there is nothing to store. */
     public String encrypt(Map<String, String> variables) {
         if (variables == null || variables.isEmpty()) return null;
         validate(variables);
@@ -45,7 +52,7 @@ public class JobVariablesService {
     }
 
     public Map<String, String> decrypt(String encrypted) {
-        if (encrypted == null) return null;
+        if (encrypted == null) return Map.of();
         try {
             return MAPPER.readValue(encryptionService.decrypt(encrypted), new TypeReference<>() {});
         } catch (Exception e) {
@@ -54,12 +61,14 @@ public class JobVariablesService {
         }
     }
 
-    public void merge(Job job, Map<String, String> terraform, Map<String, String> environment) {
-        Map<String, String> variables = job.getVariables();
-        if (variables == null) return;
+    /**
+     * Applies the job variables as raw TF_VAR_ environment variables, which keeps multiline strings and
+     * typed values intact. The workspace/template -var entry of the same name is dropped because it
+     * would take precedence over the environment. Variable files and CLI arguments keep their normal
+     * Terraform precedence.
+     */
+    public void merge(Map<String, String> variables, Map<String, String> terraform, Map<String, String> environment) {
         variables.forEach((name, value) -> {
-            // Keep raw TF_VAR semantics, including multiline strings and typed complex values.
-            // Remove the workspace/template -var entry, which would otherwise take precedence.
             terraform.remove(name);
             environment.put("TF_VAR_" + name, value);
         });

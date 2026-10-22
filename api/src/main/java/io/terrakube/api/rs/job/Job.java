@@ -2,13 +2,12 @@ package io.terrakube.api.rs.job;
 
 import java.util.List;
 import java.util.Map;
-import io.terrakube.api.plugin.execution.JobVariablesConverter;
-import io.terrakube.api.rs.hooks.job.JobVariablesHook;
 import java.util.Date;
 
 import io.terrakube.api.plugin.security.audit.GenericAuditFields;
 import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.hooks.job.JobManageHook;
+import io.terrakube.api.rs.hooks.job.JobVariablesHook;
 import io.terrakube.api.rs.hooks.job.JobApprovalHook;
 import io.terrakube.api.rs.hooks.job.JobArtifactsCleanupHook;
 import io.terrakube.api.rs.hooks.notification.JobNotificationHook;
@@ -16,6 +15,7 @@ import io.terrakube.api.rs.job.address.Address;
 import io.terrakube.api.rs.job.step.Step;
 import io.terrakube.api.rs.workspace.Workspace;
 
+import com.yahoo.elide.annotation.ComputedAttribute;
 import com.yahoo.elide.annotation.CreatePermission;
 import com.yahoo.elide.annotation.Exclude;
 import com.yahoo.elide.annotation.Include;
@@ -36,6 +36,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
+import jakarta.persistence.Transient;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -56,12 +57,20 @@ public class Job extends GenericAuditFields {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private int id;
 
-    // Write-only and immutable through the API. Values are encrypted in the database.
+    // Create-only input. JobVariablesHook validates and encrypts it into encryptedVariables before the
+    // flush, and it is never persisted, read or updated through the API.
     @ReadPermission(expression = "NONE")
     @UpdatePermission(expression = "NONE")
-    @Convert(converter = JobVariablesConverter.class)
-    @Column(name = "encrypted_variables", columnDefinition = "text")
+    @Transient
+    @ComputedAttribute
     private Map<String, String> variables;
+
+    // Encrypted JSON of the job variables. Only decrypted when the job is dispatched to the executor.
+    @ReadPermission(expression = "NONE")
+    @CreatePermission(expression = "NONE")
+    @UpdatePermission(expression = "NONE")
+    @Column(name = "encrypted_variables", columnDefinition = "text")
+    private String encryptedVariables;
 
     @Column(name = "comments")
     private String comments;
