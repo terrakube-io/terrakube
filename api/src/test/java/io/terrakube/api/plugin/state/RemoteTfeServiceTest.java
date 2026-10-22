@@ -1,6 +1,9 @@
 package io.terrakube.api.plugin.state;
 
 import io.terrakube.api.plugin.security.audit.JobApprovalService;
+import io.terrakube.api.plugin.state.model.apply.ApplyRunModel;
+import io.terrakube.api.plugin.state.model.plan.PlanRunModel;
+import io.terrakube.api.plugin.state.model.runs.RunsData;
 import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.template.Template;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -318,7 +321,7 @@ class RemoteTfeServiceTest {
         job.setId(789);
         Step applyStep = new Step();
         applyStep.setId(UUID.randomUUID());
-        applyStep.setStepNumber(100);
+        applyStep.setStepNumber(200);
         job.setStep(List.of(applyStep));
 
         when(encryptionService.decrypt("encrypted-apply-id")).thenReturn("789");
@@ -335,6 +338,107 @@ class RemoteTfeServiceTest {
         StreamOffset[] offsets = offsetsCaptor.getValue();
         assertEquals(1, offsets.length);
         assertEquals("789", offsets[0].getKey());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void getApplyLogsFiltersByStepId() {
+        RemoteTfeService service = remoteTfeService();
+
+        Job job = new Job();
+        job.setId(800);
+        UUID applyStepId = UUID.randomUUID();
+        Step applyStep = new Step();
+        applyStep.setId(applyStepId);
+        applyStep.setStepNumber(200);
+        job.setStep(List.of(applyStep));
+
+        when(encryptionService.decrypt("encrypted-apply-id-2")).thenReturn("800");
+        when(jobRepository.findById(800)).thenReturn(Optional.of(job));
+
+        StreamOperations<String, String, String> streamOperations = Mockito.mock(StreamOperations.class);
+        when(redisTemplate.opsForStream()).thenReturn(streamOperations);
+        when(streamOperations.read(any(StreamOffset.class)))
+                .thenReturn(List.of(
+                        MapRecord.create("800", Map.of("stepId", UUID.randomUUID().toString(), "output", "plan line")),
+                        MapRecord.create("800", Map.of("stepId", applyStepId.toString(), "output", "apply line 1")),
+                        MapRecord.create("800", Map.of("stepId", applyStepId.toString(), "output", "Apply complete!"))
+                ));
+
+        String logs = new String(service.getApplyLogs("encrypted-apply-id-2", 0, 500), StandardCharsets.UTF_8);
+
+        assertFalse(logs.contains("plan line"), logs);
+        assertTrue(logs.contains("apply line 1"), logs);
+        assertTrue(logs.contains("Apply complete!"), logs);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void getApplyLogsFallsBackToStorageWhenRedisIsEmpty() {
+        RemoteTfeService service = remoteTfeService();
+
+        Job job = new Job();
+        job.setId(801);
+        Organization org = organization("sample-org");
+        job.setOrganization(org);
+        UUID applyStepId = UUID.randomUUID();
+        Step applyStep = new Step();
+        applyStep.setId(applyStepId);
+        applyStep.setStepNumber(200);
+        job.setStep(List.of(applyStep));
+
+        when(encryptionService.decrypt("encrypted-apply-id-3")).thenReturn("801");
+        when(jobRepository.findById(801)).thenReturn(Optional.of(job));
+
+        StreamOperations<String, String, String> streamOperations = Mockito.mock(StreamOperations.class);
+        when(redisTemplate.opsForStream()).thenReturn(streamOperations);
+        when(streamOperations.read(any(StreamOffset.class))).thenReturn(Collections.emptyList());
+
+        when(storageTypeService.getStepOutput(org.getId().toString(), "801", applyStepId.toString()))
+                .thenReturn("Apply output from storage\nApply complete!\n".getBytes(StandardCharsets.UTF_8));
+
+        String logs = new String(service.getApplyLogs("encrypted-apply-id-3", 0, 500), StandardCharsets.UTF_8);
+
+        assertTrue(logs.contains("Apply output from storage"), logs);
+        assertTrue(logs.contains("Apply complete!"), logs);
+    }
+
+    @Test
+    void getRunIncludesApplyAndPlanInIncludedSectionWhenRequested() {
+        RemoteTfeService service = remoteTfeService();
+
+        Job job = new Job();
+        job.setId(900);
+        Organization org = organization("sample-org");
+        Workspace workspace = workspace("sample", org);
+        job.setOrganization(org);
+        job.setWorkspace(workspace);
+        job.setStatus(JobStatus.running);
+
+        Step planStep = new Step();
+        planStep.setId(UUID.randomUUID());
+        planStep.setStepNumber(100);
+        planStep.setStatus(JobStatus.completed);
+
+        Step applyStep = new Step();
+        applyStep.setId(UUID.randomUUID());
+        applyStep.setStepNumber(200);
+        applyStep.setStatus(JobStatus.running);
+
+        job.setStep(List.of(planStep, applyStep));
+
+        when(jobRepository.getReferenceById(900)).thenReturn(job);
+        when(encryptionService.encrypt("900")).thenReturn("encrypted-900");
+
+        RunsData runData = service.getRun(900, "plan,apply", null);
+
+        assertNotNull(runData);
+        assertNotNull(runData.getIncluded());
+        assertEquals(2, runData.getIncluded().size());
+        boolean hasApply = runData.getIncluded().stream().anyMatch(res -> res instanceof ApplyRunModel);
+        boolean hasPlan = runData.getIncluded().stream().anyMatch(res -> res instanceof PlanRunModel);
+        assertTrue(hasApply, "Should include apply model");
+        assertTrue(hasPlan, "Should include plan model");
     }
 
     @ParameterizedTest
