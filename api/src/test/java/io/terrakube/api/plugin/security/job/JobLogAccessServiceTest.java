@@ -1,7 +1,7 @@
 package io.terrakube.api.plugin.security.job;
 
 import io.terrakube.api.plugin.security.groups.GroupService;
-import io.terrakube.api.plugin.security.rbac.RbacService;
+import io.terrakube.api.plugin.security.user.AuthenticatedUser;
 import io.terrakube.api.repository.JobRepository;
 import io.terrakube.api.repository.StepRepository;
 import io.terrakube.api.repository.TeamRepository;
@@ -42,7 +42,7 @@ class JobLogAccessServiceTest {
     @Mock
     private TeamRepository teamRepository;
     @Mock
-    private RbacService rbacService;
+    private AuthenticatedUser authenticatedUser;
     @Mock
     private GroupService groupService;
     @Mock
@@ -61,7 +61,7 @@ class JobLogAccessServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new JobLogAccessService(jobRepository, stepRepository, teamRepository, rbacService, groupService, instanceOwner);
+        service = new JobLogAccessService(jobRepository, stepRepository, teamRepository, groupService, authenticatedUser, instanceOwner);
         // A regular token: the effective groups are the groups claim. Tests for federated tokens override it.
         lenient().when(groupService.getEffectiveGroups(any())).thenAnswer(invocation -> {
             Object claim = jwt.getTokenAttributes().get("groups");
@@ -83,6 +83,17 @@ class JobLogAccessServiceTest {
         step = new Step();
         step.setId(stepId);
         step.setJob(job);
+    }
+
+    // The token the executor daemon sends: no job and no workspace of its own.
+    private Map<String, Object> executorServiceToken() {
+        return Map.of("iss", "TerrakubeInternal", "sub", "TerrakubeInternal (EXECUTOR)");
+    }
+
+    // The token of one step run: it says which job and workspace it is for.
+    private Map<String, Object> runnerToken(String tokenJobId) {
+        return Map.of("iss", "TerrakubeInternal", "sub", "TerrakubeInternal (EXECUTOR)",
+                "jobId", tokenJobId, "workspaceId", workspace.getId().toString());
     }
 
     @Test
@@ -145,10 +156,10 @@ class JobLogAccessServiceTest {
     }
 
     @Test
-    void testCheckAccess_TerrakubeInternalToken_ReturnsAllowed() {
+    void testCheckAccess_ExecutorServiceToken_ReturnsAllowed() {
         when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
         when(stepRepository.findById(stepId)).thenReturn(Optional.of(step));
-        when(jwt.getTokenAttributes()).thenReturn(Map.of("iss", "TerrakubeInternal"));
+        when(jwt.getTokenAttributes()).thenReturn(executorServiceToken());
 
         assertEquals(JobLogAccessService.LogAccessResult.ALLOWED,
                 service.checkAccess(jwt, orgId.toString(), String.valueOf(jobId), stepId.toString()));
@@ -293,21 +304,15 @@ class JobLogAccessServiceTest {
     }
 
     @Test
-    void testCanWriteContext_TerrakubeInternalToken_MatchingJobId_ReturnsTrue() {
-        when(jwt.getTokenAttributes()).thenReturn(Map.of(
-                "iss", "TerrakubeInternal",
-                "jobId", String.valueOf(jobId)
-        ));
+    void testCanWriteContext_RunnerToken_MatchingJobId_ReturnsTrue() {
+        when(jwt.getTokenAttributes()).thenReturn(runnerToken(String.valueOf(jobId)));
 
         assertTrue(service.canWriteContext(jwt, jobId));
     }
 
     @Test
-    void testCanWriteContext_TerrakubeInternalToken_MismatchedJobId_ReturnsFalse() {
-        when(jwt.getTokenAttributes()).thenReturn(Map.of(
-                "iss", "TerrakubeInternal",
-                "jobId", "99999"
-        ));
+    void testCanWriteContext_RunnerToken_MismatchedJobId_ReturnsFalse() {
+        when(jwt.getTokenAttributes()).thenReturn(runnerToken("99999"));
 
         assertFalse(service.canWriteContext(jwt, jobId));
     }
@@ -404,7 +409,6 @@ class JobLogAccessServiceTest {
         when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
         when(jwt.getTokenAttributes()).thenReturn(Map.of("iss", "https://token.actions.githubusercontent.com"));
         when(groupService.getEffectiveGroups(any())).thenReturn(new LinkedHashSet<>());
-        when(teamRepository.findAllByOrganizationIdAndNameIn(eq(orgId), any())).thenReturn(List.of());
 
         assertEquals(JobLogAccessService.LogAccessResult.FORBIDDEN, service.checkJobAccess(jwt, jobId));
     }
@@ -419,9 +423,119 @@ class JobLogAccessServiceTest {
     @Test
     void testCheckJobAccess_InternalTokenDoesNotResolveGroups() {
         when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
-        when(jwt.getTokenAttributes()).thenReturn(Map.of("iss", "TerrakubeInternal", "jobId", String.valueOf(jobId)));
+        when(jwt.getTokenAttributes()).thenReturn(runnerToken(String.valueOf(jobId)));
 
         assertEquals(JobLogAccessService.LogAccessResult.ALLOWED, service.checkJobAccess(jwt, jobId));
         verify(groupService, never()).getEffectiveGroups(any());
+    }
+
+    // --- Internal tokens ---------------------------------------------------------------------------
+
+    @Test
+    void testCheckAccess_InternalTokenWithNoJobAndNoWorkspaceAndNoSubjectIsRefused() {
+        when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
+        when(jwt.getTokenAttributes()).thenReturn(Map.of("iss", "TerrakubeInternal"));
+
+        assertEquals(JobLogAccessService.LogAccessResult.FORBIDDEN, service.checkJobAccess(jwt, jobId));
+    }
+
+    @Test
+    void testCheckJobAccess_RegistryServiceTokenIsRefused() {
+        when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
+        when(jwt.getTokenAttributes()).thenReturn(Map.of("iss", "TerrakubeInternal", "sub", "TerrakubeInternal (REGISTRY)"));
+
+        assertEquals(JobLogAccessService.LogAccessResult.FORBIDDEN, service.checkJobAccess(jwt, jobId));
+        assertFalse(service.canWriteContext(jwt, jobId));
+    }
+
+    @Test
+    void testCheckJobAccess_LegacyInternalTokenIsRefused() {
+        when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
+        when(jwt.getTokenAttributes()).thenReturn(Map.of("iss", "TerrakubeInternal", "sub", "TerrakubeInternal (TOKEN)"));
+
+        assertEquals(JobLogAccessService.LogAccessResult.FORBIDDEN, service.checkJobAccess(jwt, jobId));
+        assertFalse(service.canWriteContext(jwt, jobId));
+    }
+
+    @Test
+    void testCheckJobAccess_RunnerTokenWithoutAJobIsRefused() {
+        when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
+        when(jwt.getTokenAttributes()).thenReturn(Map.of(
+                "iss", "TerrakubeInternal", "workspaceId", workspace.getId().toString()));
+
+        assertEquals(JobLogAccessService.LogAccessResult.FORBIDDEN, service.checkJobAccess(jwt, jobId));
+        assertFalse(service.canWriteContext(jwt, jobId));
+    }
+
+    @Test
+    void testCheckJobAccess_RunnerTokenOfAnotherWorkspaceIsRefused() {
+        when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
+        when(jwt.getTokenAttributes()).thenReturn(Map.of(
+                "iss", "TerrakubeInternal", "jobId", String.valueOf(jobId), "workspaceId", UUID.randomUUID().toString()));
+
+        assertEquals(JobLogAccessService.LogAccessResult.FORBIDDEN, service.checkJobAccess(jwt, jobId));
+    }
+
+    @Test
+    void testCanWriteContext_ExecutorServiceTokenIsAllowed() {
+        when(jwt.getTokenAttributes()).thenReturn(executorServiceToken());
+
+        assertTrue(service.canWriteContext(jwt, jobId));
+    }
+
+    // --- Instance owner ------------------------------------------------------------------------------
+
+    @Test
+    void testCheckAccess_InstanceOwnerByEmailIsAllowedForLogsToo() {
+        when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
+        when(stepRepository.findById(stepId)).thenReturn(Optional.of(step));
+        when(jwt.getTokenAttributes()).thenReturn(Map.of("iss", "Terrakube", "email", instanceOwner));
+
+        assertEquals(JobLogAccessService.LogAccessResult.ALLOWED,
+                service.checkAccess(jwt, orgId.toString(), String.valueOf(jobId), stepId.toString()));
+    }
+
+    @Test
+    void testCheckJobAccess_AFederatedTokenWithTheOwnersEmailIsNotTheOwner() {
+        when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
+        when(jwt.getTokenAttributes()).thenReturn(Map.of("iss", "https://idp.example.com", "email", instanceOwner));
+        when(authenticatedUser.isFederatedAccount(any())).thenReturn(true);
+
+        assertEquals(JobLogAccessService.LogAccessResult.FORBIDDEN, service.checkJobAccess(jwt, jobId));
+    }
+
+    @Test
+    void testCanWriteContext_InstanceOwnerByEmailIsAllowed() {
+        when(jwt.getTokenAttributes()).thenReturn(Map.of("iss", "Terrakube", "email", instanceOwner));
+
+        assertTrue(service.canWriteContext(jwt, jobId));
+    }
+
+    @Test
+    void testCanWriteContext_AFederatedTokenWithTheOwnersEmailIsRefused() {
+        when(jwt.getTokenAttributes()).thenReturn(Map.of("iss", "https://idp.example.com", "email", instanceOwner));
+        when(authenticatedUser.isFederatedAccount(any())).thenReturn(true);
+
+        assertFalse(service.canWriteContext(jwt, jobId));
+    }
+
+    @Test
+    void testCanWriteContext_AFederatedTokenWithTheOwnersGroupIsRefused() {
+        when(jwt.getTokenAttributes()).thenReturn(Map.of("iss", "https://idp.example.com", "groups", List.of(instanceOwner)));
+        when(authenticatedUser.isFederatedAccount(any())).thenReturn(true);
+
+        assertFalse(service.canWriteContext(jwt, jobId));
+    }
+
+    // --- No groups at all ----------------------------------------------------------------------------
+
+    @Test
+    void testCheckJobAccess_NoEffectiveGroupsIsRefusedWithoutQueryingTeams() {
+        when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
+        when(jwt.getTokenAttributes()).thenReturn(Map.of("iss", "https://token.actions.githubusercontent.com", "sub", "repo:acme/infra"));
+        when(groupService.getEffectiveGroups(any())).thenReturn(new LinkedHashSet<>());
+
+        assertEquals(JobLogAccessService.LogAccessResult.FORBIDDEN, service.checkJobAccess(jwt, jobId));
+        verify(teamRepository, never()).findAllByOrganizationIdAndNameIn(any(), any());
     }
 }
