@@ -246,6 +246,25 @@ describe("WorkspaceWebhook", () => {
       expect(await screen.findByLabelText("Repository webhook ID")).toHaveValue("9001");
     });
 
+    it("says why the shared repository webhook could not be synced", async () => {
+      mockWebhook({ migratedV2: true, remoteHookId: null, syncError: "The VCS connection does not have permission." });
+      renderWebhook();
+
+      expect(await screen.findByText("The repository webhook is not working")).toBeInTheDocument();
+      expect(screen.getByText(/The VCS connection does not have permission\./)).toBeInTheDocument();
+    });
+
+    it.each([
+      [{ migratedV2: true, remoteHookId: null, syncError: null }],
+      [{ migratedV2: false, remoteHookId: "1", syncError: "old" }],
+    ])("shows no sync problem when the shared webhook works or the webhook is not shared (%p)", async (attributes) => {
+      mockWebhook(attributes);
+      renderWebhook();
+
+      await screen.findByLabelText("Webhook ID");
+      expect(screen.queryByText("The repository webhook is not working")).not.toBeInTheDocument();
+    });
+
     it("creates a new webhook as a shared one when asked", async () => {
       renderWebhook(workspace({ vcs: { data: { type: "vcs", id: "vcs-1" } } }));
       fireEvent.click(screen.getByRole("switch", { name: "Enable webhook" }));

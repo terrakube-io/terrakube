@@ -9,7 +9,9 @@ import io.terrakube.api.plugin.security.audit.GenericAuditFields;
 import io.terrakube.api.rs.hooks.webhook.WebhookManageHook;
 import io.terrakube.api.rs.workspace.Workspace;
 
+import com.yahoo.elide.annotation.CreatePermission;
 import com.yahoo.elide.annotation.Include;
+import com.yahoo.elide.annotation.UpdatePermission;
 import com.yahoo.elide.annotation.LifeCycleHookBinding;
 
 import jakarta.persistence.CascadeType;
@@ -46,6 +48,12 @@ public class Webhook extends GenericAuditFields {
     
     @Column(name = "migrated_v2")
     private boolean migratedV2 = false;
+
+    // Why the last sync of the shared repository webhook failed, null when it worked. Set by the sync job.
+    @CreatePermission(expression = "NONE")
+    @UpdatePermission(expression = "NONE")
+    @Column(name = "sync_error", length = 1024)
+    private String syncError;
 
     @OneToMany(mappedBy = "webhook", fetch = FetchType.LAZY, cascade = CascadeType.REMOVE)
     private List<WebhookEvent> events;

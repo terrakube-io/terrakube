@@ -15,6 +15,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.stereotype.Service;
 import io.terrakube.api.plugin.vcs.TokenService;
 import io.terrakube.api.plugin.vcs.WebhookResult;
@@ -541,32 +542,37 @@ public class GitHubWebhookService extends WebhookServiceBase {
             events += ",\"issue_comment\"";
         }
 
-        String body;
-        String apiUrl = repoWebhook.getVcs().getApiUrl() + "/repos/" + String.join("/", ownerAndRepo) + "/hooks";
-        HttpMethod httpMethod;
+        String hooksUrl = repoWebhook.getVcs().getApiUrl() + "/repos/" + String.join("/", ownerAndRepo) + "/hooks";
 
         if (id != null && !id.isEmpty()) {
-            body = "{\"active\":true, \"events\":[" + events + "]}";
-            apiUrl = apiUrl + "/" + id;
-            httpMethod = HttpMethod.PATCH;
-        } else {
-            body = "{\"name\":\"web\",\"active\":true,\"events\":[" + events + "],\"config\":{\"url\":\""
-                    + webhookUrl
-                    + "\",\"secret\":\"" + repoWebhook.getWebhookSecret() + "\",\"content_type\":\"json\",\"insecure_ssl\":\"" + insecureSsl + "\"}}";
-            httpMethod = HttpMethod.POST;
+            String body = "{\"active\":true, \"events\":[" + events + "]}";
+            try {
+                ResponseEntity<String> updated = callGitHubApi(repoWebhook.getVcs(), ownerAndRepo, body, hooksUrl + "/" + id, HttpMethod.PATCH);
+                if (updated != null) {
+                    log.info("GitHub repo webhook {} updated", id);
+                }
+                return id;
+            } catch (HttpClientErrorException.NotFound _) {
+                // The hook was deleted on GitHub (or never existed under this id). Keeping the stored id
+                // would fail every later sync with the same 404, so register it again. When the 404 is
+                // really a repository the connection cannot see, GitHub answers the create with an error
+                // too, and that one is raised for the caller to report.
+                log.warn("GitHub repo webhook {} of {} no longer exists, creating it again",
+                        id, repoWebhook.getRepositoryUrl());
+            }
         }
 
-        ResponseEntity<String> response = callGitHubApi(repoWebhook.getVcs(), ownerAndRepo, body, apiUrl, httpMethod);
+        String body = "{\"name\":\"web\",\"active\":true,\"events\":[" + events + "],\"config\":{\"url\":\""
+                + webhookUrl
+                + "\",\"secret\":\"" + repoWebhook.getWebhookSecret() + "\",\"content_type\":\"json\",\"insecure_ssl\":\"" + insecureSsl + "\"}}";
+        ResponseEntity<String> response = callGitHubApi(repoWebhook.getVcs(), ownerAndRepo, body, hooksUrl, HttpMethod.POST);
         if (response != null && (response.getStatusCode().value() == 201 || response.getStatusCode().value() == 200)) {
-            if (id == null || id.isEmpty()) {
-                try {
-                    JsonNode rootNode = objectMapper.readTree(response.getBody());
-                    id = rootNode.path("id").asText();
-                } catch (Exception e) {
-                    log.error("Error parsing JSON response", e);
-                }
+            try {
+                id = objectMapper.readTree(response.getBody()).path("id").asText();
+            } catch (Exception e) {
+                log.error("Error parsing JSON response", e);
             }
-            log.info("GitHub repo webhook created/updated successfully with id {}", id);
+            log.info("GitHub repo webhook created successfully with id {}", id);
         }
 
         return id;

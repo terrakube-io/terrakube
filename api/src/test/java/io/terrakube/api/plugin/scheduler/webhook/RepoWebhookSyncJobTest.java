@@ -1,6 +1,10 @@
 package io.terrakube.api.plugin.scheduler.webhook;
 
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -11,6 +15,8 @@ import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.client.HttpClientErrorException;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -37,6 +43,9 @@ class RepoWebhookSyncJobTest {
 
     @Mock
     RepoWebhookService repoWebhookService;
+
+    @Mock
+    RepoWebhookSyncStatus syncStatus;
 
     @InjectMocks
     RepoWebhookSyncJob subject;
@@ -124,6 +133,40 @@ class RepoWebhookSyncJobTest {
 
         verify(repoWebhookService).getOrCreateRepoWebhook(first);
         verify(repoWebhookService).createOrUpdateSharedWebhook(repoWebhook);
+    }
+
+    @Test
+    void aSuccessfulSyncClearsTheErrorOnTheWorkspaces() throws Exception {
+        String repositoryUrl = "https://github.com/owner/repo";
+        Workspace first = workspace(UUID.randomUUID());
+        RepoWebhook repoWebhook = new RepoWebhook();
+        doReturn(List.of(first)).when(workspaceRepository).findByNormalizedSourceWithMigratedWebhook(repositoryUrl);
+        doReturn(repoWebhook).when(repoWebhookService).getOrCreateRepoWebhook(first);
+
+        subject.execute(jobExecutionContext(repositoryUrl, null));
+
+        verify(syncStatus).record(repositoryUrl, null);
+    }
+
+    @Test
+    void aFailedSyncRecordsAMessageForTheWorkspacesAndStillFails() throws Exception {
+        String repositoryUrl = "https://github.com/owner/repo";
+        Workspace first = workspace(UUID.randomUUID());
+        RepoWebhook repoWebhook = new RepoWebhook();
+        HttpClientErrorException forbidden = HttpClientErrorException.create(HttpStatus.FORBIDDEN, "Forbidden",
+                new org.springframework.http.HttpHeaders(), "{\"message\":\"token ghp_secret\"}".getBytes(), null);
+        doReturn(List.of(first)).when(workspaceRepository).findByNormalizedSourceWithMigratedWebhook(repositoryUrl);
+        doReturn(repoWebhook).when(repoWebhookService).getOrCreateRepoWebhook(first);
+        org.mockito.Mockito.doThrow(forbidden).when(repoWebhookService).createOrUpdateSharedWebhook(repoWebhook);
+
+        HttpClientErrorException thrown = assertThrows(HttpClientErrorException.class,
+                () -> subject.execute(jobExecutionContext(repositoryUrl, null)));
+
+        assertSame(forbidden, thrown);
+        org.mockito.ArgumentCaptor<String> message = org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(syncStatus).record(org.mockito.ArgumentMatchers.eq(repositoryUrl), message.capture());
+        org.junit.jupiter.api.Assertions.assertTrue(message.getValue().contains("permission"), message.getValue());
+        org.junit.jupiter.api.Assertions.assertFalse(message.getValue().contains("ghp_secret"));
     }
 
     private Workspace workspace(UUID id) {

@@ -592,6 +592,8 @@ export type Webhook = {
 export type WebhookAttributes = {
   remoteHookId: string;
   migratedV2: boolean;
+  /** Why the last sync of the shared repository webhook failed. Empty when it worked. */
+  syncError?: string | null;
 };
 export enum WebhookEventType {
   PUSH = "PUSH",
