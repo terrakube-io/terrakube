@@ -279,27 +279,6 @@ public class AzureTerraformStateImpl implements TerraformState {
         return planExists.get();
     }
 
-    public String saveOutput(String organizationId, String jobId, String stepId, String output, String outputError) {
-        BlobContainerClient blobContainerClient = blobServiceClient.getBlobContainerClient(CONTAINER_OUTPUT_NAME);
-
-        log.info("blobContainerClient.exists {}", blobContainerClient.exists());
-        if (!blobContainerClient.exists()) {
-            blobContainerClient.create();
-        }
-        String blobName = organizationId + "/" + jobId + "/" +stepId + ".tfoutput";
-        log.info("blobName: {}", blobName);
-        BlobClient blobClient = blobContainerClient.getBlobClient(blobName);
-
-        byte[] bytes = StringUtils.getBytesUtf8(output + outputError);
-        String utf8EncodedString = StringUtils.newStringUtf8(bytes);
-        storageRetryMetrics.withRetry("azure", "output-write", () -> {
-            blobClient.upload(BinaryData.fromString(utf8EncodedString), true);
-            return null;
-        });
-
-        return terraformOutputPathService.getOutputPath(organizationId, jobId, stepId);
-    }
-
     @Override
     public String saveBufferedOutput(String organizationId, String jobId, String stepId, StepOutputBuffer output, String outputError) {
         BlobContainerClient blobContainerClient = blobServiceClient.getBlobContainerClient(CONTAINER_OUTPUT_NAME);

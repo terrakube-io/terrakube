@@ -275,23 +275,6 @@ public class LocalTerraformStateImpl implements TerraformState {
     }
 
     @Override
-    public String saveOutput(String organizationId, String jobId, String stepId, String output, String outputError) {
-        String outputFilePath = String.format(LOCAL_OUTPUT_DIRECTORY, organizationId, jobId , stepId);
-        log.info("blobName: {}", outputFilePath);
-
-        File localOutputDirectory = new File(FileUtils.getUserDirectoryPath().concat(
-                FilenameUtils.separatorsToSystem(
-                        outputFilePath
-                )));
-
-        log.info("Creating Output File: {}", localOutputDirectory.getAbsolutePath());
-        return storageRetryMetrics.withRetry("local", "output-write", () -> {
-            FileUtils.writeStringToFile(localOutputDirectory, output + outputError, Charset.defaultCharset());
-            return terraformOutputPathService.getOutputPath(organizationId, jobId, stepId);
-        });
-    }
-
-    @Override
     public String saveBufferedOutput(String organizationId, String jobId, String stepId, StepOutputBuffer output, String outputError) {
         String outputFilePath = String.format(LOCAL_OUTPUT_DIRECTORY, organizationId, jobId , stepId);
         log.info("blobName: {}", outputFilePath);

@@ -2,6 +2,9 @@ package io.terrakube.executor.service.opa;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.terrakube.executor.plugin.tfstate.TerraformState;
+import io.terrakube.executor.service.logs.ExecutorLogsProperties;
+import io.terrakube.executor.service.logs.StepOutputBuffer;
+import io.terrakube.executor.service.executor.ExecutorJobResult;
 import io.terrakube.executor.service.mode.PolicyContext;
 import io.terrakube.executor.service.mode.PolicyExemptionContext;
 import io.terrakube.executor.service.mode.TerraformJob;
@@ -444,5 +447,76 @@ class OpaExecutorServiceTest {
         assertEquals(Set.of("policyEvaluation"), captor.getValue().keySet());
         Map<String, Object> payload = (Map<String, Object>) captor.getValue().get("policyEvaluation");
         assertEquals(2, payload.get("passedRules"));
+    }
+
+    private File workingDirectoryWithPlan(Path tempDir) throws Exception {
+        File workingDirectory = tempDir.resolve("work").toFile();
+        assertTrue(workingDirectory.mkdirs());
+        java.nio.file.Files.writeString(workingDirectory.toPath().resolve("plan.json"), "{}");
+        return workingDirectory;
+    }
+
+    private static TerraformJob policyJob() {
+        TerraformJob job = new TerraformJob();
+        job.setOrganizationId("org");
+        job.setWorkspaceId("ws");
+        job.setJobId("1");
+        job.setStepId("step");
+        return job;
+    }
+
+    @Test
+    void evaluateJobWritesItsOutputToTheStepBufferForTheCallerToSave(@TempDir Path tempDir) throws Exception {
+        File workingDirectory = workingDirectoryWithPlan(tempDir);
+        OpaExecutorServiceImpl subject = Mockito.spy(opaExecutorService);
+        Mockito.doAnswer(invocation -> {
+            Consumer<String> output = invocation.getArgument(3);
+            output.accept("policy one: passed");
+            output.accept("policy two: passed");
+            return List.of();
+        }).when(subject).evaluateAllPolicies(Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any());
+
+        ExecutorJobResult result = subject.evaluateJob(policyJob(), workingDirectory);
+
+        assertTrue(result.isSuccessfulExecution());
+        assertEquals(0, result.getExitCode());
+        try (StepOutputBuffer output = result.getOutputBuffer()) {
+            assertEquals("policy one: passed\npolicy two: passed\n", output.toString());
+        }
+    }
+
+    @Test
+    void evaluateJobWithoutAPlanReportsItInTheBufferAndFails(@TempDir Path tempDir) {
+        File workingDirectory = tempDir.resolve("work").toFile();
+        assertTrue(workingDirectory.mkdirs());
+
+        ExecutorJobResult result = opaExecutorService.evaluateJob(policyJob(), workingDirectory);
+
+        assertFalse(result.isSuccessfulExecution());
+        assertEquals(1, result.getExitCode());
+        try (StepOutputBuffer output = result.getOutputBuffer()) {
+            assertEquals("No plan.json or state found for compliance evaluation.", output.toString());
+        }
+    }
+
+    @Test
+    void evaluateJobClosesTheBufferWhenEvaluationFails(@TempDir Path tempDir) throws Exception {
+        File workingDirectory = workingDirectoryWithPlan(tempDir);
+        ExecutorLogsProperties properties = new ExecutorLogsProperties();
+        properties.setStepOutputMemoryBytes(1);
+        OpaExecutorServiceImpl subject = Mockito.spy(opaExecutorService);
+        subject.setLogsProperties(properties);
+        Mockito.doAnswer(invocation -> {
+            Consumer<String> output = invocation.getArgument(3);
+            output.accept("enough output to move the buffer to a file");
+            throw new IllegalStateException("evaluation failed");
+        }).when(subject).evaluateAllPolicies(Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any());
+
+        assertThrows(IllegalStateException.class, () -> subject.evaluateJob(policyJob(), workingDirectory));
+
+        try (var left = java.nio.file.Files.list(tempDir)) {
+            assertEquals(List.of("work"), left.map(path -> path.getFileName().toString()).toList(),
+                    "no spilled output file may stay next to the working directory");
+        }
     }
 }

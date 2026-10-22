@@ -1,5 +1,6 @@
 package io.terrakube.executor.service.executor;
 
+import io.terrakube.executor.service.logs.StepOutputBuffer;
 import io.terrakube.executor.service.mode.TerraformJob;
 import io.terrakube.executor.service.status.UpdateJobStatus;
 import jakarta.annotation.PreDestroy;
@@ -111,7 +112,9 @@ public class JobExecutionWatchdog {
             return;
         }
         log.warn("Executor pod is shutting down with Job {} in flight, failing it so the queue can proceed", job.getJobId());
-        updateJobStatus.setCompletedStatus(false, false, -1, job,
-                "Executor pod is shutting down\n", "Executor pod is shutting down", null, "");
+        try (StepOutputBuffer output = StepOutputBuffer.ofMessage("Executor pod is shutting down\n")) {
+            updateJobStatus.setCompletedStatus(false, false, -1, job, output,
+                    "Executor pod is shutting down", null, "", false, null, null, null);
+        }
     }
 }

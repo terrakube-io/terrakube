@@ -73,27 +73,17 @@ public class UpdateJobStatusImpl implements UpdateJobStatus {
     }
 
     @Override
-    public void setCompletedStatus(boolean successful, boolean isPlan, int exitCode, TerraformJob terraformJob, String jobOutput, String jobErrorOutput, String jobPlan, String commitId, boolean hasSoftMandatoryViolations, String approvalTeam, String deliveryState, Long deliveryRevision) {
-        complete(successful, isPlan, exitCode, terraformJob, jobOutput, null, jobErrorOutput, jobPlan, commitId, hasSoftMandatoryViolations, approvalTeam, deliveryState, deliveryRevision);
-    }
-
-    @Override
-    public void setCompletedStatusWithOutput(boolean successful, boolean isPlan, int exitCode, TerraformJob terraformJob, StepOutputBuffer jobOutput, String jobErrorOutput, String jobPlan, String commitId, boolean hasSoftMandatoryViolations, String approvalTeam, String deliveryState, Long deliveryRevision) {
-        complete(successful, isPlan, exitCode, terraformJob, "", jobOutput, jobErrorOutput, jobPlan, commitId, hasSoftMandatoryViolations, approvalTeam, deliveryState, deliveryRevision);
-    }
-
-    // jobOutputBuffer, when set, is the output of the step and jobOutput is empty.
-    private void complete(boolean successful, boolean isPlan, int exitCode, TerraformJob terraformJob, String jobOutput, StepOutputBuffer jobOutputBuffer, String jobErrorOutput, String jobPlan, String commitId, boolean hasSoftMandatoryViolations, String approvalTeam, String deliveryState, Long deliveryRevision) {
+    public void setCompletedStatus(boolean successful, boolean isPlan, int exitCode, TerraformJob terraformJob, StepOutputBuffer jobOutput, String jobErrorOutput, String jobPlan, String commitId, boolean hasSoftMandatoryViolations, String approvalTeam, String deliveryState, Long deliveryRevision) {
         if (!executorFlagsProperties.isDisableAcknowledge()) {
             String currentJobStatus = getCurrentJobStatus(terraformJob);
             // A rejected run keeps showing its approval step as failed: onReject command
             // output is still saved, but its success must not repaint the step as completed.
             boolean rejected = currentJobStatus.equals("rejected");
-            updateStepStatus(successful && !rejected, terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), jobOutput, jobOutputBuffer, jobErrorOutput, deliveryState, deliveryRevision);
+            updateStepStatus(successful && !rejected, terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), jobOutput, jobErrorOutput, deliveryState, deliveryRevision);
             if (rejected || currentJobStatus.equals("cancelled"))
                 log.warn("Job {} was {} when running executor, skipping job status update", terraformJob.getJobId(), currentJobStatus);
             else
-                updateJobStatus(successful, isPlan, exitCode, terraformJob, jobOutputBuffer != null ? jobOutputBuffer.sizeInBytes() : jobOutput.length(), jobErrorOutput, jobPlan, commitId, hasSoftMandatoryViolations, approvalTeam);
+                updateJobStatus(successful, isPlan, exitCode, terraformJob, jobOutput.sizeInBytes(), jobErrorOutput, jobPlan, commitId, hasSoftMandatoryViolations, approvalTeam);
         }
     }
 
@@ -185,10 +175,8 @@ public class UpdateJobStatusImpl implements UpdateJobStatus {
         terrakubeClient.updateJob(jobRequest, job.getRelationships().getOrganization().getData().getId(), job.getId());
     }
 
-    private void updateStepStatus(boolean status, String organizationId, String jobId, String stepId, String jobOutput, StepOutputBuffer jobOutputBuffer, String jobErrorOutput, String deliveryState, Long deliveryRevision) {
-        String output = jobOutputBuffer != null
-                ? this.terraformOutput.saveBufferedOutput(organizationId, jobId, stepId, jobOutputBuffer, jobErrorOutput)
-                : this.terraformOutput.saveOutput(organizationId, jobId, stepId, jobOutput, jobErrorOutput);
+    private void updateStepStatus(boolean status, String organizationId, String jobId, String stepId, StepOutputBuffer jobOutput, String jobErrorOutput, String deliveryState, Long deliveryRevision) {
+        String output = this.terraformOutput.saveBufferedOutput(organizationId, jobId, stepId, jobOutput, jobErrorOutput);
         String stepStatus = status ? "completed" : "failed";
 
         StepDeliveryAttributes stepAttributes = new StepDeliveryAttributes();

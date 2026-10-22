@@ -12,6 +12,7 @@ import io.terrakube.executor.plugin.tfstate.TerraformStatePathService;
 import io.terrakube.executor.service.mode.TerraformJob;
 import org.apache.commons.io.FileUtils;
 import org.junit.jupiter.api.BeforeEach;
+import io.terrakube.executor.service.logs.StepOutputBuffer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Answers;
@@ -214,23 +215,6 @@ class AzureTerraformStateImplTest {
                 () -> azureTerraformState.downloadTerraformPlan(organizationId, workspaceId, jobId, stepId, workingDirectory));
 
         verify(blobClient, times(3)).generateSas(any());
-    }
-
-    @Test
-    void testSaveOutput() {
-        String organizationId = "org1";
-        String jobId = "job1";
-        String stepId = "step1";
-        String output = "output-content";
-        String outputError = "error-content";
-
-        when(blobContainerClient.exists()).thenReturn(true);
-        when(terraformOutputPathService.getOutputPath(organizationId, jobId, stepId)).thenReturn("https://api/output");
-
-        String result = azureTerraformState.saveOutput(organizationId, jobId, stepId, output, outputError);
-
-        assertEquals("https://api/output", result);
-        verify(blobClient).upload(any(BinaryData.class), eq(true));
     }
 
     @Test

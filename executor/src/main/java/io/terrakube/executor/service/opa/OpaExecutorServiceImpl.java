@@ -7,6 +7,8 @@ import io.terrakube.executor.plugin.tfstate.TerraformState;
 import io.terrakube.executor.service.executor.ExecutorJobResult;
 import io.terrakube.executor.service.mode.PolicyContext;
 import io.terrakube.executor.service.mode.PolicyExemptionContext;
+import io.terrakube.executor.service.logs.ExecutorLogsProperties;
+import io.terrakube.executor.service.logs.StepOutputBuffer;
 import io.terrakube.executor.service.mode.TerraformJob;
 import io.terrakube.executor.service.opa.model.OpaEvaluationResult;
 import io.terrakube.executor.service.opa.model.PolicyViolation;
@@ -64,6 +66,12 @@ public class OpaExecutorServiceImpl implements OpaExecutorService {
     private final ObjectMapper objectMapper;
     private final JobContextService jobContextService;
     private final TerraformState terraformState;
+    private ExecutorLogsProperties logsProperties = new ExecutorLogsProperties();
+
+    @Autowired(required = false)
+    void setLogsProperties(ExecutorLogsProperties logsProperties) {
+        this.logsProperties = logsProperties;
+    }
 
     @Autowired
     public OpaExecutorServiceImpl(
@@ -328,36 +336,47 @@ public class OpaExecutorServiceImpl implements OpaExecutorService {
                 job.getOrganizationId(), job.getWorkspaceId(), job.getJobId());
 
         ExecutorJobResult result = new ExecutorJobResult();
-        TextStringBuilder outputLog = new TextStringBuilder();
-        Consumer<String> planOutput = outputLog::appendln;
+        StepOutputBuffer output = StepOutputBuffer.forStep(logsProperties.getStepOutputMemoryBytes(), workingDirectory);
+        boolean handedOver = false;
+        try {
+            Consumer<String> planOutput = output::appendln;
 
-        // Step 1: Resolve plan.json without full terraform init
-        File planJsonFile = new File(workingDirectory, "plan.json");
-        if (!planJsonFile.exists()) {
-            // Attempt to restore plan from storage
-            boolean downloaded = terraformState.downloadTerraformPlan(
-                    job.getOrganizationId(), job.getWorkspaceId(), job.getJobId(), job.getStepId(), workingDirectory
-            );
-            if (!downloaded) {
-                log.warn("Could not find plan.json or download terraform plan file from storage");
-                result.setSuccessfulExecution(false);
-                result.setOutputLog("No plan.json or state found for compliance evaluation.");
-                result.setOutputErrorLog("Failed to download plan for headless policyEvaluation.");
-                result.setExitCode(1);
-                return result;
+            // Step 1: Resolve plan.json without full terraform init
+            File planJsonFile = new File(workingDirectory, "plan.json");
+            if (!planJsonFile.exists()) {
+                // Attempt to restore plan from storage
+                boolean downloaded = terraformState.downloadTerraformPlan(
+                        job.getOrganizationId(), job.getWorkspaceId(), job.getJobId(), job.getStepId(), workingDirectory
+                );
+                if (!downloaded) {
+                    log.warn("Could not find plan.json or download terraform plan file from storage");
+                    output.append("No plan.json or state found for compliance evaluation.");
+                    result.setOutputBuffer(output);
+                    handedOver = true;
+                    result.setSuccessfulExecution(false);
+                    result.setOutputErrorLog("Failed to download plan for headless policyEvaluation.");
+                    result.setExitCode(1);
+                    return result;
+                }
+            }
+
+            // Step 2: Evaluate all policies
+            List<OpaEvaluationResult> evalResults = evaluateAllPolicies(job, workingDirectory, planJsonFile, planOutput);
+
+            boolean hasHardViolations = evalResults.stream().anyMatch(r -> r.getHardMandatoryViolations() > 0);
+            result.setOutputBuffer(output);
+            handedOver = true;
+            result.setSuccessfulExecution(!hasHardViolations);
+            result.setExitCode(hasHardViolations ? 1 : 0);
+            result.setPlan(false);
+
+            return result;
+        } finally {
+            // The buffer belongs to the result once it is handed over, and is closed by whoever saves it.
+            if (!handedOver) {
+                output.close();
             }
         }
-
-        // Step 2: Evaluate all policies
-        List<OpaEvaluationResult> evalResults = evaluateAllPolicies(job, workingDirectory, planJsonFile, planOutput);
-
-        boolean hasHardViolations = evalResults.stream().anyMatch(r -> r.getHardMandatoryViolations() > 0);
-        result.setOutputLog(outputLog.toString());
-        result.setSuccessfulExecution(!hasHardViolations);
-        result.setExitCode(hasHardViolations ? 1 : 0);
-        result.setPlan(false);
-
-        return result;
     }
 
     private File resolvePolicyBundleDirectory(File workingDirectory, PolicyContext policyContext) throws Exception {

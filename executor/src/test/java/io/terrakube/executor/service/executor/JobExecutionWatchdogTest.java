@@ -14,6 +14,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 
+import io.terrakube.executor.service.logs.StepOutputBuffer;
 import io.terrakube.executor.service.mode.TerraformJob;
 import io.terrakube.executor.service.status.UpdateJobStatus;
 
@@ -149,7 +150,8 @@ class JobExecutionWatchdogTest {
 
         verify(updateJobStatus, times(1)).setCompletedStatus(
                 Mockito.eq(false), Mockito.eq(false), Mockito.eq(-1), Mockito.eq(job),
-                anyString(), anyString(), Mockito.isNull(), anyString());
+                any(StepOutputBuffer.class), anyString(), Mockito.isNull(), anyString(),
+                Mockito.eq(false), Mockito.isNull(), Mockito.isNull(), Mockito.isNull());
     }
 
     @Test
@@ -160,6 +162,7 @@ class JobExecutionWatchdogTest {
 
         verify(updateJobStatus, times(0)).setCompletedStatus(
                 Mockito.anyBoolean(), Mockito.anyBoolean(), Mockito.anyInt(), any(),
-                anyString(), anyString(), any(), anyString());
+                any(StepOutputBuffer.class), anyString(), any(), anyString(),
+                Mockito.anyBoolean(), any(), any(), any());
     }
 }

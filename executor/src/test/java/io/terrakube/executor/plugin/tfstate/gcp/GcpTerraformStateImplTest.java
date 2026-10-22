@@ -11,6 +11,7 @@ import io.terrakube.executor.service.mode.TerraformJob;
 import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.io.FileUtils;
 import org.junit.jupiter.api.BeforeEach;
+import io.terrakube.executor.service.logs.StepOutputBuffer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Answers;
@@ -196,22 +197,6 @@ class GcpTerraformStateImplTest {
 
         verify(storage, times(2)).create(any(BlobInfo.class), any(byte[].class));
         verify(terrakubeClient).createHistory(any(HistoryRequest.class), eq("org1"), eq("ws1"));
-    }
-
-    @Test
-    void testSaveOutput() {
-        String organizationId = "org1";
-        String jobId = "job1";
-        String stepId = "step1";
-        String output = "output-content";
-        String outputError = "error-content";
-
-        when(terraformOutputPathService.getOutputPath(organizationId, jobId, stepId)).thenReturn("https://api/output");
-
-        String result = gcpTerraformState.saveOutput(organizationId, jobId, stepId, output, outputError);
-
-        assertEquals("https://api/output", result);
-        verify(storage).create(any(BlobInfo.class), eq("output-contenterror-content".getBytes()));
     }
 
     @Test
