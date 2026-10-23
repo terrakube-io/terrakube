@@ -1,5 +1,7 @@
 package io.terrakube.executor.plugin.tfstate.aws;
 
+import io.terrakube.executor.plugin.tfstate.OutputPartNames;
+import io.terrakube.executor.service.logs.StepOutputPartWriter;
 import io.terrakube.executor.service.logs.StepOutputBuffer;
 import lombok.Builder;
 import lombok.Getter;
@@ -410,6 +412,39 @@ public class AwsTerraformStateImpl implements TerraformState {
         log.info("Upload Object {} completed", blobKey);
 
         return terraformOutputPathService.getOutputPath(organizationId, jobId, stepId);
+    }
+
+    @Override
+    public boolean saveOutputPart(String organizationId, String jobId, String stepId, int partNumber, StepOutputPartWriter.PartSource data) {
+        String blobKey = outputPartsPrefix(organizationId, jobId, stepId) + OutputPartNames.part(partNumber);
+        PutObjectRequest putObjectRequest = PutObjectRequest.builder().bucket(bucketName).key(blobKey).build();
+        storageRetryMetrics.withRetry("aws", "output-part-write", () -> s3client.putObject(putObjectRequest,
+                RequestBody.fromContentProvider(() -> {
+                    try {
+                        return data.open();
+                    } catch (java.io.IOException e) {
+                        throw new java.io.UncheckedIOException(e);
+                    }
+                }, data.length(), "text/plain")));
+        return true;
+    }
+
+    @Override
+    public void deleteOutputParts(String organizationId, String jobId, String stepId) {
+        try {
+            String prefix = outputPartsPrefix(organizationId, jobId, stepId);
+            ListObjectsV2Response listed = s3client.listObjectsV2(ListObjectsV2Request.builder().bucket(bucketName).prefix(prefix).build());
+            for (S3Object object : listed.contents()) {
+                s3client.deleteObject(DeleteObjectRequest.builder().bucket(bucketName).key(object.key()).build());
+            }
+        } catch (RuntimeException e) {
+            // Removed with the rest of the job's output when the workspace data is deleted.
+            log.warn("Could not delete the output parts of step {}: {}", stepId, e.getMessage());
+        }
+    }
+
+    private String outputPartsPrefix(String organizationId, String jobId, String stepId) {
+        return "tfoutput/" + organizationId + "/" + jobId + "/" + OutputPartNames.folder(stepId) + "/";
     }
 
     @Override

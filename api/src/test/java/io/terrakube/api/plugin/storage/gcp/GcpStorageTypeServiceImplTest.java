@@ -241,4 +241,44 @@ class GcpStorageTypeServiceImplTest {
         // state, then plan artifacts
         verify(storage, times(2)).list(eq(bucketName), any(), any());
     }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void listsTheOutputPartsOfAStepWithTheirSizes() {
+        Blob first = mock(Blob.class);
+        Blob second = mock(Blob.class);
+        when(first.getName()).thenReturn("tfoutput/org1/job1/step1.parts/000001.part");
+        when(first.getSize()).thenReturn(5L);
+        when(second.getName()).thenReturn("tfoutput/org1/job1/step1.parts/000002.part");
+        when(second.getSize()).thenReturn(7L);
+        com.google.api.gax.paging.Page<Blob> page = mock(com.google.api.gax.paging.Page.class);
+        when(page.iterateAll()).thenReturn(java.util.List.of(first, second));
+        when(storage.list(eq(bucketName), any(Storage.BlobListOption[].class))).thenReturn(page);
+
+        var parts = gcpStorageTypeService.listStepOutputParts("org1", "job1", "step1");
+
+        assertEquals(java.util.List.of(new io.terrakube.api.plugin.storage.model.StepOutputPart("000001.part", 5),
+                new io.terrakube.api.plugin.storage.model.StepOutputPart("000002.part", 7)), parts);
+    }
+
+    @Test
+    void opensARangeOfOneOutputPart() throws IOException {
+        when(storage.get(BlobId.of(bucketName, "tfoutput/org1/job1/step1.parts/000002.part"))).thenReturn(blob);
+        com.google.cloud.ReadChannel reader = mock(com.google.cloud.ReadChannel.class);
+        when(blob.reader()).thenReturn(reader);
+
+        try (java.io.InputStream in = gcpStorageTypeService.openStepOutputPart("org1", "job1", "step1", "000002.part", 3, 4)) {
+            assertNotNull(in);
+        }
+
+        verify(reader).seek(3L);
+        verify(reader).limit(7L);
+    }
+
+    @Test
+    void aMissingPartIsAnError() {
+        when(storage.get(any(BlobId.class))).thenReturn(null);
+
+        assertThrows(IOException.class, () -> gcpStorageTypeService.openStepOutputPart("org1", "job1", "step1", "000002.part", 0, 4));
+    }
 }

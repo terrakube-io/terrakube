@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.text.TextStringBuilder;
+import io.terrakube.executor.service.logs.StepOutputArchiveService;
 import io.terrakube.executor.service.logs.StepOutputBuffer;
 import io.terrakube.executor.configuration.ExecutorFlagsProperties;
 import io.terrakube.executor.service.mode.TerraformJob;
@@ -55,6 +56,12 @@ public class ExecutorJobImpl implements ExecutorJob {
     ProcessLogs logsService;
     WorkspaceSecurity workspaceSecurity;
     private ExecutorLogsProperties logsProperties = new ExecutorLogsProperties();
+    private StepOutputArchiveService stepOutputArchiveService;
+
+    @Autowired(required = false)
+    void setStepOutputArchiveService(StepOutputArchiveService stepOutputArchiveService) {
+        this.stepOutputArchiveService = stepOutputArchiveService;
+    }
 
     @Autowired(required = false)
     void setLogsProperties(ExecutorLogsProperties logsProperties) {
@@ -259,6 +266,9 @@ public class ExecutorJobImpl implements ExecutorJob {
             case "approval":
                 log.info("Execute Groovy Script for Organization {} Workspace {} ", terraformJob.getOrganizationId(), terraformJob.getWorkspaceId());
                 StepOutputBuffer scriptOutput = StepOutputBuffer.forStep(logsProperties.getStepOutputMemoryBytes(), terraformWorkingDir);
+                if (stepOutputArchiveService != null) {
+                    stepOutputArchiveService.start(scriptOutput, terraformJob);
+                }
                 TextStringBuilder scriptErrorOutput = new TextStringBuilder();
                 Consumer<String> output;
                 if (logsService != null) {

@@ -2,6 +2,8 @@ package io.terrakube.api.plugin.logs;
 
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import io.terrakube.api.plugin.storage.StorageTypeService;
+import io.terrakube.api.plugin.storage.model.ByteRange;
+import io.terrakube.api.plugin.storage.model.StepOutputPart;
 import io.terrakube.api.plugin.storage.model.StepOutputStream;
 import io.terrakube.api.repository.StepRepository;
 import io.terrakube.api.rs.job.JobStatus;
@@ -19,6 +21,8 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -132,5 +136,98 @@ class StepLogServiceTest {
         StepLogService.StepLog result = service.resolve("o", "j", "3");
 
         assertArrayEquals(data, result.getBody());
+    }
+
+    private void finalObjectMissing() {
+        when(storage.getStepOutputStream("o", "j", stepId.toString(), null)).thenReturn(StepOutputStream.missing());
+    }
+
+    private void archivedParts(String... contents) throws Exception {
+        java.util.List<StepOutputPart> listed = new java.util.ArrayList<>();
+        for (int i = 0; i < contents.length; i++) {
+            String name = String.format("%06d.part", i + 1);
+            listed.add(new StepOutputPart(name, contents[i].length()));
+            lenient().doAnswer(invocation -> {
+                long offset = invocation.getArgument(4);
+                long length = invocation.getArgument(5);
+                return new ByteArrayInputStream(contents[Integer.parseInt(name.substring(0, 6)) - 1].substring((int) offset, (int) (offset + length)).getBytes());
+            }).when(storage).openStepOutputPart(eq("o"), eq("j"), eq(stepId.toString()), eq(name), anyLong(), anyLong());
+        }
+        when(storage.listStepOutputParts("o", "j", stepId.toString())).thenReturn(listed);
+    }
+
+    @Test
+    void failedStepWithNoFinalObjectIsServedFromTheArchivedPartsAsIncomplete() throws Exception {
+        stepWithStatus(JobStatus.failed);
+        finalObjectMissing();
+        archivedParts("first part, ", "second part");
+
+        StepLogService.StepLog result = service.resolve("o", "j", stepId.toString());
+
+        assertTrue(result.isExists());
+        assertTrue(result.isIncomplete());
+        assertEquals("first part, second part", new String(result.getBody()));
+    }
+
+    @Test
+    void incompleteOutputIsNotCached() throws Exception {
+        stepWithStatus(JobStatus.failed);
+        finalObjectMissing();
+        archivedParts("abc");
+
+        service.resolve("o", "j", stepId.toString());
+        service.resolve("o", "j", stepId.toString());
+
+        verify(storage, times(2)).getStepOutputStream("o", "j", stepId.toString(), null);
+    }
+
+    @Test
+    void largeArchivedPartsAreStreamedNotLoaded() throws Exception {
+        stepWithStatus(JobStatus.failed);
+        props.setCacheableMaxObjectBytes(4);
+        finalObjectMissing();
+        archivedParts("0123456789");
+
+        StepLogService.StepLog result = service.resolve("o", "j", stepId.toString());
+
+        assertTrue(result.isIncomplete());
+        assertNull(result.getBody());
+        assertEquals(10, result.getContentLength());
+        try (StepOutputStream out = service.openStream("o", "j", stepId.toString(), ByteRange.parse("bytes=2-4").orElseThrow(), true)) {
+            assertEquals("234", new String(out.getContent().readAllBytes()));
+            assertEquals("bytes 2-4/10", out.getContentRange());
+        }
+    }
+
+    @Test
+    void finalObjectIsPreferredOverParts() throws Exception {
+        stepWithStatus(JobStatus.completed);
+        byte[] data = "the whole output".getBytes();
+        when(storage.getStepOutputStream("o", "j", stepId.toString(), null))
+                .thenReturn(StepOutputStream.of(new ByteArrayInputStream(data), data.length, data.length));
+
+        StepLogService.StepLog result = service.resolve("o", "j", stepId.toString());
+
+        assertFalse(result.isIncomplete());
+        assertArrayEquals(data, result.getBody());
+        verify(storage, never()).listStepOutputParts(any(), any(), any());
+    }
+
+    @Test
+    void stepWithNeitherFinalObjectNorPartsIsMissing() {
+        stepWithStatus(JobStatus.failed);
+        finalObjectMissing();
+        when(storage.listStepOutputParts("o", "j", stepId.toString())).thenReturn(java.util.List.of());
+
+        assertFalse(service.resolve("o", "j", stepId.toString()).isExists());
+    }
+
+    @Test
+    void partsAreNotLookedAtWhileTheStepIsStillTerminalUnknown() {
+        when(stepRepository.findById(stepId)).thenReturn(Optional.empty());
+        finalObjectMissing();
+
+        assertFalse(service.resolve("o", "j", stepId.toString()).isExists());
+        verify(storage, never()).listStepOutputParts(any(), any(), any());
     }
 }

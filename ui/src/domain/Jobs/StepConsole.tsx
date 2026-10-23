@@ -70,7 +70,7 @@ export const StepConsole = ({
   const running = isRunningStatus(item.status);
   const terminal = isTerminalStatus(item.status);
 
-  const { state, text, truncated, retry } = useStepLog({
+  const { state, text, truncated, incomplete, retry } = useStepLog({
     stepId: item.id,
     output: item.output,
     jobId,
@@ -99,14 +99,26 @@ export const StepConsole = ({
       );
     }
     return (
-      <TerminalOutput
-        outputLog={state === "error" ? "" : text}
-        stepName={item.name}
-        isRunning={false}
-        truncated={truncated}
-        error={state === "error"}
-        onRetry={retry}
-      />
+      <>
+        {incomplete && state === "success" ? (
+          <Alert
+            type="warning"
+            showIcon
+            className="run-step-notice"
+            data-testid="console-output-incomplete"
+            title="Console output is incomplete"
+            description="This step ended before its output was saved, for example because the executor stopped. What is shown is the part that was saved while it ran, so the last lines may be missing."
+          />
+        ) : null}
+        <TerminalOutput
+          outputLog={state === "error" ? "" : text}
+          stepName={item.name}
+          isRunning={false}
+          truncated={truncated}
+          error={state === "error"}
+          onRetry={retry}
+        />
+      </>
     );
   };
 

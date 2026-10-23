@@ -11,6 +11,21 @@ public interface StorageTypeService {
             String organizationId, String jobId, String stepId,
             io.terrakube.api.plugin.storage.model.ByteRange range);
 
+    /**
+     * The parts of a step's output archived while the step ran (see {@link StepOutputPartsReader}), as listed
+     * from storage, in any order. Empty for a backend that has none.
+     */
+    default List<io.terrakube.api.plugin.storage.model.StepOutputPart> listStepOutputParts(
+            String organizationId, String jobId, String stepId) {
+        return List.of();
+    }
+
+    /** {@code length} bytes of one part starting at {@code offset}. The caller closes the stream. */
+    default InputStream openStepOutputPart(String organizationId, String jobId, String stepId,
+                                           String partName, long offset, long length) throws java.io.IOException {
+        throw new UnsupportedOperationException("This storage backend does not keep output parts");
+    }
+
     byte[] getTerraformPlan(String organizationId, String workspaceId, String jobId, String stepId);
 
     byte[] getTerraformStateJson(String organizationId, String workspaceId, String stateFileName);

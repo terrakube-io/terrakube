@@ -1,5 +1,7 @@
 package io.terrakube.executor.plugin.tfstate.gcp;
 
+import io.terrakube.executor.plugin.tfstate.OutputPartNames;
+import io.terrakube.executor.service.logs.StepOutputPartWriter;
 import io.terrakube.executor.service.logs.StepOutputBuffer;
 import com.google.cloud.storage.BlobId;
 import com.google.cloud.storage.BlobInfo;
@@ -279,6 +281,35 @@ public class GcpTerraformStateImpl implements TerraformState {
         log.info("File uploaded to bucket {} as {}", bucketName, blobKey);
 
         return terraformOutputPathService.getOutputPath(organizationId, jobId, stepId);
+    }
+
+    @Override
+    public boolean saveOutputPart(String organizationId, String jobId, String stepId, int partNumber, StepOutputPartWriter.PartSource data) {
+        BlobInfo blobInfo = BlobInfo.newBuilder(BlobId.of(bucketName, outputPartsPrefix(organizationId, jobId, stepId) + OutputPartNames.part(partNumber))).build();
+        storageRetryMetrics.withRetry("gcp", "output-part-write", () -> {
+            try (java.io.InputStream in = data.open()) {
+                return storage.createFrom(blobInfo, in);
+            } catch (java.io.IOException e) {
+                throw new java.io.UncheckedIOException(e);
+            }
+        });
+        return true;
+    }
+
+    @Override
+    public void deleteOutputParts(String organizationId, String jobId, String stepId) {
+        try {
+            String prefix = outputPartsPrefix(organizationId, jobId, stepId);
+            for (com.google.cloud.storage.Blob blob : storage.list(bucketName, Storage.BlobListOption.prefix(prefix)).iterateAll()) {
+                storage.delete(blob.getBlobId());
+            }
+        } catch (RuntimeException e) {
+            log.warn("Could not delete the output parts of step {}: {}", stepId, e.getMessage());
+        }
+    }
+
+    private String outputPartsPrefix(String organizationId, String jobId, String stepId) {
+        return String.format("tfoutput/%s/%s/%s/", organizationId, jobId, OutputPartNames.folder(stepId));
     }
 
     @Override

@@ -1,5 +1,7 @@
 package io.terrakube.executor.plugin.tfstate.local;
 
+import io.terrakube.executor.plugin.tfstate.OutputPartNames;
+import io.terrakube.executor.service.logs.StepOutputPartWriter;
 import io.terrakube.executor.service.logs.StepOutputBuffer;
 import java.io.File;
 import java.io.IOException;
@@ -51,6 +53,7 @@ public class LocalTerraformStateImpl implements TerraformState {
     // Everything under <home>/.terraform-spring-boot/local/ is local to this process unless that path is a
     // volume shared by every executor, so plan artifacts only reach an apply on another pod through one.
     private static final String LOCAL_ARTIFACTS_ROOT = "/.terraform-spring-boot/local/";
+    private static final String LOCAL_OUTPUT_PARTS_DIRECTORY = "/.terraform-spring-boot/local/output/%s/%s/%s";
     private static final String LOCAL_OUTPUT_DIRECTORY = "/.terraform-spring-boot/local/output/%s/%s/%s.tfoutput";
     private static final String LOCAL_BINARY_DIRECTORY = "/.terraform-spring-boot/local/binary/%s/%s/%s";
     private static final String LOCAL_OPA_BINARY_DIRECTORY = "/.terraform-spring-boot/local/opa/%s/%s_%s/opa";
@@ -308,6 +311,28 @@ public class LocalTerraformStateImpl implements TerraformState {
             }
             return terraformOutputPathService.getOutputPath(organizationId, jobId, stepId);
         });
+    }
+
+    private File localOutputPartsFolder(String organizationId, String jobId, String stepId) {
+        return new File(FileUtils.getUserDirectoryPath().concat(FilenameUtils.separatorsToSystem(
+                String.format(LOCAL_OUTPUT_PARTS_DIRECTORY, organizationId, jobId, OutputPartNames.folder(stepId)))));
+    }
+
+    @Override
+    public boolean saveOutputPart(String organizationId, String jobId, String stepId, int partNumber, StepOutputPartWriter.PartSource data) throws Exception {
+        File partFile = new File(localOutputPartsFolder(organizationId, jobId, stepId), OutputPartNames.part(partNumber));
+        storageRetryMetrics.withRetry("local", "output-part-write", () -> {
+            try (java.io.InputStream in = data.open()) {
+                FileUtils.copyInputStreamToFile(in, partFile);
+            }
+            return null;
+        });
+        return true;
+    }
+
+    @Override
+    public void deleteOutputParts(String organizationId, String jobId, String stepId) {
+        FileUtils.deleteQuietly(localOutputPartsFolder(organizationId, jobId, stepId));
     }
 
     @Override
