@@ -11,6 +11,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 
 import java.io.File;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -476,12 +477,12 @@ class PlanStructuredOutputServiceTest {
         assertEquals("aws_instance", merged.get(0).get("resourceType"));
     }
 
-    // getPlanAsHumanText exists specifically to restore the classic multi-line diff that -json
+    // streamPlanAsHumanText exists specifically to restore the classic multi-line diff that -json
     // mode never puts in the live event stream (only terse one-line "planned_change" summaries) -
     // it must call showPlan (the non-JSON renderer), not showPlanJson (already used for the
     // structured panel's data).
     @Test
-    void getPlanAsHumanTextRendersViaShowPlanNotShowPlanJson() throws Exception {
+    void streamPlanAsHumanTextRendersViaShowPlanNotShowPlanJson() throws Exception {
         TerraformClient terraformClient = Mockito.mock(TerraformClient.class);
         Mockito.when(terraformClient.showPlan(Mockito.any(), Mockito.<Consumer<String>>any(), Mockito.<Consumer<String>>any()))
                 .thenAnswer(invocation -> {
@@ -508,7 +509,9 @@ class PlanStructuredOutputServiceTest {
         job.setTerraformVersion("1.11.5");
         job.setEnvironmentVariables(new HashMap<>());
 
-        String humanText = service.getPlanAsHumanText(job, new File("/tmp"));
+        List<String> lines = new ArrayList<>();
+        assertTrue(service.streamPlanAsHumanText(job, new File("/tmp"), lines::add));
+        String humanText = String.join("\n", lines);
 
         assertTrue(humanText.contains("will be created"));
         assertTrue(humanText.contains("+ ami = \"ami-1\""));
@@ -516,14 +519,14 @@ class PlanStructuredOutputServiceTest {
         // four accept() calls into one run-on line with no boundary between "created" and the
         // next line's "+ resource" - contains() alone wouldn't catch that, but a missing newline
         // between these two specific fragments would.
-        assertTrue(humanText.contains("will be created\n  + resource"),
-                "Expected each showPlan line to be newline-separated, not concatenated together: " + humanText);
+        assertEquals(4, lines.size(), "Expected one consumer call per showPlan line: " + lines);
+        assertEquals("  # aws_instance.foo will be created", lines.get(0));
         Mockito.verify(terraformClient).showPlan(Mockito.any(), Mockito.any(), Mockito.any());
         Mockito.verify(terraformClient, Mockito.never()).showPlanJson(Mockito.any(), Mockito.any(), Mockito.any());
     }
 
     @Test
-    void getPlanAsHumanTextReturnsNullWhenShowFails() throws Exception {
+    void streamPlanAsHumanTextReturnsFalseWhenShowFails() throws Exception {
         TerraformClient terraformClient = Mockito.mock(TerraformClient.class);
         Mockito.when(terraformClient.showPlan(Mockito.any(), Mockito.<Consumer<String>>any(), Mockito.<Consumer<String>>any()))
                 .thenReturn(CompletableFuture.completedFuture(false));
@@ -539,7 +542,7 @@ class PlanStructuredOutputServiceTest {
         job.setTerraformVersion("1.11.5");
         job.setEnvironmentVariables(new HashMap<>());
 
-        assertNull(service.getPlanAsHumanText(job, new File("/tmp")));
+        assertFalse(service.streamPlanAsHumanText(job, new File("/tmp"), line -> { }));
     }
 
     @Test
@@ -760,7 +763,7 @@ class PlanStructuredOutputServiceTest {
         assertEquals("NOT_DURABLE", service.publishFinalPlanSynchronous(null, new File("/tmp"), List.of(), List.of()));
         assertEquals("NOT_DURABLE", service.publishFinalPlanSynchronous(null, new File("/tmp"), 1L, List.of(), List.of()));
         assertNull(service.getPlanAsJson(null, new File("/tmp")));
-        assertNull(service.getPlanAsHumanText(null, new File("/tmp")));
+        assertFalse(service.streamPlanAsHumanText(null, new File("/tmp"), line -> { }));
         assertDoesNotThrow(() -> service.publishPlanSummary(null, new File("/tmp"), List.of(), List.of()));
     }
 

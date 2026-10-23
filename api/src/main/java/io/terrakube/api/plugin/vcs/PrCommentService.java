@@ -3,6 +3,7 @@ package io.terrakube.api.plugin.vcs;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.terrakube.api.plugin.context.ContextPatchApplier;
 import io.terrakube.api.plugin.logs.StepOutputReader;
 import io.terrakube.api.plugin.storage.StorageTypeService;
 import io.terrakube.api.plugin.vcs.provider.bitbucket.BitBucketWebhookService;
@@ -275,7 +276,7 @@ public class PrCommentService {
                 Map<String, Object> context = objectMapper.readValue(contextJson, new TypeReference<Map<String, Object>>() {
                 });
                 // Key must match PlanStructuredOutputService.CONTEXT_PLAN_RENDERED_TEXT_KEY.
-                if (context.get("planRenderedText") instanceof Map<?, ?> byStep) {
+                if (context.get(ContextPatchApplier.RENDERED_PLAN_TEXT_KEY) instanceof Map<?, ?> byStep) {
                     for (Object value : byStep.values()) {
                         if (value instanceof String text && !text.isBlank()) {
                             return stepOutputReader.stripAnsi(text);

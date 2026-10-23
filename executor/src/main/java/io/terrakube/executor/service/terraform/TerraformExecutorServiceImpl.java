@@ -104,9 +104,12 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
     // Console output of a step stays in memory up to this size, then moves to a temporary file.
     private long stepOutputMemoryBytes = StepOutputBuffer.DEFAULT_MEMORY_LIMIT_BYTES;
     private boolean echoToServiceLog = false;
+    // Most bytes of the rendered plan published to the job context (the PR comment copy).
+    private long renderedPlanContextMaxBytes = new ExecutorLogsProperties().getRenderedPlanContextMaxBytes();
 
     @Autowired(required = false)
     void setLogsProperties(ExecutorLogsProperties logsProperties) {
+        this.renderedPlanContextMaxBytes = logsProperties.getRenderedPlanContextMaxBytes();
         this.stepOutputMemoryBytes = logsProperties.getStepOutputMemoryBytes();
         this.echoToServiceLog = logsProperties.isEchoToServiceLog();
     }
@@ -295,14 +298,19 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                 // lines. Must run before logsService.flush() below - the step is reported finished
                 // right after it, and anything appended afterwards arrives too late for whatever
                 // reads the stream at that signal.
-                String humanReadablePlan = planStructuredOutputService.getPlanAsHumanText(terraformJob, terraformWorkingDir);
-                if (humanReadablePlan != null && !humanReadablePlan.isBlank()) {
-                    forEachLine(humanReadablePlan, planOutput);
-                    // Separate channel for the same text, so PrCommentService can show one
-                    // authoritative diff instead of the full console stream (init/hook output,
-                    // live progress lines, and this diff all mixed together).
+                // The console gets every line as terraform prints it. A second copy, bounded in size, is
+                // published to the job context so PrCommentService can show one authoritative diff
+                // instead of the full console stream (init/hook output, live progress lines, and this
+                // diff all mixed together).
+                RenderedPlanText renderedForComment = new RenderedPlanText(renderedPlanContextMaxBytes);
+                boolean rendered = planStructuredOutputService.streamPlanAsHumanText(terraformJob, terraformWorkingDir,
+                        line -> {
+                            planOutput.accept(line);
+                            renderedForComment.accept(line);
+                        });
+                if (rendered && !renderedForComment.isBlank()) {
                     planStructuredOutputService.publishRenderedPlanText(
-                            terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), humanReadablePlan);
+                            terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), renderedForComment.text());
                 }
 
                 if (opaExecutorService != null && terraformJob.getPolicyList() != null && !terraformJob.getPolicyList().isEmpty()) {
@@ -587,7 +595,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                     // apply -json's event stream only ever carries terse per-resource one-liners
                     // ("aws_instance.foo: Creating...", "...Creation complete after 3s [id=...]")
                     // plus the final change-summary line - unlike plan(), which appends
-                    // getPlanAsHumanText's classic rendered diff, apply never appended anything
+                    // the classic rendered diff, apply never appended anything
                     // resembling a `terraform show`/CLI-style closing readout. Mirrors plan()'s
                     // append (same reasoning: must run before logsService.flush() below), just
                     // rendered from the plan file apply already downloaded above instead of one it
@@ -595,10 +603,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                     // before executing it, so this restores that content even though Terrakube
                     // renders it after the resource-by-resource lines rather than before.
                     if (execution && planFileDownloaded) {
-                        String humanReadablePlan = planStructuredOutputService.getPlanAsHumanText(terraformJob, terraformWorkingDir);
-                        if (humanReadablePlan != null && !humanReadablePlan.isBlank()) {
-                            forEachLine(humanReadablePlan, applyOutput);
-                        }
+                        planStructuredOutputService.streamPlanAsHumanText(terraformJob, terraformWorkingDir, applyOutput);
                     }
 
                     if (execution) {
@@ -982,17 +987,6 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         applyStructuredOutputService.publishFinalApplySnapshot(
                 terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(),
                 changes, jobDiagnostics);
-    }
-
-    // Same lines as text.split("\n", -1), without building an array of all of them first.
-    private static void forEachLine(String text, Consumer<String> consumer) {
-        int start = 0;
-        int end;
-        while ((end = text.indexOf('\n', start)) >= 0) {
-            consumer.accept(text.substring(start, end));
-            start = end + 1;
-        }
-        consumer.accept(text.substring(start));
     }
 
     private StepOutputBuffer newStepOutput(File workingDirectory) {

@@ -3,6 +3,7 @@ package io.terrakube.api.plugin.context;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -22,6 +23,16 @@ public final class ContextPatchApplier {
     public static final String REVISIONS_KEY = "contextRevisions";
 
     public static final int MAX_ENTRIES = 64;
+
+    /** Context key of the rendered plan text the executor publishes per step, for the pull request comment. */
+    public static final String RENDERED_PLAN_TEXT_KEY = "planRenderedText";
+
+    /**
+     * Largest rendered plan text, in bytes, accepted for one step. The executor cuts it far below this (48 KiB
+     * by default, the comment it feeds is cut at 60000 characters); the limit stops a value that is not
+     * bounded from growing the stored context.
+     */
+    public static final int MAX_RENDERED_PLAN_TEXT_BYTES = 1_048_576;
 
     // A revision is executionEpoch * REVISION_EPOCH_SCALE + seq. The epoch is the API's own clock
     // when it dispatched the step (ExecutorContext.executionEpoch) and seq counts up inside that
@@ -59,8 +70,26 @@ public final class ContextPatchApplier {
             if (segments.length > 2 || Arrays.asList(segments).contains("") || REVISIONS_KEY.equals(segments[0])) {
                 throw new InvalidContextPatchException("set contains an invalid path");
             }
+            if (RENDERED_PLAN_TEXT_KEY.equals(segments[0]) && !entry.getValue().isNull()) {
+                validateRenderedPlanText(segments, entry.getValue());
+            }
         }
         return new Patch(revision.asLong(), set);
+    }
+
+    // Only planRenderedText/<stepId> holds text, and it is the one place a bounded value is promised, so a
+    // write to the key itself or of anything but a string cannot be used to get past the limit.
+    private static void validateRenderedPlanText(String[] segments, JsonNode value) {
+        if (segments.length != 2 || !value.isTextual()) {
+            throw new InvalidContextPatchException(RENDERED_PLAN_TEXT_KEY + "/<stepId> must be set to a string");
+        }
+        String text = value.textValue();
+        // A character is at least one byte, so a longer string is over the limit without encoding it.
+        if (text.length() > MAX_RENDERED_PLAN_TEXT_BYTES
+                || text.getBytes(StandardCharsets.UTF_8).length > MAX_RENDERED_PLAN_TEXT_BYTES) {
+            throw new InvalidContextPatchException(
+                    "the rendered plan text is larger than " + MAX_RENDERED_PLAN_TEXT_BYTES + " bytes");
+        }
     }
 
     /**
