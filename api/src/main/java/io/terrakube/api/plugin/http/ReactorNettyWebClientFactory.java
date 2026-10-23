@@ -18,6 +18,9 @@ public final class ReactorNettyWebClientFactory {
 
     public static final Duration DEFAULT_RESPONSE_TIMEOUT = Duration.ofSeconds(30);
     private static final int CONNECT_TIMEOUT_MILLIS = 10_000;
+    // GitHub release/redirect responses may carry large Content-Security-Policy headers
+    // exceeding Reactor Netty's default 8 KiB header size limit (#3773).
+    public static final int MAX_RESPONSE_HEADER_SIZE = 32 * 1024;
 
     private ReactorNettyWebClientFactory() {
     }
@@ -40,6 +43,7 @@ public final class ReactorNettyWebClientFactory {
 
     private static HttpClient httpClient(Duration responseTimeout) {
         return HttpClient.create()
+                .httpResponseDecoder(spec -> spec.maxHeaderSize(MAX_RESPONSE_HEADER_SIZE))
                 .proxyWithSystemProperties()
                 .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, CONNECT_TIMEOUT_MILLIS)
                 .responseTimeout(responseTimeout)
