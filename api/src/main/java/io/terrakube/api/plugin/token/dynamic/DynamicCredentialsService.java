@@ -54,14 +54,7 @@ public class DynamicCredentialsService {
 
     @Transactional
     public HashMap<String, String> generateDynamicCredentialsAzure(Job job, HashMap<String, String> workspaceEnvVariables) {
-        String jwtToken = generateJwt(
-                job.getOrganization().getName(),
-                job.getWorkspace().getName(),
-                workspaceEnvVariables.get("WORKLOAD_IDENTITY_AUDIENCE_AZURE"),
-                job.getOrganization().getId().toString(),
-                job.getWorkspace().getId().toString(),
-                job.getId()
-        );
+        String jwtToken = generateJwt(job, workspaceEnvVariables.get("WORKLOAD_IDENTITY_AUDIENCE_AZURE"));
 
         log.debug("ARM_OIDC_TOKEN: {}", jwtToken);
         workspaceEnvVariables.put("ARM_OIDC_TOKEN", jwtToken);
@@ -71,14 +64,7 @@ public class DynamicCredentialsService {
 
     @Transactional
     public HashMap<String, String> generateDynamicCredentialsVault(Job job, HashMap<String, String> workspaceEnvVariables) {
-        String jwtToken = generateJwt(
-                job.getOrganization().getName(),
-                job.getWorkspace().getName(),
-                workspaceEnvVariables.get("WORKLOAD_IDENTITY_VAULT_AUDIENCE"),
-                job.getOrganization().getId().toString(),
-                job.getWorkspace().getId().toString(),
-                job.getId()
-        );
+        String jwtToken = generateJwt(job, workspaceEnvVariables.get("WORKLOAD_IDENTITY_VAULT_AUDIENCE"));
 
         String vaultAddress = workspaceEnvVariables.get("VAULT_ADDR");
         String vaultRole = workspaceEnvVariables.get("WORKLOAD_IDENTITY_VAULT_ROLE");
@@ -120,14 +106,17 @@ public class DynamicCredentialsService {
         return workspaceEnvVariables;
     }
 
-    private String generateJwt(String organizationName, String workspaceName, String tokenAudience, String organizationId, String workspaceId, int jobId) {
-        return generateJwt(organizationName, workspaceName, tokenAudience, organizationId, workspaceId, jobId, null);
+    private String generateJwt(Job job, String tokenAudience) {
+        return generateJwt(job, tokenAudience, null);
     }
 
-    private String generateJwt(String organizationName, String workspaceName, String tokenAudience, String organizationId, String workspaceId, int jobId, Map<String, Object> extraClaims) {
+    private String generateJwt(Job job, String tokenAudience, Map<String, Object> extraClaims) {
         String jwtToken = "";
         if (privateKeyPath != null && !privateKeyPath.isEmpty()) {
             try {
+                String organizationName = job.getOrganization().getName();
+                String workspaceName = job.getWorkspace().getName();
+                var project = job.getWorkspace().getProject();
                 Instant now = Instant.now();
                 var builder = Jwts.builder()
                         .subject(String.format("organization:%s:workspace:%s", organizationName, workspaceName))
@@ -135,14 +124,19 @@ public class DynamicCredentialsService {
                         .setAudience(tokenAudience)
                         .id(UUID.randomUUID().toString())
                         .header().add("kid", kid).and()
-                        .claim("terrakube_workspace_id", workspaceId)
-                        .claim("terrakube_organization_id", organizationId)
+                        .claim("terrakube_workspace_id", job.getWorkspace().getId().toString())
+                        .claim("terrakube_organization_id", job.getOrganization().getId().toString())
                         .claim("terrakube_workspace_name", workspaceName)
                         .claim("terrakube_organization_name", organizationName)
-                        .claim("terrakube_job_id", String.valueOf(jobId))
+                        .claim("terrakube_job_id", String.valueOf(job.getId()))
                         .issuedAt(Date.from(now))
                         .issuer(String.format("https://%s", overrideHostname.isEmpty() ? hostname : overrideHostname))
                         .expiration(Date.from(now.plus(dynamicCredentialTtl, ChronoUnit.MINUTES)));
+                // The workspace project is optional; expose its name as a claim so federated
+                // trust policies (GCP/Azure/AWS/Vault) can scope by project when one is set.
+                if (project != null) {
+                    builder.claim("terrakube_project_name", project.getName());
+                }
                 if (extraClaims != null) extraClaims.forEach(builder::claim);
                 jwtToken = builder
                         .signWith(getPrivateKey(), Jwts.SIG.RS512)
@@ -164,15 +158,7 @@ public class DynamicCredentialsService {
             extraClaims = Map.of("https://aws.amazon.com/tags", buildAwsSessionTags(job));
         }
 
-        String awsWebIdentityToken = generateJwt(
-                job.getOrganization().getName(),
-                job.getWorkspace().getName(),
-                workspaceEnvVariables.get("WORKLOAD_IDENTITY_AUDIENCE_AWS"),
-                job.getOrganization().getId().toString(),
-                job.getWorkspace().getId().toString(),
-                job.getId(),
-                extraClaims
-        );
+        String awsWebIdentityToken = generateJwt(job, workspaceEnvVariables.get("WORKLOAD_IDENTITY_AUDIENCE_AWS"), extraClaims);
 
         log.debug("TERRAKUBE_AWS_CREDENTIALS_FILE: {}", awsWebIdentityToken);
 
@@ -186,14 +172,7 @@ public class DynamicCredentialsService {
 
     @Transactional
     public HashMap<String, String> generateDynamicCredentialsGcp(Job job, HashMap<String, String> workspaceEnvVariables) {
-        String jwtToken = generateJwt(
-                job.getOrganization().getName(),
-                job.getWorkspace().getName(),
-                workspaceEnvVariables.get("WORKLOAD_IDENTITY_AUDIENCE_GCP"),
-                job.getOrganization().getId().toString(),
-                job.getWorkspace().getId().toString(),
-                job.getId()
-        );
+        String jwtToken = generateJwt(job, workspaceEnvVariables.get("WORKLOAD_IDENTITY_AUDIENCE_GCP"));
 
         String googleCredentialsFile = "{\n" +
                 "    \"access_token\": \"%s\"\n" +
