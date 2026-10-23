@@ -45,11 +45,14 @@ public class RepoWebhookSyncJob implements Job {
 
     private final RepoWebhookService repoWebhookService;
 
+    private final RepoWebhookSyncStatus syncStatus;
+
     public RepoWebhookSyncJob(RepoWebhookRepository repoWebhookRepository, WorkspaceRepository workspaceRepository,
-            RepoWebhookService repoWebhookService) {
+            RepoWebhookService repoWebhookService, RepoWebhookSyncStatus syncStatus) {
         this.repoWebhookRepository = repoWebhookRepository;
         this.workspaceRepository = workspaceRepository;
         this.repoWebhookService = repoWebhookService;
+        this.syncStatus = syncStatus;
     }
 
     @Override
@@ -72,8 +75,15 @@ public class RepoWebhookSyncJob implements Job {
 
         Workspace seedWorkspace = findSeedWorkspace(workspaces, workspaceId);
 
-        RepoWebhook repoWebhook = repoWebhookService.getOrCreateRepoWebhook(seedWorkspace);
-        repoWebhookService.createOrUpdateSharedWebhook(repoWebhook);
+        try {
+            RepoWebhook repoWebhook = repoWebhookService.getOrCreateRepoWebhook(seedWorkspace);
+            repoWebhookService.createOrUpdateSharedWebhook(repoWebhook);
+        } catch (RuntimeException e) {
+            // Saved before the transaction rolls back, so the workspace settings can show it.
+            syncStatus.recordStatus(repositoryUrl, RepoWebhookSyncStatus.describe(e));
+            throw e;
+        }
+        syncStatus.recordStatus(repositoryUrl, null);
         log.info("Synced shared webhook for {} across {} workspace(s)", repositoryUrl, workspaces.size());
     }
 

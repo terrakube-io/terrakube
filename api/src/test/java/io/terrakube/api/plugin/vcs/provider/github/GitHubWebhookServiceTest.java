@@ -3,6 +3,8 @@ package io.terrakube.api.plugin.vcs.provider.github;
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.patch;
+import static com.github.tomakehurst.wiremock.client.WireMock.patchRequestedFor;
+import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.post;
 import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathMatching;
@@ -10,12 +12,15 @@ import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.options
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import java.util.EnumSet;
 import java.util.List;
+import java.util.UUID;
 import java.util.stream.Stream;
 
 import org.junit.jupiter.api.AfterEach;
@@ -27,6 +32,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -38,6 +44,8 @@ import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.vcs.Vcs;
+import io.terrakube.api.rs.webhook.RepoWebhook;
+import io.terrakube.api.rs.webhook.WebhookEventType;
 import io.terrakube.api.rs.workspace.Workspace;
 
 public class GitHubWebhookServiceTest {
@@ -337,6 +345,143 @@ public class GitHubWebhookServiceTest {
 
             wireMockServer.verify(1, postRequestedFor(urlPathMatching("/repos/owner/repo/statuses/.*")));
             wireMockServer.verify(0, postRequestedFor(urlPathMatching(".*/pulls/.*/statuses.*")));
+        }
+    }
+
+    @Nested
+    class CreateOrUpdateRepoWebhook {
+
+        static final String HOOKS = "/repos/owner/repo/hooks";
+
+        WireMockServer wireMockServer;
+        GitHubWebhookService subjectWithRestTemplate;
+        RepoWebhook repoWebhook;
+
+        @BeforeEach
+        void setUp() throws Exception {
+            wireMockServer = new WireMockServer(options().dynamicPort());
+            wireMockServer.start();
+            TokenService tokenService = mock(TokenService.class);
+            when(tokenService.getAccessToken(any(String[].class), any())).thenReturn("test-token");
+            subjectWithRestTemplate = new GitHubWebhookService(new ObjectMapper(), tokenService);
+            subjectWithRestTemplate.setWebhookRestTemplate(
+                    new RestTemplate(new HttpComponentsClientHttpRequestFactory()));
+
+            Vcs vcs = new Vcs();
+            vcs.setApiUrl("http://localhost:" + wireMockServer.port());
+            repoWebhook = new RepoWebhook();
+            repoWebhook.setId(UUID.randomUUID());
+            repoWebhook.setRepositoryUrl("https://github.com/owner/repo");
+            repoWebhook.setWebhookSecret("secret");
+            repoWebhook.setVcs(vcs);
+        }
+
+        @AfterEach
+        void tearDown() {
+            wireMockServer.stop();
+        }
+
+        private String sync() {
+            return subjectWithRestTemplate.createOrUpdateRepoWebhook(repoWebhook, EnumSet.of(WebhookEventType.PUSH), false);
+        }
+
+        @Test
+        void failsInsteadOfKeepingTheStoredIdWhenNoTokenCanBeObtained() throws Exception {
+            TokenService failing = mock(TokenService.class);
+            when(failing.getAccessToken(any(String[].class), any()))
+                    .thenThrow(new io.terrakube.api.plugin.vcs.provider.exception.VcsTokenAcquisitionException("no token", null, false));
+            GitHubWebhookService noToken = new GitHubWebhookService(new ObjectMapper(), failing);
+            noToken.setWebhookRestTemplate(new RestTemplate(new HttpComponentsClientHttpRequestFactory()));
+            repoWebhook.setRemoteHookId("111");
+
+            org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class,
+                    () -> noToken.createOrUpdateRepoWebhook(repoWebhook, EnumSet.of(WebhookEventType.PUSH), false));
+            repoWebhook.setRemoteHookId(null);
+            org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class,
+                    () -> noToken.createOrUpdateRepoWebhook(repoWebhook, EnumSet.of(WebhookEventType.PUSH), false));
+        }
+
+        @Test
+        void doesNotKeepTheDeletedIdWhenTheNewHookHasNoId() {
+            repoWebhook.setRemoteHookId("111");
+            wireMockServer.stubFor(patch(urlEqualTo(HOOKS + "/111")).willReturn(aResponse().withStatus(404)));
+            wireMockServer.stubFor(post(urlEqualTo(HOOKS))
+                    .willReturn(aResponse().withStatus(201).withHeader("Content-Type", "application/json").withBody("{}")));
+
+            org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class, this::sync);
+        }
+
+        @Test
+        void updatesTheStoredHookAndKeepsItsId() {
+            repoWebhook.setRemoteHookId("111");
+            wireMockServer.stubFor(patch(urlEqualTo(HOOKS + "/111")).willReturn(aResponse().withStatus(200)));
+
+            assertEquals("111", sync());
+
+            wireMockServer.verify(1, patchRequestedFor(urlEqualTo(HOOKS + "/111")));
+            wireMockServer.verify(0, postRequestedFor(urlEqualTo(HOOKS)));
+        }
+
+        @Test
+        void createsTheHookAgainWhenItWasDeletedOnGitHub() {
+            repoWebhook.setRemoteHookId("111");
+            wireMockServer.stubFor(patch(urlEqualTo(HOOKS + "/111"))
+                    .willReturn(aResponse().withStatus(404).withHeader("Content-Type", "application/json")
+                            .withBody("{\"message\":\"Not Found\"}")));
+            wireMockServer.stubFor(post(urlEqualTo(HOOKS))
+                    .willReturn(aResponse().withStatus(201).withHeader("Content-Type", "application/json")
+                            .withBody("{\"id\":222}")));
+
+            assertEquals("222", sync());
+
+            wireMockServer.verify(1, postRequestedFor(urlEqualTo(HOOKS)));
+        }
+
+        @Test
+        void theNewHookKeepsTheSecretUrlAndEventsOfTheShared() throws Exception {
+            repoWebhook.setRemoteHookId("111");
+            wireMockServer.stubFor(patch(urlEqualTo(HOOKS + "/111")).willReturn(aResponse().withStatus(404)));
+            wireMockServer.stubFor(post(urlEqualTo(HOOKS))
+                    .willReturn(aResponse().withStatus(201).withHeader("Content-Type", "application/json")
+                            .withBody("{\"id\":222}")));
+
+            sync();
+
+            var request = wireMockServer.findAll(postRequestedFor(urlEqualTo(HOOKS))).getFirst();
+            var body = new ObjectMapper().readTree(request.getBodyAsString());
+            assertEquals("secret", body.path("config").path("secret").asText());
+            assertTrue(body.path("config").path("url").asText().endsWith("/webhook/v2/" + repoWebhook.getId()));
+            assertEquals("push", body.path("events").get(0).asText());
+        }
+
+        @Test
+        void raisesTheCreateErrorWhenTheRepositoryCannotBeReached() {
+            repoWebhook.setRemoteHookId("111");
+            wireMockServer.stubFor(patch(urlEqualTo(HOOKS + "/111")).willReturn(aResponse().withStatus(404)));
+            wireMockServer.stubFor(post(urlEqualTo(HOOKS)).willReturn(aResponse().withStatus(404)));
+
+            assertThrows(HttpClientErrorException.NotFound.class, this::sync);
+        }
+
+        @Test
+        void doesNotCreateAnotherHookWhenTheUpdateIsRefusedForPermissions() {
+            repoWebhook.setRemoteHookId("111");
+            wireMockServer.stubFor(patch(urlEqualTo(HOOKS + "/111")).willReturn(aResponse().withStatus(403)));
+
+            assertThrows(HttpClientErrorException.Forbidden.class, this::sync);
+
+            wireMockServer.verify(0, postRequestedFor(urlEqualTo(HOOKS)));
+        }
+
+        @Test
+        void createsTheHookWhenNoneIsStored() {
+            wireMockServer.stubFor(post(urlEqualTo(HOOKS))
+                    .willReturn(aResponse().withStatus(201).withHeader("Content-Type", "application/json")
+                            .withBody("{\"id\":333}")));
+
+            assertEquals("333", sync());
+
+            wireMockServer.verify(0, patchRequestedFor(urlPathMatching(HOOKS + "/.*")));
         }
     }
 }
