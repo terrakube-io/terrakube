@@ -1,17 +1,17 @@
 package io.terrakube.api.plugin.json;
 
+import io.terrakube.api.plugin.http.ReactorNettyWebClientFactory;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.buffer.DataBuffer;
 import org.springframework.core.io.buffer.DataBufferUtils;
 import org.springframework.http.MediaType;
-import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
-import reactor.netty.http.client.HttpClient;
 
 import java.io.File;
+import java.time.Duration;
 import java.util.List;
 
 @AllArgsConstructor
@@ -33,11 +33,7 @@ public class DownloadReleasesService {
         // rejects the request (api.github.com starts returning 400/500 past ~7KB of headers).
         WebClient webClient = webClientBuilder
                 .clone()
-                .clientConnector(new ReactorClientHttpConnector(
-                        HttpClient.create()
-                                .followRedirect(true)
-                                .proxyWithSystemProperties()
-                ))
+                .clientConnector(ReactorNettyWebClientFactory.redirectingConnector(Duration.ofSeconds(30)))
                 .defaultHeaders(h -> {
                     h.add("User-Agent", "releases-downloader");
                     h.setAccept(List.of(MediaType.APPLICATION_JSON));
