@@ -49,7 +49,7 @@
     {
       "label": "setup-secret",
       "type": "shell",
-      "command": "echo -n 'S2JeOGNNZXJQTlpWNmhTITkha2NEKkt1VVBVQmFeQjM=' > /workspaces/terrakube/internal-secret.txt 2>/dev/null || true; chmod 600 /workspaces/terrakube/internal-secret.txt 2>/dev/null || true; echo -n 'S2JeOGNNZXJQTlpWNmhTITkha2NEKkt1VVBVQmFeQjM=' > internal-secret.txt 2>/dev/null || true; chmod 600 internal-secret.txt 2>/dev/null || true"
+      "command": "mkdir -p /tmp/terrakube-executor-secrets && chmod 700 /tmp/terrakube-executor-secrets 2>/dev/null || true; printf '%s\\n' 'InternalSecret=S2JeOGNNZXJQTlpWNmhTITkha2NEKkt1VVBVQmFeQjM=' 'TerrakubeRedisPassword=password123456' 'AwsTerraformStateAccessKey=minioadmin' 'AwsTerraformStateSecretKey=minioadmin' 'AwsTerraformOutputAccessKey=minioadmin' 'AwsTerraformOutputSecretKey=minioadmin' > /tmp/terrakube-executor-secrets/executor.env && chmod 600 /tmp/terrakube-executor-secrets/executor.env 2>/dev/null || true; echo -n 'S2JeOGNNZXJQTlpWNmhTITkha2NEKkt1VVBVQmFeQjM=' > /workspaces/terrakube/internal-secret.txt 2>/dev/null || true; chmod 600 /workspaces/terrakube/internal-secret.txt 2>/dev/null || true; echo -n 'S2JeOGNNZXJQTlpWNmhTITkha2NEKkt1VVBVQmFeQjM=' > internal-secret.txt 2>/dev/null || true; chmod 600 internal-secret.txt 2>/dev/null || true"
     }
   ]
 }
