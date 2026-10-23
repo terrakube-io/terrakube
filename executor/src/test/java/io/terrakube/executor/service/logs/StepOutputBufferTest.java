@@ -92,4 +92,27 @@ class StepOutputBufferTest {
             assertEquals(0, in.readAllBytes().length);
         }
     }
+
+    @Test
+    void aMissingMessageIsAnEmptyBufferNotAFailure() {
+        try (StepOutputBuffer buffer = StepOutputBuffer.ofMessage(null)) {
+            assertEquals(0, buffer.sizeInBytes());
+            assertEquals("", buffer.toString());
+        }
+    }
+
+    @Test
+    void aSpilledFileIsReadableByItsOwnerOnly() throws IOException {
+        org.junit.jupiter.api.Assumptions.assumeTrue(
+                java.nio.file.FileSystems.getDefault().supportedFileAttributeViews().contains("posix"));
+        try (StepOutputBuffer buffer = new StepOutputBuffer(4, spool)) {
+            buffer.appendln("more than four bytes");
+
+            try (Stream<Path> files = Files.list(spool)) {
+                Path spilled = files.findFirst().orElseThrow();
+                assertEquals(java.nio.file.attribute.PosixFilePermissions.fromString("rw-------"),
+                        Files.getPosixFilePermissions(spilled));
+            }
+        }
+    }
 }

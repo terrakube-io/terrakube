@@ -195,7 +195,7 @@ class ExecutorJobImplTest {
         assertEquals(ReadinessState.ACCEPTING_TRAFFIC, stateAt(0));
         InOrder inOrder = inOrder(jobExecutionWatchdog, updateJobStatus, executorCapacityGate);
         inOrder.verify(jobExecutionWatchdog).markBusy(job);
-        inOrder.verify(updateJobStatus).setCompletedStatus(eq(false), eq(false), eq(-1), eq(job), any(io.terrakube.executor.service.logs.StepOutputBuffer.class), any(), any(), any(), anyBoolean(), any(), any(), any());
+        inOrder.verify(updateJobStatus).setCompletedStatus(eq(false), eq(false), eq(-1), eq(job), any(io.terrakube.executor.service.logs.StepOutputBuffer.class), any(), any(), any());
         inOrder.verify(jobExecutionWatchdog).markFree();
         inOrder.verify(executorCapacityGate).release();
         verifyNoMoreInteractions(terraformExecutor);
@@ -221,7 +221,7 @@ class ExecutorJobImplTest {
 
         InOrder inOrder = inOrder(jobExecutionWatchdog, updateJobStatus, executorCapacityGate);
         inOrder.verify(jobExecutionWatchdog).markBusy(job);
-        inOrder.verify(updateJobStatus).setCompletedStatus(eq(false), eq(false), eq(-1), eq(job), any(io.terrakube.executor.service.logs.StepOutputBuffer.class), any(), any(), any(), anyBoolean(), any(), any(), any());
+        inOrder.verify(updateJobStatus).setCompletedStatus(eq(false), eq(false), eq(-1), eq(job), any(io.terrakube.executor.service.logs.StepOutputBuffer.class), any(), any(), any());
         inOrder.verify(jobExecutionWatchdog).markFree();
         inOrder.verify(executorCapacityGate).release();
     }

@@ -150,8 +150,7 @@ class JobExecutionWatchdogTest {
 
         verify(updateJobStatus, times(1)).setCompletedStatus(
                 Mockito.eq(false), Mockito.eq(false), Mockito.eq(-1), Mockito.eq(job),
-                any(StepOutputBuffer.class), anyString(), Mockito.isNull(), anyString(),
-                Mockito.eq(false), Mockito.isNull(), Mockito.isNull(), Mockito.isNull());
+                any(StepOutputBuffer.class), anyString(), Mockito.isNull(), anyString());
     }
 
     @Test
@@ -162,7 +161,6 @@ class JobExecutionWatchdogTest {
 
         verify(updateJobStatus, times(0)).setCompletedStatus(
                 Mockito.anyBoolean(), Mockito.anyBoolean(), Mockito.anyInt(), any(),
-                any(StepOutputBuffer.class), anyString(), any(), anyString(),
-                Mockito.anyBoolean(), any(), any(), any());
+                any(StepOutputBuffer.class), anyString(), any(), anyString());
     }
 }

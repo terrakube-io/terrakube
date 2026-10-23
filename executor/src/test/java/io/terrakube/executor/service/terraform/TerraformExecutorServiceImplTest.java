@@ -1566,6 +1566,14 @@ class TerraformExecutorServiceImplTest {
     }
 
     @Test
+    void aFailureBeforeAnyOutputExistedStillProducesAResult() {
+        ExecutorJobResult result = subject().setError(new IllegalStateException("boom"), null);
+
+        assertFalse(result.isSuccessfulExecution());
+        assertTrue(outputOf(result).contains("boom"), outputOf(result));
+    }
+
+    @Test
     void streamDrainFailureKeepsTheTerraformDiagnosticPrimaryAndCountsIt() {
         TerraformExecutorServiceImpl subject = subject();
         String realDiagnostic = "Error: Reference to undeclared input variable\n\n  on main.tf line 3\n";

@@ -157,7 +157,7 @@ public class ExecutorJobImpl implements ExecutorJob {
             } catch (WorkspaceException e) {
                 log.error("Failed to prepare work dir: ", e);
                 try (StepOutputBuffer output = StepOutputBuffer.ofMessage("Failed to prepare work dir\n")) {
-                    updateJobStatus.setCompletedStatus(false, false, -1, terraformJob, output, e.getMessage(), null, "", false, null, null, null);
+                    updateJobStatus.setCompletedStatus(false, false, -1, terraformJob, output, e.getMessage(), null, "");
                 }
                 return;
             }
@@ -173,7 +173,7 @@ public class ExecutorJobImpl implements ExecutorJob {
                 log.error("Unexpected error executing job for Organization {} Workspace {}: {}",
                         terraformJob.getOrganizationId(), terraformJob.getWorkspaceId(), e.getMessage(), e);
                 try (StepOutputBuffer output = StepOutputBuffer.ofMessage("Unexpected error executing job\n")) {
-                    updateJobStatus.setCompletedStatus(false, false, -1, terraformJob, output, e.getMessage(), null, "", false, null, null, null);
+                    updateJobStatus.setCompletedStatus(false, false, -1, terraformJob, output, e.getMessage(), null, "");
                 }
             }
         } finally {

@@ -495,7 +495,7 @@ class OpaExecutorServiceTest {
         assertFalse(result.isSuccessfulExecution());
         assertEquals(1, result.getExitCode());
         try (StepOutputBuffer output = result.getOutputBuffer()) {
-            assertEquals("No plan.json or state found for compliance evaluation.", output.toString());
+            assertEquals("No plan.json or state found for compliance evaluation.\n", output.toString());
         }
     }
 
@@ -512,7 +512,8 @@ class OpaExecutorServiceTest {
             throw new IllegalStateException("evaluation failed");
         }).when(subject).evaluateAllPolicies(Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any());
 
-        assertThrows(IllegalStateException.class, () -> subject.evaluateJob(policyJob(), workingDirectory));
+        TerraformJob job = policyJob();
+        assertThrows(IllegalStateException.class, () -> subject.evaluateJob(job, workingDirectory));
 
         try (var left = java.nio.file.Files.list(tempDir)) {
             assertEquals(List.of("work"), left.map(path -> path.getFileName().toString()).toList(),

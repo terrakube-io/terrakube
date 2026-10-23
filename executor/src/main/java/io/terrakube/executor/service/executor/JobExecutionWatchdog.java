@@ -114,7 +114,7 @@ public class JobExecutionWatchdog {
         log.warn("Executor pod is shutting down with Job {} in flight, failing it so the queue can proceed", job.getJobId());
         try (StepOutputBuffer output = StepOutputBuffer.ofMessage("Executor pod is shutting down\n")) {
             updateJobStatus.setCompletedStatus(false, false, -1, job, output,
-                    "Executor pod is shutting down", null, "", false, null, null, null);
+                    "Executor pod is shutting down", null, "");
         }
     }
 }

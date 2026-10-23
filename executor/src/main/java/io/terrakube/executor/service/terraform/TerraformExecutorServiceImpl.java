@@ -1232,7 +1232,8 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
     // output stream" with none of the real Terraform output, and none of the real error (the
     // "Error: External Program Lookup Failed" / missing-python diagnostic, in the reported case)
     // that actually caused it.
-    ExecutorJobResult setError(Exception exception, StepOutputBuffer partialConsoleOutput) {
+    ExecutorJobResult setError(Exception exception, StepOutputBuffer streamedOutput) {
+        StepOutputBuffer partialConsoleOutput = streamedOutput != null ? streamedOutput : new StepOutputBuffer();
         // Put the failure after what was already streamed, with a blank line between.
         if (partialConsoleOutput.sizeInBytes() > 0) {
             partialConsoleOutput.appendln("");

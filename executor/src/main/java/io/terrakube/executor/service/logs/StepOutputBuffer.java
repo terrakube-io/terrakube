@@ -71,7 +71,7 @@ public class StepOutputBuffer implements AutoCloseable {
     }
 
     public synchronized void append(String text) {
-        if (closed) {
+        if (closed || text == null) {
             return;
         }
         byte[] data = text.getBytes(StandardCharsets.UTF_8);

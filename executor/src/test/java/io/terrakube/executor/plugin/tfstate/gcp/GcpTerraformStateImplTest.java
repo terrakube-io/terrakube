@@ -208,7 +208,7 @@ class GcpTerraformStateImplTest {
             return null;
         });
 
-        try (io.terrakube.executor.service.logs.StepOutputBuffer buffer = new io.terrakube.executor.service.logs.StepOutputBuffer(4, null)) {
+        try (StepOutputBuffer buffer = new StepOutputBuffer(4, null)) {
             buffer.appendln("output-content");
             String result = gcpTerraformState.saveBufferedOutput("org1", "job1", "step1", buffer, "error-content");
 

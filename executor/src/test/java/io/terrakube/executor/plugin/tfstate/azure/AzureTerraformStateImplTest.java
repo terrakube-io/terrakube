@@ -228,7 +228,7 @@ class AzureTerraformStateImplTest {
             return null;
         }).when(blobClient).upload(any(java.io.InputStream.class), length.capture(), eq(true));
 
-        try (io.terrakube.executor.service.logs.StepOutputBuffer buffer = new io.terrakube.executor.service.logs.StepOutputBuffer(4, null)) {
+        try (StepOutputBuffer buffer = new StepOutputBuffer(4, null)) {
             buffer.appendln("output-content");
             String result = azureTerraformState.saveBufferedOutput("org1", "job1", "step1", buffer, "error-content");
 

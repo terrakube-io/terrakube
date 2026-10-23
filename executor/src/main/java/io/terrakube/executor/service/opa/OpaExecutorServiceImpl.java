@@ -350,7 +350,7 @@ public class OpaExecutorServiceImpl implements OpaExecutorService {
                 );
                 if (!downloaded) {
                     log.warn("Could not find plan.json or download terraform plan file from storage");
-                    output.append("No plan.json or state found for compliance evaluation.");
+                    output.appendln("No plan.json or state found for compliance evaluation.");
                     result.setOutputBuffer(output);
                     handedOver = true;
                     result.setSuccessfulExecution(false);

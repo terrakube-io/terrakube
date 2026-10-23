@@ -139,6 +139,17 @@ public class UpdateJobStatusImplTest {
     }
 
     @Test
+    public void aStepThatProducedNoOutputBufferIsStillCompleted() {
+        stubJobWithStatus("running");
+        doReturn("output-url").when(terraformState).saveBufferedOutput(anyString(), anyString(), anyString(), any(StepOutputBuffer.class), anyString());
+
+        subject().setCompletedStatus(false, false, 1, terraformJob(), null, "failed", "", "0000000");
+
+        verify(terrakubeClient, times(1)).updateStep(any(), anyString(), anyString(), anyString());
+        verify(terrakubeClient, times(1)).updateJob(any(JobRequest.class), anyString(), anyString());
+    }
+
+    @Test
     public void setRunningStatusOnRejectedJobUpdatesStepLogsButNotJob() {
         stubJobWithStatus("rejected");
         doReturn("output-path").when(terraformOutputPathService).getOutputPath(anyString(), anyString(), anyString());
