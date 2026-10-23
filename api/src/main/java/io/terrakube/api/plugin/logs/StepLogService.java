@@ -3,6 +3,7 @@ package io.terrakube.api.plugin.logs;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import io.micrometer.core.instrument.MeterRegistry;
+import io.terrakube.api.plugin.storage.StepOutputPartsReader;
 import io.terrakube.api.plugin.storage.StorageTypeService;
 import io.terrakube.api.plugin.storage.model.ByteRange;
 import io.terrakube.api.plugin.storage.model.StepOutputStream;
@@ -51,24 +52,35 @@ public class StepLogService {
         private final long contentLength;
         private final boolean exists;
         private final boolean terminal;
+        // The step ended without its final output, this is what was archived while it ran.
+        private final boolean incomplete;
 
-        private StepLog(byte[] body, long contentLength, boolean exists, boolean terminal) {
+        private StepLog(byte[] body, long contentLength, boolean exists, boolean terminal, boolean incomplete) {
             this.body = body;
             this.contentLength = contentLength;
             this.exists = exists;
             this.terminal = terminal;
+            this.incomplete = incomplete;
         }
 
         public static StepLog missing() {
-            return new StepLog(null, -1L, false, false);
+            return new StepLog(null, -1L, false, false, false);
         }
 
         public static StepLog cached(byte[] body) {
-            return new StepLog(body, body.length, true, true);
+            return new StepLog(body, body.length, true, true, false);
         }
 
         public static StepLog streamable(long contentLength) {
-            return new StepLog(null, contentLength, true, true);
+            return new StepLog(null, contentLength, true, true, false);
+        }
+
+        public static StepLog incompleteCached(byte[] body) {
+            return new StepLog(body, body.length, true, true, true);
+        }
+
+        public static StepLog incompleteStreamable(long contentLength) {
+            return new StepLog(null, contentLength, true, true, true);
         }
     }
 
@@ -104,7 +116,7 @@ public class StepLogService {
         }
         try (StepOutputStream out = storage.getStepOutputStream(organizationId, jobId, stepId, null)) {
             if (!out.isExists()) {
-                return StepLog.missing();
+                return terminal ? resolveArchivedParts(organizationId, jobId, stepId) : StepLog.missing();
             }
             long len = out.getContentLength();
             if (len >= 0 && len <= properties.getCacheableMaxObjectBytes()) {
@@ -122,7 +134,36 @@ public class StepLogService {
         }
     }
 
+    /**
+     * A step that ended with no final output (its executor died) may still have the parts the executor
+     * archived while it ran. They are served as they are, marked incomplete, and never cached: they are not
+     * the step's output, only the part of it that was saved.
+     */
+    private StepLog resolveArchivedParts(String organizationId, String jobId, String stepId) throws IOException {
+        long total = StepOutputPartsReader.totalSize(StepOutputPartsReader.contiguous(
+                storage.listStepOutputParts(organizationId, jobId, stepId)));
+        if (total <= 0) {
+            return StepLog.missing();
+        }
+        if (total > properties.getCacheableMaxObjectBytes()) {
+            return StepLog.incompleteStreamable(total);
+        }
+        try (StepOutputStream parts = StepOutputPartsReader.open(storage, organizationId, jobId, stepId, null)) {
+            if (!parts.isExists()) {
+                return StepLog.missing();
+            }
+            return StepLog.incompleteCached(StreamUtils.copyToByteArray(parts.getContent()));
+        }
+    }
+
     public StepOutputStream openStream(String organizationId, String jobId, String stepId, ByteRange range) {
+        return openStream(organizationId, jobId, stepId, range, false);
+    }
+
+    public StepOutputStream openStream(String organizationId, String jobId, String stepId, ByteRange range, boolean fromParts) {
+        if (fromParts) {
+            return StepOutputPartsReader.open(storage, organizationId, jobId, stepId, range);
+        }
         return storage.getStepOutputStream(organizationId, jobId, stepId, range);
     }
 

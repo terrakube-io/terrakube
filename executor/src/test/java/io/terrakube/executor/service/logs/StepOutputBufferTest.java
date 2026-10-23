@@ -115,4 +115,44 @@ class StepOutputBufferTest {
             }
         }
     }
+
+    @Test
+    void openRangeReadsAPartOfMemoryAndOfTheFile() throws IOException {
+        for (long limit : new long[]{1024, 8}) {
+            try (StepOutputBuffer buffer = new StepOutputBuffer(limit, spool)) {
+                buffer.append("0123456789");
+                buffer.append("abcdef");
+
+                assertEquals(limit == 8, !buffer.isInMemory());
+                assertEquals("3456", new String(buffer.openRange(3, 4).readAllBytes(), StandardCharsets.UTF_8));
+                assertEquals("89abc", new String(buffer.openRange(8, 5).readAllBytes(), StandardCharsets.UTF_8));
+                assertEquals("def", new String(buffer.openRange(13, 100).readAllBytes(), StandardCharsets.UTF_8));
+                assertEquals(0, buffer.openRange(16, 10).readAllBytes().length);
+
+                buffer.append("XYZ");
+                assertEquals("fXYZ", new String(buffer.openRange(15, 10).readAllBytes(), StandardCharsets.UTF_8));
+            }
+        }
+    }
+
+    @Test
+    void openRangeAfterCloseIsEmpty() throws IOException {
+        StepOutputBuffer buffer = new StepOutputBuffer(4, spool);
+        buffer.append("a long line past the limit");
+        buffer.close();
+
+        assertEquals(0, buffer.openRange(0, 10).readAllBytes().length);
+    }
+
+    @Test
+    void closeStopsTheAttachedArchiver() {
+        StepOutputBuffer buffer = new StepOutputBuffer(1024, spool);
+        StepOutputPartWriter writer = new StepOutputPartWriter(buffer, (n, data) -> { }, 10, java.time.Duration.ofSeconds(30), 10, "test");
+        buffer.attachArchiver(writer);
+        writer.start();
+
+        buffer.close();
+
+        assertEquals(0, buffer.finishArchiving());
+    }
 }

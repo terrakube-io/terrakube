@@ -12,6 +12,7 @@ import io.terrakube.api.plugin.storage.StorageRetryMetrics;
 import io.terrakube.api.plugin.storage.StorageTypeService;
 import io.terrakube.api.plugin.storage.StorageUnavailableException;
 import io.terrakube.api.plugin.storage.model.ByteRange;
+import io.terrakube.api.plugin.storage.model.StepOutputPart;
 import io.terrakube.api.plugin.storage.model.StepOutputStream;
 
 import java.io.File;
@@ -26,6 +27,7 @@ import java.util.List;
 @Builder
 public class LocalStorageTypeServiceImpl implements StorageTypeService {
 
+    private static final String OUTPUT_PARTS_DIRECTORY = "/.terraform-spring-boot/local/output/%s/%s/%s.parts";
     private static final String OUTPUT_DIRECTORY = "/.terraform-spring-boot/local/output/%s/%s/%s.tfoutput";
     private static final String CONTENT_DIRECTORY = "/.terraform-spring-boot/local/content/%s/terraformContent.tar.gz";
     private static final String CONTEXT_DIRECTORY = "/.terraform-spring-boot/local/output/context/%s/context.json";
@@ -99,6 +101,34 @@ public class LocalStorageTypeServiceImpl implements StorageTypeService {
             log.error("Failed to open local step output {}: {}", path, e.getMessage());
             return StepOutputStream.missing();
         }
+    }
+
+    private File outputPartsFolder(String organizationId, String jobId, String stepId) {
+        return new File(FileUtils.getUserDirectoryPath().concat(String.format(OUTPUT_PARTS_DIRECTORY, organizationId, jobId, stepId)));
+    }
+
+    @Override
+    public List<StepOutputPart> listStepOutputParts(String organizationId, String jobId, String stepId) {
+        File[] files = outputPartsFolder(organizationId, jobId, stepId).listFiles(File::isFile);
+        if (files == null) {
+            return List.of();
+        }
+        return java.util.Arrays.stream(files).map(f -> new StepOutputPart(f.getName(), f.length())).toList();
+    }
+
+    @Override
+    public InputStream openStepOutputPart(String organizationId, String jobId, String stepId, String partName, long offset, long length) throws IOException {
+        if (partName == null || !partName.matches("\\d{6}\\.part")) {
+            throw new IOException("Not an output part name: " + partName);
+        }
+        FileInputStream in = new FileInputStream(new File(outputPartsFolder(organizationId, jobId, stepId), partName));
+        try {
+            IOUtils.skipFully(in, offset);
+        } catch (IOException e) {
+            in.close();
+            throw e;
+        }
+        return BoundedInputStream.builder().setInputStream(in).setMaxCount(length).get();
     }
 
     @Override

@@ -17,6 +17,8 @@ type UseStepLogResult = {
   state: StepLogState;
   text: string;
   truncated: boolean;
+  /** The log is only what the executor archived before it stopped, not the step's full output. */
+  incomplete: boolean;
   retry: () => void;
 };
 
@@ -40,6 +42,7 @@ export function useStepLog({
   const [state, setState] = useState<StepLogState>("idle");
   const [text, setText] = useState("");
   const [truncated, setTruncated] = useState(false);
+  const [incomplete, setIncomplete] = useState(false);
   const [attempt, setAttempt] = useState(0);
 
   const retry = useCallback(() => setAttempt((n) => n + 1), []);
@@ -54,6 +57,7 @@ export function useStepLog({
     if (cached != null) {
       setText(cached);
       setTruncated(false);
+      setIncomplete(false);
       setState("success");
       return;
     }
@@ -75,8 +79,10 @@ export function useStepLog({
           }
           setText(result.text);
           setTruncated(result.truncated);
+          setIncomplete(result.incomplete === true);
           setState("success");
-          if (isTerminal && !result.truncated) {
+          // An incomplete log is not cached: the cache only holds a step's settled output.
+          if (isTerminal && !result.truncated && result.incomplete !== true) {
             stepLogCache.set(stepId, result.text);
           }
         })
@@ -110,5 +116,5 @@ export function useStepLog({
     };
   }, [enabled, stepId, output, jobId, organizationId, isTerminal, attempt]);
 
-  return { state, text, truncated, retry };
+  return { state, text, truncated, incomplete, retry };
 }

@@ -23,6 +23,8 @@ import io.terrakube.api.plugin.security.job.JobLogAccessService;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.server.ResponseStatusException;
 
+import org.springframework.core.io.InputStreamResource;
+
 import java.io.IOException;
 
 @AllArgsConstructor
@@ -74,12 +76,13 @@ public class TerraformOutputController {
         }
 
         if (stepLog.getBody() != null) {
-            return StepLogResponses.cachedBody(stepLog.getBody(), rangeHeader);
+            ResponseEntity<byte[]> cached = StepLogResponses.cachedBody(stepLog.getBody(), rangeHeader);
+            return stepLog.isIncomplete() ? StepLogResponses.markIncomplete(cached) : cached;
         }
 
         // Large object: stream straight from storage. No buffering, no DB transaction held.
         ByteRange range = ByteRange.parse(rangeHeader).orElse(null);
-        StepOutputStream out = stepLogService.openStream(organizationId, jobId, stepId, range);
+        StepOutputStream out = stepLogService.openStream(organizationId, jobId, stepId, range, stepLog.isIncomplete());
         if (!out.isExists()) {
             try {
                 out.close();
@@ -88,7 +91,8 @@ public class TerraformOutputController {
             }
             return StepLogResponses.notFound();
         }
-        return StepLogResponses.streamed(out);
+        ResponseEntity<InputStreamResource> streamed = StepLogResponses.streamed(out);
+        return stepLog.isIncomplete() ? StepLogResponses.markIncomplete(streamed) : streamed;
     }
 
     @GetMapping(

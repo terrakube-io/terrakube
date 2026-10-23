@@ -1,5 +1,7 @@
 package io.terrakube.executor.plugin.tfstate.azure;
 
+import io.terrakube.executor.plugin.tfstate.OutputPartNames;
+import io.terrakube.executor.service.logs.StepOutputPartWriter;
 import io.terrakube.executor.service.logs.StepOutputBuffer;
 import com.azure.core.util.BinaryData;
 import com.azure.storage.blob.BlobClient;
@@ -301,6 +303,41 @@ public class AzureTerraformStateImpl implements TerraformState {
         });
 
         return terraformOutputPathService.getOutputPath(organizationId, jobId, stepId);
+    }
+
+    @Override
+    public boolean saveOutputPart(String organizationId, String jobId, String stepId, int partNumber, StepOutputPartWriter.PartSource data) {
+        BlobContainerClient blobContainerClient = blobServiceClient.getBlobContainerClient(CONTAINER_OUTPUT_NAME);
+        if (!blobContainerClient.exists()) {
+            blobContainerClient.create();
+        }
+        BlobClient blobClient = blobContainerClient.getBlobClient(outputPartsPrefix(organizationId, jobId, stepId) + OutputPartNames.part(partNumber));
+        storageRetryMetrics.withRetry("azure", "output-part-write", () -> {
+            try (java.io.InputStream in = data.open()) {
+                blobClient.upload(in, data.length(), true);
+            } catch (java.io.IOException e) {
+                throw new java.io.UncheckedIOException(e);
+            }
+            return null;
+        });
+        return true;
+    }
+
+    @Override
+    public void deleteOutputParts(String organizationId, String jobId, String stepId) {
+        try {
+            BlobContainerClient blobContainerClient = blobServiceClient.getBlobContainerClient(CONTAINER_OUTPUT_NAME);
+            String prefix = outputPartsPrefix(organizationId, jobId, stepId);
+            for (com.azure.storage.blob.models.BlobItem item : blobContainerClient.listBlobs(new com.azure.storage.blob.models.ListBlobsOptions().setPrefix(prefix), null)) {
+                blobContainerClient.getBlobClient(item.getName()).deleteIfExists();
+            }
+        } catch (RuntimeException e) {
+            log.warn("Could not delete the output parts of step {}: {}", stepId, e.getMessage());
+        }
+    }
+
+    private String outputPartsPrefix(String organizationId, String jobId, String stepId) {
+        return organizationId + "/" + jobId + "/" + OutputPartNames.folder(stepId) + "/";
     }
 
     @Override
