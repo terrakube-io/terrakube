@@ -1,11 +1,13 @@
 package io.terrakube.api.rs.job;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Date;
 
 import io.terrakube.api.plugin.security.audit.GenericAuditFields;
 import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.hooks.job.JobManageHook;
+import io.terrakube.api.rs.hooks.job.JobVariablesHook;
 import io.terrakube.api.rs.hooks.job.JobApprovalHook;
 import io.terrakube.api.rs.hooks.job.JobArtifactsCleanupHook;
 import io.terrakube.api.rs.hooks.notification.JobNotificationHook;
@@ -13,6 +15,7 @@ import io.terrakube.api.rs.job.address.Address;
 import io.terrakube.api.rs.job.step.Step;
 import io.terrakube.api.rs.workspace.Workspace;
 
+import com.yahoo.elide.annotation.ComputedAttribute;
 import com.yahoo.elide.annotation.CreatePermission;
 import com.yahoo.elide.annotation.Exclude;
 import com.yahoo.elide.annotation.Include;
@@ -33,9 +36,11 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
+import jakarta.persistence.Transient;
 import lombok.Getter;
 import lombok.Setter;
 
+@LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.CREATE, phase = LifeCycleHookBinding.TransactionPhase.PREFLUSH, hook = JobVariablesHook.class)
 @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.CREATE, phase = LifeCycleHookBinding.TransactionPhase.POSTCOMMIT, hook = JobManageHook.class)
 @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.POSTCOMMIT, hook = JobManageHook.class)
 @ReadPermission(expression = "team view job OR team project limited view job OR team limited view job OR executor read job OR user is an executor service")
@@ -51,6 +56,29 @@ public class Job extends GenericAuditFields {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private int id;
+
+    // Create-only input. JobVariablesHook validates and encrypts it into encryptedVariables before the
+    // flush, and it is never persisted, read or updated through the API.
+    @ReadPermission(expression = "NONE")
+    @UpdatePermission(expression = "NONE")
+    @Transient
+    @ComputedAttribute
+    private Map<String, String> variables;
+
+    // Encrypted JSON of the job variables. Only decrypted when the job is dispatched to the executor.
+    @ReadPermission(expression = "NONE")
+    @CreatePermission(expression = "NONE")
+    @UpdatePermission(expression = "NONE")
+    @Column(name = "encrypted_variables", columnDefinition = "text")
+    private String encryptedVariables;
+
+    // Names (never values) of the job variables, so the run details and audit trail can show that a run
+    // used them. Set by JobVariablesHook, read-only through the API.
+    @CreatePermission(expression = "NONE")
+    @UpdatePermission(expression = "NONE")
+    @Convert(converter = StringListConverter.class)
+    @Column(name = "variable_names", columnDefinition = "text")
+    private List<String> variableNames;
 
     @Column(name = "comments")
     private String comments;

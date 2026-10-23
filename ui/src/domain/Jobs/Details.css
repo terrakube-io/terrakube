@@ -102,6 +102,58 @@
   font-size: 13px;
 }
 
+.run-variables {
+  min-width: 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--run-divider);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.run-variables summary {
+  padding: 8px 0;
+  color: var(--tk-text-primary);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.run-variables summary:focus-visible {
+  outline: 2px solid var(--run-focus);
+  outline-offset: 4px;
+  border-radius: 2px;
+}
+
+.run-variables p {
+  margin: 8px 0;
+  color: var(--tk-text-secondary);
+}
+
+.run-variable-names {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 160px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.run-variable-names li {
+  min-width: 0;
+  max-width: 100%;
+  padding: 4px 8px;
+  border: 1px solid var(--run-divider);
+  border-radius: 4px;
+}
+
+.run-variable-names code {
+  padding: 0;
+  background: none;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
 /* Stays under the headline while the operator scrolls the plan, so the decision is never below the fold. */
 .job-action-bar {
   position: sticky;

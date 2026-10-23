@@ -18,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 
+import io.terrakube.api.plugin.execution.JobVariablesService;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ephemeral.EphemeralExecutorService;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.persistent.PersistentExecutorService;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.Flow;
@@ -61,6 +62,9 @@ public class ExecutorService {
 
     @Value("${io.terrakube.tools.repository}")
     String toolsRepository;
+
+    @Autowired
+    private JobVariablesService jobVariablesService;
 
     @Autowired
     GlobalVarRepository globalVarRepository;
@@ -158,6 +162,16 @@ public class ExecutorService {
 
         environmentVariables = loadOtherEnvironmentVariables(job, flow, environmentVariables);
         terraformVariables = loadOtherTerraformVariables(job, flow, terraformVariables);
+
+        if (job.getEncryptedVariables() != null) {
+            try {
+                jobVariablesService.merge(jobVariablesService.decrypt(job.getEncryptedVariables()),
+                        terraformVariables, environmentVariables);
+            } catch (IllegalStateException e) {
+                throw new ExecutionException(String.format("Failed to read the variables of job %d: %s",
+                        job.getId(), e.getMessage()), e);
+            }
+        }
 
         executorContext.setVariables(terraformVariables);
         executorContext.setEnvironmentVariables(environmentVariables);
