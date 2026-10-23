@@ -296,6 +296,36 @@ class LocalTerraformStateImplTest {
     }
 
     @Test
+    void testSaveOutputPartsAreWrittenNextToTheFinalOutputAndDeleted() throws Exception {
+        File stepFolder = new File(FileUtils.getUserDirectoryPath().concat(
+                FilenameUtils.separatorsToSystem("/.terraform-spring-boot/local/output/orgParts/jobParts/stepParts.parts")));
+        try {
+            for (int number : new int[]{1, 2}) {
+                byte[] bytes = ("part " + number).getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                assertTrue(localTerraformState.saveOutputPart("orgParts", "jobParts", "stepParts", number,
+                        new io.terrakube.executor.service.logs.StepOutputPartWriter.PartSource() {
+                            public java.io.InputStream open() {
+                                return new java.io.ByteArrayInputStream(bytes);
+                            }
+
+                            public long length() {
+                                return bytes.length;
+                            }
+                        }));
+            }
+            assertEquals("part 1", FileUtils.readFileToString(new File(stepFolder, "000001.part"), java.nio.charset.StandardCharsets.UTF_8));
+            assertEquals("part 2", FileUtils.readFileToString(new File(stepFolder, "000002.part"), java.nio.charset.StandardCharsets.UTF_8));
+
+            localTerraformState.deleteOutputParts("orgParts", "jobParts", "stepParts");
+
+            assertFalse(stepFolder.exists());
+        } finally {
+            FileUtils.deleteQuietly(new File(FileUtils.getUserDirectoryPath().concat(
+                    FilenameUtils.separatorsToSystem("/.terraform-spring-boot/local/output/orgParts"))));
+        }
+    }
+
+    @Test
     void testSpoolContextPatch() throws IOException {
         String organizationId = "org1";
         String jobId = "job1";

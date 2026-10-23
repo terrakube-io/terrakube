@@ -118,6 +118,56 @@ class TerraformOutputControllerTest {
     }
 
     @Test
+    void marksArchivedPartsOfAStepWithoutItsFinalOutputAsIncompleteAndNotCacheable() {
+        when(streamingService.getCurrentLogs("s", "")).thenReturn("");
+        when(stepLogService.resolve("o", "j", "s")).thenReturn(StepLogService.StepLog.incompleteCached("partial".getBytes()));
+
+        ResponseEntity<?> response = controller.getFile("o", "j", "s", null, null);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals("true", response.getHeaders().getFirst("X-Terrakube-Output-Incomplete"));
+        assertEquals("no-store", response.getHeaders().getCacheControl());
+        assertEquals("X-Terrakube-Output-Incomplete", response.getHeaders().getFirst(HttpHeaders.ACCESS_CONTROL_EXPOSE_HEADERS));
+        assertEquals("partial", new String((byte[]) response.getBody()));
+    }
+
+    @Test
+    void aRangeOfIncompleteOutputKeepsTheMarker() {
+        when(streamingService.getCurrentLogs("s", "")).thenReturn("");
+        when(stepLogService.resolve("o", "j", "s")).thenReturn(StepLogService.StepLog.incompleteCached("0123456789".getBytes()));
+
+        ResponseEntity<?> response = controller.getFile("o", "j", "s", "bytes=-3", null);
+
+        assertEquals(HttpStatus.PARTIAL_CONTENT, response.getStatusCode());
+        assertEquals("true", response.getHeaders().getFirst("X-Terrakube-Output-Incomplete"));
+        assertEquals("789", new String((byte[]) response.getBody()));
+    }
+
+    @Test
+    void largeIncompleteOutputIsStreamedFromTheParts() {
+        when(streamingService.getCurrentLogs("s", "")).thenReturn("");
+        when(stepLogService.resolve("o", "j", "s")).thenReturn(StepLogService.StepLog.incompleteStreamable(50_000_000L));
+        when(stepLogService.openStream(eq("o"), eq("j"), eq("s"), any(), eq(true)))
+                .thenReturn(StepOutputStream.of(new ByteArrayInputStream("joined".getBytes()), 6, 50_000_000L));
+
+        ResponseEntity<?> response = controller.getFile("o", "j", "s", null, null);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals("true", response.getHeaders().getFirst("X-Terrakube-Output-Incomplete"));
+        assertEquals("no-store", response.getHeaders().getCacheControl());
+    }
+
+    @Test
+    void completeOutputCarriesNoIncompleteMarker() {
+        when(streamingService.getCurrentLogs("s", "")).thenReturn("");
+        when(stepLogService.resolve("o", "j", "s")).thenReturn(StepLogService.StepLog.cached("done".getBytes()));
+
+        ResponseEntity<?> response = controller.getFile("o", "j", "s", null, null);
+
+        assertNull(response.getHeaders().getFirst("X-Terrakube-Output-Incomplete"));
+    }
+
+    @Test
     void servesLiveRedisLogsWithNoStoreWhenStreamHasData() {
         when(streamingService.getCurrentLogs("s", "")).thenReturn("live line\n");
 
@@ -155,7 +205,7 @@ class TerraformOutputControllerTest {
     void rangeAgainstLargeStreamableObjectDelegatesToOpenStreamWithParsedRange() {
         when(streamingService.getCurrentLogs("s", "")).thenReturn("");
         when(stepLogService.resolve("o", "j", "s")).thenReturn(StepLogService.StepLog.streamable(50_000_000L));
-        when(stepLogService.openStream(eq("o"), eq("j"), eq("s"), any()))
+        when(stepLogService.openStream(eq("o"), eq("j"), eq("s"), any(), eq(false)))
                 .thenReturn(StepOutputStream.partial(
                         new ByteArrayInputStream("tail".getBytes()), 4,
                         "bytes 49999996-49999999/50000000", 50_000_000L));

@@ -186,9 +186,19 @@ public class UpdateJobStatusImpl implements UpdateJobStatus {
     }
 
     private void updateStepStatus(boolean status, String organizationId, String jobId, String stepId, String jobOutput, StepOutputBuffer jobOutputBuffer, String jobErrorOutput, String deliveryState, Long deliveryRevision) {
+        // The parts written while the step ran are only for a step that never gets here. Stop them before
+        // the final upload, which has the whole output, and remove them once it has succeeded.
+        int archivedParts = jobOutputBuffer != null ? jobOutputBuffer.finishArchiving() : 0;
         String output = jobOutputBuffer != null
                 ? this.terraformOutput.saveBufferedOutput(organizationId, jobId, stepId, jobOutputBuffer, jobErrorOutput)
                 : this.terraformOutput.saveOutput(organizationId, jobId, stepId, jobOutput, jobErrorOutput);
+        if (archivedParts > 0) {
+            try {
+                this.terraformOutput.deleteOutputParts(organizationId, jobId, stepId);
+            } catch (RuntimeException e) {
+                log.warn("Could not delete the output parts of step {}: {}", stepId, e.getMessage());
+            }
+        }
         String stepStatus = status ? "completed" : "failed";
 
         StepDeliveryAttributes stepAttributes = new StepDeliveryAttributes();
