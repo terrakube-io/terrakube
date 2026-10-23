@@ -497,4 +497,94 @@ public class EphemeralExecutorServiceTest {
         ExecutionException thrown = assertThrows(ExecutionException.class, () -> subject().send(job(), context()));
         assertFalse(thrown instanceof ExecutorUnavailableException);
     }
+
+    @Test
+    public void mountsSecretAsEphemeralEmptyDir() throws ExecutionException {
+        config.setEmptyDirSecret(true);
+
+        subject().send(job(), context());
+
+        verify(namespaced, times(1)).resource(job.capture());
+        PodSpec podSpec = job.getValue().getSpec().getTemplate().getSpec();
+        Container container = podSpec.getContainers().getFirst();
+
+        // 1. Secrets must NOT be present in envFrom
+        assertTrue(container.getEnvFrom().isEmpty(), "Secrets must not be present in envFrom when emptyDirSecret is true");
+
+        // 2. ExecutorSecretsDirectory env var must be set
+        HashMap<String, String> envMap = envVarsToMap(container.getEnv());
+        assertEquals("/etc/terrakube/secrets", envMap.get("ExecutorSecretsDirectory"));
+
+        // 3. Container mounts writable emptyDir at /etc/terrakube/secrets
+        VolumeMount secretMount = container.getVolumeMounts().stream()
+                .filter(m -> "/etc/terrakube/secrets".equals(m.getMountPath()))
+                .findFirst()
+                .orElse(null);
+        assertNotNull(secretMount);
+        assertEquals("writable-executor-secrets", secretMount.getName());
+
+        // 4. Init container is present and copies secrets
+        assertNotNull(podSpec.getInitContainers());
+        assertEquals(1, podSpec.getInitContainers().size());
+        Container initContainer = podSpec.getInitContainers().getFirst();
+        assertEquals("copy-executor-secrets", initContainer.getName());
+        assertEquals("busybox:latest", initContainer.getImage());
+
+        // 5. Pod volumes include raw projected secret and memory-backed emptyDir
+        Volume rawVol = podSpec.getVolumes().stream()
+                .filter(v -> "raw-secret".equals(v.getName()))
+                .findFirst()
+                .orElse(null);
+        assertNotNull(rawVol);
+        assertNotNull(rawVol.getProjected());
+        assertEquals(1, rawVol.getProjected().getSources().size());
+        assertEquals("ze-secret", rawVol.getProjected().getSources().getFirst().getSecret().getName());
+
+        Volume writableVol = podSpec.getVolumes().stream()
+                .filter(v -> "writable-executor-secrets".equals(v.getName()))
+                .findFirst()
+                .orElse(null);
+        assertNotNull(writableVol);
+        assertNotNull(writableVol.getEmptyDir());
+        assertEquals("Memory", writableVol.getEmptyDir().getMedium());
+    }
+
+    @Test
+    public void mountsMultipleSecretsAsEphemeralEmptyDir() throws ExecutionException {
+        config.setEmptyDirSecret(true);
+        config.setSecret(List.of("secret-one", "secret-two"));
+
+        subject().send(job(), context());
+
+        verify(namespaced, times(1)).resource(job.capture());
+        PodSpec podSpec = job.getValue().getSpec().getTemplate().getSpec();
+        Container container = podSpec.getContainers().getFirst();
+
+        assertTrue(container.getEnvFrom().isEmpty());
+
+        Volume rawVol = podSpec.getVolumes().stream()
+                .filter(v -> "raw-secret".equals(v.getName()))
+                .findFirst()
+                .orElse(null);
+        assertNotNull(rawVol);
+        assertNotNull(rawVol.getProjected());
+        assertEquals(2, rawVol.getProjected().getSources().size());
+        assertEquals("secret-one", rawVol.getProjected().getSources().get(0).getSecret().getName());
+        assertEquals("secret-two", rawVol.getProjected().getSources().get(1).getSecret().getName());
+    }
+
+    @Test
+    public void mountsEmptySecretListWithEmptyDirSecretCleanly() throws ExecutionException {
+        config.setEmptyDirSecret(true);
+        config.setSecret(List.of());
+
+        subject().send(job(), context());
+
+        verify(namespaced, times(1)).resource(job.capture());
+        PodSpec podSpec = job.getValue().getSpec().getTemplate().getSpec();
+        Container container = podSpec.getContainers().getFirst();
+
+        assertTrue(container.getEnvFrom().isEmpty());
+        assertTrue(podSpec.getInitContainers() == null || podSpec.getInitContainers().isEmpty());
+    }
 }
