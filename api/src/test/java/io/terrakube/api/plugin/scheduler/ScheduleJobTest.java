@@ -1,5 +1,6 @@
 package io.terrakube.api.plugin.scheduler;
 
+import io.terrakube.api.plugin.workspace.WorkspaceJobStatusService;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
@@ -53,6 +54,7 @@ import io.terrakube.api.plugin.scheduler.job.tcl.model.Command;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.Flow;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.FlowType;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.ScheduleTemplate;
+import io.terrakube.api.plugin.scheduler.inactive.InactiveJobsProperties;
 import io.terrakube.api.plugin.softdelete.SoftDeleteService;
 import io.terrakube.api.plugin.variable.IncompleteVariableException;
 import io.terrakube.api.plugin.variable.InvalidVariableCategoryException;
@@ -112,6 +114,8 @@ public class ScheduleJobTest {
     DispatchRetryProperties dispatchRetryProperties;
     DispatchRetryCalculator dispatchRetryCalculator;
     DispatchRetryMetrics dispatchRetryMetrics;
+    InactiveJobsProperties inactiveJobsProperties = new InactiveJobsProperties();
+    JobStatusChangeService jobStatusChangeService = mock(JobStatusChangeService.class);
 
     UUID stepId = UUID.randomUUID();
 
@@ -136,6 +140,8 @@ public class ScheduleJobTest {
                 new FailUnkownMethod<WorkspaceVariableValidationService>());
         lenient().doNothing().when(workspaceVariableValidationService).validateWorkspaceVariables(any());
         policyApprovalGuard = mock(PolicyApprovalGuard.class);
+        lenient().doReturn(Optional.empty()).when(jobRepository).findFirstByWorkspaceAndIdNotAndStatusInOrderByIdAsc(any(), anyInt(), any());
+        lenient().doReturn(Optional.empty()).when(jobRepository).findFirstByWorkspaceOrderByIdDesc(any());
         lenient().doReturn(Optional.empty()).when(prCommentService).extractRunSummary(any());
 
         redisTemplate = mock(RedisTemplate.class, new FailUnkownMethod<RedisTemplate>());
@@ -195,11 +201,14 @@ public class ScheduleJobTest {
                 workspaceVariableValidationService,
                 policyApprovalGuard,
                 jobNotificationTrigger,
+                new WorkspaceJobStatusService(jobRepository, workspaceRepository),
                 jobReconciliationService,
                 reconciliationProperties,
                 dispatchRetryProperties,
                 dispatchRetryCalculator,
-                dispatchRetryMetrics);
+                dispatchRetryMetrics,
+                inactiveJobsProperties,
+                jobStatusChangeService);
     }
 
     private Job job(JobStatus status) {
@@ -235,6 +244,9 @@ public class ScheduleJobTest {
         Job job = job(JobStatus.pending);
         job.setCreatedDate(DateUtils.addDays(new Date(System.currentTimeMillis()), -1));
 
+        doReturn(Optional.of(Collections.emptyList())).when(jobRepository)
+                .findByWorkspaceAndStatusNotInAndIdLessThan(any(Workspace.class), anyList(), anyInt());
+        doReturn(Optional.empty()).when(jobRepository).findFirstByWorkspaceAndIdLessThanOrderByUpdatedDateDesc(any(), anyInt());
         doReturn(job).when(jobRepository).save(any());
         doReturn(job.getStep()).when(stepRepository).findByJobId(anyInt());
         doReturn(null).when(stepRepository).save(any());
@@ -242,8 +254,68 @@ public class ScheduleJobTest {
 
         Assertions.assertTrue(subject().runExecution(job));
 
-        verify(gitLabWebhookService, times(1)).sendCommitStatus(job, JobStatus.unknown, null);
+        verify(gitLabWebhookService, times(1)).sendCommitStatus(job, JobStatus.failed, null);
         Assertions.assertEquals(JobStatus.failed, job.getStatus());
+    }
+
+    @Test
+    public void expiredJobsRunTheStatusChangeFollowUpAndRecordWhy() {
+        Job job = job(JobStatus.pending);
+        job.setCreatedDate(DateUtils.addDays(new Date(System.currentTimeMillis()), -1));
+
+        doReturn(Optional.of(Collections.emptyList())).when(jobRepository)
+                .findByWorkspaceAndStatusNotInAndIdLessThan(any(Workspace.class), anyList(), anyInt());
+        doReturn(Optional.empty()).when(jobRepository).findFirstByWorkspaceAndIdLessThanOrderByUpdatedDateDesc(any(), anyInt());
+        doReturn(job).when(jobRepository).save(any());
+        doReturn(job.getStep()).when(stepRepository).findByJobId(anyInt());
+        doReturn(null).when(stepRepository).save(any());
+        doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any(), any());
+
+        Assertions.assertTrue(subject().runExecution(job));
+
+        verify(jobStatusChangeService, times(1)).afterStatusChanged(job);
+        Assertions.assertTrue(job.getOutput().contains("Closed by Terrakube: The run did not finish within 6 hours"));
+    }
+
+    @Test
+    public void aRunWaitingForApprovalIsNotClosedByTheSixHourLimit() {
+        Job job = job(JobStatus.waitingApproval);
+        job.setCreatedDate(DateUtils.addDays(new Date(System.currentTimeMillis()), -2));
+
+        org.mockito.Mockito.lenient().doReturn(Optional.of(Collections.emptyList()))
+                .when(jobRepository)
+                .findByWorkspaceAndStatusNotInAndIdLessThan(any(Workspace.class), anyList(), anyInt());
+        org.mockito.Mockito.lenient().doReturn(Collections.emptyList()).when(globalVarRepository).findByOrganization(any());
+        org.mockito.Mockito.lenient().doReturn(Optional.of(Collections.emptyList())).when(variableRepository).findByWorkspace(any());
+        org.mockito.Mockito.lenient().doReturn(false).when(tclService).isTemplatePlanOnly(any());
+        org.mockito.Mockito.lenient().doReturn(job.getStep()).when(stepRepository).findByJobId(anyInt());
+        org.mockito.Mockito.lenient().doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
+
+        subject().runExecution(job);
+
+        Assertions.assertEquals(JobStatus.waitingApproval, job.getStatus());
+        verify(jobStatusChangeService, never()).afterStatusChanged(any());
+    }
+
+    @Test
+    public void aRunWaitingBehindAnUnfinishedRunIsNotClosedByTheSixHourLimit() {
+        Job job = job(JobStatus.pending);
+        job.setCreatedDate(DateUtils.addDays(new Date(System.currentTimeMillis()), -2));
+        Job inFront = job(JobStatus.waitingApproval);
+
+        org.mockito.Mockito.lenient().doReturn(Optional.of(List.of(inFront)))
+                .when(jobRepository)
+                .findByWorkspaceAndStatusNotInAndIdLessThan(any(Workspace.class), anyList(), anyInt());
+        org.mockito.Mockito.lenient().doReturn(Collections.emptyList()).when(globalVarRepository).findByOrganization(any());
+        org.mockito.Mockito.lenient().doReturn(Optional.of(Collections.emptyList())).when(variableRepository).findByWorkspace(any());
+        org.mockito.Mockito.lenient().doReturn(false).when(tclService).isTemplatePlanOnly(any());
+        org.mockito.Mockito.lenient().doReturn(job.getStep()).when(stepRepository).findByJobId(anyInt());
+        org.mockito.Mockito.lenient().doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
+
+        subject().runExecution(job);
+
+        Assertions.assertEquals(JobStatus.pending, job.getStatus());
+        verify(jobStatusChangeService, never()).afterStatusChanged(any());
     }
 
     @Test
@@ -251,6 +323,9 @@ public class ScheduleJobTest {
         Job job = job(JobStatus.pending);
         job.setCreatedDate(DateUtils.addDays(new Date(System.currentTimeMillis()), -1));
 
+        doReturn(Optional.of(Collections.emptyList())).when(jobRepository)
+                .findByWorkspaceAndStatusNotInAndIdLessThan(any(Workspace.class), anyList(), anyInt());
+        doReturn(Optional.empty()).when(jobRepository).findFirstByWorkspaceAndIdLessThanOrderByUpdatedDateDesc(any(), anyInt());
         doReturn(job).when(jobRepository).save(any());
         doReturn(job.getStep()).when(stepRepository).findByJobId(anyInt());
         doReturn(null).when(stepRepository).save(any());

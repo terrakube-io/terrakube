@@ -356,11 +356,13 @@ public class PlanStructuredOutputService {
     // etc.) while restoring the full diff for the console/raw-log/PR-comment consumers that
     // depend on it - PrCommentService.fetchStepOutputText in particular reads this same step's
     // console output expecting exactly this content.
-    String getPlanAsHumanText(TerraformJob terraformJob, File terraformWorkingDir) throws IOException, InterruptedException, ExecutionException {
+    //
+    // The text is handed to the consumer line by line as terraform prints it, so a plan with a very
+    // large diff is never collected in one String here. Returns false when it could not be rendered.
+    boolean streamPlanAsHumanText(TerraformJob terraformJob, File terraformWorkingDir, Consumer<String> lines) throws IOException, InterruptedException, ExecutionException {
         if (terraformJob == null) {
-            return null;
+            return false;
         }
-        TextStringBuilder planOutput = new TextStringBuilder();
         TextStringBuilder planErrorOutput = new TextStringBuilder();
 
         TerraformProcessData terraformProcessData = TerraformProcessData
@@ -372,21 +374,19 @@ public class PlanStructuredOutputService {
                 .terraformEnvironmentVariables(terraformJob.getEnvironmentVariables())
                 .build();
 
-        // appendln (not append): showPlan's Consumer<String> is invoked once per line, same as
-        // plan()/apply()'s JSON line consumers - append with no separator would concatenate every
-        // line together with nothing between them, producing one unreadable run-on line.
-        boolean success = terraformClient.showPlan(terraformProcessData, (Consumer<String>) planOutput::appendln, (Consumer<String>) planErrorOutput::appendln).get();
+        // showPlan's Consumer<String> is invoked once per line, same as plan()/apply()'s JSON line consumers.
+        boolean success = terraformClient.showPlan(terraformProcessData, lines, (Consumer<String>) planErrorOutput::appendln).get();
 
         if (!success) {
             log.warn("Unable to render human-readable plan for job {} step {}. Error: {}", terraformJob.getJobId(), terraformJob.getStepId(), planErrorOutput);
-            return null;
+            return false;
         }
 
-        return planOutput.toString();
+        return true;
     }
 
     /**
-     * Persists {@link #getPlanAsHumanText}'s text under its own context key, separately from the
+     * Persists the rendered plan text (see {@link #streamPlanAsHumanText}, bounded by {@link RenderedPlanText}) under its own context key, separately from the
      * console stream it's also written to, so PrCommentService can read just the diff (#3673).
      * A failure here is logged and swallowed - the console copy is unaffected either way.
      */

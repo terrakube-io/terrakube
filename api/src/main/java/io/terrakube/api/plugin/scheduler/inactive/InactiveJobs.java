@@ -1,14 +1,16 @@
 package io.terrakube.api.plugin.scheduler.inactive;
 
 import io.terrakube.api.plugin.vcs.provider.azdevops.AzDevOpsWebhookService;
+import io.terrakube.api.plugin.scheduler.JobStatusChangeService;
 import io.terrakube.api.plugin.vcs.provider.gitlab.GitLabWebhookService;
 import io.terrakube.api.rs.vcs.Vcs;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.time.DateUtils;
+import org.quartz.DisallowConcurrentExecution;
 import org.quartz.JobExecutionContext;
 import org.quartz.JobExecutionException;
 import org.quartz.JobKey;
+import org.springframework.dao.DataAccessException;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,15 +22,23 @@ import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.job.JobVia;
 import io.terrakube.api.rs.job.step.Step;
 
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.Date;
+import java.util.Optional;
 
 import static io.terrakube.api.plugin.scheduler.ScheduleJobService.PREFIX_JOB_CONTEXT;
 
+// One pass at a time, also across API replicas (the Quartz store is shared). The per-job lock below covers
+// the other jobs that touch the same run.
+@DisallowConcurrentExecution
 @Service
 @Slf4j
 @AllArgsConstructor
 public class InactiveJobs implements org.quartz.Job {
+
+    private static final String EXECUTION_LOCK_PREFIX = "job-execution-lock:";
+    private static final Duration EXECUTION_LOCK_TTL = Duration.ofSeconds(90);
 
     private final GitLabWebhookService gitLabWebhookService;
     private final JobRepository jobRepository;
@@ -36,6 +46,8 @@ public class InactiveJobs implements org.quartz.Job {
     private final GitHubWebhookService gitHubWebhookService;
     private final AzDevOpsWebhookService azDevOpsWebhookService;
     private final StepRepository stepRepository;
+    private final InactiveJobsProperties properties;
+    private final JobStatusChangeService jobStatusChangeService;
 
     @Transactional
     @Override
@@ -50,29 +62,35 @@ public class InactiveJobs implements org.quartz.Job {
                 continue;
             }
 
-            Date currentTime = new Date(System.currentTimeMillis());
-            Date jobExpirationDate = DateUtils.addHours(job.getCreatedDate(), 6);
-            log.info("Inactive Job {} should be completed before {}, current time {}", job.getId(), jobExpirationDate, currentTime);
-            if (!currentTime.after(jobExpirationDate)) {
+            Optional<InactiveJobsProperties.Expiry> expiry = properties.expiryOf(job, new Date(System.currentTimeMillis()), jobRepository);
+            if (expiry.isEmpty()) {
                 continue;
             }
 
+            // The same per-job lock ScheduleJob and the reconciliation sweep take: a run that is being
+            // dispatched or reconciled right now is not torn down under them.
+            if (!acquireExecutionLock(job.getId())) {
+                log.info("Job {} is being processed by another worker, it is checked again on the next pass", job.getId());
+                continue;
+            }
             try {
-                closeExpiredJob(job, jobExecutionContext);
+                log.warn("Closing Job {} as {}: {}", job.getId(), expiry.get().finalStatus(), expiry.get().reason());
+                closeExpiredJob(job, expiry.get(), jobExecutionContext);
             } catch (Exception e) {
                 log.error("Failed to close inactive job {}", job.getId(), e);
+            } finally {
+                releaseExecutionLock(job.getId());
             }
-
-            log.warn("Closing Job {}", job.getId());
         }
     }
 
-    private void closeExpiredJob(Job job, JobExecutionContext jobExecutionContext) throws Exception {
-        log.error("Job has been running for more than 6 hours, cancelling running job {}", job.getId());
-        jobRepository.updateStatusById(JobStatus.failed, job.getId());
+    private void closeExpiredJob(Job job, InactiveJobsProperties.Expiry expiry, JobExecutionContext jobExecutionContext) throws Exception {
+        expiry.applyTo(job);
+        jobRepository.save(job);
         redisTemplate.delete(String.valueOf(job.getId()));
-
-        failPendingSteps(job);
+        // Steps first: the failure summary in the notification is read from the step that failed.
+        failPendingSteps(job, expiry.finalStatus());
+        jobStatusChangeService.afterStatusChanged(job);
 
         if (job.getWorkspace() == null) {
             log.warn("Job {} belongs to a deleted or filtered workspace, skipping VCS status update", job.getId());
@@ -97,16 +115,16 @@ public class InactiveJobs implements org.quartz.Job {
         switch (workspaceVcs.getVcsType()) {
             case GITHUB:
                 log.info("Updating VCS information for GITHUB on job {}", job.getId());
-                gitHubWebhookService.sendCommitStatus(job, JobStatus.unknown, null);
+                gitHubWebhookService.sendCommitStatus(job, expiry.finalStatus(), null);
                 break;
             case GITLAB:
                 log.info("Updating VCS information for GITLAB on job {}", job.getId());
-                gitLabWebhookService.sendCommitStatus(job, JobStatus.unknown, null);
+                gitLabWebhookService.sendCommitStatus(job, expiry.finalStatus(), null);
                 break;
             case AZURE_DEVOPS:
             case AZURE_SP_MI:
                 log.info("Updating VCS information for AZURE_DEVOPS on job {}", job.getId());
-                azDevOpsWebhookService.sendCommitStatus(job, JobStatus.unknown, null);
+                azDevOpsWebhookService.sendCommitStatus(job, expiry.finalStatus(), null);
                 break;
             default:
                 break;
@@ -115,11 +133,31 @@ public class InactiveJobs implements org.quartz.Job {
         jobExecutionContext.getScheduler().deleteJob(new JobKey(PREFIX_JOB_CONTEXT + job.getId()));
     }
 
-    private void failPendingSteps(Job job) {
-        log.warn("Cancelling pending steps");
+    // Fails closed like ScheduleJob.acquireExecutionLock: an unreachable Redis means "skip this job this pass".
+    private boolean acquireExecutionLock(int jobId) {
+        try {
+            Boolean acquired = redisTemplate.opsForValue()
+                    .setIfAbsent(EXECUTION_LOCK_PREFIX + jobId, "1", EXECUTION_LOCK_TTL);
+            return Boolean.TRUE.equals(acquired);
+        } catch (DataAccessException e) {
+            log.warn("Could not reach Redis for the execution lock on job {}: {}", jobId, e.getMessage());
+            return false;
+        }
+    }
+
+    private void releaseExecutionLock(int jobId) {
+        try {
+            redisTemplate.delete(EXECUTION_LOCK_PREFIX + jobId);
+        } catch (DataAccessException e) {
+            log.warn("Could not release the execution lock on job {} (its TTL clears it): {}", jobId, e.getMessage());
+        }
+    }
+
+    private void failPendingSteps(Job job, JobStatus finalStatus) {
+        log.warn("Closing pending steps as {}", finalStatus);
         for (Step step : stepRepository.findByJobId(job.getId())) {
             if (step.getStatus().equals(JobStatus.pending) || step.getStatus().equals(JobStatus.running)) {
-                step.setStatus(JobStatus.failed);
+                step.setStatus(finalStatus);
                 stepRepository.save(step);
             }
         }

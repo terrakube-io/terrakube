@@ -1,5 +1,5 @@
 import { ArrowDownOutlined, ArrowUpOutlined, CopyOutlined, DeleteOutlined, PlusOutlined } from "@ant-design/icons";
-import { Button, Checkbox, Form, Popconfirm, Segmented, Select, Spin, Switch, message } from "antd";
+import { Alert, Button, Checkbox, Form, Popconfirm, Segmented, Select, Spin, Switch, message } from "antd";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { v7 as uuid } from "uuid";
@@ -121,6 +121,8 @@ export const WorkspaceWebhook = ({
   const [webhookEnabled, setWebhookEnabled] = useState(Boolean(webhookId));
   const [remoteHookId, setRemoteHookId] = useState("");
   const [migratedV2, setMigratedV2] = useState(false);
+  // Why the last background sync of the shared repository webhook failed, if it did.
+  const [syncError, setSyncError] = useState("");
   // Only for a webhook that does not exist yet: create it as the shared repository webhook straight away.
   const [createShared, setCreateShared] = useState(false);
   const [expanded, setExpanded] = useState<string[]>([]);
@@ -139,6 +141,7 @@ export const WorkspaceWebhook = ({
       .then(([webhookRes, eventsRes]) => {
         setRemoteHookId(webhookRes.data.data.attributes.remoteHookId);
         setMigratedV2(webhookRes.data.data.attributes.migratedV2 || false);
+        setSyncError(webhookRes.data.data.attributes.syncError || "");
         // Ascending, the order the API checks triggers in.
         const events: Trigger[] = eventsRes.data.data
           .sort((a: WebhookEvent, b: WebhookEvent) => a.attributes.priority - b.attributes.priority)
@@ -364,6 +367,14 @@ export const WorkspaceWebhook = ({
                   Share one webhook across this repository
                 </Checkbox>
               </Form.Item>
+            )}
+            {webhookEnabled && webhookId && migratedV2 && syncError && (
+              <Alert
+                type="warning"
+                showIcon
+                title="The repository webhook is not working"
+                description={`${syncError} Save the webhook again to try again.`}
+              />
             )}
             {webhookEnabled && webhookId && (
               <>

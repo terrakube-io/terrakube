@@ -685,6 +685,54 @@ describe("plan approval attribution", () => {
   });
 });
 
+describe("run closed by Terrakube", () => {
+  const mockJob = (output?: string, status = "cancelled") => {
+    useStructuredOutputStreamMock.mockReturnValue(null);
+    sessionStorage.setItem("ORGANIZATION_ARCHIVE", "org-1");
+    getMock.mockImplementation((url: string) =>
+      Promise.resolve({
+        data: url.includes("/context/v1/")
+          ? {}
+          : {
+              data: { id: "7", attributes: { status, createdBy: "author@example.com", output } },
+              included: [],
+            },
+      })
+    );
+  };
+
+  it("shows why Terrakube closed the run", async () => {
+    mockJob("Closed by Terrakube: Approval was not given within 48 hours, the run was cancelled.");
+    render(<DetailsJob jobId="7" />);
+
+    expect(await screen.findByText("Run closed by Terrakube")).toBeInTheDocument();
+    expect(screen.getByText("Approval was not given within 48 hours, the run was cancelled.")).toBeInTheDocument();
+  });
+
+  it("shows the notice for a run that failed", async () => {
+    mockJob("Closed by Terrakube: The run did not finish within 6 hours and was closed.", "failed");
+    render(<DetailsJob jobId="7" />);
+
+    expect(await screen.findByText("Run closed by Terrakube")).toBeInTheDocument();
+  });
+
+  it("shows no notice for a run that is not over, whatever its output says", async () => {
+    mockJob("Closed by Terrakube: The run did not finish within 6 hours and was closed.", "completed");
+    render(<DetailsJob jobId="7" />);
+
+    await waitFor(() => expect(screen.getByText("Run #7")).toBeInTheDocument());
+    expect(screen.queryByText("Run closed by Terrakube")).not.toBeInTheDocument();
+  });
+
+  it("shows no notice for a run that was closed some other way", async () => {
+    mockJob("Step 1 completed");
+    render(<DetailsJob jobId="7" />);
+
+    await waitFor(() => expect(screen.getByText("Run #7")).toBeInTheDocument());
+    expect(screen.queryByText("Run closed by Terrakube")).not.toBeInTheDocument();
+  });
+});
+
 describe("run actions", () => {
   it("asks before approving, states what the plan destroys, then approves", async () => {
     useStructuredOutputStreamMock.mockReturnValue(null);
@@ -1215,5 +1263,53 @@ describe("DetailsJob run diagnostics and output completeness (#3693)", () => {
 
     await screen.findByRole("button", { name: /aws_instance\.web/i });
     expect(screen.queryByTestId("output-completeness")).not.toBeInTheDocument();
+  });
+});
+
+describe("DetailsJob job variables notice", () => {
+  beforeEach(() => {
+    useStructuredOutputStreamMock.mockReturnValue(null);
+  });
+
+  const mockJob = (attributes: Record<string, unknown>) => {
+    getMock.mockImplementation((url: string) => {
+      if (url.includes("/context/v1/")) {
+        return Promise.resolve({ data: {} });
+      }
+      return Promise.resolve({ data: { data: { id: "1", attributes }, included: [] } });
+    });
+  };
+
+  it("lists the names of the job variables a run was created with, and no values", async () => {
+    mockJob({ status: "completed", variableNames: ["image_tag", "region"] });
+    render(<DetailsJob jobId="1" />);
+    const summary = await screen.findByText("2 run variables");
+    expect(summary.closest("details")).not.toHaveAttribute("open");
+    expect(screen.getByText("image_tag")).toBeInTheDocument();
+    expect(screen.getByText("region")).toBeInTheDocument();
+  });
+
+  it("keeps all 100 variable names available within the disclosure", async () => {
+    const names = Array.from({ length: 100 }, (_, index) => `service_${index}_deployment_region`);
+    mockJob({ status: "completed", variableNames: names });
+    render(<DetailsJob jobId="1" />);
+    const summary = await screen.findByText("100 run variables");
+    expect(summary.closest("details")).not.toHaveAttribute("open");
+    expect(screen.getByRole("list", { name: "Run variable names", hidden: true }).children).toHaveLength(100);
+    expect(screen.getByText(names[99])).toBeInTheDocument();
+  });
+
+  it("uses a singular label for one variable", async () => {
+    mockJob({ status: "completed", variableNames: ["region"] });
+    render(<DetailsJob jobId="1" />);
+    expect(await screen.findByText("1 run variable")).toBeInTheDocument();
+  });
+
+  it.each([[undefined], [null], [[]]])("shows nothing when the run has no job variables (%p)", async (names) => {
+    mockJob({ status: "completed", variableNames: names });
+    render(<DetailsJob jobId="1" />);
+    await waitFor(() => expect(getMock).toHaveBeenCalled());
+    await waitFor(() => expect(screen.queryByText(/Loading|loading/)).not.toBeInTheDocument());
+    expect(screen.queryByText(/run variables?/)).not.toBeInTheDocument();
   });
 });

@@ -20,6 +20,10 @@ import org.springframework.stereotype.Component;
 public class StructuredOutputProperties {
 
     private int queueCapacity = 256;
+    // Estimated bytes the snapshots waiting to be persisted may hold together. When a new one does not
+    // fit, the oldest progress snapshots go first and a final one only after them. A single snapshot is
+    // always accepted, however large, so the final output of a step is not refused. 0 or less turns it off.
+    private long queueMaxBytes = 67_108_864L;
     private int maxPersistAttempts = 4;
     private long initialBackoffMs = 250;
     private long maxBackoffMs = 4000;
@@ -32,4 +36,6 @@ public class StructuredOutputProperties {
     private long recoveryInitialDelayMs = 15_000;
     private long recoveryMaxDelayMs = 60_000;
     private int recoveryMaxRetained = 64;
+    // The same budget for the snapshots retained for delayed recovery.
+    private long recoveryMaxRetainedBytes = 67_108_864L;
 }

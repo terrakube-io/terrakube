@@ -130,3 +130,15 @@ data.vault_kv_secret_v2.password: Read complete after 0s [id=shared/data/kv/cred
 
 No changes. Your infrastructure matches the configuration.
 ```
+
+## Project claim
+
+When the workspace belongs to a project, the JWT also carries a `terrakube_project_name` claim. You can bind on it in the JWT role to scope access by project, for example:
+
+```json
+"bound_claims": {
+  "terrakube_project_name": "my-project"
+}
+```
+
+The claim is only present when the workspace has a project, so a role that binds on it will reject tokens from workspaces that are not in that project.

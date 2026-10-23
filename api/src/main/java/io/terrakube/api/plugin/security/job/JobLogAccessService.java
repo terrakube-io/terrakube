@@ -1,6 +1,10 @@
 package io.terrakube.api.plugin.security.job;
 
-import io.terrakube.api.plugin.security.rbac.RbacService;
+import com.yahoo.elide.core.security.User;
+import io.terrakube.api.plugin.security.groups.GroupService;
+import io.terrakube.api.plugin.security.token.InternalTokenClassifier;
+import io.terrakube.api.plugin.security.token.InternalTokenType;
+import io.terrakube.api.plugin.security.user.AuthenticatedUser;
 import io.terrakube.api.repository.JobRepository;
 import io.terrakube.api.repository.StepRepository;
 import io.terrakube.api.repository.TeamRepository;
@@ -19,7 +23,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Collections;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Slf4j
@@ -35,19 +41,22 @@ public class JobLogAccessService {
     private final JobRepository jobRepository;
     private final StepRepository stepRepository;
     private final TeamRepository teamRepository;
-    private final RbacService rbacService;
+    private final GroupService groupService;
+    private final AuthenticatedUser authenticatedUser;
     private final String instanceOwner;
 
     public JobLogAccessService(
             JobRepository jobRepository,
             StepRepository stepRepository,
             TeamRepository teamRepository,
-            RbacService rbacService,
+            GroupService groupService,
+            AuthenticatedUser authenticatedUser,
             @Value("${io.terrakube.owner:}") String instanceOwner) {
         this.jobRepository = jobRepository;
         this.stepRepository = stepRepository;
         this.teamRepository = teamRepository;
-        this.rbacService = rbacService;
+        this.groupService = groupService;
+        this.authenticatedUser = authenticatedUser;
         this.instanceOwner = instanceOwner;
     }
 
@@ -95,60 +104,7 @@ public class JobLogAccessService {
             }
         }
 
-        // Internal service token has full access if genuine system token, or scoped if executor token
-        String iss = (String) jwt.getTokenAttributes().get("iss");
-        if ("TerrakubeInternal".equals(iss)) {
-            Object tokenJobId = jwt.getTokenAttributes().get("jobId");
-            if (tokenJobId != null && !String.valueOf(intJobId).equals(String.valueOf(tokenJobId))) {
-                log.warn("TerrakubeInternal token jobId {} does not match requested job {}", tokenJobId, intJobId);
-                return LogAccessResult.FORBIDDEN;
-            }
-            Object tokenWorkspaceId = jwt.getTokenAttributes().get("workspaceId");
-            if (tokenWorkspaceId != null && (job.getWorkspace() == null || !job.getWorkspace().getId().toString().equals(String.valueOf(tokenWorkspaceId)))) {
-                log.warn("TerrakubeInternal token workspaceId {} does not match job workspace", tokenWorkspaceId);
-                return LogAccessResult.FORBIDDEN;
-            }
-            return LogAccessResult.ALLOWED;
-        }
-
-        List<String> groups = extractGroups(jwt);
-
-        // Instance superuser has access across all organizations and jobs
-        if (instanceOwner != null && !instanceOwner.isBlank() && groups.contains(instanceOwner)) {
-            return LogAccessResult.ALLOWED;
-        }
-
-        // 1. Organization level check: any team member in the organization has read access to jobs
-        List<Team> teams = teamRepository.findAllByOrganizationIdAndNameIn(job.getOrganization().getId(), groups);
-        if (!teams.isEmpty()) {
-            return LogAccessResult.ALLOWED;
-        }
-
-        // 2. Workspace level check
-        Workspace workspace = job.getWorkspace();
-        if (workspace != null) {
-            List<Access> accessList = workspace.getAccess();
-            if (accessList != null) {
-                for (Access access : accessList) {
-                    if (groups.contains(access.getName())) {
-                        return LogAccessResult.ALLOWED;
-                    }
-                }
-            }
-
-            // 3. Project level check
-            Project project = workspace.getProject();
-            if (project != null && project.getProjectAccess() != null) {
-                for (ProjectAccess pa : project.getProjectAccess()) {
-                    if (groups.contains(pa.getName())) {
-                        return LogAccessResult.ALLOWED;
-                    }
-                }
-            }
-        }
-
-        log.warn("User with groups {} denied access to job {} in organization {}", groups, intJobId, organizationId);
-        return LogAccessResult.FORBIDDEN;
+        return authorize(jwt, job);
     }
 
     @Transactional(readOnly = true)
@@ -163,33 +119,30 @@ public class JobLogAccessService {
             return LogAccessResult.NOT_FOUND;
         }
 
-        // Internal service token has full access if genuine system token, or scoped if executor token
-        String iss = (String) jwt.getTokenAttributes().get("iss");
-        if ("TerrakubeInternal".equals(iss)) {
-            Object tokenJobId = jwt.getTokenAttributes().get("jobId");
-            if (tokenJobId != null && !String.valueOf(jobId).equals(String.valueOf(tokenJobId))) {
-                log.warn("TerrakubeInternal token jobId {} does not match requested job {}", tokenJobId, jobId);
-                return LogAccessResult.FORBIDDEN;
-            }
-            Object tokenWorkspaceId = jwt.getTokenAttributes().get("workspaceId");
-            if (tokenWorkspaceId != null && (job.getWorkspace() == null || !job.getWorkspace().getId().toString().equals(String.valueOf(tokenWorkspaceId)))) {
-                log.warn("TerrakubeInternal token workspaceId {} does not match job workspace", tokenWorkspaceId);
-                return LogAccessResult.FORBIDDEN;
-            }
+        return authorize(jwt, job);
+    }
+
+    // Who may read a job's context and logs, once the job (and the step) were found and belong together.
+    private LogAccessResult authorize(JwtAuthenticationToken jwt, Job job) {
+        Map<String, Object> claims = jwt.getTokenAttributes();
+        InternalTokenType tokenType = InternalTokenClassifier.classify(claims);
+        if (tokenType != InternalTokenType.NOT_INTERNAL) {
+            return authorizeInternal(tokenType, claims, job);
+        }
+
+        User user = new User(jwt);
+        List<String> groups = effectiveGroups(user);
+
+        // Instance superuser has access across all organizations and jobs
+        if (isInstanceOwner(user, claims, groups)) {
             return LogAccessResult.ALLOWED;
         }
 
-        List<String> groups = extractGroups(jwt);
-
-        // Instance superuser has access across all organizations and jobs
-        if (instanceOwner != null && !instanceOwner.isBlank()) {
-            Object email = jwt.getTokenAttributes().get("email");
-            if (instanceOwner.equals(email) || groups.contains(instanceOwner)) {
-                return LogAccessResult.ALLOWED;
-            }
+        if (groups.isEmpty()) {
+            return denied(claims, groups, job);
         }
 
-        // 1. Organization level check
+        // 1. Organization level check: any team member in the organization has read access to jobs
         if (job.getOrganization() != null) {
             List<Team> teams = teamRepository.findAllByOrganizationIdAndNameIn(job.getOrganization().getId(), groups);
             if (!teams.isEmpty()) {
@@ -220,7 +173,32 @@ public class JobLogAccessService {
             }
         }
 
-        log.warn("User with groups {} denied access to job {}", groups, jobId);
+        return denied(claims, groups, job);
+    }
+
+    // Internal tokens are told apart by what they are (InternalTokenClassifier), never by the issuer alone:
+    // * the executor service token reads and writes the context of any job (it is what the executor daemon
+    //   sends, with no job or workspace of its own);
+    // * a runner token is for one job of one workspace and has to say which job;
+    // * every other internal token (registry, unrecognised, legacy) has no access to a job's logs or context.
+    private LogAccessResult authorizeInternal(InternalTokenType tokenType, Map<String, Object> claims, Job job) {
+        if (tokenType == InternalTokenType.EXECUTOR_SERVICE) {
+            return LogAccessResult.ALLOWED;
+        }
+        if (tokenType == InternalTokenType.WORKSPACE_EXECUTOR) {
+            Object tokenJobId = claims.get("jobId");
+            if (tokenJobId == null || !String.valueOf(job.getId()).equals(String.valueOf(tokenJobId))) {
+                log.warn("Runner token for job {} denied access to job {}", tokenJobId, job.getId());
+                return LogAccessResult.FORBIDDEN;
+            }
+            Object tokenWorkspaceId = claims.get("workspaceId");
+            if (job.getWorkspace() == null || !job.getWorkspace().getId().toString().equals(String.valueOf(tokenWorkspaceId))) {
+                log.warn("Runner token workspaceId {} does not match the workspace of job {}", tokenWorkspaceId, job.getId());
+                return LogAccessResult.FORBIDDEN;
+            }
+            return LogAccessResult.ALLOWED;
+        }
+        log.warn("Internal token ({}, sub={}) denied access to job {}", tokenType, claims.get("sub"), job.getId());
         return LogAccessResult.FORBIDDEN;
     }
 
@@ -230,29 +208,58 @@ public class JobLogAccessService {
             return false;
         }
 
-        String iss = (String) jwt.getTokenAttributes().get("iss");
-        if ("TerrakubeInternal".equals(iss)) {
-            Object tokenJobId = jwt.getTokenAttributes().get("jobId");
-            if (tokenJobId != null) {
-                return String.valueOf(jobId).equals(String.valueOf(tokenJobId));
-            }
+        Map<String, Object> claims = jwt.getTokenAttributes();
+        InternalTokenType tokenType = InternalTokenClassifier.classify(claims);
+        if (tokenType == InternalTokenType.EXECUTOR_SERVICE) {
             return true;
         }
-
-        List<String> groups = extractGroups(jwt);
-        if (instanceOwner != null && !instanceOwner.isBlank()) {
-            Object email = jwt.getTokenAttributes().get("email");
-            if (instanceOwner.equals(email) || groups.contains(instanceOwner)) {
-                return true;
-            }
+        if (tokenType == InternalTokenType.WORKSPACE_EXECUTOR) {
+            Object tokenJobId = claims.get("jobId");
+            return tokenJobId != null && String.valueOf(jobId).equals(String.valueOf(tokenJobId));
+        }
+        if (tokenType != InternalTokenType.NOT_INTERNAL) {
+            return false;
         }
 
-        return false;
+        // A federated identity (GitHub Actions and the like) can read a job through its team but never
+        // writes its context, whatever claims the other provider put in the token.
+        User user = new User(jwt);
+        if (authenticatedUser.isFederatedAccount(user)) {
+            return false;
+        }
+
+        // The instance owner, by the groups of the token itself or by email.
+        return isInstanceOwner(user, claims, extractGroups(claims));
     }
 
+    // The groups the Elide checks use: the token's own groups plus the team of every federated credential the
+    // token matches. A GitHub OIDC token has no groups claim, so reading the claim alone denied an identity that
+    // JSON:API had already authorized for the same job.
+    private List<String> effectiveGroups(User user) {
+        return new ArrayList<>(groupService.getEffectiveGroups(user));
+    }
+
+    // The owner is a group, or an email for installations that name the owner that way. The email counts only for
+    // a token that is not matched by a federated credential: the other provider decides what its tokens say.
+    private boolean isInstanceOwner(User user, Map<String, Object> claims, List<String> groups) {
+        if (instanceOwner == null || instanceOwner.isBlank()) {
+            return false;
+        }
+        if (groups.contains(instanceOwner)) {
+            return true;
+        }
+        return instanceOwner.equals(claims.get("email")) && !authenticatedUser.isFederatedAccount(user);
+    }
+
+    private LogAccessResult denied(Map<String, Object> claims, List<String> groups, Job job) {
+        log.warn("Identity (iss={}, sub={}, groups={}) denied access to job {}", claims.get("iss"), claims.get("sub"), groups, job.getId());
+        return LogAccessResult.FORBIDDEN;
+    }
+
+    // Token groups only, for the check that must not see federated teams.
     @SuppressWarnings("unchecked")
-    private List<String> extractGroups(JwtAuthenticationToken jwt) {
-        Object groupsObj = jwt.getTokenAttributes().get("groups");
+    private List<String> extractGroups(Map<String, Object> claims) {
+        Object groupsObj = claims.get("groups");
         if (groupsObj instanceof List<?>) {
             return (List<String>) groupsObj;
         } else if (groupsObj instanceof String groupStr) {

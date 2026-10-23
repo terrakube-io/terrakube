@@ -50,7 +50,7 @@ public class LogsServiceRedis implements ProcessLogs {
             streamData.put("jobId", String.valueOf(jobId));
             streamData.put("stepId", stepId);
             streamData.put("lineNumber", String.valueOf(lineNumber));
-            streamData.put("output", output);
+            streamData.put("output", LiveLogLine.cap(output, properties.getLiveLineMaxBytes()));
 
             redisTemplate.opsForStream().add(jobId.toString(), streamData, trimOptions());
         } catch (Exception ex) {
@@ -70,6 +70,11 @@ public class LogsServiceRedis implements ProcessLogs {
         } catch (Exception ex) {
             log.error("Could not send structured update to Redis for Job {}: {}", jobId, ex.getMessage());
         }
+    }
+
+    @Override
+    public boolean echoToServiceLog() {
+        return properties.isEchoToServiceLog();
     }
 
     @Override

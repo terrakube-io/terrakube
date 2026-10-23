@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.text.TextStringBuilder;
+import io.terrakube.executor.service.logs.StepOutputBuffer;
 import io.terrakube.executor.configuration.ExecutorFlagsProperties;
 import io.terrakube.executor.service.mode.TerraformJob;
 import io.terrakube.executor.service.scripts.ScriptEngineService;
@@ -28,6 +29,7 @@ import java.io.*;
 import java.nio.charset.Charset;
 import java.util.function.Consumer;
 
+import io.terrakube.executor.service.logs.ExecutorLogsProperties;
 import io.terrakube.executor.service.logs.LogsConsumer;
 import io.terrakube.executor.service.logs.ProcessLogs;
 import io.terrakube.executor.service.opa.OpaExecutorService;
@@ -52,6 +54,12 @@ public class ExecutorJobImpl implements ExecutorJob {
     OpaExecutorService opaExecutorService;
     ProcessLogs logsService;
     WorkspaceSecurity workspaceSecurity;
+    private ExecutorLogsProperties logsProperties = new ExecutorLogsProperties();
+
+    @Autowired(required = false)
+    void setLogsProperties(ExecutorLogsProperties logsProperties) {
+        this.logsProperties = logsProperties;
+    }
 
     public ExecutorJobImpl(
             SetupWorkspace setupWorkspace,
@@ -250,7 +258,7 @@ public class ExecutorJobImpl implements ExecutorJob {
             case "customScripts":
             case "approval":
                 log.info("Execute Groovy Script for Organization {} Workspace {} ", terraformJob.getOrganizationId(), terraformJob.getWorkspaceId());
-                TextStringBuilder scriptOutput = new TextStringBuilder();
+                StepOutputBuffer scriptOutput = StepOutputBuffer.forStep(logsProperties.getStepOutputMemoryBytes(), terraformWorkingDir);
                 TextStringBuilder scriptErrorOutput = new TextStringBuilder();
                 Consumer<String> output;
                 if (logsService != null) {
@@ -263,12 +271,25 @@ public class ExecutorJobImpl implements ExecutorJob {
                             .build();
                 } else {
                     output = outputScripts -> {
-                        log.info(outputScripts);
+                        if (logsProperties.isEchoToServiceLog()) {
+                            log.info(outputScripts);
+                        }
                         scriptOutput.appendln(outputScripts);
                     };
                 }
-                boolean executionSuccess = scriptEngineService.execute(terraformJob, terraformJob.getCommandList(), terraformWorkingDir, output);
-                terraformResult.setOutputLog(scriptOutput.toString());
+                boolean executionSuccess;
+                boolean handedOver = false;
+                try {
+                    executionSuccess = scriptEngineService.execute(terraformJob, terraformJob.getCommandList(), terraformWorkingDir, output);
+                    terraformResult.setOutputLog("");
+                    terraformResult.setOutputBuffer(scriptOutput);
+                    handedOver = true;
+                } finally {
+                    // Also for an Error: the buffer may already be a file on the scratch disk.
+                    if (!handedOver) {
+                        scriptOutput.close();
+                    }
+                }
                 terraformResult.setOutputErrorLog(scriptErrorOutput.toString());
                 terraformResult.setSuccessfulExecution(executionSuccess);
                 break;
@@ -281,7 +302,18 @@ public class ExecutorJobImpl implements ExecutorJob {
         }
 
         boolean executionSuccess = terraformResult.isSuccessfulExecution();
-        updateJobStatus.setCompletedStatus(executionSuccess, terraformResult.isPlan, terraformResult.getExitCode(), terraformJob, terraformResult.getOutputLog(), terraformResult.getOutputErrorLog(), terraformResult.getPlanFile(), commitId, terraformResult.isHasSoftMandatoryViolations(), terraformResult.getApprovalTeam(), terraformResult.getDeliveryState(), terraformResult.getDeliveryRevision());
+        StepOutputBuffer outputBuffer = terraformResult.getOutputBuffer();
+        try {
+            if (outputBuffer != null) {
+                updateJobStatus.setCompletedStatusWithOutput(executionSuccess, terraformResult.isPlan, terraformResult.getExitCode(), terraformJob, outputBuffer, terraformResult.getOutputErrorLog(), terraformResult.getPlanFile(), commitId, terraformResult.isHasSoftMandatoryViolations(), terraformResult.getApprovalTeam(), terraformResult.getDeliveryState(), terraformResult.getDeliveryRevision());
+            } else {
+                updateJobStatus.setCompletedStatus(executionSuccess, terraformResult.isPlan, terraformResult.getExitCode(), terraformJob, terraformResult.getOutputLog(), terraformResult.getOutputErrorLog(), terraformResult.getPlanFile(), commitId, terraformResult.isHasSoftMandatoryViolations(), terraformResult.getApprovalTeam(), terraformResult.getDeliveryState(), terraformResult.getDeliveryRevision());
+            }
+        } finally {
+            if (outputBuffer != null) {
+                outputBuffer.close();
+            }
+        }
     }
 
     private static String getCommitId(File workspaceFolder) {

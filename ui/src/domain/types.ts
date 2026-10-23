@@ -178,6 +178,8 @@ export type JobAttributes = {
   commitId: string;
   prNumber?: number;
   prCommentError?: string;
+  /** Names (never values) of the per-job Terraform variables the run was created with. */
+  variableNames?: string[] | null;
   /** Set only on a run started by a run trigger: the upstream run that fired it. */
   triggeredByJobId?: number;
   /** How many triggered runs deep this one is. Zero for a run nobody triggered. */
@@ -213,6 +215,8 @@ export type FlatJob = {
   via?: JobVia;
   prNumber?: number;
   prCommentError?: string;
+  /** Names (never values) of the per-job Terraform variables the run was created with. */
+  variableNames?: string[] | null;
   createdDate?: string;
   updatedDate?: string;
   templateReference?: string;
@@ -592,6 +596,8 @@ export type Webhook = {
 export type WebhookAttributes = {
   remoteHookId: string;
   migratedV2: boolean;
+  /** Why the last sync of the shared repository webhook failed. Empty when it worked. */
+  syncError?: string | null;
 };
 export enum WebhookEventType {
   PUSH = "PUSH",

@@ -84,4 +84,24 @@ class LogsServiceTest {
         verify(redisTemplate, never()).executePipelined(any(SessionCallback.class));
         verify(streamOps, times(2)).add(any(String.class), any(Map.class), any(XAddOptions.class));
     }
+
+    @Test
+    void aLineLongerThanTheLimitIsCutBeforeItIsWrittenToTheStream() {
+        when(redisTemplate.opsForStream()).thenReturn(streamOps);
+        when(redisTemplate.executePipelined(any(SessionCallback.class)))
+                .thenAnswer(inv -> {
+                    inv.<SessionCallback<?>>getArgument(0).execute(redisTemplate);
+                    return List.of();
+                });
+        LogsProperties props = new LogsProperties();
+        props.setAppendLineMaxBytes(100);
+        Log entry = logEntry(42);
+        entry.setOutput("q".repeat(150));
+
+        new LogsService(redisTemplate, props).appendLogs(List.of(entry));
+
+        ArgumentCaptor<Map<String, String>> written = ArgumentCaptor.forClass(Map.class);
+        verify(streamOps).add(eq("42"), written.capture(), any(XAddOptions.class));
+        assertTrue(written.getValue().get("output").startsWith("q".repeat(100) + " ... [50 bytes left out"));
+    }
 }

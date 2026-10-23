@@ -1,5 +1,6 @@
 package io.terrakube.executor.plugin.tfstate.local;
 
+import io.terrakube.executor.service.logs.StepOutputBuffer;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.Charset;
@@ -286,6 +287,25 @@ public class LocalTerraformStateImpl implements TerraformState {
         log.info("Creating Output File: {}", localOutputDirectory.getAbsolutePath());
         return storageRetryMetrics.withRetry("local", "output-write", () -> {
             FileUtils.writeStringToFile(localOutputDirectory, output + outputError, Charset.defaultCharset());
+            return terraformOutputPathService.getOutputPath(organizationId, jobId, stepId);
+        });
+    }
+
+    @Override
+    public String saveBufferedOutput(String organizationId, String jobId, String stepId, StepOutputBuffer output, String outputError) {
+        String outputFilePath = String.format(LOCAL_OUTPUT_DIRECTORY, organizationId, jobId , stepId);
+        log.info("blobName: {}", outputFilePath);
+
+        File localOutputFile = new File(FileUtils.getUserDirectoryPath().concat(
+                FilenameUtils.separatorsToSystem(
+                        outputFilePath
+                )));
+
+        log.info("Creating Output File: {}", localOutputFile.getAbsolutePath());
+        return storageRetryMetrics.withRetry("local", "output-write", () -> {
+            try (java.io.InputStream data = output.openStream(outputError)) {
+                FileUtils.copyInputStreamToFile(data, localOutputFile);
+            }
             return terraformOutputPathService.getOutputPath(organizationId, jobId, stepId);
         });
     }

@@ -5,7 +5,9 @@ import io.terrakube.api.plugin.scheduler.dispatchretry.DispatchRetryCalculator;
 import io.terrakube.api.plugin.scheduler.dispatchretry.DispatchRetryDecision;
 import io.terrakube.api.plugin.scheduler.dispatchretry.DispatchRetryMetrics;
 import io.terrakube.api.plugin.scheduler.dispatchretry.DispatchRetryProperties;
+import io.terrakube.api.plugin.scheduler.inactive.InactiveJobsProperties;
 import io.terrakube.api.plugin.scheduler.job.tcl.TclService;
+import io.terrakube.api.plugin.workspace.WorkspaceJobStatusService;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.DispatchRetryableException;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutionException;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutorService;
@@ -41,7 +43,6 @@ import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.time.DateUtils;
 import org.hibernate.LazyInitializationException;
 import org.quartz.DisallowConcurrentExecution;
 import org.quartz.JobExecutionContext;
@@ -123,6 +124,7 @@ public class ScheduleJob implements org.quartz.Job {
     // this so status-change notifications actually fire for real runs, not just for a job
     // updated via a direct API PATCH.
     JobNotificationTrigger jobNotificationTrigger;
+    WorkspaceJobStatusService workspaceJobStatusService;
 
     // Shared routine that reconciles a job with no remaining executable step to its real terminal
     // status (see reconcileOutOfSteps). ReconciliationProperties gates the guarded FIFO-admission
@@ -135,6 +137,11 @@ public class ScheduleJob implements org.quartz.Job {
     DispatchRetryProperties dispatchRetryProperties;
     DispatchRetryCalculator dispatchRetryCalculator;
     DispatchRetryMetrics dispatchRetryMetrics;
+
+    // Limit for runs that stay open too long, and the follow-up (workspace status, live update,
+    // notification) a status change made here needs because it does not go through Elide. See #3727.
+    InactiveJobsProperties inactiveJobsProperties;
+    JobStatusChangeService jobStatusChangeService;
 
     @Override
     public void execute(JobExecutionContext jobExecutionContext) throws JobExecutionException {
@@ -208,18 +215,18 @@ public class ScheduleJob implements org.quartz.Job {
 
     private boolean doRunExecution(Job job) {
         int jobId = job.getId();
-        Date jobExpiration = DateUtils.addHours(job.getCreatedDate(), 6);
-        Date currentTime = new Date(System.currentTimeMillis());
-        log.info("Job {} should be completed before {}, current time {}", job.getId(), jobExpiration, currentTime);
-        if (currentTime.after(jobExpiration)) {
-            log.error("Job has been running for more than 6 hours, cancelling running job");
+        Optional<InactiveJobsProperties.Expiry> expired = inactiveJobsProperties.expiryOf(job, new Date(System.currentTimeMillis()), jobRepository);
+        if (expired.isPresent()) {
+            InactiveJobsProperties.Expiry expiry = expired.get();
+            log.error("Job {} is past its limit, closing it as {}: {}", jobId, expiry.finalStatus(), expiry.reason());
             try {
-                job.setStatus(JobStatus.failed);
+                expiry.applyTo(job);
                 jobRepository.save(job);
-                jobNotificationTrigger.notifyStatusChanged(job);
+                // Steps first: the failure summary in the notification is read from the step that failed.
+                updateJobStepsWithStatus(job.getId(), expiry.finalStatus());
+                jobStatusChangeService.afterStatusChanged(job);
                 log.warn("Deleting Job Context {} from Quartz", PREFIX_JOB_CONTEXT + job.getId());
-                updateJobStepsWithStatus(job.getId(), JobStatus.failed);
-                updateJobStatusOnVcs(job, JobStatus.unknown);
+                updateJobStatusOnVcs(job, expiry.finalStatus());
             } catch (Exception e) {
                 log.error(e.getMessage());
             }
@@ -385,10 +392,7 @@ public class ScheduleJob implements org.quartz.Job {
     }
 
     private void updateWorkspaceStatus(Job job) {
-        log.info("Updating last status for workspace {} to {}", job.getWorkspace().getName(), job.getStatus());
-        job.getWorkspace().setLastJobStatus(job.getStatus());
-        job.getWorkspace().setLastJobDate(new Date(System.currentTimeMillis()));
-        workspaceRepository.save(job.getWorkspace());
+        workspaceJobStatusService.refresh(job);
     }
 
     // Returns whether the job's Quartz trigger should be descheduled. False keeps it alive so

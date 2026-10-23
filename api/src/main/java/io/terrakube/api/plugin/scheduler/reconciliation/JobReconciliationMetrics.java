@@ -39,4 +39,9 @@ public class JobReconciliationMetrics {
     public void quartzTriggerRace() {
         registry.counter("terrakube.scheduler.quartz.trigger.races").increment();
     }
+
+    public void workspaceStatusRepaired(JobStatus staleStatus) {
+        registry.counter("terrakube.scheduler.workspace.status.repaired",
+                "stale", staleStatus.name()).increment();
+    }
 }

@@ -4,6 +4,7 @@ import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.quartz.*;
 import org.springframework.stereotype.Service;
+import io.terrakube.api.plugin.scheduler.JobStatusChangeService;
 import io.terrakube.api.plugin.scheduler.ScheduleJobService;
 import io.terrakube.api.plugin.scheduler.module.ModuleRefreshService;
 import io.terrakube.api.plugin.scheduler.workspace.DeleteStorageBackendJob;
@@ -42,6 +43,8 @@ public class SoftDeleteService {
 
     Scheduler scheduler;
 
+    JobStatusChangeService jobStatusChangeService;
+
     public void disableWorkspaceSchedules(Workspace workspace){
         for(Schedule schedule: workspace.getSchedule()){
             try {
@@ -65,6 +68,12 @@ public class SoftDeleteService {
             try {
                 scheduleJobService.deleteJobContext(jobId);
                 jobRepository.updateStatusById(JobStatus.cancelled, jobId);
+                // The bulk update above bypasses Elide's hooks: publish the live status event and
+                // send the notifications a cancelled run normally gets (#3727).
+                jobRepository.findById(jobId).ifPresent(job -> {
+                    job.setStatus(JobStatus.cancelled);
+                    jobStatusChangeService.afterStatusChanged(job);
+                });
             } catch (Exception e) {
                 log.error("Failed to cancel active job {} on deleted workspace {}: {}", jobId, workspaceId, e.getMessage());
             }

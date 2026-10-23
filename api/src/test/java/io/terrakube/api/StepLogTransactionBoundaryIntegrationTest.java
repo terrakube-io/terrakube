@@ -70,6 +70,7 @@ class StepLogTransactionBoundaryIntegrationTest extends ServerApplicationTests {
         org.springframework.security.oauth2.jwt.Jwt jwt = org.springframework.security.oauth2.jwt.Jwt.withTokenValue("mock-token")
                 .header("alg", "none")
                 .claim("iss", "TerrakubeInternal")
+                .claim("sub", "TerrakubeInternal (EXECUTOR)")
                 .build();
         org.springframework.security.core.Authentication auth = new org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken(jwt);
 

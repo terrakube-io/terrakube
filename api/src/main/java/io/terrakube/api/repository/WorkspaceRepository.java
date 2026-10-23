@@ -1,6 +1,7 @@
 package io.terrakube.api.repository;
 
 import io.terrakube.api.rs.Organization;
+import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.workspace.Workspace;
 import jakarta.persistence.LockModeType;
 import jakarta.persistence.QueryHint;
@@ -8,10 +9,12 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.jpa.repository.QueryHints;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Date;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -23,6 +26,34 @@ public interface WorkspaceRepository extends JpaRepository<Workspace, UUID> {
      * rather than an unguarded findAll() that loads the entire table into memory.
      */
     Page<Workspace> findAll(Pageable pageable);
+
+    /**
+     * Workspaces whose last job status says a run is still active although none of their runs is.
+     * That is what a status change made without Elide's hooks leaves behind (#3727): the run
+     * finished or was closed, but the workspace list keeps showing "Waiting approval" or "Running".
+     */
+    @Query("SELECT w FROM workspace w WHERE w.deleted = false AND w.lastJobStatus IN :activeStatuses" +
+            " AND NOT EXISTS (SELECT 1 FROM job j WHERE j.workspace = w AND j.status IN :activeStatuses)" +
+            " ORDER BY w.id")
+    List<Workspace> findWithStaleActiveJobStatus(@Param("activeStatuses") List<JobStatus> activeStatuses,
+                                                 Pageable pageable);
+
+    /**
+     * Corrects the status of a workspace found by {@link #findWithStaleActiveJobStatus}, only if it is still
+     * the stale one and still has no active run. A run created since then has set its own status, which this
+     * must not overwrite, and only the two columns are written so nothing else of the workspace is touched.
+     *
+     * @return 1 when the workspace was corrected, 0 when it changed in the meantime
+     */
+    @Modifying
+    @Query("UPDATE workspace w SET w.lastJobStatus = :newStatus, w.lastJobDate = :newDate" +
+            " WHERE w.id = :id AND w.lastJobStatus = :expectedStatus" +
+            " AND NOT EXISTS (SELECT 1 FROM job j WHERE j.workspace = w AND j.status IN :activeStatuses)")
+    int repairStaleJobStatus(@Param("id") UUID id,
+                             @Param("expectedStatus") JobStatus expectedStatus,
+                             @Param("newStatus") JobStatus newStatus,
+                             @Param("newDate") Date newDate,
+                             @Param("activeStatuses") List<JobStatus> activeStatuses);
 
     Workspace getByOrganizationNameAndName(String organizationName, String workspaceName);
 

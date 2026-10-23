@@ -25,6 +25,7 @@ import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.reactive.function.client.ExchangeFilterFunction;
@@ -1012,31 +1013,43 @@ public class GitLabWebhookService extends WebhookServiceBase {
             projectId = getGitlabProjectId(ownerAndRepo, token, vcs.getApiUrl());
         } catch (IOException e) {
             log.error("Error resolving GitLab project id for {}: {}", ownerAndRepo, e.getMessage());
-            return remoteHookId;
+            throw new IllegalStateException("Could not resolve the GitLab project of " + repoWebhook.getRepositoryUrl(), e);
         } catch (InterruptedException e) {
             log.error("Interrupted resolving GitLab project id for {}: {}", ownerAndRepo, e.getMessage());
             Thread.currentThread().interrupt();
-            return remoteHookId;
+            throw new IllegalStateException("Interrupted resolving the GitLab project of " + repoWebhook.getRepositoryUrl(), e);
         }
 
-        ResponseEntity<String> response;
-        if (remoteHookId == null || remoteHookId.isEmpty()) {
-            String apiUrl = vcs.getApiUrl() + "/projects/" + projectId + "/hooks";
-            response = callGitlabApi(token, body, apiUrl, HttpMethod.POST);
-            if (response != null && response.getStatusCode().value() == 201) {
-                try {
-                    JsonNode rootNode = objectMapper.readTree(response.getBody());
-                    remoteHookId = rootNode.path("id").asText();
-                } catch (Exception e) {
-                    log.error("Error parsing JSON response", e);
-                }
-                log.info("GitLab repo webhook created successfully with id {}", remoteHookId);
-            }
-        } else {
+        if (remoteHookId != null && !remoteHookId.isEmpty()) {
             String apiUrl = vcs.getApiUrl() + "/projects/" + projectId + "/hooks/" + remoteHookId;
-            response = callGitlabApi(token, body, apiUrl, HttpMethod.PUT);
-            log.info("GitLab repo webhook updated with status {} and id {}",
-                    response != null ? response.getStatusCode() : "no response", remoteHookId);
+            try {
+                ResponseEntity<String> updated = callGitlabApi(token, body, apiUrl, HttpMethod.PUT);
+                log.info("GitLab repo webhook updated with status {} and id {}",
+                        updated != null ? updated.getStatusCode() : "no response", remoteHookId);
+                return remoteHookId;
+            } catch (HttpClientErrorException.NotFound _) {
+                // The hook was deleted on GitLab. Keeping the stored id would fail every later sync with the
+                // same 404, so register it again. If the project is not reachable, the create fails too and
+                // that error is raised for the caller to report.
+                log.warn("GitLab repo webhook {} of {} no longer exists, creating it again",
+                        remoteHookId, repoWebhook.getRepositoryUrl());
+                remoteHookId = null;
+            }
+        }
+
+        ResponseEntity<String> response = callGitlabApi(token, body, vcs.getApiUrl() + "/projects/" + projectId + "/hooks", HttpMethod.POST);
+        if (response != null && response.getStatusCode().value() == 201) {
+            try {
+                JsonNode rootNode = objectMapper.readTree(response.getBody());
+                remoteHookId = rootNode.path("id").asText();
+            } catch (Exception e) {
+                log.error("Error parsing JSON response", e);
+            }
+            log.info("GitLab repo webhook created successfully with id {}", remoteHookId);
+        }
+        if (remoteHookId == null || remoteHookId.isBlank()) {
+            throw new IllegalStateException("The GitLab repository webhook of " + repoWebhook.getRepositoryUrl()
+                    + " was not created (" + (response == null ? "no response" : "no id returned") + ")");
         }
 
         return remoteHookId;

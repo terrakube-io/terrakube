@@ -64,4 +64,27 @@ class LogsServiceRedisTest {
 
         verify(streamOps).add(eq("42-context"), any(Map.class), any(XAddOptions.class));
     }
+
+    @Test
+    void aLineLongerThanTheLimitIsCutInTheLiveStream() {
+        when(redisTemplate.opsForStream()).thenReturn(streamOps);
+        ExecutorLogsProperties props = new ExecutorLogsProperties();
+        props.setLiveLineMaxBytes(100);
+        LogsServiceRedis service = new LogsServiceRedis(redisTemplate, props);
+
+        service.sendLogs(42, "step-1", 1, "y".repeat(101));
+
+        ArgumentCaptor<Map<String, String>> sent = ArgumentCaptor.forClass(Map.class);
+        verify(streamOps).add(eq("42"), sent.capture(), any(XAddOptions.class));
+        assertTrue(sent.getValue().get("output").startsWith("y".repeat(100) + " ... [1 bytes left out"));
+    }
+
+    @Test
+    void theServiceLogEchoIsOffUnlessConfiguredOn() {
+        ExecutorLogsProperties props = new ExecutorLogsProperties();
+        assertEquals(false, new LogsServiceRedis(redisTemplate, props).echoToServiceLog());
+
+        props.setEchoToServiceLog(true);
+        assertEquals(true, new LogsServiceRedis(redisTemplate, props).echoToServiceLog());
+    }
 }

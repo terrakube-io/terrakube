@@ -245,13 +245,24 @@ class ExecutorJobImplTest {
             return true;
         });
 
+        java.util.concurrent.atomic.AtomicReference<String> savedOutput = new java.util.concurrent.atomic.AtomicReference<>();
+        java.util.concurrent.atomic.AtomicReference<io.terrakube.executor.service.logs.StepOutputBuffer> savedBuffer = new java.util.concurrent.atomic.AtomicReference<>();
+        Mockito.doAnswer(invocation -> {
+            io.terrakube.executor.service.logs.StepOutputBuffer buffer = invocation.getArgument(4);
+            savedBuffer.set(buffer);
+            savedOutput.set(buffer.toString());
+            return null;
+        }).when(updateJobStatus).setCompletedStatusWithOutput(
+                eq(true), eq(false), eq(0), eq(job),
+                any(io.terrakube.executor.service.logs.StepOutputBuffer.class), any(), any(), any(), anyBoolean(), any(), any(), any());
+
         subjectWithLogs.createJob(job);
 
         verify(mockProcessLogs).sendLogs(eq(42), eq("1"), eq(1), eq("line 1 of script"));
         verify(mockProcessLogs).sendLogs(eq(42), eq("1"), eq(2), eq("line 2 of script"));
-        verify(updateJobStatus).setCompletedStatus(
-                eq(true), eq(false), eq(0), eq(job),
-                org.mockito.ArgumentMatchers.contains("line 1 of script"), any(), any(), any(), anyBoolean(), any(), any(), any());
+        assertEquals("line 1 of script\nline 2 of script\n", savedOutput.get());
+        // The buffer is released once the output has been saved.
+        assertEquals("", savedBuffer.get().toString());
     }
 
     @Test
