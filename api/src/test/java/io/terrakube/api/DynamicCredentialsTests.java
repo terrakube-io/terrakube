@@ -259,10 +259,39 @@ public class DynamicCredentialsTests extends ServerApplicationTests {
                 "GCP token must not carry the AWS session-tags claim");
 
         String vaultToken = ReflectionTestUtils.invokeMethod(dynamicCredentialsService, "generateJwt",
-                job.getOrganization().getName(), job.getWorkspace().getName(), "vault.example.com",
-                job.getOrganization().getId().toString(), job.getWorkspace().getId().toString(), job.getId());
+                job, "vault.example.com");
         assertFalse(decodeJwtClaims(vaultToken).has("https://aws.amazon.com/tags"),
                 "Vault token must not carry the AWS session-tags claim");
+    }
+
+    @Test
+    void testTokenIncludesProjectNameClaimWhenPresent() throws IOException {
+        Job job = createMockJob();
+        Project project = new Project();
+        project.setName("my-project");
+        job.getWorkspace().setProject(project);
+
+        HashMap<String, String> envVariables = new HashMap<>();
+        envVariables.put("WORKLOAD_IDENTITY_AUDIENCE_AZURE", "api://AzureADTokenExchange");
+
+        String token = dynamicCredentialsService.generateDynamicCredentialsAzure(job, envVariables).get("ARM_OIDC_TOKEN");
+
+        JsonNode claims = decodeJwtClaims(token);
+        assertTrue(claims.has("terrakube_project_name"), "token must carry terrakube_project_name when a project is set");
+        assertEquals("my-project", claims.get("terrakube_project_name").asText());
+    }
+
+    @Test
+    void testTokenOmitsProjectNameClaimWhenNoProject() throws IOException {
+        Job job = createMockJob(); // createMockJob sets the workspace project to null
+
+        HashMap<String, String> envVariables = new HashMap<>();
+        envVariables.put("WORKLOAD_IDENTITY_AUDIENCE_AZURE", "api://AzureADTokenExchange");
+
+        String token = dynamicCredentialsService.generateDynamicCredentialsAzure(job, envVariables).get("ARM_OIDC_TOKEN");
+
+        assertFalse(decodeJwtClaims(token).has("terrakube_project_name"),
+                "terrakube_project_name must be absent when the workspace has no project");
     }
 
     @Test
@@ -319,7 +348,8 @@ public class DynamicCredentialsTests extends ServerApplicationTests {
                         "terrakube_organization_id",
                         "terrakube_job_id",
                         "terrakube_workspace_name",
-                        "terrakube_organization_name"
+                        "terrakube_organization_name",
+                        "terrakube_project_name"
                 ));
     }
 

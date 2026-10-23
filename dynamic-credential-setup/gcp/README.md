@@ -55,3 +55,15 @@ resource "google_storage_bucket" "auto-expire" {
   public_access_prevention = "enforced"
 }
 ```
+## Project claim
+
+When the workspace belongs to a project, the token also carries a `terrakube_project_name` claim. You can map it to an attribute and scope access by project — for example, map it in the workload identity pool provider:
+
+```terraform
+attribute_mapping = {
+  "google.subject"                   = "assertion.sub",
+  "attribute.terrakube_project_name" = "assertion.terrakube_project_name"
+}
+```
+
+and reference `attribute.terrakube_project_name` in an `attribute_condition` or in the service account IAM binding to grant access only to workspaces in a given project. The claim is omitted when the workspace has no project, so conditions that require it will not match those workspaces.
