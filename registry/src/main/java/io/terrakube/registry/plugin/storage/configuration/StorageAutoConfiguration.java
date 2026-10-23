@@ -22,6 +22,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.util.StringUtils;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
@@ -145,20 +146,28 @@ public class StorageAutoConfiguration {
             case GcpStorageImpl:
                 Credentials gcpCredentials = null;
                 try {
-                    log.info("Credentials Length: {}", gcpStorageServiceProperties.getCredentials().length());
+                    if (StringUtils.hasText(gcpStorageServiceProperties.getCredentials())) {
+                        log.info("Creating GCP Registry Storage with custom credentials (Base64 length: {})", gcpStorageServiceProperties.getCredentials().length());
+                        gcpCredentials = GoogleCredentials
+                                .fromStream(
+                                        new ByteArrayInputStream(
+                                                Base64.getDecoder().decode(gcpStorageServiceProperties.getCredentials()))
+                                );
+                    } else {
+                        log.info("Creating GCP Registry Storage with Application Default Credentials (ADC)");
+                        gcpCredentials = GoogleCredentials.getApplicationDefault();
+                    }
+
                     log.info("GCP Project: {}", gcpStorageServiceProperties.getProjectId());
                     log.info("GCP Bucket: {}", gcpStorageServiceProperties.getBucketName());
 
-                    gcpCredentials = GoogleCredentials
-                            .fromStream(
-                                    new ByteArrayInputStream(
-                                            Base64.getDecoder().decode(gcpStorageServiceProperties.getCredentials()))
-                            );
-                    Storage gcpStorage = StorageOptions.newBuilder()
-                            .setCredentials(gcpCredentials)
-                            .setProjectId(gcpStorageServiceProperties.getProjectId())
-                            .build()
-                            .getService();
+                    StorageOptions.Builder storageOptionsBuilder = StorageOptions.newBuilder()
+                            .setCredentials(gcpCredentials);
+                    if (StringUtils.hasText(gcpStorageServiceProperties.getProjectId())) {
+                        storageOptionsBuilder.setProjectId(gcpStorageServiceProperties.getProjectId());
+                    }
+
+                    Storage gcpStorage = storageOptionsBuilder.build().getService();
 
                     log.info("GCP Storage null: {}", gcpStorage == null);
                     storageService = GcpStorageServiceImpl.builder()

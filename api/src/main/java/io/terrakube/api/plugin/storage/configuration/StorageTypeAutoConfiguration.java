@@ -22,6 +22,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.util.StringUtils;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
@@ -129,19 +130,27 @@ public class StorageTypeAutoConfiguration {
                         .build();
                 break;
             case GCP:
-                log.info("GCP Base64 {} length", gcpStorageTypeProperties.getCredentials().length());
                 Credentials gcpCredentials = null;
                 try {
-                    gcpCredentials = GoogleCredentials.fromStream(
-                            new ByteArrayInputStream(
-                                    Base64.decodeBase64(gcpStorageTypeProperties.getCredentials())
-                            )
-                    );
-                    Storage gcpStorage = StorageOptions.newBuilder()
-                            .setCredentials(gcpCredentials)
-                            .setProjectId(gcpStorageTypeProperties.getProjectId())
-                            .build()
-                            .getService();
+                    if (StringUtils.hasText(gcpStorageTypeProperties.getCredentials())) {
+                        log.info("Creating GCP Storage with custom credentials (Base64 length: {})", gcpStorageTypeProperties.getCredentials().length());
+                        gcpCredentials = GoogleCredentials.fromStream(
+                                new ByteArrayInputStream(
+                                        Base64.decodeBase64(gcpStorageTypeProperties.getCredentials())
+                                )
+                        );
+                    } else {
+                        log.info("Creating GCP Storage with Application Default Credentials (ADC)");
+                        gcpCredentials = GoogleCredentials.getApplicationDefault();
+                    }
+
+                    StorageOptions.Builder storageOptionsBuilder = StorageOptions.newBuilder()
+                            .setCredentials(gcpCredentials);
+                    if (StringUtils.hasText(gcpStorageTypeProperties.getProjectId())) {
+                        storageOptionsBuilder.setProjectId(gcpStorageTypeProperties.getProjectId());
+                    }
+
+                    Storage gcpStorage = storageOptionsBuilder.build().getService();
 
                     storageTypeService = GcpStorageTypeServiceImpl.builder()
                             .storage(gcpStorage)
