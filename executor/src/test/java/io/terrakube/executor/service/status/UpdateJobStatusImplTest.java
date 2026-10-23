@@ -1,5 +1,6 @@
 package io.terrakube.executor.service.status;
 
+import io.terrakube.executor.service.logs.StepOutputBuffer;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doReturn;
@@ -103,9 +104,9 @@ public class UpdateJobStatusImplTest {
     @Test
     public void setCompletedStatusOnRejectedJobMarksStepFailedAndSkipsJob() {
         stubJobWithStatus("rejected");
-        doReturn("output-url").when(terraformState).saveOutput(anyString(), anyString(), anyString(), anyString(), anyString());
+        doReturn("output-url").when(terraformState).saveBufferedOutput(anyString(), anyString(), anyString(), any(StepOutputBuffer.class), anyString());
 
-        subject().setCompletedStatus(true, false, 0, terraformJob(), "output", "", "", "0000000");
+        complete(subject(), true, false, 0, terraformJob(), "output", "", "", "0000000");
 
         ArgumentCaptor<StepRequest> stepCaptor = ArgumentCaptor.forClass(StepRequest.class);
         verify(terrakubeClient, times(1)).updateStep(stepCaptor.capture(), anyString(), anyString(), anyString());
@@ -116,9 +117,9 @@ public class UpdateJobStatusImplTest {
     @Test
     public void setCompletedStatusOnCancelledJobKeepsStepResultAndSkipsJob() {
         stubJobWithStatus("cancelled");
-        doReturn("output-url").when(terraformState).saveOutput(anyString(), anyString(), anyString(), anyString(), anyString());
+        doReturn("output-url").when(terraformState).saveBufferedOutput(anyString(), anyString(), anyString(), any(StepOutputBuffer.class), anyString());
 
-        subject().setCompletedStatus(true, false, 0, terraformJob(), "output", "", "", "0000000");
+        complete(subject(), true, false, 0, terraformJob(), "output", "", "", "0000000");
 
         ArgumentCaptor<StepRequest> stepCaptor = ArgumentCaptor.forClass(StepRequest.class);
         verify(terrakubeClient, times(1)).updateStep(stepCaptor.capture(), anyString(), anyString(), anyString());
@@ -129,9 +130,20 @@ public class UpdateJobStatusImplTest {
     @Test
     public void setCompletedStatusOnActiveJobUpdatesJob() {
         stubJobWithStatus("running");
-        doReturn("output-url").when(terraformState).saveOutput(anyString(), anyString(), anyString(), anyString(), anyString());
+        doReturn("output-url").when(terraformState).saveBufferedOutput(anyString(), anyString(), anyString(), any(StepOutputBuffer.class), anyString());
 
-        subject().setCompletedStatus(true, false, 0, terraformJob(), "output", "", "", "0000000");
+        complete(subject(), true, false, 0, terraformJob(), "output", "", "", "0000000");
+
+        verify(terrakubeClient, times(1)).updateStep(any(), anyString(), anyString(), anyString());
+        verify(terrakubeClient, times(1)).updateJob(any(JobRequest.class), anyString(), anyString());
+    }
+
+    @Test
+    public void aStepThatProducedNoOutputBufferIsStillCompleted() {
+        stubJobWithStatus("running");
+        doReturn("output-url").when(terraformState).saveBufferedOutput(anyString(), anyString(), anyString(), any(StepOutputBuffer.class), anyString());
+
+        subject().setCompletedStatus(false, false, 1, terraformJob(), null, "failed", "", "0000000");
 
         verify(terrakubeClient, times(1)).updateStep(any(), anyString(), anyString(), anyString());
         verify(terrakubeClient, times(1)).updateJob(any(JobRequest.class), anyString(), anyString());
@@ -165,9 +177,9 @@ public class UpdateJobStatusImplTest {
         // (exitCode 2) there is nothing left in the template to run, so the job
         // should be marked completed rather than left pending forever.
         Job job = stubJobWithStatus("queue", 1);
-        doReturn("output-url").when(terraformState).saveOutput(anyString(), anyString(), anyString(), anyString(), anyString());
+        doReturn("output-url").when(terraformState).saveBufferedOutput(anyString(), anyString(), anyString(), any(StepOutputBuffer.class), anyString());
 
-        subject().setCompletedStatus(true, true, 2, terraformJob(), "plan output", "", "plan-file", "commit-1");
+        complete(subject(), true, true, 2, terraformJob(), "plan output", "", "plan-file", "commit-1");
 
         Assertions.assertEquals("completed", job.getAttributes().getStatus());
         Assertions.assertEquals(true, job.getAttributes().isPlanChanges());
@@ -178,9 +190,9 @@ public class UpdateJobStatusImplTest {
         // A "Plan and Apply" template has two steps. A plan finding changes should
         // still wait "pending" for the apply step that follows it.
         Job job = stubJobWithStatus("queue", 2);
-        doReturn("output-url").when(terraformState).saveOutput(anyString(), anyString(), anyString(), anyString(), anyString());
+        doReturn("output-url").when(terraformState).saveBufferedOutput(anyString(), anyString(), anyString(), any(StepOutputBuffer.class), anyString());
 
-        subject().setCompletedStatus(true, true, 2, terraformJob(), "plan output", "", "plan-file", "commit-1");
+        complete(subject(), true, true, 2, terraformJob(), "plan output", "", "plan-file", "commit-1");
 
         Assertions.assertEquals("pending", job.getAttributes().getStatus());
         Assertions.assertEquals(true, job.getAttributes().isPlanChanges());
@@ -189,9 +201,9 @@ public class UpdateJobStatusImplTest {
     @Test
     public void planWithSoftMandatoryViolations_marksJobWaitingApprovalAndSetsApprovalTeam() {
         Job job = stubJobWithStatus("queue", 2);
-        doReturn("output-url").when(terraformState).saveOutput(anyString(), anyString(), anyString(), anyString(), anyString());
+        doReturn("output-url").when(terraformState).saveBufferedOutput(anyString(), anyString(), anyString(), any(StepOutputBuffer.class), anyString());
 
-        subject().setCompletedStatus(true, true, 2, terraformJob(), "plan output", "", "plan-file", "commit-1", true, "SecOps");
+        complete(subject(), true, true, 2, terraformJob(), "plan output", "", "plan-file", "commit-1", true, "SecOps");
 
         Assertions.assertEquals("waitingApproval", job.getAttributes().getStatus());
         Assertions.assertEquals("SecOps", job.getAttributes().getApprovalTeam());
@@ -201,9 +213,9 @@ public class UpdateJobStatusImplTest {
     @Test
     public void planWithSoftMandatoryViolationsWithoutApprovalTeam_marksJobWaitingApproval() {
         Job job = stubJobWithStatus("queue", 2);
-        doReturn("output-url").when(terraformState).saveOutput(anyString(), anyString(), anyString(), anyString(), anyString());
+        doReturn("output-url").when(terraformState).saveBufferedOutput(anyString(), anyString(), anyString(), any(StepOutputBuffer.class), anyString());
 
-        subject().setCompletedStatus(true, true, 2, terraformJob(), "plan output", "", "plan-file", "commit-1", true, null);
+        complete(subject(), true, true, 2, terraformJob(), "plan output", "", "plan-file", "commit-1", true, null);
 
         Assertions.assertEquals("waitingApproval", job.getAttributes().getStatus());
         Assertions.assertNull(job.getAttributes().getApprovalTeam());
@@ -212,11 +224,11 @@ public class UpdateJobStatusImplTest {
     @Test
     public void setCompletedStatusWithDeliveryStateSetsAttributeOnStepRequest() {
         stubJobWithStatus("queue", 1);
-        doReturn("output-url").when(terraformState).saveOutput(anyString(), anyString(), anyString(), anyString(), anyString());
+        doReturn("output-url").when(terraformState).saveBufferedOutput(anyString(), anyString(), anyString(), any(StepOutputBuffer.class), anyString());
 
         ArgumentCaptor<StepRequest> captor = ArgumentCaptor.forClass(StepRequest.class);
 
-        subject().setCompletedStatus(true, false, 0, terraformJob(), "output", "", "", "commit-1", false, null, "ACKED");
+        complete(subject(), true, false, 0, terraformJob(), "output", "", "", "commit-1", false, null, "ACKED");
 
         verify(terrakubeClient).updateStep(captor.capture(), anyString(), anyString(), anyString());
         StepRequest request = captor.getValue();
@@ -230,11 +242,11 @@ public class UpdateJobStatusImplTest {
     @Test
     public void setCompletedStatusWithDeliveryStateAndRevisionSetsAttributesOnStepRequest() {
         stubJobWithStatus("queue", 1);
-        doReturn("output-url").when(terraformState).saveOutput(anyString(), anyString(), anyString(), anyString(), anyString());
+        doReturn("output-url").when(terraformState).saveBufferedOutput(anyString(), anyString(), anyString(), any(StepOutputBuffer.class), anyString());
 
         ArgumentCaptor<StepRequest> captor = ArgumentCaptor.forClass(StepRequest.class);
 
-        subject().setCompletedStatus(true, false, 0, terraformJob(), "output", "", "", "commit-1", false, null, "ACKED", 42L);
+        complete(subject(), true, false, 0, terraformJob(), "output", "", "", "commit-1", false, null, "ACKED", 42L);
 
         verify(terrakubeClient).updateStep(captor.capture(), anyString(), anyString(), anyString());
         StepRequest request = captor.getValue();
@@ -249,7 +261,7 @@ public class UpdateJobStatusImplTest {
     @Test
     public void setCompletedStatus_WhenApiRejectsDeliveryAttributesWith400_RetriesWithPlainStepAttributes() {
         stubJobWithStatus("queue", 1);
-        doReturn("output-url").when(terraformState).saveOutput(anyString(), anyString(), anyString(), anyString(), anyString());
+        doReturn("output-url").when(terraformState).saveBufferedOutput(anyString(), anyString(), anyString(), any(StepOutputBuffer.class), anyString());
 
         feign.Request feignRequest = feign.Request.create(
                 feign.Request.HttpMethod.PATCH, "/step", java.util.Collections.emptyMap(), null, java.nio.charset.StandardCharsets.UTF_8, null);
@@ -260,7 +272,7 @@ public class UpdateJobStatusImplTest {
                 .doNothing()
                 .when(terrakubeClient).updateStep(captor.capture(), anyString(), anyString(), anyString());
 
-        subject().setCompletedStatus(true, false, 0, terraformJob(), "output", "", "", "commit-1", false, null, "ACKED", 42L);
+        complete(subject(), true, false, 0, terraformJob(), "output", "", "", "commit-1", false, null, "ACKED", 42L);
 
         verify(terrakubeClient, times(2)).updateStep(any(), anyString(), anyString(), anyString());
         List<StepRequest> requests = captor.getAllValues();
@@ -284,13 +296,13 @@ public class UpdateJobStatusImplTest {
     @Test
     public void aPlanThatSavedArtifactsRecordsWhereAndTheirChecksumWithThePlan() {
         stubJobWithStatus("queue", 2);
-        doReturn("output-url").when(terraformState).saveOutput(anyString(), anyString(), anyString(), anyString(), anyString());
+        doReturn("output-url").when(terraformState).saveBufferedOutput(anyString(), anyString(), anyString(), any(StepOutputBuffer.class), anyString());
         TerraformJob terraformJob = terraformJob();
         terraformJob.setArtifactPatterns(List.of("build/**"));
         terraformJob.setArtifactsUrl("https://bucket/plan-artifacts/o/w/4711/ze-step/plan-artifacts.tar.gz");
         terraformJob.setArtifactsChecksum("deadbeef");
 
-        subject().setCompletedStatus(true, true, 2, terraformJob, "plan output", "", "plan-file", "commit-1");
+        complete(subject(), true, true, 2, terraformJob, "plan output", "", "plan-file", "commit-1");
 
         JobAttributes sent = updatedJobAttributes();
         Assertions.assertEquals("https://bucket/plan-artifacts/o/w/4711/ze-step/plan-artifacts.tar.gz", sent.getTerraformPlanArtifacts());
@@ -302,11 +314,11 @@ public class UpdateJobStatusImplTest {
     public void aPlanWithArtifactsConfiguredButNoneSavedClearsWhatAnEarlierPlanRecorded() {
         // A later plan in the same job must not leave the first plan's bundle for its apply to unpack.
         stubJobWithStatus("queue", 2);
-        doReturn("output-url").when(terraformState).saveOutput(anyString(), anyString(), anyString(), anyString(), anyString());
+        doReturn("output-url").when(terraformState).saveBufferedOutput(anyString(), anyString(), anyString(), any(StepOutputBuffer.class), anyString());
         TerraformJob terraformJob = terraformJob();
         terraformJob.setArtifactPatterns(List.of("build/**"));
 
-        subject().setCompletedStatus(true, true, 2, terraformJob, "plan output", "", "plan-file", "commit-1");
+        complete(subject(), true, true, 2, terraformJob, "plan output", "", "plan-file", "commit-1");
 
         JobAttributes sent = updatedJobAttributes();
         Assertions.assertEquals("", sent.getTerraformPlanArtifacts());
@@ -317,9 +329,9 @@ public class UpdateJobStatusImplTest {
     public void aPlanWithoutArtifactsNeverMentionsThemSoAnOlderApiAcceptsTheUpdate() {
         // An API from before the plan-artifacts fields refuses an unknown attribute.
         stubJobWithStatus("queue", 2);
-        doReturn("output-url").when(terraformState).saveOutput(anyString(), anyString(), anyString(), anyString(), anyString());
+        doReturn("output-url").when(terraformState).saveBufferedOutput(anyString(), anyString(), anyString(), any(StepOutputBuffer.class), anyString());
 
-        subject().setCompletedStatus(true, true, 2, terraformJob(), "plan output", "", "plan-file", "commit-1");
+        complete(subject(), true, true, 2, terraformJob(), "plan output", "", "plan-file", "commit-1");
 
         JobAttributes sent = updatedJobAttributes();
         Assertions.assertNull(sent.getTerraformPlanArtifacts());
@@ -329,12 +341,24 @@ public class UpdateJobStatusImplTest {
     @Test
     public void anApplyLeavesTheRecordedArtifactsAlone() {
         stubJobWithStatus("running", 2);
-        doReturn("output-url").when(terraformState).saveOutput(anyString(), anyString(), anyString(), anyString(), anyString());
+        doReturn("output-url").when(terraformState).saveBufferedOutput(anyString(), anyString(), anyString(), any(StepOutputBuffer.class), anyString());
         TerraformJob terraformJob = terraformJob();
         terraformJob.setArtifactPatterns(List.of("build/**"));
 
-        subject().setCompletedStatus(true, false, 0, terraformJob, "apply output", "", "", "commit-1");
+        complete(subject(), true, false, 0, terraformJob, "apply output", "", "", "commit-1");
 
         Assertions.assertNull(updatedJobAttributes().getTerraformPlanArtifacts());
+    }
+
+    private static void complete(UpdateJobStatusImpl subject, boolean successful, boolean isPlan, int exitCode, TerraformJob job,
+                                 String output, String errorOutput, String planFile, String commitId, Object... extra) {
+        boolean softViolations = extra.length > 0 && (Boolean) extra[0];
+        String approvalTeam = extra.length > 1 ? (String) extra[1] : null;
+        String deliveryState = extra.length > 2 ? (String) extra[2] : null;
+        Long deliveryRevision = extra.length > 3 ? (Long) extra[3] : null;
+        try (StepOutputBuffer buffer = StepOutputBuffer.ofMessage(output)) {
+            subject.setCompletedStatus(successful, isPlan, exitCode, job, buffer, errorOutput, planFile, commitId,
+                    softViolations, approvalTeam, deliveryState, deliveryRevision);
+        }
     }
 }

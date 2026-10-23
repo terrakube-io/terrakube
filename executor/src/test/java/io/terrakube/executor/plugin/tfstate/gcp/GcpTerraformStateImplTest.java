@@ -11,6 +11,7 @@ import io.terrakube.executor.service.mode.TerraformJob;
 import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.io.FileUtils;
 import org.junit.jupiter.api.BeforeEach;
+import io.terrakube.executor.service.logs.StepOutputBuffer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Answers;
@@ -199,22 +200,6 @@ class GcpTerraformStateImplTest {
     }
 
     @Test
-    void testSaveOutput() {
-        String organizationId = "org1";
-        String jobId = "job1";
-        String stepId = "step1";
-        String output = "output-content";
-        String outputError = "error-content";
-
-        when(terraformOutputPathService.getOutputPath(organizationId, jobId, stepId)).thenReturn("https://api/output");
-
-        String result = gcpTerraformState.saveOutput(organizationId, jobId, stepId, output, outputError);
-
-        assertEquals("https://api/output", result);
-        verify(storage).create(any(BlobInfo.class), eq("output-contenterror-content".getBytes()));
-    }
-
-    @Test
     void testSaveBufferedOutputStreamsToStorage() throws Exception {
         when(terraformOutputPathService.getOutputPath("org1", "job1", "step1")).thenReturn("https://api/output");
         java.io.ByteArrayOutputStream uploaded = new java.io.ByteArrayOutputStream();
@@ -223,7 +208,7 @@ class GcpTerraformStateImplTest {
             return null;
         });
 
-        try (io.terrakube.executor.service.logs.StepOutputBuffer buffer = new io.terrakube.executor.service.logs.StepOutputBuffer(4, null)) {
+        try (StepOutputBuffer buffer = new StepOutputBuffer(4, null)) {
             buffer.appendln("output-content");
             String result = gcpTerraformState.saveBufferedOutput("org1", "job1", "step1", buffer, "error-content");
 

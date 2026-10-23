@@ -9,9 +9,8 @@ import lombok.Setter;
 public class ExecutorJobResult {
     boolean successfulExecution;
     String planFile;
-    String outputLog;
     String outputErrorLog;
-    // Console output too large to hold as a String. When set it is the output of the step, outputLog is empty.
+    // Console output of the step. The buffer is closed by whoever saves it (ExecutorJobImpl).
     StepOutputBuffer outputBuffer;
     int exitCode;
     boolean isPlan;

@@ -49,6 +49,13 @@ public class StepOutputBuffer implements AutoCloseable {
         return new StepOutputBuffer(memoryLimitBytes, spool);
     }
 
+    /** A buffer that holds only a short message, such as the reason a step could not run. */
+    public static StepOutputBuffer ofMessage(String message) {
+        StepOutputBuffer buffer = new StepOutputBuffer();
+        buffer.append(message);
+        return buffer;
+    }
+
     public StepOutputBuffer() {
         this(DEFAULT_MEMORY_LIMIT_BYTES, null);
     }
@@ -64,7 +71,7 @@ public class StepOutputBuffer implements AutoCloseable {
     }
 
     public synchronized void append(String text) {
-        if (closed) {
+        if (closed || text == null) {
             return;
         }
         byte[] data = text.getBytes(StandardCharsets.UTF_8);

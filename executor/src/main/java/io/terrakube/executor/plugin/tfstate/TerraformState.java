@@ -49,15 +49,11 @@ public interface TerraformState {
 
     void saveStateJson(TerraformJob terraformJob, String applyJSON, String rawState);
 
-    String saveOutput(String organizationId, String jobId, String stepId, String output, String outputError);
-
     /**
-     * Saves the output of a step held in a buffer that can be larger than memory. The backends stream it
-     * to the object store, so the upload does not need the output as one String.
+     * Saves the output of a step, held in a buffer that can be larger than memory, followed by its error output.
+     * The backends stream it to the object store, so the upload does not need the output as one String.
      */
-    default String saveBufferedOutput(String organizationId, String jobId, String stepId, StepOutputBuffer output, String outputError) {
-        return saveOutput(organizationId, jobId, stepId, output.toString(), outputError);
-    }
+    String saveBufferedOutput(String organizationId, String jobId, String stepId, StepOutputBuffer output, String outputError);
 
     /**
      * Upload a terraform/tofu binary to cloud storage for caching.
