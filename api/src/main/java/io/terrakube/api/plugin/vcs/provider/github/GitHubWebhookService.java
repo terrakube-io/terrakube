@@ -89,7 +89,10 @@ public class GitHubWebhookService extends WebhookServiceBase {
             result.setBranch(String.join("/", extractedBranch));
 
             // Extract the user who triggered the webhook
-            String pusher = rootNode.path("sender").path("login").asText();
+            String pusher = rootNode.path("sender").path("login").asText("");
+            if (pusher.isBlank()) {
+                pusher = rootNode.path("pusher").path("name").asText("");
+            }
             result.setCreatedBy(pusher);
 
             // Extract files changed in the push

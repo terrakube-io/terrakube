@@ -35,8 +35,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
-import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
@@ -64,26 +64,24 @@ public class GitHubWebhookServiceTest {
     class WebhookRunAuthor {
 
         @ParameterizedTest
-        @ValueSource(strings = {
-                "{\"name\":\"Octo Cat\",\"email\":\"pusher@example.com\"}",
-                "{\"name\":\"Octo Cat\",\"email\":null}",
-                "{\"name\":\"Octo Cat\"}"
-        })
-        void pushUsesSenderLoginRegardlessOfPusherEmail(String pusher) throws Exception {
+        @MethodSource("pushAuthors")
+        void pushUsesSenderLoginWithPusherNameFallback(String sender, String pusher, String expectedAuthor)
+                throws Exception {
+            String senderField = sender == null ? "" : "\"sender\": " + sender + ",";
             String payload = """
                     {
                       "ref": "refs/heads/main",
                       "pusher": %s,
-                      "sender": {"login": "octocat"},
+                      %s
                       "head_commit": {"id": "abc123"},
                       "commits": []
                     }
-                    """.formatted(pusher);
+                    """.formatted(pusher, senderField);
 
             WebhookResult result = processWebhook("push", payload);
 
             assertTrue(result.isValid());
-            assertEquals("octocat", result.getCreatedBy());
+            assertEquals(expectedAuthor, result.getCreatedBy());
         }
 
         @Test
@@ -106,6 +104,22 @@ public class GitHubWebhookServiceTest {
 
             assertTrue(result.isValid());
             assertEquals("octocat", result.getCreatedBy());
+        }
+
+        private static Stream<Arguments> pushAuthors() {
+            String sender = "{\"login\":\"octocat\"}";
+            String pusher = "{\"name\":\"pusher-user\",\"email\":\"pusher@example.com\"}";
+            return Stream.of(
+                    Arguments.of(sender, pusher, "octocat"),
+                    Arguments.of(sender, "{\"name\":\"pusher-user\",\"email\":null}", "octocat"),
+                    Arguments.of(sender, "{\"name\":\"pusher-user\"}", "octocat"),
+                    Arguments.of(null, pusher, "pusher-user"),
+                    Arguments.of("null", pusher, "pusher-user"),
+                    Arguments.of("{}", pusher, "pusher-user"),
+                    Arguments.of("{\"login\":null}", pusher, "pusher-user"),
+                    Arguments.of("{\"login\":\"\"}", pusher, "pusher-user"),
+                    Arguments.of("{\"login\":\"   \"}", pusher, "pusher-user"),
+                    Arguments.of("{\"login\":\"github-actions[bot]\"}", pusher, "github-actions[bot]"));
         }
 
         private WebhookResult processWebhook(String event, String payload) throws Exception {
