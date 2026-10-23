@@ -70,4 +70,23 @@ class DownloadReleasesServiceTest {
                     "unexpected User-Agent: " + userAgents.get(0));
         }
     }
+
+    @Test
+    void redirectWithLargeCspHeaderSucceeds() throws IOException {
+        server.createContext("/redirect-large-csp", exchange -> {
+            exchange.getResponseHeaders().add("Location", "/releases");
+            exchange.getResponseHeaders().add("Content-Security-Policy", "connect-src " + "x".repeat(10_000));
+            exchange.sendResponseHeaders(302, -1);
+            exchange.close();
+        });
+
+        DownloadReleasesService service = new DownloadReleasesService(WebClient.builder());
+        String url = "http://127.0.0.1:" + server.getAddress().getPort() + "/redirect-large-csp";
+        File targetFile = new File(tempDir.toFile(), "large-csp-releases.json");
+
+        service.downloadReleasesToFile(url, targetFile);
+
+        assertTrue(targetFile.exists(), "Target file should exist after following redirect with large CSP header");
+        assertEquals("[]", Files.readString(targetFile.toPath(), StandardCharsets.UTF_8));
+    }
 }
