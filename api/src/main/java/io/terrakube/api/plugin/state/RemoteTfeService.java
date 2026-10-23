@@ -1919,6 +1919,21 @@ public class RemoteTfeService {
                 }
             }
 
+            if (include != null) {
+                if (include.contains("apply")) {
+                    if (runsData.getIncluded() == null) {
+                        runsData.setIncluded(new ArrayList<>());
+                    }
+                    runsData.getIncluded().add(getApply(runId).getData());
+                }
+                if (include.contains("plan")) {
+                    if (runsData.getIncluded() == null) {
+                        runsData.setIncluded(new ArrayList<>());
+                    }
+                    runsData.getIncluded().add(getPlan(runId).getData());
+                }
+            }
+
             log.info("Included: {}", include);
             // if(include != null && include.equals("workspace")){
             // runsData.setIncluded(new ArrayList());
@@ -2205,16 +2220,34 @@ public class RemoteTfeService {
                             List<MapRecord<String, String, String>> messagesPlan = redisTemplate.opsForStream()
                                     .read(StreamOffset.fromStart(String.valueOf(job.get().getId())));
 
-                            for (MapRecord<String, String, String> mapRecord : messagesPlan) {
-                                Map<String, String> streamData = (Map<String, String>) mapRecord.getValue();
-                                logsOutput.appendln(streamData.get("output"));
+                            if (messagesPlan != null) {
+                                for (MapRecord<String, String, String> mapRecord : messagesPlan) {
+                                    Map<String, String> streamData = (Map<String, String>) mapRecord.getValue();
+                                    if (streamData.get("stepId") == null || step.getId().toString().equals(streamData.get("stepId"))) {
+                                        logsOutput.appendln(streamData.get("output"));
+                                    }
+                                }
                             }
 
                             String logsOutputString = logsOutput.toString();
-                            int potentialEndIndex = limit + offset;
-                            int endIndex = logsOutputString.length() > potentialEndIndex ? potentialEndIndex
-                                    : logsOutputString.length();
-                            logs = logsOutputString.substring(offset, endIndex).getBytes(StandardCharsets.UTF_8);
+                            if (logsOutputString.isEmpty() && job.get().getOrganization() != null) {
+                                byte[] stepOutput = storageTypeService.getStepOutput(
+                                        job.get().getOrganization().getId().toString(),
+                                        String.valueOf(job.get().getId()),
+                                        step.getId().toString());
+                                if (stepOutput != null && stepOutput.length > 0) {
+                                    logsOutputString = new String(stepOutput, StandardCharsets.UTF_8);
+                                }
+                            }
+
+                            if (offset < logsOutputString.length()) {
+                                int potentialEndIndex = limit + offset;
+                                int endIndex = logsOutputString.length() > potentialEndIndex ? potentialEndIndex
+                                        : logsOutputString.length();
+                                logs = logsOutputString.substring(offset, endIndex).getBytes(StandardCharsets.UTF_8);
+                            } else {
+                                logs = "".getBytes();
+                            }
                             log.debug("{}", logs);
                         } catch (Exception ex) {
                             log.error("Could not read plan logs for job {}: {}", job.get().getId(), ex.getMessage());
@@ -2236,7 +2269,7 @@ public class RemoteTfeService {
             TextStringBuilder logsOutputApply = new TextStringBuilder();
             if (job.get().getStep() != null && !job.get().getStep().isEmpty())
                 for (Step step : job.get().getStep()) {
-                    if (step.getStepNumber() == 100) {
+                    if (step.getStepNumber() == 200) {
                         log.debug("Checking logs stepId for apply: {}", step.getId());
 
                         try {
@@ -2244,16 +2277,34 @@ public class RemoteTfeService {
                             List<MapRecord<String, String, String>> messagesApply = redisTemplate.opsForStream().read(
                                     StreamOffset.fromStart(String.valueOf(job.get().getId())));
 
-                            for (MapRecord<String, String, String> mapRecord : messagesApply) {
-                                Map<String, String> streamData = (Map<String, String>) mapRecord.getValue();
-                                logsOutputApply.appendln(streamData.get("output"));
+                            if (messagesApply != null) {
+                                for (MapRecord<String, String, String> mapRecord : messagesApply) {
+                                    Map<String, String> streamData = (Map<String, String>) mapRecord.getValue();
+                                    if (streamData.get("stepId") == null || step.getId().toString().equals(streamData.get("stepId"))) {
+                                        logsOutputApply.appendln(streamData.get("output"));
+                                    }
+                                }
                             }
 
                             String logsOutputString = logsOutputApply.toString();
-                            int potentialEndIndex = limit + offset;
-                            int endIndex = logsOutputString.length() > potentialEndIndex ? potentialEndIndex
-                                    : logsOutputString.length();
-                            logs = logsOutputString.substring(offset, endIndex).getBytes(StandardCharsets.UTF_8);
+                            if (logsOutputString.isEmpty() && job.get().getOrganization() != null) {
+                                byte[] stepOutput = storageTypeService.getStepOutput(
+                                        job.get().getOrganization().getId().toString(),
+                                        String.valueOf(job.get().getId()),
+                                        step.getId().toString());
+                                if (stepOutput != null && stepOutput.length > 0) {
+                                    logsOutputString = new String(stepOutput, StandardCharsets.UTF_8);
+                                }
+                            }
+
+                            if (offset < logsOutputString.length()) {
+                                int potentialEndIndex = limit + offset;
+                                int endIndex = logsOutputString.length() > potentialEndIndex ? potentialEndIndex
+                                        : logsOutputString.length();
+                                logs = logsOutputString.substring(offset, endIndex).getBytes(StandardCharsets.UTF_8);
+                            } else {
+                                logs = "".getBytes();
+                            }
                             log.debug("{}", logs);
                         } catch (Exception ex) {
                             log.error("Could not read apply logs for job {}: {}", job.get().getId(), ex.getMessage());
