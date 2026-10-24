@@ -22,45 +22,54 @@ public class InternalSecretLoader {
     public static final String DEFAULT_SECRETS_DIRECTORY = "/etc/terrakube/secrets";
     public static final String LEGACY_INTERNAL_SECRET_DIRECTORY = "/etc/terrakube/internal-secret";
 
+    public static final String PROP_INTERNAL_SECRET = "io.terrakube.client.secretKey";
+    public static final String PROP_AWS_ACCESS_KEY = "io.terrakube.executor.plugin.tfstate.aws.accessKey";
+    public static final String PROP_AWS_SECRET_KEY = "io.terrakube.executor.plugin.tfstate.aws.secretKey";
+    public static final String PROP_AZURE_STORAGE_ACCESS_KEY = "io.terrakube.executor.plugin.tfstate.azure.storageAccessKey";
+    public static final String PROP_GCP_CREDENTIALS = "io.terrakube.executor.plugin.tfstate.gcp.credentials";
+    public static final String PROP_REDIS_PASSWORD = "io.terrakube.executor.redis.password";
+    public static final String PROP_REDIS_TRUSTSTORE_PASSWORD = "io.terrakube.executor.redis.truststorePassword";
+    public static final String PROP_REDIS_SENTINEL_PASSWORD = "io.terrakube.executor.redis.sentinel.password";
+
     public static final Map<String, String> SECRET_KEY_TO_CANONICAL_PROPERTY = Map.of(
-            "InternalSecret", "io.terrakube.client.secretKey",
-            "AwsTerraformStateAccessKey", "io.terrakube.executor.plugin.tfstate.aws.accessKey",
-            "AwsTerraformStateSecretKey", "io.terrakube.executor.plugin.tfstate.aws.secretKey",
-            "AzureTerraformStateStorageAccessKey", "io.terrakube.executor.plugin.tfstate.azure.storageAccessKey",
-            "GcpTerraformStateCredentials", "io.terrakube.executor.plugin.tfstate.gcp.credentials",
-            "TerrakubeRedisPassword", "io.terrakube.executor.redis.password",
-            "TerrakubeRedisTruststorePassword", "io.terrakube.executor.redis.truststorePassword",
-            "TerrakubeRedisSentinelPassword", "io.terrakube.executor.redis.sentinel.password"
+            "InternalSecret", PROP_INTERNAL_SECRET,
+            "AwsTerraformStateAccessKey", PROP_AWS_ACCESS_KEY,
+            "AwsTerraformStateSecretKey", PROP_AWS_SECRET_KEY,
+            "AzureTerraformStateStorageAccessKey", PROP_AZURE_STORAGE_ACCESS_KEY,
+            "GcpTerraformStateCredentials", PROP_GCP_CREDENTIALS,
+            "TerrakubeRedisPassword", PROP_REDIS_PASSWORD,
+            "TerrakubeRedisTruststorePassword", PROP_REDIS_TRUSTSTORE_PASSWORD,
+            "TerrakubeRedisSentinelPassword", PROP_REDIS_SENTINEL_PASSWORD
     );
 
     public static final Map<String, String> CANONICAL_PROPERTY_TO_SECRET_KEY = Map.of(
-            "io.terrakube.client.secretKey", "InternalSecret",
-            "io.terrakube.executor.plugin.tfstate.aws.accessKey", "AwsTerraformStateAccessKey",
-            "io.terrakube.executor.plugin.tfstate.aws.secretKey", "AwsTerraformStateSecretKey",
-            "io.terrakube.executor.plugin.tfstate.azure.storageAccessKey", "AzureTerraformStateStorageAccessKey",
-            "io.terrakube.executor.plugin.tfstate.gcp.credentials", "GcpTerraformStateCredentials",
-            "io.terrakube.executor.redis.password", "TerrakubeRedisPassword",
-            "io.terrakube.executor.redis.truststorePassword", "TerrakubeRedisTruststorePassword",
-            "io.terrakube.executor.redis.sentinel.password", "TerrakubeRedisSentinelPassword"
+            PROP_INTERNAL_SECRET, "InternalSecret",
+            PROP_AWS_ACCESS_KEY, "AwsTerraformStateAccessKey",
+            PROP_AWS_SECRET_KEY, "AwsTerraformStateSecretKey",
+            PROP_AZURE_STORAGE_ACCESS_KEY, "AzureTerraformStateStorageAccessKey",
+            PROP_GCP_CREDENTIALS, "GcpTerraformStateCredentials",
+            PROP_REDIS_PASSWORD, "TerrakubeRedisPassword",
+            PROP_REDIS_TRUSTSTORE_PASSWORD, "TerrakubeRedisTruststorePassword",
+            PROP_REDIS_SENTINEL_PASSWORD, "TerrakubeRedisSentinelPassword"
     );
 
     public static final Map<String, String> FILE_PROPERTY_TO_CANONICAL_PROPERTY = Map.ofEntries(
-            Map.entry("io.terrakube.client.secretKeyFile", "io.terrakube.client.secretKey"),
-            Map.entry("InternalSecretFile", "io.terrakube.client.secretKey"),
-            Map.entry("io.terrakube.executor.plugin.tfstate.aws.accessKeyFile", "io.terrakube.executor.plugin.tfstate.aws.accessKey"),
-            Map.entry("AwsTerraformStateAccessKeyFile", "io.terrakube.executor.plugin.tfstate.aws.accessKey"),
-            Map.entry("io.terrakube.executor.plugin.tfstate.aws.secretKeyFile", "io.terrakube.executor.plugin.tfstate.aws.secretKey"),
-            Map.entry("AwsTerraformStateSecretKeyFile", "io.terrakube.executor.plugin.tfstate.aws.secretKey"),
-            Map.entry("io.terrakube.executor.plugin.tfstate.azure.storageAccessKeyFile", "io.terrakube.executor.plugin.tfstate.azure.storageAccessKey"),
-            Map.entry("AzureTerraformStateStorageAccessKeyFile", "io.terrakube.executor.plugin.tfstate.azure.storageAccessKey"),
-            Map.entry("io.terrakube.executor.plugin.tfstate.gcp.credentialsFile", "io.terrakube.executor.plugin.tfstate.gcp.credentials"),
-            Map.entry("GcpTerraformStateCredentialsFile", "io.terrakube.executor.plugin.tfstate.gcp.credentials"),
-            Map.entry("io.terrakube.executor.redis.passwordFile", "io.terrakube.executor.redis.password"),
-            Map.entry("TerrakubeRedisPasswordFile", "io.terrakube.executor.redis.password"),
-            Map.entry("io.terrakube.executor.redis.truststorePasswordFile", "io.terrakube.executor.redis.truststorePassword"),
-            Map.entry("TerrakubeRedisTruststorePasswordFile", "io.terrakube.executor.redis.truststorePassword"),
-            Map.entry("io.terrakube.executor.redis.sentinel.passwordFile", "io.terrakube.executor.redis.sentinel.password"),
-            Map.entry("TerrakubeRedisSentinelPasswordFile", "io.terrakube.executor.redis.sentinel.password")
+            Map.entry("io.terrakube.client.secretKeyFile", PROP_INTERNAL_SECRET),
+            Map.entry("InternalSecretFile", PROP_INTERNAL_SECRET),
+            Map.entry("io.terrakube.executor.plugin.tfstate.aws.accessKeyFile", PROP_AWS_ACCESS_KEY),
+            Map.entry("AwsTerraformStateAccessKeyFile", PROP_AWS_ACCESS_KEY),
+            Map.entry("io.terrakube.executor.plugin.tfstate.aws.secretKeyFile", PROP_AWS_SECRET_KEY),
+            Map.entry("AwsTerraformStateSecretKeyFile", PROP_AWS_SECRET_KEY),
+            Map.entry("io.terrakube.executor.plugin.tfstate.azure.storageAccessKeyFile", PROP_AZURE_STORAGE_ACCESS_KEY),
+            Map.entry("AzureTerraformStateStorageAccessKeyFile", PROP_AZURE_STORAGE_ACCESS_KEY),
+            Map.entry("io.terrakube.executor.plugin.tfstate.gcp.credentialsFile", PROP_GCP_CREDENTIALS),
+            Map.entry("GcpTerraformStateCredentialsFile", PROP_GCP_CREDENTIALS),
+            Map.entry("io.terrakube.executor.redis.passwordFile", PROP_REDIS_PASSWORD),
+            Map.entry("TerrakubeRedisPasswordFile", PROP_REDIS_PASSWORD),
+            Map.entry("io.terrakube.executor.redis.truststorePasswordFile", PROP_REDIS_TRUSTSTORE_PASSWORD),
+            Map.entry("TerrakubeRedisTruststorePasswordFile", PROP_REDIS_TRUSTSTORE_PASSWORD),
+            Map.entry("io.terrakube.executor.redis.sentinel.passwordFile", PROP_REDIS_SENTINEL_PASSWORD),
+            Map.entry("TerrakubeRedisSentinelPasswordFile", PROP_REDIS_SENTINEL_PASSWORD)
     );
 
     @Getter
@@ -106,26 +115,38 @@ public class InternalSecretLoader {
     public static Map<String, Object> loadSecrets(PropertyResolver resolver) {
         Map<String, Object> secrets = new HashMap<>();
 
-        // 1. Secret Directory (Kubernetes 1-file-per-secret mounts and/or .env files)
+        File secretsDir = loadConfiguredDirectory(resolver, secrets);
+        loadLegacyDirectory(secretsDir, secrets);
+        loadCombinedSecretsFile(resolver, secrets);
+        loadIndividualSecretFiles(resolver, secrets);
+
+        return secrets;
+    }
+
+    private static File loadConfiguredDirectory(PropertyResolver resolver, Map<String, Object> secrets) {
         String configuredDir = resolver.getProperty("io.terrakube.executor.secrets.directory");
         if (configuredDir == null || configuredDir.isBlank()) {
             configuredDir = resolver.getProperty("ExecutorSecretsDirectory");
         }
-        String directoryPath = (configuredDir != null && !configuredDir.isBlank()) ? configuredDir : DEFAULT_SECRETS_DIRECTORY;
+        boolean isExplicit = configuredDir != null && !configuredDir.isBlank();
+        String directoryPath = isExplicit ? configuredDir : DEFAULT_SECRETS_DIRECTORY;
         File secretsDir = new File(directoryPath);
         if (secretsDir.exists() && secretsDir.isDirectory()) {
             loadSecretsFromDirectory(secretsDir, secrets);
-        } else if (configuredDir != null && !configuredDir.isBlank()) {
-            log.warn("Configured ephemeral secrets directory does not exist: {}", configuredDir);
+        } else if (isExplicit) {
+            throw new IllegalStateException("Configured ephemeral secrets directory does not exist or is not a directory: " + configuredDir);
         }
+        return secretsDir;
+    }
 
-        // 2. Legacy internal secret directory fallback (/etc/terrakube/internal-secret)
+    private static void loadLegacyDirectory(File secretsDir, Map<String, Object> secrets) {
         File legacyDir = new File(LEGACY_INTERNAL_SECRET_DIRECTORY);
         if (legacyDir.exists() && legacyDir.isDirectory() && !legacyDir.equals(secretsDir)) {
             loadSecretsFromDirectory(legacyDir, secrets);
         }
+    }
 
-        // 3. Combined Secrets File (useful for local devcontainers, .env format)
+    private static void loadCombinedSecretsFile(PropertyResolver resolver, Map<String, Object> secrets) {
         String combinedFilePath = resolver.getProperty("io.terrakube.executor.secrets.file");
         if (combinedFilePath == null || combinedFilePath.isBlank()) {
             combinedFilePath = resolver.getProperty("ExecutorSecretsFile");
@@ -135,11 +156,12 @@ public class InternalSecretLoader {
             if (combinedFile.exists() && combinedFile.isFile()) {
                 loadEnvFile(combinedFile, secrets);
             } else {
-                log.warn("Configured ephemeral secrets file does not exist: {}", combinedFilePath);
+                throw new IllegalStateException("Configured ephemeral secrets file does not exist or is not a file: " + combinedFilePath);
             }
         }
+    }
 
-        // 4. Individual per-property secret files
+    private static void loadIndividualSecretFiles(PropertyResolver resolver, Map<String, Object> secrets) {
         for (Map.Entry<String, String> entry : FILE_PROPERTY_TO_CANONICAL_PROPERTY.entrySet()) {
             String fileProperty = entry.getKey();
             String canonicalProperty = entry.getValue();
@@ -152,13 +174,13 @@ public class InternalSecretLoader {
                         registerSecret(secrets, canonicalProperty, content);
                         shredAndDeleteFile(file);
                     } catch (Exception e) {
-                        log.error("Failed to read secret file for property {} ({}): {}", fileProperty, filePath, e.getMessage());
+                        throw new IllegalStateException("Failed to read secret file for property " + fileProperty + " (" + filePath + "): " + e.getMessage(), e);
                     }
+                } else {
+                    throw new IllegalStateException("Configured secret file for property " + fileProperty + " does not exist: " + filePath);
                 }
             }
         }
-
-        return secrets;
     }
 
     public static void loadSecretsFromDirectory(File directory, Map<String, Object> secrets) {
@@ -188,26 +210,33 @@ public class InternalSecretLoader {
         try {
             List<String> lines = Files.readAllLines(file.toPath(), StandardCharsets.UTF_8);
             for (String line : lines) {
-                String trimmed = line.trim();
-                if (trimmed.isEmpty() || trimmed.startsWith("#")) {
-                    continue;
-                }
-                int eqIndex = trimmed.indexOf('=');
-                if (eqIndex > 0) {
-                    String key = trimmed.substring(0, eqIndex).trim();
-                    String value = trimmed.substring(eqIndex + 1).trim();
-                    if ((value.startsWith("\"") && value.endsWith("\"")) || (value.startsWith("'") && value.endsWith("'"))) {
-                        if (value.length() >= 2) {
-                            value = value.substring(1, value.length() - 1);
-                        }
-                    }
-                    registerSecret(secrets, key, value);
-                }
+                parseEnvLine(line, secrets);
             }
             shredAndDeleteFile(file);
         } catch (Exception e) {
             log.error("Failed to parse secret env file {}: {}", file.getAbsolutePath(), e.getMessage());
+            throw new IllegalStateException("Failed to parse secret env file " + file.getAbsolutePath() + ": " + e.getMessage(), e);
         }
+    }
+
+    private static void parseEnvLine(String line, Map<String, Object> secrets) {
+        String trimmed = line.trim();
+        if (trimmed.isEmpty() || trimmed.startsWith("#")) {
+            return;
+        }
+        int eqIndex = trimmed.indexOf('=');
+        if (eqIndex > 0) {
+            String key = trimmed.substring(0, eqIndex).trim();
+            String value = stripQuotes(trimmed.substring(eqIndex + 1).trim());
+            registerSecret(secrets, key, value);
+        }
+    }
+
+    private static String stripQuotes(String value) {
+        if (value.length() >= 2 && ((value.startsWith("\"") && value.endsWith("\"")) || (value.startsWith("'") && value.endsWith("'")))) {
+            return value.substring(1, value.length() - 1);
+        }
+        return value;
     }
 
     public static void registerSecret(Map<String, Object> map, String rawKey, String value) {
@@ -216,12 +245,15 @@ public class InternalSecretLoader {
         }
         String trimmedKey = rawKey.trim();
         String trimmedVal = value.trim();
-        map.put(trimmedKey, trimmedVal);
 
         if (SECRET_KEY_TO_CANONICAL_PROPERTY.containsKey(trimmedKey)) {
+            map.put(trimmedKey, trimmedVal);
             map.put(SECRET_KEY_TO_CANONICAL_PROPERTY.get(trimmedKey), trimmedVal);
         } else if (CANONICAL_PROPERTY_TO_SECRET_KEY.containsKey(trimmedKey)) {
+            map.put(trimmedKey, trimmedVal);
             map.put(CANONICAL_PROPERTY_TO_SECRET_KEY.get(trimmedKey), trimmedVal);
+        } else {
+            log.warn("Ignoring unrecognized ephemeral secret key: {}", trimmedKey);
         }
     }
 
@@ -259,7 +291,9 @@ public class InternalSecretLoader {
             log.warn("Failed to overwrite and delete secret file {}: {}. Ensure the volume is writable.", file.getAbsolutePath(), e.getMessage());
             try {
                 Files.deleteIfExists(file.toPath());
-            } catch (Exception ignored) {
+            } catch (Exception ex) {
+                // Best-effort cleanup; file may be locked or already removed
+                log.trace("Suppressed secondary deletion failure for {}: {}", file.getAbsolutePath(), ex.getMessage());
             }
         }
     }

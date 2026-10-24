@@ -8,6 +8,7 @@ import org.springframework.mock.env.MockEnvironment;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -134,10 +135,12 @@ class InternalSecretLoaderTest {
         assertTrue(secretsDir.mkdirs());
 
         File envFile = new File(secretsDir, "executor.env");
-        String envContent = "# Devcontainer secrets\n" +
-                "TerrakubeRedisPassword=dev-redis-pass\n" +
-                "InternalSecret=\"dev-internal-secret\"\n" +
-                "AwsTerraformStateSecretKey='dev-aws-secret'\n";
+        String envContent = """
+                # Devcontainer secrets
+                TerrakubeRedisPassword=dev-redis-pass
+                InternalSecret="dev-internal-secret"
+                AwsTerraformStateSecretKey='dev-aws-secret'
+                """;
         FileUtils.writeStringToFile(envFile, envContent, StandardCharsets.UTF_8);
 
         MockEnvironment env = new MockEnvironment();
@@ -190,5 +193,33 @@ class InternalSecretLoaderTest {
 
         assertFalse(redisPassFile.exists(), "Individual redis pass file must be deleted");
         assertFalse(awsSecretFile.exists(), "Individual aws secret file must be deleted");
+    }
+
+    @Test
+    void testRegisterSecretIgnoresUnrecognizedKeys() {
+        Map<String, Object> map = new HashMap<>();
+        InternalSecretLoader.registerSecret(map, "server.port", "8080");
+        InternalSecretLoader.registerSecret(map, "io.terrakube.some.random.prop", "val");
+        assertTrue(map.isEmpty(), "Unrecognized property keys must be ignored");
+
+        InternalSecretLoader.registerSecret(map, "InternalSecret", "my-secret");
+        assertEquals("my-secret", map.get("InternalSecret"));
+        assertEquals("my-secret", map.get("io.terrakube.client.secretKey"));
+    }
+
+    @Test
+    void testExplicitMissingDirectoryThrowsException() {
+        MockEnvironment env = new MockEnvironment();
+        env.setProperty("io.terrakube.executor.secrets.directory", "/non/existent/path/12345");
+
+        assertThrows(IllegalStateException.class, () -> InternalSecretLoader.loadSecrets(env));
+    }
+
+    @Test
+    void testExplicitMissingCombinedFileThrowsException() {
+        MockEnvironment env = new MockEnvironment();
+        env.setProperty("io.terrakube.executor.secrets.file", "/non/existent/file.env");
+
+        assertThrows(IllegalStateException.class, () -> InternalSecretLoader.loadSecrets(env));
     }
 }

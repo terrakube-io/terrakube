@@ -125,4 +125,17 @@ class ExecutorSecretEnvironmentPostProcessorTest {
 
         assertEquals("REDIS= AWS= INT=", output, "Spawned child process environment must not contain sensitive executor secrets");
     }
+
+    @Test
+    void testPostProcessEnvironmentPropagatesIllegalStateExceptionWhenDirectoryMissing() {
+        StandardEnvironment environment = new StandardEnvironment();
+        environment.getPropertySources().addFirst(
+                new MapPropertySource("testConfig", Map.of(
+                        "io.terrakube.executor.secrets.directory", "/non/existent/dir"
+                ))
+        );
+
+        ExecutorSecretEnvironmentPostProcessor processor = new ExecutorSecretEnvironmentPostProcessor();
+        assertThrows(IllegalStateException.class, () -> processor.postProcessEnvironment(environment, new SpringApplication()));
+    }
 }

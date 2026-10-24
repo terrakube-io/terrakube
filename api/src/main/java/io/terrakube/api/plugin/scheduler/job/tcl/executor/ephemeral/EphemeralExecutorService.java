@@ -41,6 +41,8 @@ public class EphemeralExecutorService {
     private static final String LABELS = "EPHEMERAL_CONFIG_LABELS";
     private static final String ENVFROM_CONFIG_MAP = "EPHEMERAL_CONFIG_ENVFROM_CONFIG_MAP";
     private static final String POD_ANNOTATIONS = "EPHEMERAL_CONFIG_POD_ANNOTATIONS";
+    private static final String WRITABLE_SECRETS_VOLUME = "writable-executor-secrets";
+    private static final String DEFAULT_INIT_SECRET_IMAGE = "busybox:1.37.0";
 
     KubernetesClient kubernetesClient;
     EphemeralConfiguration ephemeralConfiguration;
@@ -196,14 +198,15 @@ public class EphemeralExecutorService {
             volumes.add(rawSecretVolume);
 
             Volume writableSecretsVolume = new Volume();
-            writableSecretsVolume.setName("writable-executor-secrets");
+            writableSecretsVolume.setName(WRITABLE_SECRETS_VOLUME);
             EmptyDirVolumeSource emptyDir = new EmptyDirVolumeSource();
             emptyDir.setMedium("Memory");
+            emptyDir.setSizeLimit(new Quantity("64Mi"));
             writableSecretsVolume.setEmptyDir(emptyDir);
             volumes.add(writableSecretsVolume);
 
             VolumeMount secretMount = new VolumeMount();
-            secretMount.setName("writable-executor-secrets");
+            secretMount.setName(WRITABLE_SECRETS_VOLUME);
             secretMount.setMountPath("/etc/terrakube/secrets");
             volumeMounts.add(secretMount);
 
@@ -213,19 +216,37 @@ public class EphemeralExecutorService {
             roMount.setReadOnly(true);
 
             VolumeMount rwMount = new VolumeMount();
-            rwMount.setName("writable-executor-secrets");
+            rwMount.setName(WRITABLE_SECRETS_VOLUME);
             rwMount.setMountPath("/config-rw");
 
             String initImage = (ephemeralConfiguration.getInitSecretImage() != null && !ephemeralConfiguration.getInitSecretImage().isBlank())
                     ? ephemeralConfiguration.getInitSecretImage()
-                    : "busybox:latest";
+                    : DEFAULT_INIT_SECRET_IMAGE;
+
+            SecurityContext initSecurityContext = new SecurityContextBuilder()
+                    .withAllowPrivilegeEscalation(false)
+                    .withRunAsNonRoot(true)
+                    .withRunAsUser(1000L)
+                    .withRunAsGroup(1000L)
+                    .withCapabilities(new CapabilitiesBuilder().addToDrop("ALL").build())
+                    .withSeccompProfile(new SeccompProfileBuilder().withType("RuntimeDefault").build())
+                    .build();
+
+            ResourceRequirements initResources = new ResourceRequirementsBuilder()
+                    .addToRequests("cpu", new Quantity("50m"))
+                    .addToRequests("memory", new Quantity("64Mi"))
+                    .addToLimits("cpu", new Quantity("100m"))
+                    .addToLimits("memory", new Quantity("64Mi"))
+                    .build();
 
             Container initContainer = new ContainerBuilder()
                     .withName("copy-executor-secrets")
                     .withImage(initImage)
                     .withCommand("/bin/sh", "-c")
-                    .withArgs("chmod 0777 /config-rw\nfor f in /config-ro/*; do\n  if [ -f \"$f\" ]; then\n    target=\"/config-rw/$(basename \"$f\")\"\n    cp -L \"$f\" \"$target\"\n    chmod 0666 \"$target\"\n  fi\ndone\n")
+                    .withArgs("chmod 0700 /config-rw\nfor f in /config-ro/*; do\n  if [ -f \"$f\" ]; then\n    target=\"/config-rw/$(basename \"$f\")\"\n    cp -L \"$f\" \"$target\"\n    chmod 0600 \"$target\"\n  fi\ndone\n")
                     .withVolumeMounts(List.of(roMount, rwMount))
+                    .withSecurityContext(initSecurityContext)
+                    .withResources(initResources)
                     .build();
             initContainers.add(initContainer);
         }
