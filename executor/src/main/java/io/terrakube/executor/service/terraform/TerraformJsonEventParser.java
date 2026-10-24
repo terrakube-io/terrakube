@@ -25,10 +25,16 @@ public class TerraformJsonEventParser {
             "applying", "provisioning", "refreshing", "reading", STATUS_EPHEMERAL_OPENING, "ephemeral-closing");
 
     private final ObjectMapper objectMapper;
+    private final boolean isApply;
     private volatile boolean sawTerraformEvent;
 
     public TerraformJsonEventParser(ObjectMapper objectMapper) {
+        this(objectMapper, false);
+    }
+
+    public TerraformJsonEventParser(ObjectMapper objectMapper, boolean isApply) {
         this.objectMapper = objectMapper;
+        this.isApply = isApply;
     }
 
     /**
@@ -106,6 +112,10 @@ public class TerraformJsonEventParser {
                 // no-op: version/change_summary/outputs and any future event type from either
                 // spec don't carry a resource-status transition we track.
             }
+        }
+
+        if (isApply && ("planned_change".equals(type) || "version".equals(type))) {
+            return null;
         }
 
         return message instanceof String text ? text : null;

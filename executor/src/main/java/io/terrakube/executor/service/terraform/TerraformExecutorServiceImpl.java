@@ -592,20 +592,6 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
 
                     handleTerraformStateChange(terraformJob, terraformWorkingDir, executorTempDirectory, applyOutput);
 
-                    // apply -json's event stream only ever carries terse per-resource one-liners
-                    // ("aws_instance.foo: Creating...", "...Creation complete after 3s [id=...]")
-                    // plus the final change-summary line - unlike plan(), which appends
-                    // the classic rendered diff, apply never appended anything
-                    // resembling a `terraform show`/CLI-style closing readout. Mirrors plan()'s
-                    // append (same reasoning: must run before logsService.flush() below), just
-                    // rendered from the plan file apply already downloaded above instead of one it
-                    // computed itself - real `terraform apply <planfile>` reprints this same diff
-                    // before executing it, so this restores that content even though Terrakube
-                    // renders it after the resource-by-resource lines rather than before.
-                    if (execution && planFileDownloaded) {
-                        planStructuredOutputService.streamPlanAsHumanText(terraformJob, terraformWorkingDir, applyOutput);
-                    }
-
                     if (execution) {
                         appendHumanReadableOutputs(terraformJob, applyOutput);
                     }
@@ -674,7 +660,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         List<Map<String, Object>> changes = new ArrayList<>(applyStructuredOutputService.seedFromPlan(
                 terraformJob.getOrganizationId(), terraformJob.getJobId()));
         List<Map<String, Object>> jobDiagnostics = new ArrayList<>();
-        TerraformJsonEventParser eventParser = new TerraformJsonEventParser(objectMapper);
+        TerraformJsonEventParser eventParser = new TerraformJsonEventParser(objectMapper, true);
 
         if (!changes.isEmpty()) {
             applyStructuredOutputService.publishApplyProgress(
