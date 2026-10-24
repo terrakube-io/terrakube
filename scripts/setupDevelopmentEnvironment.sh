@@ -199,22 +199,19 @@ function generateExecutorVars() {
 	echo "TerrakubeEnableSecurity=$TerrakubeEnableSecurity" >>.envExecutor
 	echo "InternalSecret=" >>.envExecutor
 	echo "InternalSecretFile=$InternalSecretFile" >>.envExecutor
+	echo "ExecutorSecretsDirectory=/tmp/terrakube-executor-secrets" >>.envExecutor
+	echo "ExecutorSecretsFile=/tmp/terrakube-executor-secrets/executor.env" >>.envExecutor
 
 	echo "TerraformStateType=$TerraformStateType" >>.envExecutor
-	echo "AwsTerraformStateAccessKey=$AwsTerraformStateAccessKey" >>.envExecutor
-	echo "AwsTerraformStateSecretKey=$AwsTerraformStateSecretKey" >>.envExecutor
 	echo "AwsTerraformStateBucketName=$AwsTerraformStateBucketName" >>.envExecutor
 	echo "AwsTerraformStateRegion=$AwsTerraformStateRegion" >>.envExecutor
 	echo "AwsEndpoint=$AwsEndpoint" >>.envExecutor
 
 	echo "TerraformOutputType=$TerraformOutputType" >>.envExecutor
-	echo "AwsTerraformOutputAccessKey=$AwsTerraformOutputAccessKey" >>.envExecutor
-	echo "AwsTerraformOutputSecretKey=$AwsTerraformOutputSecretKey" >>.envExecutor
 	echo "AwsTerraformOutputBucketName=$AwsTerraformOutputBucketName" >>.envExecutor
 	echo "AwsTerraformOutputRegion=$AwsTerraformOutputRegion" >>.envExecutor
 
 	echo "AzureAccountName=$AzureAccountName" >>.envExecutor
-	echo "AzureAccountKey=$AzureAccountKey" >>.envExecutor
 	echo "AzureConnectionString=$AzureConnectionString" >>.envExecutor
 	echo "AzureCustomConnectionString=true" >>.envExecutor
 	echo "AzureUseStorageEndpoint=true" >>.envExecutor
@@ -222,8 +219,6 @@ function generateExecutorVars() {
 	echo "AzureTerraformStateResourceGroup=fake-rg" >>.envExecutor
 	echo "AzureTerraformStateStorageAccountName=devstoreaccount1" >>.envExecutor
 	echo "AzureTerraformStateStorageContainerName=tfstate" >>.envExecutor
-	echo "AzureTerraformStateResourceGroup=fake-rg" >>.envExecutor
-	echo "AzureTerraformStateStorageAccessKey=$AzureAccountKey" >>.envExecutor
 
 	echo "AzBuilderApiUrl=$AzBuilderApiUrl" >>.envExecutor
 	echo "ExecutorFlagBatch=$ExecutorFlagBatch" >>.envExecutor
@@ -238,7 +233,24 @@ function generateExecutorVars() {
 	echo "TerrakubeRedisPort=6379" >>.envExecutor
 	echo "TerrakubeRedisSSL=false" >>.envExecutor
 	echo "TerrakubeRedisUsername=default" >>.envExecutor
-	echo "TerrakubeRedisPassword=password123456" >>.envExecutor
+
+	# Populate ephemeral secrets for local devcontainer execution (ingested and shredded on startup)
+	mkdir -p /tmp/terrakube-executor-secrets
+	chmod 700 /tmp/terrakube-executor-secrets 2>/dev/null || true
+	rm -f /tmp/terrakube-executor-secrets/executor.env
+	echo "InternalSecret=$InternalSecret" >> /tmp/terrakube-executor-secrets/executor.env
+	echo "TerrakubeRedisPassword=password123456" >> /tmp/terrakube-executor-secrets/executor.env
+	if [ "$storage_value" = "MINIO" ]; then
+		echo "AwsTerraformStateAccessKey=$AwsTerraformStateAccessKey" >> /tmp/terrakube-executor-secrets/executor.env
+		echo "AwsTerraformStateSecretKey=$AwsTerraformStateSecretKey" >> /tmp/terrakube-executor-secrets/executor.env
+		echo "AwsTerraformOutputAccessKey=$AwsTerraformOutputAccessKey" >> /tmp/terrakube-executor-secrets/executor.env
+		echo "AwsTerraformOutputSecretKey=$AwsTerraformOutputSecretKey" >> /tmp/terrakube-executor-secrets/executor.env
+	fi
+	if [ -n "$AzureAccountKey" ]; then
+		echo "AzureAccountKey=$AzureAccountKey" >> /tmp/terrakube-executor-secrets/executor.env
+		echo "AzureTerraformStateStorageAccessKey=$AzureAccountKey" >> /tmp/terrakube-executor-secrets/executor.env
+	fi
+	chmod 600 /tmp/terrakube-executor-secrets/executor.env 2>/dev/null || true
 }
 
 function generateRegistryVars() {

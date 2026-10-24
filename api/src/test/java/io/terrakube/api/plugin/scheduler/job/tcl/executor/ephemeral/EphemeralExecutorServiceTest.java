@@ -30,6 +30,7 @@ import io.fabric8.kubernetes.api.model.Container;
 import io.fabric8.kubernetes.api.model.EnvVar;
 import io.fabric8.kubernetes.api.model.ObjectMeta;
 import io.fabric8.kubernetes.api.model.PodSpec;
+import io.fabric8.kubernetes.api.model.Quantity;
 import io.fabric8.kubernetes.api.model.Toleration;
 import io.fabric8.kubernetes.api.model.Volume;
 import io.fabric8.kubernetes.api.model.VolumeMount;
@@ -496,5 +497,110 @@ public class EphemeralExecutorServiceTest {
 
         ExecutionException thrown = assertThrows(ExecutionException.class, () -> subject().send(job(), context()));
         assertFalse(thrown instanceof ExecutorUnavailableException);
+    }
+
+    @Test
+    public void mountsSecretAsEphemeralEmptyDir() throws ExecutionException {
+        config.setEmptyDirSecret(true);
+
+        subject().send(job(), context());
+
+        verify(namespaced, times(1)).resource(job.capture());
+        PodSpec podSpec = job.getValue().getSpec().getTemplate().getSpec();
+        Container container = podSpec.getContainers().getFirst();
+
+        // 1. Secrets must NOT be present in envFrom
+        assertTrue(container.getEnvFrom().isEmpty(), "Secrets must not be present in envFrom when emptyDirSecret is true");
+
+        // 2. ExecutorSecretsDirectory env var must be set
+        HashMap<String, String> envMap = envVarsToMap(container.getEnv());
+        assertEquals("/etc/terrakube/secrets", envMap.get("ExecutorSecretsDirectory"));
+
+        // 3. Container mounts writable emptyDir at /etc/terrakube/secrets
+        VolumeMount secretMount = container.getVolumeMounts().stream()
+                .filter(m -> "/etc/terrakube/secrets".equals(m.getMountPath()))
+                .findFirst()
+                .orElse(null);
+        assertNotNull(secretMount);
+        assertEquals("writable-executor-secrets", secretMount.getName());
+
+        // 4. Init container is present and copies secrets
+        assertNotNull(podSpec.getInitContainers());
+        assertEquals(1, podSpec.getInitContainers().size());
+        Container initContainer = podSpec.getInitContainers().getFirst();
+        assertEquals("copy-executor-secrets", initContainer.getName());
+        assertEquals("busybox:1.37.0", initContainer.getImage());
+        assertNotNull(initContainer.getSecurityContext());
+        assertTrue(initContainer.getSecurityContext().getRunAsNonRoot());
+        assertEquals(1000L, initContainer.getSecurityContext().getRunAsUser());
+        assertEquals(1000L, initContainer.getSecurityContext().getRunAsGroup());
+        assertFalse(initContainer.getSecurityContext().getAllowPrivilegeEscalation());
+        assertEquals(List.of("ALL"), initContainer.getSecurityContext().getCapabilities().getDrop());
+        assertEquals("RuntimeDefault", initContainer.getSecurityContext().getSeccompProfile().getType());
+        assertNotNull(initContainer.getResources());
+        assertEquals(new Quantity("50m"), initContainer.getResources().getRequests().get("cpu"));
+        assertEquals(new Quantity("64Mi"), initContainer.getResources().getRequests().get("memory"));
+        assertEquals(new Quantity("100m"), initContainer.getResources().getLimits().get("cpu"));
+        assertEquals(new Quantity("64Mi"), initContainer.getResources().getLimits().get("memory"));
+        assertTrue(initContainer.getArgs().getFirst().contains("chmod 0700 /config-rw"));
+        assertTrue(initContainer.getArgs().getFirst().contains("chmod 0600"));
+
+        // 5. Pod volumes include raw projected secret and memory-backed emptyDir
+        Volume rawVol = podSpec.getVolumes().stream()
+                .filter(v -> "raw-secret".equals(v.getName()))
+                .findFirst()
+                .orElse(null);
+        assertNotNull(rawVol);
+        assertNotNull(rawVol.getProjected());
+        assertEquals(1, rawVol.getProjected().getSources().size());
+        assertEquals("ze-secret", rawVol.getProjected().getSources().getFirst().getSecret().getName());
+
+        Volume writableVol = podSpec.getVolumes().stream()
+                .filter(v -> "writable-executor-secrets".equals(v.getName()))
+                .findFirst()
+                .orElse(null);
+        assertNotNull(writableVol);
+        assertNotNull(writableVol.getEmptyDir());
+        assertEquals("Memory", writableVol.getEmptyDir().getMedium());
+        assertEquals(new Quantity("64Mi"), writableVol.getEmptyDir().getSizeLimit());
+    }
+
+    @Test
+    public void mountsMultipleSecretsAsEphemeralEmptyDir() throws ExecutionException {
+        config.setEmptyDirSecret(true);
+        config.setSecret(List.of("secret-one", "secret-two"));
+
+        subject().send(job(), context());
+
+        verify(namespaced, times(1)).resource(job.capture());
+        PodSpec podSpec = job.getValue().getSpec().getTemplate().getSpec();
+        Container container = podSpec.getContainers().getFirst();
+
+        assertTrue(container.getEnvFrom().isEmpty());
+
+        Volume rawVol = podSpec.getVolumes().stream()
+                .filter(v -> "raw-secret".equals(v.getName()))
+                .findFirst()
+                .orElse(null);
+        assertNotNull(rawVol);
+        assertNotNull(rawVol.getProjected());
+        assertEquals(2, rawVol.getProjected().getSources().size());
+        assertEquals("secret-one", rawVol.getProjected().getSources().get(0).getSecret().getName());
+        assertEquals("secret-two", rawVol.getProjected().getSources().get(1).getSecret().getName());
+    }
+
+    @Test
+    public void mountsEmptySecretListWithEmptyDirSecretCleanly() throws ExecutionException {
+        config.setEmptyDirSecret(true);
+        config.setSecret(List.of());
+
+        subject().send(job(), context());
+
+        verify(namespaced, times(1)).resource(job.capture());
+        PodSpec podSpec = job.getValue().getSpec().getTemplate().getSpec();
+        Container container = podSpec.getContainers().getFirst();
+
+        assertTrue(container.getEnvFrom().isEmpty());
+        assertTrue(podSpec.getInitContainers() == null || podSpec.getInitContainers().isEmpty());
     }
 }
