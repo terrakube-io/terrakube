@@ -719,31 +719,30 @@ class TerraformExecutorServiceImplTest {
                 event.getLevel() == Level.WARN && event.getFormattedMessage().strip().equals(message));
     }
 
-    // Real `terraform apply <planfile>` reprints the plan's classic HCL diff before executing it -
-    // apply -json never does, since -json mode has no such event. When apply is running from a
-    // downloaded plan file (the normal plan-then-apply workflow), the console should get that same
-    // diff back via streamPlanAsHumanText, mirroring plan()'s own append.
+    // In a plan-then-apply workflow, the plan step already rendered the HCL diff before the user
+    // approved execution. Apply must not re-stream the plan diff or emit "version" / "planned_change"
+    // preamble messages, starting directly with live resource creation lines.
     @Test
-    void appendsHumanReadablePlanDiffWhenApplyingFromDownloadedPlanFile() throws Exception {
+    void doesNotRenderPlanDiffWhenApplyingFromDownloadedPlanFile() throws Exception {
         TerraformExecutorServiceImpl subject = subjectSpy();
         TerraformJob terraformJob = createJob();
 
         when(applyStructuredOutputService.seedFromPlan("org", "42")).thenReturn(List.of());
         when(terraformState.downloadTerraformPlan(eq("org"), eq("workspace"), eq("42"), eq("1"), any(File.class)))
                 .thenReturn(true);
-        when(planStructuredOutputService.streamPlanAsHumanText(eq(terraformJob), any(File.class), any()))
-                .thenAnswer(invocation -> {
-                    Consumer<String> lines = invocation.getArgument(2);
-                    lines.accept("-/+ resource \"random_pet\" \"this\" {");
-                    lines.accept("      ~ id = \"a\" -> (known after apply)");
-                    lines.accept("    }");
-                    return true;
-                });
 
         when(terraformClient.init(any(TerraformProcessData.class), any(Consumer.class), any()))
                 .thenReturn(CompletableFuture.completedFuture(true));
         when(terraformClient.apply(any(TerraformProcessData.class), any(Consumer.class), any()))
-                .thenReturn(CompletableFuture.completedFuture(true));
+                .thenAnswer(invocation -> {
+                    Consumer<String> lineConsumer = invocation.getArgument(1);
+                    lineConsumer.accept("{\"@message\":\"Terraform 1.16.1\",\"type\":\"version\"}");
+                    lineConsumer.accept("{\"@message\":\"null_resource.previous: Plan to create\",\"change\":{\"resource\":{\"addr\":\"null_resource.previous\"},\"action\":\"create\"},\"type\":\"planned_change\"}");
+                    lineConsumer.accept("{\"@message\":\"null_resource.previous: Creating...\",\"hook\":{\"resource\":{\"addr\":\"null_resource.previous\"},\"action\":\"create\"},\"type\":\"apply_start\"}");
+                    lineConsumer.accept("{\"@message\":\"null_resource.previous: Creation complete after 0s [id=123]\",\"hook\":{\"resource\":{\"addr\":\"null_resource.previous\"},\"action\":\"create\",\"id_key\":\"id\",\"id_value\":\"123\",\"elapsed_seconds\":0},\"type\":\"apply_complete\"}");
+                    lineConsumer.accept("{\"@message\":\"Apply complete! Resources: 1 added, 0 changed, 0 destroyed.\",\"type\":\"change_summary\"}");
+                    return CompletableFuture.completedFuture(true);
+                });
         when(terraformClient.show(any(TerraformProcessData.class), any(Consumer.class), any(Consumer.class)))
                 .thenReturn(CompletableFuture.completedFuture(false));
         when(terraformClient.statePull(any(TerraformProcessData.class), any(Consumer.class), any(Consumer.class)))
@@ -752,8 +751,12 @@ class TerraformExecutorServiceImplTest {
         ExecutorJobResult result = subject.apply(terraformJob, tempDir.toFile());
 
         assertTrue(result.isSuccessfulExecution());
-        assertTrue(outputOf(result).contains("-/+ resource \"random_pet\" \"this\" {"));
-        assertTrue(outputOf(result).contains("~ id = \"a\" -> (known after apply)"));
+        verify(planStructuredOutputService, never()).streamPlanAsHumanText(any(), any(), any());
+        assertFalse(outputOf(result).contains("Terraform 1.16.1"), outputOf(result));
+        assertFalse(outputOf(result).contains("Plan to create"), outputOf(result));
+        assertTrue(outputOf(result).contains("null_resource.previous: Creating..."), outputOf(result));
+        assertTrue(outputOf(result).contains("null_resource.previous: Creation complete after 0s [id=123]"), outputOf(result));
+        assertTrue(outputOf(result).contains("Apply complete! Resources: 1 added, 0 changed, 0 destroyed."), outputOf(result));
     }
 
     // No plan file means apply ran directly against HCL (e.g. a Destroy-workflow-style apply with

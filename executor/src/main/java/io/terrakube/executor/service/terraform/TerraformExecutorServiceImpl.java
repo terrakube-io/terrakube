@@ -588,14 +588,6 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                     }
                     terraformProcessData.setTerraformVariables(planFileDownloaded ? new HashMap<>() : terraformParameters);
 
-                    // Real `terraform apply <planfile>` reprints this same plan diff before executing it.
-                    // Emitting it before runJsonApply ensures the console log flows in natural order:
-                    // plan diff first, followed by live resource changes, and ending on the final
-                    // Apply completion summary and outputs.
-                    if (planFileDownloaded) {
-                        planStructuredOutputService.streamPlanAsHumanText(terraformJob, terraformWorkingDir, applyOutput);
-                    }
-
                     execution = runJsonApply(terraformJob, terraformProcessData, applyOutput);
 
                     handleTerraformStateChange(terraformJob, terraformWorkingDir, executorTempDirectory, applyOutput);
@@ -668,7 +660,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         List<Map<String, Object>> changes = new ArrayList<>(applyStructuredOutputService.seedFromPlan(
                 terraformJob.getOrganizationId(), terraformJob.getJobId()));
         List<Map<String, Object>> jobDiagnostics = new ArrayList<>();
-        TerraformJsonEventParser eventParser = new TerraformJsonEventParser(objectMapper);
+        TerraformJsonEventParser eventParser = new TerraformJsonEventParser(objectMapper, true);
 
         if (!changes.isEmpty()) {
             applyStructuredOutputService.publishApplyProgress(
