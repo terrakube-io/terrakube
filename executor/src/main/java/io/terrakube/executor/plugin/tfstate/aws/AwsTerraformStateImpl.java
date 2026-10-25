@@ -369,25 +369,6 @@ public class AwsTerraformStateImpl implements TerraformState {
     }
 
     @Override
-    public String saveOutput(String organizationId, String jobId, String stepId, String output, String outputError) {
-        String blobKey = "tfoutput/" + organizationId + "/" + jobId + "/" + stepId + ".tfoutput";
-        log.info("blobKey: {}", blobKey);
-
-        byte[] bytes = StringUtils.getBytesUtf8(output + outputError);
-        String utf8EncodedString = StringUtils.newStringUtf8(bytes);
-
-        PutObjectRequest putObjectRequest = PutObjectRequest.builder()
-                .bucket(bucketName)
-                .key(blobKey)
-                .build();
-
-        storageRetryMetrics.withRetry("aws", "output-write", () -> s3client.putObject(putObjectRequest, RequestBody.fromString(utf8EncodedString)));
-        log.info("Upload Object {} completed", blobKey);
-
-        return terraformOutputPathService.getOutputPath(organizationId, jobId, stepId);
-    }
-
-    @Override
     public String saveBufferedOutput(String organizationId, String jobId, String stepId, StepOutputBuffer output, String outputError) {
         String blobKey = "tfoutput/" + organizationId + "/" + jobId + "/" + stepId + ".tfoutput";
         log.info("blobKey: {}", blobKey);

@@ -543,7 +543,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                     log.error("Plan artifacts could not be restored for job {} step {}: {}",
                             terraformJob.getJobId(), terraformJob.getStepId(), e.getMessage());
                     recordArtifactMetrics("restore_failed", 0);
-                    return generateJobResult(false, "", "Plan artifacts could not be restored: " + e.getMessage());
+                    return generateJobResult(false, terraformOutput, "Plan artifacts could not be restored: " + e.getMessage());
                 }
             }
 
@@ -1011,15 +1011,9 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
     // The buffer travels with the result and is closed by whoever saves it (ExecutorJobImpl), once the
     // output has been uploaded.
     private ExecutorJobResult generateJobResult(boolean scriptAfterSuccess, StepOutputBuffer jobOutput, String jobErrorOutput) {
-        ExecutorJobResult jobResult = generateJobResult(scriptAfterSuccess, "", jobErrorOutput);
-        jobResult.setOutputBuffer(jobOutput);
-        return jobResult;
-    }
-
-    private ExecutorJobResult generateJobResult(boolean scriptAfterSuccess, String jobOutput, String jobErrorOutput) {
         ExecutorJobResult jobResult = new ExecutorJobResult();
         jobResult.setSuccessfulExecution(scriptAfterSuccess);
-        jobResult.setOutputLog(jobOutput);
+        jobResult.setOutputBuffer(jobOutput);
         jobResult.setOutputErrorLog(jobErrorOutput);
 
         return jobResult;
@@ -1219,13 +1213,9 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             });
             terraformVersion = terraformClient.version().get();
         } catch (IOException | ExecutionException | InterruptedException exception) {
-            setError(exception);
+            describeFailure(exception, null);
         }
         return terraformVersion;
-    }
-
-    private ExecutorJobResult setError(Exception exception) {
-        return setError(exception, "");
     }
 
     // Keep everything Terraform/OpenTofu already streamed to the console before the failure. The
@@ -1236,55 +1226,45 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
     // output stream" with none of the real Terraform output, and none of the real error (the
     // "Error: External Program Lookup Failed" / missing-python diagnostic, in the reported case)
     // that actually caused it.
-    ExecutorJobResult setError(Exception exception, StepOutputBuffer partialConsoleOutput) {
-        ExecutorJobResult error = setError(exception, "");
-        // The text version built the trailer on its own; put it after what was already streamed.
+    ExecutorJobResult setError(Exception exception, StepOutputBuffer streamedOutput) {
+        StepOutputBuffer partialConsoleOutput = streamedOutput != null ? streamedOutput : new StepOutputBuffer();
+        // Put the failure after what was already streamed, with a blank line between.
         if (partialConsoleOutput.sizeInBytes() > 0) {
             partialConsoleOutput.appendln("");
         }
-        for (String line : error.getOutputLog().split("\n")) {
-            partialConsoleOutput.appendln(line);
-        }
-        error.setOutputLog("");
-        error.setOutputBuffer(partialConsoleOutput);
-        return error;
+        String message = describeFailure(exception, partialConsoleOutput);
+        return generateJobResult(false, partialConsoleOutput, message);
     }
 
-    ExecutorJobResult setError(Exception exception, String partialConsoleOutput) {
+    // Logs and counts the failure and, when there is an output, writes the trailer that explains it.
+    // Returns the message to report as the error of the step.
+    private String describeFailure(Exception exception, StepOutputBuffer output) {
         String message = exception.getMessage() != null ? exception.getMessage() : exception.toString();
         log.error("Terraform operation failed: {}", message, exception);
 
         // A terraform-spring-boot stream-drain watchdog failure is an executor-side symptom, not the
         // Terraform diagnostic - the real error (an unset required variable, a missing provider) is
-        // already in partialConsoleOutput above. Count it and keep it clearly secondary so it never
+        // already in the output above. Count it and keep it clearly secondary so it never
         // masks the diagnostic the user actually needs.
         boolean streamDrainFailure = messageChainContains(exception, "Failed to capture process output stream");
         if (streamDrainFailure && meterRegistry != null) {
             meterRegistry.counter("terrakube.executor.process.stream.drain.timeouts").increment();
         }
 
-        TextStringBuilder consoleOutput = new TextStringBuilder();
-        if (partialConsoleOutput != null && !partialConsoleOutput.isBlank()) {
-            consoleOutput.append(partialConsoleOutput);
-            if (!partialConsoleOutput.endsWith("\n")) {
-                consoleOutput.appendNewLine();
+        if (output != null) {
+            output.appendln("Error: the Terrakube executor could not finish this operation");
+            if (streamDrainFailure) {
+                output.appendln("(secondary, executor-side) " + message);
+                output.appendln("The Terraform/OpenTofu diagnostic above is the primary error.");
+            } else {
+                output.appendln(message);
             }
-            consoleOutput.appendNewLine();
         }
-        consoleOutput.appendln("Error: the Terrakube executor could not finish this operation");
-        if (streamDrainFailure) {
-            consoleOutput.appendln("(secondary, executor-side) " + message);
-            consoleOutput.appendln("The Terraform/OpenTofu diagnostic above is the primary error.");
-        } else {
-            consoleOutput.appendln(message);
-        }
-
-        ExecutorJobResult error = generateJobResult(false, consoleOutput.toString(), message);
 
         if (exception instanceof InterruptedException) {
             Thread.currentThread().interrupt();
         }
-        return error;
+        return message;
     }
 
     private static boolean messageChainContains(Throwable throwable, String needle) {

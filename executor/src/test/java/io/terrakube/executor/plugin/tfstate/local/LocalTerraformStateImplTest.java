@@ -8,6 +8,7 @@ import io.terrakube.executor.service.mode.TerraformJob;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.FilenameUtils;
 import org.junit.jupiter.api.BeforeEach;
+import io.terrakube.executor.service.logs.StepOutputBuffer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Answers;
@@ -215,7 +216,7 @@ class LocalTerraformStateImplTest {
 
         when(terraformOutputPathService.getOutputPath(organizationId, jobId, stepId)).thenReturn("http://api/output");
 
-        String result = localTerraformState.saveOutput(organizationId, jobId, stepId, output, outputError);
+        String result = localTerraformState.saveBufferedOutput(organizationId, jobId, stepId, StepOutputBuffer.ofMessage(output), outputError);
 
         assertEquals("http://api/output", result);
         
@@ -247,7 +248,7 @@ class LocalTerraformStateImplTest {
 
         try {
             assertThrows(io.terrakube.executor.plugin.tfstate.TerraformStateUnavailableException.class,
-                    () -> localTerraformState.saveOutput(organizationId, jobId, stepId, "output", "error"));
+                    () -> localTerraformState.saveBufferedOutput(organizationId, jobId, stepId, StepOutputBuffer.ofMessage("output"), "error"));
         } finally {
             FileUtils.deleteQuietly(new File(FileUtils.getUserDirectoryPath(),
                     String.format(".terraform-spring-boot/local/output/%s", organizationId)));

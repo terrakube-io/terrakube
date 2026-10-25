@@ -7,6 +7,7 @@ import io.terrakube.executor.plugin.tfstate.TerraformStatePathService;
 import io.terrakube.executor.service.mode.TerraformJob;
 import org.apache.commons.io.FileUtils;
 import org.junit.jupiter.api.BeforeEach;
+import io.terrakube.executor.service.logs.StepOutputBuffer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -331,7 +332,7 @@ class AwsTerraformStateImplTest {
         when(s3Utilities.getUrl(any(GetUrlRequest.class))).thenReturn(new URL("https://s3.amazonaws.com/test-bucket/output"));
         when(terraformOutputPathService.getOutputPath(organizationId, jobId, stepId)).thenReturn("http://api/output");
 
-        String result = awsTerraformState.saveOutput(organizationId, jobId, stepId, output, outputError);
+        String result = awsTerraformState.saveBufferedOutput(organizationId, jobId, stepId, StepOutputBuffer.ofMessage(output), outputError);
 
         assertEquals("http://api/output", result);
         verify(s3Client, times(1)).putObject(any(PutObjectRequest.class), any(RequestBody.class));

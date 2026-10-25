@@ -156,7 +156,9 @@ public class ExecutorJobImpl implements ExecutorJob {
                 terraformWorkingDir = setupWorkspace.prepareWorkspace(terraformJob);
             } catch (WorkspaceException e) {
                 log.error("Failed to prepare work dir: ", e);
-                updateJobStatus.setCompletedStatus(false, false, -1, terraformJob, "Failed to prepare work dir\n", e.getMessage(), null, "");
+                try (StepOutputBuffer output = StepOutputBuffer.ofMessage("Failed to prepare work dir\n")) {
+                    updateJobStatus.setCompletedStatus(false, false, -1, terraformJob, output, e.getMessage(), null, "");
+                }
                 return;
             }
             try {
@@ -170,7 +172,9 @@ public class ExecutorJobImpl implements ExecutorJob {
                 // nothing to retry.
                 log.error("Unexpected error executing job for Organization {} Workspace {}: {}",
                         terraformJob.getOrganizationId(), terraformJob.getWorkspaceId(), e.getMessage(), e);
-                updateJobStatus.setCompletedStatus(false, false, -1, terraformJob, "Unexpected error executing job\n", e.getMessage(), null, "");
+                try (StepOutputBuffer output = StepOutputBuffer.ofMessage("Unexpected error executing job\n")) {
+                    updateJobStatus.setCompletedStatus(false, false, -1, terraformJob, output, e.getMessage(), null, "");
+                }
             }
         } finally {
             // After executeJob, so the structured-output drain has already minted every revision.
@@ -249,7 +253,7 @@ public class ExecutorJobImpl implements ExecutorJob {
                     terraformResult = opaExecutorService.evaluateJob(terraformJob, terraformWorkingDir);
                 } else {
                     terraformResult = new ExecutorJobResult();
-                    terraformResult.setOutputLog("OPA Executor Service is not available.");
+                    terraformResult.setOutputBuffer(StepOutputBuffer.ofMessage("OPA Executor Service is not available."));
                     terraformResult.setOutputErrorLog("OpaExecutorService is null.");
                     terraformResult.setSuccessfulExecution(false);
                     terraformResult.setExitCode(1);
@@ -281,7 +285,6 @@ public class ExecutorJobImpl implements ExecutorJob {
                 boolean handedOver = false;
                 try {
                     executionSuccess = scriptEngineService.execute(terraformJob, terraformJob.getCommandList(), terraformWorkingDir, output);
-                    terraformResult.setOutputLog("");
                     terraformResult.setOutputBuffer(scriptOutput);
                     handedOver = true;
                 } finally {
@@ -295,24 +298,16 @@ public class ExecutorJobImpl implements ExecutorJob {
                 break;
             default:
                 terraformResult = new ExecutorJobResult();
-                terraformResult.setOutputLog("Command Completed");
+                terraformResult.setOutputBuffer(StepOutputBuffer.ofMessage("Command Completed"));
                 terraformResult.setOutputErrorLog("Command type not defined");
                 terraformResult.setSuccessfulExecution(false);
                 break;
         }
 
         boolean executionSuccess = terraformResult.isSuccessfulExecution();
-        StepOutputBuffer outputBuffer = terraformResult.getOutputBuffer();
-        try {
-            if (outputBuffer != null) {
-                updateJobStatus.setCompletedStatusWithOutput(executionSuccess, terraformResult.isPlan, terraformResult.getExitCode(), terraformJob, outputBuffer, terraformResult.getOutputErrorLog(), terraformResult.getPlanFile(), commitId, terraformResult.isHasSoftMandatoryViolations(), terraformResult.getApprovalTeam(), terraformResult.getDeliveryState(), terraformResult.getDeliveryRevision());
-            } else {
-                updateJobStatus.setCompletedStatus(executionSuccess, terraformResult.isPlan, terraformResult.getExitCode(), terraformJob, terraformResult.getOutputLog(), terraformResult.getOutputErrorLog(), terraformResult.getPlanFile(), commitId, terraformResult.isHasSoftMandatoryViolations(), terraformResult.getApprovalTeam(), terraformResult.getDeliveryState(), terraformResult.getDeliveryRevision());
-            }
-        } finally {
-            if (outputBuffer != null) {
-                outputBuffer.close();
-            }
+        // Every step hands over its console output in a buffer, which is closed here once it is saved.
+        try (StepOutputBuffer outputBuffer = terraformResult.getOutputBuffer()) {
+            updateJobStatus.setCompletedStatus(executionSuccess, terraformResult.isPlan, terraformResult.getExitCode(), terraformJob, outputBuffer, terraformResult.getOutputErrorLog(), terraformResult.getPlanFile(), commitId, terraformResult.isHasSoftMandatoryViolations(), terraformResult.getApprovalTeam(), terraformResult.getDeliveryState(), terraformResult.getDeliveryRevision());
         }
     }
 

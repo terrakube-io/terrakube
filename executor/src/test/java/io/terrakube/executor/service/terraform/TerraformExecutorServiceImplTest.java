@@ -14,6 +14,7 @@ import io.terrakube.executor.service.artifact.ArtifactPackagingService;
 import io.terrakube.executor.service.artifact.ArtifactRestoreService;
 import io.terrakube.executor.plugin.tfstate.TerraformStateUnavailableException;
 import io.terrakube.executor.service.executor.ExecutorJobResult;
+import io.terrakube.executor.service.logs.StepOutputBuffer;
 import io.terrakube.executor.service.logs.ProcessLogs;
 import io.terrakube.executor.service.mode.TerraformJob;
 import io.terrakube.executor.service.scripts.ScriptEngineService;
@@ -1615,12 +1616,22 @@ class TerraformExecutorServiceImplTest {
     }
 
     @Test
+    void aFailureBeforeAnyOutputExistedStillProducesAResult() {
+        ExecutorJobResult result = subject().setError(new IllegalStateException("boom"), null);
+
+        assertFalse(result.isSuccessfulExecution());
+        assertTrue(outputOf(result).contains("boom"), outputOf(result));
+    }
+
+    @Test
     void streamDrainFailureKeepsTheTerraformDiagnosticPrimaryAndCountsIt() {
         TerraformExecutorServiceImpl subject = subject();
         String realDiagnostic = "Error: Reference to undeclared input variable\n\n  on main.tf line 3\n";
 
+        StepOutputBuffer partial = new StepOutputBuffer();
+        partial.appendln(realDiagnostic.stripTrailing());
         ExecutorJobResult result = subject.setError(
-                new RuntimeException("Failed to capture process output stream"), realDiagnostic);
+                new RuntimeException("Failed to capture process output stream"), partial);
 
         int diagnosticIndex = outputOf(result).indexOf("undeclared input variable");
         int captureIndex = outputOf(result).indexOf("Failed to capture process output stream");
@@ -2083,8 +2094,8 @@ class TerraformExecutorServiceImplTest {
         assertEquals(1, artifactCount("restore_failed"));
     }
 
-    // Step output travels in a buffer that may have moved to a file, the String field is empty then.
+    // Step output travels in a buffer that may have moved to a file.
     private static String outputOf(ExecutorJobResult result) {
-        return result.getOutputBuffer() != null ? result.getOutputBuffer().toString() : result.getOutputLog();
+        return result.getOutputBuffer().toString();
     }
 }

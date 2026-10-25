@@ -249,21 +249,6 @@ public class GcpTerraformStateImpl implements TerraformState {
     }
 
     @Override
-    public String saveOutput(String organizationId, String jobId, String stepId, String output, String outputError) {
-        String blobKey = String.format("tfoutput/%s/%s/%s.tfoutput",organizationId, jobId, stepId);
-        log.info("blobKey: {}", blobKey);
-
-        byte[] bytes = StringUtils.getBytesUtf8(output + outputError);
-        String utf8EncodedString = StringUtils.newStringUtf8(bytes);
-        BlobId blobId = BlobId.of(bucketName, blobKey);
-        BlobInfo blobInfo = BlobInfo.newBuilder(blobId).build();
-        storageRetryMetrics.withRetry("gcp", "output-write", () -> storage.create(blobInfo, utf8EncodedString.getBytes()));
-        log.info("File uploaded to bucket {} as {}", bucketName, blobKey);
-
-        return terraformOutputPathService.getOutputPath(organizationId, jobId, stepId);
-    }
-
-    @Override
     public String saveBufferedOutput(String organizationId, String jobId, String stepId, StepOutputBuffer output, String outputError) {
         String blobKey = String.format("tfoutput/%s/%s/%s.tfoutput", organizationId, jobId, stepId);
         log.info("blobKey: {}", blobKey);
