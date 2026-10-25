@@ -56,6 +56,7 @@ export default function ProjectsPage({ organizationName, setOrganizationName }: 
       const values = await form.validateFields();
       setSubmitting(true);
       await projectService.createProject(id!, values);
+      setSearch("");
       message.success("Project created");
       setModalOpen(false);
       execute();
@@ -131,23 +132,18 @@ export default function ProjectsPage({ organizationName, setOrganizationName }: 
             allowClear
             className="projects-search-input"
           />
-          {filteredProjects.length === 0 ? (
-            <Flex justify="center">
-              <EmptyState description="No projects found" />
-            </Flex>
-          ) : (
-            <Table
-              dataSource={filteredProjects}
-              columns={columns}
-              rowKey="id"
-              pagination={{
-                showSizeChanger: true,
-                defaultPageSize: 10,
-                current: currentPage,
-                onChange: setCurrentPage,
-              }}
-            />
-          )}
+          <Table
+            dataSource={filteredProjects}
+            columns={columns}
+            rowKey="id"
+            locale={{ emptyText: <EmptyState description="No projects found" /> }}
+            pagination={{
+              showSizeChanger: true,
+              defaultPageSize: 10,
+              current: currentPage,
+              onChange: setCurrentPage,
+            }}
+          />
         </>
       )}
       <Modal
