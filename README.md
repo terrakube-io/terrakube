@@ -57,7 +57,7 @@ Open Terrakube in a GitHub Codespace to test it from your browser:
 
 - **Drift Detection and Schedules:** Run plans on a schedule to catch drift, and chain workspaces with run triggers.
 
-- **Pull Request and CI Integration:** Post plan results back to your GitHub, GitLab or Bitbucket pull requests, and run Terrakube jobs from your pipelines with the [Terrakube GitHub Action](https://github.com/terrakube-io/terrakube-action-github).
+- **Pull Request and CI Integration:** Webhooks from GitHub, GitLab, Bitbucket and Azure DevOps trigger plans for your pull requests, and Terrakube posts the result back to the pull request on GitHub, GitLab and Bitbucket. You can also run Terrakube jobs from your pipelines with the [Terrakube GitHub Action](https://github.com/terrakube-io/terrakube-action-github).
 
 - **Manage Terrakube as Code:** Use the [Terraform provider](https://registry.terraform.io/providers/terrakube-io/terrakube/latest), the Terrakube CLI or the API to configure organizations, workspaces and policies.
 
