@@ -442,6 +442,37 @@ class RemoteTfeServiceTest {
 
     @Test
     @SuppressWarnings("unchecked")
+    void planStepWithNoChangesStatusFallsBackToStorageWhenRedisIsEmpty() {
+        RemoteTfeService service = remoteTfeService();
+
+        Job job = new Job();
+        job.setId(8021);
+        Organization org = organization("sample-org");
+        job.setOrganization(org);
+        UUID planStepId = UUID.randomUUID();
+        Step planStep = new Step();
+        planStep.setId(planStepId);
+        planStep.setStepNumber(100);
+        planStep.setStatus(JobStatus.noChanges);
+        job.setStep(List.of(planStep));
+
+        when(encryptionService.decrypt("encrypted-plan-nochanges")).thenReturn("8021");
+        when(jobRepository.findById(8021)).thenReturn(Optional.of(job));
+
+        StreamOperations<String, String, String> streamOperations = Mockito.mock(StreamOperations.class);
+        when(redisTemplate.opsForStream()).thenReturn(streamOperations);
+        when(streamOperations.read(any(StreamOffset.class))).thenReturn(Collections.emptyList());
+
+        when(storageTypeService.getStepOutput(org.getId().toString(), "8021", planStepId.toString()))
+                .thenReturn("No changes. Your infrastructure matches the configuration.\n".getBytes(StandardCharsets.UTF_8));
+
+        String logs = new String(service.getPlanLogs("encrypted-plan-nochanges", 0, 500), StandardCharsets.UTF_8);
+
+        assertTrue(logs.contains("No changes. Your infrastructure matches the configuration."), logs);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
     void runningStepWithEmptyStreamDoesNotTouchStorage() {
         RemoteTfeService service = remoteTfeService();
 

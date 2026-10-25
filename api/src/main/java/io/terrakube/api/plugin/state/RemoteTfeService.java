@@ -2269,7 +2269,7 @@ public class RemoteTfeService {
 
                     // Empty live stream from Redis. Only fall back to storage if step is terminal.
                     JobStatus stepStatus = step.getStatus();
-                    boolean isTerminal = stepStatus == JobStatus.completed || stepStatus == JobStatus.failed || stepStatus == JobStatus.cancelled;
+                    boolean isTerminal = stepStatus != null && stepStatus.isTerminal();
                     if (!isTerminal || job.get().getOrganization() == null) {
                         return new byte[0];
                     }
