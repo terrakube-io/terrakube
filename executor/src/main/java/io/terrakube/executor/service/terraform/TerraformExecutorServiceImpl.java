@@ -187,7 +187,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         // structured snapshot carrying whatever changes/diagnostics were parsed before it broke.
         List<Map<String, Object>> liveChanges = new ArrayList<>();
         List<Map<String, Object>> jobDiagnostics = new ArrayList<>();
-        TerraformJsonEventParser eventParser = new TerraformJsonEventParser(objectMapper);
+        TerraformJsonEventParser eventParser = TerraformJsonEventParser.forPlan(objectMapper);
         boolean planCommandExecuted = false;
         try {
             File terraformWorkingDir = getTerraformWorkingDir(terraformJob, executorTempDirectory);
@@ -660,7 +660,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         List<Map<String, Object>> changes = new ArrayList<>(applyStructuredOutputService.seedFromPlan(
                 terraformJob.getOrganizationId(), terraformJob.getJobId()));
         List<Map<String, Object>> jobDiagnostics = new ArrayList<>();
-        TerraformJsonEventParser eventParser = new TerraformJsonEventParser(objectMapper, true);
+        TerraformJsonEventParser eventParser = TerraformJsonEventParser.forApply(objectMapper);
 
         if (!changes.isEmpty()) {
             applyStructuredOutputService.publishApplyProgress(
@@ -730,7 +730,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             throws IOException, ExecutionException, InterruptedException {
         List<Map<String, Object>> changes = new ArrayList<>();
         List<Map<String, Object>> jobDiagnostics = new ArrayList<>();
-        TerraformJsonEventParser eventParser = new TerraformJsonEventParser(objectMapper);
+        TerraformJsonEventParser eventParser = TerraformJsonEventParser.forPlan(objectMapper);
         AtomicLong lastFlush = new AtomicLong(0);
 
         Consumer<String> jsonLineConsumer = (line) -> {

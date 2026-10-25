@@ -28,6 +28,14 @@ public class TerraformJsonEventParser {
     private final boolean isApply;
     private volatile boolean sawTerraformEvent;
 
+    public static TerraformJsonEventParser forPlan(ObjectMapper objectMapper) {
+        return new TerraformJsonEventParser(objectMapper, false);
+    }
+
+    public static TerraformJsonEventParser forApply(ObjectMapper objectMapper) {
+        return new TerraformJsonEventParser(objectMapper, true);
+    }
+
     public TerraformJsonEventParser(ObjectMapper objectMapper) {
         this(objectMapper, false);
     }

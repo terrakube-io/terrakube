@@ -577,7 +577,7 @@ class TerraformJsonEventParserTest {
 
     @Test
     void applyModeSuppressesPlannedChangeAndVersionConsoleMessagesWhileUpdatingChanges() {
-        TerraformJsonEventParser parser = new TerraformJsonEventParser(new ObjectMapper(), true);
+        TerraformJsonEventParser parser = TerraformJsonEventParser.forApply(new ObjectMapper());
         List<Map<String, Object>> changes = new ArrayList<>();
         List<Map<String, Object>> jobDiagnostics = new ArrayList<>();
 

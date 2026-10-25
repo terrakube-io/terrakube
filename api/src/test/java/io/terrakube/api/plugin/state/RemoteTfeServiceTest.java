@@ -25,6 +25,7 @@ import io.terrakube.api.plugin.state.model.workspace.tags.TagBindingList;
 import io.terrakube.api.plugin.state.model.workspace.tags.TagBindingModel;
 import io.terrakube.api.plugin.state.model.workspace.tags.TagDataList;
 import io.terrakube.api.plugin.state.model.workspace.tags.TagModel;
+import io.terrakube.api.plugin.logs.StepLogService;
 import io.terrakube.api.plugin.storage.StorageTypeService;
 import io.terrakube.api.plugin.token.team.TeamTokenService;
 import io.terrakube.api.repository.AccessRepository;
@@ -388,6 +389,7 @@ class RemoteTfeServiceTest {
         Step applyStep = new Step();
         applyStep.setId(applyStepId);
         applyStep.setStepNumber(200);
+        applyStep.setStatus(JobStatus.completed);
         job.setStep(List.of(applyStep));
 
         when(encryptionService.decrypt("encrypted-apply-id-3")).thenReturn("801");
@@ -404,6 +406,211 @@ class RemoteTfeServiceTest {
 
         assertTrue(logs.contains("Apply output from storage"), logs);
         assertTrue(logs.contains("Apply complete!"), logs);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void getPlanLogsFallsBackToStorageWhenRedisIsEmpty() {
+        RemoteTfeService service = remoteTfeService();
+
+        Job job = new Job();
+        job.setId(802);
+        Organization org = organization("sample-org");
+        job.setOrganization(org);
+        UUID planStepId = UUID.randomUUID();
+        Step planStep = new Step();
+        planStep.setId(planStepId);
+        planStep.setStepNumber(100);
+        planStep.setStatus(JobStatus.completed);
+        job.setStep(List.of(planStep));
+
+        when(encryptionService.decrypt("encrypted-plan-id-1")).thenReturn("802");
+        when(jobRepository.findById(802)).thenReturn(Optional.of(job));
+
+        StreamOperations<String, String, String> streamOperations = Mockito.mock(StreamOperations.class);
+        when(redisTemplate.opsForStream()).thenReturn(streamOperations);
+        when(streamOperations.read(any(StreamOffset.class))).thenReturn(Collections.emptyList());
+
+        when(storageTypeService.getStepOutput(org.getId().toString(), "802", planStepId.toString()))
+                .thenReturn("Plan output from storage\nPlan: 1 to add\n".getBytes(StandardCharsets.UTF_8));
+
+        String logs = new String(service.getPlanLogs("encrypted-plan-id-1", 0, 500), StandardCharsets.UTF_8);
+
+        assertTrue(logs.contains("Plan output from storage"), logs);
+        assertTrue(logs.contains("Plan: 1 to add"), logs);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void runningStepWithEmptyStreamDoesNotTouchStorage() {
+        RemoteTfeService service = remoteTfeService();
+
+        Job job = new Job();
+        job.setId(803);
+        Organization org = organization("sample-org");
+        job.setOrganization(org);
+        UUID applyStepId = UUID.randomUUID();
+        Step applyStep = new Step();
+        applyStep.setId(applyStepId);
+        applyStep.setStepNumber(200);
+        applyStep.setStatus(JobStatus.running);
+        job.setStep(List.of(applyStep));
+
+        when(encryptionService.decrypt("encrypted-apply-running")).thenReturn("803");
+        when(jobRepository.findById(803)).thenReturn(Optional.of(job));
+
+        StreamOperations<String, String, String> streamOperations = Mockito.mock(StreamOperations.class);
+        when(redisTemplate.opsForStream()).thenReturn(streamOperations);
+        when(streamOperations.read(any(StreamOffset.class))).thenReturn(Collections.emptyList());
+
+        byte[] logs = service.getApplyLogs("encrypted-apply-running", 0, 500);
+
+        assertEquals(0, logs.length);
+        verify(storageTypeService, never()).getStepOutput(any(), any(), any());
+        verify(storageTypeService, never()).getStepOutputStream(any(), any(), any(), any());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void getStepLogsOffsetPastEndReturnsEmptyArray() {
+        RemoteTfeService service = remoteTfeService();
+
+        Job job = new Job();
+        job.setId(804);
+        UUID applyStepId = UUID.randomUUID();
+        Step applyStep = new Step();
+        applyStep.setId(applyStepId);
+        applyStep.setStepNumber(200);
+        applyStep.setStatus(JobStatus.completed);
+        job.setStep(List.of(applyStep));
+
+        when(encryptionService.decrypt("encrypted-apply-804")).thenReturn("804");
+        when(jobRepository.findById(804)).thenReturn(Optional.of(job));
+
+        StreamOperations<String, String, String> streamOperations = Mockito.mock(StreamOperations.class);
+        when(redisTemplate.opsForStream()).thenReturn(streamOperations);
+        when(streamOperations.read(any(StreamOffset.class)))
+                .thenReturn(List.of(
+                        MapRecord.create("804", Map.of("stepId", applyStepId.toString(), "output", "short output"))
+                ));
+
+        byte[] logs = service.getApplyLogs("encrypted-apply-804", 1000, 500);
+
+        assertEquals(0, logs.length);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void getStepLogsIncludesRecordsWithoutStepIdForCompatibility() {
+        RemoteTfeService service = remoteTfeService();
+
+        Job job = new Job();
+        job.setId(805);
+        UUID applyStepId = UUID.randomUUID();
+        Step applyStep = new Step();
+        applyStep.setId(applyStepId);
+        applyStep.setStepNumber(200);
+        applyStep.setStatus(JobStatus.completed);
+        job.setStep(List.of(applyStep));
+
+        when(encryptionService.decrypt("encrypted-apply-805")).thenReturn("805");
+        when(jobRepository.findById(805)).thenReturn(Optional.of(job));
+
+        StreamOperations<String, String, String> streamOperations = Mockito.mock(StreamOperations.class);
+        when(redisTemplate.opsForStream()).thenReturn(streamOperations);
+        Map<String, String> dataWithoutStepId = new HashMap<>();
+        dataWithoutStepId.put("output", "legacy line without stepId");
+        when(streamOperations.read(any(StreamOffset.class)))
+                .thenReturn(List.of(
+                        MapRecord.create("805", dataWithoutStepId)
+                ));
+
+        String logs = new String(service.getApplyLogs("encrypted-apply-805", 0, 500), StandardCharsets.UTF_8);
+
+        assertTrue(logs.contains("legacy line without stepId"), logs);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void getStepLogsByteOffsetHandlesMultiByteUtf8WithoutDrift() {
+        RemoteTfeService service = remoteTfeService();
+
+        Job job = new Job();
+        job.setId(806);
+        UUID applyStepId = UUID.randomUUID();
+        Step applyStep = new Step();
+        applyStep.setId(applyStepId);
+        applyStep.setStepNumber(200);
+        applyStep.setStatus(JobStatus.completed);
+        job.setStep(List.of(applyStep));
+
+        when(encryptionService.decrypt("encrypted-apply-806")).thenReturn("806");
+        when(jobRepository.findById(806)).thenReturn(Optional.of(job));
+
+        String line = "✓ done";
+        StreamOperations<String, String, String> streamOperations = Mockito.mock(StreamOperations.class);
+        when(redisTemplate.opsForStream()).thenReturn(streamOperations);
+        when(streamOperations.read(any(StreamOffset.class)))
+                .thenReturn(List.of(
+                        MapRecord.create("806", Map.of("stepId", applyStepId.toString(), "output", line))
+                ));
+
+        byte[] sliced = service.getApplyLogs("encrypted-apply-806", 3, 50);
+        assertEquals(" done\n", new String(sliced, StandardCharsets.UTF_8));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void getApplyLogsUsesStepLogServiceWhenPresent() {
+        RemoteTfeService service = remoteTfeService();
+        StepLogService stepLogService = Mockito.mock(StepLogService.class);
+        service.setStepLogService(stepLogService);
+
+        Job job = new Job();
+        job.setId(807);
+        Organization org = organization("sample-org");
+        job.setOrganization(org);
+        UUID applyStepId = UUID.randomUUID();
+        Step applyStep = new Step();
+        applyStep.setId(applyStepId);
+        applyStep.setStepNumber(200);
+        applyStep.setStatus(JobStatus.completed);
+        job.setStep(List.of(applyStep));
+
+        when(encryptionService.decrypt("encrypted-apply-807")).thenReturn("807");
+        when(jobRepository.findById(807)).thenReturn(Optional.of(job));
+
+        StreamOperations<String, String, String> streamOperations = Mockito.mock(StreamOperations.class);
+        when(redisTemplate.opsForStream()).thenReturn(streamOperations);
+        when(streamOperations.read(any(StreamOffset.class))).thenReturn(Collections.emptyList());
+
+        byte[] cachedBody = "Cached apply log from StepLogService\n".getBytes(StandardCharsets.UTF_8);
+        when(stepLogService.resolve(org.getId().toString(), "807", applyStepId.toString()))
+                .thenReturn(StepLogService.StepLog.cached(cachedBody));
+
+        byte[] logs = service.getApplyLogs("encrypted-apply-807", 0, 500);
+
+        assertEquals("Cached apply log from StepLogService\n", new String(logs, StandardCharsets.UTF_8));
+    }
+
+    @Test
+    void getRunDoesNotIncludeApplyWhenIncludeContainsPartialWord() {
+        RemoteTfeService service = remoteTfeService();
+
+        Job job = new Job();
+        job.setId(901);
+        Organization org = organization("sample-org");
+        Workspace workspace = workspace("sample", org);
+        job.setOrganization(org);
+        job.setWorkspace(workspace);
+        job.setStatus(JobStatus.running);
+
+        when(jobRepository.getReferenceById(901)).thenReturn(job);
+
+        RunsData runData = service.getRun(901, "workspace,applies", null);
+
+        assertNotNull(runData);
+        assertNull(runData.getIncluded(), "Included should be null or not contain ApplyRunModel when 'applies' is passed");
     }
 
     @Test

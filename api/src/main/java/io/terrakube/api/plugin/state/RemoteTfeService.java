@@ -39,8 +39,13 @@ import io.terrakube.api.plugin.state.model.workspace.tags.TagDataList;
 import io.terrakube.api.plugin.state.model.workspace.tags.TagModel;
 import io.terrakube.api.plugin.state.model.workspace.vcs.VcsRepo;
 import io.terrakube.api.plugin.security.rbac.RbacService;
+import io.terrakube.api.plugin.logs.StepLogService;
 import io.terrakube.api.plugin.storage.StorageTypeService;
 import io.terrakube.api.plugin.storage.StorageUnavailableException;
+import io.terrakube.api.plugin.storage.model.ByteRange;
+import io.terrakube.api.plugin.storage.model.StepOutputStream;
+import org.springframework.util.StreamUtils;
+import java.util.stream.Collectors;
 import io.terrakube.api.plugin.token.team.TeamTokenService;
 import io.terrakube.api.repository.*;
 import io.terrakube.api.rs.ExecutionMode;
@@ -162,6 +167,13 @@ public class RemoteTfeService {
 
     @Autowired(required = false)
     private ConfigurationUploadTicketService uploadTicketService;
+
+    @Autowired(required = false)
+    private StepLogService stepLogService;
+
+    public void setStepLogService(StepLogService stepLogService) {
+        this.stepLogService = stepLogService;
+    }
 
     public void setUploadTicketService(ConfigurationUploadTicketService uploadTicketService) {
         this.uploadTicketService = uploadTicketService;
@@ -1894,6 +1906,13 @@ public class RemoteTfeService {
             runEventsModel.setData(new ArrayList<Resource>());
             relationships.setRunEventsModel(runEventsModel);
 
+            Set<String> includes = include != null
+                    ? Arrays.stream(include.split(","))
+                            .map(String::trim)
+                            .filter(s -> !s.isEmpty())
+                            .collect(Collectors.toSet())
+                    : Collections.emptySet();
+
             if (policyEvaluationRepository != null) {
                 List<PolicyEvaluation> evaluations = policyEvaluationRepository.findByJob(job);
                 if (evaluations != null && !evaluations.isEmpty()) {
@@ -1908,7 +1927,7 @@ public class RemoteTfeService {
                     policyChecksModel.setData(checkResources);
                     relationships.setPolicyChecks(policyChecksModel);
 
-                    if (include != null && include.contains("policy-checks")) {
+                    if (includes.contains("policy-checks")) {
                         if (runsData.getIncluded() == null) {
                             runsData.setIncluded(new ArrayList<>());
                         }
@@ -1919,19 +1938,17 @@ public class RemoteTfeService {
                 }
             }
 
-            if (include != null) {
-                if (include.contains("apply")) {
-                    if (runsData.getIncluded() == null) {
-                        runsData.setIncluded(new ArrayList<>());
-                    }
-                    runsData.getIncluded().add(getApply(runId).getData());
+            if (includes.contains("apply")) {
+                if (runsData.getIncluded() == null) {
+                    runsData.setIncluded(new ArrayList<>());
                 }
-                if (include.contains("plan")) {
-                    if (runsData.getIncluded() == null) {
-                        runsData.setIncluded(new ArrayList<>());
-                    }
-                    runsData.getIncluded().add(getPlan(runId).getData());
+                runsData.getIncluded().add(getApply(runId).getData());
+            }
+            if (includes.contains("plan")) {
+                if (runsData.getIncluded() == null) {
+                    runsData.setIncluded(new ArrayList<>());
                 }
+                runsData.getIncluded().add(getPlan(runId).getData());
             }
 
             log.info("Included: {}", include);
@@ -2204,117 +2221,135 @@ public class RemoteTfeService {
     }
 
     byte[] getPlanLogs(String planId, int offset, int limit) {
-        planId = encryptionService.decrypt(planId);
-        log.info("Searching logs for plan {}", planId);
-        Optional<Job> job = jobRepository.findById(Integer.valueOf(planId));
-        byte[] logs = "".getBytes();
-        if(job.isPresent()) {
-            TextStringBuilder logsOutput = new TextStringBuilder();
-            if (job.get().getStep() != null && !job.get().getStep().isEmpty())
-                for (Step step : job.get().getStep()) {
-                    if (step.getStepNumber() == 100) {
-                        log.info("Checking logs for plan: {}", step.getId());
-
-                        try {
-                            @SuppressWarnings("unchecked")
-                            List<MapRecord<String, String, String>> messagesPlan = redisTemplate.opsForStream()
-                                    .read(StreamOffset.fromStart(String.valueOf(job.get().getId())));
-
-                            if (messagesPlan != null) {
-                                for (MapRecord<String, String, String> mapRecord : messagesPlan) {
-                                    Map<String, String> streamData = (Map<String, String>) mapRecord.getValue();
-                                    if (streamData.get("stepId") == null || step.getId().toString().equals(streamData.get("stepId"))) {
-                                        logsOutput.appendln(streamData.get("output"));
-                                    }
-                                }
-                            }
-
-                            String logsOutputString = logsOutput.toString();
-                            if (logsOutputString.isEmpty() && job.get().getOrganization() != null) {
-                                byte[] stepOutput = storageTypeService.getStepOutput(
-                                        job.get().getOrganization().getId().toString(),
-                                        String.valueOf(job.get().getId()),
-                                        step.getId().toString());
-                                if (stepOutput != null && stepOutput.length > 0) {
-                                    logsOutputString = new String(stepOutput, StandardCharsets.UTF_8);
-                                }
-                            }
-
-                            if (offset < logsOutputString.length()) {
-                                int potentialEndIndex = limit + offset;
-                                int endIndex = logsOutputString.length() > potentialEndIndex ? potentialEndIndex
-                                        : logsOutputString.length();
-                                logs = logsOutputString.substring(offset, endIndex).getBytes(StandardCharsets.UTF_8);
-                            } else {
-                                logs = "".getBytes();
-                            }
-                            log.debug("{}", logs);
-                        } catch (Exception ex) {
-                            log.error("Could not read plan logs for job {}: {}", job.get().getId(), ex.getMessage());
-                        }
-                    }
-                }
-        } else {
-            log.warn("No logs found for plan {}", planId);
-        }
-        return logs;
+        return getStepLogs(planId, 100, offset, limit);
     }
 
     byte[] getApplyLogs(String applyId, int offset, int limit) {
-        applyId = encryptionService.decrypt(applyId);
-        log.info("Searching logs for apply {}", applyId);
-        Optional<Job> job = jobRepository.findById(Integer.valueOf(applyId));
-        byte[] logs = "".getBytes();
-        if (job.isPresent()) {
-            TextStringBuilder logsOutputApply = new TextStringBuilder();
-            if (job.get().getStep() != null && !job.get().getStep().isEmpty())
-                for (Step step : job.get().getStep()) {
-                    if (step.getStepNumber() == 200) {
-                        log.debug("Checking logs stepId for apply: {}", step.getId());
+        return getStepLogs(applyId, 200, offset, limit);
+    }
 
-                        try {
-                            @SuppressWarnings("unchecked")
-                            List<MapRecord<String, String, String>> messagesApply = redisTemplate.opsForStream().read(
-                                    StreamOffset.fromStart(String.valueOf(job.get().getId())));
+    private byte[] getStepLogs(String encryptedJobId, int stepNumber, int offset, int limit) {
+        if (offset < 0 || limit <= 0) {
+            return new byte[0];
+        }
+        String jobId = encryptionService.decrypt(encryptedJobId);
+        log.info("Searching logs for job {} stepNumber {}", jobId, stepNumber);
+        Optional<Job> job = jobRepository.findById(Integer.valueOf(jobId));
+        if (job.isEmpty()) {
+            log.warn("No logs found for job {}", jobId);
+            return new byte[0];
+        }
 
-                            if (messagesApply != null) {
-                                for (MapRecord<String, String, String> mapRecord : messagesApply) {
-                                    Map<String, String> streamData = (Map<String, String>) mapRecord.getValue();
-                                    if (streamData.get("stepId") == null || step.getId().toString().equals(streamData.get("stepId"))) {
-                                        logsOutputApply.appendln(streamData.get("output"));
-                                    }
-                                }
+        if (job.get().getStep() == null || job.get().getStep().isEmpty()) {
+            return new byte[0];
+        }
+
+        for (Step step : job.get().getStep()) {
+            if (step.getStepNumber() == stepNumber) {
+                log.debug("Checking logs for step: {}", step.getId());
+                try {
+                    TextStringBuilder logsOutput = new TextStringBuilder();
+                    @SuppressWarnings("unchecked")
+                    List<MapRecord<String, String, String>> messages = redisTemplate.opsForStream()
+                            .read(StreamOffset.fromStart(String.valueOf(job.get().getId())));
+
+                    if (messages != null) {
+                        for (MapRecord<String, String, String> mapRecord : messages) {
+                            Map<String, String> streamData = (Map<String, String>) mapRecord.getValue();
+                            if (streamData.get("stepId") == null || step.getId().toString().equals(streamData.get("stepId"))) {
+                                logsOutput.appendln(streamData.get("output"));
                             }
-
-                            String logsOutputString = logsOutputApply.toString();
-                            if (logsOutputString.isEmpty() && job.get().getOrganization() != null) {
-                                byte[] stepOutput = storageTypeService.getStepOutput(
-                                        job.get().getOrganization().getId().toString(),
-                                        String.valueOf(job.get().getId()),
-                                        step.getId().toString());
-                                if (stepOutput != null && stepOutput.length > 0) {
-                                    logsOutputString = new String(stepOutput, StandardCharsets.UTF_8);
-                                }
-                            }
-
-                            if (offset < logsOutputString.length()) {
-                                int potentialEndIndex = limit + offset;
-                                int endIndex = logsOutputString.length() > potentialEndIndex ? potentialEndIndex
-                                        : logsOutputString.length();
-                                logs = logsOutputString.substring(offset, endIndex).getBytes(StandardCharsets.UTF_8);
-                            } else {
-                                logs = "".getBytes();
-                            }
-                            log.debug("{}", logs);
-                        } catch (Exception ex) {
-                            log.error("Could not read apply logs for job {}: {}", job.get().getId(), ex.getMessage());
                         }
                     }
+
+                    if (logsOutput.length() > 0) {
+                        byte[] liveBytes = logsOutput.toString().getBytes(StandardCharsets.UTF_8);
+                        return sliceBytes(liveBytes, offset, limit);
+                    }
+
+                    // Empty live stream from Redis. Only fall back to storage if step is terminal.
+                    JobStatus stepStatus = step.getStatus();
+                    boolean isTerminal = stepStatus == JobStatus.completed || stepStatus == JobStatus.failed || stepStatus == JobStatus.cancelled;
+                    if (!isTerminal || job.get().getOrganization() == null) {
+                        return new byte[0];
+                    }
+
+                    return readPersistedStepLogs(
+                            job.get().getOrganization().getId().toString(),
+                            String.valueOf(job.get().getId()),
+                            step.getId().toString(),
+                            offset,
+                            limit);
+                } catch (Exception ex) {
+                    log.error("Could not read logs for job {} step {}: {}", job.get().getId(), step.getId(), ex.getMessage());
                 }
-        } else {
-            log.warn("No logs found for apply {}", applyId);
+            }
         }
-        return logs;
+        return new byte[0];
+    }
+
+    private byte[] readPersistedStepLogs(String organizationId, String jobId, String stepId, int offset, int limit) {
+        if (offset < 0 || limit <= 0) {
+            return new byte[0];
+        }
+
+        if (stepLogService != null) {
+            try {
+                StepLogService.StepLog stepLog = stepLogService.resolve(organizationId, jobId, stepId);
+                if (!stepLog.isExists()) {
+                    return new byte[0];
+                }
+                if (stepLog.getBody() != null) {
+                    return sliceBytes(stepLog.getBody(), offset, limit);
+                }
+                long contentLength = stepLog.getContentLength();
+                if (contentLength >= 0 && offset >= contentLength) {
+                    return new byte[0];
+                }
+                long rangeEnd = (long) offset + limit - 1;
+                if (contentLength >= 0) {
+                    rangeEnd = Math.min(rangeEnd, contentLength - 1);
+                }
+                ByteRange range = ByteRange.parse("bytes=" + offset + "-" + rangeEnd).orElse(null);
+                try (StepOutputStream out = stepLogService.openStream(organizationId, jobId, stepId, range)) {
+                    if (out != null && out.isExists() && out.getContent() != null) {
+                        return StreamUtils.copyToByteArray(out.getContent());
+                    }
+                }
+                return new byte[0];
+            } catch (Exception e) {
+                log.warn("Could not read persisted logs via stepLogService for job {} step {}: {}", jobId, stepId, e.getMessage());
+                return new byte[0];
+            }
+        }
+
+        if (storageTypeService != null) {
+            try {
+                long rangeEnd = (long) offset + limit - 1;
+                ByteRange range = ByteRange.parse("bytes=" + offset + "-" + rangeEnd).orElse(null);
+                try (StepOutputStream out = storageTypeService.getStepOutputStream(organizationId, jobId, stepId, range)) {
+                    if (out != null && out.isExists() && out.getContent() != null) {
+                        return StreamUtils.copyToByteArray(out.getContent());
+                    }
+                }
+                byte[] fullOutput = storageTypeService.getStepOutput(organizationId, jobId, stepId);
+                if (fullOutput != null && fullOutput.length > 0) {
+                    return sliceBytes(fullOutput, offset, limit);
+                }
+            } catch (Exception e) {
+                log.warn("Could not read persisted logs via storageTypeService for job {} step {}: {}", jobId, stepId, e.getMessage());
+            }
+        }
+
+        return new byte[0];
+    }
+
+    private byte[] sliceBytes(byte[] bytes, int offset, int limit) {
+        if (bytes == null || offset < 0 || limit <= 0 || offset >= bytes.length) {
+            return new byte[0];
+        }
+        int endIndex = Math.min(bytes.length, offset + limit);
+        return Arrays.copyOfRange(bytes, offset, endIndex);
     }
 
     StateOutputs getCurrentOutputs(String workspaceId) {
