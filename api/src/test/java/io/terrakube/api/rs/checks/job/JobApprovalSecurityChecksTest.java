@@ -68,18 +68,11 @@ class JobApprovalSecurityChecksTest {
         assertFalse(TeamApproveJob.isApprovalTransition(Optional.empty()));
     }
 
-    @Test
-    void cancellationPermissionOnlyAllowsStatusChangesToCancelled() {
-        JobCancel check = new JobCancel();
-
-        assertTrue(check.ok(
-                new Job(), requestScope, change(JobStatus.pending, JobStatus.cancelled)));
-        assertFalse(check.ok(
-                new Job(), requestScope, change(JobStatus.failed, JobStatus.approved)));
-        assertFalse(check.ok(
-                new Job(), requestScope,
-                Optional.of(new ChangeSpec(null, "output", JobStatus.pending, JobStatus.cancelled))));
-        assertFalse(check.ok(new Job(), requestScope, Optional.empty()));
+    @ParameterizedTest
+    @MethodSource("cancellationTransitions")
+    void cancellationTransitionOnlyAllowsNonTerminalJobs(JobStatus original, boolean expected) {
+        assertEquals(expected, TeamApproveJob.isCancellationTransition(
+                change(original, JobStatus.cancelled)));
     }
 
     @Test
@@ -100,7 +93,28 @@ class JobApprovalSecurityChecksTest {
         when(rbacService.canApproveJob(team)).thenReturn(true);
 
         assertTrue(check.ok(job, requestScope, change(JobStatus.waitingApproval, JobStatus.approved)));
+        assertTrue(check.ok(job, requestScope, change(JobStatus.running, JobStatus.cancelled)));
         assertFalse(check.ok(job, requestScope, change(JobStatus.waitingApproval, JobStatus.failed)));
+    }
+
+    @Test
+    void organizationRbacDoesNotAllowPlanOnlyUsersToCancel() {
+        Team team = new Team();
+        team.setName("organization-planners");
+        Organization organization = new Organization();
+        organization.setTeam(List.of(team));
+        Job job = new Job();
+        job.setOrganization(organization);
+
+        TeamApproveJobRbac check = new TeamApproveJobRbac();
+        check.authenticatedUser = authenticatedUser;
+        check.groupService = groupService;
+        check.rbacService = rbacService;
+
+        when(groupService.isMember(user, team.getName())).thenReturn(true);
+        when(rbacService.canApproveJob(team)).thenReturn(false);
+
+        assertFalse(check.ok(job, requestScope, change(JobStatus.pending, JobStatus.cancelled)));
     }
 
     @Test
@@ -121,6 +135,7 @@ class JobApprovalSecurityChecksTest {
         when(rbacService.canApproveJob(access)).thenReturn(true);
 
         assertTrue(check.ok(job, requestScope, change(JobStatus.waitingApproval, JobStatus.rejected)));
+        assertTrue(check.ok(job, requestScope, change(JobStatus.queue, JobStatus.cancelled)));
         assertFalse(check.ok(job, requestScope, change(JobStatus.running, JobStatus.failed)));
     }
 
@@ -144,6 +159,7 @@ class JobApprovalSecurityChecksTest {
         when(membershipService.checkProjectMembership(eq(user), eq(accessList), any())).thenReturn(true);
 
         assertTrue(check.ok(job, requestScope, change(JobStatus.waitingApproval, JobStatus.approved)));
+        assertTrue(check.ok(job, requestScope, change(JobStatus.approved, JobStatus.cancelled)));
         assertFalse(check.ok(job, requestScope, change(JobStatus.waitingApproval, JobStatus.completed)));
     }
 
@@ -172,5 +188,19 @@ class JobApprovalSecurityChecksTest {
                 Arguments.of("status", JobStatus.running, JobStatus.rejected, false),
                 Arguments.of("status", JobStatus.waitingApproval, JobStatus.failed, false),
                 Arguments.of("output", JobStatus.waitingApproval, JobStatus.approved, false));
+    }
+
+    private static Stream<Arguments> cancellationTransitions() {
+        return Stream.of(
+                Arguments.of(JobStatus.pending, true),
+                Arguments.of(JobStatus.queue, true),
+                Arguments.of(JobStatus.running, true),
+                Arguments.of(JobStatus.waitingApproval, true),
+                Arguments.of(JobStatus.approved, true),
+                Arguments.of(JobStatus.failed, false),
+                Arguments.of(JobStatus.completed, false),
+                Arguments.of(JobStatus.noChanges, false),
+                Arguments.of(JobStatus.rejected, false),
+                Arguments.of(JobStatus.cancelled, false));
     }
 }

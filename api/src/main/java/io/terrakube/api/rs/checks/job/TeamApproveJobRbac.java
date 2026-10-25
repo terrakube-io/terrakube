@@ -43,7 +43,7 @@ public class TeamApproveJobRbac extends OperationCheck<Job> {
     @Override
     public boolean ok(Job job, RequestScope requestScope, Optional<ChangeSpec> optional) {
         log.debug("team approve job rbac {}", job.getId());
-        if (!TeamApproveJob.isApprovalTransition(optional)) return false;
+        if (!TeamApproveJob.isRbacUserTransition(optional)) return false;
 
         List<Team> teamList = job.getOrganization().getTeam();
         boolean isServiceAccount = authenticatedUser.isServiceAccount(requestScope.getUser());

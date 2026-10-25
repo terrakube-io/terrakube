@@ -33,7 +33,7 @@ public class TeamProjectLimitedApproveJob extends OperationCheck<Job> {
     @Override
     public boolean ok(Job job, RequestScope requestScope, Optional<ChangeSpec> optional) {
         log.debug("team project limited approve job {}", job.getId());
-        if (!TeamApproveJob.isApprovalTransition(optional)) return false;
+        if (!TeamApproveJob.isRbacUserTransition(optional)) return false;
 
         Project project = job.getWorkspace().getProject();
         if (project == null) return false;

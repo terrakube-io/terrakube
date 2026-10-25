@@ -38,6 +38,19 @@ public class TeamApproveJob extends OperationCheck<Job> {
                 .isPresent();
     }
 
+    static boolean isRbacUserTransition(Optional<ChangeSpec> maybeChange) {
+        return isApprovalTransition(maybeChange) || isCancellationTransition(maybeChange);
+    }
+
+    static boolean isCancellationTransition(Optional<ChangeSpec> maybeChange) {
+        return maybeChange
+                .filter(change -> "status".equals(change.getFieldName()))
+                .filter(change -> change.getOriginal() instanceof JobStatus)
+                .filter(change -> !((JobStatus) change.getOriginal()).isTerminal())
+                .filter(change -> JobStatus.cancelled.equals(change.getModified()))
+                .isPresent();
+    }
+
     @Override
     public boolean ok(Job job, RequestScope requestScope, Optional<ChangeSpec> maybeChange) {
         log.info("Evaluating for approval: {}", maybeChange);
