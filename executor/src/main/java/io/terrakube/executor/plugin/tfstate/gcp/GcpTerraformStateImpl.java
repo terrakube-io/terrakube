@@ -53,7 +53,6 @@ public class GcpTerraformStateImpl implements TerraformState {
     @NonNull
     private Storage storage;
 
-    @NonNull
     private String credentials;
 
     @NonNull
@@ -80,22 +79,26 @@ public class GcpTerraformStateImpl implements TerraformState {
             gcpBackendHcl.appendln("  backend \"gcs\" {");
             gcpBackendHcl.appendln("    bucket      = \"" + bucketName + "\"");
             gcpBackendHcl.appendln("    prefix      = \"tfstate/" + organizationId + "/" + workspaceId + "/terraform.tfstate" + "\"");
-            gcpBackendHcl.appendln("    credentials = \"" + GCP_CREDENTIALS_FILE + "\"");
+            if (credentials != null && !credentials.trim().isEmpty()) {
+                gcpBackendHcl.appendln("    credentials = \"" + GCP_CREDENTIALS_FILE + "\"");
+            }
             gcpBackendHcl.appendln("  }");
             gcpBackendHcl.appendln("}");
 
-            File gcpBackendCredentials = new File(
-                    FilenameUtils.separatorsToSystem(
-                            workingDirectory.getAbsolutePath().concat("/").concat(GCP_CREDENTIALS_FILE)
-                    )
-            );
+            if (credentials != null && !credentials.trim().isEmpty()) {
+                File gcpBackendCredentials = new File(
+                        FilenameUtils.separatorsToSystem(
+                                workingDirectory.getAbsolutePath().concat("/").concat(GCP_CREDENTIALS_FILE)
+                        )
+                );
+                FileUtils.writeStringToFile(gcpBackendCredentials, new String(Base64.decodeBase64(credentials), StandardCharsets.UTF_8), Charset.defaultCharset());
+            }
 
             File gcpBackendFile = new File(
                     FilenameUtils.separatorsToSystem(
                             workingDirectory.getAbsolutePath().concat("/").concat(BACKEND_FILE_NAME)
                     )
             );
-            FileUtils.writeStringToFile(gcpBackendCredentials, new String(Base64.decodeBase64(credentials), StandardCharsets.UTF_8), Charset.defaultCharset());
             FileUtils.writeStringToFile(gcpBackendFile, gcpBackendHcl.toString(), Charset.defaultCharset());
 
         } catch (IOException e) {
@@ -148,13 +151,12 @@ public class GcpTerraformStateImpl implements TerraformState {
                     storageRetryMetrics.withRetry("gcp", "plan-read", () -> {
                         String buketNamePath = String.format("/%s/", bucketName);
                         String blobPath = new URL(stateUrl).getPath().replace(buketNamePath, "");
-                        log.info("Generating pre-signed URL. {}", blobPath);
-                        BlobInfo blobInfo = BlobInfo.newBuilder(BlobId.of(bucketName, blobPath)).build();
+                        log.info("Downloading plan from GCS blob {}", blobPath);
+                        BlobId blobId = BlobId.of(bucketName, blobPath);
                         File targetFile = new File(FilenameUtils.concat(workingDirectory.getAbsolutePath(), TERRAFORM_PLAN_FILE));
 
-                        URL signedUrl = storage.signUrl(blobInfo, 5, TimeUnit.MINUTES);
-                        log.info("Pre-Signed URL: " + signedUrl.toString());
-                        FileUtils.copyURLToFile(signedUrl, targetFile, 30000, 30000);
+                        byte[] content = storage.readAllBytes(blobId);
+                        FileUtils.writeByteArrayToFile(targetFile, content);
                         return null;
                     });
                     planGcExist.set(true);
