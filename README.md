@@ -105,6 +105,7 @@ flowchart TB
     cli --> registry
     api -->|runs each step| executor
     api -->|sign in| dex
+    executor ~~~ dex
     api --> db
     executor -->|live output| redis
     executor -->|state and output| storage
