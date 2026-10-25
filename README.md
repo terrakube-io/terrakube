@@ -99,24 +99,18 @@ flowchart TB
         redis[(Redis)]
         storage[(Object storage)]
     end
-    subgraph identity[" Identity "]
-        dex[Dex]
-        idp[Identity provider]
-    end
+    dex[Dex and your identity provider]
     browser --> ui --> api
     cli --> api
     cli --> registry
     api -->|runs each step| executor
+    api -->|sign in| dex
     api --> db
-    api --> redis
-    api --> storage
     executor -->|live output| redis
     executor -->|state and output| storage
-    registry --> storage
-    api -->|sign in| dex --> idp
 ```
 
-Terrakube stores state and run output in Amazon S3 (or any S3-compatible service such as MinIO), Azure Blob Storage, Google Cloud Storage or local disk. The database is PostgreSQL or Azure SQL (H2 is available for local testing).
+The executor writes the live output to Redis and the state and final output to object storage, and the API reads both back. Terrakube stores state and run output in Amazon S3 (or any S3-compatible service such as MinIO), Azure Blob Storage, Google Cloud Storage or local disk. The database is PostgreSQL or Azure SQL (H2 is available for local testing).
 
 ## Getting started
 
