@@ -30,14 +30,18 @@ public class TeamApproveJob extends OperationCheck<Job> {
 
     static final Set<JobStatus> APPROVAL_STATUSES = Set.of(JobStatus.approved, JobStatus.rejected);
 
-    @Override
-    public boolean ok(Job job, RequestScope requestScope, Optional<ChangeSpec> maybeChange) {
-        log.info("Evaluating for approval: {}", maybeChange);
-        if (maybeChange
+    static boolean isApprovalTransition(Optional<ChangeSpec> maybeChange) {
+        return maybeChange
                 .filter(change -> "status".equals(change.getFieldName()))
                 .filter(change -> JobStatus.waitingApproval.equals(change.getOriginal()))
                 .filter(change -> APPROVAL_STATUSES.contains(change.getModified()))
-                .isEmpty()) {
+                .isPresent();
+    }
+
+    @Override
+    public boolean ok(Job job, RequestScope requestScope, Optional<ChangeSpec> maybeChange) {
+        log.info("Evaluating for approval: {}", maybeChange);
+        if (!isApprovalTransition(maybeChange)) {
             return false;
         }
 

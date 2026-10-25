@@ -83,7 +83,7 @@ public class Job extends GenericAuditFields {
     @Column(name = "comments")
     private String comments;
 
-    @UpdatePermission(expression = "team approve job OR team approve job rbac OR team limited approve job OR team project limited approve job OR user is a super service OR executor manage job OR user is an executor service")
+    @UpdatePermission(expression = "job cancel AND (team manage job OR team limited manage job OR team project limited manage job) OR team approve job OR team approve job rbac OR team limited approve job OR team project limited approve job OR user is a super service OR executor manage job OR user is an executor service")
     @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.CREATE, phase = LifeCycleHookBinding.TransactionPhase.PRECOMMIT, hook = JobApprovalHook.class)
     @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.PRECOMMIT, hook = JobApprovalHook.class)
     @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.PRECOMMIT, hook = JobNotificationHook.class)

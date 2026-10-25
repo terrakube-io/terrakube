@@ -38,6 +38,8 @@ public class TeamLimitedApproveJob extends OperationCheck<Job> {
     @Override
     public boolean ok(Job job, RequestScope requestScope, Optional<ChangeSpec> optional) {
         log.debug("team limited approve job {}", job.getId());
+        if (!TeamApproveJob.isApprovalTransition(optional)) return false;
+
         List<Access> teamList = job.getWorkspace().getAccess();
         boolean isServiceAccount = authenticatedUser.isServiceAccount(requestScope.getUser());
         if (!teamList.isEmpty())

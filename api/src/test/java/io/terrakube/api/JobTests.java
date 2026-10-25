@@ -466,7 +466,7 @@ class JobTests extends ServerApplicationTests {
         job.setStatus(JobStatus.running);
         jobRepository.save(job);
 
-        // The approve permission of the team is enough for Elide, so only the hook stops this.
+        // Approval permissions apply only to waitingApproval -> approved/rejected transitions.
         given()
                 .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
                 .body(statusChangePayload(jobId, JobStatus.approved))
@@ -474,7 +474,7 @@ class JobTests extends ServerApplicationTests {
                 .patch("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/job/" + jobId)
                 .then()
                 .assertThat()
-                .statusCode(HttpStatus.CONFLICT.value());
+                .statusCode(HttpStatus.FORBIDDEN.value());
 
         Job refused = jobRepository.findById(Integer.parseInt(jobId)).orElseThrow();
         assertEquals(JobStatus.running, refused.getStatus());
