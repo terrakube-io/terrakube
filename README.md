@@ -27,13 +27,13 @@ Open Terrakube in a GitHub Codespace to test it from your browser:
 
 ## Features
 
-- **Private Registry:** Publish your Terraform Modules and Providers privately.
-
-<img src="docs/images/readme/registry.png" alt="The Terrakube private registry listing six modules with their provider, latest version and download count" width="1080"/>
-
 - **Organizations and Workspaces:** Use Organizations and Workspaces to manage your infrastructure in a structured and efficient way. Workspaces also support Tags, which let you group, organize, and filter your workspaces based on the tags you assign to them.
 
 <img src="docs/images/readme/workspaces.png" alt="The Terrakube workspace list grouped by project, showing run status, last run time, Terraform version and source repository" width="1080"/>
+
+- **Private Registry:** Publish your Terraform Modules and Providers privately.
+
+<img src="docs/images/readme/registry.png" alt="The Terrakube private registry listing six modules with their provider, latest version and download count" width="1080"/>
 
 - **Version Control Integration:** Terrakube integrates with GitHub (Cloud and Enterprise), GitLab (EE and CE), Bitbucket and Azure DevOps to retrieve your terraform/opentofu code.
 
