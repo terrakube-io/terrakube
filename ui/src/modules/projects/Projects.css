@@ -4,6 +4,11 @@
   padding: 0;
 }
 
+.projects-search-input {
+  max-width: 400px;
+  margin-bottom: 16px;
+}
+
 /* Detail layout: settings menu on the left, the active panel on the right. */
 .ant-layout.project-detail-layout {
   background: var(--tk-bg-container);

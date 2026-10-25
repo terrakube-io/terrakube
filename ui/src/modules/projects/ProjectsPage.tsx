@@ -1,5 +1,5 @@
 import { Button, Flex, Form, Input, Modal, Table, message } from "antd";
-import { PlusOutlined } from "@ant-design/icons";
+import { PlusOutlined, SearchOutlined } from "@ant-design/icons";
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import PageWrapper from "@/components/layout/PageWrapper/PageWrapper";
@@ -26,6 +26,8 @@ export default function ProjectsPage({ organizationName, setOrganizationName }: 
   const { id } = useParams();
   const { permissions } = useOrgPermissions(id);
   const [projects, setProjects] = useState<ProjectModel[]>([]);
+  const [search, setSearch] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
   const [modalOpen, setModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [form] = Form.useForm<ProjectForm>();
@@ -34,6 +36,7 @@ export default function ProjectsPage({ organizationName, setOrganizationName }: 
     action: () => projectService.listProjects(id!),
     onReturn: (data) => {
       setProjects(data);
+      setCurrentPage(1);
       const stored = sessionStorage.getItem(ORGANIZATION_NAME);
       if (stored) setOrganizationName(stored);
     },
@@ -86,6 +89,9 @@ export default function ProjectsPage({ organizationName, setOrganizationName }: 
     },
   ];
 
+  const normalizedSearch = search.trim().toLowerCase();
+  const filteredProjects = projects.filter((project) => project.name.toLowerCase().includes(normalizedSearch));
+
   return (
     <PageWrapper
       title="Projects"
@@ -112,12 +118,37 @@ export default function ProjectsPage({ organizationName, setOrganizationName }: 
           </EmptyState>
         </Flex>
       ) : (
-        <Table
-          dataSource={projects}
-          columns={columns}
-          rowKey="id"
-          pagination={{ showSizeChanger: true, defaultPageSize: 10 }}
-        />
+        <>
+          <Input
+            aria-label="Search projects by name"
+            placeholder="Search projects"
+            prefix={<SearchOutlined />}
+            value={search}
+            onChange={(event) => {
+              setSearch(event.target.value);
+              setCurrentPage(1);
+            }}
+            allowClear
+            className="projects-search-input"
+          />
+          {filteredProjects.length === 0 ? (
+            <Flex justify="center">
+              <EmptyState description="No projects found" />
+            </Flex>
+          ) : (
+            <Table
+              dataSource={filteredProjects}
+              columns={columns}
+              rowKey="id"
+              pagination={{
+                showSizeChanger: true,
+                defaultPageSize: 10,
+                current: currentPage,
+                onChange: setCurrentPage,
+              }}
+            />
+          )}
+        </>
       )}
       <Modal
         title="New project"
