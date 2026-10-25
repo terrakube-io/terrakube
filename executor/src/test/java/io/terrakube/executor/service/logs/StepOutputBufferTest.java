@@ -136,6 +136,21 @@ class StepOutputBufferTest {
     }
 
     @Test
+    void aRangeReadFromTheFileCannotBeSkippedPastItsEnd() throws IOException {
+        try (StepOutputBuffer buffer = new StepOutputBuffer(8, spool)) {
+            buffer.append("0123456789abcdef");
+            assertFalse(buffer.isInMemory());
+
+            try (InputStream in = buffer.openRange(2, 4)) {
+                assertEquals(4, in.available());
+                assertEquals(4, in.skip(100));
+                assertEquals(0, in.available());
+                assertEquals(-1, in.read());
+            }
+        }
+    }
+
+    @Test
     void openRangeAfterCloseIsEmpty() throws IOException {
         StepOutputBuffer buffer = new StepOutputBuffer(4, spool);
         buffer.append("a long line past the limit");

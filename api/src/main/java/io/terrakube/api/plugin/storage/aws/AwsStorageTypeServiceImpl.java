@@ -5,6 +5,7 @@ import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.codec.binary.StringUtils;
 import org.apache.sshd.common.util.io.IoUtils;
+import io.terrakube.api.plugin.storage.StepOutputPartsReader;
 import io.terrakube.api.plugin.storage.StorageRetryMetrics;
 import io.terrakube.api.plugin.storage.StorageTypeService;
 import io.terrakube.api.plugin.storage.StorageUnavailableException;
@@ -145,7 +146,8 @@ public class AwsStorageTypeServiceImpl implements StorageTypeService {
     }
 
     @Override
-    public InputStream openStepOutputPart(String organizationId, String jobId, String stepId, String partName, long offset, long length) {
+    public InputStream openStepOutputPart(String organizationId, String jobId, String stepId, String partName, long offset, long length) throws IOException {
+        StepOutputPartsReader.requirePartName(partName);
         return s3client.getObject(GetObjectRequest.builder()
                 .bucket(bucketName)
                 .key(outputPartsPrefix(organizationId, jobId, stepId) + partName)

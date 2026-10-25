@@ -107,7 +107,7 @@ public class StepOutputBuffer implements AutoCloseable {
      * does not hold the whole output twice. The caller closes it.
      */
     public synchronized InputStream openRange(long offset, long length) throws IOException {
-        long available = Math.max(0, Math.min(length, bytes - offset));
+        long available = Math.clamp(bytes - offset, 0L, Math.max(0L, length));
         if (available == 0 || offset < 0) {
             return new java.io.ByteArrayInputStream(new byte[0]);
         }
@@ -257,6 +257,21 @@ public class StepOutputBuffer implements AutoCloseable {
                 remaining -= n;
             }
             return n;
+        }
+
+        @Override
+        public long skip(long n) throws IOException {
+            if (remaining <= 0 || n <= 0) {
+                return 0;
+            }
+            long skipped = super.skip(Math.min(n, remaining));
+            remaining -= Math.max(0, skipped);
+            return skipped;
+        }
+
+        @Override
+        public int available() throws IOException {
+            return (int) Math.min(super.available(), Math.max(0, remaining));
         }
     }
 }

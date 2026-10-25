@@ -6,6 +6,7 @@ import io.terrakube.executor.service.logs.StepOutputBuffer;
 import io.terrakube.executor.service.logs.StepOutputPartWriter;
 
 import java.io.File;
+import java.io.IOException;
 
 public interface TerraformState {
 
@@ -64,7 +65,7 @@ public interface TerraformState {
      *
      * @return true if the part was stored
      */
-    default boolean saveOutputPart(String organizationId, String jobId, String stepId, int partNumber, StepOutputPartWriter.PartSource data) throws Exception {
+    default boolean saveOutputPart(String organizationId, String jobId, String stepId, int partNumber, StepOutputPartWriter.PartSource data) throws IOException {
         return false;
     }
 

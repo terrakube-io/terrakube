@@ -11,6 +11,7 @@ import com.azure.storage.blob.models.ListBlobsOptions;
 import lombok.Builder;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
+import io.terrakube.api.plugin.storage.StepOutputPartsReader;
 import io.terrakube.api.plugin.storage.StorageRetryMetrics;
 import io.terrakube.api.plugin.storage.StorageTypeService;
 import io.terrakube.api.plugin.storage.StorageUnavailableException;
@@ -135,7 +136,8 @@ public class AzureStorageTypeServiceImpl implements StorageTypeService {
     }
 
     @Override
-    public InputStream openStepOutputPart(String organizationId, String jobId, String stepId, String partName, long offset, long length) {
+    public InputStream openStepOutputPart(String organizationId, String jobId, String stepId, String partName, long offset, long length) throws IOException {
+        StepOutputPartsReader.requirePartName(partName);
         BlobClient blobClient = blobServiceClient.getBlobContainerClient(CONTAINER_NAME_OUTPUT)
                 .getBlobClient(outputPartsPrefix(organizationId, jobId, stepId) + partName);
         return blobClient.openInputStream(new com.azure.storage.blob.options.BlobInputStreamOptions().setRange(new BlobRange(offset, length)));

@@ -403,6 +403,14 @@ class AwsStorageTypeServiceImplTest {
     }
 
     @Test
+    void anOutputPartNameThatIsNotGeneratedIsRefusedBeforeStorageIsAsked() {
+        assertThrows(IOException.class, () -> awsStorageTypeService.openStepOutputPart("org1", "job1", "step1", "../../state/terraform.tfstate", 0, 4));
+        assertThrows(IOException.class, () -> awsStorageTypeService.openStepOutputPart("org1", "job1", "step1", null, 0, 4));
+
+        verify(s3Client, never()).getObject(any(GetObjectRequest.class), any(ResponseTransformer.class));
+    }
+
+    @Test
     void opensARangeOfOneOutputPart() throws IOException {
         ResponseInputStream<GetObjectResponse> ris = new ResponseInputStream<>(
                 GetObjectResponse.builder().contentLength(4L).build(), new ByteArrayInputStream("3456".getBytes()));

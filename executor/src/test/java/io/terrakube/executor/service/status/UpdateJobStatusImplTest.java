@@ -4,6 +4,7 @@ import io.terrakube.executor.service.logs.StepOutputBuffer;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -140,7 +141,7 @@ public class UpdateJobStatusImplTest {
         writer.start();
         Assertions.assertTrue(written.await(10, java.util.concurrent.TimeUnit.SECONDS));
 
-        subject().setCompletedStatusWithOutput(true, false, 0, terraformJob(), buffer, "", "", "0000000", false, null, null, null);
+        subject().setCompletedStatus(true, false, 0, terraformJob(), buffer, "", "", "0000000", false, null, null, null);
 
         org.mockito.InOrder order = org.mockito.Mockito.inOrder(terraformState);
         order.verify(terraformState).saveBufferedOutput(anyString(), anyString(), anyString(), any(), any());
@@ -154,7 +155,7 @@ public class UpdateJobStatusImplTest {
         io.terrakube.executor.service.logs.StepOutputBuffer buffer = new io.terrakube.executor.service.logs.StepOutputBuffer();
         buffer.append("short step");
 
-        subject().setCompletedStatusWithOutput(true, false, 0, terraformJob(), buffer, "", "", "0000000", false, null, null, null);
+        subject().setCompletedStatus(true, false, 0, terraformJob(), buffer, "", "", "0000000", false, null, null, null);
 
         verify(terraformState, never()).deleteOutputParts(anyString(), anyString(), anyString());
     }
@@ -162,7 +163,7 @@ public class UpdateJobStatusImplTest {
     @Test
     public void partsStayWhenTheFinalOutputCannotBeSaved() {
         stubJobWithStatus("running");
-        org.mockito.Mockito.doThrow(new RuntimeException("storage down")).when(terraformState).saveBufferedOutput(anyString(), anyString(), anyString(), any(), any());
+        doThrow(new RuntimeException("storage down")).when(terraformState).saveBufferedOutput(anyString(), anyString(), anyString(), any(), any());
         io.terrakube.executor.service.logs.StepOutputBuffer buffer = new io.terrakube.executor.service.logs.StepOutputBuffer();
         buffer.append("abcdef");
         io.terrakube.executor.service.logs.StepOutputPartWriter writer = new io.terrakube.executor.service.logs.StepOutputPartWriter(
@@ -170,7 +171,7 @@ public class UpdateJobStatusImplTest {
         buffer.attachArchiver(writer);
 
         Assertions.assertThrows(RuntimeException.class, () ->
-                subject().setCompletedStatusWithOutput(true, false, 0, terraformJob(), buffer, "", "", "0000000", false, null, null, null));
+                subject().setCompletedStatus(true, false, 0, terraformJob(), buffer, "", "", "0000000", false, null, null, null));
 
         verify(terraformState, never()).deleteOutputParts(anyString(), anyString(), anyString());
     }
@@ -316,7 +317,7 @@ public class UpdateJobStatusImplTest {
         feign.FeignException badRequest = new feign.FeignException.BadRequest("Unknown attribute: deliveryState", feignRequest, null, null);
 
         ArgumentCaptor<StepRequest> captor = ArgumentCaptor.forClass(StepRequest.class);
-        org.mockito.Mockito.doThrow(badRequest)
+        doThrow(badRequest)
                 .doNothing()
                 .when(terrakubeClient).updateStep(captor.capture(), anyString(), anyString(), anyString());
 

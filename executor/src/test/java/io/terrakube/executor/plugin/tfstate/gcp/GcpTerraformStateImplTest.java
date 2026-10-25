@@ -247,15 +247,14 @@ class GcpTerraformStateImplTest {
 
         gcpTerraformState.deleteOutputParts("org1", "job1", "step1");
 
-        verify(storage).delete(firstId);
-        verify(storage).delete(secondId);
+        verify(storage).delete(java.util.List.of(firstId, secondId));
     }
 
     @Test
     void testDeleteOutputPartsDoesNotThrowWhenStorageFails() {
         when(storage.list(eq(bucketName), any(com.google.cloud.storage.Storage.BlobListOption[].class))).thenThrow(new RuntimeException("down"));
 
-        gcpTerraformState.deleteOutputParts("org1", "job1", "step1");
+        assertDoesNotThrow(() -> gcpTerraformState.deleteOutputParts("org1", "job1", "step1"));
     }
 
     private static final io.terrakube.executor.service.logs.StepOutputPartWriter.PartSource PART_SOURCE = new io.terrakube.executor.service.logs.StepOutputPartWriter.PartSource() {

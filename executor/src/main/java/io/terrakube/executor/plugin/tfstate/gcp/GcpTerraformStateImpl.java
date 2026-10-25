@@ -35,6 +35,8 @@ import java.io.IOException;
 import java.net.URL;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
@@ -285,8 +287,12 @@ public class GcpTerraformStateImpl implements TerraformState {
     public void deleteOutputParts(String organizationId, String jobId, String stepId) {
         try {
             String prefix = outputPartsPrefix(organizationId, jobId, stepId);
+            List<BlobId> parts = new ArrayList<>();
             for (com.google.cloud.storage.Blob blob : storage.list(bucketName, Storage.BlobListOption.prefix(prefix)).iterateAll()) {
-                storage.delete(blob.getBlobId());
+                parts.add(blob.getBlobId());
+            }
+            if (!parts.isEmpty()) {
+                storage.delete(parts);
             }
         } catch (RuntimeException e) {
             log.warn("Could not delete the output parts of step {}: {}", stepId, e.getMessage());

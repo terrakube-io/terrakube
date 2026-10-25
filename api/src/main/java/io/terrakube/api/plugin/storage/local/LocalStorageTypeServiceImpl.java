@@ -8,6 +8,7 @@ import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.io.input.BoundedInputStream;
+import io.terrakube.api.plugin.storage.StepOutputPartsReader;
 import io.terrakube.api.plugin.storage.StorageRetryMetrics;
 import io.terrakube.api.plugin.storage.StorageTypeService;
 import io.terrakube.api.plugin.storage.StorageUnavailableException;
@@ -118,9 +119,7 @@ public class LocalStorageTypeServiceImpl implements StorageTypeService {
 
     @Override
     public InputStream openStepOutputPart(String organizationId, String jobId, String stepId, String partName, long offset, long length) throws IOException {
-        if (partName == null || !partName.matches("\\d{6}\\.part")) {
-            throw new IOException("Not an output part name: " + partName);
-        }
+        StepOutputPartsReader.requirePartName(partName);
         FileInputStream in = new FileInputStream(new File(outputPartsFolder(organizationId, jobId, stepId), partName));
         try {
             IOUtils.skipFully(in, offset);

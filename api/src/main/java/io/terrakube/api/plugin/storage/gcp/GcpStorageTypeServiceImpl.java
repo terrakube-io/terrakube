@@ -6,6 +6,7 @@ import com.google.cloud.storage.*;
 import lombok.Builder;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
+import io.terrakube.api.plugin.storage.StepOutputPartsReader;
 import io.terrakube.api.plugin.storage.StorageRetryMetrics;
 import io.terrakube.api.plugin.storage.StorageTypeService;
 import io.terrakube.api.plugin.storage.StorageUnavailableException;
@@ -131,6 +132,7 @@ public class GcpStorageTypeServiceImpl implements StorageTypeService {
 
     @Override
     public InputStream openStepOutputPart(String organizationId, String jobId, String stepId, String partName, long offset, long length) throws IOException {
+        StepOutputPartsReader.requirePartName(partName);
         Blob blob = storage.get(BlobId.of(bucketName, outputPartsPrefix(organizationId, jobId, stepId) + partName));
         if (blob == null) {
             throw new IOException("Output part not found: " + partName);

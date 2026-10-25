@@ -44,6 +44,13 @@ public final class StepOutputPartsReader {
         return result;
     }
 
+    /** Part names are generated, never taken from a request: refuse anything else before it becomes part of a storage key. */
+    public static void requirePartName(String partName) throws IOException {
+        if (partName == null || !PART_NAME.matcher(partName).matches()) {
+            throw new IOException("Not an output part name: " + partName);
+        }
+    }
+
     public static long totalSize(List<StepOutputPart> parts) {
         long total = 0;
         for (StepOutputPart part : parts) {
@@ -54,7 +61,11 @@ public final class StepOutputPartsReader {
 
     /** The joined output (or the requested range of it), or {@link StepOutputStream#missing()} when there are no parts. */
     public static StepOutputStream open(StorageTypeService storage, String organizationId, String jobId, String stepId, ByteRange range) {
-        List<StepOutputPart> parts = contiguous(storage.listStepOutputParts(organizationId, jobId, stepId));
+        return open(storage, organizationId, jobId, stepId, range, contiguous(storage.listStepOutputParts(organizationId, jobId, stepId)));
+    }
+
+    /** Like {@link #open(StorageTypeService, String, String, String, ByteRange)} for parts the caller has already listed, so a request lists them once. */
+    public static StepOutputStream open(StorageTypeService storage, String organizationId, String jobId, String stepId, ByteRange range, List<StepOutputPart> parts) {
         long total = totalSize(parts);
         if (parts.isEmpty() || total == 0) {
             return StepOutputStream.missing();
@@ -62,9 +73,14 @@ public final class StepOutputPartsReader {
         long start = 0;
         long endInclusive = total - 1;
         if (range != null) {
-            start = range.isSuffix() ? Math.max(0, total - range.getSuffixLength()) : range.getStart();
-            endInclusive = range.isSuffix() ? total - 1
-                    : (range.getEnd() >= 0 ? Math.min(range.getEnd(), total - 1) : total - 1);
+            if (range.isSuffix()) {
+                start = Math.max(0, total - range.getSuffixLength());
+            } else {
+                start = range.getStart();
+                if (range.getEnd() >= 0) {
+                    endInclusive = Math.min(range.getEnd(), total - 1);
+                }
+            }
             if (start >= total) {
                 return StepOutputStream.missing();
             }
@@ -130,11 +146,12 @@ public final class StepOutputPartsReader {
             return true;
         }
 
+        private final byte[] single = new byte[1];
+
         @Override
         public int read() throws IOException {
-            byte[] one = new byte[1];
-            int n = read(one, 0, 1);
-            return n < 0 ? -1 : one[0] & 0xff;
+            int n = read(single, 0, 1);
+            return n < 0 ? -1 : single[0] & 0xff;
         }
 
         @Override

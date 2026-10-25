@@ -28,7 +28,7 @@ public class StepOutputPartWriter {
 
     /** Where the parts go. {@code partNumber} starts at 1. A failure is retried by the writer. */
     public interface Sink {
-        void put(int partNumber, PartSource data) throws Exception;
+        void put(int partNumber, PartSource data) throws IOException;
     }
 
     /** The bytes of one part. {@link #open()} is called again for each upload attempt. */
@@ -134,59 +134,72 @@ public class StepOutputPartWriter {
 
     /** One pass of the writer. Package visible so tests drive it without a thread. */
     synchronized void tick() {
-        while (!stopped) {
-            long now = clock.getAsLong();
-            if (now < retryNotBefore) {
-                return;
-            }
-            if (parts >= maxParts) {
-                if (!capLogged) {
-                    capLogged = true;
-                    log.info("Output of {} reached {} parts, not archiving more of it before the step ends", description, maxParts);
-                }
-                return;
-            }
-            long pending = buffer.sizeInBytes() - uploaded;
-            if (pending <= 0) {
-                return;
-            }
-            long size = partSize(parts + 1);
-            boolean full = pending >= size;
-            boolean due = now - lastWrite >= intervalMillis;
-            if (!full && !due) {
-                return;
-            }
-            long length = Math.min(pending, size);
-            int number = parts + 1;
-            try {
-                sink.put(number, new PartSource() {
-                    @Override
-                    public InputStream open() throws IOException {
-                        return buffer.openRange(uploaded, length);
-                    }
+        while (!stopped && archiveNextPart()) {
+            // keeps going while there is another part to write
+        }
+    }
 
-                    @Override
-                    public long length() {
-                        return length;
-                    }
-                });
-            } catch (Exception e) {
-                failures++;
-                count("failed");
-                retryNotBefore = now + Math.min(MAX_BACKOFF_MILLIS, POLL_MILLIS << Math.min(failures, 5));
-                if (failures == 1) {
-                    log.warn("Unable to archive part {} of the output of {}, will try again: {}", number, description, e.toString());
-                } else {
-                    log.debug("Part {} of the output of {} failed again ({} in a row)", number, description, failures, e);
+    /** Writes one part if there is something to write and it is time to. Returns whether to look for another. */
+    private boolean archiveNextPart() {
+        long now = clock.getAsLong();
+        if (now < retryNotBefore || reachedCap()) {
+            return false;
+        }
+        long pending = buffer.sizeInBytes() - uploaded;
+        long size = partSize(parts + 1);
+        boolean full = pending >= size;
+        boolean due = now - lastWrite >= intervalMillis;
+        if (pending <= 0 || (!full && !due)) {
+            return false;
+        }
+        return upload(parts + 1, Math.min(pending, size), now);
+    }
+
+    private boolean reachedCap() {
+        if (parts < maxParts) {
+            return false;
+        }
+        if (!capLogged) {
+            capLogged = true;
+            log.info("Output of {} reached {} parts, not archiving more of it before the step ends", description, maxParts);
+        }
+        return true;
+    }
+
+    private boolean upload(int number, long length, long now) {
+        try {
+            sink.put(number, new PartSource() {
+                @Override
+                public InputStream open() throws IOException {
+                    return buffer.openRange(uploaded, length);
                 }
-                return;
-            }
-            failures = 0;
-            retryNotBefore = 0;
-            uploaded += length;
-            parts = number;
-            count("written");
-            lastWrite = now;
+
+                @Override
+                public long length() {
+                    return length;
+                }
+            });
+        } catch (IOException | RuntimeException e) {
+            recordFailure(number, now, e);
+            return false;
+        }
+        failures = 0;
+        retryNotBefore = 0;
+        uploaded += length;
+        parts = number;
+        count("written");
+        lastWrite = now;
+        return true;
+    }
+
+    private void recordFailure(int number, long now, Exception e) {
+        failures++;
+        count("failed");
+        retryNotBefore = now + Math.min(MAX_BACKOFF_MILLIS, POLL_MILLIS << Math.min(failures, 5));
+        if (failures == 1) {
+            log.warn("Unable to archive part {} of the output of {}, will try again: {}", number, description, e.toString());
+        } else {
+            log.debug("Part {} of the output of {} failed again ({} in a row)", number, description, failures, e);
         }
     }
 

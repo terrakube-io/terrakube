@@ -19,6 +19,8 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class StepOutputPartsReaderTest {
@@ -79,6 +81,28 @@ class StepOutputPartsReaderTest {
 
     private static FakeParts threeParts() {
         return new FakeParts().with("000001.part", "aaaaa").with("000002.part", "bbbbb").with("000003.part", "ccc");
+    }
+
+    @Test
+    void onlyAGeneratedPartNameIsAccepted() throws IOException {
+        StepOutputPartsReader.requirePartName("000001.part");
+        for (String bad : new String[]{null, "", "1.part", "000001.parts", "../000001.part", "000001.part/../x", "000001.part\n"}) {
+            assertThrows(IOException.class, () -> StepOutputPartsReader.requirePartName(bad), String.valueOf(bad));
+        }
+    }
+
+    @Test
+    void partsThatWereAlreadyListedAreNotListedAgain() throws IOException {
+        FakeParts fake = new FakeParts();
+        fake.parts.put("000001.part", "abc");
+        fake.parts.put("000002.part", "def");
+        List<StepOutputPart> listed = StepOutputPartsReader.contiguous(fake.storage.listStepOutputParts("o", "j", "s"));
+
+        try (StepOutputStream out = StepOutputPartsReader.open(fake.storage, "o", "j", "s", null, listed)) {
+            assertEquals("abcdef", new String(out.getContent().readAllBytes(), StandardCharsets.UTF_8));
+        }
+
+        verify(fake.storage, times(1)).listStepOutputParts(any(), any(), any());
     }
 
     @Test

@@ -16,6 +16,7 @@ public final class StepLogResponses {
 
     /** Set when the output is only what the executor archived while the step ran, the step ended without its own. */
     public static final String INCOMPLETE_HEADER = "X-Terrakube-Output-Incomplete";
+    private static final String NO_STORE = "no-store";
 
     private StepLogResponses() {
     }
@@ -28,7 +29,7 @@ public final class StepLogResponses {
         HttpHeaders headers = new HttpHeaders();
         headers.putAll(response.getHeaders());
         headers.set(INCOMPLETE_HEADER, "true");
-        headers.set(HttpHeaders.CACHE_CONTROL, "no-store");
+        headers.set(HttpHeaders.CACHE_CONTROL, NO_STORE);
         headers.set(HttpHeaders.ACCESS_CONTROL_EXPOSE_HEADERS, INCOMPLETE_HEADER);
         return new ResponseEntity<>(response.getBody(), headers, response.getStatusCode());
     }
@@ -36,7 +37,7 @@ public final class StepLogResponses {
     public static ResponseEntity<byte[]> liveLogs(String logs) {
         byte[] body = logs.getBytes(StandardCharsets.UTF_8);
         return ResponseEntity.ok()
-                .header(HttpHeaders.CACHE_CONTROL, "no-store")
+                .header(HttpHeaders.CACHE_CONTROL, NO_STORE)
                 .contentType(MediaType.APPLICATION_OCTET_STREAM)
                 .contentLength(body.length)
                 .body(body);
@@ -44,7 +45,7 @@ public final class StepLogResponses {
 
     public static ResponseEntity<byte[]> notFound() {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                .header(HttpHeaders.CACHE_CONTROL, "no-store")
+                .header(HttpHeaders.CACHE_CONTROL, NO_STORE)
                 .build();
     }
 

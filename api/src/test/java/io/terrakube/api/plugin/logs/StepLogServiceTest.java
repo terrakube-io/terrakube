@@ -170,6 +170,17 @@ class StepLogServiceTest {
     }
 
     @Test
+    void theArchivedPartsAreListedOncePerRequest() throws Exception {
+        stepWithStatus(JobStatus.failed);
+        finalObjectMissing();
+        archivedParts("abc", "def");
+
+        service.resolve("o", "j", stepId.toString());
+
+        verify(storage, times(1)).listStepOutputParts("o", "j", stepId.toString());
+    }
+
+    @Test
     void incompleteOutputIsNotCached() throws Exception {
         stepWithStatus(JobStatus.failed);
         finalObjectMissing();

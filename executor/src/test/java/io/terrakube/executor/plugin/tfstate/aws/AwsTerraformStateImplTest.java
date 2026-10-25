@@ -396,17 +396,34 @@ class AwsTerraformStateImplTest {
         org.mockito.ArgumentCaptor<software.amazon.awssdk.services.s3.model.ListObjectsV2Request> listed = org.mockito.ArgumentCaptor.forClass(software.amazon.awssdk.services.s3.model.ListObjectsV2Request.class);
         verify(s3Client).listObjectsV2(listed.capture());
         assertEquals("tfoutput/org1/job1/step1.parts/", listed.getValue().prefix());
-        org.mockito.ArgumentCaptor<software.amazon.awssdk.services.s3.model.DeleteObjectRequest> deleted = org.mockito.ArgumentCaptor.forClass(software.amazon.awssdk.services.s3.model.DeleteObjectRequest.class);
-        verify(s3Client, times(2)).deleteObject(deleted.capture());
-        assertEquals("tfoutput/org1/job1/step1.parts/000001.part", deleted.getAllValues().get(0).key());
-        assertEquals("tfoutput/org1/job1/step1.parts/000002.part", deleted.getAllValues().get(1).key());
+        org.mockito.ArgumentCaptor<software.amazon.awssdk.services.s3.model.DeleteObjectsRequest> deleted = org.mockito.ArgumentCaptor.forClass(software.amazon.awssdk.services.s3.model.DeleteObjectsRequest.class);
+        verify(s3Client, times(1)).deleteObjects(deleted.capture());
+        assertEquals(java.util.List.of("tfoutput/org1/job1/step1.parts/000001.part", "tfoutput/org1/job1/step1.parts/000002.part"),
+                deleted.getValue().delete().objects().stream().map(software.amazon.awssdk.services.s3.model.ObjectIdentifier::key).toList());
+        verify(s3Client, never()).deleteObject(any(software.amazon.awssdk.services.s3.model.DeleteObjectRequest.class));
+    }
+
+    @Test
+    void testDeleteOutputPartsFollowsEveryPageOfTheListing() {
+        when(s3Client.listObjectsV2(any(software.amazon.awssdk.services.s3.model.ListObjectsV2Request.class))).thenReturn(
+                software.amazon.awssdk.services.s3.model.ListObjectsV2Response.builder().isTruncated(true).nextContinuationToken("next").contents(
+                        software.amazon.awssdk.services.s3.model.S3Object.builder().key("tfoutput/org1/job1/step1.parts/000001.part").build()).build(),
+                software.amazon.awssdk.services.s3.model.ListObjectsV2Response.builder().contents(
+                        software.amazon.awssdk.services.s3.model.S3Object.builder().key("tfoutput/org1/job1/step1.parts/000002.part").build()).build());
+
+        awsTerraformState.deleteOutputParts("org1", "job1", "step1");
+
+        org.mockito.ArgumentCaptor<software.amazon.awssdk.services.s3.model.ListObjectsV2Request> listed = org.mockito.ArgumentCaptor.forClass(software.amazon.awssdk.services.s3.model.ListObjectsV2Request.class);
+        verify(s3Client, times(2)).listObjectsV2(listed.capture());
+        assertEquals("next", listed.getAllValues().get(1).continuationToken());
+        verify(s3Client, times(2)).deleteObjects(any(software.amazon.awssdk.services.s3.model.DeleteObjectsRequest.class));
     }
 
     @Test
     void testDeleteOutputPartsDoesNotThrowWhenStorageFails() {
         when(s3Client.listObjectsV2(any(software.amazon.awssdk.services.s3.model.ListObjectsV2Request.class))).thenThrow(new RuntimeException("down"));
 
-        awsTerraformState.deleteOutputParts("org1", "job1", "step1");
+        assertDoesNotThrow(() -> awsTerraformState.deleteOutputParts("org1", "job1", "step1"));
     }
 
     private static final io.terrakube.executor.service.logs.StepOutputPartWriter.PartSource PART_SOURCE = new io.terrakube.executor.service.logs.StepOutputPartWriter.PartSource() {

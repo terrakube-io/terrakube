@@ -276,6 +276,13 @@ class GcpStorageTypeServiceImplTest {
     }
 
     @Test
+    void anOutputPartNameThatIsNotGeneratedIsRefusedBeforeStorageIsAsked() {
+        assertThrows(IOException.class, () -> gcpStorageTypeService.openStepOutputPart("org1", "job1", "step1", "../../state/terraform.tfstate", 0, 4));
+
+        verify(storage, never()).get(any(BlobId.class));
+    }
+
+    @Test
     void aMissingPartIsAnError() {
         when(storage.get(any(BlobId.class))).thenReturn(null);
 

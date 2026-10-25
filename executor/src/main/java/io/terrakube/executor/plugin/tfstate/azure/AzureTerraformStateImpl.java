@@ -58,6 +58,7 @@ public class AzureTerraformStateImpl implements TerraformState {
     private static final String CONTAINER_BINARY_NAME = "tfbinary";
     private static final String CONTEXT_SPOOL_LOCATION = "context-spool/%s/%s/%s-%s.json.gz";
 
+    private volatile boolean outputContainerReady;
     private String resourceGroupName;
     private String storageAccountName;
     private String storageContainerName;
@@ -308,8 +309,10 @@ public class AzureTerraformStateImpl implements TerraformState {
     @Override
     public boolean saveOutputPart(String organizationId, String jobId, String stepId, int partNumber, StepOutputPartWriter.PartSource data) {
         BlobContainerClient blobContainerClient = blobServiceClient.getBlobContainerClient(CONTAINER_OUTPUT_NAME);
-        if (!blobContainerClient.exists()) {
-            blobContainerClient.create();
+        if (!outputContainerReady) {
+            // Up to 1000 parts a step: ask Azure about the container once, not before every part.
+            blobContainerClient.createIfNotExists();
+            outputContainerReady = true;
         }
         BlobClient blobClient = blobContainerClient.getBlobClient(outputPartsPrefix(organizationId, jobId, stepId) + OutputPartNames.part(partNumber));
         storageRetryMetrics.withRetry("azure", "output-part-write", () -> {

@@ -311,7 +311,14 @@ class AzureStorageTypeServiceImplTest {
     }
 
     @Test
-    void opensARangeOfOneOutputPart() {
+    void anOutputPartNameThatIsNotGeneratedIsRefusedBeforeStorageIsAsked() {
+        assertThrows(java.io.IOException.class, () -> azureStorageTypeService.openStepOutputPart("org1", "job1", "step1", "../../state/terraform.tfstate", 0, 4));
+
+        verify(containerClient, never()).getBlobClient(any());
+    }
+
+    @Test
+    void opensARangeOfOneOutputPart() throws java.io.IOException {
         when(blobServiceClient.getBlobContainerClient("tfoutput")).thenReturn(containerClient);
         when(containerClient.getBlobClient("org1/job1/step1.parts/000002.part")).thenReturn(blobClient);
         com.azure.storage.blob.specialized.BlobInputStream stream = mock(com.azure.storage.blob.specialized.BlobInputStream.class);

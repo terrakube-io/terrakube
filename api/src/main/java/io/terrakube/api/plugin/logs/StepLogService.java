@@ -6,6 +6,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import io.terrakube.api.plugin.storage.StepOutputPartsReader;
 import io.terrakube.api.plugin.storage.StorageTypeService;
 import io.terrakube.api.plugin.storage.model.ByteRange;
+import io.terrakube.api.plugin.storage.model.StepOutputPart;
 import io.terrakube.api.plugin.storage.model.StepOutputStream;
 import io.terrakube.api.repository.StepRepository;
 import io.terrakube.api.rs.job.JobStatus;
@@ -15,6 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StreamUtils;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -140,15 +142,15 @@ public class StepLogService {
      * the step's output, only the part of it that was saved.
      */
     private StepLog resolveArchivedParts(String organizationId, String jobId, String stepId) throws IOException {
-        long total = StepOutputPartsReader.totalSize(StepOutputPartsReader.contiguous(
-                storage.listStepOutputParts(organizationId, jobId, stepId)));
+        List<StepOutputPart> listed = StepOutputPartsReader.contiguous(storage.listStepOutputParts(organizationId, jobId, stepId));
+        long total = StepOutputPartsReader.totalSize(listed);
         if (total <= 0) {
             return StepLog.missing();
         }
         if (total > properties.getCacheableMaxObjectBytes()) {
             return StepLog.incompleteStreamable(total);
         }
-        try (StepOutputStream parts = StepOutputPartsReader.open(storage, organizationId, jobId, stepId, null)) {
+        try (StepOutputStream parts = StepOutputPartsReader.open(storage, organizationId, jobId, stepId, null, listed)) {
             if (!parts.isExists()) {
                 return StepLog.missing();
             }

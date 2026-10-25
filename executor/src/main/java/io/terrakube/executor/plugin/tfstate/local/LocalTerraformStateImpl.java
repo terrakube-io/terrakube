@@ -302,7 +302,7 @@ public class LocalTerraformStateImpl implements TerraformState {
     }
 
     @Override
-    public boolean saveOutputPart(String organizationId, String jobId, String stepId, int partNumber, StepOutputPartWriter.PartSource data) throws Exception {
+    public boolean saveOutputPart(String organizationId, String jobId, String stepId, int partNumber, StepOutputPartWriter.PartSource data) {
         File partFile = new File(localOutputPartsFolder(organizationId, jobId, stepId), OutputPartNames.part(partNumber));
         storageRetryMetrics.withRetry("local", "output-part-write", () -> {
             try (java.io.InputStream in = data.open()) {

@@ -278,7 +278,7 @@ class AzureTerraformStateImplTest {
     void testDeleteOutputPartsDoesNotThrowWhenStorageFails() {
         when(blobContainerClient.listBlobs(any(com.azure.storage.blob.models.ListBlobsOptions.class), any())).thenThrow(new RuntimeException("down"));
 
-        azureTerraformState.deleteOutputParts("org1", "job1", "step1");
+        assertDoesNotThrow(() -> azureTerraformState.deleteOutputParts("org1", "job1", "step1"));
     }
 
     private static final io.terrakube.executor.service.logs.StepOutputPartWriter.PartSource PART_SOURCE = new io.terrakube.executor.service.logs.StepOutputPartWriter.PartSource() {
