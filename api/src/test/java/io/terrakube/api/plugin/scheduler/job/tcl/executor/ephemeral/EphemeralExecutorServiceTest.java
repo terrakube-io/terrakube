@@ -391,6 +391,21 @@ public class EphemeralExecutorServiceTest {
     }
 
     @Test
+    public void defaultPodSecurityContext() throws ExecutionException {
+        ExecutorContext context = context();
+        subject().send(job(), context);
+
+        verify(namespaced, times(1)).resource(job.capture());
+        PodSpec podspec = job.getValue().getSpec().getTemplate().getSpec();
+        assertEquals(1000L, podspec.getSecurityContext().getRunAsUser());
+        assertEquals(1000L, podspec.getSecurityContext().getRunAsGroup());
+        assertEquals(1000L, podspec.getSecurityContext().getFsGroup());
+
+        Container container = podspec.getContainers().getFirst();
+        assertTrue(container.getEnv().stream().anyMatch(e -> "HOME".equals(e.getName()) && "/tmp".equals(e.getValue())));
+    }
+
+    @Test
     public void appliesSecurityContext() throws ExecutionException {
         ExecutorContext context = context();
         context.getEnvironmentVariables().put("EPHEMERAL_CONFIG_POD_SECURITY_CONTEXT", "runAsNonRoot=true");
@@ -542,7 +557,8 @@ public class EphemeralExecutorServiceTest {
         assertEquals(new Quantity("64Mi"), initContainer.getResources().getRequests().get("memory"));
         assertEquals(new Quantity("100m"), initContainer.getResources().getLimits().get("cpu"));
         assertEquals(new Quantity("64Mi"), initContainer.getResources().getLimits().get("memory"));
-        assertTrue(initContainer.getArgs().getFirst().contains("chmod 0700 /config-rw"));
+        assertTrue(initContainer.getArgs().getFirst().contains("set -eu"));
+        assertFalse(initContainer.getArgs().getFirst().contains("chmod 0700 /config-rw"));
         assertTrue(initContainer.getArgs().getFirst().contains("chmod 0600"));
 
         // 5. Pod volumes include raw projected secret and memory-backed emptyDir

@@ -105,6 +105,10 @@ public class EphemeralExecutorService {
         final List<EnvVar> executorEnvVarFlags = new LinkedList<>();
         executorEnvVarFlags.add(executorFlagBatch);
         executorEnvVarFlags.add(executorFlagBatchJsonContent);
+        EnvVar homeEnvVar = new EnvVar();
+        homeEnvVar.setName("HOME");
+        homeEnvVar.setValue("/tmp");
+        executorEnvVarFlags.add(homeEnvVar);
         if (ephemeralConfiguration.isEmptyDirSecret() && !validSecrets.isEmpty()) {
             EnvVar secretsDirEnvVar = new EnvVar();
             secretsDirEnvVar.setName("ExecutorSecretsDirectory");
@@ -243,7 +247,7 @@ public class EphemeralExecutorService {
                     .withName("copy-executor-secrets")
                     .withImage(initImage)
                     .withCommand("/bin/sh", "-c")
-                    .withArgs("chmod 0700 /config-rw\nfor f in /config-ro/*; do\n  if [ -f \"$f\" ]; then\n    target=\"/config-rw/$(basename \"$f\")\"\n    cp -L \"$f\" \"$target\"\n    chmod 0600 \"$target\"\n  fi\ndone\n")
+                    .withArgs("set -eu\nfor f in /config-ro/*; do\n  if [ -f \"$f\" ]; then\n    target=\"/config-rw/$(basename \"$f\")\"\n    cp -L \"$f\" \"$target\"\n    chmod 0600 \"$target\"\n  fi\ndone\n")
                     .withVolumeMounts(List.of(roMount, rwMount))
                     .withSecurityContext(initSecurityContext)
                     .withResources(initResources)
@@ -304,7 +308,11 @@ public class EphemeralExecutorService {
 
         Optional<String> configPodSecurityContext = Optional
                 .ofNullable(executorContext.getEnvironmentVariables().getOrDefault(POD_SECURITY_CONTEXT, null));
-        PodSecurityContext podSecurityContext = new PodSecurityContextBuilder().withFsGroup(1000L).build();
+        PodSecurityContext podSecurityContext = new PodSecurityContextBuilder()
+                .withRunAsUser(1000L)
+                .withRunAsGroup(1000L)
+                .withFsGroup(1000L)
+                .build();
         if (configPodSecurityContext.isPresent()) {
             log.info("Using custom pod security context");
             Map<String, String> podSecurityContextData = parseKeyValueString(configPodSecurityContext.get());

@@ -138,4 +138,24 @@ class ExecutorSecretEnvironmentPostProcessorTest {
         ExecutorSecretEnvironmentPostProcessor processor = new ExecutorSecretEnvironmentPostProcessor();
         assertThrows(IllegalStateException.class, () -> processor.postProcessEnvironment(environment, new SpringApplication()));
     }
+
+    @Test
+    void testPostProcessEnvironmentWithRealApplicationPropertiesDoesNotThrowWhenSecretsDirectoryMissing() throws IOException {
+        StandardEnvironment environment = new StandardEnvironment();
+        environment.getPropertySources().addLast(new org.springframework.core.io.support.ResourcePropertySource("classpath:application.properties"));
+
+        ExecutorSecretEnvironmentPostProcessor processor = new ExecutorSecretEnvironmentPostProcessor();
+        assertDoesNotThrow(() -> processor.postProcessEnvironment(environment, new SpringApplication()));
+    }
+
+    @Test
+    void testEnvironmentPostProcessorIsRegisteredInSpringFactories() {
+        java.util.List<String> factoryNames =
+                org.springframework.core.io.support.SpringFactoriesLoader.loadFactoryNames(
+                        org.springframework.boot.EnvironmentPostProcessor.class,
+                        getClass().getClassLoader()
+                );
+        assertTrue(factoryNames.contains(ExecutorSecretEnvironmentPostProcessor.class.getName()),
+                "ExecutorSecretEnvironmentPostProcessor must be registered under org.springframework.boot.EnvironmentPostProcessor in META-INF/spring.factories");
+    }
 }

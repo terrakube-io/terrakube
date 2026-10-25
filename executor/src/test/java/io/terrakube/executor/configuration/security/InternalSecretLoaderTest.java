@@ -222,4 +222,49 @@ class InternalSecretLoaderTest {
 
         assertThrows(IllegalStateException.class, () -> InternalSecretLoader.loadSecrets(env));
     }
+
+    @Test
+    void testDefaultDirectoryMissingDoesNotThrow() {
+        MockEnvironment env = new MockEnvironment();
+        // Neither io.terrakube.executor.secrets.directory nor ExecutorSecretsDirectory is configured
+        assertDoesNotThrow(() -> {
+            Map<String, Object> secrets = InternalSecretLoader.loadSecrets(env);
+            assertNotNull(secrets);
+        });
+    }
+
+    @Test
+    void testOutputStorageSecretsRecognized() {
+        Map<String, Object> map = new HashMap<>();
+        InternalSecretLoader.registerSecret(map, "AwsTerraformOutputAccessKey", "output-access");
+        InternalSecretLoader.registerSecret(map, "AwsTerraformOutputSecretKey", "output-secret");
+        InternalSecretLoader.registerSecret(map, "AzureTerraformOutputAccountKey", "azure-output-key");
+        InternalSecretLoader.registerSecret(map, "GcpTerraformOutputCredentials", "gcp-output-creds");
+
+        assertEquals("output-access", map.get("AwsTerraformOutputAccessKey"));
+        assertEquals("output-secret", map.get("AwsTerraformOutputSecretKey"));
+        assertEquals("azure-output-key", map.get("AzureTerraformOutputAccountKey"));
+        assertEquals("gcp-output-creds", map.get("GcpTerraformOutputCredentials"));
+    }
+
+    @Test
+    void testUnreadableSecretFileThrowsIllegalStateException() throws IOException {
+        File secretsDir = new File(tempDir, "unreadable-secrets-dir");
+        assertTrue(secretsDir.mkdirs());
+
+        File secretFile = new File(secretsDir, "InternalSecret");
+        FileUtils.writeStringToFile(secretFile, "secret-data", StandardCharsets.UTF_8);
+
+        // Make file unreadable
+        if (secretFile.setReadable(false)) {
+            try {
+                MockEnvironment env = new MockEnvironment();
+                env.setProperty("io.terrakube.executor.secrets.directory", secretsDir.getAbsolutePath());
+
+                assertThrows(IllegalStateException.class, () -> InternalSecretLoader.loadSecrets(env));
+            } finally {
+                secretFile.setReadable(true);
+            }
+        }
+    }
 }

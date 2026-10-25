@@ -14,6 +14,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Slf4j
 @Component
@@ -30,6 +31,13 @@ public class InternalSecretLoader {
     public static final String PROP_REDIS_PASSWORD = "io.terrakube.executor.redis.password";
     public static final String PROP_REDIS_TRUSTSTORE_PASSWORD = "io.terrakube.executor.redis.truststorePassword";
     public static final String PROP_REDIS_SENTINEL_PASSWORD = "io.terrakube.executor.redis.sentinel.password";
+
+    public static final Set<String> KNOWN_OUTPUT_SECRET_KEYS = Set.of(
+            "AwsTerraformOutputAccessKey",
+            "AwsTerraformOutputSecretKey",
+            "AzureTerraformOutputAccountKey",
+            "GcpTerraformOutputCredentials"
+    );
 
     public static final Map<String, String> SECRET_KEY_TO_CANONICAL_PROPERTY = Map.of(
             "InternalSecret", PROP_INTERNAL_SECRET,
@@ -201,6 +209,7 @@ public class InternalSecretLoader {
                     shredAndDeleteFile(file);
                 } catch (Exception e) {
                     log.error("Failed to read secret file {}: {}", file.getAbsolutePath(), e.getMessage());
+                    throw new IllegalStateException("Failed to read secret file " + file.getAbsolutePath() + ": " + e.getMessage(), e);
                 }
             }
         }
@@ -252,8 +261,10 @@ public class InternalSecretLoader {
         } else if (CANONICAL_PROPERTY_TO_SECRET_KEY.containsKey(trimmedKey)) {
             map.put(trimmedKey, trimmedVal);
             map.put(CANONICAL_PROPERTY_TO_SECRET_KEY.get(trimmedKey), trimmedVal);
+        } else if (KNOWN_OUTPUT_SECRET_KEYS.contains(trimmedKey)) {
+            map.put(trimmedKey, trimmedVal);
         } else {
-            log.warn("Ignoring unrecognized ephemeral secret key: {}", trimmedKey);
+            log.debug("Ignoring unrecognized ephemeral secret key: {}", trimmedKey);
         }
     }
 
