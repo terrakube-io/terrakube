@@ -39,7 +39,7 @@ gap event (below). A viewer resuming with a real cursor always gets everything a
 
 ### `event: gap`: output the stream cannot provide
 
-```
+```text
 event: gap
 data: {"reason":"trimmed","afterId":"<resume id>","firstAvailableId":"<id>","recovery":"step-log"}
 ```
@@ -59,7 +59,7 @@ continues from `firstAvailableId`; the client keeps what it has and shows that o
 
 ### `event: end`: why the stream is closing
 
-```
+```text
 event: end
 data: {"reason":"rotate"}
 ```
