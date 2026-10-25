@@ -1,8 +1,8 @@
-# Runbook: zero-pending job reconciliation & executor queue liveness
+# Runbook: zero-pending job reconciliation and executor queue liveness
 
 Covers jobs that get stuck non-terminal (`pending` / `approved` / `waitingApproval` / `queue` /
 `running`) with **no remaining executable step**, which used to block the shared executor FIFO
-queue indefinitely. Design: `docs/superpowers/specs/2026-09-02-zero-pending-job-reconciliation-design.md`.
+queue indefinitely.
 
 ## Symptom
 
@@ -14,7 +14,7 @@ queue indefinitely. Design: `docs/superpowers/specs/2026-09-02-zero-pending-job-
 
 Call the admin report (needs an instance-owner group token or an internal service token):
 
-```
+```http
 GET /admin/v1/scheduler/reconciliation
 ```
 
@@ -43,7 +43,7 @@ Automatic: with `auto-remediate=true` (default) the 30s sweep resolves determini
 
 Manual (dry-run reporting only, or `auto-remediate=false`):
 
-```
+```http
 POST /admin/v1/scheduler/reconciliation
 { "confirm": true, "jobIds": [755, 756, 759] }
 ```
@@ -60,7 +60,7 @@ later jobs. Resolve it by hand (correct the step rows, or cancel the job through
 
 ## Alerts (PromQL sketches - not shipped, add to your stack)
 
-```
+```promql
 # A stuck job has been visible longer than the grace period.
 increase(terrakube_scheduler_zero_pending_nonterminal_total[15m]) > 0
   and max_over_time(terrakube_scheduler_executor_queue_head_age_seconds[15m])
