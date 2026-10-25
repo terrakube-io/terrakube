@@ -18,6 +18,7 @@ import java.util.UUID;
 @CreatePermission(expression = "team manage project")
 @UpdatePermission(expression = "team manage project OR team project admin manages project access field")
 @DeletePermission(expression = "team manage project")
+@Paginate(defaultPageSize = 10000, maxPageSize = 10000)
 @Include
 @Getter
 @Setter
