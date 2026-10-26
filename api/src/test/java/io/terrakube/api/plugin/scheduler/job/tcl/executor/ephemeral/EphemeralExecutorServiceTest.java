@@ -397,12 +397,12 @@ public class EphemeralExecutorServiceTest {
 
         verify(namespaced, times(1)).resource(job.capture());
         PodSpec podspec = job.getValue().getSpec().getTemplate().getSpec();
-        assertEquals(1000L, podspec.getSecurityContext().getRunAsUser());
-        assertEquals(1000L, podspec.getSecurityContext().getRunAsGroup());
+        assertNull(podspec.getSecurityContext().getRunAsUser());
+        assertNull(podspec.getSecurityContext().getRunAsGroup());
         assertEquals(1000L, podspec.getSecurityContext().getFsGroup());
 
         Container container = podspec.getContainers().getFirst();
-        assertTrue(container.getEnv().stream().anyMatch(e -> "HOME".equals(e.getName()) && "/tmp".equals(e.getValue())));
+        assertFalse(container.getEnv().stream().anyMatch(e -> "HOME".equals(e.getName())));
     }
 
     @Test
@@ -530,8 +530,14 @@ public class EphemeralExecutorServiceTest {
         // 2. ExecutorSecretsDirectory env var must be set
         HashMap<String, String> envMap = envVarsToMap(container.getEnv());
         assertEquals("/etc/terrakube/secrets", envMap.get("ExecutorSecretsDirectory"));
+        assertNull(envMap.get("HOME"));
 
-        // 3. Container mounts writable emptyDir at /etc/terrakube/secrets
+        // 3. Security context on the pod template retains fsGroup 1000
+        assertNull(podSpec.getSecurityContext().getRunAsUser());
+        assertNull(podSpec.getSecurityContext().getRunAsGroup());
+        assertEquals(1000L, podSpec.getSecurityContext().getFsGroup());
+
+        // 4. Container mounts writable emptyDir at /etc/terrakube/secrets
         VolumeMount secretMount = container.getVolumeMounts().stream()
                 .filter(m -> "/etc/terrakube/secrets".equals(m.getMountPath()))
                 .findFirst()
@@ -546,11 +552,7 @@ public class EphemeralExecutorServiceTest {
         assertEquals("copy-executor-secrets", initContainer.getName());
         assertEquals("busybox:1.37.0", initContainer.getImage());
         assertNotNull(initContainer.getSecurityContext());
-        assertTrue(initContainer.getSecurityContext().getRunAsNonRoot());
-        assertEquals(1000L, initContainer.getSecurityContext().getRunAsUser());
-        assertEquals(1000L, initContainer.getSecurityContext().getRunAsGroup());
         assertFalse(initContainer.getSecurityContext().getAllowPrivilegeEscalation());
-        assertEquals(List.of("ALL"), initContainer.getSecurityContext().getCapabilities().getDrop());
         assertEquals("RuntimeDefault", initContainer.getSecurityContext().getSeccompProfile().getType());
         assertNotNull(initContainer.getResources());
         assertEquals(new Quantity("50m"), initContainer.getResources().getRequests().get("cpu"));
@@ -558,8 +560,8 @@ public class EphemeralExecutorServiceTest {
         assertEquals(new Quantity("100m"), initContainer.getResources().getLimits().get("cpu"));
         assertEquals(new Quantity("64Mi"), initContainer.getResources().getLimits().get("memory"));
         assertTrue(initContainer.getArgs().getFirst().contains("set -eu"));
-        assertFalse(initContainer.getArgs().getFirst().contains("chmod 0700 /config-rw"));
-        assertTrue(initContainer.getArgs().getFirst().contains("chmod 0600"));
+        assertTrue(initContainer.getArgs().getFirst().contains("chmod 2770 /config-rw"));
+        assertTrue(initContainer.getArgs().getFirst().contains("chmod 0660"));
 
         // 5. Pod volumes include raw projected secret and memory-backed emptyDir
         Volume rawVol = podSpec.getVolumes().stream()

@@ -16,6 +16,9 @@ public class ExecutorSecretEnvironmentPostProcessor implements EnvironmentPostPr
 
     @Override
     public void postProcessEnvironment(ConfigurableEnvironment environment, SpringApplication application) {
+        if (environment.getPropertySources().contains(PROPERTY_SOURCE_NAME)) {
+            return;
+        }
         try {
             Map<String, Object> ephemeralSecrets = InternalSecretLoader.loadSecrets(environment);
             if (!ephemeralSecrets.isEmpty()) {
