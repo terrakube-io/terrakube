@@ -7,6 +7,7 @@ import io.terrakube.executor.plugin.tfstate.TerraformStatePathService;
 import io.terrakube.executor.service.mode.TerraformJob;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.FilenameUtils;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import io.terrakube.executor.service.logs.StepOutputBuffer;
 import org.junit.jupiter.api.Test;
@@ -300,30 +301,31 @@ class LocalTerraformStateImplTest {
     void testSaveOutputPartsAreWrittenNextToTheFinalOutputAndDeleted() throws Exception {
         File stepFolder = new File(FileUtils.getUserDirectoryPath().concat(
                 FilenameUtils.separatorsToSystem("/.terraform-spring-boot/local/output/orgParts/jobParts/stepParts.parts")));
-        try {
-            for (int number : new int[]{1, 2}) {
-                byte[] bytes = ("part " + number).getBytes(java.nio.charset.StandardCharsets.UTF_8);
-                assertTrue(localTerraformState.saveOutputPart("orgParts", "jobParts", "stepParts", number,
-                        new io.terrakube.executor.service.logs.StepOutputPartWriter.PartSource() {
-                            public java.io.InputStream open() {
-                                return new java.io.ByteArrayInputStream(bytes);
-                            }
+        for (int number : new int[]{1, 2}) {
+            byte[] bytes = ("part " + number).getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            assertTrue(localTerraformState.saveOutputPart("orgParts", "jobParts", "stepParts", number,
+                    new io.terrakube.executor.service.logs.StepOutputPartWriter.PartSource() {
+                        public java.io.InputStream open() {
+                            return new java.io.ByteArrayInputStream(bytes);
+                        }
 
-                            public long length() {
-                                return bytes.length;
-                            }
-                        }));
-            }
-            assertEquals("part 1", FileUtils.readFileToString(new File(stepFolder, "000001.part"), java.nio.charset.StandardCharsets.UTF_8));
-            assertEquals("part 2", FileUtils.readFileToString(new File(stepFolder, "000002.part"), java.nio.charset.StandardCharsets.UTF_8));
-
-            localTerraformState.deleteOutputParts("orgParts", "jobParts", "stepParts");
-
-            assertFalse(stepFolder.exists());
-        } finally {
-            FileUtils.deleteQuietly(new File(FileUtils.getUserDirectoryPath().concat(
-                    FilenameUtils.separatorsToSystem("/.terraform-spring-boot/local/output/orgParts"))));
+                        public long length() {
+                            return bytes.length;
+                        }
+                    }));
         }
+        assertEquals("part 1", FileUtils.readFileToString(new File(stepFolder, "000001.part"), java.nio.charset.StandardCharsets.UTF_8));
+        assertEquals("part 2", FileUtils.readFileToString(new File(stepFolder, "000002.part"), java.nio.charset.StandardCharsets.UTF_8));
+
+        localTerraformState.deleteOutputParts("orgParts", "jobParts", "stepParts");
+
+        assertFalse(stepFolder.exists());
+    }
+
+    @AfterEach
+    void removeOutputPartsOfTheTest() {
+        FileUtils.deleteQuietly(new File(FileUtils.getUserDirectoryPath().concat(
+                FilenameUtils.separatorsToSystem("/.terraform-spring-boot/local/output/orgParts"))));
     }
 
     @Test

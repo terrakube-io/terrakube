@@ -170,8 +170,10 @@ public class UpdateJobStatusImplTest {
                 buffer, (number, data) -> { }, 3, java.time.Duration.ofSeconds(30), 10, "test");
         buffer.attachArchiver(writer);
 
+        UpdateJobStatusImpl subject = subject();
+        TerraformJob job = terraformJob();
         Assertions.assertThrows(RuntimeException.class, () ->
-                subject().setCompletedStatus(true, false, 0, terraformJob(), buffer, "", "", "0000000", false, null, null, null));
+                subject.setCompletedStatus(true, false, 0, job, buffer, "", "", "0000000", false, null, null, null));
 
         verify(terraformState, never()).deleteOutputParts(anyString(), anyString(), anyString());
     }

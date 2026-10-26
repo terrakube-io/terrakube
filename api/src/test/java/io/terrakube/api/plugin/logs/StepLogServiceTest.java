@@ -211,7 +211,7 @@ class StepLogServiceTest {
     }
 
     @Test
-    void finalObjectIsPreferredOverParts() throws Exception {
+    void finalObjectIsPreferredOverParts() {
         stepWithStatus(JobStatus.completed);
         byte[] data = "the whole output".getBytes();
         when(storage.getStepOutputStream("o", "j", stepId.toString(), null))

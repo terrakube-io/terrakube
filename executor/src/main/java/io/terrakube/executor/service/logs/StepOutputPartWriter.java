@@ -114,7 +114,7 @@ public class StepOutputPartWriter {
                     toStop.shutdownNow();
                     log.warn("Step output part upload for {} did not finish in time, leftover parts are removed with the job", description);
                 }
-            } catch (InterruptedException e) {
+            } catch (InterruptedException _) {
                 toStop.shutdownNow();
                 Thread.currentThread().interrupt();
             }

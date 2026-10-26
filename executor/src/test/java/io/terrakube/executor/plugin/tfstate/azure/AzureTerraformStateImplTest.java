@@ -239,7 +239,7 @@ class AzureTerraformStateImplTest {
     }
 
     @Test
-    void testSaveOutputPartGoesUnderThePartsFolderOfTheStep() throws Exception {
+    void testSaveOutputPartGoesUnderThePartsFolderOfTheStep() {
         when(blobContainerClient.exists()).thenReturn(true);
         java.io.ByteArrayOutputStream uploaded = new java.io.ByteArrayOutputStream();
         org.mockito.ArgumentCaptor<Long> length = org.mockito.ArgumentCaptor.forClass(Long.class);

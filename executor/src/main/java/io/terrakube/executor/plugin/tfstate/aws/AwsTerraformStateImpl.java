@@ -436,7 +436,7 @@ public class AwsTerraformStateImpl implements TerraformState {
         }
         List<ObjectIdentifier> keys = objects.stream().map(object -> ObjectIdentifier.builder().key(object.key()).build()).toList();
         DeleteObjectsResponse deleted = s3client.deleteObjects(DeleteObjectsRequest.builder()
-                .bucket(bucketName).delete(Delete.builder().objects(keys).quiet(true).build()).build());
+                .bucket(bucketName).delete(delete -> delete.objects(keys).quiet(true)).build());
         if (deleted != null && deleted.hasErrors()) {
             log.warn("{} output parts could not be deleted", deleted.errors().size());
         }

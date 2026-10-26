@@ -268,43 +268,7 @@ public class ExecutorJobImpl implements ExecutorJob {
                 break;
             case "customScripts":
             case "approval":
-                log.info("Execute Groovy Script for Organization {} Workspace {} ", terraformJob.getOrganizationId(), terraformJob.getWorkspaceId());
-                StepOutputBuffer scriptOutput = StepOutputBuffer.forStep(logsProperties.getStepOutputMemoryBytes(), terraformWorkingDir);
-                if (stepOutputArchiveService != null) {
-                    stepOutputArchiveService.start(scriptOutput, terraformJob);
-                }
-                TextStringBuilder scriptErrorOutput = new TextStringBuilder();
-                Consumer<String> output;
-                if (logsService != null) {
-                    output = LogsConsumer.builder()
-                            .jobId(Integer.valueOf(terraformJob.getJobId()))
-                            .terraformOutput(scriptOutput)
-                            .stepId(terraformJob.getStepId())
-                            .processLogs(logsService)
-                            .lineNumber(new AtomicInteger(0))
-                            .build();
-                } else {
-                    output = outputScripts -> {
-                        if (logsProperties.isEchoToServiceLog()) {
-                            log.info(outputScripts);
-                        }
-                        scriptOutput.appendln(outputScripts);
-                    };
-                }
-                boolean executionSuccess;
-                boolean handedOver = false;
-                try {
-                    executionSuccess = scriptEngineService.execute(terraformJob, terraformJob.getCommandList(), terraformWorkingDir, output);
-                    terraformResult.setOutputBuffer(scriptOutput);
-                    handedOver = true;
-                } finally {
-                    // Also for an Error: the buffer may already be a file on the scratch disk.
-                    if (!handedOver) {
-                        scriptOutput.close();
-                    }
-                }
-                terraformResult.setOutputErrorLog(scriptErrorOutput.toString());
-                terraformResult.setSuccessfulExecution(executionSuccess);
+                terraformResult = executeScripts(terraformJob, terraformWorkingDir, terraformResult);
                 break;
             default:
                 terraformResult = new ExecutorJobResult();
@@ -319,6 +283,47 @@ public class ExecutorJobImpl implements ExecutorJob {
         try (StepOutputBuffer outputBuffer = terraformResult.getOutputBuffer()) {
             updateJobStatus.setCompletedStatus(executionSuccess, terraformResult.isPlan, terraformResult.getExitCode(), terraformJob, outputBuffer, terraformResult.getOutputErrorLog(), terraformResult.getPlanFile(), commitId, terraformResult.isHasSoftMandatoryViolations(), terraformResult.getApprovalTeam(), terraformResult.getDeliveryState(), terraformResult.getDeliveryRevision());
         }
+    }
+
+    private ExecutorJobResult executeScripts(TerraformJob terraformJob, File terraformWorkingDir, ExecutorJobResult terraformResult) {
+        log.info("Execute Groovy Script for Organization {} Workspace {} ", terraformJob.getOrganizationId(), terraformJob.getWorkspaceId());
+        StepOutputBuffer scriptOutput = StepOutputBuffer.forStep(logsProperties.getStepOutputMemoryBytes(), terraformWorkingDir);
+        if (stepOutputArchiveService != null) {
+            stepOutputArchiveService.start(scriptOutput, terraformJob);
+        }
+        TextStringBuilder scriptErrorOutput = new TextStringBuilder();
+        Consumer<String> output;
+        if (logsService != null) {
+            output = LogsConsumer.builder()
+                    .jobId(Integer.valueOf(terraformJob.getJobId()))
+                    .terraformOutput(scriptOutput)
+                    .stepId(terraformJob.getStepId())
+                    .processLogs(logsService)
+                    .lineNumber(new AtomicInteger(0))
+                    .build();
+        } else {
+            output = outputScripts -> {
+                if (logsProperties.isEchoToServiceLog()) {
+                    log.info(outputScripts);
+                }
+                scriptOutput.appendln(outputScripts);
+            };
+        }
+        boolean executionSuccess;
+        boolean handedOver = false;
+        try {
+            executionSuccess = scriptEngineService.execute(terraformJob, terraformJob.getCommandList(), terraformWorkingDir, output);
+            terraformResult.setOutputBuffer(scriptOutput);
+            handedOver = true;
+        } finally {
+            // Also for an Error: the buffer may already be a file on the scratch disk.
+            if (!handedOver) {
+                scriptOutput.close();
+            }
+        }
+        terraformResult.setOutputErrorLog(scriptErrorOutput.toString());
+        terraformResult.setSuccessfulExecution(executionSuccess);
+        return terraformResult;
     }
 
     private static String getCommitId(File workspaceFolder) {
