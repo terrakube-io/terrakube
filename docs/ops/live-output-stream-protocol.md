@@ -107,4 +107,4 @@ All under `io.terrakube.logs` (`LogsProperties`):
 | `sse-replay-page-size` | 1000 |
 | `sse-max-concurrent-replay-reads` | 16 |
 
-Overall byte budgets and incremental archival are out of scope here (#3695).
+Overall byte budgets and the incremental archival of the saved output (#3695, #3751) are not part of the stream protocol. They are described in [Executor log output](executor-log-output.md).
