@@ -10,6 +10,8 @@ What the executor does with the output of a step (the lines Terraform or OpenTof
 
 ## Output kept while the step runs
 
+The loss boundary for all output, and its expiry, is in the [output delivery contract](output-delivery-contract.md).
+
 The saved output is written once, when the step ends. If the executor dies before that (the pod is killed, the node goes away), there is nothing to read once the live stream has expired. So the executor also copies the output to storage in parts while the step runs:
 
 ```text
