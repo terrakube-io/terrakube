@@ -553,6 +553,7 @@ public class EphemeralExecutorServiceTest {
         assertEquals("busybox:1.37.0", initContainer.getImage());
         assertNotNull(initContainer.getSecurityContext());
         assertFalse(initContainer.getSecurityContext().getAllowPrivilegeEscalation());
+        assertEquals(List.of("ALL"), initContainer.getSecurityContext().getCapabilities().getDrop());
         assertEquals("RuntimeDefault", initContainer.getSecurityContext().getSeccompProfile().getType());
         assertNotNull(initContainer.getResources());
         assertEquals(new Quantity("50m"), initContainer.getResources().getRequests().get("cpu"));

@@ -225,6 +225,7 @@ public class EphemeralExecutorService {
 
             SecurityContext initSecurityContext = new SecurityContextBuilder()
                     .withAllowPrivilegeEscalation(false)
+                    .withCapabilities(new CapabilitiesBuilder().addToDrop("ALL").build())
                     .withSeccompProfile(new SeccompProfileBuilder().withType("RuntimeDefault").build())
                     .build();
 
