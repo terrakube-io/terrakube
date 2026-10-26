@@ -41,6 +41,8 @@ public class EphemeralExecutorService {
     private static final String LABELS = "EPHEMERAL_CONFIG_LABELS";
     private static final String ENVFROM_CONFIG_MAP = "EPHEMERAL_CONFIG_ENVFROM_CONFIG_MAP";
     private static final String POD_ANNOTATIONS = "EPHEMERAL_CONFIG_POD_ANNOTATIONS";
+    private static final String WRITABLE_SECRETS_VOLUME = "writable-executor-secrets";
+    private static final String DEFAULT_INIT_SECRET_IMAGE = "busybox:1.37.0";
 
     KubernetesClient kubernetesClient;
     EphemeralConfiguration ephemeralConfiguration;
@@ -49,6 +51,7 @@ public class EphemeralExecutorService {
         final String jobName = String.format("job-%s-%s", job.getId(), System.currentTimeMillis());
         log.info("Ephemeral Executor Image {}, Job: {}, Namespace: {}, NodeSelector: {}", ephemeralConfiguration.getImage(), jobName, ephemeralConfiguration.getNamespace(), ephemeralConfiguration.getNodeSelector());
         final List<EnvFromSource> executorEnvFromSources = new ArrayList<>();
+        final List<String> validSecrets = new ArrayList<>();
         if (ephemeralConfiguration.getSecret() != null) {
             for (String secretName : ephemeralConfiguration.getSecret()) {
                 if (secretName == null) {
@@ -58,11 +61,14 @@ public class EphemeralExecutorService {
                 if (trimmed.isEmpty()) {
                     continue;
                 }
-                SecretEnvSource secretEnvSource = new SecretEnvSource();
-                secretEnvSource.setName(trimmed);
-                EnvFromSource envFromSource = new EnvFromSource();
-                envFromSource.setSecretRef(secretEnvSource);
-                executorEnvFromSources.add(envFromSource);
+                validSecrets.add(trimmed);
+                if (!ephemeralConfiguration.isEmptyDirSecret()) {
+                    SecretEnvSource secretEnvSource = new SecretEnvSource();
+                    secretEnvSource.setName(trimmed);
+                    EnvFromSource envFromSource = new EnvFromSource();
+                    envFromSource.setSecretRef(secretEnvSource);
+                    executorEnvFromSources.add(envFromSource);
+                }
             }
         }
 
@@ -99,6 +105,12 @@ public class EphemeralExecutorService {
         final List<EnvVar> executorEnvVarFlags = new LinkedList<>();
         executorEnvVarFlags.add(executorFlagBatch);
         executorEnvVarFlags.add(executorFlagBatchJsonContent);
+        if (ephemeralConfiguration.isEmptyDirSecret() && !validSecrets.isEmpty()) {
+            EnvVar secretsDirEnvVar = new EnvVar();
+            secretsDirEnvVar.setName("ExecutorSecretsDirectory");
+            secretsDirEnvVar.setValue("/etc/terrakube/secrets");
+            executorEnvVarFlags.add(secretsDirEnvVar);
+        }
 
         Optional<String> additionalEnvVars=Optional.ofNullable(executorContext.getEnvironmentVariables().getOrDefault(EPHEMERAL_JOB_ENV_VARS, null));
 
@@ -167,6 +179,74 @@ public class EphemeralExecutorService {
         // Volume and VolumeMount for ConfigMap if specified
         List<Volume> volumes = new ArrayList<>();
         List<VolumeMount> volumeMounts = new ArrayList<>();
+        List<Container> initContainers = new ArrayList<>();
+
+        if (ephemeralConfiguration.isEmptyDirSecret() && !validSecrets.isEmpty()) {
+            Volume rawSecretVolume = new Volume();
+            rawSecretVolume.setName("raw-secret");
+            ProjectedVolumeSource projected = new ProjectedVolumeSource();
+            List<VolumeProjection> sources = new ArrayList<>();
+            for (String sName : validSecrets) {
+                SecretProjection secretProj = new SecretProjection();
+                secretProj.setName(sName);
+                VolumeProjection proj = new VolumeProjection();
+                proj.setSecret(secretProj);
+                sources.add(proj);
+            }
+            projected.setSources(sources);
+            rawSecretVolume.setProjected(projected);
+            volumes.add(rawSecretVolume);
+
+            Volume writableSecretsVolume = new Volume();
+            writableSecretsVolume.setName(WRITABLE_SECRETS_VOLUME);
+            EmptyDirVolumeSource emptyDir = new EmptyDirVolumeSource();
+            emptyDir.setMedium("Memory");
+            emptyDir.setSizeLimit(new Quantity("64Mi"));
+            writableSecretsVolume.setEmptyDir(emptyDir);
+            volumes.add(writableSecretsVolume);
+
+            VolumeMount secretMount = new VolumeMount();
+            secretMount.setName(WRITABLE_SECRETS_VOLUME);
+            secretMount.setMountPath("/etc/terrakube/secrets");
+            volumeMounts.add(secretMount);
+
+            VolumeMount roMount = new VolumeMount();
+            roMount.setName("raw-secret");
+            roMount.setMountPath("/config-ro");
+            roMount.setReadOnly(true);
+
+            VolumeMount rwMount = new VolumeMount();
+            rwMount.setName(WRITABLE_SECRETS_VOLUME);
+            rwMount.setMountPath("/config-rw");
+
+            String initImage = (ephemeralConfiguration.getInitSecretImage() != null && !ephemeralConfiguration.getInitSecretImage().isBlank())
+                    ? ephemeralConfiguration.getInitSecretImage()
+                    : DEFAULT_INIT_SECRET_IMAGE;
+
+            SecurityContext initSecurityContext = new SecurityContextBuilder()
+                    .withAllowPrivilegeEscalation(false)
+                    .withCapabilities(new CapabilitiesBuilder().addToDrop("ALL").build())
+                    .withSeccompProfile(new SeccompProfileBuilder().withType("RuntimeDefault").build())
+                    .build();
+
+            ResourceRequirements initResources = new ResourceRequirementsBuilder()
+                    .addToRequests("cpu", new Quantity("50m"))
+                    .addToRequests("memory", new Quantity("64Mi"))
+                    .addToLimits("cpu", new Quantity("100m"))
+                    .addToLimits("memory", new Quantity("64Mi"))
+                    .build();
+
+            Container initContainer = new ContainerBuilder()
+                    .withName("copy-executor-secrets")
+                    .withImage(initImage)
+                    .withCommand("/bin/sh", "-c")
+                    .withArgs("set -eu\nchmod 2770 /config-rw\nfor f in /config-ro/*; do\n  if [ -f \"$f\" ]; then\n    target=\"/config-rw/$(basename \"$f\")\"\n    cp -L \"$f\" \"$target\"\n    chmod 0660 \"$target\"\n  fi\ndone\n")
+                    .withVolumeMounts(List.of(roMount, rwMount))
+                    .withSecurityContext(initSecurityContext)
+                    .withResources(initResources)
+                    .build();
+            initContainers.add(initContainer);
+        }
 
         Optional<String> configMapNameOpt = Optional.ofNullable(executorContext.getEnvironmentVariables().get(CONFIG_MAP_NAME));
         Optional<String> configMapMountPathOpt = Optional.ofNullable(executorContext.getEnvironmentVariables().get(CONFIG_MAP_PATH));
@@ -319,6 +399,7 @@ public class EphemeralExecutorService {
                 .withServiceAccountName(serviceAccount)
                 .withTolerations(tolerations)
                 .withVolumes(volumes)
+                .withInitContainers(initContainers)
                 .addNewContainer()
                 .withName("executor")
                 .withEnvFrom(executorEnvFromSources)
