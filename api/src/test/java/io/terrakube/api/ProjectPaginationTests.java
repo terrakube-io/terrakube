@@ -2,10 +2,15 @@ package io.terrakube.api;
 
 import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.project.Project;
+import io.terrakube.api.rs.project.access.ProjectAccess;
+import jakarta.persistence.EntityManagerFactory;
+import org.hibernate.SessionFactory;
+import org.hibernate.stat.Statistics;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.MockitoAnnotations;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 
 import java.util.ArrayList;
@@ -24,7 +29,11 @@ import static org.mockito.Mockito.when;
 class ProjectPaginationTests extends ServerApplicationTests {
 
     private static final String ORGANIZATION_ID = "d9b58bd3-f3fc-4056-a026-1163297e80a8";
+    private static final String PROJECT_ONLY_TEAM = "PROJECT_TEAM_MEMBER";
     private static final int SEEDED_PROJECTS = 501;
+
+    @Autowired
+    private EntityManagerFactory entityManagerFactory;
 
     private List<Project> seeded = new ArrayList<>();
 
@@ -40,6 +49,11 @@ class ProjectPaginationTests extends ServerApplicationTests {
             project.setName(String.format("pagination-3783-%04d", i));
             project.setDescription("Project pagination regression");
             project.setOrganization(organization);
+            ProjectAccess access = new ProjectAccess();
+            access.setName(PROJECT_ONLY_TEAM);
+            access.setRole("read");
+            access.setProject(project);
+            project.getProjectAccess().add(access);
             projects.add(project);
         }
         seeded = projectRepository.saveAll(projects);
@@ -82,6 +96,38 @@ class ProjectPaginationTests extends ServerApplicationTests {
                 .statusCode(HttpStatus.OK.value())
                 .body("$", not(hasKey("errors")))
                 .body("data.organization.edges[0].node.project.edges.node.id", hasItems(seededProjectIds()));
+    }
+
+    @Test
+    void listMoreThanFiveHundredProjectsViaGraphQlAsProjectAccessOnlyCaller() {
+        String query = "{ organization(ids: [\"" + ORGANIZATION_ID + "\"]) { edges { node { "
+                + "project { edges { node { id name description } } } } } } }";
+        Statistics statistics = entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
+        statistics.setStatisticsEnabled(true);
+        statistics.clear();
+
+        long start = System.nanoTime();
+        given()
+                .headers("Authorization", "Bearer " + generatePAT(PROJECT_ONLY_TEAM))
+                .contentType("application/json")
+                .body(Map.of("query", query))
+                .when()
+                .post("/graphql/api/v1")
+                .then()
+                .assertThat()
+                .log()
+                .ifValidationFails()
+                .statusCode(HttpStatus.OK.value())
+                .body("$", not(hasKey("errors")))
+                .body("data.organization.edges[0].node.project.edges.node.id", hasItems(seededProjectIds()))
+                .extract();
+        long elapsedMillis = (System.nanoTime() - start) / 1_000_000;
+        long statements = statistics.getPrepareStatementCount();
+        statistics.setStatisticsEnabled(false);
+
+        // Without @BatchSize on Project.projectAccess this is one lazy-load statement per project (~511).
+        org.junit.jupiter.api.Assertions.assertTrue(statements < 200,
+                "expected batched projectAccess loading but ran " + statements + " statements in " + elapsedMillis + "ms");
     }
 
     private String[] seededProjectIds() {
