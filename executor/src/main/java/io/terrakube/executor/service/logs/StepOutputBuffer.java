@@ -271,7 +271,7 @@ public class StepOutputBuffer implements AutoCloseable {
 
         @Override
         public int available() throws IOException {
-            return (int) Math.clamp(remaining, 0, super.available());
+            return Math.clamp(remaining, 0, super.available());
         }
     }
 }
