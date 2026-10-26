@@ -14,6 +14,7 @@ import io.terrakube.executor.service.executor.ExecutorJobResult;
 import io.terrakube.executor.service.logs.ExecutorLogsProperties;
 import io.terrakube.executor.service.logs.LogsConsumer;
 import io.terrakube.executor.service.logs.ProcessLogs;
+import io.terrakube.executor.service.logs.StepOutputArchiveService;
 import io.terrakube.executor.service.logs.StepOutputBuffer;
 import io.terrakube.executor.service.mode.TerraformJob;
 import io.terrakube.executor.service.scripts.ScriptEngineService;
@@ -107,6 +108,13 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
     // Most bytes of the rendered plan published to the job context (the PR comment copy).
     private long renderedPlanContextMaxBytes = new ExecutorLogsProperties().getRenderedPlanContextMaxBytes();
 
+    private StepOutputArchiveService stepOutputArchiveService;
+
+    @Autowired(required = false)
+    void setStepOutputArchiveService(StepOutputArchiveService stepOutputArchiveService) {
+        this.stepOutputArchiveService = stepOutputArchiveService;
+    }
+
     @Autowired(required = false)
     void setLogsProperties(ExecutorLogsProperties logsProperties) {
         this.renderedPlanContextMaxBytes = logsProperties.getRenderedPlanContextMaxBytes();
@@ -175,7 +183,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
 
     @Override
     public ExecutorJobResult plan(TerraformJob terraformJob, File executorTempDirectory, boolean isDestroy) {
-        return withStepOutput(executorTempDirectory, jobOutput -> plan(terraformJob, executorTempDirectory, isDestroy, jobOutput));
+        return withStepOutput(terraformJob, executorTempDirectory, jobOutput -> plan(terraformJob, executorTempDirectory, isDestroy, jobOutput));
     }
 
     private ExecutorJobResult plan(TerraformJob terraformJob, File executorTempDirectory, boolean isDestroy, StepOutputBuffer jobOutput) {
@@ -522,7 +530,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
 
     @Override
     public ExecutorJobResult apply(TerraformJob terraformJob, File executorTempDirectory) {
-        return withStepOutput(executorTempDirectory, terraformOutput -> apply(terraformJob, executorTempDirectory, terraformOutput));
+        return withStepOutput(terraformJob, executorTempDirectory, terraformOutput -> apply(terraformJob, executorTempDirectory, terraformOutput));
     }
 
     private ExecutorJobResult apply(TerraformJob terraformJob, File executorTempDirectory, StepOutputBuffer terraformOutput) {
@@ -879,7 +887,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
 
     @Override
     public ExecutorJobResult destroy(TerraformJob terraformJob, File executorTempDirectory) {
-        return withStepOutput(executorTempDirectory, jobOutput -> destroy(terraformJob, executorTempDirectory, jobOutput));
+        return withStepOutput(terraformJob, executorTempDirectory, jobOutput -> destroy(terraformJob, executorTempDirectory, jobOutput));
     }
 
     private ExecutorJobResult destroy(TerraformJob terraformJob, File executorTempDirectory, StepOutputBuffer jobOutput) {
@@ -981,8 +989,11 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
 
     // The buffer belongs to the result it was handed to. Anything else (an unchecked exception, an
     // error, an early return with a plain String) closes it here, so a spilled file is never left behind.
-    private ExecutorJobResult withStepOutput(File workingDirectory, java.util.function.Function<StepOutputBuffer, ExecutorJobResult> step) {
+    private ExecutorJobResult withStepOutput(TerraformJob terraformJob, File workingDirectory, java.util.function.Function<StepOutputBuffer, ExecutorJobResult> step) {
         StepOutputBuffer output = newStepOutput(workingDirectory);
+        if (stepOutputArchiveService != null) {
+            stepOutputArchiveService.start(output, terraformJob);
+        }
         ExecutorJobResult result = null;
         try {
             result = step.apply(output);

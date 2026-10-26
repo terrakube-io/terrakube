@@ -201,7 +201,7 @@ x-traefik_dex_labels: &traefik_dex_labels
   traefik.http.middlewares.terrakube-dex-allow-origin.headers.accesscontrolallowcredentials: true
   traefik.http.middlewares.terrakube-dex-allow-origin.headers.accessControlExposeHeaders: >
     Cache-Control, Content-Language, Content-Length, Content-Type, Expires, Last-Modified,
-    Pragma, x-amz-server-side-encryption, x-amz-request-id, x-amz-id-2, ETag, x-terraform-get
+    Pragma, x-amz-server-side-encryption, x-amz-request-id, x-amz-id-2, ETag, x-terraform-get, X-Terrakube-Output-Incomplete
   traefik.http.middlewares.terrakube-dex-allow-origin.headers.accesscontrolmaxage: 86400
   traefik.http.middlewares.terrakube-dex-allow-origin.headers.addvaryheader: true
 

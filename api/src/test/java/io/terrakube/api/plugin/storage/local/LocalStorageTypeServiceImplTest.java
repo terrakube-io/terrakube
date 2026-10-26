@@ -330,4 +330,77 @@ class LocalStorageTypeServiceImplTest {
         assertFalse(second.exists());
         assertTrue(otherWorkspace.exists());
     }
+
+    private void writePart(String name, String content) throws IOException {
+        File file = tempDir.resolve(".terraform-spring-boot/local/output/o/j/s.parts/" + name).toFile();
+        file.getParentFile().mkdirs();
+        java.nio.file.Files.writeString(file.toPath(), content);
+    }
+
+    @Test
+    void listsTheOutputPartsOfAStepWithTheirSizes() throws IOException {
+        try (MockedStatic<FileUtils> mockedFileUtils = mockStatic(FileUtils.class)) {
+            mockedFileUtils.when(FileUtils::getUserDirectoryPath).thenReturn(tempDir.toString());
+            writePart("000001.part", "hello ");
+            writePart("000002.part", "world!");
+
+            var parts = localStorageTypeService.listStepOutputParts("o", "j", "s");
+
+            assertEquals(java.util.Set.of(
+                    new io.terrakube.api.plugin.storage.model.StepOutputPart("000001.part", 6),
+                    new io.terrakube.api.plugin.storage.model.StepOutputPart("000002.part", 6)), new java.util.HashSet<>(parts));
+        }
+    }
+
+    @Test
+    void aStepWithoutAPartsFolderHasNoParts() {
+        try (MockedStatic<FileUtils> mockedFileUtils = mockStatic(FileUtils.class)) {
+            mockedFileUtils.when(FileUtils::getUserDirectoryPath).thenReturn(tempDir.toString());
+
+            assertTrue(localStorageTypeService.listStepOutputParts("o", "j", "s").isEmpty());
+        }
+    }
+
+    @Test
+    void opensARangeOfOneOutputPart() throws IOException {
+        try (MockedStatic<FileUtils> mockedFileUtils = mockStatic(FileUtils.class)) {
+            mockedFileUtils.when(FileUtils::getUserDirectoryPath).thenReturn(tempDir.toString());
+            writePart("000001.part", "0123456789");
+
+            try (InputStream in = localStorageTypeService.openStepOutputPart("o", "j", "s", "000001.part", 3, 4)) {
+                assertEquals("3456", new String(IOUtils.toByteArray(in)));
+            }
+        }
+    }
+
+    @Test
+    void refusesAPartNameThatIsNotAPart() {
+        try (MockedStatic<FileUtils> mockedFileUtils = mockStatic(FileUtils.class)) {
+            mockedFileUtils.when(FileUtils::getUserDirectoryPath).thenReturn(tempDir.toString());
+
+            assertThrows(IOException.class, () -> localStorageTypeService.openStepOutputPart("o", "j", "s", "../s.tfoutput", 0, 4));
+        }
+    }
+
+    @Test
+    void deletingTheOutputOfAJobAlsoRemovesTheParts() throws IOException {
+        try (MockedStatic<FileUtils> mockedFileUtils = mockStatic(FileUtils.class, CALLS_REAL_METHODS)) {
+            mockedFileUtils.when(FileUtils::getUserDirectoryPath).thenReturn(tempDir.toString());
+            File part = tempDir.resolve(".terraform-spring-boot/local/output/org1/100/step1.parts/000001.part").toFile();
+            part.getParentFile().mkdirs();
+            java.nio.file.Files.writeString(part.toPath(), "abc");
+            File finalOutput = tempDir.resolve(".terraform-spring-boot/local/output/org1/100/step1.tfoutput").toFile();
+            java.nio.file.Files.writeString(finalOutput.toPath(), "abc");
+            File otherJob = tempDir.resolve(".terraform-spring-boot/local/output/org1/101/step1.parts/000001.part").toFile();
+            otherJob.getParentFile().mkdirs();
+            java.nio.file.Files.writeString(otherJob.toPath(), "abc");
+
+            localStorageTypeService.deleteWorkspaceOutputData("org1", java.util.List.of(100));
+
+            assertFalse(part.exists());
+            assertFalse(finalOutput.exists());
+            assertFalse(part.getParentFile().exists());
+            assertTrue(otherJob.exists());
+        }
+    }
 }

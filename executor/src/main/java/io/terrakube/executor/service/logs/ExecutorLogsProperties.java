@@ -56,4 +56,20 @@ public class ExecutorLogsProperties {
      * output keeps the whole plan. 0 or less publishes all of it.
      */
     private long renderedPlanContextMaxBytes = 49_152L;
+
+    /**
+     * Keep the output of a running step in the object store as numbered parts, so the part written so far
+     * survives an executor that dies before the step ends. The output saved when the step ends is the same
+     * as without this, and the parts are deleted after it.
+     */
+    private boolean archiveEnabled = true;
+
+    /** A part is written when this many bytes have not been archived yet. Grows for a very long step. */
+    private long archivePartBytes = 1_048_576L;
+
+    /** A part is also written after this long, if there is anything new, however small. */
+    private long archiveIntervalSeconds = 30L;
+
+    /** Most parts archived for one step. Past it the writer stops until the step ends. */
+    private int archiveMaxParts = 1000;
 }

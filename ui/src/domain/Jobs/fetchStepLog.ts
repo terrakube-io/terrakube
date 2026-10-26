@@ -32,7 +32,12 @@ type FetchStepLogParams = {
 type FetchStepLogResult = {
   text: string;
   truncated: boolean;
+  /** The step ended without its own saved output: this is only what was archived while it ran. */
+  incomplete: boolean;
 };
+
+/** Set by the API when the log is only the parts archived while the step ran. */
+export const OUTPUT_INCOMPLETE_HEADER = "x-terrakube-output-incomplete";
 
 function resolveUrl(params: FetchStepLogParams): { url: string; terrakubeApi: boolean } {
   if (params.output != null && params.output !== "") {
@@ -130,7 +135,9 @@ async function fetchStepLogInner(params: FetchStepLogParams): Promise<FetchStepL
     const contentRange = response.headers?.["content-range"] as string | undefined;
     const truncated = response.status === 206 && contentRange != null && !/^bytes 0-/.test(contentRange);
 
-    return { text, truncated };
+    const incomplete = String(response.headers?.[OUTPUT_INCOMPLETE_HEADER] ?? "").toLowerCase() === "true";
+
+    return { text, truncated, incomplete };
   } catch (error) {
     if (isAbortError(error)) {
       throw error;

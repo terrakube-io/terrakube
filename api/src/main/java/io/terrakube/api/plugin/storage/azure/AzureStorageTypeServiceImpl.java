@@ -11,10 +11,12 @@ import com.azure.storage.blob.models.ListBlobsOptions;
 import lombok.Builder;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
+import io.terrakube.api.plugin.storage.StepOutputPartsReader;
 import io.terrakube.api.plugin.storage.StorageRetryMetrics;
 import io.terrakube.api.plugin.storage.StorageTypeService;
 import io.terrakube.api.plugin.storage.StorageUnavailableException;
 import io.terrakube.api.plugin.storage.model.ByteRange;
+import io.terrakube.api.plugin.storage.model.StepOutputPart;
 import io.terrakube.api.plugin.storage.model.StepOutputStream;
 
 import java.io.ByteArrayInputStream;
@@ -110,6 +112,35 @@ public class AzureStorageTypeServiceImpl implements StorageTypeService {
             }
             throw e;
         }
+    }
+
+    private static String outputPartsPrefix(String organizationId, String jobId, String stepId) {
+        return String.format("%s/%s/%s.parts/", organizationId, jobId, stepId);
+    }
+
+    @Override
+    public List<StepOutputPart> listStepOutputParts(String organizationId, String jobId, String stepId) {
+        BlobContainerClient containerClient = blobServiceClient.getBlobContainerClient(CONTAINER_NAME_OUTPUT);
+        String prefix = outputPartsPrefix(organizationId, jobId, stepId);
+        List<StepOutputPart> parts = new java.util.ArrayList<>();
+        try {
+            containerClient.listBlobs(new ListBlobsOptions().setPrefix(prefix), null).forEach(item -> parts.add(
+                    new StepOutputPart(item.getName().substring(prefix.length()),
+                            item.getProperties() == null || item.getProperties().getContentLength() == null ? 0 : item.getProperties().getContentLength())));
+        } catch (BlobStorageException e) {
+            if (e.getStatusCode() != 404) {
+                throw e;
+            }
+        }
+        return parts;
+    }
+
+    @Override
+    public InputStream openStepOutputPart(String organizationId, String jobId, String stepId, String partName, long offset, long length) throws IOException {
+        StepOutputPartsReader.requirePartName(partName);
+        BlobClient blobClient = blobServiceClient.getBlobContainerClient(CONTAINER_NAME_OUTPUT)
+                .getBlobClient(outputPartsPrefix(organizationId, jobId, stepId) + partName);
+        return blobClient.openInputStream(new com.azure.storage.blob.options.BlobInputStreamOptions().setRange(new BlobRange(offset, length)));
     }
 
     @Override
