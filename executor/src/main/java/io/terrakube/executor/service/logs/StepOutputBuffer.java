@@ -30,11 +30,12 @@ public class StepOutputBuffer implements AutoCloseable {
 
     private final long memoryLimitBytes;
     private final Path spoolDirectory;
-    private ByteArrayOutputStream memory = new ByteArrayOutputStream();
+    private ExposedBytes memory = new ExposedBytes();
     private Path file;
     private OutputStream fileOut;
     private long bytes;
     private boolean closed;
+    private StepOutputPartWriter archiver;
 
     /**
      * A buffer that spills next to {@code workingDirectory} (the executor's scratch disk, the same place
@@ -100,6 +101,48 @@ public class StepOutputBuffer implements AutoCloseable {
         log.info("Step output is larger than {} bytes, keeping it in {} instead of memory", memoryLimitBytes, file);
     }
 
+    /**
+     * A new stream over {@code length} bytes starting at {@code offset} of what has been collected so far
+     * (fewer if the output is shorter). Only the requested range is copied or read, so archiving a part
+     * does not hold the whole output twice. The caller closes it.
+     */
+    public synchronized InputStream openRange(long offset, long length) throws IOException {
+        long available = Math.clamp(bytes - offset, 0L, Math.max(0L, length));
+        if (available == 0 || offset < 0) {
+            return new java.io.ByteArrayInputStream(new byte[0]);
+        }
+        if (file == null) {
+            return new java.io.ByteArrayInputStream(memory == null ? new byte[0] : memory.copy((int) offset, (int) available));
+        }
+        fileOut.flush();
+        InputStream in = Files.newInputStream(file);
+        try {
+            in.skipNBytes(offset);
+        } catch (IOException e) {
+            in.close();
+            throw e;
+        }
+        return new BoundedInputStream(in, available);
+    }
+
+    /** Starts copying the output to the object store in parts while the step runs. See {@link StepOutputPartWriter}. */
+    public synchronized void attachArchiver(StepOutputPartWriter writer) {
+        this.archiver = writer;
+    }
+
+    /**
+     * Stops the part writer, if any, and returns the number of parts it wrote. Called before the final
+     * upload, which holds the whole output; the parts are only for a step that never gets that far.
+     */
+    public int finishArchiving() {
+        StepOutputPartWriter writer;
+        synchronized (this) {
+            writer = archiver;
+            archiver = null;
+        }
+        return writer == null ? 0 : writer.stop();
+    }
+
     public synchronized long sizeInBytes() {
         return bytes;
     }
@@ -152,7 +195,12 @@ public class StepOutputBuffer implements AutoCloseable {
     }
 
     @Override
-    public synchronized void close() {
+    public void close() {
+        finishArchiving();
+        closeFiles();
+    }
+
+    private synchronized void closeFiles() {
         closed = true;
         memory = null;
         if (fileOut != null) {
@@ -170,6 +218,60 @@ public class StepOutputBuffer implements AutoCloseable {
                 log.warn("Unable to delete step output file {}", file, e);
             }
             file = null;
+        }
+    }
+
+    private static final class ExposedBytes extends ByteArrayOutputStream {
+        byte[] copy(int from, int length) {
+            return java.util.Arrays.copyOfRange(buf, from, from + length);
+        }
+    }
+
+    private static final class BoundedInputStream extends java.io.FilterInputStream {
+        private long remaining;
+
+        BoundedInputStream(InputStream in, long limit) {
+            super(in);
+            this.remaining = limit;
+        }
+
+        @Override
+        public int read() throws IOException {
+            if (remaining <= 0) {
+                return -1;
+            }
+            int b = super.read();
+            if (b >= 0) {
+                remaining--;
+            }
+            return b;
+        }
+
+        @Override
+        public int read(byte[] b, int off, int len) throws IOException {
+            if (remaining <= 0) {
+                return -1;
+            }
+            int n = super.read(b, off, (int) Math.min(len, remaining));
+            if (n > 0) {
+                remaining -= n;
+            }
+            return n;
+        }
+
+        @Override
+        public long skip(long n) throws IOException {
+            if (remaining <= 0 || n <= 0) {
+                return 0;
+            }
+            long skipped = super.skip(Math.min(n, remaining));
+            remaining -= Math.max(0, skipped);
+            return skipped;
+        }
+
+        @Override
+        public int available() throws IOException {
+            return Math.clamp(remaining, 0, super.available());
         }
     }
 }

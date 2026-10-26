@@ -31,10 +31,12 @@ public class DexAuditorAwareImpl implements AuditorAware<String> {
 
     public String getEmail(Authentication authentication) {
         org.springframework.security.oauth2.jwt.Jwt principal = (org.springframework.security.oauth2.jwt.Jwt) authentication.getPrincipal();
-        if (principal.getClaims().get("email") != null)
-            return (String) principal.getClaims().get("email");
-        else
-            return "Unknown";
+        Object email = principal.getClaims().get("email");
+        if (email instanceof String value && !value.isBlank()) {
+            return value;
+        }
+        // Workload OIDC tokens normally have a subject but no email claim.
+        return AuditActorContext.normalize(principal.getSubject()).orElse("Unknown");
     }
 
     public boolean isServiceAccount(Authentication authentication) {

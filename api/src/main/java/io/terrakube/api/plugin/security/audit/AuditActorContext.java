@@ -24,7 +24,8 @@ public final class AuditActorContext {
         return ScopedValue.where(ACTOR, normalize(actor)).call(action::get);
     }
 
-    private static Optional<String> normalize(String actor) {
+    /** Clean an audit display value without binding an actor or changing authentication. */
+    public static Optional<String> normalize(String actor) {
         if (actor == null) {
             return Optional.empty();
         }

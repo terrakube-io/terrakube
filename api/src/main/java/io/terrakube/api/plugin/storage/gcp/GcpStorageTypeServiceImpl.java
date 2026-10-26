@@ -6,10 +6,12 @@ import com.google.cloud.storage.*;
 import lombok.Builder;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
+import io.terrakube.api.plugin.storage.StepOutputPartsReader;
 import io.terrakube.api.plugin.storage.StorageRetryMetrics;
 import io.terrakube.api.plugin.storage.StorageTypeService;
 import io.terrakube.api.plugin.storage.StorageUnavailableException;
 import io.terrakube.api.plugin.storage.model.ByteRange;
+import io.terrakube.api.plugin.storage.model.StepOutputPart;
 import io.terrakube.api.plugin.storage.model.StepOutputStream;
 
 import java.io.IOException;
@@ -112,6 +114,33 @@ public class GcpStorageTypeServiceImpl implements StorageTypeService {
         reader.limit(endInclusive + 1);
         String contentRange = "bytes " + start + "-" + endInclusive + "/" + size;
         return StepOutputStream.partial(Channels.newInputStream(reader), endInclusive - start + 1, contentRange, size);
+    }
+
+    private static String outputPartsPrefix(String organizationId, String jobId, String stepId) {
+        return String.format("tfoutput/%s/%s/%s.parts/", organizationId, jobId, stepId);
+    }
+
+    @Override
+    public List<StepOutputPart> listStepOutputParts(String organizationId, String jobId, String stepId) {
+        String prefix = outputPartsPrefix(organizationId, jobId, stepId);
+        List<StepOutputPart> parts = new java.util.ArrayList<>();
+        for (Blob blob : storage.list(bucketName, Storage.BlobListOption.prefix(prefix)).iterateAll()) {
+            parts.add(new StepOutputPart(blob.getName().substring(prefix.length()), blob.getSize() == null ? 0 : blob.getSize()));
+        }
+        return parts;
+    }
+
+    @Override
+    public InputStream openStepOutputPart(String organizationId, String jobId, String stepId, String partName, long offset, long length) throws IOException {
+        StepOutputPartsReader.requirePartName(partName);
+        Blob blob = storage.get(BlobId.of(bucketName, outputPartsPrefix(organizationId, jobId, stepId) + partName));
+        if (blob == null) {
+            throw new IOException("Output part not found: " + partName);
+        }
+        ReadChannel reader = blob.reader();
+        reader.seek(offset);
+        reader.limit(offset + length);
+        return Channels.newInputStream(reader);
     }
 
     @Override

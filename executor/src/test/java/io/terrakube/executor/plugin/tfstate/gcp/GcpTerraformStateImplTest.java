@@ -218,6 +218,56 @@ class GcpTerraformStateImplTest {
     }
 
     @Test
+    void testSaveOutputPartGoesUnderThePartsFolderOfTheStep() throws Exception {
+        java.io.ByteArrayOutputStream uploaded = new java.io.ByteArrayOutputStream();
+        ArgumentCaptor<BlobInfo> info = ArgumentCaptor.forClass(BlobInfo.class);
+        when(storage.createFrom(info.capture(), any(java.io.InputStream.class))).thenAnswer(invocation -> {
+            invocation.<java.io.InputStream>getArgument(1).transferTo(uploaded);
+            return null;
+        });
+
+        assertTrue(gcpTerraformState.saveOutputPart("org1", "job1", "step1", 12, PART_SOURCE));
+
+        assertEquals("tfoutput/org1/job1/step1.parts/000012.part", info.getValue().getBlobId().getName());
+        assertEquals("part-content", uploaded.toString(StandardCharsets.UTF_8));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void testDeleteOutputPartsRemovesOnlyThePartsOfTheStep() {
+        com.google.cloud.storage.Blob first = mock(com.google.cloud.storage.Blob.class);
+        com.google.cloud.storage.Blob second = mock(com.google.cloud.storage.Blob.class);
+        BlobId firstId = BlobId.of(bucketName, "tfoutput/org1/job1/step1.parts/000001.part");
+        BlobId secondId = BlobId.of(bucketName, "tfoutput/org1/job1/step1.parts/000002.part");
+        when(first.getBlobId()).thenReturn(firstId);
+        when(second.getBlobId()).thenReturn(secondId);
+        com.google.api.gax.paging.Page<com.google.cloud.storage.Blob> page = mock(com.google.api.gax.paging.Page.class);
+        when(page.iterateAll()).thenReturn(java.util.List.of(first, second));
+        when(storage.list(eq(bucketName), any(com.google.cloud.storage.Storage.BlobListOption[].class))).thenReturn(page);
+
+        gcpTerraformState.deleteOutputParts("org1", "job1", "step1");
+
+        verify(storage).delete(java.util.List.of(firstId, secondId));
+    }
+
+    @Test
+    void testDeleteOutputPartsDoesNotThrowWhenStorageFails() {
+        when(storage.list(eq(bucketName), any(com.google.cloud.storage.Storage.BlobListOption[].class))).thenThrow(new RuntimeException("down"));
+
+        assertDoesNotThrow(() -> gcpTerraformState.deleteOutputParts("org1", "job1", "step1"));
+    }
+
+    private static final io.terrakube.executor.service.logs.StepOutputPartWriter.PartSource PART_SOURCE = new io.terrakube.executor.service.logs.StepOutputPartWriter.PartSource() {
+            public java.io.InputStream open() {
+                return new java.io.ByteArrayInputStream("part-content".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            }
+
+            public long length() {
+                return 12;
+            }
+        };
+
+    @Test
     void testSpoolContextPatch() {
         String organizationId = "org1";
         String jobId = "job1";

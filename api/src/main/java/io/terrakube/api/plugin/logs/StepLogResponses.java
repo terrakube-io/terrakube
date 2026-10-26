@@ -14,13 +14,30 @@ public final class StepLogResponses {
 
     public static final String IMMUTABLE = "public, max-age=31536000, immutable";
 
+    /** Set when the output is only what the executor archived while the step ran, the step ended without its own. */
+    public static final String INCOMPLETE_HEADER = "X-Terrakube-Output-Incomplete";
+    private static final String NO_STORE = "no-store";
+
     private StepLogResponses() {
+    }
+
+    /**
+     * The same response marked as incomplete output, and not cacheable: it is not the step's output, only
+     * the part of it that was saved, and the cache headers of a finished log would pin that in browsers.
+     */
+    public static <T> ResponseEntity<T> markIncomplete(ResponseEntity<T> response) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.putAll(response.getHeaders());
+        headers.set(INCOMPLETE_HEADER, "true");
+        headers.set(HttpHeaders.CACHE_CONTROL, NO_STORE);
+        headers.set(HttpHeaders.ACCESS_CONTROL_EXPOSE_HEADERS, INCOMPLETE_HEADER);
+        return new ResponseEntity<>(response.getBody(), headers, response.getStatusCode());
     }
 
     public static ResponseEntity<byte[]> liveLogs(String logs) {
         byte[] body = logs.getBytes(StandardCharsets.UTF_8);
         return ResponseEntity.ok()
-                .header(HttpHeaders.CACHE_CONTROL, "no-store")
+                .header(HttpHeaders.CACHE_CONTROL, NO_STORE)
                 .contentType(MediaType.APPLICATION_OCTET_STREAM)
                 .contentLength(body.length)
                 .body(body);
@@ -28,7 +45,7 @@ public final class StepLogResponses {
 
     public static ResponseEntity<byte[]> notFound() {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                .header(HttpHeaders.CACHE_CONTROL, "no-store")
+                .header(HttpHeaders.CACHE_CONTROL, NO_STORE)
                 .build();
     }
 

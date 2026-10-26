@@ -1,6 +1,6 @@
 # Structured output spool recovery and delivery contract
 
-This document outlines the architecture, delivery lifecycle, upgrade ordering, and operational failure scenarios for Terrakube structured output recovery (Issue #3692).
+This document outlines the architecture, delivery lifecycle, upgrade ordering, and operational failure scenarios for Terrakube structured output recovery (Issue #3692). For what can still be lost and when output expires, see the [output delivery contract](output-delivery-contract.md).
 
 ---
 
@@ -93,7 +93,7 @@ Each `Step` tracks its final structured output persistence status in `deliverySt
 * If the API remains down and the executor pod terminates before it can record `SPOOLED` on the step:
   * The step remains in `running` with `deliveryState = NOT_DURABLE`.
   * After the heartbeat key `executor-job-heartbeat:<jobId>` expires in Redis, `JobReconciliationSweep.failIfExecutorHeartbeatExpired` triggers a dead-executor storage probe.
-  * The probe inspects the storage spool folder, recovers the spooled patch into `context.json`, marks the step `RECOVERED`, and marks the dead job as `failed`. Output and diagnostics are never lost.
+  * The probe inspects the storage spool folder, recovers the spooled patch into `context.json`, marks the step `RECOVERED`, and marks the dead job as `failed`. This only recovers what the executor had already spooled. If it died before writing the spool, that final snapshot is not recoverable and the step stays `NOT_DURABLE`; see the [output delivery contract](output-delivery-contract.md).
 
 ### 3. Invalid or corrupted spool payloads
 * If a spooled file is unparseable, exceeds decompression limits (5MB compressed / 15MB uncompressed), fails envelope matching, or contains invalid patch paths (e.g. invalid slash segments):

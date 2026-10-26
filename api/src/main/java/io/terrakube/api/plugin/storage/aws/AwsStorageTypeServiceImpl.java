@@ -5,10 +5,12 @@ import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.codec.binary.StringUtils;
 import org.apache.sshd.common.util.io.IoUtils;
+import io.terrakube.api.plugin.storage.StepOutputPartsReader;
 import io.terrakube.api.plugin.storage.StorageRetryMetrics;
 import io.terrakube.api.plugin.storage.StorageTypeService;
 import io.terrakube.api.plugin.storage.StorageUnavailableException;
 import io.terrakube.api.plugin.storage.model.ByteRange;
+import io.terrakube.api.plugin.storage.model.StepOutputPart;
 import io.terrakube.api.plugin.storage.model.StepOutputStream;
 import software.amazon.awssdk.core.ResponseInputStream;
 import software.amazon.awssdk.core.sync.RequestBody;
@@ -120,6 +122,39 @@ public class AwsStorageTypeServiceImpl implements StorageTypeService {
         }
     }
 
+    private static String outputPartsPrefix(String organizationId, String jobId, String stepId) {
+        return String.format("tfoutput/%s/%s/%s.parts/", organizationId, jobId, stepId);
+    }
+
+    @Override
+    public List<StepOutputPart> listStepOutputParts(String organizationId, String jobId, String stepId) {
+        String prefix = outputPartsPrefix(organizationId, jobId, stepId);
+        List<StepOutputPart> parts = new java.util.ArrayList<>();
+        String continuationToken = null;
+        do {
+            ListObjectsV2Request.Builder request = ListObjectsV2Request.builder().bucket(bucketName).prefix(prefix);
+            if (continuationToken != null) {
+                request.continuationToken(continuationToken);
+            }
+            ListObjectsV2Response page = s3client.listObjectsV2(request.build());
+            for (S3Object object : page.contents()) {
+                parts.add(new StepOutputPart(object.key().substring(prefix.length()), object.size()));
+            }
+            continuationToken = Boolean.TRUE.equals(page.isTruncated()) ? page.nextContinuationToken() : null;
+        } while (continuationToken != null);
+        return parts;
+    }
+
+    @Override
+    public InputStream openStepOutputPart(String organizationId, String jobId, String stepId, String partName, long offset, long length) throws IOException {
+        StepOutputPartsReader.requirePartName(partName);
+        return s3client.getObject(GetObjectRequest.builder()
+                .bucket(bucketName)
+                .key(outputPartsPrefix(organizationId, jobId, stepId) + partName)
+                .range("bytes=" + offset + "-" + (offset + length - 1))
+                .build(), ResponseTransformer.toInputStream());
+    }
+
     private static long parseTotalFromContentRange(String contentRange) {
         int slash = contentRange.lastIndexOf('/');
         if (slash < 0) {
@@ -220,7 +255,8 @@ public class AwsStorageTypeServiceImpl implements StorageTypeService {
     public void deleteWorkspaceOutputData(String organizationId, List<Integer> jobList) {
         for (Integer jobId : jobList) {
             String workspaceOutputFolder = String.format("tfoutput/%s/%s/", organizationId, jobId);
-            deleteFolderFromBucket(workspaceOutputFolder);
+            // Every page: the parts of a long step can be more than one listing returns.
+            deleteAllUnder(workspaceOutputFolder);
             String contextSpoolFolder = String.format("context-spool/%s/%s/", organizationId, jobId);
             deleteFolderFromBucket(contextSpoolFolder);
         }

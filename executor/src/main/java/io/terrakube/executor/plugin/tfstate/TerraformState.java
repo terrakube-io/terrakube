@@ -3,8 +3,10 @@ package io.terrakube.executor.plugin.tfstate;
 import io.terrakube.executor.service.mode.TerraformJob;
 
 import io.terrakube.executor.service.logs.StepOutputBuffer;
+import io.terrakube.executor.service.logs.StepOutputPartWriter;
 
 import java.io.File;
+import java.io.IOException;
 
 public interface TerraformState {
 
@@ -54,6 +56,22 @@ public interface TerraformState {
      * The backends stream it to the object store, so the upload does not need the output as one String.
      */
     String saveBufferedOutput(String organizationId, String jobId, String stepId, StepOutputBuffer output, String outputError);
+
+    /**
+     * Saves one part of the output of a step that is still running, next to where the final output will
+     * go: {@code <step>.parts/000001.part} and so on. The final output stays the source of truth, the parts
+     * only keep what was written if the executor dies before the step ends. A backend that does not support
+     * it keeps the default and the step output is saved once, when the step ends, as before.
+     *
+     * @return true if the part was stored
+     */
+    default boolean saveOutputPart(String organizationId, String jobId, String stepId, int partNumber, StepOutputPartWriter.PartSource data) throws IOException {
+        return false;
+    }
+
+    /** Best-effort removal of the parts of a step, once its final output has been saved. */
+    default void deleteOutputParts(String organizationId, String jobId, String stepId) {
+    }
 
     /**
      * Upload a terraform/tofu binary to cloud storage for caching.

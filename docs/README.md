@@ -8,6 +8,7 @@ The full user and administrator documentation is at [docs.terrakube.io](https://
 | --- | --- |
 | [Executor log output](ops/executor-log-output.md) | You want to know where step output goes and which settings control it. |
 | [Live output stream protocol](ops/live-output-stream-protocol.md) | You are writing a client for the live output streams, or debugging a stream that reconnects or closes. |
+| [Output delivery contract](ops/output-delivery-contract.md) | You want to know what output survives an executor dying, and what can still be lost. |
 | [Structured output spool recovery](ops/structured-output-spool-recovery.md) | You are upgrading the API and executors, or a step's structured result is missing after an outage. |
 | [Inactive runs and approval timeouts](ops/inactive-jobs-and-approval-timeouts.md) | Runs are being closed automatically, or a run is stuck waiting for approval. |
 | [Zero-pending job reconciliation](ops/zero-pending-job-reconciliation.md) | A run is stuck with nothing left to execute and the executor queue is blocked. |

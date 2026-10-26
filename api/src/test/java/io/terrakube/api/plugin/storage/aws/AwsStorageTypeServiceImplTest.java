@@ -382,4 +382,65 @@ class AwsStorageTypeServiceImplTest {
         verify(s3Client).deleteObjects(argThat((DeleteObjectsRequest request) -> deletesExactly(request, "plan-artifacts/org1/ws1/2/s/plan-artifacts.tar.gz")));
         verify(s3Client).listObjectsV2(argThat((ListObjectsV2Request request) -> "plan-artifacts/org1/ws1/".equals(request.prefix()) && "next".equals(request.continuationToken())));
     }
+
+    @Test
+    void listsAllPagesOfTheOutputPartsOfAStep() {
+        when(s3Client.listObjectsV2(any(ListObjectsV2Request.class))).thenReturn(
+                ListObjectsV2Response.builder().isTruncated(true).nextContinuationToken("next").contents(
+                        S3Object.builder().key("tfoutput/org1/job1/step1.parts/000001.part").size(5L).build()).build(),
+                ListObjectsV2Response.builder().isTruncated(false).contents(
+                        S3Object.builder().key("tfoutput/org1/job1/step1.parts/000002.part").size(7L).build()).build());
+
+        var parts = awsStorageTypeService.listStepOutputParts("org1", "job1", "step1");
+
+        assertEquals(List.of(new io.terrakube.api.plugin.storage.model.StepOutputPart("000001.part", 5),
+                new io.terrakube.api.plugin.storage.model.StepOutputPart("000002.part", 7)), parts);
+        ArgumentCaptor<ListObjectsV2Request> requests = ArgumentCaptor.forClass(ListObjectsV2Request.class);
+        verify(s3Client, times(2)).listObjectsV2(requests.capture());
+        assertEquals("tfoutput/org1/job1/step1.parts/", requests.getAllValues().get(0).prefix());
+        assertNull(requests.getAllValues().get(0).continuationToken());
+        assertEquals("next", requests.getAllValues().get(1).continuationToken());
+    }
+
+    @Test
+    void anOutputPartNameThatIsNotGeneratedIsRefusedBeforeStorageIsAsked() {
+        assertThrows(IOException.class, () -> awsStorageTypeService.openStepOutputPart("org1", "job1", "step1", "../../state/terraform.tfstate", 0, 4));
+        assertThrows(IOException.class, () -> awsStorageTypeService.openStepOutputPart("org1", "job1", "step1", null, 0, 4));
+
+        verify(s3Client, never()).getObject(any(GetObjectRequest.class), any(ResponseTransformer.class));
+    }
+
+    @Test
+    void opensARangeOfOneOutputPart() throws IOException {
+        ResponseInputStream<GetObjectResponse> ris = new ResponseInputStream<>(
+                GetObjectResponse.builder().contentLength(4L).build(), new ByteArrayInputStream("3456".getBytes()));
+        when(s3Client.getObject(any(GetObjectRequest.class), any(ResponseTransformer.class))).thenReturn(ris);
+
+        try (InputStream in = awsStorageTypeService.openStepOutputPart("org1", "job1", "step1", "000002.part", 3, 4)) {
+            assertEquals("3456", new String(in.readAllBytes()));
+        }
+
+        verify(s3Client).getObject(argThat((GetObjectRequest r) ->
+                r.bucket().equals(bucketName)
+                        && r.key().equals("tfoutput/org1/job1/step1.parts/000002.part")
+                        && "bytes=3-6".equals(r.range())), any(ResponseTransformer.class));
+    }
+
+    @Test
+    void deletingTheOutputOfAJobRemovesEveryPageIncludingTheParts() {
+        when(s3Client.listObjectsV2(any(ListObjectsV2Request.class))).thenReturn(
+                ListObjectsV2Response.builder().isTruncated(true).nextContinuationToken("next").contents(
+                        S3Object.builder().key("tfoutput/org1/7/step1.parts/000001.part").build()).build(),
+                ListObjectsV2Response.builder().isTruncated(false).contents(
+                        S3Object.builder().key("tfoutput/org1/7/step1.tfoutput").build()).build(),
+                ListObjectsV2Response.builder().isTruncated(false).build());
+        when(s3Client.deleteObjects(any(DeleteObjectsRequest.class))).thenReturn(DeleteObjectsResponse.builder().build());
+
+        awsStorageTypeService.deleteWorkspaceOutputData("org1", List.of(7));
+
+        ArgumentCaptor<DeleteObjectsRequest> deleted = ArgumentCaptor.forClass(DeleteObjectsRequest.class);
+        verify(s3Client, times(2)).deleteObjects(deleted.capture());
+        assertEquals("tfoutput/org1/7/step1.parts/000001.part", deleted.getAllValues().get(0).delete().objects().get(0).key());
+        assertEquals("tfoutput/org1/7/step1.tfoutput", deleted.getAllValues().get(1).delete().objects().get(0).key());
+    }
 }

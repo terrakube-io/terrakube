@@ -166,3 +166,24 @@ it("retry() from the error state re-runs the fetch", async () => {
   await waitFor(() => expect(result.current.state).toBe("success"));
   expect(result.current.text).toBe("second try");
 });
+
+it("exposes an incomplete log and does not cache it", async () => {
+  mockFetch.mockResolvedValue({ text: "saved so far", truncated: false, incomplete: true });
+
+  const { result } = renderHook(() => useStepLog(params()));
+
+  await waitFor(() => expect(result.current.state).toBe("success"));
+  expect(result.current.text).toBe("saved so far");
+  expect(result.current.incomplete).toBe(true);
+  expect(stepLogCache.has("s1")).toBe(false);
+});
+
+it("reports a normal log as complete", async () => {
+  mockFetch.mockResolvedValue({ text: "all of it", truncated: false, incomplete: false });
+
+  const { result } = renderHook(() => useStepLog(params()));
+
+  await waitFor(() => expect(result.current.state).toBe("success"));
+  expect(result.current.incomplete).toBe(false);
+  expect(stepLogCache.has("s1")).toBe(true);
+});
