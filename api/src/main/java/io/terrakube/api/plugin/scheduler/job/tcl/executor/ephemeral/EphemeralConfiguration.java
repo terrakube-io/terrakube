@@ -27,6 +27,8 @@ public class EphemeralConfiguration {
     private String namespace;
     private String image;
     private List<String> secret;
+    private boolean emptyDirSecret = false;
+    private String initSecretImage = "busybox:1.37.0";
     private Map<String, String> nodeSelector;
     /** Kubernetes rejects a Job whose activeDeadlineSeconds is not greater than zero. */
     @Positive
