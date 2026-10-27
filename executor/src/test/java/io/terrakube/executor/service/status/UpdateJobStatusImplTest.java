@@ -161,14 +161,11 @@ public class UpdateJobStatusImplTest {
     }
 
     @Test
-    public void partsStayWhenTheFinalOutputCannotBeSaved() {
+    public void aFailedFinalSaveStillThrowsWhenNoPartWasWritten() {
         stubJobWithStatus("running");
         doThrow(new RuntimeException("storage down")).when(terraformState).saveBufferedOutput(anyString(), anyString(), anyString(), any(), any());
-        io.terrakube.executor.service.logs.StepOutputBuffer buffer = new io.terrakube.executor.service.logs.StepOutputBuffer();
-        buffer.append("abcdef");
-        io.terrakube.executor.service.logs.StepOutputPartWriter writer = new io.terrakube.executor.service.logs.StepOutputPartWriter(
-                buffer, (number, data) -> { }, 3, java.time.Duration.ofSeconds(30), 10, "test");
-        buffer.attachArchiver(writer);
+        StepOutputBuffer buffer = new StepOutputBuffer();
+        buffer.append("short step");
 
         UpdateJobStatusImpl subject = subject();
         TerraformJob job = terraformJob();
@@ -176,6 +173,34 @@ public class UpdateJobStatusImplTest {
                 subject.setCompletedStatus(true, false, 0, job, buffer, "", "", "0000000", false, null, null, null));
 
         verify(terraformState, never()).deleteOutputParts(anyString(), anyString(), anyString());
+    }
+
+    @Test
+    public void partsStayAndTheStepFailsWithoutOutputWhenTheFinalOutputCannotBeSaved() throws Exception {
+        stubJobWithStatus("running");
+        doThrow(new RuntimeException("storage down")).when(terraformState).saveBufferedOutput(anyString(), anyString(), anyString(), any(), any());
+        StepOutputBuffer buffer = new StepOutputBuffer();
+        buffer.append("abcdef");
+        List<Integer> uploaded = java.util.Collections.synchronizedList(new ArrayList<>());
+        io.terrakube.executor.service.logs.StepOutputPartWriter writer = new io.terrakube.executor.service.logs.StepOutputPartWriter(
+                buffer, (number, data) -> uploaded.add(number), 3, java.time.Duration.ofMillis(20), 10, "test");
+        buffer.attachArchiver(writer);
+        writer.start();
+        for (int i = 0; i < 250 && uploaded.isEmpty(); i++) {
+            Thread.sleep(20);
+        }
+        Assertions.assertFalse(uploaded.isEmpty(), "the test needs an uploaded part");
+
+        subject().setCompletedStatus(true, false, 0, terraformJob(), buffer, "", "", "0000000", false, null, null, null);
+
+        verify(terraformState, never()).deleteOutputParts(anyString(), anyString(), anyString());
+        ArgumentCaptor<StepRequest> step = ArgumentCaptor.forClass(StepRequest.class);
+        verify(terrakubeClient).updateStep(step.capture(), anyString(), anyString(), anyString());
+        Assertions.assertEquals("failed", step.getValue().getData().getAttributes().getStatus());
+        Assertions.assertNull(step.getValue().getData().getAttributes().getOutput());
+        ArgumentCaptor<JobRequest> job = ArgumentCaptor.forClass(JobRequest.class);
+        verify(terrakubeClient).updateJob(job.capture(), anyString(), anyString());
+        Assertions.assertEquals("failed", job.getValue().getData().getAttributes().getStatus());
     }
 
     @Test
