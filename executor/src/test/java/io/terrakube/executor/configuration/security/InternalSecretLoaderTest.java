@@ -175,6 +175,50 @@ class InternalSecretLoaderTest {
     }
 
     @Test
+    void testLoadSecretsWhenBothDirectoryAndFileConfigured() throws IOException {
+        File secretsDir = new File(tempDir, "both-secrets-dir");
+        assertTrue(secretsDir.mkdirs());
+
+        File envFile = new File(secretsDir, "executor.env");
+        String envContent = """
+                TerrakubeRedisPassword=dev-redis-pass
+                InternalSecret=dev-internal-secret
+                """;
+        FileUtils.writeStringToFile(envFile, envContent, StandardCharsets.UTF_8);
+
+        MockEnvironment env = new MockEnvironment();
+        env.setProperty("io.terrakube.executor.secrets.directory", secretsDir.getAbsolutePath());
+        env.setProperty("io.terrakube.executor.secrets.file", envFile.getAbsolutePath());
+
+        Map<String, Object> secrets = InternalSecretLoader.loadSecrets(env);
+
+        assertEquals("dev-redis-pass", secrets.get("io.terrakube.executor.redis.password"));
+        assertEquals("dev-redis-pass", secrets.get("TerrakubeRedisPassword"));
+        assertEquals("dev-internal-secret", secrets.get("io.terrakube.client.secretKey"));
+        assertEquals("dev-internal-secret", secrets.get("InternalSecret"));
+
+        assertFalse(envFile.exists(), "Combined secret file must be shredded and deleted");
+    }
+
+    @Test
+    void testLoadSecretsWhenIndividualFileIsInsideDirectory() throws IOException {
+        File secretsDir = new File(tempDir, "indiv-inside-dir");
+        assertTrue(secretsDir.mkdirs());
+
+        File redisPassFile = new File(secretsDir, "redis.pass");
+        FileUtils.writeStringToFile(redisPassFile, "indiv-pass-inside-dir", StandardCharsets.UTF_8);
+
+        MockEnvironment env = new MockEnvironment();
+        env.setProperty("io.terrakube.executor.secrets.directory", secretsDir.getAbsolutePath());
+        env.setProperty("io.terrakube.executor.redis.passwordFile", redisPassFile.getAbsolutePath());
+
+        Map<String, Object> secrets = InternalSecretLoader.loadSecrets(env);
+
+        assertEquals("indiv-pass-inside-dir", secrets.get("io.terrakube.executor.redis.password"));
+        assertFalse(redisPassFile.exists(), "Individual secret file inside directory must be shredded and deleted");
+    }
+
+    @Test
     void testLoadSecretsFromIndividualFileProperties() throws IOException {
         File redisPassFile = new File(tempDir, "redis.pass");
         FileUtils.writeStringToFile(redisPassFile, "indiv-redis-pass", StandardCharsets.UTF_8);
