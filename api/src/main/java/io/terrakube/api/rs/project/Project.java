@@ -7,6 +7,7 @@ import io.terrakube.api.rs.project.access.ProjectAccess;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.BatchSize;
 import org.hibernate.annotations.JdbcTypeCode;
 
 import java.sql.Types;
@@ -18,6 +19,8 @@ import java.util.UUID;
 @CreatePermission(expression = "team manage project")
 @UpdatePermission(expression = "team manage project OR team project admin manages project access field")
 @DeletePermission(expression = "team manage project")
+// Interim cap: in-memory read checks prevent explicit pagination, so raise the implicit limit instead.
+@Paginate(defaultPageSize = 10000, maxPageSize = 10000)
 @Include
 @Getter
 @Setter
@@ -39,6 +42,7 @@ public class Project extends GenericAuditFields {
     private Organization organization;
 
     @UpdatePermission(expression = "team manage project OR team project admin manages project access field")
+    @BatchSize(size = 100)
     @OneToMany(mappedBy = "project", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<ProjectAccess> projectAccess = new ArrayList<>();
 }
