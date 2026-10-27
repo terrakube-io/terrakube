@@ -44,7 +44,8 @@ import lombok.Setter;
 @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.CREATE, phase = LifeCycleHookBinding.TransactionPhase.POSTCOMMIT, hook = JobManageHook.class)
 @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.POSTCOMMIT, hook = JobManageHook.class)
 @ReadPermission(expression = "team view job OR team project limited view job OR team limited view job OR executor read job OR user is an executor service")
-@CreatePermission(expression = "team manage job OR team limited manage job OR team plan job OR team limited plan job OR team project limited plan job")
+// Creating a job needs plan rights. "manage job" also matches approve-only access, which must not queue new runs.
+@CreatePermission(expression = "team plan job OR team limited plan job OR team project limited plan job")
 @UpdatePermission(expression = "team manage job OR team limited manage job OR team project limited manage job OR user is a super service OR executor manage job OR user is an executor service")
 @Include(rootLevel = false)
 @Getter
