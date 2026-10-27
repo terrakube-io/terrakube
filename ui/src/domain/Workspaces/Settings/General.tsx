@@ -10,6 +10,7 @@ import {
   genericHeader,
   getIaCIconById,
   getIaCNameById,
+  gitRepoUrlPattern,
   iacTypes,
   validateTerraformVersion,
 } from "../Workspaces";
@@ -22,6 +23,7 @@ import { SettingsForm } from "@/components/settings/SettingsForm";
 import { RadioChoices } from "@/components/settings/RadioChoices";
 import { IdField } from "@/components/settings/IdField";
 import VcsLogo from "@/components/display/VcsLogo";
+import DeleteConfirmationModal from "@/components/modals/DeleteConfirmationModal/DeleteConfirmationModal";
 
 type Props = {
   workspaceData: Workspace;
@@ -42,6 +44,7 @@ type UpdateWorkspaceForm = {
   executorAgent?: string;
   project?: string;
   vcs?: string;
+  source?: string;
 };
 
 export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace, onWorkspaceUpdate }: Props) => {
@@ -55,6 +58,12 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace,
   const [projectList, setProjectList] = useState<ProjectModel[]>([]);
   const [vcsList, setVcsList] = useState<VcsModel[]>([]);
   const [waiting, setWaiting] = useState(false);
+  // Values held back until the user confirms that the webhook on the old repository gets deleted.
+  const [pendingValues, setPendingValues] = useState<UpdateWorkspaceForm | null>(null);
+  const webhookId = workspaceData.relationships?.webhook?.data?.id;
+  const initialVcsId = workspaceData.relationships?.vcs?.data?.id ?? "public";
+  // CLI-driven workspaces have no repository to point at.
+  const vcsDriven = workspaceData.attributes?.source !== "empty";
 
   const loadVersions = (iacType: string) => {
     const versionsApi = `${new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin}/${iacType}/index.json`;
@@ -113,8 +122,35 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace,
     setSelectedIac(iac);
     loadVersions(iac);
   };
-  const onFinish = async (values: UpdateWorkspaceForm) => {
+  const onFinish = (values: UpdateWorkspaceForm) => {
+    const repoChanged = values.source !== undefined && values.source !== workspaceData.attributes?.source;
+    const vcsChanged = values.vcs !== undefined && values.vcs !== initialVcsId;
+    // The webhook lives on the old repository and was registered with the old connection, so it would keep
+    // starting runs from the wrong repository. Delete it first: the API removes the remote hook using the
+    // workspace's current repository and connection.
+    if (webhookId && (repoChanged || vcsChanged)) {
+      setPendingValues(values);
+      return;
+    }
+    return saveWorkspace(values, false);
+  };
+
+  const saveWorkspace = async (values: UpdateWorkspaceForm, deleteWebhook: boolean) => {
     setWaiting(true);
+    if (deleteWebhook) {
+      try {
+        await axiosInstance.delete(`organization/${organizationId}/workspace/${id}/webhook/${webhookId}`, {
+          headers: { "Content-Type": undefined },
+        });
+      } catch (error: any) {
+        // 404: an earlier save deleted it and then failed on the workspace update, so carry on with the retry.
+        if (error?.response?.status !== 404) {
+          message.error(`Couldn't delete the webhook, the workspace was not changed: ${getErrorMessage(error)}`);
+          setWaiting(false);
+          return;
+        }
+      }
+    }
     const body = {
       "atomic:operations": [
         {
@@ -131,6 +167,7 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace,
               terraformVersion: values.terraformVersion,
               iacType: values.iacType,
               branch: values.branch,
+              source: values.source,
               defaultTemplate: values.defaultTemplate,
             },
           },
@@ -174,7 +211,6 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace,
       )
     );
 
-    const initialVcsId = workspaceData.relationships?.vcs?.data?.id ?? "public";
     if (values.vcs !== undefined && values.vcs !== initialVcsId) {
       const bodyVcs =
         values.vcs && values.vcs !== "public"
@@ -217,7 +253,7 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace,
       <SettingsPageHeader
         docUrl="https://docs.terrakube.io/user-guide/workspaces"
         title="General settings"
-        description="Adjust how this workspace behaves: identity, execution mode, IaC tool and version, VCS provider, default template and project."
+        description="Adjust how this workspace behaves: identity, execution mode, IaC tool and version, VCS provider and repository, default template and project."
       />
       <Spin spinning={waiting}>
         <SettingsForm
@@ -238,6 +274,7 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace,
                 : workspaceData.relationships.agent.data?.id,
             project: workspaceData.relationships.project?.data?.id ?? "none",
             vcs: workspaceData.relationships?.vcs?.data?.id ?? "public",
+            source: workspaceData.attributes?.source,
           }}
           name="form-settings"
         >
@@ -384,6 +421,23 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace,
                 ))}
               </Select>
             </Form.Item>
+            {vcsDriven && (
+              <Form.Item
+                name="source"
+                label="Repository URL"
+                extra="The Git repository this workspace clones, over https or ssh. State, variables and run history are kept when it changes."
+                rules={[
+                  { required: true, pattern: gitRepoUrlPattern, message: "Enter a valid https or ssh Git URL." },
+                  // "empty" marks a CLI-driven workspace; it is not a repository.
+                  {
+                    validator: (_, value) =>
+                      value?.trim() === "empty" ? Promise.reject(new Error("Enter a Git URL.")) : Promise.resolve(),
+                  },
+                ]}
+              >
+                <Input disabled={!manageWorkspace} placeholder="https://github.com/org/repo.git" />
+              </Form.Item>
+            )}
           </SettingsSection>
 
           <SettingsSection title="Default template">
@@ -416,6 +470,17 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace,
           </SettingsSection>
         </SettingsForm>
       </Spin>
+      <DeleteConfirmationModal
+        open={pendingValues !== null}
+        title="Delete webhook"
+        message="This workspace's webhook is set up on the current repository and VCS connection. Saving deletes it, and repository events stop starting runs until you set it up again under Webhook."
+        okText="Delete webhook and save"
+        onConfirm={() => {
+          if (pendingValues) saveWorkspace(pendingValues, true);
+          setPendingValues(null);
+        }}
+        onCancel={() => setPendingValues(null)}
+      />
     </div>
   );
 };

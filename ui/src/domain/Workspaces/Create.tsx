@@ -39,7 +39,7 @@ import {
   VcsRepositorySummary,
   VcsTypeExtended,
 } from "../types";
-import { compareVersions, validateTerraformVersion } from "./Workspaces";
+import { compareVersions, gitRepoUrlPattern, validateTerraformVersion } from "./Workspaces";
 import projectService from "@/modules/projects/projectService";
 import { withBasePath } from "../../config/basePath";
 import PageWrapper from "@/components/layout/PageWrapper/PageWrapper";
@@ -830,9 +830,7 @@ export const CreateWorkspace = () => {
             rules={[
               {
                 required: true,
-                pattern: new RegExp(
-                  "(empty)|(((git|ssh|http(s)?)|(git@[\\w\\.\\-]+))(:(//)?)([\\w\\.@\\:/\\-~]+)(\\.git)?(/)?)"
-                ),
+                pattern: gitRepoUrlPattern,
               },
             ]}
           >

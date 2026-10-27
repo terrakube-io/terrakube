@@ -12,6 +12,11 @@ export const genericHeader = {
 
 export { validateTerraformVersion } from "@/modules/workspaces/utils/versionValidation";
 
+// A git URL over https or ssh, or "empty" for a CLI-driven workspace.
+export const gitRepoUrlPattern = new RegExp(
+  "(empty)|(((git|ssh|http(s)?)|(git@[\\w\\.\\-]+))(:(//)?)([\\w\\.@\\:/\\-~]+)(\\.git)?(/)?)"
+);
+
 export function compareVersions(a: string, b: string) {
   if (a === b) {
     return 0;
