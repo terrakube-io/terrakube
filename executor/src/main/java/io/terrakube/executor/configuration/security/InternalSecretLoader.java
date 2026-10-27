@@ -7,6 +7,7 @@ import org.springframework.core.env.PropertyResolver;
 import org.springframework.stereotype.Component;
 
 import java.io.File;
+import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -123,17 +124,38 @@ public class InternalSecretLoader {
      */
     public static Map<String, Object> loadSecrets(PropertyResolver resolver) {
         Map<String, Object> secrets = new HashMap<>();
-        Set<String> processedFiles = new HashSet<>();
+        Set<String> explicitFilesToSkip = getExplicitFilePaths(resolver);
 
-        loadCombinedSecretsFile(resolver, secrets, processedFiles);
-        loadIndividualSecretFiles(resolver, secrets, processedFiles);
-        File secretsDir = loadConfiguredDirectory(resolver, secrets, processedFiles);
-        loadLegacyDirectory(secretsDir, secrets, processedFiles);
+        File secretsDir = loadConfiguredDirectory(resolver, secrets, explicitFilesToSkip);
+        loadLegacyDirectory(secretsDir, secrets, explicitFilesToSkip);
+        loadCombinedSecretsFile(resolver, secrets);
+        loadIndividualSecretFiles(resolver, secrets);
 
         return secrets;
     }
 
-    private static File loadConfiguredDirectory(PropertyResolver resolver, Map<String, Object> secrets, Set<String> processedFiles) {
+    private static Set<String> getExplicitFilePaths(PropertyResolver resolver) {
+        Set<String> explicitFiles = new HashSet<>();
+
+        String combinedFilePath = resolver.getProperty("io.terrakube.executor.secrets.file");
+        if (combinedFilePath == null || combinedFilePath.isBlank()) {
+            combinedFilePath = resolver.getProperty("ExecutorSecretsFile");
+        }
+        if (combinedFilePath != null && !combinedFilePath.isBlank()) {
+            explicitFiles.add(getCanonicalOrAbsolutePath(new File(combinedFilePath)));
+        }
+
+        for (String fileProperty : FILE_PROPERTY_TO_CANONICAL_PROPERTY.keySet()) {
+            String filePath = resolver.getProperty(fileProperty);
+            if (filePath != null && !filePath.isBlank()) {
+                explicitFiles.add(getCanonicalOrAbsolutePath(new File(filePath)));
+            }
+        }
+
+        return explicitFiles;
+    }
+
+    private static File loadConfiguredDirectory(PropertyResolver resolver, Map<String, Object> secrets, Set<String> explicitFilesToSkip) {
         String configuredDir = resolver.getProperty("io.terrakube.executor.secrets.directory");
         if (configuredDir == null || configuredDir.isBlank()) {
             configuredDir = resolver.getProperty("ExecutorSecretsDirectory");
@@ -142,34 +164,28 @@ public class InternalSecretLoader {
         String directoryPath = isExplicit ? configuredDir : DEFAULT_SECRETS_DIRECTORY;
         File secretsDir = new File(directoryPath);
         if (secretsDir.exists() && secretsDir.isDirectory()) {
-            loadSecretsFromDirectory(secretsDir, secrets, processedFiles);
+            loadSecretsFromDirectory(secretsDir, secrets, explicitFilesToSkip);
         } else if (isExplicit) {
             throw new IllegalStateException("Configured ephemeral secrets directory does not exist or is not a directory: " + configuredDir);
         }
         return secretsDir;
     }
 
-    private static void loadLegacyDirectory(File secretsDir, Map<String, Object> secrets, Set<String> processedFiles) {
+    private static void loadLegacyDirectory(File secretsDir, Map<String, Object> secrets, Set<String> explicitFilesToSkip) {
         File legacyDir = new File(LEGACY_INTERNAL_SECRET_DIRECTORY);
         if (legacyDir.exists() && legacyDir.isDirectory() && !legacyDir.equals(secretsDir)) {
-            loadSecretsFromDirectory(legacyDir, secrets, processedFiles);
+            loadSecretsFromDirectory(legacyDir, secrets, explicitFilesToSkip);
         }
     }
 
-    private static void loadCombinedSecretsFile(PropertyResolver resolver, Map<String, Object> secrets, Set<String> processedFiles) {
+    private static void loadCombinedSecretsFile(PropertyResolver resolver, Map<String, Object> secrets) {
         String combinedFilePath = resolver.getProperty("io.terrakube.executor.secrets.file");
         if (combinedFilePath == null || combinedFilePath.isBlank()) {
             combinedFilePath = resolver.getProperty("ExecutorSecretsFile");
         }
         if (combinedFilePath != null && !combinedFilePath.isBlank()) {
             File combinedFile = new File(combinedFilePath);
-            String pathKey = getCanonicalOrAbsolutePath(combinedFile);
-            if (processedFiles.contains(pathKey)) {
-                log.debug("Ephemeral secrets file already loaded: {}", combinedFilePath);
-                return;
-            }
             if (combinedFile.exists() && combinedFile.isFile()) {
-                processedFiles.add(pathKey);
                 loadEnvFile(combinedFile, secrets);
             } else {
                 throw new IllegalStateException("Configured ephemeral secrets file does not exist or is not a file: " + combinedFilePath);
@@ -177,7 +193,8 @@ public class InternalSecretLoader {
         }
     }
 
-    private static void loadIndividualSecretFiles(PropertyResolver resolver, Map<String, Object> secrets, Set<String> processedFiles) {
+    private static void loadIndividualSecretFiles(PropertyResolver resolver, Map<String, Object> secrets) {
+        Set<String> processedFiles = new HashSet<>();
         for (Map.Entry<String, String> entry : FILE_PROPERTY_TO_CANONICAL_PROPERTY.entrySet()) {
             String fileProperty = entry.getKey();
             String canonicalProperty = entry.getValue();
@@ -206,10 +223,10 @@ public class InternalSecretLoader {
     }
 
     public static void loadSecretsFromDirectory(File directory, Map<String, Object> secrets) {
-        loadSecretsFromDirectory(directory, secrets, new HashSet<>());
+        loadSecretsFromDirectory(directory, secrets, Set.of());
     }
 
-    public static void loadSecretsFromDirectory(File directory, Map<String, Object> secrets, Set<String> processedFiles) {
+    private static void loadSecretsFromDirectory(File directory, Map<String, Object> secrets, Set<String> explicitFilesToSkip) {
         File[] files = directory.listFiles();
         if (files == null) {
             return;
@@ -219,10 +236,10 @@ public class InternalSecretLoader {
                 continue;
             }
             String pathKey = getCanonicalOrAbsolutePath(file);
-            if (processedFiles.contains(pathKey)) {
+            if (explicitFilesToSkip.contains(pathKey)) {
+                log.debug("Skipping explicit secret file during directory pass: {}", file.getAbsolutePath());
                 continue;
             }
-            processedFiles.add(pathKey);
             if (file.getName().endsWith(".env") || file.getName().endsWith(".properties")) {
                 loadEnvFile(file, secrets);
             } else {
@@ -241,7 +258,7 @@ public class InternalSecretLoader {
     private static String getCanonicalOrAbsolutePath(File file) {
         try {
             return file.getCanonicalPath();
-        } catch (Exception e) {
+        } catch (IOException e) {
             return file.getAbsolutePath();
         }
     }

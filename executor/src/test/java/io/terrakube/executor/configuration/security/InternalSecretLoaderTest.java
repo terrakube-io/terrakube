@@ -175,6 +175,67 @@ class InternalSecretLoaderTest {
     }
 
     @Test
+    void testExplicitCombinedSecretFileOverridesDirectoryValue() throws IOException {
+        File secretsDir = new File(tempDir, "precedence-dir");
+        assertTrue(secretsDir.mkdirs());
+
+        File dirSecretFile = new File(secretsDir, "InternalSecret");
+        FileUtils.writeStringToFile(dirSecretFile, "directory-internal-secret", StandardCharsets.UTF_8);
+
+        File dirRedisFile = new File(secretsDir, "TerrakubeRedisPassword");
+        FileUtils.writeStringToFile(dirRedisFile, "directory-redis-pass", StandardCharsets.UTF_8);
+
+        File envFile = new File(secretsDir, "executor.env");
+        String envContent = """
+                InternalSecret=override-internal-secret
+                """;
+        FileUtils.writeStringToFile(envFile, envContent, StandardCharsets.UTF_8);
+
+        MockEnvironment env = new MockEnvironment();
+        env.setProperty("io.terrakube.executor.secrets.directory", secretsDir.getAbsolutePath());
+        env.setProperty("io.terrakube.executor.secrets.file", envFile.getAbsolutePath());
+
+        Map<String, Object> secrets = InternalSecretLoader.loadSecrets(env);
+
+        // Explicit file must override directory value
+        assertEquals("override-internal-secret", secrets.get("InternalSecret"));
+        assertEquals("override-internal-secret", secrets.get("io.terrakube.client.secretKey"));
+
+        // Un-overridden key from directory must remain
+        assertEquals("directory-redis-pass", secrets.get("TerrakubeRedisPassword"));
+        assertEquals("directory-redis-pass", secrets.get("io.terrakube.executor.redis.password"));
+
+        assertFalse(dirSecretFile.exists(), "Directory secret file must be shredded and deleted");
+        assertFalse(dirRedisFile.exists(), "Directory redis file must be shredded and deleted");
+        assertFalse(envFile.exists(), "Combined secret file must be shredded and deleted");
+    }
+
+    @Test
+    void testIndividualSecretFileOverridesDirectoryValue() throws IOException {
+        File secretsDir = new File(tempDir, "precedence-indiv-dir");
+        assertTrue(secretsDir.mkdirs());
+
+        File dirRedisFile = new File(secretsDir, "TerrakubeRedisPassword");
+        FileUtils.writeStringToFile(dirRedisFile, "directory-redis-pass", StandardCharsets.UTF_8);
+
+        File overrideRedisFile = new File(tempDir, "override-redis.pass");
+        FileUtils.writeStringToFile(overrideRedisFile, "override-redis-pass", StandardCharsets.UTF_8);
+
+        MockEnvironment env = new MockEnvironment();
+        env.setProperty("io.terrakube.executor.secrets.directory", secretsDir.getAbsolutePath());
+        env.setProperty("io.terrakube.executor.redis.passwordFile", overrideRedisFile.getAbsolutePath());
+
+        Map<String, Object> secrets = InternalSecretLoader.loadSecrets(env);
+
+        // Explicit individual file must override directory value
+        assertEquals("override-redis-pass", secrets.get("io.terrakube.executor.redis.password"));
+        assertEquals("override-redis-pass", secrets.get("TerrakubeRedisPassword"));
+
+        assertFalse(dirRedisFile.exists(), "Directory redis file must be shredded and deleted");
+        assertFalse(overrideRedisFile.exists(), "Individual secret file must be shredded and deleted");
+    }
+
+    @Test
     void testLoadSecretsWhenBothDirectoryAndFileConfigured() throws IOException {
         File secretsDir = new File(tempDir, "both-secrets-dir");
         assertTrue(secretsDir.mkdirs());
