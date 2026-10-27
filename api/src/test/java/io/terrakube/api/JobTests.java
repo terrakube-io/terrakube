@@ -37,6 +37,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.when;
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
 
@@ -64,7 +65,7 @@ class JobTests extends ServerApplicationTests {
     @BeforeEach
     public void setup() {
         MockitoAnnotations.openMocks(this);
-        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        doReturn(valueOperations).when(redisTemplate).opsForValue();
         // ScheduleJob.runExecution now takes this lock around every job run, not just dispatch -
         // an unstubbed mock defaults to null/false, which would fail-closed and block every job
         // in this class from ever progressing.
