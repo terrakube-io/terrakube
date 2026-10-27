@@ -107,27 +107,44 @@ class ProjectPaginationTests extends ServerApplicationTests {
         statistics.clear();
 
         long start = System.nanoTime();
-        given()
-                .headers("Authorization", "Bearer " + generatePAT(PROJECT_ONLY_TEAM))
-                .contentType("application/json")
-                .body(Map.of("query", query))
-                .when()
-                .post("/graphql/api/v1")
-                .then()
-                .assertThat()
-                .log()
-                .ifValidationFails()
-                .statusCode(HttpStatus.OK.value())
-                .body("$", not(hasKey("errors")))
-                .body("data.organization.edges[0].node.project.edges.node.id", hasItems(seededProjectIds()))
-                .extract();
-        long elapsedMillis = (System.nanoTime() - start) / 1_000_000;
-        long statements = statistics.getPrepareStatementCount();
-        statistics.setStatisticsEnabled(false);
-
-        // Without @BatchSize on Project.projectAccess this is one lazy-load statement per project (~511).
-        org.junit.jupiter.api.Assertions.assertTrue(statements < 200,
-                "expected batched projectAccess loading but ran " + statements + " statements in " + elapsedMillis + "ms");
+        long statements;
+        long projectAccessFetches = 0;
+        long elapsedMillis;
+        try {
+            given()
+                    .headers("Authorization", "Bearer " + generatePAT(PROJECT_ONLY_TEAM))
+                    .contentType("application/json")
+                    .body(Map.of("query", query))
+                    .when()
+                    .post("/graphql/api/v1")
+                    .then()
+                    .assertThat()
+                    .log()
+                    .ifValidationFails()
+                    .statusCode(HttpStatus.OK.value())
+                    .body("$", not(hasKey("errors")))
+                    .body("data.organization.edges[0].node.project.edges.node.id", hasItems(seededProjectIds()));
+        } finally {
+            elapsedMillis = (System.nanoTime() - start) / 1_000_000;
+            statements = statistics.getPrepareStatementCount();
+            System.out.printf("PROJECT_ACCESS_ONLY_METRICS projects=%d statements=%d elapsedMs=%d%n",
+                    SEEDED_PROJECTS, statements, elapsedMillis);
+            for (String role : statistics.getCollectionRoleNames()) {
+                var collectionStatistics = statistics.getCollectionStatistics(role);
+                if (collectionStatistics.getFetchCount() > 0) {
+                    System.out.printf("COLLECTION_FETCH role=%s fetches=%d loads=%d%n",
+                            role, collectionStatistics.getFetchCount(), collectionStatistics.getLoadCount());
+                    if (role.equals(Project.class.getName() + ".projectAccess")) {
+                        projectAccessFetches = collectionStatistics.getFetchCount();
+                    }
+                }
+            }
+            statistics.setStatisticsEnabled(false);
+        }
+        org.junit.jupiter.api.Assertions.assertTrue(statements < 150,
+                "expected fewer than 150 total statements but ran " + statements + " in " + elapsedMillis + "ms");
+        org.junit.jupiter.api.Assertions.assertTrue(projectAccessFetches <= 10,
+                "expected batched projectAccess loading but fetched " + projectAccessFetches + " collections");
     }
 
     private String[] seededProjectIds() {
