@@ -29,10 +29,10 @@ const workspace = (source: string, relationships: Record<string, unknown> = {}) 
     },
   }) as any;
 
-const renderGeneral = (ws: any) =>
+const renderGeneral = (ws: any, onWorkspaceUpdate = jest.fn()) =>
   render(
     <MemoryRouter>
-      <WorkspaceGeneral workspaceData={ws} orgTemplates={[]} manageWorkspace />
+      <WorkspaceGeneral workspaceData={ws} orgTemplates={[]} manageWorkspace onWorkspaceUpdate={onWorkspaceUpdate} />
     </MemoryRouter>
   );
 
@@ -68,6 +68,53 @@ describe("WorkspaceGeneral repository URL", () => {
     expect(savedSource()).toBe("git@gitlab.com:acme/infra.git");
     expect(axiosInstance.delete).not.toHaveBeenCalled();
   });
+
+  it("trims a new repository URL before saving", async () => {
+    renderGeneral(workspace(REPO));
+
+    await changeRepoAndSave("  https://gitlab.com/acme/infra.git  ");
+
+    await waitFor(() => expect(axiosInstance.post).toHaveBeenCalled());
+    expect(savedSource()).toBe("https://gitlab.com/acme/infra.git");
+  });
+
+  it("does not delete the webhook when only repository URL whitespace changes", async () => {
+    renderGeneral(workspace(REPO, { webhook: { data: { type: "webhook", id: "hook-1" } } }));
+
+    await changeRepoAndSave(`  ${REPO}  `);
+
+    await waitFor(() => expect(axiosInstance.post).toHaveBeenCalled());
+    expect(savedSource()).toBe(REPO);
+    expect(axiosInstance.delete).not.toHaveBeenCalled();
+    expect(screen.queryByText(/Saving deletes it/)).not.toBeInTheDocument();
+  });
+
+  it.each(["request rejection", "unsuccessful response"])(
+    "refreshes the deleted webhook and explains an update failure: %s",
+    async (failure) => {
+      const onWorkspaceUpdate = jest.fn();
+      const consoleError = jest.spyOn(console, "error").mockImplementation(() => {});
+      if (failure === "request rejection") {
+        (axiosInstance.post as jest.Mock).mockRejectedValue(new Error("Update unavailable"));
+      } else {
+        (axiosInstance.post as jest.Mock).mockResolvedValue({ status: 500 });
+      }
+      renderGeneral(workspace(REPO, { webhook: { data: { type: "webhook", id: "hook-1" } } }), onWorkspaceUpdate);
+
+      try {
+        await changeRepoAndSave("https://gitlab.com/acme/infra.git");
+        fireEvent.click(await screen.findByRole("button", { name: "Delete webhook and save" }));
+
+        expect(await screen.findByText(/Workspace update failed after the webhook was deleted/)).toBeInTheDocument();
+        expect(onWorkspaceUpdate).toHaveBeenCalledTimes(1);
+        expect(onWorkspaceUpdate.mock.invocationCallOrder[0]).toBeLessThan(
+          (axiosInstance.post as jest.Mock).mock.invocationCallOrder[0]
+        );
+      } finally {
+        consoleError.mockRestore();
+      }
+    }
+  );
 
   it("deletes the webhook before pointing the workspace at another repository", async () => {
     renderGeneral(workspace(REPO, { webhook: { data: { type: "webhook", id: "hook-1" } } }));

@@ -143,14 +143,18 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace,
           headers: { "Content-Type": undefined },
         });
       } catch (error: any) {
-        // 404: an earlier save deleted it and then failed on the workspace update, so carry on with the retry.
+        // 404 means the row is already gone; remote cleanup may still have failed.
         if (error?.response?.status !== 404) {
           message.error(`Couldn't delete the webhook, the workspace was not changed: ${getErrorMessage(error)}`);
           setWaiting(false);
           return;
         }
       }
+      onWorkspaceUpdate?.();
     }
+    const updateFailureMessage = deleteWebhook
+      ? "Workspace update failed after the webhook was deleted. Set it up again under Webhook."
+      : "Workspace update failed";
     const body = {
       "atomic:operations": [
         {
@@ -236,11 +240,11 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace,
         message.success("Workspace updated successfully");
         onWorkspaceUpdate?.();
       } else {
-        message.error("Workspace update failed");
+        message.error(updateFailureMessage);
       }
     } catch (error) {
       console.error("Error updating workspace:", error);
-      message.error(getErrorMessage(error));
+      message.error(deleteWebhook ? `${updateFailureMessage} ${getErrorMessage(error)}` : getErrorMessage(error));
     } finally {
       setWaiting(false);
     }
@@ -425,7 +429,8 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace,
               <Form.Item
                 name="source"
                 label="Repository URL"
-                extra="The Git repository this workspace clones, over https or ssh. State, variables and run history are kept when it changes."
+                normalize={(value) => value?.trim()}
+                extra="The Git repository this workspace clones, over https or ssh. The configured branch must exist in the new repository. State, variables and run history are kept when it changes."
                 rules={[
                   { required: true, pattern: gitRepoUrlPattern, message: "Enter a valid https or ssh Git URL." },
                   // "empty" marks a CLI-driven workspace; it is not a repository.
