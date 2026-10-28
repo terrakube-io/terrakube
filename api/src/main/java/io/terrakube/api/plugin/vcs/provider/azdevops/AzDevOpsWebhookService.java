@@ -88,6 +88,16 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
 
     @Value("${io.terrakube.hostname}")
     private String hostname;
+
+    @Value("${io.terrakube.vcs.hostname:}")
+    private String vcsHostname;
+
+    private String getVcsHostname() {
+        return vcsHostname == null || vcsHostname.isEmpty()
+                ? hostname
+                : vcsHostname;
+    }
+
     @Value("${io.terrakube.ui.url}")
     private String uiUrl;
 
@@ -324,7 +334,7 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
 
         String secret = Base64.getEncoder()
                 .encodeToString(workspace.getId().toString().getBytes(StandardCharsets.UTF_8));
-        String webhookUrl = String.format("https://%s/webhook/v1/%s", hostname, webhook.getId());
+        String webhookUrl = String.format("https://%s/webhook/v1/%s", getVcsHostname(), webhook.getId());
 
         Set<String> azureEventTypes = resolveAzureEventTypes(webhook);
 
@@ -1009,7 +1019,7 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
             deleteRepoWebhookSubscriptions(vcs, repo, remoteHookId);
         }
 
-        String webhookUrl = String.format("https://%s/webhook/v2/%s", hostname, repoWebhook.getId().toString());
+        String webhookUrl = String.format("https://%s/webhook/v2/%s", getVcsHostname(), repoWebhook.getId().toString());
         String secret = repoWebhook.getWebhookSecret();
 
         Set<String> azureEventTypes = resolveAzureEventTypesFromSet(eventTypes);

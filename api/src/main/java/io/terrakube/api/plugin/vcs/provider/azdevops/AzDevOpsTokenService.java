@@ -31,13 +31,22 @@ public class AzDevOpsTokenService {
     @Value("${io.terrakube.hostname}")
     private String hostname;
 
+    @Value("${io.terrakube.vcs.hostname:}")
+    private String vcsHostname;
+
+    private String getVcsHostname() {
+        return vcsHostname == null || vcsHostname.isEmpty()
+                ? hostname
+                : vcsHostname;
+    }
+
     @Autowired
     private DynamicCredentialsService dynamicCredentialsService;
 
     @Autowired
     private WebClient.Builder webClientBuilder;
 
-    private static final String DEFAULT_ENDPOINT="https://app.vssps.visualstudio.com";
+    private static final String DEFAULT_ENDPOINT = "https://app.vssps.visualstudio.com";
     private static final String AZURE_DEVOPS_SCOPE = "499b84ac-1321-427f-aa17-267ca6975798/.default"; // Azure DevOps scope
 
     public AzDevOpsToken getAccessToken(String vcsId, String clientSecret, String tempCode, String callback, String endpoint) throws TokenException {
@@ -46,7 +55,7 @@ public class AzDevOpsTokenService {
         formData.add("client_assertion", clientSecret);
         formData.add("grant_type", "urn:ietf:params:oauth:grant-type:jwt-bearer");
         formData.add("assertion", tempCode);
-        formData.add("redirect_uri", String.format("https://%s/callback/v1/vcs/%s", hostname, callback == null ? vcsId: callback));
+        formData.add("redirect_uri", String.format("https://%s/callback/v1/vcs/%s", getVcsHostname(), callback == null ? vcsId : callback));
 
         AzDevOpsToken azDevOpsToken = getWebClient(endpoint).post()
                 .uri("/oauth2/token")
@@ -64,9 +73,9 @@ public class AzDevOpsTokenService {
         formData.add("client_assertion", clientSecret);
         formData.add("grant_type", "refresh_token");
         formData.add("assertion", refreshToken);
-        formData.add("redirect_uri", String.format("https://%s/callback/v1/vcs/%s", hostname, callback == null ? vcsId: callback));
+        formData.add("redirect_uri", String.format("https://%s/callback/v1/vcs/%s", getVcsHostname(), callback == null ? vcsId : callback));
 
-        AzDevOpsToken azDevOpsToken  = getWebClient(endpoint).post()
+        AzDevOpsToken azDevOpsToken = getWebClient(endpoint).post()
                 .uri("/oauth2/token")
                 .body(BodyInserters.fromFormData(formData))
                 .retrieve()
@@ -96,11 +105,7 @@ public class AzDevOpsTokenService {
                 String proxyUsername = System.getProperty("http.proxyUser");
                 String proxyPass = System.getProperty("http.proxyPassword");
                 if (proxyUsername != null && !proxyUsername.isEmpty() && proxyPass != null && !proxyPass.isEmpty()) {
-
-                    proxyOptions.setCredentials(
-                            proxyUsername,
-                            proxyPass
-                    );
+                    proxyOptions.setCredentials(proxyUsername, proxyPass);
                 }
                 log.debug("Using proxy credentials: {}:{}", proxyUsername, proxyPass);
                 credBuilder.httpClient(
@@ -124,20 +129,20 @@ public class AzDevOpsTokenService {
         }
     }
 
-    private WebClient getWebClient(String endpoint){
+    private WebClient getWebClient(String endpoint) {
         return webClientBuilder
                 .clone()
-                .baseUrl((endpoint != null)? endpoint : DEFAULT_ENDPOINT)
+                .baseUrl((endpoint != null) ? endpoint : DEFAULT_ENDPOINT)
                 .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_FORM_URLENCODED_VALUE)
                 .clientConnector(ReactorNettyWebClientFactory.connector())
                 .build();
     }
 
     private AzDevOpsToken validateNewToken(AzDevOpsToken azDevOpsToken) throws TokenException {
-        if(azDevOpsToken != null) {
+        if (azDevOpsToken != null) {
             return azDevOpsToken;
         } else {
-            throw new TokenException("500","Unable to get Azure DevOps Token");
+            throw new TokenException("500", "Unable to get Azure DevOps Token");
         }
     }
 }

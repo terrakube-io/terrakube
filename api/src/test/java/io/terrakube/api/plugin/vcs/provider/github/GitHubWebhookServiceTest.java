@@ -1,3 +1,4 @@
+
 package io.terrakube.api.plugin.vcs.provider.github;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
@@ -32,6 +33,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
 
@@ -445,12 +447,17 @@ public class GitHubWebhookServiceTest {
                     .willReturn(aResponse().withStatus(201).withHeader("Content-Type", "application/json")
                             .withBody("{\"id\":222}")));
 
+            ReflectionTestUtils.setField(subjectWithRestTemplate, "hostname", "app.example.com");
+            ReflectionTestUtils.setField(subjectWithRestTemplate, "vcsHostname", "vcs.example.com");
+
             sync();
 
             var request = wireMockServer.findAll(postRequestedFor(urlEqualTo(HOOKS))).getFirst();
             var body = new ObjectMapper().readTree(request.getBodyAsString());
             assertEquals("secret", body.path("config").path("secret").asText());
-            assertTrue(body.path("config").path("url").asText().endsWith("/webhook/v2/" + repoWebhook.getId()));
+            assertEquals(
+                    "https://vcs.example.com/webhook/v2/" + repoWebhook.getId(),
+                    body.path("config").path("url").asText());
             assertEquals("push", body.path("events").get(0).asText());
         }
 
