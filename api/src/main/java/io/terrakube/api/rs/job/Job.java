@@ -81,6 +81,14 @@ public class Job extends GenericAuditFields {
     @Column(name = "variable_names", columnDefinition = "text")
     private List<String> variableNames;
 
+    // True for the variables a Terraform CLI run supplied with -var, -var-file or TF_VAR_: the executor then passes
+    // them as --var arguments, which rank above the configuration's tfvars files like they do on a local run.
+    // False (the default) keeps the TF_VAR_ environment variables of jobs created through the job API.
+    @CreatePermission(expression = "NONE")
+    @UpdatePermission(expression = "NONE")
+    @Column(name = "variables_as_arguments", nullable = false)
+    private boolean variablesAsArguments = false;
+
     @Column(name = "comments")
     private String comments;
 

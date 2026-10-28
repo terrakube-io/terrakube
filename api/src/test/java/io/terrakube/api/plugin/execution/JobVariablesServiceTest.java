@@ -99,4 +99,14 @@ class JobVariablesServiceTest {
         JobVariablesService service = service();
         assertNotNull(service.encrypt(Map.of("my-var", "x")));
     }
+
+    @Test
+    void argumentsReplaceTheWorkspaceVariableAndLeaveTheEnvironmentAlone() {
+        JobVariablesService service = service();
+        Map<String, String> terraform = new HashMap<>(Map.of("key", "workspace-value", "other", "retained"));
+        Map<String, String> environment = new HashMap<>(Map.of("TF_IN_AUTOMATION", "1"));
+        service.mergeAsArguments(service.decrypt(service.encrypt(Map.of("key", "line one\nline two", "list", "[\"a\"]"))), terraform);
+        assertEquals(Map.of("key", "line one\nline two", "list", "[\"a\"]", "other", "retained"), terraform);
+        assertEquals(Map.of("TF_IN_AUTOMATION", "1"), environment);
+    }
 }

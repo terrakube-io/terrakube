@@ -29,7 +29,10 @@ public class JobVariablesAccess {
     private final MembershipService membershipService;
 
     public boolean canSet(User user, Job job) {
-        Workspace workspace = job.getWorkspace();
+        return canSet(user, job.getWorkspace());
+    }
+
+    public boolean canSet(User user, Workspace workspace) {
         if (workspace == null) return false;
         if (authenticatedUser.isSuperUser(user)) return true;
         return hasOrganizationAccess(user, workspace) || hasWorkspaceAccess(user, workspace)

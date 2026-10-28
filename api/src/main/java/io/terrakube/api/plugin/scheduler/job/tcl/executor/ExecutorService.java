@@ -165,8 +165,12 @@ public class ExecutorService {
 
         if (job.getEncryptedVariables() != null) {
             try {
-                jobVariablesService.merge(jobVariablesService.decrypt(job.getEncryptedVariables()),
-                        terraformVariables, environmentVariables);
+                Map<String, String> jobVariables = jobVariablesService.decrypt(job.getEncryptedVariables());
+                if (job.isVariablesAsArguments()) {
+                    jobVariablesService.mergeAsArguments(jobVariables, terraformVariables);
+                } else {
+                    jobVariablesService.merge(jobVariables, terraformVariables, environmentVariables);
+                }
             } catch (IllegalStateException e) {
                 throw new ExecutionException(String.format("Failed to read the variables of job %d: %s",
                         job.getId(), e.getMessage()), e);

@@ -12,4 +12,11 @@
             <column name="variable_names" type="text"/>
         </addColumn>
     </changeSet>
+    <changeSet id="2-34-0-job-variables-as-arguments" author="terrakube">
+        <addColumn tableName="job">
+            <column name="variables_as_arguments" type="boolean" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+        </addColumn>
+    </changeSet>
 </databaseChangeLog>

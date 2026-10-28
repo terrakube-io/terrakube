@@ -79,4 +79,14 @@ public class JobVariablesService {
             environment.put(ENV_PREFIX + name, value);
         });
     }
+
+    /**
+     * Applies the job variables as Terraform {@code --var} arguments, the way a CLI run supplies them, replacing
+     * the workspace variable of the same name. Arguments rank above the configuration's own variable files
+     * ({@code terraform.tfvars}, {@code *.auto.tfvars}), as {@code -var} does on a local run, which the
+     * {@code TF_VAR_} environment variables of {@link #merge} do not.
+     */
+    public void mergeAsArguments(Map<String, String> variables, Map<String, String> terraform) {
+        terraform.putAll(variables);
+    }
 }
