@@ -2166,6 +2166,16 @@ public class RemoteTfeService {
             }
         }
 
+        // Terraform CLI approves as soon as its plan finishes. Keep it polling until
+        // the scheduler has reached the approval gate that runApply requires.
+        if ("finished".equals(planStatus) && job.getStatus() != JobStatus.waitingApproval
+                && job.getStatus() != JobStatus.completed && job.isPlanChanges()
+                && job.getStep().stream().anyMatch(step -> step.getStepNumber() == 150
+                        && step.getStatus() != JobStatus.completed)) {
+            planStatus = List.of(JobStatus.failed, JobStatus.cancelled, JobStatus.rejected).contains(job.getStatus())
+                    ? "errored" : "running";
+        }
+
         HashMap<String, Object> actions = new HashMap<>();
         actions.put("is-confirmable", true);
         actions.put("is-discardable", false);
