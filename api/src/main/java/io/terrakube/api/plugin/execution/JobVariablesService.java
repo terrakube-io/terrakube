@@ -79,4 +79,31 @@ public class JobVariablesService {
             environment.put(ENV_PREFIX + name, value);
         });
     }
+
+    /**
+     * Applies the variables of a CLI run, stored as HCL literals, as Terraform {@code --var} arguments, replacing
+     * the workspace variable of the same name. Arguments rank above the configuration's own variable files
+     * ({@code terraform.tfvars}, {@code *.auto.tfvars}), as {@code -var} does on a local run, which the
+     * {@code TF_VAR_} environment variables of {@link #merge} do not.
+     *
+     * @return the literals that are not strings (numbers, booleans, lists, objects). Every variable is passed as a
+     *         {@code --var} argument so that an executor that does not know about the return value keeps working,
+     *         but Terraform reads such a value as a string when the variable has no type constraint. A newer
+     *         executor therefore also writes these to a variable file, which keeps their type.
+     */
+    public Map<String, String> mergeAsArguments(Map<String, String> literals, Map<String, String> terraform) {
+        Map<String, String> structured = new java.util.LinkedHashMap<>();
+        try {
+            literals.forEach((name, literal) -> {
+                terraform.put(name, CliRunVariables.argumentValue(name, literal));
+                if (!CliRunVariables.isString(literal)) {
+                    structured.put(name, literal);
+                }
+            });
+        } catch (IllegalArgumentException _) {
+            // The message names the variable but a value must never reach a log or an error.
+            throw new IllegalStateException("Could not read the stored job variables");
+        }
+        return structured;
+    }
 }

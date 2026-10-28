@@ -97,6 +97,10 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import com.yahoo.elide.core.security.User;
+import io.terrakube.api.plugin.execution.CliRunVariables;
+import io.terrakube.api.plugin.execution.JobVariablesAccess;
+import io.terrakube.api.plugin.execution.JobVariablesService;
 import java.text.ParseException;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -161,6 +165,12 @@ public class RemoteTfeService {
 
     @Autowired(required = false)
     private PolicyOverrideRepository policyOverrideRepository;
+
+    @Autowired
+    private JobVariablesService jobVariablesService;
+
+    @Autowired
+    private JobVariablesAccess jobVariablesAccess;
 
     @Autowired(required = false)
     private PolicySetRepository policySetRepository;
@@ -1726,6 +1736,17 @@ public class RemoteTfeService {
         }
 
         Workspace workspace = workspaceRepository.getReferenceById(UUID.fromString(workspaceId));
+
+        // -var, -var-file and TF_VAR_ inputs of the CLI arrive as run variables. They override the workspace
+        // variables for this run only, so they need the same right as setting variables on a job.
+        Map<String, String> runVariables = CliRunVariables.parse(runsData.getData().getAttributes().get("variables"));
+        jobVariablesService.validate(runVariables);
+        if (!runVariables.isEmpty() && !jobVariablesAccess.canSet(new User(currentUser), workspace)) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "Supplying variables with -var, -var-file or TF_VAR_ environment variables requires permission to "
+                            + "manage the workspace. Variables: " + String.join(", ", runVariables.keySet()));
+        }
+
         String sourceTarGz = String.format("https://%s/remote/tfe/v2/configuration-versions/%s/terraformContent.tar.gz",
                 hostname, configurationId);
         // We intentionally do NOT persist this configuration version onto workspace.source
@@ -1753,6 +1774,11 @@ public class RemoteTfeService {
         job.setAutoApply(autoApply);
         job.setComments("terraform-cli");
         job.setVia(JobVia.CLI.getValue());
+        if (!runVariables.isEmpty()) {
+            job.setEncryptedVariables(jobVariablesService.encrypt(runVariables));
+            job.setVariableNames(runVariables.keySet().stream().sorted().toList());
+            job.setVariablesAsArguments(true);
+        }
         job.setTemplateReference(template.getId().toString());
         // if the vcs connection is not null, we need to override the value inside the
         // job

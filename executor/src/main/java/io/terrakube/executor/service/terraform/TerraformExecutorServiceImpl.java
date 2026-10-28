@@ -570,7 +570,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                         + artifactsRestoration.sha256() + ").");
             }
 
-            HashMap<String, String> terraformParameters = getWorkspaceParameters(terraformJob.getVariables());
+            HashMap<String, String> terraformParameters = getWorkspaceParameters(argumentVariables(terraformJob));
 
             boolean execution = false;
             boolean scriptAfterSuccess;
@@ -595,6 +595,13 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                         }
                     }
                     terraformProcessData.setTerraformVariables(planFileDownloaded ? new HashMap<>() : terraformParameters);
+                    if (!planFileDownloaded && hasRunVariablesFile(terraformJob)) {
+                        // An apply without a saved plan takes the variables again. With a saved plan Terraform refuses them.
+                        HashMap<String, String> applyEnvironment = new HashMap<>(terraformProcessData.getTerraformEnvironmentVariables());
+                        applyEnvironment.put("TF_CLI_ARGS_apply", RunVariablesFile.addVarFile(applyEnvironment.get("TF_CLI_ARGS_apply"),
+                                new File(executorTempDirectory, RunVariablesFile.FILE_NAME)));
+                        terraformProcessData.setTerraformEnvironmentVariables(applyEnvironment);
+                    }
 
                     execution = runJsonApply(terraformJob, terraformProcessData, applyOutput);
 
@@ -999,6 +1006,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             result = step.apply(output);
             return result;
         } finally {
+            RunVariablesFile.delete(workingDirectory);
             if (result == null || result.getOutputBuffer() != output) {
                 output.close();
             }
@@ -1556,20 +1564,58 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             log.warn("Not using any SSH key to download modules");
         }
 
+        HashMap<String, String> environmentVariables = loadTempEnvironmentVariables(
+                workspaceRootDirectory,
+                terraformWorkingDir,
+                terraformJob
+        );
+        if (hasRunVariablesFile(terraformJob)) {
+            File runVariablesFile = writeRunVariablesFile(terraformJob, workspaceRootDirectory);
+            // Copied so the job's own map never accumulates arguments across the calls of one step.
+            environmentVariables = new HashMap<>(environmentVariables);
+            for (String command : List.of("plan", "destroy")) {
+                String name = "TF_CLI_ARGS_" + command;
+                environmentVariables.put(name, RunVariablesFile.addVarFile(environmentVariables.get(name), runVariablesFile));
+            }
+        }
+
         return TerraformProcessData.builder()
                 .terraformVersion(terraformJob.getTerraformVersion())
-                .terraformVariables(terraformJob.getVariables())
-                .terraformEnvironmentVariables(loadTempEnvironmentVariables(
-                        workspaceRootDirectory,
-                        terraformWorkingDir,
-                        terraformJob
-                ))
+                .terraformVariables(argumentVariables(terraformJob))
+                .terraformEnvironmentVariables(environmentVariables)
                 .workingDirectory(terraformWorkingDir)
                 .refresh(terraformJob.isRefresh())
                 .refreshOnly(terraformJob.isRefreshOnly())
                 .tofu(terraformJob.isTofu())
                 .sshFile(sshKeyFile)
                 .build();
+    }
+
+    private static boolean hasRunVariablesFile(TerraformJob terraformJob) {
+        return terraformJob.getHclVariables() != null && !terraformJob.getHclVariables().isEmpty();
+    }
+
+    private File writeRunVariablesFile(TerraformJob terraformJob, File workspaceRootDirectory) {
+        try {
+            return RunVariablesFile.write(workspaceRootDirectory, terraformJob.getHclVariables());
+        } catch (IOException e) {
+            // The message never carries a value.
+            throw new IllegalStateException("Could not write the variable file of the run", e);
+        }
+    }
+
+    /**
+     * The variables passed as {@code --var}. Those that also go to the variable file are left out: Terraform applies
+     * arguments in order, so a second definition of the same name would replace the typed one.
+     */
+    private static HashMap<String, String> argumentVariables(TerraformJob terraformJob) {
+        HashMap<String, String> variables = terraformJob.getVariables();
+        if (variables == null || !hasRunVariablesFile(terraformJob)) {
+            return variables;
+        }
+        HashMap<String, String> arguments = new HashMap<>(variables);
+        arguments.keySet().removeAll(terraformJob.getHclVariables().keySet());
+        return arguments;
     }
 
     private File getFile(File workspaceRootDirectory, File sshKeyFile) {
