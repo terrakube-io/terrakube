@@ -13,7 +13,7 @@ import io.terrakube.api.rs.vcs.Vcs;
 import io.terrakube.api.rs.vcs.VcsConnectionType;
 import lombok.extern.slf4j.Slf4j;
 import org.eclipse.jgit.api.Git;
-import org.eclipse.jgit.api.TransportConfigCallback;
+import org.eclipse.jgit.api.LsRemoteCommand;
 import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.jgit.lib.Ref;
 import org.eclipse.jgit.transport.CredentialsProvider;
@@ -127,13 +127,14 @@ public class ModuleRefreshJob implements Job {
                     module.getName());
         });
 
+        List<ModuleVersion> allModuleVersions = new ArrayList<>(currentModuleVersion);
         if (newModuleVersions.isEmpty()) {
             log.info("No new versions found for module {}", module.getName());
         } else {
-            moduleVersionRepository.saveAll(newModuleVersions);
+            moduleVersionRepository.saveAll(newModuleVersions).forEach(allModuleVersions::add);
         }
 
-        moduleLatestVersion.recalculate(module);
+        moduleLatestVersion.recalculate(module, allModuleVersions);
         return true;
     }
 
@@ -195,50 +196,19 @@ public class ModuleRefreshJob implements Job {
             throws JsonProcessingException, NoSuchAlgorithmException, InvalidKeySpecException,
             URISyntaxException, GitAPIException,
             io.terrakube.api.plugin.vcs.provider.exception.VcsTokenAcquisitionException {
-        CredentialsProvider credentialsProvider = null;
-        TransportConfigCallback transportConfigCallback = null;
-        Map<String, Ref> tags = new HashMap<>(), originalTags = new HashMap<>();
+        LsRemoteCommand lsRemote = Git.lsRemoteRepository()
+                .setTags(true)
+                .setRemote(source)
+                .setTimeout(GIT_TIMEOUT_SECONDS);
         if (vcs != null) {
             log.info("vcs using {}", vcs.getVcsType().toString());
-            switch (vcs.getVcsType()) {
-                case GITHUB:
-                    if (vcs.getConnectionType() == VcsConnectionType.OAUTH) {
-                        credentialsProvider = new UsernamePasswordCredentialsProvider(vcs.getAccessToken(), "");
-                    } else {
-                        credentialsProvider = new UsernamePasswordCredentialsProvider("x-access-token",
-                                tokenService.getAccessToken(source, vcs));
-                    }
-                    break;
-                case BITBUCKET:
-                    credentialsProvider = new UsernamePasswordCredentialsProvider("x-token-auth",
-                            vcs.getAccessToken());
-                    break;
-                case GITLAB:
-                    credentialsProvider = new UsernamePasswordCredentialsProvider("oauth2", vcs.getAccessToken());
-                    break;
-                case AZURE_DEVOPS:
-                    credentialsProvider = new UsernamePasswordCredentialsProvider("dummy", vcs.getAccessToken());
-                    break;
-                case AZURE_SP_MI:
-                    credentialsProvider = new UsernamePasswordCredentialsProvider("dummy", azDevOpsTokenService.getAzureDefaultToken());
-                    break;
-                default:
-                    credentialsProvider = null;
-                    break;
-            }
-
-            originalTags = Git.lsRemoteRepository()
-                    .setTags(true)
-                    .setRemote(source)
-                    .setCredentialsProvider(credentialsProvider)
-                    .setTimeout(GIT_TIMEOUT_SECONDS)
-                    .callAsMap();
+            lsRemote.setCredentialsProvider(getCredentialsProvider(source, vcs));
         }
 
+        // Configuring both lets the transport the source URL selects pick what it needs, in one ls-remote.
         if (ssh != null) {
             log.info("vcs using ssh {}", ssh.getId());
-
-            transportConfigCallback = transport -> {
+            lsRemote.setTransportConfigCallback(transport -> {
                 if (transport instanceof SshTransport sshTransport) {
                     TerrakubeSshdSessionFactory terrakubeSshdSessionFactory = TerrakubeSshdSessionFactory
                             .builder()
@@ -249,26 +219,28 @@ public class ModuleRefreshJob implements Job {
                     sshTransport.setSshSessionFactory(terrakubeSshdSessionFactory.getSshdSessionFactory());
                     sshTransport.setTimeout(GIT_TIMEOUT_SECONDS);
                 }
-            };
-
-            originalTags = Git.lsRemoteRepository()
-                    .setTags(true)
-                    .setRemote(source)
-                    .setTransportConfigCallback(transportConfigCallback)
-                    .setTimeout(GIT_TIMEOUT_SECONDS)
-                    .callAsMap();
+            });
         }
 
-        if (ssh == null && vcs == null) {
-            originalTags = Git.lsRemoteRepository()
-                    .setTags(true)
-                    .setRemote(source)
-                    .setTimeout(GIT_TIMEOUT_SECONDS)
-                    .callAsMap();
-        }
-
+        Map<String, Ref> tags = new HashMap<>();
+        Map<String, Ref> originalTags = lsRemote.callAsMap();
         originalTags.forEach((key, value) -> tags.put(key.replace("refs/tags/", ""), value));
 
         return tags;
+    }
+
+    private CredentialsProvider getCredentialsProvider(String source, Vcs vcs)
+            throws JsonProcessingException, NoSuchAlgorithmException, InvalidKeySpecException,
+            URISyntaxException, io.terrakube.api.plugin.vcs.provider.exception.VcsTokenAcquisitionException {
+        return switch (vcs.getVcsType()) {
+            case GITHUB -> vcs.getConnectionType() == VcsConnectionType.OAUTH
+                    ? new UsernamePasswordCredentialsProvider(vcs.getAccessToken(), "")
+                    : new UsernamePasswordCredentialsProvider("x-access-token", tokenService.getAccessToken(source, vcs));
+            case BITBUCKET -> new UsernamePasswordCredentialsProvider("x-token-auth", vcs.getAccessToken());
+            case GITLAB -> new UsernamePasswordCredentialsProvider("oauth2", vcs.getAccessToken());
+            case AZURE_DEVOPS -> new UsernamePasswordCredentialsProvider("dummy", vcs.getAccessToken());
+            case AZURE_SP_MI -> new UsernamePasswordCredentialsProvider("dummy", azDevOpsTokenService.getAzureDefaultToken());
+            default -> null;
+        };
     }
 }
