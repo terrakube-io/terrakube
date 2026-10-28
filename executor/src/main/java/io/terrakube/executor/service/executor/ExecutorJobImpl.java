@@ -232,7 +232,7 @@ public class ExecutorJobImpl implements ExecutorJob {
     }
 
     private void executeJob(TerraformJob terraformJob, File terraformWorkingDir) {
-        String commitId = "000000000";
+        String commitId = terraformJob.getCommitId() == null ? "000000000" : terraformJob.getCommitId();
         ExecutorJobResult terraformResult = new ExecutorJobResult();
 
         if (!terraformJob.getBranch().equals("remote-content"))

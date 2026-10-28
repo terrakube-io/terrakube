@@ -8,6 +8,6 @@ import java.util.Map;
 public class ExecutionCapabilitiesController {
     @GetMapping(value = "/execution/v1/capabilities", produces = "application/json")
     public Map<String, Boolean> capabilities() {
-        return Map.of("jobVariables", true);
+        return Map.of("jobVariables", true, "configurationUploads", true);
     }
 }

@@ -414,6 +414,16 @@ public class RemoteTfeService {
                 }
             });
 
+        // Match native job creation: a project-scoped planner can upload configuration
+        // for workspaces in that project without receiving organization-wide rights.
+        if (workspace.getProject() != null && workspace.getProject().getProjectAccess() != null) {
+            workspace.getProject().getProjectAccess().forEach(access -> {
+                if (userGroups.contains(access.getName()) && rbacService.canPlanJob(access)) {
+                    userCanPlan.set(true);
+                }
+            });
+        }
+
         return userCanPlan.get();
     }
 

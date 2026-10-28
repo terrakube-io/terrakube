@@ -79,6 +79,22 @@ class ExecutorJobImplTest {
     }
 
     @Test
+    void uploadedRunsRetainTheirSubmittedRevisionInPlanAndCompletionUpdates() throws Exception {
+        TerraformJob job = createJob("terraformPlan");
+        String revision = "a".repeat(40);
+        job.setCommitId(revision);
+        File workDir = tempDir.toFile();
+        when(setupWorkspace.prepareWorkspace(job)).thenReturn(workDir);
+        ExecutorJobResult result = new ExecutorJobResult();
+        result.setSuccessfulExecution(true);
+        when(terraformExecutor.plan(eq(job), eq(workDir), eq(false))).thenReturn(result);
+        subject(eventPublisher).createJob(job);
+        verify(updateJobStatus).setRunningStatus(job, revision);
+        verify(updateJobStatus).setCompletedStatus(eq(true), anyBoolean(), anyInt(), eq(job), any(), any(), any(),
+                eq(revision), anyBoolean(), any(), any(), any());
+    }
+
+    @Test
     void togglesReadinessWatchdogAndCapacityGateAroundASuccessfulJob() throws Exception {
         TerraformJob job = createJob("terraformPlan");
         File workDir = tempDir.toFile();

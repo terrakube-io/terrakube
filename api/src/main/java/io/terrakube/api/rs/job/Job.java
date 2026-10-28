@@ -8,6 +8,7 @@ import io.terrakube.api.plugin.security.audit.GenericAuditFields;
 import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.hooks.job.JobManageHook;
 import io.terrakube.api.rs.hooks.job.JobVariablesHook;
+import io.terrakube.api.rs.hooks.job.JobConfigurationHook;
 import io.terrakube.api.rs.hooks.job.JobApprovalHook;
 import io.terrakube.api.rs.hooks.job.JobArtifactsCleanupHook;
 import io.terrakube.api.rs.hooks.notification.JobNotificationHook;
@@ -41,6 +42,7 @@ import lombok.Getter;
 import lombok.Setter;
 
 @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.CREATE, phase = LifeCycleHookBinding.TransactionPhase.PREFLUSH, hook = JobVariablesHook.class)
+@LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.CREATE, phase = LifeCycleHookBinding.TransactionPhase.PREFLUSH, hook = JobConfigurationHook.class)
 @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.CREATE, phase = LifeCycleHookBinding.TransactionPhase.POSTCOMMIT, hook = JobManageHook.class)
 @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.POSTCOMMIT, hook = JobManageHook.class)
 @ReadPermission(expression = "team view job OR team project limited view job OR team limited view job OR executor read job OR user is an executor service")
@@ -57,6 +59,13 @@ public class Job extends GenericAuditFields {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private int id;
+
+    // Create-only reference to an uploaded configuration owned by this job's workspace.
+    @ReadPermission(expression = "NONE")
+    @UpdatePermission(expression = "NONE")
+    @Transient
+    @ComputedAttribute
+    private java.util.UUID configurationVersion;
 
     // Create-only input. JobVariablesHook validates and encrypts it into encryptedVariables before the
     // flush, and it is never persisted, read or updated through the API.
