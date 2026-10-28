@@ -199,7 +199,6 @@ function generateExecutorVars() {
 	echo "TerrakubeEnableSecurity=$TerrakubeEnableSecurity" >>.envExecutor
 	echo "InternalSecret=" >>.envExecutor
 	echo "InternalSecretFile=$InternalSecretFile" >>.envExecutor
-	echo "ExecutorSecretsDirectory=/tmp/terrakube-executor-secrets" >>.envExecutor
 	echo "ExecutorSecretsFile=/tmp/terrakube-executor-secrets/executor.env" >>.envExecutor
 
 	echo "TerraformStateType=$TerraformStateType" >>.envExecutor
