@@ -96,4 +96,53 @@ class TeamTests extends ServerApplicationTests{
                 .all()
                 .statusCode(HttpStatus.FORBIDDEN.value());
     }
+
+    @Test
+    void listTeamsAsRegistryService() {
+        given()
+                .headers("Authorization", "Bearer " + generateRegistryToken())
+                .when()
+                .get("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/team")
+                .then()
+                .assertThat()
+                .log()
+                .all()
+                .statusCode(HttpStatus.OK.value());
+    }
+
+    @Test
+    void searchTeamAsRegistryService() {
+        given()
+                .headers("Authorization", "Bearer " + generateRegistryToken())
+                .when()
+                .get("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/team/58529721-425e-44d7-8b0d-1d515043c2f7")
+                .then()
+                .assertThat()
+                .body("data.attributes.name", IsEqual.equalTo("TERRAKUBE_DEVELOPERS"))
+                .log()
+                .all()
+                .statusCode(HttpStatus.OK.value());
+    }
+
+    @Test
+    void createTeamAsRegistryServiceForbidden() {
+        given()
+                .headers("Authorization", "Bearer " + generateRegistryToken(), "Content-Type", "application/vnd.api+json")
+                .body("{\n" +
+                        "  \"data\": {\n" +
+                        "    \"type\": \"team\",\n" +
+                        "    \"attributes\": {\n" +
+                        "      \"name\": \"REGISTRY_TEST_TEAM\",\n" +
+                        "      \"manageWorkspace\": true\n" +
+                        "    }\n" +
+                        "  }\n" +
+                        "}")
+                .when()
+                .post("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/team")
+                .then()
+                .assertThat()
+                .log()
+                .all()
+                .statusCode(HttpStatus.FORBIDDEN.value());
+    }
 }

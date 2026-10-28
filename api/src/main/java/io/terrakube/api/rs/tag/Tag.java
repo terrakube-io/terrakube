@@ -14,6 +14,10 @@ import java.util.UUID;
 
 @Paginate(defaultPageSize = 10000, maxPageSize = 10000)
 @Include(rootLevel = false)
+@ReadPermission(expression = "team view tag")
+@CreatePermission(expression = "team manage tag")
+@UpdatePermission(expression = "team manage tag")
+@DeletePermission(expression = "team manage tag")
 @Getter
 @Setter
 @Entity(name = "tag")

@@ -17,6 +17,7 @@ import io.terrakube.api.rs.workspace.Workspace;
 
 import com.yahoo.elide.annotation.ComputedAttribute;
 import com.yahoo.elide.annotation.CreatePermission;
+import com.yahoo.elide.annotation.DeletePermission;
 import com.yahoo.elide.annotation.Exclude;
 import com.yahoo.elide.annotation.Include;
 import com.yahoo.elide.annotation.LifeCycleHookBinding;
@@ -47,6 +48,7 @@ import lombok.Setter;
 // Creating a job needs plan rights. "manage job" also matches approve-only access, which must not queue new runs.
 @CreatePermission(expression = "team plan job OR team limited plan job OR team project limited plan job")
 @UpdatePermission(expression = "team manage job OR team limited manage job OR team project limited manage job OR user is a super service OR executor manage job OR user is an executor service")
+@DeletePermission(expression = "user is a super service OR user is a superuser")
 @Include(rootLevel = false)
 @Getter
 @Setter

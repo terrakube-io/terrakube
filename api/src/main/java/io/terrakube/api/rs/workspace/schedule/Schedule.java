@@ -1,7 +1,11 @@
 package io.terrakube.api.rs.workspace.schedule;
 
+import com.yahoo.elide.annotation.CreatePermission;
+import com.yahoo.elide.annotation.DeletePermission;
 import com.yahoo.elide.annotation.Include;
 import com.yahoo.elide.annotation.LifeCycleHookBinding;
+import com.yahoo.elide.annotation.ReadPermission;
+import com.yahoo.elide.annotation.UpdatePermission;
 import lombok.Getter;
 import lombok.Setter;
 import org.hibernate.annotations.JdbcTypeCode;
@@ -18,6 +22,10 @@ import java.util.UUID;
 @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.POSTCOMMIT, hook = ScheduleManageHook.class)
 @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.DELETE, phase = LifeCycleHookBinding.TransactionPhase.POSTCOMMIT, hook = ScheduleManageHook.class)
 @Include(rootLevel = false)
+@ReadPermission(expression = "team view schedule")
+@CreatePermission(expression = "team manage schedule")
+@UpdatePermission(expression = "team manage schedule")
+@DeletePermission(expression = "team manage schedule")
 @Getter
 @Setter
 @Entity(name = "schedule")

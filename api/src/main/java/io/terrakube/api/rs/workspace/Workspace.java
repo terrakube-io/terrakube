@@ -163,6 +163,15 @@ public class Workspace extends GenericAuditFields {
     @OneToMany(mappedBy = "workspace", fetch = FetchType.LAZY)
     private List<NotificationConfiguration> notificationConfiguration;
 
+    /**
+     * References linking global or organization collections to this workspace.
+     *
+     * The permission mirrors the one on {@link #job} and {@link #destinationWorkspace}:
+     * references are managed through the collection/reference resource, whose own checks
+     * validate both ends. Elide maintains the bidirectional relationship, so an inverse
+     * check must allow view workspace permission to prevent locking out collection managers.
+     */
+    @UpdatePermission(expression = "team view workspace OR team project limited view workspace OR team limited view workspace")
     @OneToMany(mappedBy = "workspace", fetch = FetchType.LAZY)
     private List<Reference> reference;
 

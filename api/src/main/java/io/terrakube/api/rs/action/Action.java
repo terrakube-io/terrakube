@@ -3,6 +3,7 @@ package io.terrakube.api.rs.action;
 import com.yahoo.elide.annotation.CreatePermission;
 import com.yahoo.elide.annotation.DeletePermission;
 import com.yahoo.elide.annotation.Include;
+import com.yahoo.elide.annotation.ReadPermission;
 import com.yahoo.elide.annotation.UpdatePermission;
 
 import lombok.Getter;
@@ -17,6 +18,7 @@ import jakarta.persistence.Id;
 @Getter
 @Setter
 @Entity(name = "action")
+@ReadPermission(expression = "read action")
 @CreatePermission(expression = "user is a superuser")
 @UpdatePermission(expression = "user is a superuser")
 @DeletePermission(expression = "user is a superuser")

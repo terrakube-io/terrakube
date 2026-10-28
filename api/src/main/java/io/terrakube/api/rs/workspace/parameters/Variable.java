@@ -1,7 +1,10 @@
 package io.terrakube.api.rs.workspace.parameters;
 
+import com.yahoo.elide.annotation.CreatePermission;
+import com.yahoo.elide.annotation.DeletePermission;
 import com.yahoo.elide.annotation.Include;
 import com.yahoo.elide.annotation.ReadPermission;
+import com.yahoo.elide.annotation.UpdatePermission;
 import lombok.Getter;
 import lombok.Setter;
 import org.hibernate.annotations.JdbcTypeCode;
@@ -12,6 +15,10 @@ import java.sql.Types;
 import java.util.UUID;
 
 @Include(rootLevel = false)
+@ReadPermission(expression = "team view variable OR user is an executor service")
+@CreatePermission(expression = "team manage variable")
+@UpdatePermission(expression = "team manage variable")
+@DeletePermission(expression = "team manage variable")
 @Getter
 @Setter
 @Entity(name = "variable")

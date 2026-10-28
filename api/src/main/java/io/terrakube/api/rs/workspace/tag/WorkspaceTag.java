@@ -12,6 +12,7 @@ import jakarta.persistence.*;
 import java.sql.Types;
 import java.util.UUID;
 
+@ReadPermission(expression = "user is a superuser OR team view workspace tag")
 @CreatePermission(expression = "user is a superuser OR team manage workspace tag")
 @UpdatePermission(expression = "user is a superuser OR team manage workspace tag")
 @DeletePermission(expression = "user is a superuser OR team manage workspace tag")
