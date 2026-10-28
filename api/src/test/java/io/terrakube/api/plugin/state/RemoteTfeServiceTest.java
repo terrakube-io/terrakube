@@ -117,6 +117,43 @@ class RemoteTfeServiceTest {
     private final RbacService rbacService = Mockito.mock(RbacService.class);
     private final JobNotificationTrigger jobNotificationTrigger = Mockito.mock(JobNotificationTrigger.class);
 
+    @ParameterizedTest
+    @CsvSource({"pending,running", "running,running", "queue,running", "approved,running", "waitingApproval,finished",
+            "completed,finished", "noChanges,finished", "failed,errored", "cancelled,errored", "rejected,errored"})
+    void cliPlanFinishesOnlyWhenItsApprovalGateCanAcceptTheApply(JobStatus status, String expected) {
+        RemoteTfeService service = remoteTfeService();
+        Job job = new Job();
+        job.setId(9841);
+        job.setStatus(status);
+        Step plan = new Step();
+        plan.setStepNumber(100);
+        plan.setStatus(JobStatus.completed);
+        Step approval = new Step();
+        approval.setStepNumber(150);
+        approval.setStatus(JobStatus.pending);
+        job.setStep(List.of(plan, approval));
+        when(jobRepository.getReferenceById(9841)).thenReturn(job);
+        assertEquals(expected, service.getPlan(9841).getData().getAttributes().get("status"));
+        approval.setStatus(JobStatus.completed);
+        assertEquals("finished", service.getPlan(9841).getData().getAttributes().get("status"));
+        job.setStep(List.of(plan));
+        assertEquals("finished", service.getPlan(9841).getData().getAttributes().get("status"));
+    }
+
+    @ParameterizedTest
+    @CsvSource({"completed", "pending"})
+    void unchangedCliPlansFinishWithoutWaitingForApproval(JobStatus status) {
+        RemoteTfeService service = remoteTfeService();
+        Job job = jobWaitingAtTheApprovalStep(status);
+        job.setPlanChanges(false);
+        Step plan = new Step();
+        plan.setStepNumber(100);
+        plan.setStatus(JobStatus.completed);
+        job.setStep(List.of(plan, job.getStep().getFirst()));
+
+        assertEquals("finished", service.getPlan(job.getId()).getData().getAttributes().get("status"));
+    }
+
     @Test
     void listWorkspaceWithSearchNameUsesLoadedWorkspaceEntities() {
         RemoteTfeService service = remoteTfeService();
