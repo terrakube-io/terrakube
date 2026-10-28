@@ -137,10 +137,7 @@ public class InternalSecretLoader {
     private static Set<String> getExplicitFilePaths(PropertyResolver resolver) {
         Set<String> explicitFiles = new HashSet<>();
 
-        String combinedFilePath = resolver.getProperty("io.terrakube.executor.secrets.file");
-        if (combinedFilePath == null || combinedFilePath.isBlank()) {
-            combinedFilePath = resolver.getProperty("ExecutorSecretsFile");
-        }
+        String combinedFilePath = getCombinedSecretsFilePath(resolver);
         if (combinedFilePath != null && !combinedFilePath.isBlank()) {
             explicitFiles.add(getCanonicalOrAbsolutePath(new File(combinedFilePath)));
         }
@@ -153,6 +150,14 @@ public class InternalSecretLoader {
         }
 
         return explicitFiles;
+    }
+
+    private static String getCombinedSecretsFilePath(PropertyResolver resolver) {
+        String combinedFilePath = resolver.getProperty("io.terrakube.executor.secrets.file");
+        if (combinedFilePath == null || combinedFilePath.isBlank()) {
+            combinedFilePath = resolver.getProperty("ExecutorSecretsFile");
+        }
+        return combinedFilePath;
     }
 
     private static File loadConfiguredDirectory(PropertyResolver resolver, Map<String, Object> secrets, Set<String> explicitFilesToSkip) {
@@ -179,10 +184,7 @@ public class InternalSecretLoader {
     }
 
     private static void loadCombinedSecretsFile(PropertyResolver resolver, Map<String, Object> secrets) {
-        String combinedFilePath = resolver.getProperty("io.terrakube.executor.secrets.file");
-        if (combinedFilePath == null || combinedFilePath.isBlank()) {
-            combinedFilePath = resolver.getProperty("ExecutorSecretsFile");
-        }
+        String combinedFilePath = getCombinedSecretsFilePath(resolver);
         if (combinedFilePath != null && !combinedFilePath.isBlank()) {
             File combinedFile = new File(combinedFilePath);
             if (combinedFile.exists() && combinedFile.isFile()) {
@@ -236,6 +238,7 @@ public class InternalSecretLoader {
                 continue;
             }
             String pathKey = getCanonicalOrAbsolutePath(file);
+            // Explicit files must load last so they override directory defaults, and must not be shredded prematurely.
             if (explicitFilesToSkip.contains(pathKey)) {
                 log.debug("Skipping explicit secret file during directory pass: {}", file.getAbsolutePath());
                 continue;
