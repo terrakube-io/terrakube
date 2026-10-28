@@ -142,6 +142,7 @@ public class RemoteTfeService {
     private RbacService rbacService;
 
     private static final String LATEST_TERRAFORM_VERSION = "latest";
+    private static final int CLI_APPROVAL_STEP = 150;
     // HCP Terraform limits for direct tag bindings; tag.name is varchar(128) and workspacetag.tag_value varchar(256)
     private static final int TAG_KEY_MAX_LENGTH = 128;
     private static final int TAG_VALUE_MAX_LENGTH = 256;
@@ -2054,7 +2055,7 @@ public class RemoteTfeService {
                 log.warn("Only a plan was executed, adding apply steps to job execution");
                 Step approvalStep = new Step();
                 approvalStep.setStatus(JobStatus.pending);
-                approvalStep.setStepNumber(150);
+                approvalStep.setStepNumber(CLI_APPROVAL_STEP);
                 approvalStep.setName("Approve Plan from Terraform CLI");
                 approvalStep.setJob(job);
                 approvalStep = stepRepository.save(approvalStep);
@@ -2079,7 +2080,7 @@ public class RemoteTfeService {
             }
 
             for (Step step : job.getStep()) {
-                if (step.getStepNumber() == 150) {
+                if (step.getStepNumber() == CLI_APPROVAL_STEP) {
                     if (step.getStatus() == JobStatus.completed) {
                         break;
                     }
@@ -2169,8 +2170,9 @@ public class RemoteTfeService {
         // Terraform CLI approves as soon as its plan finishes. Keep it polling until
         // the scheduler has reached the approval gate that runApply requires.
         if ("finished".equals(planStatus) && job.getStatus() != JobStatus.waitingApproval
-                && job.getStatus() != JobStatus.completed && job.isPlanChanges()
-                && job.getStep().stream().anyMatch(step -> step.getStepNumber() == 150
+                && job.getStatus() != JobStatus.completed && job.getStatus() != JobStatus.noChanges
+                && job.isPlanChanges()
+                && job.getStep().stream().anyMatch(step -> step.getStepNumber() == CLI_APPROVAL_STEP
                         && step.getStatus() != JobStatus.completed)) {
             planStatus = List.of(JobStatus.failed, JobStatus.cancelled, JobStatus.rejected).contains(job.getStatus())
                     ? "errored" : "running";

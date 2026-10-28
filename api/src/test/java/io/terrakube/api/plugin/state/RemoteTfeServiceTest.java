@@ -118,8 +118,8 @@ class RemoteTfeServiceTest {
     private final JobNotificationTrigger jobNotificationTrigger = Mockito.mock(JobNotificationTrigger.class);
 
     @ParameterizedTest
-    @CsvSource({"pending,running", "running,running", "queue,running", "waitingApproval,finished",
-            "completed,finished", "failed,errored", "cancelled,errored", "rejected,errored"})
+    @CsvSource({"pending,running", "running,running", "queue,running", "approved,running", "waitingApproval,finished",
+            "completed,finished", "noChanges,finished", "failed,errored", "cancelled,errored", "rejected,errored"})
     void cliPlanFinishesOnlyWhenItsApprovalGateCanAcceptTheApply(JobStatus status, String expected) {
         RemoteTfeService service = remoteTfeService();
         Job job = new Job();
@@ -138,6 +138,20 @@ class RemoteTfeServiceTest {
         assertEquals("finished", service.getPlan(9841).getData().getAttributes().get("status"));
         job.setStep(List.of(plan));
         assertEquals("finished", service.getPlan(9841).getData().getAttributes().get("status"));
+    }
+
+    @ParameterizedTest
+    @CsvSource({"completed", "pending"})
+    void unchangedCliPlansFinishWithoutWaitingForApproval(JobStatus status) {
+        RemoteTfeService service = remoteTfeService();
+        Job job = jobWaitingAtTheApprovalStep(status);
+        job.setPlanChanges(false);
+        Step plan = new Step();
+        plan.setStepNumber(100);
+        plan.setStatus(JobStatus.completed);
+        job.setStep(List.of(plan, job.getStep().getFirst()));
+
+        assertEquals("finished", service.getPlan(job.getId()).getData().getAttributes().get("status"));
     }
 
     @Test
