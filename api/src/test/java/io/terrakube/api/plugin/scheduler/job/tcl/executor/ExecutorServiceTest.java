@@ -636,7 +636,7 @@ class ExecutorServiceTest {
         untouched.setValue("workspace-value");
         untouched.setCategory(Category.TERRAFORM);
         when(variableRepository.findByWorkspace(workspace)).thenReturn(Optional.of(List.of(old, untouched)));
-        job.setEncryptedVariables(jobVariablesService.encrypt(Map.of("example", "private-from-cli", "names", "[\"a\", \"b\"]")));
+        job.setEncryptedVariables(jobVariablesService.encrypt(Map.of("example", "\"private-from-cli\"", "names", "[\"a\", \"b\"]")));
         job.setVariablesAsArguments(true);
         executorService.execute(job, "plan-step", flow(FlowType.terraformPlan));
         job.setTerraformPlan("saved-plan");
@@ -649,6 +649,8 @@ class ExecutorServiceTest {
             assertThat(context.getVariables()).containsEntry("example", "private-from-cli")
                     .containsEntry("names", "[\"a\", \"b\"]").containsEntry("untouched", "workspace-value");
             assertThat(context.getEnvironmentVariables()).doesNotContainKeys("TF_VAR_example", "TF_VAR_names");
+            // Only the literal that is not a string also goes to the variable file of a newer executor.
+            assertThat(context.getHclVariables()).containsOnly(Map.entry("names", "[\"a\", \"b\"]"));
             assertThat(context.toString()).doesNotContain("private-from-cli");
         }
         assertThat(old.getValue()).isEqualTo("workspace-default");

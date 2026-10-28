@@ -11,44 +11,75 @@ class CliRunVariablesTest {
         return Map.of("key", key, "value", value);
     }
 
+    @SafeVarargs
     private static Map<String, String> parse(Map<String, Object>... pairs) {
         return CliRunVariables.parse(List.of(pairs));
     }
 
+    private static String argument(String literal) {
+        return CliRunVariables.argumentValue("v", parse(pair("v", literal)).get("v"));
+    }
+
     @Test
-    @SuppressWarnings("unchecked")
-    void quotedStringsArriveAsTheirRawValueAndOtherLiteralsStayHcl() {
+    void keepsEachLiteralAsReceivedInRequestOrder() {
         Map<String, String> variables = parse(
-                pair("example", "\"from-file\""),
-                pair("count", "5"),
-                pair("enabled", "true"),
-                pair("names", "[\"a\", \"b\"]"),
-                pair("tags", "{\n  env = \"prod\"\n}"),
-                pair("empty", "\"\""));
-        assertEquals("from-file", variables.get("example"));
-        assertEquals("5", variables.get("count"));
-        assertEquals("true", variables.get("enabled"));
-        assertEquals("[\"a\", \"b\"]", variables.get("names"));
+                pair("example", "\"from-file\""), pair("count", "5"), pair("enabled", "true"),
+                pair("names", "[\"a\", \"b\"]"), pair("tags", "{\n  env = \"prod\"\n}"), pair("empty", "\"\""),
+                pair("padded", "  \"x\"\n"));
+        assertEquals(List.of("example", "count", "enabled", "names", "tags", "empty", "padded"), new ArrayList<>(variables.keySet()));
+        assertEquals("\"from-file\"", variables.get("example"));
         assertEquals("{\n  env = \"prod\"\n}", variables.get("tags"));
-        assertEquals("", variables.get("empty"));
-        assertEquals(List.of("example", "count", "enabled", "names", "tags", "empty"), new ArrayList<>(variables.keySet()));
+        assertEquals("\"x\"", variables.get("padded"));
     }
 
     @Test
-    @SuppressWarnings("unchecked")
+    void stringLiteralsBecomePlainTextForVarAndEveryOtherLiteralStaysHcl() {
+        assertEquals("from-file", argument("\"from-file\""));
+        assertEquals("", argument("\"\""));
+        assertEquals("5", argument("5"));
+        assertEquals("true", argument("true"));
+        assertEquals("[\"a\", \"b\"]", argument("[\"a\", \"b\"]"));
+        assertTrue(CliRunVariables.isString("\"x\""));
+        assertTrue(CliRunVariables.isString("<<EOT\nx\nEOT"));
+        for (String literal : new String[]{"5", "true", "[\"a\"]", "{a = 1}", "-1.5e3"}) {
+            assertFalse(CliRunVariables.isString(literal), literal);
+        }
+    }
+
+    @Test
     void decodesTheEscapesHclwriteProducesForStrings() {
-        assertEquals("line one\nline two\r\tend", parse(pair("a", "\"line one\\nline two\\r\\tend\"")).get("a"));
-        assertEquals("say \"hi\" \\ path", parse(pair("a", "\"say \\\"hi\\\" \\\\ path\"")).get("a"));
-        assertEquals("${not} %{interpolated}", parse(pair("a", "\"$${not} %%{interpolated}\"")).get("a"));
-        assertEquals("caf\u00e9 \uD83D\uDE00", parse(pair("a", "\"caf\\u00E9 \\U0001F600\"")).get("a"));
-        assertEquals("100% $5 {x}", parse(pair("a", "\"100% $5 {x}\"")).get("a"));
-        assertEquals("  padded  ", parse(pair("a", "  \"  padded  \"\n")).get("a"));
+        assertEquals("line one\nline two\r\tend", argument("\"line one\\nline two\\r\\tend\""));
+        assertEquals("say \"hi\" \\ path", argument("\"say \\\"hi\\\" \\\\ path\""));
+        assertEquals("${not} %{interpolated}", argument("\"$${not} %%{interpolated}\""));
+        assertEquals("caf\u00e9 \uD83D\uDE00", argument("\"caf\\u00E9 \\U0001F600\""));
+        assertEquals("100% $5 {x}", argument("\"100% $5 {x}\""));
     }
 
     @Test
-    @SuppressWarnings("unchecked")
+    void decodesHeredocs() {
+        assertEquals("line one\nline two\n", argument("<<EOT\nline one\nline two\nEOT"));
+        assertEquals("  keep\n  indent\n", argument("<<EOT\n  keep\n  indent\nEOT"));
+        assertEquals("one\n  two\n\nthree\n", argument("<<-EOT\n    one\n      two\n\n    three\n    EOT"));
+        assertEquals("", argument("<<EOT\nEOT"));
+        assertEquals("a\\nb \"q\" ${x}\n", argument("<<EOT\na\\nb \"q\" $${x}\nEOT"));
+        assertEquals("crlf\n", argument("<<EOT\r\ncrlf\r\nEOT"));
+        assertEquals("inner EOT word\n", argument("<<EOT\ninner EOT word\nEOT"));
+    }
+
+    @Test
+    void acceptsTheHclLiteralForms() {
+        for (String literal : new String[]{
+                "0", "-1", "3.14", "1e3", "-2.5E-10", "100000000000000000000", "true", "false",
+                "[]", "[ ]", "[1, 2, 3]", "[\"a\", \"b\",]", "[\n  \"a\",\n  \"b\"\n]", "[\n  \"a\"\n  \"b\"\n]",
+                "[[1, 2], [3]]", "{}", "{ a = 1 }", "{a = 1, b = \"two\"}", "{\n  a = 1\n  b = [true, null]\n}",
+                "{ \"quoted key\" = 1, other-key = { nested = \"v\" } }", "{ a : 1 }", "{\n  a = 1,\n}"}) {
+            assertDoesNotThrow(() -> parse(pair("v", literal)), literal);
+        }
+    }
+
+    @Test
     void nullLiteralLeavesTheVariableToTheWorkspaceOrItsDefault() {
-        assertEquals(Map.of("kept", "x"), parse(pair("unset", "null"), pair("kept", "\"x\"")));
+        assertEquals(List.of("kept"), new ArrayList<>(parse(pair("unset", "null"), pair("kept", "\"x\"")).keySet()));
     }
 
     @Test
@@ -58,21 +89,30 @@ class CliRunVariablesTest {
     }
 
     @Test
-    @SuppressWarnings("unchecked")
-    void rejectsMalformedEntriesWithoutEchoingValues() {
-        String secret = "\"private-marker";
+    void rejectsMalformedEntriesAndLiteralsWithoutEchoingValues() {
+        String secret = "private-marker";
         for (Object bad : new Object[]{
                 "not a list", List.of("text"), List.of(Map.of("key", "a")), List.of(Map.of("value", "1")),
                 List.of(Map.of("key", 1, "value", "\"x\"")), List.of(Map.of("key", "a", "value", 1)),
                 List.of(pair("bad name", "1")), List.of(pair("", "1")), List.of(pair("a", "")), List.of(pair("a", "  ")),
-                List.of(pair("a", secret)), List.of(pair("a", secret + "\" trailing\"")),
+                List.of(pair("a", "\"" + secret)), List.of(pair("a", "\"" + secret + "\" trailing\"")),
                 List.of(pair("a", "\"unfinished\\\"")), List.of(pair("a", "\"bad \\q escape\"")),
                 List.of(pair("a", "\"short \\u12\"")), List.of(pair("a", "\"nan \\uZZZZ\"")),
                 List.of(pair("a", "\"${interpolated}\"")), List.of(pair("a", "\"%{if x}y%{endif}\"")),
-                List.of(pair("a", "\"1\"\"2\"")), List.of(pair("a", "\"")),
+                List.of(pair("a", "\"1\"\"2\"")), List.of(pair("a", "\"")), List.of(pair("a", "\"nul \\u0000\"")),
+                List.of(pair("a", "\"line\nbreak\"")),
+                List.of(pair("a", "[\"" + secret + "\", ")), List.of(pair("a", "[1 2]")), List.of(pair("a", "[1,, 2]")),
+                List.of(pair("a", "{ a = }")), List.of(pair("a", "{ a 1 }")), List.of(pair("a", "{ a = 1 b = 2 }")),
+                List.of(pair("a", "{ a = 1")), List.of(pair("a", "[" + secret + "]")), List.of(pair("a", "var." + secret)),
+                List.of(pair("a", "upper(\"" + secret + "\")")), List.of(pair("a", "\"" + secret + "\" + 1")),
+                List.of(pair("a", "1 + 2")), List.of(pair("a", "5x")), List.of(pair("a", "+5")), List.of(pair("a", "0x10")),
+                List.of(pair("a", "truee")), List.of(pair("a", "[for x in y : x]")), List.of(pair("a", "# " + secret)),
+                List.of(pair("a", "<<EOT\n" + secret)), List.of(pair("a", "<<EOT\nline\nEOTX")),
+                List.of(pair("a", "<<EOT\n${x}\nEOT")), List.of(pair("a", "<<\nx\n")), List.of(pair("a", "<<EOT\nx\nEOT\nextra")),
+                List.of(pair("a", "[<<EOT\nx\nEOT\n]")),
                 List.of(pair("a", "\"x\""), pair("a", "\"y\""))}) {
             IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () -> CliRunVariables.parse(bad), String.valueOf(bad));
-            assertFalse(error.getMessage().contains("private-marker"), error.getMessage());
+            assertFalse(error.getMessage().contains(secret), error.getMessage());
         }
     }
 }

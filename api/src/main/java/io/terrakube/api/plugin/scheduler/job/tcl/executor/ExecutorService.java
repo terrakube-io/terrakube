@@ -167,7 +167,10 @@ public class ExecutorService {
             try {
                 Map<String, String> jobVariables = jobVariablesService.decrypt(job.getEncryptedVariables());
                 if (job.isVariablesAsArguments()) {
-                    jobVariablesService.mergeAsArguments(jobVariables, terraformVariables);
+                    Map<String, String> structured = jobVariablesService.mergeAsArguments(jobVariables, terraformVariables);
+                    if (!structured.isEmpty()) {
+                        executorContext.setHclVariables(new HashMap<>(structured));
+                    }
                 } else {
                     jobVariablesService.merge(jobVariables, terraformVariables, environmentVariables);
                 }

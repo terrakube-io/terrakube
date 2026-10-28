@@ -84,10 +84,10 @@ class CliRunVariablesApiTests extends ServerApplicationTests {
         Job one = jobRepository.findById(jobId(first)).orElseThrow();
         Job two = jobRepository.findById(jobId(second)).orElseThrow();
         assertTrue(one.isVariablesAsArguments());
-        assertEquals(Map.of("example", "private-from-file", "count", "5", "names", "[\"a\", \"b\"]"),
+        assertEquals(Map.of("example", "\"private-from-file\"", "count", "5", "names", "[\"a\", \"b\"]"),
                 variablesService.decrypt(one.getEncryptedVariables()));
         assertEquals(List.of("count", "example", "names"), one.getVariableNames());
-        assertEquals(Map.of("example", "private-other-run"), variablesService.decrypt(two.getEncryptedVariables()));
+        assertEquals(Map.of("example", "\"private-other-run\""), variablesService.decrypt(two.getEncryptedVariables()));
         assertFalse(one.getEncryptedVariables().contains("private-from-file"));
         assertEquals(variablesBefore, variableRepository.count());
     }
@@ -128,7 +128,8 @@ class CliRunVariablesApiTests extends ServerApplicationTests {
         String token = generatePAT("CLI_RUN_VARIABLES_INVALID");
         long before = jobRepository.count();
         for (Object bad : new Object[]{"text", List.of(Map.of("key", "bad name", "value", "1")),
-                List.of(Map.of("key", "example", "value", "\"private-marker")), List.of(Map.of("key", "example"))}) {
+                List.of(Map.of("key", "example", "value", "\"private-marker")), List.of(Map.of("key", "example")),
+                List.of(Map.of("key", "example", "value", "[\"private-marker\", ")), List.of(Map.of("key", "example", "value", "var.private-marker"))}) {
             var rejected = post(token, run(workspace, bad));
             assertEquals(400, rejected.statusCode(), rejected.asString());
             assertFalse(rejected.asString().contains("private-marker"));

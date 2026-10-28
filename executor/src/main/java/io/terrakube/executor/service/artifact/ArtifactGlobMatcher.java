@@ -38,7 +38,7 @@ public class ArtifactGlobMatcher {
             "terrakube_config_dynamic_credentials_aws.txt",
             "terrakube_dynamic_credentials.json",
             "terrakube_config_dynamic_credentials.json",
-            ".terrakube_temp_env", "commitHash.info",
+            ".terrakube_temp_env", "commitHash.info", "terrakube-run-variables.tfvars",
             "terraformLibrary.tfPlan",
             // plan.json is the raw plan (sensitive values included) and the policy inputs embed it;
             // the uploaded configuration archive is a copy of the source, not something a plan built.

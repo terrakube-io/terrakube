@@ -50,6 +50,9 @@ public class TerraformJob {
     private HashMap<String, String> environmentVariables;
     @ToString.Exclude
     private HashMap<String, String> variables;
+    // Variables of a CLI run whose value is not a string, as HCL literals, written to a variable file so they keep their type.
+    @ToString.Exclude
+    private HashMap<String, String> hclVariables;
     private List<Map<String, Object>> liveChanges;
     private List<Map<String, Object>> jobDiagnostics;
     private List<PolicyContext> policyList;

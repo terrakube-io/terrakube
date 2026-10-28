@@ -45,6 +45,11 @@ public class ExecutorContext {
     private HashMap<String, String> environmentVariables;
     @ToString.Exclude
     private HashMap<String, String> variables;
+    // Variables of a CLI run whose value is not a string (a list, object, number or boolean), as HCL literals.
+    // They are also in variables as --var text for executors that do not read this field. An executor that does
+    // writes them to a variable file instead, which keeps their type for a variable without a type constraint.
+    @ToString.Exclude
+    private HashMap<String, String> hclVariables;
     private List<io.terrakube.api.plugin.scheduler.job.tcl.executor.model.PolicyContext> policyList;
     private List<io.terrakube.api.plugin.scheduler.job.tcl.executor.model.PolicyExemptionContext> policyExemptionList;
 }

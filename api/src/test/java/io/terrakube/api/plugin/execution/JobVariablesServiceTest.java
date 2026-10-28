@@ -101,12 +101,22 @@ class JobVariablesServiceTest {
     }
 
     @Test
-    void argumentsReplaceTheWorkspaceVariableAndLeaveTheEnvironmentAlone() {
+    void argumentsReplaceTheWorkspaceVariableAndReportTheLiteralsThatAreNotStrings() {
         JobVariablesService service = service();
         Map<String, String> terraform = new HashMap<>(Map.of("key", "workspace-value", "other", "retained"));
         Map<String, String> environment = new HashMap<>(Map.of("TF_IN_AUTOMATION", "1"));
-        service.mergeAsArguments(service.decrypt(service.encrypt(Map.of("key", "line one\nline two", "list", "[\"a\"]"))), terraform);
-        assertEquals(Map.of("key", "line one\nline two", "list", "[\"a\"]", "other", "retained"), terraform);
+        Map<String, String> literals = Map.of("key", "\"line one\\nline two\"", "list", "[\"a\"]", "count", "5", "text", "<<EOT\nx\nEOT");
+        Map<String, String> structured = service.mergeAsArguments(service.decrypt(service.encrypt(literals)), terraform);
+        assertEquals(Map.of("key", "line one\nline two", "list", "[\"a\"]", "count", "5", "text", "x\n", "other", "retained"), terraform);
+        assertEquals(Map.of("list", "[\"a\"]", "count", "5"), structured);
         assertEquals(Map.of("TF_IN_AUTOMATION", "1"), environment);
+    }
+
+    @Test
+    void unreadableStoredLiteralsFailWithoutLeakingTheValue() {
+        JobVariablesService service = service();
+        Map<String, String> stored = Map.of("key", "\"private-marker");
+        IllegalStateException error = assertThrows(IllegalStateException.class, () -> service.mergeAsArguments(stored, new HashMap<>()));
+        assertFalse(error.getMessage().contains("private-marker"));
     }
 }
