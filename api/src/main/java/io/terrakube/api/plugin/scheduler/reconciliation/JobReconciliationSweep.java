@@ -265,8 +265,9 @@ public class JobReconciliationSweep implements org.quartz.Job {
         if (job.getWorkspace() == null) {
             log.warn("Job {} has no active workspace, cancelling orphaned job", job.getId());
             try {
-                job.setStatus(JobStatus.cancelled);
-                jobRepository.save(job);
+                // The workspace is soft deleted, so the job loaded without it: saving or dirtying the entity
+                // writes workspace_id = NULL, which the NOT NULL column rejects. Change only the status.
+                jobRepository.updateStatusByIdAndStatusIn(JobStatus.cancelled, job.getId(), ACTIVE_STATUSES);
                 for (Step step : stepRepository.findByJobId(job.getId())) {
                     if (step.getStatus() == JobStatus.pending || step.getStatus() == JobStatus.running || step.getStatus() == JobStatus.queue) {
                         step.setStatus(JobStatus.cancelled);
