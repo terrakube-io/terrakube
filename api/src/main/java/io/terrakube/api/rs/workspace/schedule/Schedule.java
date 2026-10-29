@@ -2,6 +2,7 @@ package io.terrakube.api.rs.workspace.schedule;
 
 import com.yahoo.elide.annotation.CreatePermission;
 import com.yahoo.elide.annotation.DeletePermission;
+import com.yahoo.elide.annotation.Exclude;
 import com.yahoo.elide.annotation.Include;
 import com.yahoo.elide.annotation.LifeCycleHookBinding;
 import com.yahoo.elide.annotation.ReadPermission;
@@ -39,6 +40,7 @@ public class Schedule extends GenericAuditFields {
     @Column(name = "cron")
     private String cron;
 
+    @Exclude
     @Deprecated(since = "1.9")
     @Column(name = "tcl")
     private String tcl;
