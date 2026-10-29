@@ -26,7 +26,7 @@ import java.util.UUID;
 @ReadPermission(expression = "team view schedule")
 @CreatePermission(expression = "team manage schedule")
 @UpdatePermission(expression = "team manage schedule")
-@DeletePermission(expression = "team manage schedule")
+@DeletePermission(expression = "team delete schedule")
 @Getter
 @Setter
 @Entity(name = "schedule")

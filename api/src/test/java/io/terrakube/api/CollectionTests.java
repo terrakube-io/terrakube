@@ -550,4 +550,98 @@ public class CollectionTests extends ServerApplicationTests {
                 .extract()
                 .statusCode();
     }
+
+    @Test
+    void cannotFlipCollectionItemSensitiveFlag() {
+        allowDevelopersToManageCollections();
+
+        String testCollectionId = given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
+                .body("{\n" +
+                        "  \"data\": {\n" +
+                        "    \"type\": \"collection\",\n" +
+                        "    \"attributes\": {\n" +
+                        "      \"name\": \"SensitiveItemCollection\",\n" +
+                        "      \"description\": \"Sample Description\",\n" +
+                        "      \"priority\": 50\n" +
+                        "    }\n" +
+                        "  }\n" +
+                        "}")
+                .when()
+                .post("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/collection/")
+                .then()
+                .statusCode(HttpStatus.CREATED.value())
+                .extract().path("data.id");
+
+        String itemId = given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
+                .body("{\n" +
+                        "  \"data\": {\n" +
+                        "    \"type\": \"item\",\n" +
+                        "    \"attributes\": {\n" +
+                        "      \"key\": \"sensitive_item_key\",\n" +
+                        "      \"value\": \"initial_plain\",\n" +
+                        "      \"sensitive\": false,\n" +
+                        "      \"category\": \"ENV\"\n" +
+                        "    }\n" +
+                        "  }\n" +
+                        "}")
+                .when()
+                .post("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/collection/" + testCollectionId + "/item/")
+                .then()
+                .statusCode(HttpStatus.CREATED.value())
+                .extract().path("data.id");
+
+        // Hardening: flipping sensitive from false to true must succeed
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
+                .body("{\n" +
+                        "  \"data\": {\n" +
+                        "    \"type\": \"item\",\n" +
+                        "    \"id\": \"" + itemId + "\",\n" +
+                        "    \"attributes\": {\n" +
+                        "      \"sensitive\": true\n" +
+                        "    }\n" +
+                        "  }\n" +
+                        "}")
+                .when()
+                .patch("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/collection/" + testCollectionId + "/item/" + itemId)
+                .then()
+                .statusCode(HttpStatus.NO_CONTENT.value());
+
+        // Unmasking: flipping sensitive from true to false must be forbidden
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
+                .body("{\n" +
+                        "  \"data\": {\n" +
+                        "    \"type\": \"item\",\n" +
+                        "    \"id\": \"" + itemId + "\",\n" +
+                        "    \"attributes\": {\n" +
+                        "      \"sensitive\": false\n" +
+                        "    }\n" +
+                        "  }\n" +
+                        "}")
+                .when()
+                .patch("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/collection/" + testCollectionId + "/item/" + itemId)
+                .then()
+                .statusCode(HttpStatus.FORBIDDEN.value());
+
+        // Updating value with sensitive: true (unchanged) must succeed
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
+                .body("{\n" +
+                        "  \"data\": {\n" +
+                        "    \"type\": \"item\",\n" +
+                        "    \"id\": \"" + itemId + "\",\n" +
+                        "    \"attributes\": {\n" +
+                        "      \"value\": \"updated_secret\",\n" +
+                        "      \"sensitive\": true\n" +
+                        "    }\n" +
+                        "  }\n" +
+                        "}")
+                .when()
+                .patch("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/collection/" + testCollectionId + "/item/" + itemId)
+                .then()
+                .statusCode(HttpStatus.NO_CONTENT.value());
+    }
 }

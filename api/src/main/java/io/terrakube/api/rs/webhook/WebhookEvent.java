@@ -31,7 +31,7 @@ import lombok.Setter;
 @ReadPermission(expression = "team view webhook event")
 @CreatePermission(expression = "team manage webhook event")
 @UpdatePermission(expression = "team manage webhook event")
-@DeletePermission(expression = "team manage webhook event")
+@DeletePermission(expression = "team delete webhook event")
 @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.CREATE, phase = LifeCycleHookBinding.TransactionPhase.POSTCOMMIT, hook = WebhookEventManageHook.class)
 @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.POSTCOMMIT, hook = WebhookEventManageHook.class)
 @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.DELETE, phase = LifeCycleHookBinding.TransactionPhase.POSTCOMMIT, hook = WebhookEventManageHook.class)

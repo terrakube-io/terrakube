@@ -30,9 +30,25 @@ public class TeamProjectLimitedPlanJob extends OperationCheck<Job> {
     @Autowired
     MembershipService membershipService;
 
+    @Autowired
+    io.terrakube.api.rs.checks.workspace.WorkspaceCheckSupport workspaceCheckSupport;
+
     @Override
     public boolean ok(Job job, RequestScope requestScope, Optional<ChangeSpec> optional) {
+        if (job == null || job.getWorkspace() == null || job.getWorkspace().getOrganization() == null || job.getOrganization() == null) {
+            log.warn("Job, workspace, or organization is null");
+            return false;
+        }
+        if (!job.getOrganization().getId().equals(job.getWorkspace().getOrganization().getId())) {
+            log.warn("Rejecting project limited plan job: job organization {} does not match workspace organization {}",
+                    job.getOrganization().getId(), job.getWorkspace().getOrganization().getId());
+            return false;
+        }
         log.debug("team project limited plan job {}", job.getId());
+        if (!workspaceCheckSupport.isTemplateInJobOrganization(job)) {
+            log.warn("Rejecting project limited plan job: templateReference does not belong to job organization");
+            return false;
+        }
         Project project = job.getWorkspace().getProject();
         if (project == null) return false;
         List<ProjectAccess> accessList = project.getProjectAccess();

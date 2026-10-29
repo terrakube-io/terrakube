@@ -25,6 +25,21 @@ public class TeamManageSchedule extends OperationCheck<Schedule> {
             return false;
         }
         log.debug("team manage schedule {}", schedule.getId());
+        if (optional.isPresent()) {
+            ChangeSpec cs = optional.get();
+            if ("templateReference".equals(cs.getFieldName())) {
+                String newTemplateRef = cs.getModified() != null ? cs.getModified().toString() : null;
+                if (!workspaceCheckSupport.isTemplateInWorkspaceOrganization(schedule.getWorkspace(), newTemplateRef)) {
+                    log.warn("Rejecting schedule {}: templateReference does not belong to workspace organization", schedule.getId());
+                    return false;
+                }
+            }
+        } else {
+            if (!workspaceCheckSupport.isTemplateInWorkspaceOrganization(schedule.getWorkspace(), schedule.getTemplateReference())) {
+                log.warn("Rejecting schedule {}: templateReference does not belong to workspace organization", schedule.getId());
+                return false;
+            }
+        }
         return workspaceCheckSupport.canManageWorkspace(schedule.getWorkspace(), requestScope);
     }
 }

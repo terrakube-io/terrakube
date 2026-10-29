@@ -160,6 +160,7 @@ public class Job extends GenericAuditFields {
     @Column(name = "override_branch")
     private String overrideBranch;
 
+    @UpdatePermission(expression = "NONE")
     @Column(name = "template_reference")
     private String templateReference;
 
@@ -258,9 +259,11 @@ public class Job extends GenericAuditFields {
     @Column(name = "dispatch_last_error", length = 1024)
     private String dispatchLastError;
 
+    @UpdatePermission(expression = "user is a superuser")
     @ManyToOne
     private Organization organization;
 
+    @UpdatePermission(expression = "user is a superuser")
     @ManyToOne
     private Workspace workspace;
 

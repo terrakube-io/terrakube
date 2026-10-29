@@ -1,5 +1,6 @@
 package io.terrakube.api.rs.checks;
 
+import com.yahoo.elide.core.security.ChangeSpec;
 import com.yahoo.elide.core.security.RequestScope;
 import com.yahoo.elide.core.security.User;
 import io.terrakube.api.plugin.security.groups.GroupService;
@@ -14,7 +15,9 @@ import io.terrakube.api.rs.checks.collection.TeamManageCollectionItem;
 import io.terrakube.api.rs.checks.collection.TeamManageCollectionReference;
 import io.terrakube.api.rs.checks.collection.TeamViewCollectionItem;
 import io.terrakube.api.rs.checks.collection.TeamViewCollectionReference;
+import io.terrakube.api.rs.checks.collection.UpdateCollectionSecret;
 import io.terrakube.api.rs.checks.globalvar.TeamViewGlobalvar;
+import io.terrakube.api.rs.checks.job.*;
 import io.terrakube.api.rs.checks.job.address.TeamManageJobAddress;
 import io.terrakube.api.rs.checks.job.address.TeamViewJobAddress;
 import io.terrakube.api.rs.checks.membership.MembershipService;
@@ -30,15 +33,24 @@ import io.terrakube.api.rs.checks.tag.TeamViewTag;
 import io.terrakube.api.rs.checks.team.TeamViewTeam;
 import io.terrakube.api.rs.checks.variable.TeamManageVariable;
 import io.terrakube.api.rs.checks.variable.TeamViewVariable;
+import io.terrakube.api.rs.checks.variable.UpdateVariableSecret;
+import io.terrakube.api.rs.checks.webhook.TeamDeleteWebhookEvent;
 import io.terrakube.api.rs.checks.webhook.TeamManageWebhook;
 import io.terrakube.api.rs.checks.webhook.TeamManageWebhookEvent;
 import io.terrakube.api.rs.checks.webhook.TeamViewWebhook;
 import io.terrakube.api.rs.checks.webhook.TeamViewWebhookEvent;
+import io.terrakube.api.rs.checks.workspace.TeamDeleteSchedule;
 import io.terrakube.api.rs.checks.workspace.TeamManageSchedule;
 import io.terrakube.api.rs.checks.workspace.TeamManageWorkspaceTag;
 import io.terrakube.api.rs.checks.workspace.TeamViewSchedule;
 import io.terrakube.api.rs.checks.workspace.TeamViewWorkspaceTag;
 import io.terrakube.api.rs.checks.workspace.WorkspaceCheckSupport;
+import com.yahoo.elide.annotation.LifeCycleHookBinding;
+import io.terrakube.api.repository.WorkspaceRepository;
+import io.terrakube.api.rs.hooks.workspace.WorkspaceManageHook;
+import io.terrakube.api.rs.hooks.workspace.WorkspaceManagementException;
+import io.terrakube.api.rs.ssh.Ssh;
+import io.terrakube.api.rs.vcs.Vcs;
 import io.terrakube.api.rs.collection.Collection;
 import io.terrakube.api.rs.collection.Reference;
 import io.terrakube.api.rs.collection.item.Item;
@@ -103,6 +115,9 @@ class NewSecurityChecksTest {
 
     @Mock
     private MembershipService membershipService;
+
+    @Mock
+    private io.terrakube.api.repository.TemplateRepository templateRepository;
 
     @Mock
     private RequestScope requestScope;
@@ -605,5 +620,401 @@ class NewSecurityChecksTest {
         org.junit.jupiter.api.Assertions.assertEquals(
                 "team view workspace OR team project limited view workspace OR team limited view workspace",
                 wsRefPerm.expression());
+
+        com.yahoo.elide.annotation.UpdatePermission jobOrgPerm =
+                Job.class.getDeclaredField("organization").getAnnotation(com.yahoo.elide.annotation.UpdatePermission.class);
+        org.junit.jupiter.api.Assertions.assertNotNull(jobOrgPerm);
+        org.junit.jupiter.api.Assertions.assertEquals("user is a superuser", jobOrgPerm.expression());
+
+        com.yahoo.elide.annotation.UpdatePermission jobWsPerm =
+                Job.class.getDeclaredField("workspace").getAnnotation(com.yahoo.elide.annotation.UpdatePermission.class);
+        org.junit.jupiter.api.Assertions.assertNotNull(jobWsPerm);
+        org.junit.jupiter.api.Assertions.assertEquals("user is a superuser", jobWsPerm.expression());
+
+        com.yahoo.elide.annotation.UpdatePermission varSensPerm =
+                Variable.class.getDeclaredField("sensitive").getAnnotation(com.yahoo.elide.annotation.UpdatePermission.class);
+        org.junit.jupiter.api.Assertions.assertNotNull(varSensPerm);
+        org.junit.jupiter.api.Assertions.assertEquals("user update secret", varSensPerm.expression());
+
+        com.yahoo.elide.annotation.UpdatePermission itemSensPerm =
+                Item.class.getDeclaredField("sensitive").getAnnotation(com.yahoo.elide.annotation.UpdatePermission.class);
+        org.junit.jupiter.api.Assertions.assertNotNull(itemSensPerm);
+        org.junit.jupiter.api.Assertions.assertEquals("user update collection secret", itemSensPerm.expression());
+    }
+
+    @Test
+    void testTemplateOrganizationValidation() {
+        UUID orgAId = UUID.randomUUID();
+        UUID orgBId = UUID.randomUUID();
+        UUID templateId = UUID.randomUUID();
+
+        Organization orgA = new Organization();
+        orgA.setId(orgAId);
+        Organization orgB = new Organization();
+        orgB.setId(orgBId);
+
+        Workspace workspaceA = new Workspace();
+        workspaceA.setId(UUID.randomUUID());
+        workspaceA.setOrganization(orgA);
+
+        io.terrakube.api.rs.template.Template templateA = new io.terrakube.api.rs.template.Template();
+        templateA.setId(templateId);
+        templateA.setOrganization(orgA);
+
+        io.terrakube.api.rs.template.Template templateB = new io.terrakube.api.rs.template.Template();
+        templateB.setId(templateId);
+        templateB.setOrganization(orgB);
+
+        // Null or blank template is allowed
+        assertTrue(workspaceCheckSupport.isTemplateInWorkspaceOrganization(workspaceA, null));
+        assertTrue(workspaceCheckSupport.isTemplateInWorkspaceOrganization(workspaceA, ""));
+
+        // Non-existent template is rejected
+        when(templateRepository.findById(templateId)).thenReturn(Optional.empty());
+        assertFalse(workspaceCheckSupport.isTemplateInWorkspaceOrganization(workspaceA, templateId.toString()));
+
+        // Mismatched organization template is rejected
+        when(templateRepository.findById(templateId)).thenReturn(Optional.of(templateB));
+        assertFalse(workspaceCheckSupport.isTemplateInWorkspaceOrganization(workspaceA, templateId.toString()));
+
+        // Matching organization template is accepted
+        when(templateRepository.findById(templateId)).thenReturn(Optional.of(templateA));
+        assertTrue(workspaceCheckSupport.isTemplateInWorkspaceOrganization(workspaceA, templateId.toString()));
+
+        // Verify TeamManageSchedule rejects cross-organization template
+        TeamManageSchedule scheduleCheck = new TeamManageSchedule();
+        ReflectionTestUtils.setField(scheduleCheck, "workspaceCheckSupport", workspaceCheckSupport);
+        Schedule schedule = new Schedule();
+        schedule.setWorkspace(workspaceA);
+        schedule.setTemplateReference(templateId.toString());
+
+        when(templateRepository.findById(templateId)).thenReturn(Optional.of(templateB));
+        assertFalse(scheduleCheck.ok(schedule, requestScope, Optional.empty()));
+
+        // Verify TeamManageWebhookEvent rejects cross-organization template
+        TeamManageWebhookEvent webhookEventCheck = new TeamManageWebhookEvent();
+        ReflectionTestUtils.setField(webhookEventCheck, "workspaceCheckSupport", workspaceCheckSupport);
+        Webhook webhook = new Webhook();
+        webhook.setWorkspace(workspaceA);
+        WebhookEvent event = new WebhookEvent();
+        event.setWebhook(webhook);
+        event.setTemplateId(templateId.toString());
+
+        assertFalse(webhookEventCheck.ok(event, requestScope, Optional.empty()));
+
+        // On UPDATE, non-template edits (e.g. cron, branch) succeed without checking template existence
+        when(authenticatedUser.isSuperUser(user)).thenReturn(true);
+        ChangeSpec cronChange = new ChangeSpec(null, "cron", "0 0 * * *", "0 0 12 * * ?");
+        assertTrue(scheduleCheck.ok(schedule, requestScope, Optional.of(cronChange)));
+
+        ChangeSpec branchChange = new ChangeSpec(null, "branch", "main", "develop");
+        assertTrue(webhookEventCheck.ok(event, requestScope, Optional.of(branchChange)));
+
+        // On UPDATE, changing templateReference to foreign template is rejected
+        ChangeSpec templateChange = new ChangeSpec(null, "templateReference", null, templateId.toString());
+        assertFalse(scheduleCheck.ok(schedule, requestScope, Optional.of(templateChange)));
+
+        // DELETE checks allow removal even when template is missing/dangling
+        TeamDeleteSchedule deleteScheduleCheck = new TeamDeleteSchedule();
+        ReflectionTestUtils.setField(deleteScheduleCheck, "workspaceCheckSupport", workspaceCheckSupport);
+        assertTrue(deleteScheduleCheck.ok(schedule, requestScope, Optional.empty()));
+
+        TeamDeleteWebhookEvent deleteWebhookEventCheck = new TeamDeleteWebhookEvent();
+        ReflectionTestUtils.setField(deleteWebhookEventCheck, "workspaceCheckSupport", workspaceCheckSupport);
+        assertTrue(deleteWebhookEventCheck.ok(event, requestScope, Optional.empty()));
+    }
+
+    @Test
+    void testJobWorkspaceOrganizationValidation() {
+        UUID orgAId = UUID.randomUUID();
+        UUID orgBId = UUID.randomUUID();
+
+        Organization orgA = new Organization();
+        orgA.setId(orgAId);
+        Team teamA = new Team();
+        teamA.setName("team-a");
+        orgA.setTeam(List.of(teamA));
+
+        Organization orgB = new Organization();
+        orgB.setId(orgBId);
+
+        Workspace workspaceA = new Workspace();
+        workspaceA.setId(UUID.randomUUID());
+        workspaceA.setOrganization(orgA);
+
+        Access access = new Access();
+        access.setName("access-team");
+        workspaceA.setAccess(List.of(access));
+
+        Project project = new Project();
+        project.setId(UUID.randomUUID());
+        ProjectAccess projectAccess = new ProjectAccess();
+        projectAccess.setName("proj-team");
+        project.setProjectAccess(List.of(projectAccess));
+        workspaceA.setProject(project);
+
+        Workspace workspaceB = new Workspace();
+        workspaceB.setId(UUID.randomUUID());
+        workspaceB.setOrganization(orgB);
+
+        // Job pointing to Org A as its organization, but Workspace B (in Org B)
+        Job crossOrgJob = new Job();
+        crossOrgJob.setId(999);
+        crossOrgJob.setOrganization(orgA);
+        crossOrgJob.setWorkspace(workspaceB);
+
+        // Job pointing to Org A as its organization, and Workspace A (in Org A)
+        Job validJob = new Job();
+        validJob.setId(1000);
+        validJob.setOrganization(orgA);
+        validJob.setWorkspace(workspaceA);
+
+        // Job with null workspace
+        Job nullWsJob = new Job();
+        nullWsJob.setId(1001);
+        nullWsJob.setOrganization(orgA);
+
+        // Job with null organization
+        Job nullOrgJob = new Job();
+        nullOrgJob.setId(1002);
+        nullOrgJob.setWorkspace(workspaceA);
+
+        // Workspace with null organization
+        Workspace nullWsOrg = new Workspace();
+        nullWsOrg.setId(UUID.randomUUID());
+        Job nullWsOrgJob = new Job();
+        nullWsOrgJob.setId(1003);
+        nullWsOrgJob.setOrganization(orgA);
+        nullWsOrgJob.setWorkspace(nullWsOrg);
+
+        TeamPlanJob planJob = new TeamPlanJob();
+        ReflectionTestUtils.setField(planJob, "authenticatedUser", authenticatedUser);
+        ReflectionTestUtils.setField(planJob, "groupService", groupService);
+        ReflectionTestUtils.setField(planJob, "rbacService", rbacService);
+        ReflectionTestUtils.setField(planJob, "workspaceCheckSupport", workspaceCheckSupport);
+
+        TeamManageJob manageJob = new TeamManageJob();
+        ReflectionTestUtils.setField(manageJob, "authenticatedUser", authenticatedUser);
+        ReflectionTestUtils.setField(manageJob, "groupService", groupService);
+        ReflectionTestUtils.setField(manageJob, "rbacService", rbacService);
+
+        TeamApproveJobRbac approveJob = new TeamApproveJobRbac();
+        ReflectionTestUtils.setField(approveJob, "authenticatedUser", authenticatedUser);
+        ReflectionTestUtils.setField(approveJob, "groupService", groupService);
+        ReflectionTestUtils.setField(approveJob, "rbacService", rbacService);
+
+        TeamViewJob viewJob = new TeamViewJob();
+        ReflectionTestUtils.setField(viewJob, "authenticatedUser", authenticatedUser);
+        ReflectionTestUtils.setField(viewJob, "membershipService", membershipService);
+
+        TeamLimitedPlanJob limitedPlanJob = new TeamLimitedPlanJob();
+        ReflectionTestUtils.setField(limitedPlanJob, "authenticatedUser", authenticatedUser);
+        ReflectionTestUtils.setField(limitedPlanJob, "groupService", groupService);
+        ReflectionTestUtils.setField(limitedPlanJob, "rbacService", rbacService);
+        ReflectionTestUtils.setField(limitedPlanJob, "workspaceCheckSupport", workspaceCheckSupport);
+
+        TeamLimitedManageJob limitedManageJob = new TeamLimitedManageJob();
+        ReflectionTestUtils.setField(limitedManageJob, "authenticatedUser", authenticatedUser);
+        ReflectionTestUtils.setField(limitedManageJob, "groupService", groupService);
+        ReflectionTestUtils.setField(limitedManageJob, "rbacService", rbacService);
+
+        TeamLimitedApproveJob limitedApproveJob = new TeamLimitedApproveJob();
+        ReflectionTestUtils.setField(limitedApproveJob, "authenticatedUser", authenticatedUser);
+        ReflectionTestUtils.setField(limitedApproveJob, "groupService", groupService);
+        ReflectionTestUtils.setField(limitedApproveJob, "rbacService", rbacService);
+
+        TeamLimitedViewJob limitedViewJob = new TeamLimitedViewJob();
+        ReflectionTestUtils.setField(limitedViewJob, "authenticatedUser", authenticatedUser);
+        ReflectionTestUtils.setField(limitedViewJob, "membershipService", membershipService);
+
+        TeamProjectLimitedPlanJob projectLimitedPlanJob = new TeamProjectLimitedPlanJob();
+        ReflectionTestUtils.setField(projectLimitedPlanJob, "authenticatedUser", authenticatedUser);
+        ReflectionTestUtils.setField(projectLimitedPlanJob, "rbacService", rbacService);
+        ReflectionTestUtils.setField(projectLimitedPlanJob, "membershipService", membershipService);
+        ReflectionTestUtils.setField(projectLimitedPlanJob, "workspaceCheckSupport", workspaceCheckSupport);
+
+        TeamProjectLimitedManageJob projectLimitedManageJob = new TeamProjectLimitedManageJob();
+        ReflectionTestUtils.setField(projectLimitedManageJob, "authenticatedUser", authenticatedUser);
+        ReflectionTestUtils.setField(projectLimitedManageJob, "rbacService", rbacService);
+        ReflectionTestUtils.setField(projectLimitedManageJob, "membershipService", membershipService);
+
+        TeamProjectLimitedApproveJob projectLimitedApproveJob = new TeamProjectLimitedApproveJob();
+        ReflectionTestUtils.setField(projectLimitedApproveJob, "authenticatedUser", authenticatedUser);
+        ReflectionTestUtils.setField(projectLimitedApproveJob, "rbacService", rbacService);
+        ReflectionTestUtils.setField(projectLimitedApproveJob, "membershipService", membershipService);
+
+        TeamProjectLimitedViewJob projectLimitedViewJob = new TeamProjectLimitedViewJob();
+        ReflectionTestUtils.setField(projectLimitedViewJob, "membershipService", membershipService);
+
+        List<com.yahoo.elide.core.security.checks.OperationCheck<Job>> allJobChecks = List.of(
+                planJob, manageJob, approveJob, viewJob,
+                limitedPlanJob, limitedManageJob, limitedApproveJob, limitedViewJob,
+                projectLimitedPlanJob, projectLimitedManageJob, projectLimitedApproveJob, projectLimitedViewJob
+        );
+
+        // 1. Null job must not throw NPE and must return false for all 12 checks
+        for (var check : allJobChecks) {
+            assertFalse(check.ok(null, requestScope, Optional.empty()), "Check " + check.getClass().getSimpleName() + " should reject null job");
+        }
+
+        // 2. Null workspace must return false for all 12 checks
+        for (var check : allJobChecks) {
+            assertFalse(check.ok(nullWsJob, requestScope, Optional.empty()), "Check " + check.getClass().getSimpleName() + " should reject null workspace");
+        }
+
+        // 3. Null organization must return false for all 12 checks
+        for (var check : allJobChecks) {
+            assertFalse(check.ok(nullOrgJob, requestScope, Optional.empty()), "Check " + check.getClass().getSimpleName() + " should reject null organization");
+        }
+
+        // 4. Null workspace organization must return false for all 12 checks
+        for (var check : allJobChecks) {
+            assertFalse(check.ok(nullWsOrgJob, requestScope, Optional.empty()), "Check " + check.getClass().getSimpleName() + " should reject null workspace organization");
+        }
+
+        // 5. Cross-organization mismatch must return false for all 12 checks
+        for (var check : allJobChecks) {
+            assertFalse(check.ok(crossOrgJob, requestScope, Optional.empty()), "Check " + check.getClass().getSimpleName() + " should reject cross-org job");
+        }
+
+        // 6. Matching organization: verify positive authorizations
+        when(authenticatedUser.isServiceAccount(user)).thenReturn(false);
+        when(authenticatedUser.isSuperUser(user)).thenReturn(false);
+        when(groupService.isMember(user, "team-a")).thenReturn(true);
+        when(rbacService.canPlanJob(teamA)).thenReturn(true);
+        when(rbacService.canManageJob(teamA)).thenReturn(true);
+        when(rbacService.canApproveJob(teamA)).thenReturn(true);
+        when(membershipService.checkMembership(user, List.of(teamA))).thenReturn(true);
+
+        assertTrue(planJob.ok(validJob, requestScope, Optional.empty()));
+        assertTrue(manageJob.ok(validJob, requestScope, Optional.empty()));
+        assertTrue(approveJob.ok(validJob, requestScope, Optional.empty()));
+        assertTrue(viewJob.ok(validJob, requestScope, Optional.empty()));
+
+        when(groupService.isMember(user, "access-team")).thenReturn(true);
+        when(rbacService.canPlanJob(access)).thenReturn(true);
+        when(rbacService.canManageJob(access)).thenReturn(true);
+        when(rbacService.canApproveJob(access)).thenReturn(true);
+        when(membershipService.checkLimitedMembership(user, List.of(access))).thenReturn(true);
+
+        assertTrue(limitedPlanJob.ok(validJob, requestScope, Optional.empty()));
+        assertTrue(limitedManageJob.ok(validJob, requestScope, Optional.empty()));
+        assertTrue(limitedApproveJob.ok(validJob, requestScope, Optional.empty()));
+        assertTrue(limitedViewJob.ok(validJob, requestScope, Optional.empty()));
+
+        when(membershipService.checkProjectMembership(eq(user), eq(List.of(projectAccess)), any())).thenReturn(true);
+        assertTrue(projectLimitedPlanJob.ok(validJob, requestScope, Optional.empty()));
+        assertTrue(projectLimitedManageJob.ok(validJob, requestScope, Optional.empty()));
+        assertTrue(projectLimitedApproveJob.ok(validJob, requestScope, Optional.empty()));
+        assertTrue(projectLimitedViewJob.ok(validJob, requestScope, Optional.empty()));
+    }
+
+    @Test
+    void testSensitiveUpdateChecks() {
+        UpdateVariableSecret varCheck = new UpdateVariableSecret();
+        UpdateCollectionSecret itemCheck = new UpdateCollectionSecret();
+
+        ChangeSpec changeTrueToFalse = new ChangeSpec(null, "sensitive", true, false);
+        ChangeSpec changeFalseToTrue = new ChangeSpec(null, "sensitive", false, true);
+        ChangeSpec unchangedTrue = new ChangeSpec(null, "sensitive", true, true);
+        ChangeSpec unchangedFalse = new ChangeSpec(null, "sensitive", false, false);
+
+        // Empty changeSpec allows update
+        assertTrue(varCheck.ok(new Variable(), requestScope, Optional.empty()));
+        assertTrue(itemCheck.ok(new Item(), requestScope, Optional.empty()));
+
+        // Flipping true -> false must be rejected
+        assertFalse(varCheck.ok(new Variable(), requestScope, Optional.of(changeTrueToFalse)));
+        assertFalse(itemCheck.ok(new Item(), requestScope, Optional.of(changeTrueToFalse)));
+
+        // Flipping false -> true (hardening) must be allowed
+        assertTrue(varCheck.ok(new Variable(), requestScope, Optional.of(changeFalseToTrue)));
+        assertTrue(itemCheck.ok(new Item(), requestScope, Optional.of(changeFalseToTrue)));
+
+        // Keeping sensitive unchanged must succeed
+        assertTrue(varCheck.ok(new Variable(), requestScope, Optional.of(unchangedTrue)));
+        assertTrue(itemCheck.ok(new Item(), requestScope, Optional.of(unchangedTrue)));
+
+        assertTrue(varCheck.ok(new Variable(), requestScope, Optional.of(unchangedFalse)));
+        assertTrue(itemCheck.ok(new Item(), requestScope, Optional.of(unchangedFalse)));
+    }
+
+    @Test
+    void testWorkspaceManageHookUpdateConflictAndCoTenancy() throws NoSuchFieldException {
+        // Class-level hook has CREATE only (UPDATE moved to field level)
+        LifeCycleHookBinding[] classHooks = Workspace.class.getAnnotationsByType(LifeCycleHookBinding.class);
+        for (LifeCycleHookBinding hookBinding : classHooks) {
+            org.junit.jupiter.api.Assertions.assertNotEquals(LifeCycleHookBinding.Operation.UPDATE, hookBinding.operation());
+        }
+
+        // Field-level hooks for UPDATE PRECOMMIT
+        org.junit.jupiter.api.Assertions.assertNotNull(
+                Workspace.class.getDeclaredField("name").getAnnotation(LifeCycleHookBinding.class));
+        org.junit.jupiter.api.Assertions.assertNotNull(
+                Workspace.class.getDeclaredField("agent").getAnnotation(LifeCycleHookBinding.class));
+        org.junit.jupiter.api.Assertions.assertNotNull(
+                Workspace.class.getDeclaredField("vcs").getAnnotation(LifeCycleHookBinding.class));
+        org.junit.jupiter.api.Assertions.assertNotNull(
+                Workspace.class.getDeclaredField("ssh").getAnnotation(LifeCycleHookBinding.class));
+        org.junit.jupiter.api.Assertions.assertNotNull(
+                Workspace.class.getDeclaredField("project").getAnnotation(LifeCycleHookBinding.class));
+        org.junit.jupiter.api.Assertions.assertNotNull(
+                Workspace.class.getDeclaredField("deleted").getAnnotation(LifeCycleHookBinding.class));
+
+        WorkspaceRepository wsRepo = mock(WorkspaceRepository.class);
+        WorkspaceManageHook hook = new WorkspaceManageHook(null, null, null, null, wsRepo);
+
+        Organization orgA = new Organization();
+        orgA.setId(UUID.randomUUID());
+        orgA.setName("OrgA");
+
+        Workspace ws1 = new Workspace();
+        ws1.setId(UUID.randomUUID());
+        ws1.setName("ws1");
+        ws1.setOrganization(orgA);
+
+        Workspace ws2 = new Workspace();
+        ws2.setId(UUID.randomUUID());
+        ws2.setName("ws2");
+        ws2.setOrganization(orgA);
+
+        // 1. Name change without conflict -> succeeds
+        ChangeSpec nameChangeNoConflict = new ChangeSpec(null, "name", "old", "ws1");
+        when(wsRepo.findAllByOrganizationNameAndName("OrgA", "ws1")).thenReturn(List.of(ws1));
+        org.junit.jupiter.api.Assertions.assertDoesNotThrow(() ->
+                hook.execute(LifeCycleHookBinding.Operation.UPDATE, LifeCycleHookBinding.TransactionPhase.PRECOMMIT, ws1, requestScope, Optional.of(nameChangeNoConflict)));
+
+        // 2. Name change with duplicate conflict -> throws SC_CONFLICT (409)
+        ChangeSpec nameChangeConflict = new ChangeSpec(null, "name", "old", "ws2");
+        ws1.setName("ws2");
+        when(wsRepo.findAllByOrganizationNameAndName("OrgA", "ws2")).thenReturn(List.of(ws2));
+        org.junit.jupiter.api.Assertions.assertThrows(WorkspaceManagementException.class, () ->
+                hook.execute(LifeCycleHookBinding.Operation.UPDATE, LifeCycleHookBinding.TransactionPhase.PRECOMMIT, ws1, requestScope, Optional.of(nameChangeConflict)));
+
+        // 3. Agent change with cross-org agent -> throws SC_FORBIDDEN (403)
+        Organization orgB = new Organization();
+        orgB.setId(UUID.randomUUID());
+        Agent agentB = new Agent();
+        agentB.setId(UUID.randomUUID());
+        agentB.setOrganization(orgB);
+        ws1.setAgent(agentB);
+
+        ChangeSpec agentChange = new ChangeSpec(null, "agent", null, agentB);
+        org.junit.jupiter.api.Assertions.assertThrows(WorkspaceManagementException.class, () ->
+                hook.execute(LifeCycleHookBinding.Operation.UPDATE, LifeCycleHookBinding.TransactionPhase.PRECOMMIT, ws1, requestScope, Optional.of(agentChange)));
+
+        // 4. Same-org relationships -> succeeds
+        Agent agentA = new Agent();
+        agentA.setId(UUID.randomUUID());
+        agentA.setOrganization(orgA);
+        ws1.setAgent(agentA);
+        org.junit.jupiter.api.Assertions.assertDoesNotThrow(() ->
+                hook.execute(LifeCycleHookBinding.Operation.UPDATE, LifeCycleHookBinding.TransactionPhase.PRECOMMIT, ws1, requestScope, Optional.of(agentChange)));
+
+        // 5. Unrelated field change (e.g. description) does not run name query or relationship checks
+        ChangeSpec descChange = new ChangeSpec(null, "description", "old", "new");
+        ws1.setAgent(agentB); // Even if cross-org agent was present, non-relationship update doesn't re-validate
+        org.junit.jupiter.api.Assertions.assertDoesNotThrow(() ->
+                hook.execute(LifeCycleHookBinding.Operation.UPDATE, LifeCycleHookBinding.TransactionPhase.PRECOMMIT, ws1, requestScope, Optional.of(descChange)));
     }
 }

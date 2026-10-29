@@ -59,7 +59,12 @@ public class TclService {
 
             FlowConfig flowConfig = null;
             if (job.getTemplateReference() != null) {
-                String tcl = getTemplateTcl(job.getTemplateReference());
+                String tcl = getTemplateTcl(job.getTemplateReference(), job);
+                if (tcl == null) {
+                    log.error("Template {} not found or does not belong to job organization for job {}", job.getTemplateReference(), job.getId());
+                    job.setStatus(JobStatus.failed);
+                    return jobRepository.save(job);
+                }
                 job.setTcl(tcl);
                 jobRepository.save(job);
                 flowConfig = getFlowConfig(tcl);
@@ -276,13 +281,40 @@ public class TclService {
         return getPendingSteps(job).firstEntry().getValue().getId().toString();
     }
 
+    /**
+     * Unscoped template resolution overload. Reserved for internal callers (e.g. isTemplatePlanOnly)
+     * where template organization ownership has already been verified at job creation or initialization time.
+     */
     private String getTemplateTcl(String templateId) {
+        return getTemplateTcl(templateId, null);
+    }
+
+    private String getTemplateTcl(String templateId, Job job) {
         // findById (not getReferenceById): isTemplatePlanOnly is called from ScheduleJob's
         // doRunExecution path, which runs with no open Hibernate session - a lazy
         // getReferenceById proxy would throw "no session" the moment getTcl() is read.
-        return templateRepository.findById(UUID.fromString(templateId))
-                .map(Template::getTcl)
-                .orElse(null);
+        Optional<Template> templateOpt = templateRepository.findById(UUID.fromString(templateId));
+        if (templateOpt.isEmpty()) {
+            return null;
+        }
+        Template template = templateOpt.get();
+        if (job != null) {
+            UUID expectedOrgId = null;
+            if (job.getWorkspace() != null && job.getWorkspace().getOrganization() != null) {
+                expectedOrgId = job.getWorkspace().getOrganization().getId();
+            } else if (job.getOrganization() != null) {
+                expectedOrgId = job.getOrganization().getId();
+            }
+            if (expectedOrgId != null) {
+                if (template.getOrganization() == null || !expectedOrgId.equals(template.getOrganization().getId())) {
+                    log.error("Security violation: job {} in organization {} attempted to resolve template {} belonging to organization {}",
+                            job.getId(), expectedOrgId, templateId,
+                            template.getOrganization() != null ? template.getOrganization().getId() : "null");
+                    return null;
+                }
+            }
+        }
+        return template.getTcl();
     }
 
     public String getFlowTypeForStep(Job job, int stepNumber) {

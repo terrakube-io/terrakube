@@ -32,6 +32,15 @@ public class TeamProjectLimitedManageJob extends OperationCheck<Job> {
 
     @Override
     public boolean ok(Job job, RequestScope requestScope, Optional<ChangeSpec> optional) {
+        if (job == null || job.getWorkspace() == null || job.getWorkspace().getOrganization() == null || job.getOrganization() == null) {
+            log.warn("Job, workspace, or organization is null");
+            return false;
+        }
+        if (!job.getOrganization().getId().equals(job.getWorkspace().getOrganization().getId())) {
+            log.warn("Rejecting project limited manage job: job organization {} does not match workspace organization {}",
+                    job.getOrganization().getId(), job.getWorkspace().getOrganization().getId());
+            return false;
+        }
         log.debug("team project limited manage job {}", job.getId());
         Project project = job.getWorkspace().getProject();
         if (project == null) return false;

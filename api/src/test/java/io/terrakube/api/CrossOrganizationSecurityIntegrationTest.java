@@ -18,6 +18,7 @@ import io.terrakube.api.rs.project.Project;
 import io.terrakube.api.rs.project.access.ProjectAccess;
 import io.terrakube.api.rs.tag.Tag;
 import io.terrakube.api.rs.team.Team;
+import io.terrakube.api.rs.template.Template;
 import io.terrakube.api.rs.webhook.Webhook;
 import io.terrakube.api.rs.webhook.WebhookEvent;
 import io.terrakube.api.rs.webhook.WebhookEventPathType;
@@ -97,6 +98,8 @@ class CrossOrganizationSecurityIntegrationTest extends ServerApplicationTests {
     private AccessRepository accessRepository;
     @Autowired
     private ProjectAccessRepository projectAccessRepository;
+    @Autowired
+    private TemplateRepository templateRepository;
 
     private Organization orgA;
     private Organization orgB;
@@ -120,6 +123,7 @@ class CrossOrganizationSecurityIntegrationTest extends ServerApplicationTests {
     private Tag tagB;
     private Agent agentB;
     private Globalvar globalvarB;
+    private Template templateB;
 
     // Fixtures in Org A
     private Workspace workspaceA;
@@ -196,12 +200,20 @@ class CrossOrganizationSecurityIntegrationTest extends ServerApplicationTests {
         webhookB.setRemoteHookId("hook-b-" + UUID.randomUUID());
         webhookB = webhookRepository.saveAndFlush(webhookB);
 
+        templateB = new Template();
+        templateB.setName("Template B");
+        templateB.setDescription("Template B");
+        templateB.setVersion("1.0.0");
+        templateB.setTcl("ZmxvdzoKICAtIHR5cGU6ICJ0ZXJyYWZvcm1QbGFuIgogICAgbmFtZTogIlBsYW4iCiAgICBzdGVwOiAxMDAK");
+        templateB.setOrganization(orgB);
+        templateB = templateRepository.saveAndFlush(templateB);
+
         eventB = new WebhookEvent();
         eventB.setId(UUID.randomUUID());
         eventB.setWebhook(webhookB);
         eventB.setBranch("main");
         eventB.setPath("/*");
-        eventB.setTemplateId("42201234-a5e2-4c62-b2fc-9729ca6b4515");
+        eventB.setTemplateId(templateB.getId().toString());
         eventB.setEvent(WebhookEventType.PUSH);
         eventB.setPathType(WebhookEventPathType.REGEX);
         eventB = webhookEventRepository.saveAndFlush(eventB);
@@ -381,6 +393,7 @@ class CrossOrganizationSecurityIntegrationTest extends ServerApplicationTests {
         safeDelete(() -> { if (tagB != null) tagRepository.delete(tagB); });
         safeDelete(() -> { if (agentB != null) agentRepository.delete(agentB); });
         safeDelete(() -> { if (globalvarB != null) globalVarRepository.delete(globalvarB); });
+        safeDelete(() -> { if (templateB != null) templateRepository.delete(templateB); });
 
         // Clean up Org A entities
         safeDelete(() -> { if (addressA != null) addressRepository.delete(addressA); });
@@ -1254,5 +1267,300 @@ class CrossOrganizationSecurityIntegrationTest extends ServerApplicationTests {
                 .get("/api/v1/address/" + addressA.getId())
                 .then()
                 .statusCode(HttpStatus.OK.value());
+    }
+
+    @Test
+    void crossOrganizationTemplateReferenceIsForbidden() {
+        // User in Org A cannot create a schedule referencing templateB (from Org B)
+        String schedulePayload = String.format("""
+                {
+                  "data": {
+                    "type": "schedule",
+                    "attributes": {
+                      "cron": "0 0/1 * * * ?",
+                      "templateReference": "%s"
+                    }
+                  }
+                }
+                """, templateB.getId());
+
+        given()
+                .headers("Authorization", "Bearer " + tokenOrgA, "Content-Type", JSON_API_CONTENT_TYPE)
+                .body(schedulePayload)
+                .when()
+                .post("/api/v1/organization/" + ORG_A_ID + "/workspace/" + workspaceA.getId() + "/schedule")
+                .then()
+                .statusCode(HttpStatus.FORBIDDEN.value());
+
+        // User in Org A cannot create a webhook event referencing templateB (from Org B)
+        String webhookEventPayload = String.format("""
+                {
+                  "data": {
+                    "type": "webhook_event",
+                    "id": "%s",
+                    "attributes": {
+                      "branch": "main",
+                      "path": "/*",
+                      "templateId": "%s",
+                      "event": "PUSH",
+                      "pathType": "REGEX"
+                    }
+                  }
+                }
+                """, UUID.randomUUID(), templateB.getId());
+
+        given()
+                .headers("Authorization", "Bearer " + tokenOrgA, "Content-Type", JSON_API_CONTENT_TYPE)
+                .body(webhookEventPayload)
+                .when()
+                .post("/api/v1/organization/" + ORG_A_ID + "/workspace/" + workspaceA.getId() + "/webhook/" + webhookA.getId() + "/events")
+                .then()
+                .statusCode(HttpStatus.FORBIDDEN.value());
+
+        // User in Org A cannot create a job referencing templateB (from Org B)
+        String jobPayload = String.format("""
+                {
+                  "data": {
+                    "type": "job",
+                    "attributes": {
+                      "templateReference": "%s"
+                    },
+                    "relationships": {
+                      "workspace": {
+                        "data": {
+                          "type": "workspace",
+                          "id": "%s"
+                        }
+                      }
+                    }
+                  }
+                }
+                """, templateB.getId(), workspaceA.getId());
+
+        given()
+                .headers("Authorization", "Bearer " + tokenOrgA, "Content-Type", JSON_API_CONTENT_TYPE)
+                .body(jobPayload)
+                .when()
+                .post("/api/v1/organization/" + ORG_A_ID + "/job")
+                .then()
+                .statusCode(HttpStatus.FORBIDDEN.value());
+    }
+
+    @Test
+    void scheduleAndWebhookEventDanglingTemplateCanBeDeletedAndEdited() {
+        // Create a temporary template in Org A
+        Template tempTemplate = new Template();
+        tempTemplate.setName("Temp Template");
+        tempTemplate.setDescription("Temp Template");
+        tempTemplate.setVersion("1.0.0");
+        tempTemplate.setTcl("ZmxvdzoKICAtIHR5cGU6ICJ0ZXJyYWZvcm1QbGFuIgogICAgbmFtZTogIlBsYW4iCiAgICBzdGVwOiAxMDAK");
+        tempTemplate.setOrganization(orgA);
+        tempTemplate = templateRepository.saveAndFlush(tempTemplate);
+
+        // Create a schedule referencing tempTemplate
+        Schedule tempSchedule = new Schedule();
+        tempSchedule.setCron("0 0 12 * * ?");
+        tempSchedule.setWorkspace(workspaceA);
+        tempSchedule.setTemplateReference(tempTemplate.getId().toString());
+        tempSchedule = scheduleRepository.saveAndFlush(tempSchedule);
+
+        // Delete the template so it becomes dangling
+        templateRepository.delete(tempTemplate);
+
+        // 1. Updating non-template attribute (cron) succeeds with 204 No Content
+        String patchCronPayload = String.format("""
+                {
+                  "data": {
+                    "type": "schedule",
+                    "id": "%s",
+                    "attributes": {
+                      "cron": "0 0 18 * * ?"
+                    }
+                  }
+                }
+                """, tempSchedule.getId());
+
+        given()
+                .headers("Authorization", "Bearer " + tokenOrgA, "Content-Type", JSON_API_CONTENT_TYPE)
+                .body(patchCronPayload)
+                .when()
+                .patch("/api/v1/organization/" + ORG_A_ID + "/workspace/" + workspaceA.getId() + "/schedule/" + tempSchedule.getId())
+                .then()
+                .statusCode(HttpStatus.NO_CONTENT.value());
+
+        // 2. Deleting the schedule with dangling template succeeds with 204 No Content
+        given()
+                .headers("Authorization", "Bearer " + tokenOrgA)
+                .when()
+                .delete("/api/v1/organization/" + ORG_A_ID + "/workspace/" + workspaceA.getId() + "/schedule/" + tempSchedule.getId())
+                .then()
+                .statusCode(HttpStatus.NO_CONTENT.value());
+    }
+
+    @Test
+    void crossOrganizationJobWorkspaceIsForbidden() {
+        String dualOrgToken = generatePAT(teamOrgA.getName(), teamOrgB.getName());
+        // User belonging to both orgs cannot create a job in Org A targeting Workspace B (belonging to Org B)
+        String jobPayload = String.format("""
+                {
+                  "data": {
+                    "type": "job",
+                    "relationships": {
+                      "workspace": {
+                        "data": {
+                          "type": "workspace",
+                          "id": "%s"
+                        }
+                      }
+                    }
+                  }
+                }
+                """, workspaceB.getId());
+
+        given()
+                .headers("Authorization", "Bearer " + dualOrgToken, "Content-Type", JSON_API_CONTENT_TYPE)
+                .body(jobPayload)
+                .when()
+                .post("/api/v1/organization/" + ORG_A_ID + "/job")
+                .then()
+                .statusCode(HttpStatus.FORBIDDEN.value());
+    }
+
+    @Test
+    void repointingJobWorkspaceOrOrganizationIsForbidden() {
+        String dualOrgToken = generatePAT(teamOrgA.getName(), teamOrgB.getName());
+        // Attempting to repoint workspace on existing job returns 403 Forbidden
+        String patchWorkspacePayload = String.format("""
+                {
+                  "data": {
+                    "type": "job",
+                    "id": "%d",
+                    "relationships": {
+                      "workspace": {
+                        "data": {
+                          "type": "workspace",
+                          "id": "%s"
+                        }
+                      }
+                    }
+                  }
+                }
+                """, jobA.getId(), workspaceB.getId());
+
+        given()
+                .headers("Authorization", "Bearer " + dualOrgToken, "Content-Type", JSON_API_CONTENT_TYPE)
+                .body(patchWorkspacePayload)
+                .when()
+                .patch("/api/v1/organization/" + ORG_A_ID + "/job/" + jobA.getId())
+                .then()
+                .statusCode(HttpStatus.FORBIDDEN.value());
+
+        // Attempting to repoint organization on existing job returns 403 Forbidden
+        String patchOrgPayload = String.format("""
+                {
+                  "data": {
+                    "type": "job",
+                    "id": "%d",
+                    "relationships": {
+                      "organization": {
+                        "data": {
+                          "type": "organization",
+                          "id": "%s"
+                        }
+                      }
+                    }
+                  }
+                }
+                """, jobA.getId(), ORG_B_ID);
+
+        given()
+                .headers("Authorization", "Bearer " + dualOrgToken, "Content-Type", JSON_API_CONTENT_TYPE)
+                .body(patchOrgPayload)
+                .when()
+                .patch("/api/v1/organization/" + ORG_A_ID + "/job/" + jobA.getId())
+                .then()
+                .statusCode(HttpStatus.FORBIDDEN.value());
+    }
+
+    @Test
+    void workspaceCrossOrganizationRelationshipsAndRenameConflict() {
+        String dualOrgToken = generatePAT(teamOrgA.getName(), teamOrgB.getName());
+
+        // 1. Attempting to link agentB (from Org B) to workspaceA (in Org A) via PATCH -> 403 Forbidden
+        String patchCrossOrgAgent = String.format("""
+                {
+                  "data": {
+                    "type": "workspace",
+                    "id": "%s",
+                    "relationships": {
+                      "agent": {
+                        "data": {
+                          "type": "agent",
+                          "id": "%s"
+                        }
+                      }
+                    }
+                  }
+                }
+                """, workspaceA.getId(), agentB.getId());
+
+        given()
+                .headers("Authorization", "Bearer " + dualOrgToken, "Content-Type", JSON_API_CONTENT_TYPE)
+                .body(patchCrossOrgAgent)
+                .when()
+                .patch("/api/v1/organization/" + ORG_A_ID + "/workspace/" + workspaceA.getId())
+                .then()
+                .statusCode(HttpStatus.FORBIDDEN.value());
+
+        // 2. Sibling workspace rename conflict in Org A -> 409 Conflict
+        Workspace workspaceA2 = new Workspace();
+        workspaceA2.setName("ws-org-a-second-" + UUID.randomUUID());
+        workspaceA2.setOrganization(orgA);
+        workspaceA2.setSource("https://github.com/terrakube-io/terrakube.git");
+        workspaceA2.setBranch("main");
+        workspaceA2.setTerraformVersion("1.13.1");
+        workspaceA2 = workspaceRepository.saveAndFlush(workspaceA2);
+        createdWorkspaces.add(workspaceA2);
+
+        String renameConflictPayload = String.format("""
+                {
+                  "data": {
+                    "type": "workspace",
+                    "id": "%s",
+                    "attributes": {
+                      "name": "%s"
+                    }
+                  }
+                }
+                """, workspaceA2.getId(), workspaceA.getName());
+
+        given()
+                .headers("Authorization", "Bearer " + tokenOrgA, "Content-Type", JSON_API_CONTENT_TYPE)
+                .body(renameConflictPayload)
+                .when()
+                .patch("/api/v1/organization/" + ORG_A_ID + "/workspace/" + workspaceA2.getId())
+                .then()
+                .statusCode(HttpStatus.CONFLICT.value());
+
+        // 3. Normal update on workspace (without rename conflict) -> 204 No Content
+        String normalUpdatePayload = String.format("""
+                {
+                  "data": {
+                    "type": "workspace",
+                    "id": "%s",
+                    "attributes": {
+                      "description": "Updated Description"
+                    }
+                  }
+                }
+                """, workspaceA.getId());
+
+        given()
+                .headers("Authorization", "Bearer " + tokenOrgA, "Content-Type", JSON_API_CONTENT_TYPE)
+                .body(normalUpdatePayload)
+                .when()
+                .patch("/api/v1/organization/" + ORG_A_ID + "/workspace/" + workspaceA.getId())
+                .then()
+                .statusCode(HttpStatus.NO_CONTENT.value());
     }
 }

@@ -31,8 +31,17 @@ public class TeamManageJob extends OperationCheck<Job> {
 
     @Override
     public boolean ok(Job job, RequestScope requestScope, Optional<ChangeSpec> optional) {
+        if (job == null || job.getWorkspace() == null || job.getWorkspace().getOrganization() == null || job.getOrganization() == null) {
+            log.warn("Job, workspace, or organization is null");
+            return false;
+        }
+        if (!job.getOrganization().getId().equals(job.getWorkspace().getOrganization().getId())) {
+            log.warn("Rejecting manage job: job organization {} does not match workspace organization {}",
+                    job.getOrganization().getId(), job.getWorkspace().getOrganization().getId());
+            return false;
+        }
         log.debug("team manage job {}", job.getId());
-        List<Team> teamList = job.getOrganization().getTeam();
+        List<Team> teamList = job.getWorkspace().getOrganization().getTeam();
         boolean isServiceAccount = authenticatedUser.isServiceAccount(requestScope.getUser());
         for (Team team : teamList) {
             if (isServiceAccount){

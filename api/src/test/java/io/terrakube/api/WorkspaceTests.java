@@ -449,4 +449,80 @@ class WorkspaceTests extends ServerApplicationTests {
                 .statusCode(HttpStatus.BAD_REQUEST.value());
     }
 
+    @Test
+    void cannotFlipVariableSensitiveFlag() {
+        String varId = given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
+                .body("{\n" +
+                        "  \"data\": {\n" +
+                        "    \"type\": \"variable\",\n" +
+                        "    \"attributes\": {\n" +
+                        "      \"key\": \"secret_flag_key\",\n" +
+                        "      \"value\": \"plain_val\",\n" +
+                        "      \"sensitive\": false,\n" +
+                        "      \"hcl\": false,\n" +
+                        "      \"category\": \"ENV\",\n" +
+                        "      \"description\": \"secret test\"\n" +
+                        "    }\n" +
+                        "  }\n" +
+                        "}")
+                .when()
+                .post("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/workspace/5ed411ca-7ab8-4d2f-b591-02d0d5788afc/variable")
+                .then()
+                .statusCode(HttpStatus.CREATED.value())
+                .extract().path("data.id");
+
+        // Hardening: flipping sensitive from false to true must succeed
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
+                .body("{\n" +
+                        "  \"data\": {\n" +
+                        "    \"type\": \"variable\",\n" +
+                        "    \"id\": \"" + varId + "\",\n" +
+                        "    \"attributes\": {\n" +
+                        "      \"sensitive\": true\n" +
+                        "    }\n" +
+                        "  }\n" +
+                        "}")
+                .when()
+                .patch("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/workspace/5ed411ca-7ab8-4d2f-b591-02d0d5788afc/variable/" + varId)
+                .then()
+                .statusCode(HttpStatus.NO_CONTENT.value());
+
+        // Unmasking: flipping sensitive from true to false must be forbidden
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
+                .body("{\n" +
+                        "  \"data\": {\n" +
+                        "    \"type\": \"variable\",\n" +
+                        "    \"id\": \"" + varId + "\",\n" +
+                        "    \"attributes\": {\n" +
+                        "      \"sensitive\": false\n" +
+                        "    }\n" +
+                        "  }\n" +
+                        "}")
+                .when()
+                .patch("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/workspace/5ed411ca-7ab8-4d2f-b591-02d0d5788afc/variable/" + varId)
+                .then()
+                .statusCode(HttpStatus.FORBIDDEN.value());
+
+        // Updating value with sensitive: true (unchanged) must succeed
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
+                .body("{\n" +
+                        "  \"data\": {\n" +
+                        "    \"type\": \"variable\",\n" +
+                        "    \"id\": \"" + varId + "\",\n" +
+                        "    \"attributes\": {\n" +
+                        "      \"value\": \"new_secret_val\",\n" +
+                        "      \"sensitive\": true\n" +
+                        "    }\n" +
+                        "  }\n" +
+                        "}")
+                .when()
+                .patch("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/workspace/5ed411ca-7ab8-4d2f-b591-02d0d5788afc/variable/" + varId)
+                .then()
+                .statusCode(HttpStatus.NO_CONTENT.value());
+    }
+
 }
