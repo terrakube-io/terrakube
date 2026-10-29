@@ -80,10 +80,12 @@ public interface JobRepository extends JpaRepository<Job, Integer> {
     @Query("update job j set j.terraformPlanArtifacts = null, j.terraformPlanArtifactsChecksum = null where j.id = :jobId")
     int clearPlanArtifactsLocation(@Param("jobId") int jobId);
 
+    @Transactional
     @Modifying(flushAutomatically = true)
     @Query("update job j set j.status = :status where j.id = :jobId")
     int updateStatusById(@Param("status") JobStatus status, @Param("jobId") int jobId);
 
+    @Transactional
     @Modifying(flushAutomatically = true)
     @Query("update job j set j.status = :newStatus where j.id = :jobId and j.status in :currentStatuses")
     int updateStatusByIdAndStatusIn(@Param("newStatus") JobStatus newStatus, @Param("jobId") int jobId, @Param("currentStatuses") List<JobStatus> currentStatuses);
@@ -93,6 +95,7 @@ public interface JobRepository extends JpaRepository<Job, Integer> {
      * only while the job is still active, in one statement, so two writers cannot both win. Returns 1 when
      * the job now has that version.
      */
+    @Transactional
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("update job j set j.resolvedTerraformVersion = :version "
             + "where j.id = :jobId and j.organization.id = :organizationId "

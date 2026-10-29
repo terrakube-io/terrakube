@@ -197,7 +197,7 @@ public class ScheduleJob implements org.quartz.Job {
     // Testing entry point: exercises doRunExecution's business logic directly against mocks, so
     // it holds the same execution lock as execute() but without a real Spring transaction - there
     // is no persistence context in these tests for one to commit.
-    protected boolean runExecution(Job job) {
+    public boolean runExecution(Job job) {
         return withExecutionLock(job.getId(), () -> doRunExecution(job));
     }
 
