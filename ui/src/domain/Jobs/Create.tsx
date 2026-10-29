@@ -9,6 +9,7 @@ import { buildResourceOptions } from "../Workspaces/workspaceDataUtils";
 import LoadingFallback from "@/components/feedback/LoadingFallback";
 import { CrudFormModal } from "@/components/modals/CrudFormModal";
 import { RadioChoices } from "@/components/settings/RadioChoices";
+import { configuredBranch, isPlanOnlyTemplate } from "./planOnlyTemplate";
 import "./runTokens.css";
 import "./Create.css";
 
@@ -51,10 +52,26 @@ export const CreateJob = ({ changeJob, planJob = true, disabledReason, resources
   const [form] = Form.useForm<CreateJobForm>();
   const [defaultTemplate, setDefaultTemplate] = useState();
   const [templates, setTemplates] = useState<Template[]>([]);
-  const [branchName, setBranchName] = useState([]);
+  const [branchName, setBranchName] = useState("");
+  const [restrictApply, setRestrictApply] = useState(false);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const resourceOptions = useMemo(() => buildResourceOptions(resources ?? []), [resources]);
+  const selectedBranch = Form.useWatch("branchName", form);
+  // A workspace that restricts apply to its configured branch only runs plan-only templates on another branch.
+  const onOtherBranch =
+    restrictApply && configuredBranch(selectedBranch ?? branchName) !== configuredBranch(branchName);
+  const availableTemplates = useMemo(
+    () => (onOtherBranch ? templates.filter((item) => isPlanOnlyTemplate(item.attributes.tcl)) : templates),
+    [onOtherBranch, templates]
+  );
+  const selectedTemplate = Form.useWatch("templateId", form);
+
+  useEffect(() => {
+    if (onOtherBranch && !availableTemplates.some((item) => item.id === selectedTemplate)) {
+      form.setFieldsValue({ templateId: availableTemplates[0]?.id });
+    }
+  }, [onOtherBranch, availableTemplates, selectedTemplate, form]);
 
   const onCancel = () => {
     setVisible(false);
@@ -68,10 +85,13 @@ export const CreateJob = ({ changeJob, planJob = true, disabledReason, resources
 
   const loadBranch = () => {
     axiosInstance.get(`organization/${organizationId}/workspace/${workspaceId}`).then((response) => {
-      const { branch, defaultTemplate } = response.data.data.attributes;
+      const { branch, defaultTemplate, restrictApplyToConfiguredBranch } = response.data.data.attributes;
+      // Runs use the first entry of the workspace branch, so that is the one to offer.
+      const firstBranch = configuredBranch(branch);
       setDefaultTemplate(defaultTemplate);
-      setBranchName(branch);
-      form.setFieldsValue({ templateId: defaultTemplate, branchName: branch });
+      setBranchName(firstBranch);
+      setRestrictApply(Boolean(restrictApplyToConfiguredBranch));
+      form.setFieldsValue({ templateId: defaultTemplate, branchName: firstBranch });
     });
   };
 
@@ -169,9 +189,9 @@ export const CreateJob = ({ changeJob, planJob = true, disabledReason, resources
         <Form.Item name="templateId" label="Template" rules={[{ required: true }]} initialValue={defaultTemplate}>
           {loading || !templates ? (
             <LoadingFallback />
-          ) : templates.length <= 3 ? (
+          ) : availableTemplates.length <= 3 ? (
             <RadioChoices
-              options={templates.map((item) => ({
+              options={availableTemplates.map((item) => ({
                 value: item.id,
                 label: templateLabel(item),
                 help: isDestroyTemplate(item)
@@ -180,13 +200,19 @@ export const CreateJob = ({ changeJob, planJob = true, disabledReason, resources
               }))}
             />
           ) : (
-            <Select options={templates.map((item) => ({ value: item.id, label: templateLabel(item) }))} />
+            <Select options={availableTemplates.map((item) => ({ value: item.id, label: templateLabel(item) }))} />
           )}
         </Form.Item>
         <Form.Item
           name="branchName"
           label="Branch"
-          extra="The run uses this branch instead of the workspace default. Leave it as is for CLI-driven workspaces."
+          extra={
+            onOtherBranch
+              ? `This workspace only allows plan runs on branches other than ${configuredBranch(branchName)}, so only plan-only templates are offered.`
+              : restrictApply
+                ? `This workspace only allows plan runs on branches other than ${configuredBranch(branchName)}. Leave it as is to run a template that applies.`
+                : "The run uses this branch instead of the workspace default. Leave it as is for CLI-driven workspaces."
+          }
           initialValue={branchName}
         >
           <Input />

@@ -101,6 +101,7 @@ import com.yahoo.elide.core.security.User;
 import io.terrakube.api.plugin.execution.CliRunVariables;
 import io.terrakube.api.plugin.execution.JobVariablesAccess;
 import io.terrakube.api.plugin.execution.JobVariablesService;
+import io.terrakube.api.plugin.execution.WorkspaceBranchPolicy;
 import java.text.ParseException;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -172,6 +173,9 @@ public class RemoteTfeService {
 
     @Autowired
     private JobVariablesAccess jobVariablesAccess;
+
+    @Autowired
+    private WorkspaceBranchPolicy workspaceBranchPolicy;
 
     @Autowired(required = false)
     private PolicySetRepository policySetRepository;
@@ -1760,6 +1764,19 @@ public class RemoteTfeService {
         Template template = templateRepository.getByOrganizationNameAndName(
                 workspace.getOrganization().getName(),
                 getTemplateName(configurationId, isDestroy));
+
+        // On a workspace that restricts apply to its configured branch, a run of the local configuration may only
+        // plan. A VCS or SSH workspace runs the uploaded content under the branch "remote-content", which is not
+        // the workspace branch, so apply and destroy are refused and a speculative plan is allowed.
+        boolean runsUploadedContent = workspace.getVcs() != null || workspace.getSsh() != null;
+        workspaceBranchPolicy.violation(workspace, runsUploadedContent ? "remote-content" : null, null,
+                        template.getId().toString())
+                .ifPresent(message -> {
+                    log.info("Run refused by the branch policy of workspace {}: {}", workspace.getName(), message);
+                    throw new org.springframework.security.access.AccessDeniedException(
+                            runsUploadedContent ? workspaceBranchPolicy.cliMessage(workspace) : message);
+                });
+
         log.info("Creating Job");
         Job job = new Job();
         job.setPlanChanges(true);

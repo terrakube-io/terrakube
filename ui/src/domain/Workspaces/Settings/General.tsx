@@ -1,4 +1,4 @@
-import { AutoComplete, Form, Input, Select, Space, Spin, message } from "antd";
+import { AutoComplete, Checkbox, Form, Input, Select, Space, Spin, message } from "antd";
 import { GlobalOutlined } from "@ant-design/icons";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
@@ -41,6 +41,7 @@ type UpdateWorkspaceForm = {
   iacType: string;
   branch: string;
   defaultTemplate?: string;
+  restrictApplyToConfiguredBranch?: boolean;
   executorAgent?: string;
   project?: string;
   vcs?: string;
@@ -173,6 +174,10 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace,
               branch: values.branch,
               source: values.source,
               defaultTemplate: values.defaultTemplate,
+              // A manager limited to this workspace cannot change it, and the API refuses a change from them.
+              ...(orgPermissions.manageWorkspace
+                ? { restrictApplyToConfiguredBranch: Boolean(values.restrictApplyToConfiguredBranch) }
+                : {}),
             },
           },
         },
@@ -272,6 +277,7 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace,
             iacType: workspaceData.attributes?.iacType,
             branch: workspaceData.attributes?.branch,
             defaultTemplate: workspaceData.attributes?.defaultTemplate,
+            restrictApplyToConfiguredBranch: workspaceData.attributes?.restrictApplyToConfiguredBranch ?? false,
             executorAgent:
               workspaceData.relationships.agent?.data?.id == null
                 ? "default"
@@ -379,6 +385,15 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace,
               extra="The branch runs started from the UI use. Only applies to the VCS-driven workflow; leave it as is for CLI-driven workspaces."
             >
               <Input disabled={!manageWorkspace} />
+            </Form.Item>
+            <Form.Item
+              name="restrictApplyToConfiguredBranch"
+              valuePropName="checked"
+              extra="Plan-only runs and terraform plan from the CLI still work on any branch. Webhook runs are not affected. Only a manager of every workspace in the organization can change this."
+            >
+              <Checkbox disabled={!manageWorkspace || !orgPermissions.manageWorkspace}>
+                Only run apply and destroy from the default branch
+              </Checkbox>
             </Form.Item>
           </SettingsSection>
 

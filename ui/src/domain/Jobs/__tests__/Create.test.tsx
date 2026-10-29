@@ -89,3 +89,61 @@ describe("CreateJob new run modal", () => {
     expect(screen.queryByText("Terraform-Plan/Apply-Cli")).not.toBeInTheDocument();
   });
 });
+
+describe("CreateJob on a workspace that restricts apply to its branch", () => {
+  const tcl = (yaml: string) => window.btoa(yaml);
+  const plan = tcl('flow:\n  - type: "terraformPlan"\n    step: 100\n');
+  const planAndApply = tcl(
+    'flow:\n  - type: "terraformPlan"\n    step: 100\n  - type: "terraformApply"\n    step: 200\n'
+  );
+
+  beforeEach(() => {
+    getMock.mockImplementation((url: string) => {
+      if (typeof url === "string" && url.includes("/template")) {
+        return Promise.resolve({
+          data: {
+            data: [
+              { id: "t-plan", attributes: { name: "Plan", description: "Plan only", tcl: plan } },
+              {
+                id: "t-apply",
+                attributes: { name: "Plan and Apply", description: "Plan, then apply", tcl: planAndApply },
+              },
+            ],
+          },
+        });
+      }
+      return Promise.resolve({
+        data: {
+          data: {
+            attributes: { branch: "main, develop", defaultTemplate: "t-apply", restrictApplyToConfiguredBranch: true },
+          },
+        },
+      });
+    });
+  });
+
+  const open = async () => {
+    render(<CreateJob changeJob={jest.fn()} planJob={true} />);
+    await waitFor(() => expect(screen.getByRole("button", { name: /run now/i })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: /run now/i }));
+    await screen.findByText("Start a run");
+  };
+
+  it("offers every template on the first branch of the workspace", async () => {
+    await open();
+
+    expect(await screen.findByRole("radio", { name: /^Plan and Apply/ })).toBeChecked();
+    expect(screen.getByRole("radio", { name: /^Plan Plan only/ })).toBeInTheDocument();
+    expect(screen.getByLabelText("Branch")).toHaveValue("main");
+  });
+
+  it("offers only plan-only templates on another branch", async () => {
+    await open();
+
+    fireEvent.change(screen.getByLabelText("Branch"), { target: { value: "feature/x" } });
+
+    await waitFor(() => expect(screen.queryByRole("radio", { name: /^Plan and Apply/ })).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole("radio", { name: /^Plan Plan only/ })).toBeChecked());
+    expect(screen.getByText(/only plan-only templates are offered/)).toBeInTheDocument();
+  });
+});

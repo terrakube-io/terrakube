@@ -101,6 +101,15 @@ public class Workspace extends GenericAuditFields {
     @Column(name = "default_template")
     private String defaultTemplate;
 
+    /**
+     * When on, a job created through the API or the Terraform CLI may only change infrastructure from the
+     * workspace branch. Plan-only templates can still run on any branch. Organization-level workspace
+     * managers control it, so a limited manager cannot switch the guard off.
+     */
+    @UpdatePermission(expression = "user is a superuser OR team manage workspace")
+    @Column(name = "restrict_apply_to_configured_branch", nullable = false)
+    private boolean restrictApplyToConfiguredBranch = false;
+
     @Column(name = "lock_description")
     private String lockDescription;
 
