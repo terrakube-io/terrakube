@@ -11,6 +11,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 
 import graphql.AssertException;
+import io.terrakube.api.plugin.scheduler.ScheduleJobService;
 import io.terrakube.api.repository.PolicyEvaluationRepository;
 import io.terrakube.api.repository.PolicyOverrideRepository;
 import io.terrakube.api.rs.Organization;
@@ -23,6 +24,7 @@ import io.terrakube.api.rs.policy.PolicyOverride;
 import io.terrakube.api.rs.team.Team;
 import io.terrakube.api.rs.template.Template;
 import io.terrakube.api.rs.workspace.Workspace;
+import org.quartz.JobKey;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -84,8 +86,16 @@ class JobTests extends ServerApplicationTests {
     @AfterEach
     public void tearDown() {
         devsManageJobs(false);
-        workspace.setDeleted(true);
-        workspaceRepository.save(workspace);
+        if (workspace != null) {
+            for (Integer jobId : jobRepository.findActiveJobIdsByWorkspace(workspace.getId().toString())) {
+                try {
+                    scheduler.deleteJob(new JobKey(ScheduleJobService.PREFIX_JOB_CONTEXT + jobId));
+                } catch (Exception ignored) {}
+                jobRepository.updateStatusById(JobStatus.cancelled, jobId);
+            }
+            workspace.setDeleted(true);
+            workspaceRepository.save(workspace);
+        }
     }
 
     private Team devsManageJobs(boolean canManage) {
