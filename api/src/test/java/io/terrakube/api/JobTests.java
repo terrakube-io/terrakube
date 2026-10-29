@@ -6,6 +6,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.MockitoAnnotations;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -480,6 +482,29 @@ class JobTests extends ServerApplicationTests {
         assertEquals(JobStatus.running, refused.getStatus());
         assertNull(refused.getApprovedBy());
         assertNull(refused.getApprovedAt());
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = JobStatus.class, names = {"completed", "cancelled"})
+    void failedJobStatusCannotBeRewrittenByAnApprover(JobStatus requestedStatus) {
+        devsManageJobs(true);
+        String jobId = createJob(jobDefinition("2db36f7c-f549-4341-a789-315d47eb061d"));
+        Job job = jobRepository.findById(Integer.parseInt(jobId)).orElseThrow();
+        job.setStatus(JobStatus.failed);
+        jobRepository.save(job);
+
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"),
+                        "Content-Type", "application/vnd.api+json")
+                .body(statusChangePayload(jobId, requestedStatus))
+                .when()
+                .patch("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/job/" + jobId)
+                .then()
+                .assertThat()
+                .statusCode(HttpStatus.FORBIDDEN.value());
+
+        Job refused = jobRepository.findById(Integer.parseInt(jobId)).orElseThrow();
+        assertEquals(JobStatus.failed, refused.getStatus());
     }
 
     @Test
