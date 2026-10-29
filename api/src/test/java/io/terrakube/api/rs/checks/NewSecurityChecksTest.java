@@ -634,12 +634,12 @@ class NewSecurityChecksTest {
         com.yahoo.elide.annotation.UpdatePermission varSensPerm =
                 Variable.class.getDeclaredField("sensitive").getAnnotation(com.yahoo.elide.annotation.UpdatePermission.class);
         org.junit.jupiter.api.Assertions.assertNotNull(varSensPerm);
-        org.junit.jupiter.api.Assertions.assertEquals("user update secret", varSensPerm.expression());
+        org.junit.jupiter.api.Assertions.assertEquals("team manage variable AND user update secret", varSensPerm.expression());
 
         com.yahoo.elide.annotation.UpdatePermission itemSensPerm =
                 Item.class.getDeclaredField("sensitive").getAnnotation(com.yahoo.elide.annotation.UpdatePermission.class);
         org.junit.jupiter.api.Assertions.assertNotNull(itemSensPerm);
-        org.junit.jupiter.api.Assertions.assertEquals("user update collection secret", itemSensPerm.expression());
+        org.junit.jupiter.api.Assertions.assertEquals("team manage collection item AND user update collection secret", itemSensPerm.expression());
     }
 
     @Test

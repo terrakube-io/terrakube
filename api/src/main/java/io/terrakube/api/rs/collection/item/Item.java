@@ -44,7 +44,7 @@ public class Item {
     @Column(name="item_category")
     private Category category;
 
-    @UpdatePermission(expression = "user update collection secret")
+    @UpdatePermission(expression = "team manage collection item AND user update collection secret")
     @Column(name="sensitive")
     private boolean sensitive;
 

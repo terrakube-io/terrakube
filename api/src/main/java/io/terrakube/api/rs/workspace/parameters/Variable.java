@@ -44,7 +44,7 @@ public class Variable {
     @Column(name="variable_category", nullable = false)
     private Category category;
 
-    @UpdatePermission(expression = "user update secret")
+    @UpdatePermission(expression = "team manage variable AND user update secret")
     @Column(name="sensitive")
     private boolean sensitive;
 
