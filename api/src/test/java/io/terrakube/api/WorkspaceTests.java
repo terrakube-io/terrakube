@@ -309,6 +309,26 @@ class WorkspaceTests extends ServerApplicationTests {
     }
 
     @Test
+    void tclAttributeIsExcludedFromSchedule() {
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
+                .body("{\n" +
+                        "  \"data\": {\n" +
+                        "    \"type\": \"schedule\",\n" +
+                        "    \"attributes\": {\n" +
+                        "      \"cron\": \"0 0/1 * * * ?\",\n" +
+                        "      \"tcl\": \"ZmxvdzogW10=\",\n" +
+                        "      \"templateReference\": \"42201234-a5e2-4c62-b2fc-9729ca6b4515\"\n" +
+                        "    }\n" +
+                        "  }\n" +
+                        "}")
+                .when()
+                .post("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/workspace/5ed411ca-7ab8-4d2f-b591-02d0d5788afc/schedule")
+                .then()
+                .statusCode(HttpStatus.NOT_FOUND.value());
+    }
+
+    @Test
     void createWorkspaceAsOrgMember() {
         String workspaceId = given()
                 .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
