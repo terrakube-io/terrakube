@@ -80,6 +80,10 @@ export const StepConsole = ({
   });
 
   const logText = guardMessage ?? text;
+  // Steps that were still pending when the job ended (for example the apply of a run whose plan
+  // had no changes) are marked notExecuted. They never ran, so there is no log or structured
+  // output to wait for.
+  const notExecuted = item.status === "notExecuted";
 
   const renderConsole = () => {
     if (guardMessage != null) {
@@ -90,6 +94,11 @@ export const StepConsole = ({
     }
     if (!terminal) {
       return <TerminalOutput outputLog="" stepName={item.name} isRunning={false} emptyLabel="Waiting for output…" />;
+    }
+    if (notExecuted && (state === "error" || (state === "success" && text === ""))) {
+      return (
+        <TerminalOutput outputLog="" stepName={item.name} isRunning={false} emptyLabel="This step was not executed." />
+      );
     }
     if (state === "loading") {
       return (
@@ -157,6 +166,7 @@ export const StepConsole = ({
   // step failure all rule it out.
   const structuredUnavailable =
     terminal &&
+    !notExecuted &&
     isPlanOrApplyStep &&
     !hasRealStructuredContent &&
     !applyIsNoOp &&
