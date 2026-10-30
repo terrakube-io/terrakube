@@ -1,5 +1,6 @@
 package io.terrakube.api.plugin.vcs;
 
+import io.terrakube.api.plugin.execution.WorkspaceBranchPolicy;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -84,5 +85,37 @@ public class WebhookResultTest {
         assertFalse(result.isPrComment());
         assertNull(result.getCommentBody());
         assertNull(result.getCommentCommand());
+    }
+
+    @Test
+    public void aPushIsAPushForTheBranchPolicy() {
+        WebhookResult result = new WebhookResult();
+        result.setEvent("push");
+        assertEquals(WorkspaceBranchPolicy.Source.PUSH, result.branchPolicySource());
+        assertEquals(WorkspaceBranchPolicy.Source.PUSH, new WebhookResult().branchPolicySource());
+    }
+
+    @Test
+    public void aPullRequestEventAndACommentCommandAreBothAPullRequest() {
+        WebhookResult pullRequest = new WebhookResult();
+        pullRequest.setEvent("pull_request");
+        WebhookResult mergeRequest = new WebhookResult();
+        mergeRequest.setEvent("merge_request");
+        WebhookResult withNumber = new WebhookResult();
+        withNumber.setPrNumber(7);
+        WebhookResult comment = new WebhookResult();
+        comment.setPrComment(true);
+
+        for (WebhookResult result : new WebhookResult[] {pullRequest, mergeRequest, withNumber, comment}) {
+            assertEquals(WorkspaceBranchPolicy.Source.PULL_REQUEST, result.branchPolicySource());
+        }
+    }
+
+    @Test
+    public void aReleaseIsAReleaseEvenWhenItCarriesAPullRequestNumber() {
+        WebhookResult result = new WebhookResult();
+        result.setRelease(true);
+        result.setPrNumber(7);
+        assertEquals(WorkspaceBranchPolicy.Source.RELEASE, result.branchPolicySource());
     }
 }

@@ -3,6 +3,8 @@ package io.terrakube.api.plugin.vcs;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 
+import io.terrakube.api.plugin.execution.JobBranchPolicyException;
+import io.terrakube.api.plugin.execution.WorkspaceBranchPolicy;
 import io.terrakube.api.rs.webhook.WebhookEvent;
 import io.terrakube.api.plugin.security.audit.AuditActorContext;
 import org.springframework.stereotype.Service;
@@ -47,6 +49,7 @@ public class WebhookService {
     ObjectMapper objectMapper;
     WorkspaceRepository workspaceRepository;
     PrCommentService prCommentService;
+    WorkspaceBranchPolicy workspaceBranchPolicy;
 
     @Transactional
     public String processWebhook(String webhookId, String jsonPayload, Map<String, String> headers) {
@@ -119,6 +122,8 @@ public class WebhookService {
 
                 sendCommitStatus(savedJob);
             }
+        } catch (JobBranchPolicyException e) {
+            refuseRun(workspace, webhookResult, e.getMessage());
         } catch (IllegalArgumentException e) {
             // A provider sends every event its hook is subscribed to, so an event with no
             // template configured in Terrakube is an ordinary outcome rather than a
@@ -165,6 +170,8 @@ public class WebhookService {
                 return;
             }
             log.info("PR comment apply for workspace {}, using default template {}", workspace.getName(), templateId);
+            // Before the lock below, so a refused command does not leave the workspace locked.
+            enforceBranchPolicy(workspace, webhookResult, templateId);
             workspace.setLocked(true);
             workspace.setLockDescription(buildPrApplyLockDescription(prNumber));
             workspaceRepository.save(workspace);
@@ -190,7 +197,24 @@ public class WebhookService {
         prCommentService.acknowledgeReceipt(workspace, webhookResult.getCommentId(), webhookResult.getPrNumber());
     }
 
+    /** A workspace that restricts apply to its configured branch does not run a mutating template from this event. */
+    private void enforceBranchPolicy(Workspace workspace, WebhookResult webhookResult, String templateId) {
+        workspaceBranchPolicy
+                .vcsViolation(workspace, webhookResult.branchPolicySource(), webhookResult.getBranch(), templateId)
+                .ifPresent(reason -> {
+                    throw new JobBranchPolicyException(reason);
+                });
+    }
+
+    private void refuseRun(Workspace workspace, WebhookResult webhookResult, String reason) {
+        log.info("Webhook event {} refused for workspace {}: {}", webhookResult.getEvent(), workspace.getName(), reason);
+        if (webhookResult.isPrComment() && webhookResult.getPrNumber() != null) {
+            prCommentService.postBranchPolicyNotice(workspace, webhookResult.getPrNumber().intValue(), reason);
+        }
+    }
+
     private Job createAndScheduleJob(String templateId, WebhookResult webhookResult, Workspace workspace) throws Exception {
+        enforceBranchPolicy(workspace, webhookResult, templateId);
         Job job = new Job();
         job.setTemplateReference(templateId);
         job.setRefresh(true);
@@ -230,6 +254,9 @@ public class WebhookService {
             Job savedJob = createAndScheduleJob(matchedEvent.getTemplateId(), webhookResult, workspace);
             sendCommitStatus(savedJob);
             return true;
+        } catch (JobBranchPolicyException e) {
+            refuseRun(workspace, webhookResult, e.getMessage());
+            return false;
         } catch (IllegalArgumentException e) {
             log.info("No matching push event for polled commit on workspace {}: {}", workspace.getName(),
                     e.getMessage());
