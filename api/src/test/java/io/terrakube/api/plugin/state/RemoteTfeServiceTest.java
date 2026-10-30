@@ -1511,6 +1511,19 @@ class RemoteTfeServiceTest {
     }
 
     private RemoteTfeService remoteTfeServiceWithoutPolicyGuard() {
+        RemoteTfeService service = newRemoteTfeService();
+        // Templates that do not destroy, so the rights for a destroy are not in play unless a test is about them.
+        io.terrakube.api.plugin.scheduler.job.tcl.TclService tclService =
+                Mockito.mock(io.terrakube.api.plugin.scheduler.job.tcl.TclService.class);
+        Mockito.lenient().when(tclService.templateDestroys(Mockito.any()))
+                .thenReturn(io.terrakube.api.plugin.scheduler.job.tcl.TclService.Destroys.NO);
+        ReflectionTestUtils.setField(service, "tclService", tclService);
+        ReflectionTestUtils.setField(service, "jobRunRights",
+                Mockito.mock(io.terrakube.api.plugin.execution.JobRunRights.class));
+        return service;
+    }
+
+    private RemoteTfeService newRemoteTfeService() {
         return new RemoteTfeService(jobRepository, contentRepository, organizationRepository, workspaceRepository,
                 historyRepository, templateRepository, scheduleJobService, "localhost", storageTypeService,
                 stepRepository, redisTemplate, 1, tagRepository, workspaceTagRepository, teamTokenService,

@@ -5,8 +5,11 @@ import com.yahoo.elide.annotation.LifeCycleHookBinding.TransactionPhase;
 import com.yahoo.elide.core.security.ChangeSpec;
 import com.yahoo.elide.core.security.RequestScope;
 import com.yahoo.elide.core.security.User;
+import io.terrakube.api.plugin.execution.JobRightForbiddenException;
+import io.terrakube.api.plugin.execution.JobRunRights;
 import io.terrakube.api.plugin.policy.PolicyApprovalGuard;
 import io.terrakube.api.plugin.policy.PolicyBlocksApprovalException;
+import io.terrakube.api.plugin.scheduler.job.tcl.TclService;
 import io.terrakube.api.plugin.security.audit.JobApprovalService;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
@@ -38,6 +41,10 @@ class JobApprovalHookTest {
     @Mock
     PolicyApprovalGuard policyApprovalGuard;
     @Mock
+    TclService tclService;
+    @Mock
+    JobRunRights rights;
+    @Mock
     RequestScope scope;
 
     private JobApprovalHook hook;
@@ -45,9 +52,10 @@ class JobApprovalHookTest {
 
     @BeforeEach
     void setUp() {
-        hook = new JobApprovalHook(jobApprovalService, policyApprovalGuard);
+        hook = new JobApprovalHook(jobApprovalService, policyApprovalGuard, tclService, rights);
         job = new Job();
         job.setId(7);
+        org.mockito.Mockito.lenient().when(tclService.templateDestroys(any())).thenReturn(TclService.Destroys.NO);
     }
 
     private Optional<ChangeSpec> statusChange(JobStatus from, JobStatus to) {
@@ -64,6 +72,37 @@ class JobApprovalHookTest {
     @Test
     void recordsTheApprovalWhenNothingBlocksIt() {
         JwtAuthenticationToken token = principal();
+        when(policyApprovalGuard.blockingReason(job)).thenReturn(Optional.empty());
+
+        hook.execute(Operation.UPDATE, TransactionPhase.PRECOMMIT, job, scope,
+                statusChange(JobStatus.waitingApproval, JobStatus.approved));
+
+        verify(jobApprovalService).recordApproval(job, token);
+    }
+
+    @Test
+    void refusesToApproveARunThatDestroysWhenTheTeamMayNeverDestroy() {
+        principal();
+        io.terrakube.api.rs.workspace.Workspace workspace = new io.terrakube.api.rs.workspace.Workspace();
+        workspace.setName("prod");
+        job.setWorkspace(workspace);
+        when(tclService.templateDestroys(any())).thenReturn(TclService.Destroys.AFTER_APPROVAL);
+        when(rights.canDestroy(any(), any())).thenReturn(false);
+
+        JobRightForbiddenException thrown = assertThrows(JobRightForbiddenException.class,
+                () -> hook.execute(Operation.UPDATE, TransactionPhase.PRECOMMIT, job, scope,
+                        statusChange(JobStatus.waitingApproval, JobStatus.approved)));
+
+        assertEquals(403, thrown.getStatus());
+        verify(jobApprovalService, never()).recordApproval(any(), any());
+        verifyNoInteractions(policyApprovalGuard);
+    }
+
+    @Test
+    void approvesARunThatDestroysWhenTheTeamMayDestroy() {
+        JwtAuthenticationToken token = principal();
+        when(tclService.templateDestroys(any())).thenReturn(TclService.Destroys.AFTER_APPROVAL);
+        when(rights.canDestroy(any(), any())).thenReturn(true);
         when(policyApprovalGuard.blockingReason(job)).thenReturn(Optional.empty());
 
         hook.execute(Operation.UPDATE, TransactionPhase.PRECOMMIT, job, scope,

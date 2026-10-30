@@ -42,6 +42,7 @@ type UpdateWorkspaceForm = {
   branch: string;
   defaultTemplate?: string;
   restrictApplyToConfiguredBranch?: boolean;
+  requireApproveToApply?: boolean;
   executorAgent?: string;
   project?: string;
   vcs?: string;
@@ -56,6 +57,7 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace,
   const { permissions: orgPermissions } = useOrgPermissions();
   // Terrakube before 2.34.0 does not know the setting and does not report it.
   const supportsBranchRestriction = workspaceData.attributes?.restrictApplyToConfiguredBranch !== undefined;
+  const supportsApproveRule = workspaceData.attributes?.requireApproveToApply !== undefined;
   const [terraformVersions, setTerraformVersions] = useState<string[]>([]);
   const [agentList, setAgentList] = useState<Agent[]>([]);
   const [projectList, setProjectList] = useState<ProjectModel[]>([]);
@@ -181,6 +183,9 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace,
               ...(supportsBranchRestriction && orgPermissions.manageWorkspace
                 ? { restrictApplyToConfiguredBranch: Boolean(values.restrictApplyToConfiguredBranch) }
                 : {}),
+              ...(supportsApproveRule && orgPermissions.manageWorkspace
+                ? { requireApproveToApply: Boolean(values.requireApproveToApply) }
+                : {}),
             },
           },
         },
@@ -281,6 +286,7 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace,
             branch: workspaceData.attributes?.branch,
             defaultTemplate: workspaceData.attributes?.defaultTemplate,
             restrictApplyToConfiguredBranch: workspaceData.attributes?.restrictApplyToConfiguredBranch ?? false,
+            requireApproveToApply: workspaceData.attributes?.requireApproveToApply ?? false,
             executorAgent:
               workspaceData.relationships.agent?.data?.id == null
                 ? "default"
@@ -401,6 +407,17 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace,
               >
                 <Checkbox disabled={!manageWorkspace || !orgPermissions.manageWorkspace || !vcsDriven}>
                   Only run apply and destroy from the default branch
+                </Checkbox>
+              </Form.Item>
+            )}
+            {supportsApproveRule && (
+              <Form.Item
+                name="requireApproveToApply"
+                valuePropName="checked"
+                extra="A team that can only plan can still queue a run whose template asks for an approval first, and cannot start an apply that has no approval step. Starting a destroy with no approval step always needs the destroy permission. Only a manager of every workspace in the organization can change this."
+              >
+                <Checkbox disabled={!manageWorkspace || !orgPermissions.manageWorkspace}>
+                  Require the approve permission to start an apply with no approval step
                 </Checkbox>
               </Form.Item>
             )}

@@ -366,6 +366,98 @@ public class TclService {
         }
     }
 
+    /** How a run of a template can destroy. */
+    public enum Destroys {
+        /** No step destroys. A plan of a destroy does not count. */
+        NO,
+        /** A step destroys, but an approval step comes first, so someone who may approve has to let it through. */
+        AFTER_APPROVAL,
+        /** A step destroys with no approval before it, or the template cannot be read. */
+        WITHOUT_APPROVAL
+    }
+
+    /**
+     * Whether a run of this template destroys, and whether an approval comes first. A step destroys when it is a
+     * destroy, or when it is an apply that follows a plan of a destroy (the shape of the built-in destroy template of
+     * the Terraform CLI). A template that cannot be read counts as one that destroys without approval, because the
+     * answer decides who may start it.
+     */
+    public Destroys templateDestroys(String templateId) {
+        if (templateId == null || templateId.isEmpty()) {
+            return Destroys.NO;
+        }
+        List<Flow> flows = orderedFlows(templateId);
+        if (flows == null) {
+            return Destroys.WITHOUT_APPROVAL;
+        }
+        boolean approved = false;
+        boolean destroyPlanned = false;
+        boolean destroys = false;
+        for (Flow flow : flows) {
+            String type = flow.getType();
+            if (type == null) {
+                return Destroys.WITHOUT_APPROVAL;
+            }
+            if (type.equals(FlowType.approval.toString())) {
+                approved = true;
+            } else if (type.equals(FlowType.terraformPlanDestroy.toString())) {
+                destroyPlanned = true;
+            } else if (type.equals(FlowType.terraformDestroy.toString())
+                    || (type.equals(FlowType.terraformApply.toString()) && destroyPlanned)) {
+                if (!approved) {
+                    return Destroys.WITHOUT_APPROVAL;
+                }
+                destroys = true;
+            }
+        }
+        return destroys ? Destroys.AFTER_APPROVAL : Destroys.NO;
+    }
+
+    /**
+     * Whether a run of this template applies (not destroys) with no approval step in front of the apply. A template that
+     * cannot be read counts as one that does, because the answer decides who may start it.
+     */
+    public boolean appliesWithoutApproval(String templateId) {
+        if (templateId == null || templateId.isEmpty()) {
+            return false;
+        }
+        List<Flow> flows = orderedFlows(templateId);
+        if (flows == null) {
+            return true;
+        }
+        boolean approved = false;
+        boolean destroyPlanned = false;
+        for (Flow flow : flows) {
+            String type = flow.getType();
+            if (type == null) {
+                return true;
+            }
+            if (type.equals(FlowType.approval.toString())) {
+                approved = true;
+            } else if (type.equals(FlowType.terraformPlanDestroy.toString())) {
+                destroyPlanned = true;
+            } else if (type.equals(FlowType.terraformApply.toString()) && !destroyPlanned && !approved) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** The steps of a template by step number, or null when the template cannot be read. */
+    private List<Flow> orderedFlows(String templateId) {
+        try {
+            String tcl = getTemplateTcl(templateId);
+            FlowConfig flowConfig = tcl == null || tcl.isBlank() ? null : getFlowConfig(tcl);
+            if (flowConfig == null || flowConfig.getFlow() == null) {
+                return null;
+            }
+            return flowConfig.getFlow().stream().sorted(Comparator.comparingInt(Flow::getStep)).toList();
+        } catch (Exception e) {
+            log.warn("Error reading the steps of template {}: {}", templateId, e.getMessage());
+            return null;
+        }
+    }
+
     public boolean isCliTemplate(String templateReference) {
         try {
             Optional<Template> template = templateRepository.findById(UUID.fromString(templateReference));

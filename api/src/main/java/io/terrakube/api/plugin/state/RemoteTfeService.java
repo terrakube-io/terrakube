@@ -99,6 +99,8 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import com.yahoo.elide.core.security.User;
 import io.terrakube.api.plugin.execution.CliRunVariables;
+import io.terrakube.api.plugin.execution.JobRunRights;
+import io.terrakube.api.plugin.scheduler.job.tcl.TclService;
 import io.terrakube.api.plugin.execution.JobVariablesAccess;
 import io.terrakube.api.rs.project.access.ProjectAccess;
 import io.terrakube.api.rs.checks.membership.MembershipService;
@@ -179,6 +181,12 @@ public class RemoteTfeService {
 
     @Autowired
     private MembershipService membershipService;
+
+    @Autowired
+    private JobRunRights jobRunRights;
+
+    @Autowired
+    private TclService tclService;
 
     @Autowired
     private WorkspaceBranchPolicy workspaceBranchPolicy;
@@ -653,7 +661,8 @@ public class RemoteTfeService {
             defaultAttributes.put("can-manage-run-tasks", isManageWorkspace);
             defaultAttributes.put("can-manage-tags", isManageWorkspace);
             defaultAttributes.put("can-queue-apply", isApproveJob);
-            defaultAttributes.put("can-queue-destroy", isManageWorkspace);
+            // A destroy with no approval in front of it also needs the destroy right (see JobRunRights).
+            defaultAttributes.put("can-queue-destroy", isManageWorkspace && jobRunRights.canDestroy(new User(currentUser), workspace));
             defaultAttributes.put("can-queue-run", isManageJob);
             defaultAttributes.put("can-read-settings", true);
             defaultAttributes.put("can-read-state-versions", isManageWorkspace);
@@ -1796,6 +1805,15 @@ public class RemoteTfeService {
                 workspace.getOrganization().getName(),
                 getTemplateName(configurationId, isDestroy));
 
+        // Destroying with no approval in front of it is a separate right from planning. Auto-approving takes the
+        // approval away, so it counts as no approval.
+        TclService.Destroys destroys = tclService.templateDestroys(template.getId().toString());
+        if ((destroys == TclService.Destroys.WITHOUT_APPROVAL || (destroys == TclService.Destroys.AFTER_APPROVAL && autoApply))
+                && !jobRunRights.canDestroy(new User(currentUser), workspace)) {
+            log.warn("User does not have permission to destroy in workspace {}", workspace.getName());
+            throw new org.springframework.security.access.AccessDeniedException(JobRunRights.destroyRefusal(workspace));
+        }
+
         // On a workspace that restricts apply to its configured branch, a run of the local configuration may only
         // plan. A VCS or SSH workspace runs the uploaded content under the branch "remote-content", which is not
         // the workspace branch, so apply and destroy are refused and a speculative plan is allowed.
@@ -2116,6 +2134,12 @@ public class RemoteTfeService {
             log.warn("User does not have permission to apply job {} in workspace {}", runId, job.getWorkspace().getName());
             throw new org.springframework.security.access.AccessDeniedException(
                     "User does not have permission to apply runs in this workspace");
+        }
+        // Confirming a run that destroys is allowing the destroy.
+        if (tclService.templateDestroys(job.getTemplateReference()) != TclService.Destroys.NO
+                && !jobRunRights.canDestroy(new User(currentUser), job.getWorkspace())) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    JobRunRights.approveDestroyRefusal(job.getWorkspace()));
         }
         if (job.getStep() != null && !job.getStep().isEmpty()) {
 

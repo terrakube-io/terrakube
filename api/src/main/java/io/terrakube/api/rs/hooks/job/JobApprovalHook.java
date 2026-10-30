@@ -7,8 +7,11 @@ import com.yahoo.elide.annotation.LifeCycleHookBinding.TransactionPhase;
 import com.yahoo.elide.core.lifecycle.LifeCycleHook;
 import com.yahoo.elide.core.security.ChangeSpec;
 import com.yahoo.elide.core.security.RequestScope;
+import io.terrakube.api.plugin.execution.JobRightForbiddenException;
+import io.terrakube.api.plugin.execution.JobRunRights;
 import io.terrakube.api.plugin.policy.PolicyApprovalGuard;
 import io.terrakube.api.plugin.policy.PolicyBlocksApprovalException;
+import io.terrakube.api.plugin.scheduler.job.tcl.TclService;
 import io.terrakube.api.plugin.security.audit.JobApprovalService;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
@@ -21,6 +24,8 @@ import org.springframework.stereotype.Component;
 public class JobApprovalHook implements LifeCycleHook<Job> {
     private final JobApprovalService jobApprovalService;
     private final PolicyApprovalGuard policyApprovalGuard;
+    private final TclService tclService;
+    private final JobRunRights rights;
 
     @Override
     public void execute(Operation operation, TransactionPhase phase, Job job, RequestScope scope,
@@ -52,6 +57,11 @@ public class JobApprovalHook implements LifeCycleHook<Job> {
             throw new PolicyBlocksApprovalException(String.format(
                     "Job %d cannot be approved from status '%s': only a job that is waiting for approval can be approved.",
                     job.getId(), original));
+        }
+        // Approving a run that destroys is allowing the destroy, so a team that may never destroy cannot do it.
+        if (tclService.templateDestroys(job.getTemplateReference()) != TclService.Destroys.NO
+                && !rights.canDestroy(scope.getUser(), job.getWorkspace())) {
+            throw new JobRightForbiddenException(JobRunRights.approveDestroyRefusal(job.getWorkspace()));
         }
         // Before anything is recorded: a job whose policy evaluations still block it stays waiting.
         Optional<String> blockingReason = policyApprovalGuard.blockingReason(job);

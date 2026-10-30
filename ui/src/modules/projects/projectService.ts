@@ -12,6 +12,7 @@ export type ProjectAccessModel = {
   manageJob: boolean;
   planJob: boolean;
   approveJob: boolean;
+  destroyJob: boolean;
 };
 
 async function listProjects(organizationId: string): Promise<ApiResponse<ProjectModel[]>> {
@@ -171,6 +172,7 @@ async function listProjectAccess(
                   manageJob
                   planJob
                   approveJob
+                  destroyJob
                 }
               }
             }
@@ -208,6 +210,7 @@ async function listProjectAccess(
       manageJob: edge.node.manageJob ?? false,
       planJob: edge.node.planJob ?? false,
       approveJob: edge.node.approveJob ?? false,
+      destroyJob: edge.node.destroyJob ?? true,
     })),
   };
 }

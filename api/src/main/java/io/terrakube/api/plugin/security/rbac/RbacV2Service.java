@@ -153,6 +153,17 @@ public class RbacV2Service implements RbacService {
         return canPlanJob(team) || canApproveJob(team);
     }
 
+    @Override
+    public boolean canDestroyJob(Team team) {
+        String role = normalizeRole(team.getRole());
+        return switch (role) {
+            case ROLE_ADMIN, ROLE_WRITE -> true;
+            case ROLE_PLAN, ROLE_READ -> false;
+            case ROLE_CUSTOM -> team.isDestroyJob();
+            default -> false;
+        };
+    }
+
     // --- Workspace-level (Access) checks ---
 
     @Override
@@ -204,6 +215,17 @@ public class RbacV2Service implements RbacService {
         return canPlanJob(access) || canApproveJob(access);
     }
 
+    @Override
+    public boolean canDestroyJob(Access access) {
+        String role = normalizeRole(access.getRole());
+        return switch (role) {
+            case ROLE_ADMIN, ROLE_WRITE -> true;
+            case ROLE_PLAN, ROLE_READ -> false;
+            case ROLE_CUSTOM -> access.isDestroyJob();
+            default -> false;
+        };
+    }
+
     // --- Project-level (ProjectAccess) checks ---
 
     @Override
@@ -253,6 +275,17 @@ public class RbacV2Service implements RbacService {
     @Override
     public boolean canManageJob(ProjectAccess access) {
         return canPlanJob(access) || canApproveJob(access);
+    }
+
+    @Override
+    public boolean canDestroyJob(ProjectAccess access) {
+        String role = normalizeRole(access.getRole());
+        return switch (role) {
+            case ROLE_ADMIN, ROLE_WRITE -> true;
+            case ROLE_PLAN, ROLE_READ -> false;
+            case ROLE_CUSTOM -> access.isDestroyJob();
+            default -> false;
+        };
     }
 
     @Override
