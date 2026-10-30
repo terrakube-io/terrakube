@@ -1,3 +1,4 @@
+
 package io.terrakube.api.plugin.vcs.provider.azdevops;
 
 import com.sun.net.httpserver.HttpServer;
@@ -10,6 +11,7 @@ import org.springframework.web.reactive.function.client.WebClient;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
@@ -22,14 +24,33 @@ class AzDevOpsTokenServiceTest {
 
     private HttpServer server;
     private final List<List<String>> receivedContentTypes = new ArrayList<>();
+    private final List<String> receivedRedirectUris = new ArrayList<>();
 
     @BeforeEach
     void startServer() throws IOException {
+        receivedContentTypes.clear();
+        receivedRedirectUris.clear();
+
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/oauth2/token", exchange -> {
             List<String> contentTypes = exchange.getRequestHeaders().get("Content-Type");
-            receivedContentTypes.add(contentTypes == null ? List.of() : List.copyOf(contentTypes));
-            byte[] body = "{\"access_token\":\"az-test-token\",\"token_type\":\"bearer\",\"expires_in\":3600,\"refresh_token\":\"az-test-refresh\"}".getBytes(StandardCharsets.UTF_8);
+            receivedContentTypes.add(
+                    contentTypes == null ? List.of() : List.copyOf(contentTypes));
+
+            String requestBody = new String(
+                    exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+
+            for (String parameter : requestBody.split("&")) {
+                String[] parts = parameter.split("=", 2);
+                if (parts.length == 2 && parts[0].equals("redirect_uri")) {
+                    receivedRedirectUris.add(
+                            URLDecoder.decode(parts[1], StandardCharsets.UTF_8));
+                }
+            }
+
+            byte[] body = "{\"access_token\":\"az-test-token\",\"token_type\":\"bearer\",\"expires_in\":3600,\"refresh_token\":\"az-test-refresh\"}"
+                    .getBytes(StandardCharsets.UTF_8);
+
             exchange.getResponseHeaders().add("Content-Type", "application/json");
             exchange.sendResponseHeaders(200, body.length);
             exchange.getResponseBody().write(body);
@@ -52,18 +73,58 @@ class AzDevOpsTokenServiceTest {
         String endpoint = "http://127.0.0.1:" + server.getAddress().getPort();
 
         for (int i = 0; i < 5; i++) {
-            AzDevOpsToken token = service.getAccessToken("vcs-az", "secret", "temp-code", null, endpoint);
+            AzDevOpsToken token = service.getAccessToken(
+                    "vcs-az", "secret", "temp-code", null, endpoint);
+
             assertNotNull(token);
             assertEquals("az-test-token", token.getAccess_token());
         }
 
-        assertEquals(5, receivedContentTypes.size(), "expected 5 requests to mock server");
+        assertEquals(5, receivedContentTypes.size(),
+                "expected 5 requests to mock server");
+
         for (int i = 0; i < receivedContentTypes.size(); i++) {
             List<String> contentTypes = receivedContentTypes.get(i);
             assertEquals(1, contentTypes.size(),
-                    "request " + (i + 1) + " sent " + contentTypes.size() + " Content-Type values: " + contentTypes);
+                    "request " + (i + 1) + " sent " + contentTypes.size()
+                            + " Content-Type values: " + contentTypes);
             assertTrue(contentTypes.get(0).contains("application/x-www-form-urlencoded"),
                     "unexpected Content-Type: " + contentTypes.get(0));
         }
+    }
+
+    @Test
+    void shouldUseVcsHostnameForOAuthRedirectUri() throws TokenException {
+        AzDevOpsTokenService service = new AzDevOpsTokenService();
+        ReflectionTestUtils.setField(service, "hostname", "app.example.com");
+        ReflectionTestUtils.setField(service, "vcsHostname", "vcs.example.com");
+        ReflectionTestUtils.setField(service, "webClientBuilder", WebClient.builder());
+
+        String endpoint = "http://127.0.0.1:" + server.getAddress().getPort();
+
+        service.getAccessToken(
+                "vcs-az", "secret", "temp-code", null, endpoint);
+
+        assertEquals(
+                "https://vcs.example.com/callback/v1/vcs/vcs-az",
+                receivedRedirectUris.get(0));
+    }
+
+    @Test
+    void shouldFallBackToGeneralHostnameWhenVcsHostnameIsEmpty()
+            throws TokenException {
+        AzDevOpsTokenService service = new AzDevOpsTokenService();
+        ReflectionTestUtils.setField(service, "hostname", "app.example.com");
+        ReflectionTestUtils.setField(service, "vcsHostname", "");
+        ReflectionTestUtils.setField(service, "webClientBuilder", WebClient.builder());
+
+        String endpoint = "http://127.0.0.1:" + server.getAddress().getPort();
+
+        service.getAccessToken(
+                "vcs-az", "secret", "temp-code", null, endpoint);
+
+        assertEquals(
+                "https://app.example.com/callback/v1/vcs/vcs-az",
+                receivedRedirectUris.get(0));
     }
 }
