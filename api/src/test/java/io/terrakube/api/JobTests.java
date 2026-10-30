@@ -470,20 +470,25 @@ class JobTests extends ServerApplicationTests {
         job = jobRepository.saveAndFlush(job);
         String jobId = Integer.toString(job.getId());
 
-        // The approve permission of the team is enough for Elide, so only the hook stops this.
-        given()
-                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
-                .body(statusChangePayload(jobId, JobStatus.approved))
-                .when()
-                .patch("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/job/" + jobId)
-                .then()
-                .assertThat()
-                .statusCode(HttpStatus.CONFLICT.value());
+        try {
+            // The approve permission of the team is enough for Elide, so only the hook stops this.
+            given()
+                    .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
+                    .body(statusChangePayload(jobId, JobStatus.approved))
+                    .when()
+                    .patch("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/job/" + jobId)
+                    .then()
+                    .assertThat()
+                    .statusCode(HttpStatus.CONFLICT.value());
 
-        Job refused = jobRepository.findById(Integer.parseInt(jobId)).orElseThrow();
-        assertEquals(JobStatus.running, refused.getStatus());
-        assertNull(refused.getApprovedBy());
-        assertNull(refused.getApprovedAt());
+            Job refused = jobRepository.findById(Integer.parseInt(jobId)).orElseThrow();
+            assertEquals(JobStatus.running, refused.getStatus());
+            assertNull(refused.getApprovedBy());
+            assertNull(refused.getApprovedAt());
+        } finally {
+            // No scheduler owns this fixture; remove it before the workspace is soft-deleted.
+            jobRepository.deleteById(Integer.parseInt(jobId));
+        }
     }
 
     @Test
