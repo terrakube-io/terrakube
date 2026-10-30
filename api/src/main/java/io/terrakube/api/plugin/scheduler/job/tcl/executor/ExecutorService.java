@@ -241,6 +241,8 @@ public class ExecutorService {
         }
         executorContext.setTofu(iacType(job));
         executorContext.setCommitId(job.getCommitId());
+        executorContext.setRequireCommitOnBranch(commitBranchToRequire(job.getWorkspace(), flow.getType(),
+                executorContext.getBranch()));
         executorContext
                 .setFolder(job.getWorkspace().getFolder() != null ? job.getWorkspace().getFolder().split(",")[0] : "/");
         executorContext.setRefresh(job.isRefresh());
@@ -357,6 +359,23 @@ public class ExecutorService {
     private boolean iacType(Job job) {
         return job.getWorkspace().getIacType() != null && job.getWorkspace().getIacType().equals("terraform") ? false
                 : true;
+    }
+
+    /**
+     * The branch the checked-out commit of an apply or destroy step must be on, when the workspace restricts apply to
+     * its configured branch. The job was checked when it was created, but the executor fetches a commit by id and
+     * that commit can live on another branch, so it checks the commit itself before it runs. Content uploaded by the
+     * Terraform CLI has no repository to check.
+     */
+    static String commitBranchToRequire(Workspace workspace, String flowType, String branch) {
+        if (!workspace.isRestrictApplyToConfiguredBranch() || WorkspaceBranches.REMOTE_CONTENT.equals(branch)) {
+            return null;
+        }
+        boolean changesInfrastructure = FlowType.terraformApply.name().equals(flowType)
+                || FlowType.terraformDestroy.name().equals(flowType);
+        return changesInfrastructure
+                ? WorkspaceBranches.shortName(WorkspaceBranches.firstBranch(workspace.getBranch()))
+                : null;
     }
 
     /**

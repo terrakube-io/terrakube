@@ -44,6 +44,9 @@ public class TerraformJob {
     @ToString.Exclude
     private String moduleSshKey;
     private String commitId;
+    // The branch the checked-out commit must be on before an apply or destroy step runs. Null when the workspace
+    // does not restrict apply to its branch, and from an API that does not send it.
+    private String requireCommitOnBranch;
     private boolean tofu;
     private String agentUrl;
     @ToString.Exclude

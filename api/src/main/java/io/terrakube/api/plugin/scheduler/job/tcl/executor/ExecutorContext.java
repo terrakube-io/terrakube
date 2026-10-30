@@ -40,6 +40,9 @@ public class ExecutorContext {
     private String accessToken;
     private String moduleSshKey;
     private String commitId;
+    // The branch the checked-out commit must be on before this apply or destroy step runs, set when the workspace
+    // restricts apply to its configured branch. Null otherwise, and for executors that do not read it.
+    private String requireCommitOnBranch;
     private boolean tofu;
     @ToString.Exclude
     private HashMap<String, String> environmentVariables;
