@@ -53,6 +53,16 @@ public class Step {
     @Column(name = "output")
     private String output;
 
+    @CreatePermission(expression = "user is a super service")
+    @UpdatePermission(expression = "user is a super service OR executor manage job step OR user is an executor service")
+    @Column(name = "execution_duration_ms")
+    private Long executionDurationMs;
+
+    @CreatePermission(expression = "user is a super service")
+    @UpdatePermission(expression = "user is a super service OR executor manage job step OR user is an executor service")
+    @Column(name = "execution_phase")
+    private String executionPhase;
+
     @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.CREATE, phase = LifeCycleHookBinding.TransactionPhase.PRECOMMIT, hook = StepDeliveryStateHook.class)
     @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.PRECOMMIT, hook = StepDeliveryStateHook.class)
     @Column(name = "delivery_state")
