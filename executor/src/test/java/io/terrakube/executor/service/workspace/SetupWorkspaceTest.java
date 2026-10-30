@@ -429,6 +429,146 @@ public class SetupWorkspaceTest {
         }
     }
 
+    // A workspace that restricts apply to its configured branch sends the branch the commit must be on.
+
+    @Test
+    public void refusesACommitThatIsNotOnTheRequiredBranch() throws Exception {
+        File sourceRepository = Files.createTempDirectory("terrakube-source").toFile();
+        try (Git sourceGit = Git.init().setDirectory(sourceRepository).call()) {
+            commitFile(sourceGit, "main.tf", "requested");
+            String requestedBranch = sourceGit.getRepository().getBranch();
+            sourceGit.checkout().setCreateBranch(true).setName("unrelated").call();
+            RevCommit unrelatedCommit = commitFile(sourceGit, "main.tf", "unrelated");
+            sourceGit.checkout().setName(requestedBranch).call();
+
+            TerraformJob job = localGitJob(sourceRepository, requestedBranch);
+            job.setCommitId(unrelatedCommit.getName());
+            job.setRequireCommitOnBranch(requestedBranch);
+
+            WorkspaceException e = Assertions.assertThrows(WorkspaceException.class,
+                    () -> standardSetupWorkspaceImpl(job).prepareWorkspace(job));
+
+            Assertions.assertTrue(e.getCause().getMessage().contains("is not on branch " + requestedBranch),
+                    e.getCause().getMessage());
+        } finally {
+            FileUtils.deleteDirectory(sourceRepository);
+        }
+    }
+
+    @Test
+    public void runsTheTipOfTheRequiredBranchWithoutFetchingTheHistory() throws Exception {
+        File sourceRepository = Files.createTempDirectory("terrakube-source").toFile();
+        try (Git sourceGit = Git.init().setDirectory(sourceRepository).call()) {
+            RevCommit tip = commitFile(sourceGit, "main.tf", "tip");
+            String branch = sourceGit.getRepository().getBranch();
+            TerraformJob job = localGitJob(sourceRepository, branch);
+            job.setCommitId(tip.getName());
+            job.setRequireCommitOnBranch(branch);
+
+            UnshallowRecordingSetupWorkspace setup = new UnshallowRecordingSetupWorkspace();
+            File workspaceDir = setup.prepareWorkspace(job);
+
+            Assertions.assertFalse(setup.unshallowRepositoryCalled);
+            Assertions.assertTrue(FileUtils.getFile(workspaceDir, ".git", "shallow").exists());
+        } finally {
+            FileUtils.deleteDirectory(sourceRepository);
+        }
+    }
+
+    @Test
+    public void runsAnEarlierCommitOfTheRequiredBranch() throws Exception {
+        File sourceRepository = Files.createTempDirectory("terrakube-source").toFile();
+        try (Git sourceGit = Git.init().setDirectory(sourceRepository).call()) {
+            RevCommit planned = commitFile(sourceGit, "main.tf", "planned");
+            String branch = sourceGit.getRepository().getBranch();
+            commitFile(sourceGit, "main.tf", "advanced");
+            TerraformJob job = localGitJob(sourceRepository, branch);
+            job.setCommitId(planned.getName());
+            job.setRequireCommitOnBranch(branch);
+
+            UnshallowRecordingSetupWorkspace setup = new UnshallowRecordingSetupWorkspace();
+            File workspaceDir = setup.prepareWorkspace(job);
+
+            // The history up to the tip was fetched to prove the commit is on the branch.
+            Assertions.assertTrue(setup.unshallowRepositoryCalled);
+            try (Git workspaceGit = Git.open(workspaceDir)) {
+                Assertions.assertEquals(planned.getName(), workspaceGit.getRepository().resolve("HEAD").getName());
+            }
+        } finally {
+            FileUtils.deleteDirectory(sourceRepository);
+        }
+    }
+
+    @Test
+    public void runsTheTipWhenNoCommitIsNamed() throws Exception {
+        File sourceRepository = Files.createTempDirectory("terrakube-source").toFile();
+        try (Git sourceGit = Git.init().setDirectory(sourceRepository).call()) {
+            commitFile(sourceGit, "main.tf", "tip");
+            String branch = sourceGit.getRepository().getBranch();
+            TerraformJob job = localGitJob(sourceRepository, branch);
+            job.setRequireCommitOnBranch(branch);
+
+            File workspaceDir = standardSetupWorkspaceImpl(job).prepareWorkspace(job);
+
+            Assertions.assertTrue(FileUtils.getFile(workspaceDir, "main.tf").exists());
+        } finally {
+            FileUtils.deleteDirectory(sourceRepository);
+        }
+    }
+
+    @Test
+    public void checksATagWhenTheWorkspaceBranchNamesOne() throws Exception {
+        File sourceRepository = Files.createTempDirectory("terrakube-source").toFile();
+        try (Git sourceGit = Git.init().setDirectory(sourceRepository).call()) {
+            RevCommit tagged = commitFile(sourceGit, "main.tf", "tagged");
+            sourceGit.tag().setName("v1.0.0").call();
+            TerraformJob job = localGitJob(sourceRepository, "v1.0.0");
+            job.setRequireCommitOnBranch("v1.0.0");
+
+            File workspaceDir = standardSetupWorkspaceImpl(job).prepareWorkspace(job);
+
+            try (Git workspaceGit = Git.open(workspaceDir)) {
+                Assertions.assertEquals(tagged.getName(), workspaceGit.getRepository().resolve("HEAD").getName());
+            }
+        } finally {
+            FileUtils.deleteDirectory(sourceRepository);
+        }
+    }
+
+    @Test
+    public void refusesWhenTheRequiredBranchWasNotFetched() throws Exception {
+        TerraformJob job = successfulGitJob();
+        job.setRequireCommitOnBranch("another-branch");
+
+        WorkspaceException e = Assertions.assertThrows(WorkspaceException.class,
+                () -> standardSetupWorkspaceImpl(job).prepareWorkspace(job));
+
+        Assertions.assertTrue(e.getCause().getMessage().contains("was not fetched"), e.getCause().getMessage());
+    }
+
+    @Test
+    public void ignoresABlankRequiredBranch() throws Exception {
+        File sourceRepository = Files.createTempDirectory("terrakube-source").toFile();
+        try (Git sourceGit = Git.init().setDirectory(sourceRepository).call()) {
+            commitFile(sourceGit, "main.tf", "requested");
+            String requestedBranch = sourceGit.getRepository().getBranch();
+            sourceGit.checkout().setCreateBranch(true).setName("unrelated").call();
+            RevCommit unrelatedCommit = commitFile(sourceGit, "main.tf", "unrelated");
+            sourceGit.checkout().setName(requestedBranch).call();
+            TerraformJob job = localGitJob(sourceRepository, requestedBranch);
+            job.setCommitId(unrelatedCommit.getName());
+            job.setRequireCommitOnBranch(" ");
+
+            File workspaceDir = standardSetupWorkspaceImpl(job).prepareWorkspace(job);
+
+            try (Git workspaceGit = Git.open(workspaceDir)) {
+                Assertions.assertEquals(unrelatedCommit.getName(), workspaceGit.getRepository().resolve("HEAD").getName());
+            }
+        } finally {
+            FileUtils.deleteDirectory(sourceRepository);
+        }
+    }
+
     @Test
     public void clonesOverSshAndLeavesTheKeyInTheWorkspace() throws Exception {
         File sourceRepository = Files.createTempDirectory("terrakube-source").toFile();
