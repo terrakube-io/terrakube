@@ -1,5 +1,5 @@
 import { DeleteOutlined, PlayCircleOutlined } from "@ant-design/icons";
-import { Button, Collapse, Form, Input, Select, Tooltip, message } from "antd";
+import { Alert, Button, Collapse, Form, Input, Select, Tooltip, message } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ORGANIZATION_ARCHIVE, WORKSPACE_ARCHIVE } from "../../config/actionTypes";
@@ -59,8 +59,9 @@ export const CreateJob = ({ changeJob, planJob = true, disabledReason, resources
   const resourceOptions = useMemo(() => buildResourceOptions(resources ?? []), [resources]);
   const selectedBranch = Form.useWatch("branchName", form);
   // A workspace that restricts apply to its configured branch only runs plan-only templates on another branch.
-  const onOtherBranch =
-    restrictApply && configuredBranch(selectedBranch ?? branchName) !== configuredBranch(branchName);
+  // An empty branch box means the workspace branch, as it does for the API.
+  const effectiveBranch = selectedBranch?.trim() ? selectedBranch : branchName;
+  const onOtherBranch = restrictApply && configuredBranch(effectiveBranch) !== configuredBranch(branchName);
   const availableTemplates = useMemo(
     () => (onOtherBranch ? templates.filter((item) => isPlanOnlyTemplate(item.attributes.tcl)) : templates),
     [onOtherBranch, templates]
@@ -186,6 +187,15 @@ export const CreateJob = ({ changeJob, planJob = true, disabledReason, resources
           onCreate(values);
         }}
       >
+        {onOtherBranch && !loading && availableTemplates.length === 0 && (
+          <Alert
+            type="warning"
+            showIcon
+            className="mb-4"
+            message="No plan-only templates available in this organization"
+            description={`This workspace only allows plan runs on branches other than ${configuredBranch(branchName)}. Create a plan-only template, or use the workspace branch.`}
+          />
+        )}
         <Form.Item name="templateId" label="Template" rules={[{ required: true }]} initialValue={defaultTemplate}>
           {loading || !templates ? (
             <LoadingFallback />

@@ -21,6 +21,7 @@ public class JobBranchFieldsEditable extends OperationCheck<Job> {
 
     @Override
     public boolean ok(Job job, RequestScope requestScope, Optional<ChangeSpec> optional) {
-        return job.getWorkspace() == null || !job.getWorkspace().isRestrictApplyToConfiguredBranch();
+        // Fails closed: a job whose workspace cannot be read is not editable.
+        return job.getWorkspace() != null && !job.getWorkspace().isRestrictApplyToConfiguredBranch();
     }
 }

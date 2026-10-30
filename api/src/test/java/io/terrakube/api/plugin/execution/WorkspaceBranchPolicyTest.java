@@ -66,6 +66,15 @@ class WorkspaceBranchPolicyTest {
     }
 
     @Test
+    void aWorkspaceOnATagRunsThatTagWhicheverWayItIsSpelled() {
+        workspace.setBranch("v1.0.0");
+
+        assertTrue(policy.violation(workspace, "refs/tags/v1.0.0", null, APPLY).isEmpty());
+        assertTrue(policy.violation(workspace, "v1.0.0", null, APPLY).isEmpty());
+        assertTrue(policy.violation(workspace, "refs/tags/v2.0.0", null, APPLY).isPresent());
+    }
+
+    @Test
     void noBranchMeansTheConfiguredBranch() {
         assertTrue(policy.violation(workspace, null, null, APPLY).isEmpty());
         assertTrue(policy.violation(workspace, " ", null, APPLY).isEmpty());

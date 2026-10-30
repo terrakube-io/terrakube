@@ -197,13 +197,9 @@ public class ExecutorService {
         } else {
             executorContext.setSource(job.getOverrideSource());
         }
-        if (job.getOverrideBranch() == null) {
-            executorContext.setBranch(WorkspaceBranches.firstBranch(job.getWorkspace().getBranch()));
-        } else {
-            if (WorkspaceBranches.REMOTE_CONTENT.equals(job.getOverrideBranch())) {
-                executorContext.setShowHeader(false);
-            }
-            executorContext.setBranch(job.getOverrideBranch());
+        executorContext.setBranch(branchFor(job));
+        if (WorkspaceBranches.REMOTE_CONTENT.equals(job.getOverrideBranch())) {
+            executorContext.setShowHeader(false);
         }
 
         // A remote-content workspace requires a tarball URL (job.overrideSource set by
@@ -307,6 +303,17 @@ public class ExecutorService {
      * a range such as ">= 1.3.0" can pick a newer release between plan and apply. Until one is resolved the
      * workspace's value (an exact version or a constraint) is passed through.
      */
+    /**
+     * The branch or tag a job runs: its own, or the first entry of the workspace branch. The executor adds
+     * {@code refs/heads/} or {@code refs/tags/} itself, so a full ref is shortened.
+     */
+    static String branchFor(Job job) {
+        String override = job.getOverrideBranch();
+        return override == null || override.isBlank()
+                ? WorkspaceBranches.firstBranch(job.getWorkspace().getBranch())
+                : WorkspaceBranches.shortName(override);
+    }
+
     static String terraformVersionFor(Job job) {
         String resolved = job.getResolvedTerraformVersion();
         return resolved != null && !resolved.isBlank() ? resolved : job.getWorkspace().getTerraformVersion();

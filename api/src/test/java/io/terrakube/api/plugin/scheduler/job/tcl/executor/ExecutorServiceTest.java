@@ -218,6 +218,21 @@ class ExecutorServiceTest {
     }
 
     @Test
+    void aJobRunsItsOwnBranchWithoutTheRefsPrefix() {
+        workspace.setBranch("main, develop");
+
+        assertThat(ExecutorService.branchFor(job)).isEqualTo("main");
+        job.setOverrideBranch(" ");
+        assertThat(ExecutorService.branchFor(job)).isEqualTo("main");
+        job.setOverrideBranch("feature/x");
+        assertThat(ExecutorService.branchFor(job)).isEqualTo("feature/x");
+        job.setOverrideBranch("refs/heads/main");
+        assertThat(ExecutorService.branchFor(job)).isEqualTo("main");
+        job.setOverrideBranch("refs/tags/v1.0.0");
+        assertThat(ExecutorService.branchFor(job)).isEqualTo("v1.0.0");
+    }
+
+    @Test
     void aBlankResolvedVersionIsIgnored() {
         workspace.setTerraformVersion("1.5.7");
         job.setResolvedTerraformVersion(" ");

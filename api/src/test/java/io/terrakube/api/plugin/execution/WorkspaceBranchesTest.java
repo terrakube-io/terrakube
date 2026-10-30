@@ -20,11 +20,13 @@ class WorkspaceBranchesTest {
     }
 
     @Test
-    void aHeadsPrefixIsDroppedAndNothingElse() {
+    void aHeadsOrTagsPrefixIsDroppedAndNothingElse() {
         assertEquals("main", WorkspaceBranches.shortName("refs/heads/main"));
         assertEquals("feature/x", WorkspaceBranches.shortName("refs/heads/feature/x"));
         assertEquals("feature/x", WorkspaceBranches.shortName("feature/x"));
-        assertEquals("refs/tags/v1", WorkspaceBranches.shortName("refs/tags/v1"));
+        assertEquals("v1.0.0", WorkspaceBranches.shortName("refs/tags/v1.0.0"));
+        assertEquals("v1.0.0", WorkspaceBranches.shortName(" v1.0.0 "));
+        assertEquals("", WorkspaceBranches.shortName(null));
     }
 
     @Test

@@ -20,8 +20,8 @@ export const isPlanOnlyTemplate = (tcl?: string): boolean => {
   return types.length > 0 && types.every((type) => PLAN_ONLY_FLOW_TYPES.has(type));
 };
 
-/** The branch runs use when none is given: the first entry of the workspace branch. */
+/** The branch runs use when none is given: the first entry of the workspace branch, without a refs/ prefix. */
 export const configuredBranch = (branch?: string): string => {
   const first = (branch ?? "").split(",")[0].trim();
-  return first.startsWith("refs/heads/") ? first.substring("refs/heads/".length) : first;
+  return first.replace(/^refs\/(heads|tags)\//, "");
 };

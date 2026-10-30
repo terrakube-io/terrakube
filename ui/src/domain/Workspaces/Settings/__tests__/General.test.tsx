@@ -260,6 +260,15 @@ describe("WorkspaceGeneral branch restriction", () => {
     expect(savedAttributes()).not.toHaveProperty("restrictApplyToConfiguredBranch");
   });
 
+  it("is disabled with an explanation on a CLI-driven workspace, which has no branch to restrict", async () => {
+    renderGeneral(workspace("empty", { vcs: undefined }));
+
+    expect(
+      await screen.findByRole("checkbox", { name: /Only run apply and destroy from the default branch/ })
+    ).toBeDisabled();
+    expect(screen.getByText(/This workspace is CLI-driven/)).toBeInTheDocument();
+  });
+
   it("hides the setting and does not send it to a Terrakube that does not report it", async () => {
     const older = workspace(REPO);
     delete older.attributes.restrictApplyToConfiguredBranch;

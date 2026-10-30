@@ -393,9 +393,13 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace,
               <Form.Item
                 name="restrictApplyToConfiguredBranch"
                 valuePropName="checked"
-                extra="Plan-only runs and terraform plan from the CLI still work on any branch. Webhook runs are not affected. Only a manager of every workspace in the organization can change this."
+                extra={
+                  vcsDriven
+                    ? "Plan-only runs and terraform plan from the CLI still work on any branch. Webhook runs are not affected. Only a manager of every workspace in the organization can change this."
+                    : "This workspace is CLI-driven: its configuration is uploaded by the Terraform CLI, not read from a branch, so there is no branch to restrict. Connect a repository to use this setting."
+                }
               >
-                <Checkbox disabled={!manageWorkspace || !orgPermissions.manageWorkspace}>
+                <Checkbox disabled={!manageWorkspace || !orgPermissions.manageWorkspace || !vcsDriven}>
                   Only run apply and destroy from the default branch
                 </Checkbox>
               </Form.Item>

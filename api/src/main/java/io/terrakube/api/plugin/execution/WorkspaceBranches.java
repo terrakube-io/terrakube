@@ -10,6 +10,7 @@ public final class WorkspaceBranches {
     public static final String REMOTE_CONTENT = "remote-content";
 
     private static final String HEADS_PREFIX = "refs/heads/";
+    private static final String TAGS_PREFIX = "refs/tags/";
 
     private WorkspaceBranches() {
     }
@@ -19,8 +20,21 @@ public final class WorkspaceBranches {
         return workspaceBranch == null ? "" : workspaceBranch.split(",")[0].trim();
     }
 
-    /** The branch name without a leading {@code refs/heads/}, so the two spellings of a branch compare equal. */
-    public static String shortName(String branch) {
-        return branch.startsWith(HEADS_PREFIX) ? branch.substring(HEADS_PREFIX.length()) : branch;
+    /**
+     * The branch or tag name without a leading {@code refs/heads/} or {@code refs/tags/}, so the spellings of a
+     * ref compare equal. The branch of a workspace can name a tag, and release webhooks send {@code refs/tags/...}.
+     */
+    public static String shortName(String ref) {
+        if (ref == null) {
+            return "";
+        }
+        String trimmed = ref.trim();
+        if (trimmed.startsWith(HEADS_PREFIX)) {
+            return trimmed.substring(HEADS_PREFIX.length());
+        }
+        if (trimmed.startsWith(TAGS_PREFIX)) {
+            return trimmed.substring(TAGS_PREFIX.length());
+        }
+        return trimmed;
     }
 }

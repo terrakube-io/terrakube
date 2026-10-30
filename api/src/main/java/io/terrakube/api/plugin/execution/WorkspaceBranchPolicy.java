@@ -37,7 +37,7 @@ public class WorkspaceBranchPolicy {
         }
 
         String configured = configuredBranch(workspace);
-        String effective = isBlank(overrideBranch) ? configured : WorkspaceBranches.shortName(overrideBranch.trim());
+        String effective = isBlank(overrideBranch) ? configured : WorkspaceBranches.shortName(overrideBranch);
         if (!effective.equals(configured)) {
             // No quotes around the names: Elide HTML-escapes error messages, which would show as &#39;.
             return Optional.of("Workspace " + workspace.getName() + " only allows plan runs on branches other than "

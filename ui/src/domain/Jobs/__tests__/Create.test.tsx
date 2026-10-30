@@ -146,4 +146,31 @@ describe("CreateJob on a workspace that restricts apply to its branch", () => {
     await waitFor(() => expect(screen.getByRole("radio", { name: /^Plan Plan only/ })).toBeChecked());
     expect(screen.getByText(/only plan-only templates are offered/)).toBeInTheDocument();
   });
+
+  it("keeps every template when the branch box is emptied, as the API treats it as the workspace branch", async () => {
+    await open();
+
+    fireEvent.change(screen.getByLabelText("Branch"), { target: { value: "" } });
+
+    expect(screen.getByRole("radio", { name: /^Plan and Apply/ })).toBeInTheDocument();
+    expect(screen.queryByText(/only plan-only templates are offered/)).not.toBeInTheDocument();
+  });
+
+  it("explains why nothing can be chosen when the organization has no plan-only template", async () => {
+    const original = getMock.getMockImplementation();
+    getMock.mockImplementation((url: string) =>
+      typeof url === "string" && url.includes("/template")
+        ? Promise.resolve({
+            data: {
+              data: [{ id: "t-apply", attributes: { name: "Plan and Apply", description: "", tcl: planAndApply } }],
+            },
+          })
+        : original!(url)
+    );
+    await open();
+
+    fireEvent.change(screen.getByLabelText("Branch"), { target: { value: "feature/x" } });
+
+    expect(await screen.findByText("No plan-only templates available in this organization")).toBeInTheDocument();
+  });
 });
