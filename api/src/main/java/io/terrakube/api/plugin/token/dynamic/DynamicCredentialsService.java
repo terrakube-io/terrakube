@@ -13,6 +13,7 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestTemplate;
+import io.terrakube.api.plugin.scheduler.job.tcl.model.FlowType;
 import io.terrakube.api.rs.job.Job;
 
 import java.io.BufferedReader;
@@ -51,23 +52,77 @@ public class DynamicCredentialsService {
     @Autowired
     ObjectMapper objectMapper;
 
+    // Opt-in, off by default. When enabled, every token says which run phase it was issued for
+    // (terrakube_run_phase claim and a ":run_phase:<phase>" suffix on the subject), and steps that
+    // do not change infrastructure use the "_PLAN" variant of the identity settings when one is set
+    // (WORKLOAD_IDENTITY_SERVICE_ACCOUNT_EMAIL_PLAN, WORKLOAD_IDENTITY_ROLE_AWS_PLAN,
+    // WORKLOAD_IDENTITY_VAULT_ROLE_PLAN, ARM_CLIENT_ID_PLAN). A plan runs the code under review, so
+    // it can then get a read-only identity while apply keeps the one that can make changes. The
+    // cloud or Vault side has to enforce it: the plan step receives its own token, so only a trust
+    // condition on the run phase stops that token from being exchanged for the apply identity.
+    @Value("${io.terrakube.dynamic.credentials.run-phase.enabled:false}")
+    boolean runPhaseEnabled;
+
+    static final String RUN_PHASE_PLAN = "plan";
+    static final String RUN_PHASE_APPLY = "apply";
+    private static final Set<String> APPLY_FLOWS = Set.of(FlowType.terraformApply.name(),
+            FlowType.terraformDestroy.name());
+
+    /**
+     * Returns the run phase of a step of the given flow type: "apply" for steps that change
+     * infrastructure, "plan" for every other step. Returns null when run-phase credentials are
+     * disabled.
+     */
+    public String runPhase(String flowType) {
+        if (!runPhaseEnabled || flowType == null) {
+            return null;
+        }
+        return APPLY_FLOWS.contains(flowType) ? RUN_PHASE_APPLY : RUN_PHASE_PLAN;
+    }
+
+    // The "_PLAN" variant of a setting for a plan-phase step when it is set, the setting itself otherwise.
+    private static String forRunPhase(Map<String, String> workspaceEnvVariables, String key, String runPhase) {
+        if (RUN_PHASE_PLAN.equals(runPhase)) {
+            String planValue = workspaceEnvVariables.get(key + "_PLAN");
+            if (planValue != null && !planValue.isBlank()) {
+                return planValue;
+            }
+        }
+        return workspaceEnvVariables.get(key);
+    }
 
     @Transactional
     public HashMap<String, String> generateDynamicCredentialsAzure(Job job, HashMap<String, String> workspaceEnvVariables) {
-        String jwtToken = generateJwt(job, workspaceEnvVariables.get("WORKLOAD_IDENTITY_AUDIENCE_AZURE"));
+        return generateDynamicCredentialsAzure(job, workspaceEnvVariables, null);
+    }
+
+    @Transactional
+    public HashMap<String, String> generateDynamicCredentialsAzure(Job job, HashMap<String, String> workspaceEnvVariables,
+            String runPhase) {
+        String jwtToken = generateJwt(job, workspaceEnvVariables.get("WORKLOAD_IDENTITY_AUDIENCE_AZURE"), null, runPhase);
 
         log.debug("ARM_OIDC_TOKEN: {}", jwtToken);
         workspaceEnvVariables.put("ARM_OIDC_TOKEN", jwtToken);
+        String clientId = forRunPhase(workspaceEnvVariables, "ARM_CLIENT_ID", runPhase);
+        if (clientId != null) {
+            workspaceEnvVariables.put("ARM_CLIENT_ID", clientId);
+        }
 
         return workspaceEnvVariables;
     }
 
     @Transactional
     public HashMap<String, String> generateDynamicCredentialsVault(Job job, HashMap<String, String> workspaceEnvVariables) {
-        String jwtToken = generateJwt(job, workspaceEnvVariables.get("WORKLOAD_IDENTITY_VAULT_AUDIENCE"));
+        return generateDynamicCredentialsVault(job, workspaceEnvVariables, null);
+    }
+
+    @Transactional
+    public HashMap<String, String> generateDynamicCredentialsVault(Job job, HashMap<String, String> workspaceEnvVariables,
+            String runPhase) {
+        String jwtToken = generateJwt(job, workspaceEnvVariables.get("WORKLOAD_IDENTITY_VAULT_AUDIENCE"), null, runPhase);
 
         String vaultAddress = workspaceEnvVariables.get("VAULT_ADDR");
-        String vaultRole = workspaceEnvVariables.get("WORKLOAD_IDENTITY_VAULT_ROLE");
+        String vaultRole = forRunPhase(workspaceEnvVariables, "WORKLOAD_IDENTITY_VAULT_ROLE", runPhase);
         String vaultToken = "";
         // Work with vault jwt path
         String vaultJwtPath;
@@ -107,19 +162,23 @@ public class DynamicCredentialsService {
     }
 
     private String generateJwt(Job job, String tokenAudience) {
-        return generateJwt(job, tokenAudience, null);
+        return generateJwt(job, tokenAudience, null, null);
     }
 
-    private String generateJwt(Job job, String tokenAudience, Map<String, Object> extraClaims) {
+    private String generateJwt(Job job, String tokenAudience, Map<String, Object> extraClaims, String runPhase) {
         String jwtToken = "";
         if (privateKeyPath != null && !privateKeyPath.isEmpty()) {
             try {
                 String organizationName = job.getOrganization().getName();
                 String workspaceName = job.getWorkspace().getName();
                 var project = job.getWorkspace().getProject();
+                String subject = String.format("organization:%s:workspace:%s", organizationName, workspaceName);
+                if (runPhase != null) {
+                    subject = subject + ":run_phase:" + runPhase;
+                }
                 Instant now = Instant.now();
                 var builder = Jwts.builder()
-                        .subject(String.format("organization:%s:workspace:%s", organizationName, workspaceName))
+                        .subject(subject)
                         //.audience().add(tokenAudience).and()
                         .setAudience(tokenAudience)
                         .id(UUID.randomUUID().toString())
@@ -137,6 +196,9 @@ public class DynamicCredentialsService {
                 if (project != null) {
                     builder.claim("terrakube_project_name", project.getName());
                 }
+                if (runPhase != null) {
+                    builder.claim("terrakube_run_phase", runPhase);
+                }
                 if (extraClaims != null) extraClaims.forEach(builder::claim);
                 jwtToken = builder
                         .signWith(getPrivateKey(), Jwts.SIG.RS512)
@@ -153,17 +215,24 @@ public class DynamicCredentialsService {
 
     @Transactional
     public HashMap<String, String> generateDynamicCredentialsAws(Job job, HashMap<String, String> workspaceEnvVariables) {
+        return generateDynamicCredentialsAws(job, workspaceEnvVariables, null);
+    }
+
+    @Transactional
+    public HashMap<String, String> generateDynamicCredentialsAws(Job job, HashMap<String, String> workspaceEnvVariables,
+            String runPhase) {
         Map<String, Object> extraClaims = null;
         if (Boolean.parseBoolean(workspaceEnvVariables.get("ENABLE_AWS_SESSION_TAGS"))) {
             extraClaims = Map.of("https://aws.amazon.com/tags", buildAwsSessionTags(job));
         }
 
-        String awsWebIdentityToken = generateJwt(job, workspaceEnvVariables.get("WORKLOAD_IDENTITY_AUDIENCE_AWS"), extraClaims);
+        String awsWebIdentityToken = generateJwt(job, workspaceEnvVariables.get("WORKLOAD_IDENTITY_AUDIENCE_AWS"),
+                extraClaims, runPhase);
 
         log.debug("TERRAKUBE_AWS_CREDENTIALS_FILE: {}", awsWebIdentityToken);
 
         workspaceEnvVariables.put("TERRAKUBE_AWS_CREDENTIALS_FILE", awsWebIdentityToken);
-        workspaceEnvVariables.put("AWS_ROLE_ARN", workspaceEnvVariables.get("WORKLOAD_IDENTITY_ROLE_AWS"));
+        workspaceEnvVariables.put("AWS_ROLE_ARN", forRunPhase(workspaceEnvVariables, "WORKLOAD_IDENTITY_ROLE_AWS", runPhase));
         // AWS_WEB_IDENTITY_TOKEN_FILE is set by the executor once it knows the absolute
         // path of the file it wrote (the workspace clone dir is only known there).
 
@@ -172,7 +241,13 @@ public class DynamicCredentialsService {
 
     @Transactional
     public HashMap<String, String> generateDynamicCredentialsGcp(Job job, HashMap<String, String> workspaceEnvVariables) {
-        String jwtToken = generateJwt(job, workspaceEnvVariables.get("WORKLOAD_IDENTITY_AUDIENCE_GCP"));
+        return generateDynamicCredentialsGcp(job, workspaceEnvVariables, null);
+    }
+
+    @Transactional
+    public HashMap<String, String> generateDynamicCredentialsGcp(Job job, HashMap<String, String> workspaceEnvVariables,
+            String runPhase) {
+        String jwtToken = generateJwt(job, workspaceEnvVariables.get("WORKLOAD_IDENTITY_AUDIENCE_GCP"), null, runPhase);
 
         String googleCredentialsFile = "{\n" +
                 "    \"access_token\": \"%s\"\n" +
@@ -198,7 +273,7 @@ public class DynamicCredentialsService {
         // The ${WORKSPACE_DIRECTORY} placeholder is substituted by the executor when
         // it writes the config to disk (only the executor knows the workspace clone path).
         String audience = workspaceEnvVariables.get("WORKLOAD_IDENTITY_AUDIENCE_GCP");
-        String serviceAccountEmail = workspaceEnvVariables.get("WORKLOAD_IDENTITY_SERVICE_ACCOUNT_EMAIL");
+        String serviceAccountEmail = forRunPhase(workspaceEnvVariables, "WORKLOAD_IDENTITY_SERVICE_ACCOUNT_EMAIL", runPhase);
 
         googleCredentialConfigFile = String.format(googleCredentialConfigFile, audience, serviceAccountEmail);
 

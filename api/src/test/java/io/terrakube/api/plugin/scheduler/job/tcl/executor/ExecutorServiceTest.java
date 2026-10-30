@@ -40,6 +40,7 @@ import org.mockito.Spy;
 import org.mockito.ArgumentCaptor;
 import io.terrakube.api.plugin.execution.JobVariablesService;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.persistent.PersistentExecutorService;
+import io.terrakube.api.plugin.token.dynamic.DynamicCredentialsService;
 import io.terrakube.api.repository.GlobalVarRepository;
 import io.terrakube.api.repository.ReferenceRepository;
 import io.terrakube.api.repository.StepRepository;
@@ -67,6 +68,7 @@ class ExecutorServiceTest {
     @Mock private ReferenceRepository referenceRepository;
     @Mock private StepRepository stepRepository;
     @Mock private PersistentExecutorService persistentExecutorService;
+    @Mock private DynamicCredentialsService dynamicCredentialsService;
     @Spy private JobVariablesService jobVariablesService = new JobVariablesService(encryption());
 
     private static io.terrakube.api.plugin.security.encryption.EncryptionService encryption() {
@@ -673,5 +675,36 @@ class ExecutorServiceTest {
         assertThatThrownBy(() -> executorService.execute(job, "plan-step", flow(FlowType.terraformPlan)))
                 .isInstanceOf(ExecutionException.class)
                 .hasMessageNotContaining("private-invalid-ciphertext");
+    }
+
+    @Test
+    void dynamicCredentialStepsCarryTheirRunPhase() throws Exception {
+        Organization organization = new Organization();
+        organization.setId(UUID.randomUUID());
+        organization.setName("test");
+        job.setOrganization(organization);
+        workspace.setId(UUID.randomUUID());
+        workspace.setOrganization(organization);
+        workspace.setBranch("main");
+        workspace.setSource("https://github.com/example/repo.git");
+        workspace.setTerraformVersion("1.14.0");
+        workspace.setIacType("terraform");
+        Variable enableVault = new Variable();
+        enableVault.setKey("ENABLE_DYNAMIC_CREDENTIALS_VAULT");
+        enableVault.setValue("true");
+        enableVault.setCategory(Category.ENV);
+        when(variableRepository.findByWorkspace(workspace)).thenReturn(Optional.of(List.of(enableVault)));
+        when(dynamicCredentialsService.runPhase(FlowType.terraformPlan.name())).thenReturn("plan");
+        when(dynamicCredentialsService.generateDynamicCredentialsVault(org.mockito.ArgumentMatchers.eq(job),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.eq("plan")))
+                .thenAnswer(invocation -> invocation.getArgument(1));
+
+        executorService.execute(job, "plan-step", flow(FlowType.terraformPlan));
+
+        var context = ArgumentCaptor.forClass(ExecutorContext.class);
+        verify(persistentExecutorService).send(org.mockito.ArgumentMatchers.eq(job), context.capture());
+        assertThat(context.getValue().getEnvironmentVariables())
+                .containsEntry("TERRAKUBE_RUN_PHASE", "plan")
+                .containsEntry("TF_VAR_terrakube_run_phase", "plan");
     }
 }
