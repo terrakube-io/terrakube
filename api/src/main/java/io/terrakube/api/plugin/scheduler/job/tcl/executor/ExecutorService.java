@@ -18,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 
+import io.terrakube.api.plugin.execution.WorkspaceBranches;
 import io.terrakube.api.plugin.execution.JobVariablesService;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ephemeral.EphemeralExecutorService;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.persistent.PersistentExecutorService;
@@ -111,7 +112,7 @@ public class ExecutorService {
         executorContext.setStepId(stepId);
         executorContext.setExecutionEpoch(System.currentTimeMillis());
 
-        if (job.getWorkspace().getBranch().equals("remote-content")) {
+        if (WorkspaceBranches.REMOTE_CONTENT.equals(job.getWorkspace().getBranch())) {
             log.warn("Running remote operation, disable headers");
             executorContext.setShowHeader(false);
         } else {
@@ -197,9 +198,9 @@ public class ExecutorService {
             executorContext.setSource(job.getOverrideSource());
         }
         if (job.getOverrideBranch() == null) {
-            executorContext.setBranch(job.getWorkspace().getBranch().split(",")[0]);
+            executorContext.setBranch(WorkspaceBranches.firstBranch(job.getWorkspace().getBranch()));
         } else {
-            if (job.getOverrideBranch().equals("remote-content")) {
+            if (WorkspaceBranches.REMOTE_CONTENT.equals(job.getOverrideBranch())) {
                 executorContext.setShowHeader(false);
             }
             executorContext.setBranch(job.getOverrideBranch());
@@ -213,7 +214,7 @@ public class ExecutorService {
         // constructing the download URL. The UI disables "Run now" for this case; this guard
         // is defense-in-depth for direct API calls / stale clients.
         if (!FlowType.policyEvaluation.name().equals(flow.getType())
-                && "remote-content".equals(executorContext.getBranch())
+                && WorkspaceBranches.REMOTE_CONTENT.equals(executorContext.getBranch())
                 && (executorContext.getSource() == null || executorContext.getSource().isBlank()
                         || "empty".equals(executorContext.getSource()))) {
             throw new ExecutionException(
@@ -377,7 +378,7 @@ public class ExecutorService {
         if (job.getOverrideSource() != null) {
             return;
         }
-        if (!"remote-content".equals(branch)) {
+        if (!WorkspaceBranches.REMOTE_CONTENT.equals(branch)) {
             return;
         }
         Workspace workspace = job.getWorkspace();
@@ -411,7 +412,7 @@ public class ExecutorService {
         if (workspace.getVcs() != null || workspace.getSsh() != null) {
             return;
         }
-        if (!"remote-content".equals(workspace.getBranch())) {
+        if (!WorkspaceBranches.REMOTE_CONTENT.equals(workspace.getBranch())) {
             return;
         }
         if (resolvedSource == null || resolvedSource.isBlank()) {
