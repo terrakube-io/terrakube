@@ -22,7 +22,14 @@ const REPO = "https://github.com/acme/infra.git";
 const workspace = (source: string, relationships: Record<string, unknown> = {}) =>
   ({
     id: "ws-1",
-    attributes: { name: "prod", source, branch: "main", iacType: "terraform", terraformVersion: "1.9.0" },
+    attributes: {
+      name: "prod",
+      source,
+      branch: "main",
+      iacType: "terraform",
+      terraformVersion: "1.9.0",
+      restrictApplyToConfiguredBranch: false,
+    },
     relationships: {
       organization: { data: { id: "org-1" } },
       vcs: { data: { type: "vcs", id: "vcs-1" } },
@@ -247,6 +254,21 @@ describe("WorkspaceGeneral branch restriction", () => {
     expect(
       await screen.findByRole("checkbox", { name: /Only run apply and destroy from the default branch/ })
     ).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
+
+    await waitFor(() => expect(axiosInstance.post).toHaveBeenCalled());
+    expect(savedAttributes()).not.toHaveProperty("restrictApplyToConfiguredBranch");
+  });
+
+  it("hides the setting and does not send it to a Terrakube that does not report it", async () => {
+    const older = workspace(REPO);
+    delete older.attributes.restrictApplyToConfiguredBranch;
+    renderGeneral(older);
+
+    await screen.findByLabelText("Repository URL");
+    expect(
+      screen.queryByRole("checkbox", { name: /Only run apply and destroy from the default branch/ })
+    ).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
 
     await waitFor(() => expect(axiosInstance.post).toHaveBeenCalled());

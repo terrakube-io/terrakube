@@ -54,6 +54,8 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace,
   const { Option } = Select;
   const [selectedIac, setSelectedIac] = useState("");
   const { permissions: orgPermissions } = useOrgPermissions();
+  // Terrakube before 2.34.0 does not know the setting and does not report it.
+  const supportsBranchRestriction = workspaceData.attributes?.restrictApplyToConfiguredBranch !== undefined;
   const [terraformVersions, setTerraformVersions] = useState<string[]>([]);
   const [agentList, setAgentList] = useState<Agent[]>([]);
   const [projectList, setProjectList] = useState<ProjectModel[]>([]);
@@ -174,8 +176,9 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace,
               branch: values.branch,
               source: values.source,
               defaultTemplate: values.defaultTemplate,
-              // A manager limited to this workspace cannot change it, and the API refuses a change from them.
-              ...(orgPermissions.manageWorkspace
+              // Only sent to an API that has the setting (it reports it), so a newer UI still saves against an older
+              // API. A manager limited to this workspace cannot change it, and the API refuses a change from them.
+              ...(supportsBranchRestriction && orgPermissions.manageWorkspace
                 ? { restrictApplyToConfiguredBranch: Boolean(values.restrictApplyToConfiguredBranch) }
                 : {}),
             },
@@ -386,15 +389,17 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace,
             >
               <Input disabled={!manageWorkspace} />
             </Form.Item>
-            <Form.Item
-              name="restrictApplyToConfiguredBranch"
-              valuePropName="checked"
-              extra="Plan-only runs and terraform plan from the CLI still work on any branch. Webhook runs are not affected. Only a manager of every workspace in the organization can change this."
-            >
-              <Checkbox disabled={!manageWorkspace || !orgPermissions.manageWorkspace}>
-                Only run apply and destroy from the default branch
-              </Checkbox>
-            </Form.Item>
+            {supportsBranchRestriction && (
+              <Form.Item
+                name="restrictApplyToConfiguredBranch"
+                valuePropName="checked"
+                extra="Plan-only runs and terraform plan from the CLI still work on any branch. Webhook runs are not affected. Only a manager of every workspace in the organization can change this."
+              >
+                <Checkbox disabled={!manageWorkspace || !orgPermissions.manageWorkspace}>
+                  Only run apply and destroy from the default branch
+                </Checkbox>
+              </Form.Item>
+            )}
           </SettingsSection>
 
           <SettingsSection
