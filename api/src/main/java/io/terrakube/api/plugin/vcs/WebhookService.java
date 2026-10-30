@@ -200,7 +200,7 @@ public class WebhookService {
     /** A workspace that restricts apply to its configured branch does not run a mutating template from this event. */
     private void enforceBranchPolicy(Workspace workspace, WebhookResult webhookResult, String templateId) {
         workspaceBranchPolicy
-                .vcsViolation(workspace, webhookResult.branchPolicySource(), webhookResult.getBranch(), templateId)
+                .vcsViolation(workspace, webhookResult.getBranchPolicySource(), webhookResult.getBranch(), templateId)
                 .ifPresent(reason -> {
                     throw new JobBranchPolicyException(reason);
                 });

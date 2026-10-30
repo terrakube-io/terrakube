@@ -71,8 +71,9 @@ public class WorkspaceBranchPolicy {
      *       still plan;</li>
      *   <li>a pull request or a comment command on one can only plan, whatever its branch is called, because a
      *       pull request can come from a fork whose branch has the same name;</li>
-     *   <li>a release runs a template that the workspace manager attached to the release event, so it is allowed.
-     *       Who may publish a release is controlled in the VCS, for example with tag protection rules.</li>
+     *   <li>a release runs a template that the workspace manager attached to the release event, so it is allowed
+     *       here. Anyone who can publish a release can point it at any commit, so the executor checks that the
+     *       commit is on the configured branch before an apply or destroy step runs.</li>
      * </ul>
      *
      * @return why the run is refused, or empty when it is allowed

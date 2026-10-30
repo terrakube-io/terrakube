@@ -91,8 +91,8 @@ public class WebhookResultTest {
     public void aPushIsAPushForTheBranchPolicy() {
         WebhookResult result = new WebhookResult();
         result.setEvent("push");
-        assertEquals(WorkspaceBranchPolicy.Source.PUSH, result.branchPolicySource());
-        assertEquals(WorkspaceBranchPolicy.Source.PUSH, new WebhookResult().branchPolicySource());
+        assertEquals(WorkspaceBranchPolicy.Source.PUSH, result.getBranchPolicySource());
+        assertEquals(WorkspaceBranchPolicy.Source.PUSH, new WebhookResult().getBranchPolicySource());
     }
 
     @Test
@@ -107,7 +107,7 @@ public class WebhookResultTest {
         comment.setPrComment(true);
 
         for (WebhookResult result : new WebhookResult[] {pullRequest, mergeRequest, withNumber, comment}) {
-            assertEquals(WorkspaceBranchPolicy.Source.PULL_REQUEST, result.branchPolicySource());
+            assertEquals(WorkspaceBranchPolicy.Source.PULL_REQUEST, result.getBranchPolicySource());
         }
     }
 
@@ -116,6 +116,13 @@ public class WebhookResultTest {
         WebhookResult result = new WebhookResult();
         result.setRelease(true);
         result.setPrNumber(7);
-        assertEquals(WorkspaceBranchPolicy.Source.RELEASE, result.branchPolicySource());
+        assertEquals(WorkspaceBranchPolicy.Source.RELEASE, result.getBranchPolicySource());
+    }
+
+    @Test
+    void theBranchPolicySourceIsNotSerialized() throws Exception {
+        String json = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(new WebhookResult());
+
+        assertFalse(json.contains("branchPolicySource"), json);
     }
 }
