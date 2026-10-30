@@ -100,6 +100,8 @@ import java.nio.charset.StandardCharsets;
 import com.yahoo.elide.core.security.User;
 import io.terrakube.api.plugin.execution.CliRunVariables;
 import io.terrakube.api.plugin.execution.JobVariablesAccess;
+import io.terrakube.api.rs.project.access.ProjectAccess;
+import io.terrakube.api.rs.checks.membership.MembershipService;
 import io.terrakube.api.plugin.execution.JobVariablesService;
 import io.terrakube.api.plugin.execution.WorkspaceBranchPolicy;
 import io.terrakube.api.plugin.execution.WorkspaceBranches;
@@ -174,6 +176,9 @@ public class RemoteTfeService {
 
     @Autowired
     private JobVariablesAccess jobVariablesAccess;
+
+    @Autowired
+    private MembershipService membershipService;
 
     @Autowired
     private WorkspaceBranchPolicy workspaceBranchPolicy;
@@ -400,6 +405,20 @@ public class RemoteTfeService {
     }
 
     /**
+     * The third place a right can come from, next to the organization team and the workspace access: the access
+     * list of the project the workspace belongs to. Elide checks it for the same rights ("team project limited ..."),
+     * so the Terraform CLI has to as well, or a right granted through the project would work in the UI and not here.
+     */
+    private boolean hasProjectAccess(Workspace workspace, JwtAuthenticationToken currentUser,
+                                     java.util.function.Function<ProjectAccess, Boolean> allows) {
+        Project project = workspace.getProject();
+        if (project == null || project.getProjectAccess() == null || project.getProjectAccess().isEmpty()) {
+            return false;
+        }
+        return membershipService.checkProjectMembership(new User(currentUser), project.getProjectAccess(), allows);
+    }
+
+    /**
      * Validates that the current user has permission to plan (queue) jobs
      * in the workspace.
      */
@@ -430,7 +449,7 @@ public class RemoteTfeService {
                 }
             });
 
-        return userCanPlan.get();
+        return userCanPlan.get() || hasProjectAccess(workspace, currentUser, rbacService::canPlanJob);
     }
 
     /**
@@ -464,7 +483,7 @@ public class RemoteTfeService {
                 }
             });
 
-        return userCanApprove.get();
+        return userCanApprove.get() || hasProjectAccess(workspace, currentUser, rbacService::canApproveJob);
     }
 
     EntitlementData getOrgEntitlementSet(String organizationName, JwtAuthenticationToken currentUser) {
@@ -1742,6 +1761,17 @@ public class RemoteTfeService {
         }
 
         Workspace workspace = workspaceRepository.getReferenceById(UUID.fromString(workspaceId));
+
+        // Auto-approving skips the approval step, so it is the same act as approving the run: it needs the right to
+        // approve, not just the right to plan.
+        // A speculative plan never applies, so auto approving it asks for nothing.
+        boolean runsApply = isDestroy || !contentRepository.getReferenceById(UUID.fromString(configurationId)).isSpeculative();
+        if (autoApply && runsApply && !validateUserApproveJob(workspace, currentUser)) {
+            log.warn("User does not have permission to auto approve runs in workspace {}", workspace.getName());
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "Auto approving a run requires permission to approve runs in workspace " + workspace.getName()
+                            + ". Run it without auto approve and ask someone who can approve to confirm it.");
+        }
 
         // -var, -var-file and TF_VAR_ inputs of the CLI arrive as run variables. They override the workspace
         // variables for this run only, so they need the same right as setting variables on a job.
