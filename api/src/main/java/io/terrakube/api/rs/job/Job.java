@@ -285,6 +285,35 @@ public class Job extends GenericAuditFields {
     @OneToMany(mappedBy = "job", cascade = CascadeType.REMOVE, orphanRemoval = true)
     private List<Step> step;
 
+    @Transient
+    @ComputedAttribute
+    @CreatePermission(expression = "NONE")
+    @UpdatePermission(expression = "NONE")
+    public Long getPlanDurationMs() {
+        return executionDuration("plan");
+    }
+
+    @Transient
+    @ComputedAttribute
+    @CreatePermission(expression = "NONE")
+    @UpdatePermission(expression = "NONE")
+    public Long getApplyDurationMs() {
+        return executionDuration("apply");
+    }
+
+    private Long executionDuration(String phase) {
+        if (step == null) {
+            return null;
+        }
+        Long total = null;
+        for (Step entry : step) {
+            if (phase.equals(entry.getExecutionPhase()) && entry.getExecutionDurationMs() != null) {
+                total = (total == null ? 0L : total) + entry.getExecutionDurationMs();
+            }
+        }
+        return total;
+    }
+
     @OneToMany(mappedBy = "job", cascade = CascadeType.REMOVE, orphanRemoval = true)
     private List<Address> address;
 

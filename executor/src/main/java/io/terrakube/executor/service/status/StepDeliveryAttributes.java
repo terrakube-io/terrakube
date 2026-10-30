@@ -10,4 +10,6 @@ public class StepDeliveryAttributes extends StepAttributes {
     private String deliveryState;
     private Long deliveryRevision;
     private Long deliveryTimestamp;
+    private Long executionDurationMs;
+    private String executionPhase;
 }
