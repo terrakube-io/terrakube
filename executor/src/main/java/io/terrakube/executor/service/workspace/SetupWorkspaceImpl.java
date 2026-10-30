@@ -297,6 +297,13 @@ public class SetupWorkspaceImpl implements SetupWorkspace {
             Repository repository = git.getRepository();
             ObjectId commit = repository.resolve(Constants.HEAD);
             ObjectId tip = branchTip(repository, branch);
+            boolean fetchedWithHistory = false;
+            if (tip == null) {
+                // The run is on another ref than the required branch, for example the tag of a release. Fetch the
+                // branch with its history, which is what the check walks.
+                fetchedWithHistory = fetchRequiredBranch(git, gitCloneFolder, terraformJob, branch);
+                tip = branchTip(repository, branch);
+            }
             if (tip == null) {
                 throw new IOException("Cannot check that commit " + shortId(commit) + " is on branch " + branch
                         + " because that branch was not fetched.");
@@ -304,7 +311,7 @@ public class SetupWorkspaceImpl implements SetupWorkspace {
             if (commit.equals(tip)) {
                 return;
             }
-            if (!repository.getObjectDatabase().getShallowCommits().isEmpty()) {
+            if (!fetchedWithHistory && !repository.getObjectDatabase().getShallowCommits().isEmpty()) {
                 // The history between the commit and the tip is not here yet.
                 unshallowRepository(git, gitCloneFolder, terraformJob);
             }
@@ -315,6 +322,23 @@ public class SetupWorkspaceImpl implements SetupWorkspace {
                 }
             }
         }
+    }
+
+    /** Fetches the required branch, or the tag of that name, with its history. @return whether one was fetched */
+    private boolean fetchRequiredBranch(Git git, File gitCloneFolder, TerraformJob terraformJob, String branch) {
+        for (String refSpec : List.of(
+                "+" + Constants.R_HEADS + branch + ":" + Constants.R_REMOTES + "origin/" + branch,
+                "+" + Constants.R_TAGS + branch + ":" + Constants.R_TAGS + branch)) {
+            try (SshdSessionFactory sshSessionFactory = sshSessionFactory(gitCloneFolder, terraformJob)) {
+                configureFetchCommand(git.fetch(), sshSessionFactory, terraformJob)
+                        .setRefSpecs(new RefSpec(refSpec))
+                        .call();
+                return true;
+            } catch (GitAPIException | IOException e) {
+                log.info("Could not fetch {} from {}: {}", refSpec, terraformJob.getSource(), e.getMessage());
+            }
+        }
+        return false;
     }
 
     /** The tip of the branch, or of the tag when the workspace branch names one. */
