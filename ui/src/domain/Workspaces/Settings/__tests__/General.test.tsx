@@ -12,8 +12,9 @@ jest.mock("@/modules/projects/projectService", () => ({
   __esModule: true,
   default: { listProjects: jest.fn(() => Promise.resolve({ isError: false, data: [] })) },
 }));
+let mockOrgPermissions = { manageVcs: false, manageWorkspace: true };
 jest.mock("@/modules/permissions/useOrgPermissions", () => ({
-  useOrgPermissions: () => ({ permissions: { manageVcs: false, manageWorkspace: true } }),
+  useOrgPermissions: () => ({ permissions: mockOrgPermissions }),
 }));
 
 const REPO = "https://github.com/acme/infra.git";
@@ -21,7 +22,14 @@ const REPO = "https://github.com/acme/infra.git";
 const workspace = (source: string, relationships: Record<string, unknown> = {}) =>
   ({
     id: "ws-1",
-    attributes: { name: "prod", source, branch: "main", iacType: "terraform", terraformVersion: "1.9.0" },
+    attributes: {
+      name: "prod",
+      source,
+      branch: "main",
+      iacType: "terraform",
+      terraformVersion: "1.9.0",
+      restrictApplyToConfiguredBranch: false,
+    },
     relationships: {
       organization: { data: { id: "org-1" } },
       vcs: { data: { type: "vcs", id: "vcs-1" } },
@@ -50,6 +58,7 @@ beforeAll(() => {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockOrgPermissions = { manageVcs: false, manageWorkspace: true };
   (axiosInstance.get as jest.Mock).mockImplementation((url: string) =>
     Promise.resolve({ data: url.endsWith("index.json") ? { versions: { "1.9.0": {} } } : { data: [] } })
   );
@@ -209,5 +218,69 @@ describe("WorkspaceGeneral repository URL", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
     await waitFor(() => expect(axiosInstance.post).toHaveBeenCalled());
     expect(savedSource()).toBeUndefined();
+  });
+});
+
+describe("WorkspaceGeneral branch restriction", () => {
+  const savedAttributes = () =>
+    (axiosInstance.post as jest.Mock).mock.calls[0][1]["atomic:operations"][0].data.attributes;
+
+  it("saves the setting with the workspace for an organization manager", async () => {
+    renderGeneral(workspace(REPO));
+
+    fireEvent.click(
+      await screen.findByRole("checkbox", { name: /Only run apply and destroy from the default branch/ })
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
+
+    await waitFor(() => expect(axiosInstance.post).toHaveBeenCalled());
+    expect(savedAttributes().restrictApplyToConfiguredBranch).toBe(true);
+  });
+
+  it("shows the saved value", async () => {
+    const restricted = workspace(REPO);
+    restricted.attributes.restrictApplyToConfiguredBranch = true;
+    renderGeneral(restricted);
+
+    expect(
+      await screen.findByRole("checkbox", { name: /Only run apply and destroy from the default branch/ })
+    ).toBeChecked();
+  });
+
+  it("is read-only and not sent for a manager limited to the workspace", async () => {
+    mockOrgPermissions = { manageVcs: false, manageWorkspace: false };
+    renderGeneral(workspace(REPO));
+
+    expect(
+      await screen.findByRole("checkbox", { name: /Only run apply and destroy from the default branch/ })
+    ).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
+
+    await waitFor(() => expect(axiosInstance.post).toHaveBeenCalled());
+    expect(savedAttributes()).not.toHaveProperty("restrictApplyToConfiguredBranch");
+  });
+
+  it("is disabled with an explanation on a CLI-driven workspace, which has no branch to restrict", async () => {
+    renderGeneral(workspace("empty", { vcs: undefined }));
+
+    expect(
+      await screen.findByRole("checkbox", { name: /Only run apply and destroy from the default branch/ })
+    ).toBeDisabled();
+    expect(screen.getByText(/This workspace is CLI-driven/)).toBeInTheDocument();
+  });
+
+  it("hides the setting and does not send it to a Terrakube that does not report it", async () => {
+    const older = workspace(REPO);
+    delete older.attributes.restrictApplyToConfiguredBranch;
+    renderGeneral(older);
+
+    await screen.findByLabelText("Repository URL");
+    expect(
+      screen.queryByRole("checkbox", { name: /Only run apply and destroy from the default branch/ })
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
+
+    await waitFor(() => expect(axiosInstance.post).toHaveBeenCalled());
+    expect(savedAttributes()).not.toHaveProperty("restrictApplyToConfiguredBranch");
   });
 });

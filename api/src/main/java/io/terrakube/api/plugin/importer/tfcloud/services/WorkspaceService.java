@@ -4,6 +4,7 @@ import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
+import io.terrakube.api.plugin.execution.WorkspaceBranches;
 import io.terrakube.api.plugin.importer.tfcloud.StateVersion;
 import io.terrakube.api.plugin.importer.tfcloud.TagResponse;
 import io.terrakube.api.plugin.importer.tfcloud.TagResponse.TagData;
@@ -511,7 +512,7 @@ public class WorkspaceService {
             workspace.setFolder(workspaceImportRequest.getFolder());
             workspace.setSource(workspaceImportRequest.getSource());
         } else {
-            workspace.setBranch("remote-content");
+            workspace.setBranch(WorkspaceBranches.REMOTE_CONTENT);
             workspace.setSource("empty");
         }
 
