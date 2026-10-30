@@ -24,6 +24,7 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import io.terrakube.api.plugin.execution.WorkspaceBranchPolicy;
 import io.terrakube.api.plugin.scheduler.ScheduleJobService;
 import io.terrakube.api.plugin.vcs.PrCommentService;
 import io.terrakube.api.plugin.vcs.RepoWebhookDeliveryTransactions;
@@ -142,7 +143,7 @@ class RepoWebhookJobAuditIntegrationTest extends ServerApplicationTests {
             RepoWebhookService service = new RepoWebhookService(mock(RepoWebhookRepository.class), workspaceLookup,
                     events, gitHub, mock(GitLabWebhookService.class), mock(AzDevOpsWebhookService.class),
                     jobRepository, scheduling, mock(PrCommentService.class), mock(RepoWebhookDeliveryTransactions.class),
-                    new ObjectMapper(), worker);
+                    new ObjectMapper(), worker, mock(WorkspaceBranchPolicy.class));
             service.processClaimedDelivery(repoWebhook, "payload", Map.of());
             var captor = ArgumentCaptor.forClass(Job.class);
             verify(scheduling).createJobContext(captor.capture());

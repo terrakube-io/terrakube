@@ -15,11 +15,22 @@ import java.util.Optional;
  * too: the executor fetches that commit by id, so it could come from a different branch and run under the
  * name of the configured one.
  *
- * <p>Jobs created by server-side code (webhooks, schedules, run triggers) do not go through this rule.
+ * <p>Jobs started by a webhook event follow {@link #vcsViolation(Workspace, Source, String, String)} instead. Schedules
+ * and run triggers always use the workspace branch and do not go through this rule.
  */
 @Service
 @RequiredArgsConstructor
 public class WorkspaceBranchPolicy {
+
+    /** What started a run that a VCS event asked for. */
+    public enum Source {
+        /** A push to a branch, seen as a webhook or by polling. */
+        PUSH,
+        /** A pull request event or a comment command on one. The code is the pull request's, not the branch's. */
+        PULL_REQUEST,
+        /** A release or tag the workspace manager chose to run through a release event. */
+        RELEASE
+    }
 
     private final TclService tclService;
 
@@ -48,6 +59,43 @@ public class WorkspaceBranchPolicy {
             return Optional.of("Workspace " + workspace.getName() + " only allows a run that can change "
                     + "infrastructure to use the tip of branch " + configured + ". Remove the commit id or use a "
                     + "plan-only template.");
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * The same rule for a run that a webhook event started. The commit comes from the event, so unlike a run created
+     * by a user it is allowed, but the code has to come from the configured branch:
+     * <ul>
+     *   <li>a push counts only on the configured branch, so a push to another branch that an event matches can
+     *       still plan;</li>
+     *   <li>a pull request or a comment command on one can only plan, whatever its branch is called, because a
+     *       pull request can come from a fork whose branch has the same name;</li>
+     *   <li>a release runs a template that the workspace manager attached to the release event, so it is allowed.
+     *       Who may publish a release is controlled in the VCS, for example with tag protection rules.</li>
+     * </ul>
+     *
+     * @return why the run is refused, or empty when it is allowed
+     */
+    public Optional<String> vcsViolation(Workspace workspace, Source source, String branch, String templateReference) {
+        if (workspace == null || !workspace.isRestrictApplyToConfiguredBranch() || source == Source.RELEASE) {
+            return Optional.empty();
+        }
+        if (tclService.isTemplatePlanOnly(templateReference)) {
+            return Optional.empty();
+        }
+
+        String configured = configuredBranch(workspace);
+        if (source == Source.PULL_REQUEST) {
+            return Optional.of("Workspace " + workspace.getName() + " restricts apply and destroy to its configured "
+                    + "branch, " + configured + ", so a pull request can only run a plan-only template. "
+                    + "Merge the pull request to apply it.");
+        }
+        String pushed = isBlank(branch) ? "" : WorkspaceBranches.shortName(branch.trim());
+        if (!pushed.equals(configured)) {
+            return Optional.of("Workspace " + workspace.getName() + " only allows plan runs on branches other than "
+                    + configured + ". The webhook event for branch " + pushed + " uses a template that can change "
+                    + "infrastructure, so no run was started.");
         }
         return Optional.empty();
     }

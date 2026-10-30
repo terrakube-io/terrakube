@@ -22,6 +22,8 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import io.terrakube.api.plugin.execution.JobBranchPolicyException;
+import io.terrakube.api.plugin.execution.WorkspaceBranchPolicy;
 import io.terrakube.api.plugin.scheduler.ScheduleJobService;
 import io.terrakube.api.plugin.security.audit.AuditActorContext;
 import io.terrakube.api.plugin.vcs.provider.azdevops.AzDevOpsWebhookService;
@@ -63,6 +65,7 @@ public class RepoWebhookService {
     RepoWebhookDeliveryTransactions repoWebhookDeliveryTransactions;
     ObjectMapper objectMapper;
     Executor workspaceFanoutExecutor;
+    WorkspaceBranchPolicy workspaceBranchPolicy;
 
     private boolean isGitLab(RepoWebhook repoWebhook) {
         return repoWebhook.getVcs() != null && repoWebhook.getVcs().getVcsType() == VcsType.GITLAB;
@@ -378,6 +381,8 @@ public class RepoWebhookService {
                 job.setCommandCommentId(webhookResult.getCommentId());
             }
             saveAndScheduleJob(workspace, webhookResult, job);
+        } catch (JobBranchPolicyException e) {
+            refuseRun(workspace, webhookResult, e.getMessage());
         } catch (IllegalArgumentException e) {
             log.info("No matching template for workspace {} on event {}: {}", workspace.getName(),
                     webhookResult.getNormalizedEvent(), e.getMessage());
@@ -408,6 +413,8 @@ public class RepoWebhookService {
         }
 
         log.info("PR comment apply for workspace {}, using default template {}", workspace.getName(), templateId);
+        // Before the lock below, so a refused command does not leave the workspace locked.
+        enforceBranchPolicy(workspace, webhookResult, templateId);
         workspace.setLocked(true);
         workspace.setLockDescription(WebhookService.buildPrApplyLockDescription(prNumber != null ? prNumber.intValue() : null));
         workspaceRepository.save(workspace);
@@ -419,7 +426,24 @@ public class RepoWebhookService {
         saveAndScheduleJob(workspace, webhookResult, job);
     }
 
+    /** A workspace that restricts apply to its configured branch does not run a mutating template from this event. */
+    private void enforceBranchPolicy(Workspace workspace, WebhookResult webhookResult, String templateId) {
+        workspaceBranchPolicy
+                .vcsViolation(workspace, webhookResult.branchPolicySource(), webhookResult.getBranch(), templateId)
+                .ifPresent(reason -> {
+                    throw new JobBranchPolicyException(reason);
+                });
+    }
+
+    private void refuseRun(Workspace workspace, WebhookResult webhookResult, String reason) {
+        log.info("Webhook event {} refused for workspace {}: {}", webhookResult.getEvent(), workspace.getName(), reason);
+        if (webhookResult.isPrComment() && webhookResult.getPrNumber() != null) {
+            prCommentService.postBranchPolicyNotice(workspace, webhookResult.getPrNumber().intValue(), reason);
+        }
+    }
+
     private Job buildJob(Workspace workspace, WebhookResult webhookResult, String templateId) {
+        enforceBranchPolicy(workspace, webhookResult, templateId);
         Job job = new Job();
         job.setTemplateReference(templateId);
         job.setRefresh(true);
