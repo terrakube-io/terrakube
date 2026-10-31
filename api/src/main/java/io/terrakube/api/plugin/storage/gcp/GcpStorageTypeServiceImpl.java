@@ -177,6 +177,7 @@ public class GcpStorageTypeServiceImpl implements StorageTypeService {
         String currentStateKey = String.format(GCP_CURRENT_STATE, organizationId, workspaceId);
         log.info("Deleting Current State File GCP Storage: {}", currentStateKey);
         storageRetryMetrics.withRetry("gcp", "delete", () -> {
+            // storage.delete returns false when the blob does not exist; ignoring the return value ensures deletion is idempotent
             storage.delete(BlobId.of(bucketName, currentStateKey));
             return null;
         });

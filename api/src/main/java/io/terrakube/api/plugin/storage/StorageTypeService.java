@@ -34,6 +34,16 @@ public interface StorageTypeService {
 
     byte[] getCurrentTerraformState(String organizationId, String workspaceId);
 
+    /**
+     * Overwrites the current Terraform state file for the specified workspace.
+     * This operation unconditionally overwrites any existing state; this is safe
+     * because Terrakube strictly serializes jobs per workspace (at most one job
+     * executes on a given workspace at any point in time).
+     *
+     * @param organizationId the organization UUID
+     * @param workspaceId    the workspace UUID
+     * @param stateData      the serialized state bytes
+     */
     default void saveCurrentTerraformState(String organizationId, String workspaceId, byte[] stateData) {
         throw new UnsupportedOperationException("This storage backend does not support saving current state directly");
     }
