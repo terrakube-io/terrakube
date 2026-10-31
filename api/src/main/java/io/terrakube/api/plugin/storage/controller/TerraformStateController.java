@@ -16,6 +16,31 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseBody;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.Base64;
+import java.util.Optional;
+import java.util.UUID;
+
+import org.apache.commons.io.IOUtils;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestMethod;
+import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.bind.annotation.RestController;
 import io.terrakube.api.plugin.security.state.StateService;
 import io.terrakube.api.plugin.storage.StorageTypeService;
@@ -73,6 +98,83 @@ public class TerraformStateController {
     public @ResponseBody byte[] getCurrentTerraformState(@PathVariable("organizationId") String organizationId,
             @PathVariable("workspaceId") String workspaceId) {
         return storageTypeService.getCurrentTerraformState(organizationId, workspaceId);
+    }
+
+    @GetMapping(value = "/organization/{organizationId}/workspace/{workspaceId}/backend/terraform.tfstate", produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<byte[]> getHttpBackendState(
+            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorizationHeader,
+            @PathVariable("organizationId") String organizationId,
+            @PathVariable("workspaceId") String workspaceId) {
+        StateService.HttpBackendAccessDecision decision = stateService.authorizeHttpBackendAccess(authorizationHeader, organizationId, workspaceId);
+        if (decision == StateService.HttpBackendAccessDecision.UNAUTHORIZED) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        if (decision != StateService.HttpBackendAccessDecision.ALLOWED) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
+
+        byte[] currentState = storageTypeService.getCurrentTerraformState(organizationId, workspaceId);
+        if (currentState == null || currentState.length == 0) {
+            return ResponseEntity.noContent().build();
+        }
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(currentState);
+    }
+
+    @RequestMapping(
+            value = "/organization/{organizationId}/workspace/{workspaceId}/backend/terraform.tfstate",
+            method = {RequestMethod.POST, RequestMethod.PUT}
+    )
+    public ResponseEntity<Void> updateHttpBackendState(
+            HttpServletRequest httpServletRequest,
+            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorizationHeader,
+            @RequestHeader(value = "Content-MD5", required = false) String contentMd5,
+            @PathVariable("organizationId") String organizationId,
+            @PathVariable("workspaceId") String workspaceId) throws IOException {
+        StateService.HttpBackendAccessDecision decision = stateService.authorizeHttpBackendAccess(authorizationHeader, organizationId, workspaceId);
+        if (decision == StateService.HttpBackendAccessDecision.UNAUTHORIZED) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        if (decision != StateService.HttpBackendAccessDecision.ALLOWED) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
+
+        byte[] stateBytes = IOUtils.toByteArray(httpServletRequest.getInputStream());
+        if (contentMd5 != null && !contentMd5.isBlank() && !matchesMd5(stateBytes, contentMd5.trim())) {
+            log.warn("HTTP backend state upload Content-MD5 mismatch for org={} workspace={}", organizationId, workspaceId);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
+        }
+
+        storageTypeService.saveCurrentTerraformState(organizationId, workspaceId, stateBytes);
+        return ResponseEntity.ok().build();
+    }
+
+    @DeleteMapping(value = "/organization/{organizationId}/workspace/{workspaceId}/backend/terraform.tfstate")
+    public ResponseEntity<Void> deleteHttpBackendState(
+            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorizationHeader,
+            @PathVariable("organizationId") String organizationId,
+            @PathVariable("workspaceId") String workspaceId) {
+        StateService.HttpBackendAccessDecision decision = stateService.authorizeHttpBackendAccess(authorizationHeader, organizationId, workspaceId);
+        if (decision == StateService.HttpBackendAccessDecision.UNAUTHORIZED) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        if (decision != StateService.HttpBackendAccessDecision.ALLOWED) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
+
+        storageTypeService.deleteCurrentTerraformState(organizationId, workspaceId);
+        return ResponseEntity.ok().build();
+    }
+
+    private static boolean matchesMd5(byte[] data, String expectedBase64Md5) {
+        try {
+            byte[] digest = MessageDigest.getInstance("MD5").digest(data);
+            String computed = Base64.getEncoder().encodeToString(digest);
+            return computed.equals(expectedBase64Md5);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("MD5 algorithm not available", e);
+        }
     }
 
     @PutMapping(value = "/archive/{archiveId}/terraform.tfstate", produces = MediaType.APPLICATION_JSON_VALUE)
