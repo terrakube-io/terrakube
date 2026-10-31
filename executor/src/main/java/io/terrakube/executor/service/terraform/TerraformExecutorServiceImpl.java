@@ -1529,7 +1529,9 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                 terraformJob.getOrganizationId(),
                 terraformJob.getWorkspaceId(),
                 terraformWorkingDir,
-                terraformJob.getTerraformVersion()
+                terraformJob.getTerraformVersion(),
+                terraformJob.getJobId(),
+                terraformJob.getStepId()
         );
 
         File sshKeyFile = null;

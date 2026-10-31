@@ -91,6 +91,8 @@ class TerraformExecutorServiceImplTest {
 
     private TerraformExecutorServiceImpl subject() {
         when(terraformState.getBackendStateFile(anyString(), anyString(), any(File.class), anyString())).thenReturn("backend.tfvars");
+        when(terraformState.getBackendStateFile(anyString(), anyString(), any(File.class), anyString(), any(), any())).thenCallRealMethod();
+        when(terraformState.getBackendStateFile(anyString(), anyString(), any(), any(), any(File.class), anyString())).thenCallRealMethod();
         when(structuredOutputPersistenceQueue.awaitDrain(any())).thenReturn(true);
         when(planStructuredOutputService.publishFinalPlanSynchronous(any(), any(), any(), any())).thenReturn("ACKED");
         when(planStructuredOutputService.publishFinalPlanSynchronous(any(), any(), anyLong(), any(), any())).thenReturn("ACKED");
