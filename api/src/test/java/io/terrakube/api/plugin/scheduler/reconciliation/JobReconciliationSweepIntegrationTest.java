@@ -78,6 +78,8 @@ class JobReconciliationSweepIntegrationTest {
     private OrganizationRepository organizationRepository;
     @Autowired
     private Scheduler scheduler;
+    @Autowired
+    private JobReconciliationSweep sweep;
 
     private Organization organization;
 
@@ -181,5 +183,52 @@ class JobReconciliationSweepIntegrationTest {
 
         assertThat(reconciled).isTrue();
         assertThat(scheduler.checkExists(new JobKey(ScheduleJobService.PREFIX_JOB_CONTEXT + id))).isFalse();
+    }
+
+    @Test
+    void aJobWhoseWorkspaceWasDeletedIsCancelledWithoutStoppingTheSweep() throws Exception {
+        Workspace gone = workspace();
+        Job orphan = runningJob(gone);
+        io.terrakube.api.rs.job.step.Step running = new io.terrakube.api.rs.job.step.Step();
+        running.setJob(orphan);
+        running.setStepNumber(100);
+        running.setStatus(JobStatus.running);
+        running = stepRepository.save(running);
+        // Deleting a workspace is soft: the job stays and reads back with no workspace.
+        gone.setDeleted(true);
+        workspaceRepository.save(gone);
+
+        // A job with steps after the orphan makes the sweep run a query, which is what failed to flush the orphan.
+        Workspace healthy = workspace();
+        Job later = runningJob(healthy);
+        io.terrakube.api.rs.job.step.Step laterStep = new io.terrakube.api.rs.job.step.Step();
+        laterStep.setJob(later);
+        laterStep.setStepNumber(100);
+        laterStep.setStatus(JobStatus.running);
+        stepRepository.save(laterStep);
+
+        sweep.execute(null);
+
+        assertThat(jobRepository.findById(orphan.getId()).orElseThrow().getStatus()).isEqualTo(JobStatus.cancelled);
+        assertThat(stepRepository.findById(running.getId()).orElseThrow().getStatus()).isEqualTo(JobStatus.cancelled);
+        assertThat(jobRepository.findById(later.getId()).orElseThrow().getStatus()).isEqualTo(JobStatus.running);
+    }
+
+    private Workspace workspace() {
+        Workspace workspace = new Workspace();
+        workspace.setName("ws-" + UUID.randomUUID().toString().substring(0, 8));
+        workspace.setSource("https://github.com/example/repo.git");
+        workspace.setBranch("main");
+        workspace.setTerraformVersion("1.6.0");
+        workspace.setOrganization(organization);
+        return workspaceRepository.save(workspace);
+    }
+
+    private Job runningJob(Workspace workspace) {
+        Job job = new Job();
+        job.setOrganization(organization);
+        job.setWorkspace(workspace);
+        job.setStatus(JobStatus.running);
+        return jobRepository.save(job);
     }
 }

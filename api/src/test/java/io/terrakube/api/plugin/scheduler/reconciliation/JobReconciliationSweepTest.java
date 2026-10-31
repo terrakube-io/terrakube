@@ -159,15 +159,17 @@ class JobReconciliationSweepTest {
         Step step = step(JobStatus.pending);
         doReturn(List.of(orphaned)).when(jobRepository)
                 .findAllByStatusInOrderByIdAsc(JobReconciliationSweep.ACTIVE_STATUSES);
-        doReturn(orphaned).when(jobRepository).save(orphaned);
+        doReturn(1).when(jobRepository).updateStatusByIdAndStatusIn(eq(JobStatus.cancelled), eq(18), any());
         doReturn(List.of(step)).when(stepRepository).findByJobId(18);
         doReturn(step).when(stepRepository).save(step);
 
         subject().execute(null);
 
         verify(scheduleJobService, times(0)).createJobContext(any());
-        assertThat(orphaned.getStatus()).isEqualTo(JobStatus.cancelled);
-        verify(jobRepository, times(1)).save(orphaned);
+        // A bulk update, never a save of the entity: it has no workspace, so saving it would write a NULL workspace_id.
+        verify(jobRepository, times(1)).updateStatusByIdAndStatusIn(JobStatus.cancelled, 18,
+                JobReconciliationSweep.ACTIVE_STATUSES);
+        verify(jobRepository, times(0)).save(any());
         assertThat(step.getStatus()).isEqualTo(JobStatus.cancelled);
         verify(stepRepository, times(1)).save(step);
     }
