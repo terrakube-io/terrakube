@@ -182,6 +182,7 @@ public class TerraformStateAutoConfiguration {
                             .terraformStatePathService(terraformStatePathService)
                             .workspaceSecurity(workspaceSecurity)
                             .delegate(localDelegate)
+                            .tokenTtlMinutes(terraformStateProperties != null ? terraformStateProperties.getHttpTokenTtlMinutes() : 60)
                             .build();
                     break;
                 default:
@@ -210,6 +211,7 @@ public class TerraformStateAutoConfiguration {
                     .terraformStatePathService(terraformStatePathService)
                     .workspaceSecurity(workspaceSecurity)
                     .delegate(terraformState)
+                    .tokenTtlMinutes(terraformStateProperties.getHttpTokenTtlMinutes())
                     .build();
         }
         return terraformState;

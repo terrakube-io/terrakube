@@ -51,6 +51,7 @@ import java.util.function.Consumer;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -91,7 +92,6 @@ class TerraformExecutorServiceImplTest {
 
     private TerraformExecutorServiceImpl subject() {
         when(terraformState.getBackendStateFile(anyString(), anyString(), any(File.class), anyString())).thenReturn("backend.tfvars");
-        when(terraformState.getBackendStateFile(anyString(), anyString(), any(File.class), anyString(), any(), any())).thenCallRealMethod();
         when(terraformState.getBackendStateFile(anyString(), anyString(), any(), any(), any(File.class), anyString())).thenCallRealMethod();
         when(structuredOutputPersistenceQueue.awaitDrain(any())).thenReturn(true);
         when(planStructuredOutputService.publishFinalPlanSynchronous(any(), any(), any(), any())).thenReturn("ACKED");
@@ -538,6 +538,52 @@ class TerraformExecutorServiceImplTest {
         assertTrue(result.isSuccessfulExecution());
         assertTrue(outputOf(result).contains("Outputs:"));
         assertTrue(outputOf(result).contains("foo = \"bar\""));
+    }
+
+    @Test
+    void handleTerraformStateChangePreservesBackendCredentialsForShowAndStatePull() throws Exception {
+        TerraformExecutorServiceImpl subject = subjectSpy();
+        TerraformJob terraformJob = createJob();
+        Map<String, String> backendEnv = Map.of(
+                "TF_HTTP_USERNAME", "terraform",
+                "TF_HTTP_PASSWORD", "secret-scoped-token"
+        );
+        when(terraformState.getBackendEnvironmentVariables(
+                terraformJob.getOrganizationId(),
+                terraformJob.getWorkspaceId(),
+                terraformJob.getJobId(),
+                terraformJob.getStepId())).thenReturn(backendEnv);
+
+        HashMap<String, String> jobEnv = new HashMap<>(backendEnv);
+        jobEnv.put("CUSTOM_WORKSPACE_VAR", "sensitive-value");
+        terraformJob.setEnvironmentVariables(jobEnv);
+
+        when(applyStructuredOutputService.seedFromPlan("org", "42")).thenReturn(List.of());
+        when(terraformClient.init(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(true));
+        when(terraformClient.apply(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(true));
+
+        ArgumentCaptor<TerraformProcessData> showCaptor = ArgumentCaptor.forClass(TerraformProcessData.class);
+        ArgumentCaptor<TerraformProcessData> statePullCaptor = ArgumentCaptor.forClass(TerraformProcessData.class);
+        when(terraformClient.show(showCaptor.capture(), any(Consumer.class), any(Consumer.class)))
+                .thenReturn(CompletableFuture.completedFuture(true));
+        when(terraformClient.statePull(statePullCaptor.capture(), any(Consumer.class), any(Consumer.class)))
+                .thenReturn(CompletableFuture.completedFuture(true));
+
+        subject.apply(terraformJob, tempDir.toFile());
+
+        TerraformProcessData showData = showCaptor.getValue();
+        assertNotNull(showData);
+        assertEquals("terraform", showData.getTerraformEnvironmentVariables().get("TF_HTTP_USERNAME"));
+        assertEquals("secret-scoped-token", showData.getTerraformEnvironmentVariables().get("TF_HTTP_PASSWORD"));
+        assertNull(showData.getTerraformEnvironmentVariables().get("CUSTOM_WORKSPACE_VAR"));
+
+        TerraformProcessData statePullData = statePullCaptor.getValue();
+        assertNotNull(statePullData);
+        assertEquals("terraform", statePullData.getTerraformEnvironmentVariables().get("TF_HTTP_USERNAME"));
+        assertEquals("secret-scoped-token", statePullData.getTerraformEnvironmentVariables().get("TF_HTTP_PASSWORD"));
+        assertNull(statePullData.getTerraformEnvironmentVariables().get("CUSTOM_WORKSPACE_VAR"));
     }
 
     // #3671 follow-up: the live Terraform state is already durably written by Terraform/OpenTofu's
