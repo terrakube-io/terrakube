@@ -166,6 +166,23 @@ public class GcpStorageTypeServiceImpl implements StorageTypeService {
     }
 
     @Override
+    public void saveCurrentTerraformState(String organizationId, String workspaceId, byte[] stateData) {
+        String currentStateKey = String.format(GCP_CURRENT_STATE, organizationId, workspaceId);
+        log.info("Saving Current State File GCP Storage: {}", currentStateKey);
+        uploadBlob(currentStateKey, stateData, "application/json");
+    }
+
+    @Override
+    public void deleteCurrentTerraformState(String organizationId, String workspaceId) {
+        String currentStateKey = String.format(GCP_CURRENT_STATE, organizationId, workspaceId);
+        log.info("Deleting Current State File GCP Storage: {}", currentStateKey);
+        storageRetryMetrics.withRetry("gcp", "delete", () -> {
+            storage.delete(BlobId.of(bucketName, currentStateKey));
+            return null;
+        });
+    }
+
+    @Override
     public void uploadState(String organizationId, String workspaceId, String terraformState, String historyId) {
         String currentStateKey = String.format(GCP_CURRENT_STATE, organizationId, workspaceId);
         String rawStateKey = String.format(GCP_HISTORY_RAW_STATE, organizationId, workspaceId, historyId);
