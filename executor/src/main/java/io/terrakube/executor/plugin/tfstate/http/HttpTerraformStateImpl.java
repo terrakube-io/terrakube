@@ -19,6 +19,8 @@ import org.apache.commons.text.TextStringBuilder;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Stream;
 
 @Slf4j
@@ -30,6 +32,9 @@ public class HttpTerraformStateImpl implements TerraformState {
     private static final String BACKEND_FILE_NAME = "terrakube_override.tf";
     private static final String HTTP_BACKEND_USERNAME = "terraform";
     private static final int TOKEN_TTL_MINUTES = 60;
+
+    @Builder.Default
+    private final Map<String, String> tokenCache = new ConcurrentHashMap<>();
 
     @NonNull
     private TerraformStatePathService terraformStatePathService;
@@ -67,8 +72,21 @@ public class HttpTerraformStateImpl implements TerraformState {
                             String.join(File.separator, Stream.of(workingDirectory.getAbsolutePath(), BACKEND_FILE_NAME)
                                     .toArray(String[]::new))));
 
+            String content = httpBackendHcl.toString();
+            if (httpBackendFile.exists()) {
+                try {
+                    String existingContent = FileUtils.readFileToString(httpBackendFile, StandardCharsets.UTF_8);
+                    if (existingContent.equals(content)) {
+                        log.debug("HTTP Backend File already up-to-date: {}", httpBackendFile.getAbsolutePath());
+                        return BACKEND_FILE_NAME;
+                    }
+                } catch (IOException e) {
+                    log.warn("Could not read existing HTTP backend override file, will overwrite: {}", e.getMessage());
+                }
+            }
+
             log.info("Creating HTTP Backend File: {}", httpBackendFile.getAbsolutePath());
-            FileUtils.writeStringToFile(httpBackendFile, httpBackendHcl.toString(), StandardCharsets.UTF_8);
+            FileUtils.writeStringToFile(httpBackendFile, content, StandardCharsets.UTF_8);
         } catch (IOException e) {
             log.error("Failed to generate HTTP backend override file: {}", e.getMessage());
             httpBackend = null;
@@ -80,8 +98,19 @@ public class HttpTerraformStateImpl implements TerraformState {
         if (workspaceSecurity == null) {
             return "";
         }
-        String token = workspaceSecurity.generateAccessToken(TOKEN_TTL_MINUTES, organizationId, workspaceId, jobId, stepId);
-        return token != null ? token : "";
+        String cacheKey = String.format("%s:%s:%s:%s",
+                organizationId != null ? organizationId : "",
+                workspaceId != null ? workspaceId : "",
+                jobId != null ? jobId : "",
+                stepId != null ? stepId : "");
+        return tokenCache.computeIfAbsent(cacheKey, k -> {
+            String token = workspaceSecurity.generateAccessToken(TOKEN_TTL_MINUTES, organizationId, workspaceId, jobId, stepId);
+            return token != null ? token : "";
+        });
+    }
+
+    public void clearTokenCache() {
+        tokenCache.clear();
     }
 
     @Override
