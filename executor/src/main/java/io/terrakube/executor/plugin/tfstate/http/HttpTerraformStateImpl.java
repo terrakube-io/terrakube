@@ -19,6 +19,7 @@ import org.apache.commons.text.TextStringBuilder;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Stream;
@@ -31,6 +32,8 @@ public class HttpTerraformStateImpl implements TerraformState {
 
     private static final String BACKEND_FILE_NAME = "terrakube_override.tf";
     private static final String HTTP_BACKEND_USERNAME = "terraform";
+    private static final String TF_HTTP_USERNAME = "TF_HTTP_USERNAME";
+    private static final String TF_HTTP_PASSWORD = "TF_HTTP_PASSWORD";
     private static final int TOKEN_TTL_MINUTES = 60;
 
     @Builder.Default
@@ -56,14 +59,11 @@ public class HttpTerraformStateImpl implements TerraformState {
         String httpBackend = BACKEND_FILE_NAME;
         try {
             String backendAddress = terraformStatePathService.getStateHttpBackendPath(organizationId, workspaceId);
-            String accessToken = resolveScopedToken(organizationId, workspaceId, jobId, stepId);
 
             TextStringBuilder httpBackendHcl = new TextStringBuilder();
             httpBackendHcl.appendln("terraform {");
             httpBackendHcl.appendln("  backend \"http\" {");
             httpBackendHcl.appendln("    address  = \"" + backendAddress + "\"");
-            httpBackendHcl.appendln("    username = \"" + HTTP_BACKEND_USERNAME + "\"");
-            httpBackendHcl.appendln("    password = \"" + accessToken + "\"");
             httpBackendHcl.appendln("  }");
             httpBackendHcl.appendln("}");
 
@@ -111,6 +111,20 @@ public class HttpTerraformStateImpl implements TerraformState {
 
     public void clearTokenCache() {
         tokenCache.clear();
+    }
+
+    @Override
+    public Map<String, String> getBackendEnvironmentVariables(String organizationId, String workspaceId, String jobId, String stepId) {
+        Map<String, String> env = new HashMap<>();
+        if (delegate != null) {
+            env.putAll(delegate.getBackendEnvironmentVariables(organizationId, workspaceId, jobId, stepId));
+        }
+        String accessToken = resolveScopedToken(organizationId, workspaceId, jobId, stepId);
+        if (accessToken != null && !accessToken.isBlank()) {
+            env.put(TF_HTTP_USERNAME, HTTP_BACKEND_USERNAME);
+            env.put(TF_HTTP_PASSWORD, accessToken);
+        }
+        return env;
     }
 
     @Override

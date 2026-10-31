@@ -17,6 +17,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -58,12 +59,12 @@ class HttpTerraformStateImplTest {
     }
 
     @Test
-    void testGetBackendStateFileWithJobAndStepGeneratesScopedHttpBackendBlock() throws Exception {
-        String expectedUrl = "https://terrakube-api.localhost/tfstate/v1/organization/" + ORG_ID + "/workspace/" + WS_ID + "/backend/terraform.tfstate";
-        String expectedToken = "scoped.jwt.token.value";
+    void testGetBackendStateFileWithJobAndStepGeneratesScopedHttpBackendBlockWithoutEmbeddingCredentials()
+            throws Exception {
+        String expectedUrl = "https://terrakube-api.localhost/tfstate/v1/organization/" + ORG_ID + "/workspace/" + WS_ID
+                + "/backend/terraform.tfstate";
 
         when(terraformStatePathService.getStateHttpBackendPath(ORG_ID, WS_ID)).thenReturn(expectedUrl);
-        when(workspaceSecurity.generateAccessToken(60, ORG_ID, WS_ID, JOB_ID, STEP_ID)).thenReturn(expectedToken);
 
         File workingDir = tempDir.toFile();
         String fileName = httpTerraformState.getBackendStateFile(ORG_ID, WS_ID, JOB_ID, STEP_ID, workingDir, "1.6.0");
@@ -75,8 +76,10 @@ class HttpTerraformStateImplTest {
         String content = FileUtils.readFileToString(overrideFile, StandardCharsets.UTF_8);
         assertTrue(content.contains("backend \"http\" {"));
         assertTrue(content.contains("address  = \"" + expectedUrl + "\""));
-        assertTrue(content.contains("username = \"terraform\""));
-        assertTrue(content.contains("password = \"" + expectedToken + "\""));
+        // Credentials must not be in the HCL file to avoid baking them into .tfplan
+        // binary plan files
+        assertFalse(content.contains("username"));
+        assertFalse(content.contains("password"));
         assertFalse(content.contains("access_key"));
         assertFalse(content.contains("secret_key"));
         assertFalse(content.contains("storage_account_name"));
@@ -84,84 +87,76 @@ class HttpTerraformStateImplTest {
     }
 
     @Test
-    void testGetBackendStateFileWithoutJobIdGeneratesScopedTokenWithNullJobAndStep() throws Exception {
-        String expectedUrl = "https://terrakube-api.localhost/tfstate/v1/organization/" + ORG_ID + "/workspace/" + WS_ID + "/backend/terraform.tfstate";
-        String expectedToken = "fallback.jwt.token";
+    void testGetBackendEnvironmentVariablesProvidesBasicAuthCredentials() {
+        String expectedToken = "scoped.jwt.token.value";
+        when(workspaceSecurity.generateAccessToken(60, ORG_ID, WS_ID, JOB_ID, STEP_ID)).thenReturn(expectedToken);
 
-        when(terraformStatePathService.getStateHttpBackendPath(ORG_ID, WS_ID)).thenReturn(expectedUrl);
-        when(workspaceSecurity.generateAccessToken(60, ORG_ID, WS_ID, null, null)).thenReturn(expectedToken);
+        Map<String, String> env = httpTerraformState.getBackendEnvironmentVariables(ORG_ID, WS_ID, JOB_ID, STEP_ID);
 
-        File workingDir = tempDir.toFile();
-        String fileName = httpTerraformState.getBackendStateFile(ORG_ID, WS_ID, workingDir, "1.6.0");
-
-        assertEquals("terrakube_override.tf", fileName);
-        File overrideFile = new File(workingDir, "terrakube_override.tf");
-        String content = FileUtils.readFileToString(overrideFile, StandardCharsets.UTF_8);
-        assertTrue(content.contains("password = \"" + expectedToken + "\""));
+        assertNotNull(env);
+        assertEquals("terraform", env.get("TF_HTTP_USERNAME"));
+        assertEquals(expectedToken, env.get("TF_HTTP_PASSWORD"));
     }
 
     @Test
-    void testGetBackendStateFileCachesTokenForSameStepAndPreventsDrift() throws Exception {
-        String expectedUrl = "https://terrakube-api.localhost/tfstate/v1/organization/" + ORG_ID + "/workspace/" + WS_ID + "/backend/terraform.tfstate";
-        String expectedToken = "stable.cached.token.for.step";
+    void testGetBackendEnvironmentVariablesWithoutJobIdGeneratesScopedTokenWithNullJobAndStep() {
+        String expectedToken = "fallback.jwt.token";
+        when(workspaceSecurity.generateAccessToken(60, ORG_ID, WS_ID, null, null)).thenReturn(expectedToken);
 
-        when(terraformStatePathService.getStateHttpBackendPath(ORG_ID, WS_ID)).thenReturn(expectedUrl);
+        Map<String, String> env = httpTerraformState.getBackendEnvironmentVariables(ORG_ID, WS_ID, null, null);
+
+        assertNotNull(env);
+        assertEquals("terraform", env.get("TF_HTTP_USERNAME"));
+        assertEquals(expectedToken, env.get("TF_HTTP_PASSWORD"));
+    }
+
+    @Test
+    void testGetBackendEnvironmentVariablesCachesTokenForSameStepAndPreventsDrift() {
+        String expectedToken = "stable.cached.token.for.step";
         when(workspaceSecurity.generateAccessToken(60, ORG_ID, WS_ID, JOB_ID, STEP_ID)).thenReturn(expectedToken);
 
-        File workingDir = tempDir.toFile();
-        // First invocation (e.g. during prepareTerraformOperation / init)
-        String fileName1 = httpTerraformState.getBackendStateFile(ORG_ID, WS_ID, JOB_ID, STEP_ID, workingDir, "1.6.0");
-        assertEquals("terrakube_override.tf", fileName1);
+        Map<String, String> env1 = httpTerraformState.getBackendEnvironmentVariables(ORG_ID, WS_ID, JOB_ID, STEP_ID);
+        Map<String, String> env2 = httpTerraformState.getBackendEnvironmentVariables(ORG_ID, WS_ID, JOB_ID, STEP_ID);
 
-        File overrideFile = new File(workingDir, "terrakube_override.tf");
-        String content1 = FileUtils.readFileToString(overrideFile, StandardCharsets.UTF_8);
-
-        // Second invocation (e.g. during plan() or apply())
-        String fileName2 = httpTerraformState.getBackendStateFile(ORG_ID, WS_ID, JOB_ID, STEP_ID, workingDir, "1.6.0");
-        assertEquals("terrakube_override.tf", fileName2);
-        String content2 = FileUtils.readFileToString(overrideFile, StandardCharsets.UTF_8);
-
-        assertEquals(content1, content2);
-        // generateAccessToken must be called exactly once; second call uses the cached token
+        assertEquals(env1, env2);
+        assertEquals(expectedToken, env1.get("TF_HTTP_PASSWORD"));
         verify(workspaceSecurity, times(1)).generateAccessToken(60, ORG_ID, WS_ID, JOB_ID, STEP_ID);
     }
 
     @Test
-    void testGetBackendStateFileGeneratesDistinctTokensForDifferentSteps() throws Exception {
-        String expectedUrl = "https://terrakube-api.localhost/tfstate/v1/organization/" + ORG_ID + "/workspace/" + WS_ID + "/backend/terraform.tfstate";
+    void testGetBackendEnvironmentVariablesGeneratesDistinctTokensForDifferentSteps() {
         String step1Token = "token.for.step1";
         String step2Id = "another-step-uuid-9999";
         String step2Token = "token.for.step2";
 
-        when(terraformStatePathService.getStateHttpBackendPath(ORG_ID, WS_ID)).thenReturn(expectedUrl);
         when(workspaceSecurity.generateAccessToken(60, ORG_ID, WS_ID, JOB_ID, STEP_ID)).thenReturn(step1Token);
         when(workspaceSecurity.generateAccessToken(60, ORG_ID, WS_ID, JOB_ID, step2Id)).thenReturn(step2Token);
 
-        File workingDir = tempDir.toFile();
-        httpTerraformState.getBackendStateFile(ORG_ID, WS_ID, JOB_ID, STEP_ID, workingDir, "1.6.0");
-        File overrideFile = new File(workingDir, "terrakube_override.tf");
-        assertTrue(FileUtils.readFileToString(overrideFile, StandardCharsets.UTF_8).contains("password = \"" + step1Token + "\""));
+        Map<String, String> envStep1 = httpTerraformState.getBackendEnvironmentVariables(ORG_ID, WS_ID, JOB_ID,
+                STEP_ID);
+        Map<String, String> envStep2 = httpTerraformState.getBackendEnvironmentVariables(ORG_ID, WS_ID, JOB_ID,
+                step2Id);
 
-        httpTerraformState.getBackendStateFile(ORG_ID, WS_ID, JOB_ID, step2Id, workingDir, "1.6.0");
-        assertTrue(FileUtils.readFileToString(overrideFile, StandardCharsets.UTF_8).contains("password = \"" + step2Token + "\""));
+        assertEquals(step1Token, envStep1.get("TF_HTTP_PASSWORD"));
+        assertEquals(step2Token, envStep2.get("TF_HTTP_PASSWORD"));
 
         verify(workspaceSecurity, times(1)).generateAccessToken(60, ORG_ID, WS_ID, JOB_ID, STEP_ID);
         verify(workspaceSecurity, times(1)).generateAccessToken(60, ORG_ID, WS_ID, JOB_ID, step2Id);
     }
 
     @Test
-    void testClearTokenCacheEvictsCachedTokens() throws Exception {
-        String expectedUrl = "https://terrakube-api.localhost/tfstate/v1/organization/" + ORG_ID + "/workspace/" + WS_ID + "/backend/terraform.tfstate";
-
-        when(terraformStatePathService.getStateHttpBackendPath(ORG_ID, WS_ID)).thenReturn(expectedUrl);
+    void testClearTokenCacheEvictsCachedTokens() {
         when(workspaceSecurity.generateAccessToken(60, ORG_ID, WS_ID, JOB_ID, STEP_ID))
                 .thenReturn("first.token")
                 .thenReturn("second.token");
 
-        File workingDir = tempDir.toFile();
-        httpTerraformState.getBackendStateFile(ORG_ID, WS_ID, JOB_ID, STEP_ID, workingDir, "1.6.0");
+        Map<String, String> env1 = httpTerraformState.getBackendEnvironmentVariables(ORG_ID, WS_ID, JOB_ID, STEP_ID);
+        assertEquals("first.token", env1.get("TF_HTTP_PASSWORD"));
+
         httpTerraformState.clearTokenCache();
-        httpTerraformState.getBackendStateFile(ORG_ID, WS_ID, JOB_ID, STEP_ID, workingDir, "1.6.0");
+
+        Map<String, String> env2 = httpTerraformState.getBackendEnvironmentVariables(ORG_ID, WS_ID, JOB_ID, STEP_ID);
+        assertEquals("second.token", env2.get("TF_HTTP_PASSWORD"));
 
         verify(workspaceSecurity, times(2)).generateAccessToken(60, ORG_ID, WS_ID, JOB_ID, STEP_ID);
     }
@@ -172,7 +167,7 @@ class HttpTerraformStateImplTest {
         TerraformJob job = new TerraformJob();
         StepOutputBuffer buffer = new StepOutputBuffer();
         StepOutputPartWriter.PartSource partSource = org.mockito.Mockito.mock(StepOutputPartWriter.PartSource.class);
-        byte[] patchBytes = new byte[]{1, 2, 3};
+        byte[] patchBytes = new byte[] { 1, 2, 3 };
 
         when(delegate.saveTerraformPlan(ORG_ID, WS_ID, JOB_ID, STEP_ID, workingDir)).thenReturn("plan-url");
         when(delegate.downloadTerraformPlan(ORG_ID, WS_ID, JOB_ID, STEP_ID, workingDir)).thenReturn(true);
@@ -209,4 +204,3 @@ class HttpTerraformStateImplTest {
         assertNotNull(httpTerraformState.getDelegate());
     }
 }
-
