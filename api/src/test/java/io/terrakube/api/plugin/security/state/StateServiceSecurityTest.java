@@ -307,10 +307,15 @@ class StateServiceSecurityTest {
                 "stepId", stepId.toString()
         ), 300);
 
-        assertEquals(StateService.HttpBackendAccessDecision.ALLOWED,
-                stateService.authorizeHttpBackendAccess(basicHeader("terraform", token), orgId.toString(), wsId.toString()));
-        assertEquals(StateService.HttpBackendAccessDecision.ALLOWED,
-                stateService.authorizeHttpBackendAccess("Bearer " + token, orgId.toString(), wsId.toString()));
+        StateService.HttpBackendAccessResult basicResult = stateService.authorizeHttpBackendAccess(basicHeader("terraform", token), orgId.toString(), wsId.toString());
+        assertEquals(StateService.HttpBackendAccessDecision.ALLOWED, basicResult.decision());
+        assertEquals("101", basicResult.jobId());
+        assertEquals(stepId.toString(), basicResult.stepId());
+
+        StateService.HttpBackendAccessResult bearerResult = stateService.authorizeHttpBackendAccess("Bearer " + token, orgId.toString(), wsId.toString());
+        assertEquals(StateService.HttpBackendAccessDecision.ALLOWED, bearerResult.decision());
+        assertEquals("101", bearerResult.jobId());
+        assertEquals(stepId.toString(), bearerResult.stepId());
     }
 
     @Test
@@ -318,15 +323,15 @@ class StateServiceSecurityTest {
         ReflectionTestUtils.setField(stateService, "internalJwtSecret", TEST_INTERNAL_SECRET);
 
         assertEquals(StateService.HttpBackendAccessDecision.UNAUTHORIZED,
-                stateService.authorizeHttpBackendAccess(null, orgId.toString(), wsId.toString()));
+                stateService.authorizeHttpBackendAccess(null, orgId.toString(), wsId.toString()).decision());
         assertEquals(StateService.HttpBackendAccessDecision.UNAUTHORIZED,
-                stateService.authorizeHttpBackendAccess("", orgId.toString(), wsId.toString()));
+                stateService.authorizeHttpBackendAccess("", orgId.toString(), wsId.toString()).decision());
         assertEquals(StateService.HttpBackendAccessDecision.UNAUTHORIZED,
-                stateService.authorizeHttpBackendAccess("Basic !!!not-base64!!!", orgId.toString(), wsId.toString()));
+                stateService.authorizeHttpBackendAccess("Basic !!!not-base64!!!", orgId.toString(), wsId.toString()).decision());
         assertEquals(StateService.HttpBackendAccessDecision.UNAUTHORIZED,
-                stateService.authorizeHttpBackendAccess(basicHeader("", "some-token"), orgId.toString(), wsId.toString()));
+                stateService.authorizeHttpBackendAccess(basicHeader("", "some-token"), orgId.toString(), wsId.toString()).decision());
         assertEquals(StateService.HttpBackendAccessDecision.UNAUTHORIZED,
-                stateService.authorizeHttpBackendAccess(basicHeader("terraform", ""), orgId.toString(), wsId.toString()));
+                stateService.authorizeHttpBackendAccess(basicHeader("terraform", ""), orgId.toString(), wsId.toString()).decision());
     }
 
     @Test
@@ -348,7 +353,7 @@ class StateServiceSecurityTest {
         ), 300);
 
         assertEquals(StateService.HttpBackendAccessDecision.UNAUTHORIZED,
-                stateService.authorizeHttpBackendAccess(basicHeader("terraform", activeTokenWithCompletedStep), orgId.toString(), wsId.toString()));
+                stateService.authorizeHttpBackendAccess(basicHeader("terraform", activeTokenWithCompletedStep), orgId.toString(), wsId.toString()).decision());
 
         String expiredToken = signToken(TEST_INTERNAL_SECRET, "TerrakubeInternal", "TerrakubeInternal (TOKEN)", Map.of(
                 "organizationId", orgId.toString(),
@@ -358,7 +363,7 @@ class StateServiceSecurityTest {
         ), -120);
 
         assertEquals(StateService.HttpBackendAccessDecision.UNAUTHORIZED,
-                stateService.authorizeHttpBackendAccess(basicHeader("terraform", expiredToken), orgId.toString(), wsId.toString()));
+                stateService.authorizeHttpBackendAccess(basicHeader("terraform", expiredToken), orgId.toString(), wsId.toString()).decision());
     }
 
     @Test
@@ -373,27 +378,27 @@ class StateServiceSecurityTest {
 
         // Mismatched workspace
         assertEquals(StateService.HttpBackendAccessDecision.FORBIDDEN,
-                stateService.authorizeHttpBackendAccess(basicHeader("terraform", wsToken), orgId.toString(), UUID.randomUUID().toString()));
+                stateService.authorizeHttpBackendAccess(basicHeader("terraform", wsToken), orgId.toString(), UUID.randomUUID().toString()).decision());
         // Mismatched organization
         assertEquals(StateService.HttpBackendAccessDecision.FORBIDDEN,
-                stateService.authorizeHttpBackendAccess(basicHeader("terraform", wsToken), UUID.randomUUID().toString(), wsId.toString()));
+                stateService.authorizeHttpBackendAccess(basicHeader("terraform", wsToken), UUID.randomUUID().toString(), wsId.toString()).decision());
 
         // EXECUTOR_SERVICE token (unscoped) must be rejected on HTTP backend
         String executorServiceToken = signToken(TEST_INTERNAL_SECRET, "TerrakubeInternal", "TerrakubeInternal (EXECUTOR)", Map.of(), 300);
         assertEquals(StateService.HttpBackendAccessDecision.FORBIDDEN,
-                stateService.authorizeHttpBackendAccess(basicHeader("terraform", executorServiceToken), orgId.toString(), wsId.toString()));
+                stateService.authorizeHttpBackendAccess(basicHeader("terraform", executorServiceToken), orgId.toString(), wsId.toString()).decision());
 
         // REGISTRY_SERVICE token must be rejected
         String registryServiceToken = signToken(TEST_INTERNAL_SECRET, "TerrakubeInternal", "TerrakubeInternal (REGISTRY)", Map.of(), 300);
         assertEquals(StateService.HttpBackendAccessDecision.FORBIDDEN,
-                stateService.authorizeHttpBackendAccess(basicHeader("terraform", registryServiceToken), orgId.toString(), wsId.toString()));
+                stateService.authorizeHttpBackendAccess(basicHeader("terraform", registryServiceToken), orgId.toString(), wsId.toString()).decision());
 
         // User PAT token must be rejected with FORBIDDEN
         String userPatToken = signToken(TEST_PAT_SECRET, "Terrakube", "user@example.com", Map.of(
                 "groups", java.util.List.of("TERRAKUBE_ADMIN")
         ), 300);
         assertEquals(StateService.HttpBackendAccessDecision.FORBIDDEN,
-                stateService.authorizeHttpBackendAccess(basicHeader("terraform", userPatToken), orgId.toString(), wsId.toString()));
+                stateService.authorizeHttpBackendAccess(basicHeader("terraform", userPatToken), orgId.toString(), wsId.toString()).decision());
     }
 
     private static final String TEST_INTERNAL_SECRET = "dGVycmFrdWJlLWludGVybmFsLXNlY3JldC1rZXktZm9yLXRlc3RpbmctMjU2Yml0cw";
