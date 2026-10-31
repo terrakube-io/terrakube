@@ -170,7 +170,7 @@ function generateExecutorVars() {
 		AwsTerraformOutputRegion="us-east-1"
 		AwsEndpoint="http://minio:9000"
   else
-		TerraformStateType=LocalTerraformStateImpl
+		TerraformStateType=HttpTerraformStateImpl
 		TerraformOutputType=LocalTerraformOutputImpl
 	fi
 
