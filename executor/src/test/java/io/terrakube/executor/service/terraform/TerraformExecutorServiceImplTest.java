@@ -168,6 +168,35 @@ class TerraformExecutorServiceImplTest {
     }
 
     @Test
+    void planInjectsBackendEnvironmentVariablesIntoProcessDataAndJob() throws Exception {
+        TerraformExecutorServiceImpl subject = subject();
+        TerraformJob terraformJob = createJob();
+        Map<String, String> backendEnv = Map.of(
+                "TF_HTTP_USERNAME", "terraform",
+                "TF_HTTP_PASSWORD", "secret-scoped-token"
+        );
+        when(terraformState.getBackendEnvironmentVariables(
+                terraformJob.getOrganizationId(),
+                terraformJob.getWorkspaceId(),
+                terraformJob.getJobId(),
+                terraformJob.getStepId())).thenReturn(backendEnv);
+
+        when(terraformClient.init(
+                any(TerraformProcessData.class),
+                any(Consumer.class),
+                any())).thenReturn(CompletableFuture.completedFuture(false));
+
+        subject.plan(terraformJob, tempDir.toFile(), false);
+
+        assertEquals("terraform", terraformJob.getEnvironmentVariables().get("TF_HTTP_USERNAME"));
+        assertEquals("secret-scoped-token", terraformJob.getEnvironmentVariables().get("TF_HTTP_PASSWORD"));
+        verify(terraformClient).init(
+                argThat(data -> "terraform".equals(data.getTerraformEnvironmentVariables().get("TF_HTTP_USERNAME"))
+                        && "secret-scoped-token".equals(data.getTerraformEnvironmentVariables().get("TF_HTTP_PASSWORD"))),
+                any(), any());
+    }
+
+    @Test
     void planResolvesVersionConstraintBeforeBuildingTerraformProcesses() throws Exception {
         TerraformExecutorServiceImpl subject = subject();
         TerraformJob terraformJob = createJob();

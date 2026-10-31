@@ -1534,6 +1534,19 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                 terraformJob.getStepId()
         );
 
+        Map<String, String> backendEnv = terraformState.getBackendEnvironmentVariables(
+                terraformJob.getOrganizationId(),
+                terraformJob.getWorkspaceId(),
+                terraformJob.getJobId(),
+                terraformJob.getStepId()
+        );
+        if (backendEnv != null && !backendEnv.isEmpty()) {
+            if (terraformJob.getEnvironmentVariables() == null) {
+                terraformJob.setEnvironmentVariables(new HashMap<>());
+            }
+            terraformJob.getEnvironmentVariables().putAll(backendEnv);
+        }
+
         File sshKeyFile = null;
 
         if (terraformJob.getVcsType() != null
