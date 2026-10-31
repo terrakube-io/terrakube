@@ -187,6 +187,27 @@ public class AwsStorageTypeServiceImpl implements StorageTypeService {
     }
 
     @Override
+    public void saveCurrentTerraformState(String organizationId, String workspaceId, byte[] stateData) {
+        String blobKey = String.format("tfstate/%s/%s/terraform.tfstate", organizationId, workspaceId);
+        log.info("Saving current terraformStateFile: {}", blobKey);
+        uploadBytesToBucket(bucketName, blobKey, stateData, "application/json");
+    }
+
+    @Override
+    public void deleteCurrentTerraformState(String organizationId, String workspaceId) {
+        String blobKey = String.format("tfstate/%s/%s/terraform.tfstate", organizationId, workspaceId);
+        log.info("Deleting current terraformStateFile: {}", blobKey);
+        storageRetryMetrics.withRetry("aws", "delete", () -> {
+            try {
+                s3client.deleteObject(DeleteObjectRequest.builder().bucket(bucketName).key(blobKey).build());
+            } catch (NoSuchKeyException e) {
+                log.debug("Current state already absent: {}", blobKey);
+            }
+            return null;
+        });
+    }
+
+    @Override
     public void uploadState(String organizationId, String workspaceId, String terraformState, String historyId) {
         String blobKey = String.format("tfstate/%s/%s/terraform.tfstate", organizationId, workspaceId);
         String rawBlobKey = String.format("tfstate/%s/%s/state/%s.raw.json", organizationId, workspaceId, historyId);

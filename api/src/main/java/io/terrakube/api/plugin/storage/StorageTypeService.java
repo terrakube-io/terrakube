@@ -34,6 +34,14 @@ public interface StorageTypeService {
 
     byte[] getCurrentTerraformState(String organizationId, String workspaceId);
 
+    default void saveCurrentTerraformState(String organizationId, String workspaceId, byte[] stateData) {
+        throw new UnsupportedOperationException("This storage backend does not support saving current state directly");
+    }
+
+    default void deleteCurrentTerraformState(String organizationId, String workspaceId) {
+        throw new UnsupportedOperationException("This storage backend does not support deleting current state directly");
+    }
+
     void uploadState(String organizationId, String workspaceId, String terraformState, String historyId);
 
     String saveContext(int jobId, String jobContext);
