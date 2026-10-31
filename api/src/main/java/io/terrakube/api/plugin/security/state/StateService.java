@@ -23,8 +23,6 @@ import io.terrakube.api.plugin.security.token.InternalTokenType;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
 import io.terrakube.api.plugin.security.authentication.dex.ActiveStepTokenValidator;
-import io.terrakube.api.plugin.security.token.InternalTokenClassifier;
-import io.terrakube.api.plugin.security.token.InternalTokenType;
 import io.terrakube.api.repository.StepRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
@@ -42,17 +40,12 @@ import java.util.Map;
 @Slf4j
 @Service
 public class StateService {
-   @Autowired
-   private TeamRepository teamRepository;
-
-   @Autowired
-   private WorkspaceRepository workspaceRepository;
-
-   @Autowired
-   private RbacService rbacService;
+   private final TeamRepository teamRepository;
+   private final WorkspaceRepository workspaceRepository;
+   private final RbacService rbacService;
+   private final StepRepository stepRepository;
 
    @Value("${io.terrakube.owner:}")
-
    private String instanceOwner;
 
    @Value("${io.terrakube.token.internal:}")
@@ -61,8 +54,21 @@ public class StateService {
    @Value("${io.terrakube.token.pat:}")
    private String patJwtSecret;
 
-   @Autowired(required = false)
-   private StepRepository stepRepository;
+   private volatile NimbusJwtDecoder cachedInternalJwtDecoder;
+   private volatile String cachedInternalSecret;
+
+   private volatile NimbusJwtDecoder cachedPatJwtDecoder;
+   private volatile String cachedPatSecret;
+
+   public StateService(TeamRepository teamRepository,
+                       WorkspaceRepository workspaceRepository,
+                       RbacService rbacService,
+                       StepRepository stepRepository) {
+      this.teamRepository = teamRepository;
+      this.workspaceRepository = workspaceRepository;
+      this.rbacService = rbacService;
+      this.stepRepository = stepRepository;
+   }
 
    public enum HttpBackendAccessDecision {
       ALLOWED,
@@ -255,13 +261,14 @@ public class StateService {
          return HttpBackendAccessResult.unauthorized();
       }
 
-      if (internalJwtSecret == null || internalJwtSecret.isBlank()) {
+      NimbusJwtDecoder decoder = getInternalJwtDecoder();
+      if (decoder == null) {
          log.error("Internal JWT secret is not configured; failing closed for HTTP backend");
          return HttpBackendAccessResult.unauthorized();
       }
 
       try {
-         Jwt jwt = buildInternalJwtDecoder().decode(rawToken);
+         Jwt jwt = decoder.decode(rawToken);
          HttpBackendAccessDecision decision = validateHttpBackendClaims(jwt.getClaims(), organizationId, workspaceId);
          if (decision == HttpBackendAccessDecision.ALLOWED) {
             String jobId = jwt.getClaimAsString("jobId");
@@ -276,10 +283,10 @@ public class StateService {
             log.warn("User PAT token rejected on executor-only HTTP backend endpoint for org={} workspace={}", organizationId, workspaceId);
             return HttpBackendAccessResult.forbidden();
          }
-         log.warn("HTTP backend token authentication failed for org={} workspace={}: {}", organizationId, workspaceId, ex.getMessage());
+         log.info("HTTP backend token authentication failed for org={} workspace={}: {}", organizationId, workspaceId, ex.getMessage());
          return HttpBackendAccessResult.unauthorized();
       } catch (RuntimeException ex) {
-         log.warn("Unexpected error validating HTTP backend token: {}", ex.getMessage());
+         log.info("Unexpected error validating HTTP backend token: {}", ex.getMessage());
          return HttpBackendAccessResult.unauthorized();
       }
    }
@@ -341,34 +348,65 @@ public class StateService {
       return null;
    }
 
-   private NimbusJwtDecoder buildInternalJwtDecoder() {
-      byte[] secretBytes = Decoders.BASE64URL.decode(internalJwtSecret);
+   private NimbusJwtDecoder getInternalJwtDecoder() {
+      if (internalJwtSecret == null || internalJwtSecret.isBlank()) {
+         return null;
+      }
+      if (cachedInternalJwtDecoder == null || !internalJwtSecret.equals(cachedInternalSecret)) {
+         synchronized (this) {
+            if (cachedInternalJwtDecoder == null || !internalJwtSecret.equals(cachedInternalSecret)) {
+               cachedInternalJwtDecoder = buildInternalJwtDecoder(internalJwtSecret);
+               cachedInternalSecret = internalJwtSecret;
+            }
+         }
+      }
+      return cachedInternalJwtDecoder;
+   }
+
+   private NimbusJwtDecoder getPatJwtDecoder() {
+      if (patJwtSecret == null || patJwtSecret.isBlank()) {
+         return null;
+      }
+      if (cachedPatJwtDecoder == null || !patJwtSecret.equals(cachedPatSecret)) {
+         synchronized (this) {
+            if (cachedPatJwtDecoder == null || !patJwtSecret.equals(cachedPatSecret)) {
+               cachedPatJwtDecoder = buildPatJwtDecoder(patJwtSecret);
+               cachedPatSecret = patJwtSecret;
+            }
+         }
+      }
+      return cachedPatJwtDecoder;
+   }
+
+   private NimbusJwtDecoder buildInternalJwtDecoder(String secret) {
+      byte[] secretBytes = Decoders.BASE64URL.decode(secret);
       SecretKey jwtSecretKey = Keys.hmacShaKeyFor(secretBytes);
       NimbusJwtDecoder decoder = NimbusJwtDecoder.withSecretKey(jwtSecretKey)
               .macAlgorithm(resolveMacAlgorithm(secretBytes.length))
               .build();
-      if (stepRepository != null) {
-         decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(
-                 new JwtTimestampValidator(),
-                 new ActiveStepTokenValidator(stepRepository)
-         ));
-      } else {
-         decoder.setJwtValidator(new JwtTimestampValidator());
-      }
+      decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(
+              new JwtTimestampValidator(),
+              new ActiveStepTokenValidator(stepRepository)
+      ));
+      return decoder;
+   }
+
+   private NimbusJwtDecoder buildPatJwtDecoder(String secret) {
+      byte[] secretBytes = Decoders.BASE64URL.decode(secret);
+      SecretKey jwtSecretKey = Keys.hmacShaKeyFor(secretBytes);
+      NimbusJwtDecoder decoder = NimbusJwtDecoder.withSecretKey(jwtSecretKey)
+              .macAlgorithm(resolveMacAlgorithm(secretBytes.length))
+              .build();
+      decoder.setJwtValidator(new JwtTimestampValidator());
       return decoder;
    }
 
    private boolean isValidPatToken(String rawToken) {
-      if (patJwtSecret == null || patJwtSecret.isBlank()) {
+      NimbusJwtDecoder decoder = getPatJwtDecoder();
+      if (decoder == null) {
          return false;
       }
       try {
-         byte[] secretBytes = Decoders.BASE64URL.decode(patJwtSecret);
-         SecretKey jwtSecretKey = Keys.hmacShaKeyFor(secretBytes);
-         NimbusJwtDecoder decoder = NimbusJwtDecoder.withSecretKey(jwtSecretKey)
-                 .macAlgorithm(resolveMacAlgorithm(secretBytes.length))
-                 .build();
-         decoder.setJwtValidator(new JwtTimestampValidator());
          Jwt jwt = decoder.decode(rawToken);
          return "Terrakube".equals(jwt.getClaimAsString("iss"));
       } catch (RuntimeException e) {
@@ -384,9 +422,6 @@ public class StateService {
       } else {
          return MacAlgorithm.HS256;
       }
-   }
-   private boolean noopEnd() {
-      return false;
    }
 }
 

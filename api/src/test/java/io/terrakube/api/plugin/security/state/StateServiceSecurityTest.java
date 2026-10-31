@@ -25,19 +25,18 @@ class StateServiceSecurityTest {
     private WorkspaceRepository workspaceRepository;
     private io.terrakube.api.repository.TeamRepository teamRepository;
     private io.terrakube.api.plugin.security.rbac.RbacService rbacService;
+    private io.terrakube.api.repository.StepRepository stepRepository;
     private UUID orgId;
     private UUID wsId;
 
     @BeforeEach
     void setUp() {
-        stateService = new StateService();
         workspaceRepository = Mockito.mock(WorkspaceRepository.class);
         teamRepository = Mockito.mock(io.terrakube.api.repository.TeamRepository.class);
         rbacService = Mockito.mock(io.terrakube.api.plugin.security.rbac.RbacService.class);
+        stepRepository = Mockito.mock(io.terrakube.api.repository.StepRepository.class);
 
-        ReflectionTestUtils.setField(stateService, "workspaceRepository", workspaceRepository);
-        ReflectionTestUtils.setField(stateService, "teamRepository", teamRepository);
-        ReflectionTestUtils.setField(stateService, "rbacService", rbacService);
+        stateService = new StateService(teamRepository, workspaceRepository, rbacService, stepRepository);
 
         orgId = UUID.randomUUID();
         wsId = UUID.randomUUID();
@@ -293,12 +292,10 @@ class StateServiceSecurityTest {
     void testHttpBackendAccessAllowedWithValidBasicAuthWorkspaceToken() {
         ReflectionTestUtils.setField(stateService, "internalJwtSecret", TEST_INTERNAL_SECRET);
         UUID stepId = UUID.randomUUID();
-        io.terrakube.api.repository.StepRepository stepRepo = Mockito.mock(io.terrakube.api.repository.StepRepository.class);
         io.terrakube.api.rs.job.step.Step activeStep = new io.terrakube.api.rs.job.step.Step();
         activeStep.setId(stepId);
         activeStep.setStatus(io.terrakube.api.rs.job.JobStatus.running);
-        when(stepRepo.findById(stepId)).thenReturn(Optional.of(activeStep));
-        ReflectionTestUtils.setField(stateService, "stepRepository", stepRepo);
+        when(stepRepository.findById(stepId)).thenReturn(Optional.of(activeStep));
 
         String token = signToken(TEST_INTERNAL_SECRET, "TerrakubeInternal", "TerrakubeInternal (TOKEN)", Map.of(
                 "organizationId", orgId.toString(),
@@ -338,12 +335,10 @@ class StateServiceSecurityTest {
     void testHttpBackendAccessUnauthorizedWhenTokenExpiredOrStepCompleted() {
         ReflectionTestUtils.setField(stateService, "internalJwtSecret", TEST_INTERNAL_SECRET);
         UUID stepId = UUID.randomUUID();
-        io.terrakube.api.repository.StepRepository stepRepo = Mockito.mock(io.terrakube.api.repository.StepRepository.class);
         io.terrakube.api.rs.job.step.Step completedStep = new io.terrakube.api.rs.job.step.Step();
         completedStep.setId(stepId);
         completedStep.setStatus(io.terrakube.api.rs.job.JobStatus.completed);
-        when(stepRepo.findById(stepId)).thenReturn(Optional.of(completedStep));
-        ReflectionTestUtils.setField(stateService, "stepRepository", stepRepo);
+        when(stepRepository.findById(stepId)).thenReturn(Optional.of(completedStep));
 
         String activeTokenWithCompletedStep = signToken(TEST_INTERNAL_SECRET, "TerrakubeInternal", "TerrakubeInternal (TOKEN)", Map.of(
                 "organizationId", orgId.toString(),
@@ -371,9 +366,17 @@ class StateServiceSecurityTest {
         ReflectionTestUtils.setField(stateService, "internalJwtSecret", TEST_INTERNAL_SECRET);
         ReflectionTestUtils.setField(stateService, "patJwtSecret", TEST_PAT_SECRET);
 
+        UUID stepId = UUID.randomUUID();
+        io.terrakube.api.rs.job.step.Step activeStep = new io.terrakube.api.rs.job.step.Step();
+        activeStep.setId(stepId);
+        activeStep.setStatus(io.terrakube.api.rs.job.JobStatus.running);
+        when(stepRepository.findById(stepId)).thenReturn(Optional.of(activeStep));
+
         String wsToken = signToken(TEST_INTERNAL_SECRET, "TerrakubeInternal", "TerrakubeInternal (TOKEN)", Map.of(
                 "organizationId", orgId.toString(),
-                "workspaceId", wsId.toString()
+                "workspaceId", wsId.toString(),
+                "jobId", "101",
+                "stepId", stepId.toString()
         ), 300);
 
         // Mismatched workspace
