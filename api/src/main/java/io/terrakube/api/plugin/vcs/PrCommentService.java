@@ -323,6 +323,26 @@ public class PrCommentService {
     }
 
     /**
+     * Tells the pull request that a command was not run because the workspace restricts apply and destroy to its
+     * configured branch. Used by the per-workspace (v1) and shared (v2) webhook paths.
+     */
+    public void postBranchPolicyNotice(Workspace workspace, Integer prNumber, String reason) {
+        if (prNumber == null || prNumber == 0) return;
+
+        Job transientJob = new Job();
+        transientJob.setWorkspace(workspace);
+        transientJob.setPrNumber(prNumber);
+
+        String markdown = """
+                ## Terrakube
+
+                ⚠️ %s
+                """.formatted(reason);
+
+        postComment(transientJob, markdown);
+    }
+
+    /**
      * Reacts to a just-received "terrakube plan"/"terrakube apply" comment with an "eyes" reaction,
      * so the user gets immediate feedback the command was seen while the job is still running.
      * Shared by both the per-workspace (v1) and shared (v2) webhook paths. Bitbucket Cloud has no

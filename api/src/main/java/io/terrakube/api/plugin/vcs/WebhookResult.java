@@ -1,5 +1,7 @@
 package io.terrakube.api.plugin.vcs;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import io.terrakube.api.plugin.execution.WorkspaceBranchPolicy;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.ToString;
@@ -29,6 +31,17 @@ public class WebhookResult {
     private String prFilesUrl;
     private String rawPayload;
     private String prDetailsUrl;
+
+    /** What started the run, for the workspace branch policy. Derived from the other fields, so not serialized. */
+    @JsonIgnore
+    public WorkspaceBranchPolicy.Source getBranchPolicySource() {
+        if (isRelease) {
+            return WorkspaceBranchPolicy.Source.RELEASE;
+        }
+        boolean pullRequest = isPrComment || prNumber != null
+                || "pull_request".equals(event) || "merge_request".equals(event);
+        return pullRequest ? WorkspaceBranchPolicy.Source.PULL_REQUEST : WorkspaceBranchPolicy.Source.PUSH;
+    }
 
     public String getNormalizedEvent() {
         String normalizedEvent = "unknown";
