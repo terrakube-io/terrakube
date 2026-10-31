@@ -18,10 +18,6 @@ public interface TerraformState {
         return getBackendStateFile(organizationId, workspaceId, workingDirectory, terraformVersion);
     }
 
-    default String getBackendStateFile(String organizationId, String workspaceId, File workingDirectory, String terraformVersion, String jobId, String stepId) {
-        return getBackendStateFile(organizationId, workspaceId, jobId, stepId, workingDirectory, terraformVersion);
-    }
-
     default Map<String, String> getBackendEnvironmentVariables(String organizationId, String workspaceId, String jobId, String stepId) {
         return Collections.emptyMap();
     }

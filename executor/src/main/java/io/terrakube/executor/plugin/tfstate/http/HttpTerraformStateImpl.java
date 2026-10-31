@@ -21,7 +21,6 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Stream;
 
 @Slf4j
@@ -34,10 +33,9 @@ public class HttpTerraformStateImpl implements TerraformState {
     private static final String HTTP_BACKEND_USERNAME = "terraform";
     private static final String TF_HTTP_USERNAME = "TF_HTTP_USERNAME";
     private static final String TF_HTTP_PASSWORD = "TF_HTTP_PASSWORD";
-    private static final int TOKEN_TTL_MINUTES = 60;
 
     @Builder.Default
-    private final Map<String, String> tokenCache = new ConcurrentHashMap<>();
+    private int tokenTtlMinutes = 60;
 
     @NonNull
     private TerraformStatePathService terraformStatePathService;
@@ -98,19 +96,8 @@ public class HttpTerraformStateImpl implements TerraformState {
         if (workspaceSecurity == null) {
             return "";
         }
-        String cacheKey = String.format("%s:%s:%s:%s",
-                organizationId != null ? organizationId : "",
-                workspaceId != null ? workspaceId : "",
-                jobId != null ? jobId : "",
-                stepId != null ? stepId : "");
-        return tokenCache.computeIfAbsent(cacheKey, k -> {
-            String token = workspaceSecurity.generateAccessToken(TOKEN_TTL_MINUTES, organizationId, workspaceId, jobId, stepId);
-            return token != null ? token : "";
-        });
-    }
-
-    public void clearTokenCache() {
-        tokenCache.clear();
+        String token = workspaceSecurity.generateAccessToken(tokenTtlMinutes, organizationId, workspaceId, jobId, stepId);
+        return token != null ? token : "";
     }
 
     @Override

@@ -111,54 +111,36 @@ class HttpTerraformStateImplTest {
     }
 
     @Test
-    void testGetBackendEnvironmentVariablesCachesTokenForSameStepAndPreventsDrift() {
-        String expectedToken = "stable.cached.token.for.step";
-        when(workspaceSecurity.generateAccessToken(60, ORG_ID, WS_ID, JOB_ID, STEP_ID)).thenReturn(expectedToken);
-
-        Map<String, String> env1 = httpTerraformState.getBackendEnvironmentVariables(ORG_ID, WS_ID, JOB_ID, STEP_ID);
-        Map<String, String> env2 = httpTerraformState.getBackendEnvironmentVariables(ORG_ID, WS_ID, JOB_ID, STEP_ID);
-
-        assertEquals(env1, env2);
-        assertEquals(expectedToken, env1.get("TF_HTTP_PASSWORD"));
-        verify(workspaceSecurity, times(1)).generateAccessToken(60, ORG_ID, WS_ID, JOB_ID, STEP_ID);
-    }
-
-    @Test
-    void testGetBackendEnvironmentVariablesGeneratesDistinctTokensForDifferentSteps() {
-        String step1Token = "token.for.step1";
-        String step2Id = "another-step-uuid-9999";
-        String step2Token = "token.for.step2";
-
-        when(workspaceSecurity.generateAccessToken(60, ORG_ID, WS_ID, JOB_ID, STEP_ID)).thenReturn(step1Token);
-        when(workspaceSecurity.generateAccessToken(60, ORG_ID, WS_ID, JOB_ID, step2Id)).thenReturn(step2Token);
-
-        Map<String, String> envStep1 = httpTerraformState.getBackendEnvironmentVariables(ORG_ID, WS_ID, JOB_ID,
-                STEP_ID);
-        Map<String, String> envStep2 = httpTerraformState.getBackendEnvironmentVariables(ORG_ID, WS_ID, JOB_ID,
-                step2Id);
-
-        assertEquals(step1Token, envStep1.get("TF_HTTP_PASSWORD"));
-        assertEquals(step2Token, envStep2.get("TF_HTTP_PASSWORD"));
-
-        verify(workspaceSecurity, times(1)).generateAccessToken(60, ORG_ID, WS_ID, JOB_ID, STEP_ID);
-        verify(workspaceSecurity, times(1)).generateAccessToken(60, ORG_ID, WS_ID, JOB_ID, step2Id);
-    }
-
-    @Test
-    void testClearTokenCacheEvictsCachedTokens() {
+    void testGetBackendEnvironmentVariablesGeneratesTokenDirectlyWithoutCaching() {
         when(workspaceSecurity.generateAccessToken(60, ORG_ID, WS_ID, JOB_ID, STEP_ID))
                 .thenReturn("first.token")
                 .thenReturn("second.token");
 
         Map<String, String> env1 = httpTerraformState.getBackendEnvironmentVariables(ORG_ID, WS_ID, JOB_ID, STEP_ID);
-        assertEquals("first.token", env1.get("TF_HTTP_PASSWORD"));
-
-        httpTerraformState.clearTokenCache();
-
         Map<String, String> env2 = httpTerraformState.getBackendEnvironmentVariables(ORG_ID, WS_ID, JOB_ID, STEP_ID);
-        assertEquals("second.token", env2.get("TF_HTTP_PASSWORD"));
 
+        assertEquals("first.token", env1.get("TF_HTTP_PASSWORD"));
+        assertEquals("second.token", env2.get("TF_HTTP_PASSWORD"));
         verify(workspaceSecurity, times(2)).generateAccessToken(60, ORG_ID, WS_ID, JOB_ID, STEP_ID);
+    }
+
+    @Test
+    void testGetBackendEnvironmentVariablesRespectsConfiguredTtl() {
+        HttpTerraformStateImpl customTtlState = HttpTerraformStateImpl.builder()
+                .terraformStatePathService(terraformStatePathService)
+                .workspaceSecurity(workspaceSecurity)
+                .delegate(delegate)
+                .tokenTtlMinutes(120)
+                .build();
+
+        String expectedToken = "custom.ttl.token";
+        when(workspaceSecurity.generateAccessToken(120, ORG_ID, WS_ID, JOB_ID, STEP_ID)).thenReturn(expectedToken);
+
+        Map<String, String> env = customTtlState.getBackendEnvironmentVariables(ORG_ID, WS_ID, JOB_ID, STEP_ID);
+
+        assertEquals("terraform", env.get("TF_HTTP_USERNAME"));
+        assertEquals(expectedToken, env.get("TF_HTTP_PASSWORD"));
+        verify(workspaceSecurity, times(1)).generateAccessToken(120, ORG_ID, WS_ID, JOB_ID, STEP_ID);
     }
 
     @Test
