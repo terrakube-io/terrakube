@@ -1,22 +1,8 @@
 package io.terrakube.api.plugin.storage.controller;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.util.Optional;
-import java.util.UUID;
-
-import org.apache.commons.io.IOUtils;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PutMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.ResponseBody;
-import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -35,7 +21,6 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -65,7 +50,10 @@ public class TerraformStateController {
     @SuppressWarnings("unused")
     @Autowired
     private StateService stateService;
-    private final String hostname; 
+    private final String hostname;
+
+    @Value("${io.terrakube.state.max-size-bytes:104857600}")
+    private long maxStateSizeBytes = 104857600L; 
 
     public TerraformStateController(StorageTypeService storageTypeService, 
                                     ArchiveRepository archiveRepository, 
@@ -105,11 +93,11 @@ public class TerraformStateController {
             @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorizationHeader,
             @PathVariable("organizationId") String organizationId,
             @PathVariable("workspaceId") String workspaceId) {
-        StateService.HttpBackendAccessDecision decision = stateService.authorizeHttpBackendAccess(authorizationHeader, organizationId, workspaceId);
-        if (decision == StateService.HttpBackendAccessDecision.UNAUTHORIZED) {
+        StateService.HttpBackendAccessResult accessResult = stateService.authorizeHttpBackendAccess(authorizationHeader, organizationId, workspaceId);
+        if (accessResult.decision() == StateService.HttpBackendAccessDecision.UNAUTHORIZED) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
-        if (decision != StateService.HttpBackendAccessDecision.ALLOWED) {
+        if (accessResult.decision() != StateService.HttpBackendAccessDecision.ALLOWED) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
 
@@ -132,20 +120,42 @@ public class TerraformStateController {
             @RequestHeader(value = "Content-MD5", required = false) String contentMd5,
             @PathVariable("organizationId") String organizationId,
             @PathVariable("workspaceId") String workspaceId) throws IOException {
-        StateService.HttpBackendAccessDecision decision = stateService.authorizeHttpBackendAccess(authorizationHeader, organizationId, workspaceId);
-        if (decision == StateService.HttpBackendAccessDecision.UNAUTHORIZED) {
+        StateService.HttpBackendAccessResult accessResult = stateService.authorizeHttpBackendAccess(authorizationHeader, organizationId, workspaceId);
+        if (accessResult.decision() == StateService.HttpBackendAccessDecision.UNAUTHORIZED) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
-        if (decision != StateService.HttpBackendAccessDecision.ALLOWED) {
+        if (accessResult.decision() != StateService.HttpBackendAccessDecision.ALLOWED) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
 
-        byte[] stateBytes = IOUtils.toByteArray(httpServletRequest.getInputStream());
+        long contentLength = httpServletRequest.getContentLengthLong();
+        if (contentLength > maxStateSizeBytes) {
+            log.warn("HTTP backend state upload Content-Length {} exceeds limit {} for org={} workspace={}",
+                    contentLength, maxStateSizeBytes, organizationId, workspaceId);
+            return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE).build();
+        }
+
+        byte[] stateBytes;
+        try {
+            stateBytes = readBoundedBody(httpServletRequest.getInputStream(), maxStateSizeBytes);
+        } catch (PayloadTooLargeException e) {
+            log.warn("HTTP backend state upload payload exceeded maximum size {} for org={} workspace={}",
+                    maxStateSizeBytes, organizationId, workspaceId);
+            return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE).build();
+        }
+
+        if (stateBytes.length == 0) {
+            log.warn("HTTP backend state upload with empty body rejected for org={} workspace={}", organizationId, workspaceId);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
+        }
+
         if (contentMd5 != null && !contentMd5.isBlank() && !matchesMd5(stateBytes, contentMd5.trim())) {
             log.warn("HTTP backend state upload Content-MD5 mismatch for org={} workspace={}", organizationId, workspaceId);
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
         }
 
+        log.info("Saving HTTP backend state for org={} workspace={} jobId={} stepId={}",
+                organizationId, workspaceId, accessResult.jobId(), accessResult.stepId());
         storageTypeService.saveCurrentTerraformState(organizationId, workspaceId, stateBytes);
         return ResponseEntity.ok().build();
     }
@@ -155,16 +165,35 @@ public class TerraformStateController {
             @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorizationHeader,
             @PathVariable("organizationId") String organizationId,
             @PathVariable("workspaceId") String workspaceId) {
-        StateService.HttpBackendAccessDecision decision = stateService.authorizeHttpBackendAccess(authorizationHeader, organizationId, workspaceId);
-        if (decision == StateService.HttpBackendAccessDecision.UNAUTHORIZED) {
+        StateService.HttpBackendAccessResult accessResult = stateService.authorizeHttpBackendAccess(authorizationHeader, organizationId, workspaceId);
+        if (accessResult.decision() == StateService.HttpBackendAccessDecision.UNAUTHORIZED) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
-        if (decision != StateService.HttpBackendAccessDecision.ALLOWED) {
+        if (accessResult.decision() != StateService.HttpBackendAccessDecision.ALLOWED) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
 
+        log.info("Deleting HTTP backend state for org={} workspace={} jobId={} stepId={}",
+                organizationId, workspaceId, accessResult.jobId(), accessResult.stepId());
         storageTypeService.deleteCurrentTerraformState(organizationId, workspaceId);
         return ResponseEntity.ok().build();
+    }
+
+    private static class PayloadTooLargeException extends Exception {}
+
+    private static byte[] readBoundedBody(InputStream in, long maxBytes) throws IOException, PayloadTooLargeException {
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        byte[] buffer = new byte[8192];
+        long totalRead = 0;
+        int bytesRead;
+        while ((bytesRead = in.read(buffer)) != -1) {
+            totalRead += bytesRead;
+            if (totalRead > maxBytes) {
+                throw new PayloadTooLargeException();
+            }
+            baos.write(buffer, 0, bytesRead);
+        }
+        return baos.toByteArray();
     }
 
     private static boolean matchesMd5(byte[] data, String expectedBase64Md5) {
