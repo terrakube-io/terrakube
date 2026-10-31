@@ -12,6 +12,14 @@ public interface TerraformState {
 
     String getBackendStateFile(String organizationId, String workspaceId, File workingDirectory, String terraformVersion);
 
+    default String getBackendStateFile(String organizationId, String workspaceId, String jobId, String stepId, File workingDirectory, String terraformVersion) {
+        return getBackendStateFile(organizationId, workspaceId, workingDirectory, terraformVersion);
+    }
+
+    default String getBackendStateFile(String organizationId, String workspaceId, File workingDirectory, String terraformVersion, String jobId, String stepId) {
+        return getBackendStateFile(organizationId, workspaceId, jobId, stepId, workingDirectory, terraformVersion);
+    }
+
     String saveTerraformPlan(String organizationId, String workspaceId, String jobId, String stepId, File workingDirectory);
 
     boolean downloadTerraformPlan(String organizationId, String workspaceId, String jobId, String stepId, File workingDirectory);
