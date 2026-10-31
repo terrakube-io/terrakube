@@ -59,7 +59,7 @@ class TerraformStateControllerTest {
     @Test
     void getHttpBackendState_Returns204WhenNoStateExists() {
         when(stateService.authorizeHttpBackendAccess(AUTH_HEADER, ORG_ID, WS_ID))
-                .thenReturn(StateService.HttpBackendAccessDecision.ALLOWED);
+                .thenReturn(StateService.HttpBackendAccessResult.allowed("100", "step-1"));
         when(storageTypeService.getCurrentTerraformState(ORG_ID, WS_ID))
                 .thenReturn(new byte[0]);
 
@@ -73,7 +73,7 @@ class TerraformStateControllerTest {
     void getHttpBackendState_Returns200WithStatePayload() {
         byte[] statePayload = "{\"version\":4,\"serial\":1}".getBytes(StandardCharsets.UTF_8);
         when(stateService.authorizeHttpBackendAccess(AUTH_HEADER, ORG_ID, WS_ID))
-                .thenReturn(StateService.HttpBackendAccessDecision.ALLOWED);
+                .thenReturn(StateService.HttpBackendAccessResult.allowed("100", "step-1"));
         when(storageTypeService.getCurrentTerraformState(ORG_ID, WS_ID))
                 .thenReturn(statePayload);
 
@@ -87,11 +87,11 @@ class TerraformStateControllerTest {
     @Test
     void getHttpBackendState_Returns401And403WhenDenied() {
         when(stateService.authorizeHttpBackendAccess(null, ORG_ID, WS_ID))
-                .thenReturn(StateService.HttpBackendAccessDecision.UNAUTHORIZED);
+                .thenReturn(StateService.HttpBackendAccessResult.unauthorized());
         assertEquals(HttpStatus.UNAUTHORIZED, controller.getHttpBackendState(null, ORG_ID, WS_ID).getStatusCode());
 
         when(stateService.authorizeHttpBackendAccess(AUTH_HEADER, ORG_ID, WS_ID))
-                .thenReturn(StateService.HttpBackendAccessDecision.FORBIDDEN);
+                .thenReturn(StateService.HttpBackendAccessResult.forbidden());
         assertEquals(HttpStatus.FORBIDDEN, controller.getHttpBackendState(AUTH_HEADER, ORG_ID, WS_ID).getStatusCode());
         verify(storageTypeService, never()).getCurrentTerraformState(anyString(), anyString());
     }
@@ -101,7 +101,7 @@ class TerraformStateControllerTest {
         byte[] statePayload = "{\"version\":4,\"serial\":2}".getBytes(StandardCharsets.UTF_8);
         String validMd5 = Base64.getEncoder().encodeToString(MessageDigest.getInstance("MD5").digest(statePayload));
         when(stateService.authorizeHttpBackendAccess(AUTH_HEADER, ORG_ID, WS_ID))
-                .thenReturn(StateService.HttpBackendAccessDecision.ALLOWED);
+                .thenReturn(StateService.HttpBackendAccessResult.allowed("100", "step-1"));
 
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.setContent(statePayload);
@@ -116,7 +116,7 @@ class TerraformStateControllerTest {
     void updateHttpBackendState_RejectsInvalidContentMd5With400() throws IOException {
         byte[] statePayload = "{\"version\":4,\"serial\":2}".getBytes(StandardCharsets.UTF_8);
         when(stateService.authorizeHttpBackendAccess(AUTH_HEADER, ORG_ID, WS_ID))
-                .thenReturn(StateService.HttpBackendAccessDecision.ALLOWED);
+                .thenReturn(StateService.HttpBackendAccessResult.allowed("100", "step-1"));
 
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.setContent(statePayload);
@@ -128,9 +128,61 @@ class TerraformStateControllerTest {
     }
 
     @Test
+    void updateHttpBackendState_RejectsEmptyBodyWith400() throws IOException {
+        when(stateService.authorizeHttpBackendAccess(AUTH_HEADER, ORG_ID, WS_ID))
+                .thenReturn(StateService.HttpBackendAccessResult.allowed("100", "step-1"));
+
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setContent(new byte[0]);
+
+        ResponseEntity<Void> response = controller.updateHttpBackendState(request, AUTH_HEADER, null, ORG_ID, WS_ID);
+
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+        verify(storageTypeService, never()).saveCurrentTerraformState(anyString(), anyString(), any());
+    }
+
+    @Test
+    void updateHttpBackendState_RejectsPayloadExceedingLimitWith413_ContentLengthHeader() throws IOException {
+        when(stateService.authorizeHttpBackendAccess(AUTH_HEADER, ORG_ID, WS_ID))
+                .thenReturn(StateService.HttpBackendAccessResult.allowed("100", "step-1"));
+        ReflectionTestUtils.setField(controller, "maxStateSizeBytes", 50L);
+
+        byte[] oversized = new byte[100];
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setContent(oversized);
+
+        ResponseEntity<Void> response = controller.updateHttpBackendState(request, AUTH_HEADER, null, ORG_ID, WS_ID);
+
+        assertEquals(HttpStatus.PAYLOAD_TOO_LARGE, response.getStatusCode());
+        verify(storageTypeService, never()).saveCurrentTerraformState(anyString(), anyString(), any());
+    }
+
+    @Test
+    void updateHttpBackendState_RejectsPayloadExceedingLimitWith413_StreamedWithoutContentLength() throws IOException {
+        when(stateService.authorizeHttpBackendAccess(AUTH_HEADER, ORG_ID, WS_ID))
+                .thenReturn(StateService.HttpBackendAccessResult.allowed("100", "step-1"));
+        ReflectionTestUtils.setField(controller, "maxStateSizeBytes", 50L);
+
+        byte[] oversized = new byte[100];
+        // MockHttpServletRequest without content length set, wrapped in custom stream or contentLength = -1
+        MockHttpServletRequest request = new MockHttpServletRequest() {
+            @Override
+            public long getContentLengthLong() {
+                return -1;
+            }
+        };
+        request.setContent(oversized);
+
+        ResponseEntity<Void> response = controller.updateHttpBackendState(request, AUTH_HEADER, null, ORG_ID, WS_ID);
+
+        assertEquals(HttpStatus.PAYLOAD_TOO_LARGE, response.getStatusCode());
+        verify(storageTypeService, never()).saveCurrentTerraformState(anyString(), anyString(), any());
+    }
+
+    @Test
     void deleteHttpBackendState_DeletesStateWhenAuthorized() {
         when(stateService.authorizeHttpBackendAccess(AUTH_HEADER, ORG_ID, WS_ID))
-                .thenReturn(StateService.HttpBackendAccessDecision.ALLOWED);
+                .thenReturn(StateService.HttpBackendAccessResult.allowed("100", "step-1"));
 
         ResponseEntity<Void> response = controller.deleteHttpBackendState(AUTH_HEADER, ORG_ID, WS_ID);
 
