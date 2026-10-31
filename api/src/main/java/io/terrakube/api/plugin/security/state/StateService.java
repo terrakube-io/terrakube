@@ -70,6 +70,28 @@ public class StateService {
       FORBIDDEN
    }
 
+   public record HttpBackendAccessResult(
+      HttpBackendAccessDecision decision,
+      String jobId,
+      String stepId
+   ) {
+      public static HttpBackendAccessResult allowed(String jobId, String stepId) {
+         return new HttpBackendAccessResult(HttpBackendAccessDecision.ALLOWED, jobId, stepId);
+      }
+
+      public static HttpBackendAccessResult unauthorized() {
+         return new HttpBackendAccessResult(HttpBackendAccessDecision.UNAUTHORIZED, null, null);
+      }
+
+      public static HttpBackendAccessResult forbidden() {
+         return new HttpBackendAccessResult(HttpBackendAccessDecision.FORBIDDEN, null, null);
+      }
+
+      public boolean isAllowed() {
+         return decision == HttpBackendAccessDecision.ALLOWED;
+      }
+   }
+
    @Transactional(readOnly = true)
    public boolean hasManageStatePermission(Authentication authentication, String organizationId, String workspaceId) {
       if (authentication == null || !(authentication instanceof JwtAuthenticationToken jwt)) {
@@ -227,30 +249,38 @@ public class StateService {
    }
 
    @Transactional(readOnly = true)
-   public HttpBackendAccessDecision authorizeHttpBackendAccess(String authorizationHeader, String organizationId, String workspaceId) {
+   public HttpBackendAccessResult authorizeHttpBackendAccess(String authorizationHeader, String organizationId, String workspaceId) {
       String rawToken = extractTokenFromAuthorizationHeader(authorizationHeader);
       if (rawToken == null || rawToken.isBlank()) {
-         return HttpBackendAccessDecision.UNAUTHORIZED;
+         return HttpBackendAccessResult.unauthorized();
       }
 
       if (internalJwtSecret == null || internalJwtSecret.isBlank()) {
          log.error("Internal JWT secret is not configured; failing closed for HTTP backend");
-         return HttpBackendAccessDecision.UNAUTHORIZED;
+         return HttpBackendAccessResult.unauthorized();
       }
 
       try {
          Jwt jwt = buildInternalJwtDecoder().decode(rawToken);
-         return validateHttpBackendClaims(jwt.getClaims(), organizationId, workspaceId);
+         HttpBackendAccessDecision decision = validateHttpBackendClaims(jwt.getClaims(), organizationId, workspaceId);
+         if (decision == HttpBackendAccessDecision.ALLOWED) {
+            String jobId = jwt.getClaimAsString("jobId");
+            String stepId = jwt.getClaimAsString("stepId");
+            return HttpBackendAccessResult.allowed(jobId, stepId);
+         }
+         return decision == HttpBackendAccessDecision.UNAUTHORIZED
+                 ? HttpBackendAccessResult.unauthorized()
+                 : HttpBackendAccessResult.forbidden();
       } catch (JwtException ex) {
          if (isValidPatToken(rawToken)) {
             log.warn("User PAT token rejected on executor-only HTTP backend endpoint for org={} workspace={}", organizationId, workspaceId);
-            return HttpBackendAccessDecision.FORBIDDEN;
+            return HttpBackendAccessResult.forbidden();
          }
          log.warn("HTTP backend token authentication failed for org={} workspace={}: {}", organizationId, workspaceId, ex.getMessage());
-         return HttpBackendAccessDecision.UNAUTHORIZED;
+         return HttpBackendAccessResult.unauthorized();
       } catch (RuntimeException ex) {
          log.warn("Unexpected error validating HTTP backend token: {}", ex.getMessage());
-         return HttpBackendAccessDecision.UNAUTHORIZED;
+         return HttpBackendAccessResult.unauthorized();
       }
    }
 
