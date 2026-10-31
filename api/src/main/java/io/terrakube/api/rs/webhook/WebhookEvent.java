@@ -7,8 +7,12 @@ import org.hibernate.annotations.JdbcTypeCode;
 import io.terrakube.api.plugin.security.audit.GenericAuditFields;
 import io.terrakube.api.rs.hooks.webhook.WebhookEventManageHook;
 
+import com.yahoo.elide.annotation.CreatePermission;
+import com.yahoo.elide.annotation.DeletePermission;
 import com.yahoo.elide.annotation.Include;
 import com.yahoo.elide.annotation.LifeCycleHookBinding;
+import com.yahoo.elide.annotation.ReadPermission;
+import com.yahoo.elide.annotation.UpdatePermission;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Convert;
@@ -24,6 +28,10 @@ import lombok.Setter;
 @Getter
 @Setter
 @Include
+@ReadPermission(expression = "team view webhook event")
+@CreatePermission(expression = "team manage webhook event")
+@UpdatePermission(expression = "team manage webhook event")
+@DeletePermission(expression = "team delete webhook event")
 @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.CREATE, phase = LifeCycleHookBinding.TransactionPhase.POSTCOMMIT, hook = WebhookEventManageHook.class)
 @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.POSTCOMMIT, hook = WebhookEventManageHook.class)
 @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.DELETE, phase = LifeCycleHookBinding.TransactionPhase.POSTCOMMIT, hook = WebhookEventManageHook.class)

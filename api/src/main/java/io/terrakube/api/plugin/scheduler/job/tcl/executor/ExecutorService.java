@@ -18,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 
+import io.terrakube.api.plugin.execution.WorkspaceBranches;
 import io.terrakube.api.plugin.execution.JobVariablesService;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ephemeral.EphemeralExecutorService;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.persistent.PersistentExecutorService;
@@ -111,7 +112,7 @@ public class ExecutorService {
         executorContext.setStepId(stepId);
         executorContext.setExecutionEpoch(System.currentTimeMillis());
 
-        if (job.getWorkspace().getBranch().equals("remote-content")) {
+        if (WorkspaceBranches.REMOTE_CONTENT.equals(job.getWorkspace().getBranch())) {
             log.warn("Running remote operation, disable headers");
             executorContext.setShowHeader(false);
         } else {
@@ -165,8 +166,15 @@ public class ExecutorService {
 
         if (job.getEncryptedVariables() != null) {
             try {
-                jobVariablesService.merge(jobVariablesService.decrypt(job.getEncryptedVariables()),
-                        terraformVariables, environmentVariables);
+                Map<String, String> jobVariables = jobVariablesService.decrypt(job.getEncryptedVariables());
+                if (job.isVariablesAsArguments()) {
+                    Map<String, String> structured = jobVariablesService.mergeAsArguments(jobVariables, terraformVariables);
+                    if (!structured.isEmpty()) {
+                        executorContext.setHclVariables(new HashMap<>(structured));
+                    }
+                } else {
+                    jobVariablesService.merge(jobVariables, terraformVariables, environmentVariables);
+                }
             } catch (IllegalStateException e) {
                 throw new ExecutionException(String.format("Failed to read the variables of job %d: %s",
                         job.getId(), e.getMessage()), e);
@@ -189,13 +197,9 @@ public class ExecutorService {
         } else {
             executorContext.setSource(job.getOverrideSource());
         }
-        if (job.getOverrideBranch() == null) {
-            executorContext.setBranch(job.getWorkspace().getBranch().split(",")[0]);
-        } else {
-            if (job.getOverrideBranch().equals("remote-content")) {
-                executorContext.setShowHeader(false);
-            }
-            executorContext.setBranch(job.getOverrideBranch());
+        executorContext.setBranch(branchFor(job));
+        if (WorkspaceBranches.REMOTE_CONTENT.equals(job.getOverrideBranch())) {
+            executorContext.setShowHeader(false);
         }
 
         // A remote-content workspace requires a tarball URL (job.overrideSource set by
@@ -206,7 +210,7 @@ public class ExecutorService {
         // constructing the download URL. The UI disables "Run now" for this case; this guard
         // is defense-in-depth for direct API calls / stale clients.
         if (!FlowType.policyEvaluation.name().equals(flow.getType())
-                && "remote-content".equals(executorContext.getBranch())
+                && WorkspaceBranches.REMOTE_CONTENT.equals(executorContext.getBranch())
                 && (executorContext.getSource() == null || executorContext.getSource().isBlank()
                         || "empty".equals(executorContext.getSource()))) {
             throw new ExecutionException(
@@ -237,6 +241,8 @@ public class ExecutorService {
         }
         executorContext.setTofu(iacType(job));
         executorContext.setCommitId(job.getCommitId());
+        executorContext.setRequireCommitOnBranch(commitBranchToRequire(job.getWorkspace(), flow.getType(),
+                executorContext.getBranch()));
         executorContext
                 .setFolder(job.getWorkspace().getFolder() != null ? job.getWorkspace().getFolder().split(",")[0] : "/");
         executorContext.setRefresh(job.isRefresh());
@@ -299,6 +305,17 @@ public class ExecutorService {
      * a range such as ">= 1.3.0" can pick a newer release between plan and apply. Until one is resolved the
      * workspace's value (an exact version or a constraint) is passed through.
      */
+    /**
+     * The branch or tag a job runs: its own, or the first entry of the workspace branch. The executor adds
+     * {@code refs/heads/} or {@code refs/tags/} itself, so a full ref is shortened.
+     */
+    static String branchFor(Job job) {
+        String override = job.getOverrideBranch();
+        return override == null || override.isBlank()
+                ? WorkspaceBranches.firstBranch(job.getWorkspace().getBranch())
+                : WorkspaceBranches.shortName(override);
+    }
+
     static String terraformVersionFor(Job job) {
         String resolved = job.getResolvedTerraformVersion();
         return resolved != null && !resolved.isBlank() ? resolved : job.getWorkspace().getTerraformVersion();
@@ -345,6 +362,23 @@ public class ExecutorService {
     }
 
     /**
+     * The branch the checked-out commit of an apply or destroy step must be on, when the workspace restricts apply to
+     * its configured branch. The job was checked when it was created, but the executor fetches a commit by id and
+     * that commit can live on another branch, so it checks the commit itself before it runs. Content uploaded by the
+     * Terraform CLI has no repository to check.
+     */
+    static String commitBranchToRequire(Workspace workspace, String flowType, String branch) {
+        if (!workspace.isRestrictApplyToConfiguredBranch() || WorkspaceBranches.REMOTE_CONTENT.equals(branch)) {
+            return null;
+        }
+        boolean changesInfrastructure = FlowType.terraformApply.name().equals(flowType)
+                || FlowType.terraformDestroy.name().equals(flowType);
+        return changesInfrastructure
+                ? WorkspaceBranches.shortName(WorkspaceBranches.firstBranch(workspace.getBranch()))
+                : null;
+    }
+
+    /**
      * Persists the resolved source directly onto the job for CLI/API driven (remote-content) jobs
      * whose overrideSource was not already set at creation time. A UI "Run now" job is the case
      * that matters here: it only sets overrideBranch, so it reaches execute() with
@@ -370,7 +404,7 @@ public class ExecutorService {
         if (job.getOverrideSource() != null) {
             return;
         }
-        if (!"remote-content".equals(branch)) {
+        if (!WorkspaceBranches.REMOTE_CONTENT.equals(branch)) {
             return;
         }
         Workspace workspace = job.getWorkspace();
@@ -404,7 +438,7 @@ public class ExecutorService {
         if (workspace.getVcs() != null || workspace.getSsh() != null) {
             return;
         }
-        if (!"remote-content".equals(workspace.getBranch())) {
+        if (!WorkspaceBranches.REMOTE_CONTENT.equals(workspace.getBranch())) {
             return;
         }
         if (resolvedSource == null || resolvedSource.isBlank()) {

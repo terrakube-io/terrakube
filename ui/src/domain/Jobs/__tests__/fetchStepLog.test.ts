@@ -32,7 +32,33 @@ describe("fetchStepLog", () => {
 
     const result = await fetchStepLog({ ...base, signal: ac() });
 
-    expect(result).toEqual({ text: "hello world!", truncated: false });
+    expect(result).toEqual({ text: "hello world!", truncated: false, incomplete: false });
+  });
+
+  it("flags a log that is only what was archived before the step ended", async () => {
+    (axiosAuxiliary.head as jest.Mock).mockResolvedValue({ headers: { "content-length": "7" } });
+    (axiosAuxiliary.get as jest.Mock).mockResolvedValue({
+      status: 200,
+      data: "partial",
+      headers: { "x-terrakube-output-incomplete": "true" },
+    });
+
+    const result = await fetchStepLog({ ...base, signal: ac() });
+
+    expect(result).toEqual({ text: "partial", truncated: false, incomplete: true });
+  });
+
+  it("does not flag a log when the header is anything but true", async () => {
+    (axiosAuxiliary.head as jest.Mock).mockResolvedValue({ headers: { "content-length": "4" } });
+    (axiosAuxiliary.get as jest.Mock).mockResolvedValue({
+      status: 200,
+      data: "done",
+      headers: { "x-terrakube-output-incomplete": "false" },
+    });
+
+    const result = await fetchStepLog({ ...base, signal: ac() });
+
+    expect(result.incomplete).toBe(false);
   });
 
   it("tails a large log with a Range request and marks it truncated", async () => {

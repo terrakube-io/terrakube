@@ -400,6 +400,10 @@ public class ScheduleJob implements org.quartz.Job {
     // of failing the job just because the whole pool was busy at this particular attempt.
     private boolean executePendingJob(Job job) {
         job = tclService.initJobConfiguration(job);
+        if (job.getStatus().equals(JobStatus.failed)) {
+            workspaceJobStatusService.refresh(job);
+            return true;
+        }
         if (failJobIfWorkspaceVariablesAreIncomplete(job)) {
             return true;
         }

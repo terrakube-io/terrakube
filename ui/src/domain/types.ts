@@ -587,6 +587,8 @@ export type WorkspaceAttributes = {
   sharedIds?: string;
   policyComplianceStatus?: "COMPLIANT" | "NON_COMPLIANT" | "EXEMPTED" | "UNKNOWN";
   lastJobStatus?: string;
+  /** Only plan-only runs may use a branch other than the workspace branch. */
+  restrictApplyToConfiguredBranch?: boolean;
 } & AuditFieldBase;
 
 export type Webhook = {

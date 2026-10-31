@@ -33,9 +33,25 @@ public class TeamLimitedPlanJob extends OperationCheck<Job> {
     @Autowired
     RbacService rbacService;
 
+    @Autowired
+    io.terrakube.api.rs.checks.workspace.WorkspaceCheckSupport workspaceCheckSupport;
+
     @Override
     public boolean ok(Job job, RequestScope requestScope, Optional<ChangeSpec> optional) {
+        if (job == null || job.getWorkspace() == null || job.getWorkspace().getOrganization() == null || job.getOrganization() == null) {
+            log.warn("Job, workspace, or organization is null");
+            return false;
+        }
+        if (!job.getOrganization().getId().equals(job.getWorkspace().getOrganization().getId())) {
+            log.warn("Rejecting limited plan job: job organization {} does not match workspace organization {}",
+                    job.getOrganization().getId(), job.getWorkspace().getOrganization().getId());
+            return false;
+        }
         log.debug("team limited plan job {}", job.getId());
+        if (!workspaceCheckSupport.isTemplateInJobOrganization(job)) {
+            log.warn("Rejecting limited plan job: templateReference does not belong to job organization");
+            return false;
+        }
         List<Access> teamList = job.getWorkspace().getAccess();
         boolean isServiceAccount = authenticatedUser.isServiceAccount(requestScope.getUser());
         if (!teamList.isEmpty())

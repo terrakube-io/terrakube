@@ -574,4 +574,43 @@ class TerraformJsonEventParserTest {
         assertFalse(TerraformJsonEventParser.IN_PROGRESS_STATUSES.contains("interrupted"));
         assertFalse(TerraformJsonEventParser.IN_PROGRESS_STATUSES.contains("pending"));
     }
+
+    @Test
+    void applyModeSuppressesPlannedChangeAndVersionConsoleMessagesWhileUpdatingChanges() {
+        TerraformJsonEventParser parser = TerraformJsonEventParser.forApply(new ObjectMapper());
+        List<Map<String, Object>> changes = new ArrayList<>();
+        List<Map<String, Object>> jobDiagnostics = new ArrayList<>();
+
+        String versionMsg = parser.parseLine(
+                "{\"@level\":\"info\",\"@message\":\"Terraform 1.16.1\",\"type\":\"version\"}",
+                changes, jobDiagnostics);
+        assertNull(versionMsg);
+        assertTrue(parser.hasSeenTerraformEvents());
+
+        String plannedMsg = parser.parseLine(
+                "{\"@message\":\"null_resource.previous: Plan to create\",\"change\":{\"resource\":{\"addr\":\"null_resource.previous\"},\"action\":\"create\"},\"type\":\"planned_change\"}",
+                changes, jobDiagnostics);
+        assertNull(plannedMsg);
+        assertEquals(1, changes.size());
+        assertEquals("null_resource.previous", changes.get(0).get("address"));
+        assertEquals("create", changes.get(0).get("action"));
+        assertEquals("planned", changes.get(0).get("status"));
+
+        String startMsg = parser.parseLine(
+                "{\"@message\":\"null_resource.previous: Creating...\",\"hook\":{\"resource\":{\"addr\":\"null_resource.previous\"},\"action\":\"create\"},\"type\":\"apply_start\"}",
+                changes, jobDiagnostics);
+        assertEquals("null_resource.previous: Creating...", startMsg);
+        assertEquals("applying", changes.get(0).get("status"));
+
+        String completeMsg = parser.parseLine(
+                "{\"@message\":\"null_resource.previous: Creation complete after 0s [id=123]\",\"hook\":{\"resource\":{\"addr\":\"null_resource.previous\"},\"action\":\"create\",\"id_key\":\"id\",\"id_value\":\"123\",\"elapsed_seconds\":0},\"type\":\"apply_complete\"}",
+                changes, jobDiagnostics);
+        assertEquals("null_resource.previous: Creation complete after 0s [id=123]", completeMsg);
+        assertEquals("applied", changes.get(0).get("status"));
+
+        String summaryMsg = parser.parseLine(
+                "{\"@message\":\"Apply complete! Resources: 1 added, 0 changed, 0 destroyed.\",\"type\":\"change_summary\"}",
+                changes, jobDiagnostics);
+        assertEquals("Apply complete! Resources: 1 added, 0 changed, 0 destroyed.", summaryMsg);
+    }
 }

@@ -7,7 +7,11 @@ import org.hibernate.annotations.JdbcTypeCode;
 import io.terrakube.api.plugin.security.audit.GenericAuditFields;
 import io.terrakube.api.rs.job.JobStatus;
 
+import com.yahoo.elide.annotation.CreatePermission;
+import com.yahoo.elide.annotation.DeletePermission;
 import com.yahoo.elide.annotation.Include;
+import com.yahoo.elide.annotation.ReadPermission;
+import com.yahoo.elide.annotation.UpdatePermission;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Convert;
@@ -25,6 +29,10 @@ import lombok.Setter;
 @Getter
 @Setter
 @Include
+@ReadPermission(expression = "team read notification trigger")
+@CreatePermission(expression = "team manage notification trigger")
+@UpdatePermission(expression = "team manage notification trigger")
+@DeletePermission(expression = "team manage notification trigger")
 @Entity(name = "notification_trigger")
 public class NotificationTrigger extends GenericAuditFields {
     @Id

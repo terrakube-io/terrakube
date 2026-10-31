@@ -39,7 +39,6 @@ import java.util.UUID;
 @CreatePermission(expression = "team manage workspace OR team project limited create workspace")
 @UpdatePermission(expression = "team manage workspace OR team project limited manage workspace OR team limited manage workspace")
 @DeletePermission(expression = "team manage workspace")
-@LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.PRECOMMIT, hook = WorkspaceManageHook.class)
 @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.CREATE, phase = LifeCycleHookBinding.TransactionPhase.PRECOMMIT, hook = WorkspaceManageHook.class)
 // Elide silently truncates un-paged collections to 500 rows, and clients cannot opt into page[...] because the
 // read permission above is evaluated in memory (Elide rejects it with "Cannot paginate workspace"). Raise the
@@ -57,6 +56,7 @@ public class Workspace extends GenericAuditFields {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
+    @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.PRECOMMIT, hook = WorkspaceManageHook.class)
     @Size(max = 128, message = "Workspace name must be 128 characters or fewer")
     @Column(name = "name")
     private String name;
@@ -85,6 +85,7 @@ public class Workspace extends GenericAuditFields {
     @Column(name = "locked")
     private boolean locked;
 
+    @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.PRECOMMIT, hook = WorkspaceManageHook.class)
     @Column(name = "deleted")
     private boolean deleted;
 
@@ -99,6 +100,15 @@ public class Workspace extends GenericAuditFields {
 
     @Column(name = "default_template")
     private String defaultTemplate;
+
+    /**
+     * When on, a job created through the API or the Terraform CLI may only change infrastructure from the
+     * workspace branch. Plan-only templates can still run on any branch. Organization-level workspace
+     * managers control it, so a limited manager cannot switch the guard off.
+     */
+    @UpdatePermission(expression = "user is a superuser OR team manage workspace")
+    @Column(name = "restrict_apply_to_configured_branch", nullable = false)
+    private boolean restrictApplyToConfiguredBranch = false;
 
     @Column(name = "lock_description")
     private String lockDescription;
@@ -144,16 +154,20 @@ public class Workspace extends GenericAuditFields {
     @OneToMany(mappedBy = "workspace")
     private List<WorkspaceTag> workspaceTag;
 
+    @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.PRECOMMIT, hook = WorkspaceManageHook.class)
     @UpdatePermission(expression = "team manage workspace OR team project limited reassign workspace")
     @OneToOne
     private Project project;
 
+    @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.PRECOMMIT, hook = WorkspaceManageHook.class)
     @ManyToOne
     private Vcs vcs;
 
+    @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.PRECOMMIT, hook = WorkspaceManageHook.class)
     @OneToOne
     private Ssh ssh;
 
+    @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.PRECOMMIT, hook = WorkspaceManageHook.class)
     @OneToOne
     private Agent agent;
     
@@ -163,6 +177,15 @@ public class Workspace extends GenericAuditFields {
     @OneToMany(mappedBy = "workspace", fetch = FetchType.LAZY)
     private List<NotificationConfiguration> notificationConfiguration;
 
+    /**
+     * References linking global or organization collections to this workspace.
+     *
+     * The permission mirrors the one on {@link #job} and {@link #destinationWorkspace}:
+     * references are managed through the collection/reference resource, whose own checks
+     * validate both ends. Elide maintains the bidirectional relationship, so an inverse
+     * check must allow view workspace permission to prevent locking out collection managers.
+     */
+    @UpdatePermission(expression = "team view workspace OR team project limited view workspace OR team limited view workspace")
     @OneToMany(mappedBy = "workspace", fetch = FetchType.LAZY)
     private List<Reference> reference;
 

@@ -1,5 +1,6 @@
 package io.terrakube.api.plugin.scheduler.job.tcl;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
@@ -291,7 +292,7 @@ public class TclServiceTest {
         doReturn(Collections.emptyList()).when(stepRepository).findByJobId(42);
         doReturn(job).when(jobRepository).getReferenceById(42);
         doReturn(job).when(jobRepository).save(job);
-        doAnswer(invocation -> invocation.getArgument(0)).when(stepRepository).save(org.mockito.ArgumentMatchers.any(Step.class));
+        doAnswer(invocation -> invocation.getArgument(0)).when(stepRepository).save(any(Step.class));
 
         subject().initJobConfiguration(job);
 
@@ -318,5 +319,86 @@ public class TclServiceTest {
         Assertions.assertSame(job, result);
         Mockito.verify(stepRepository, Mockito.never()).save(org.mockito.ArgumentMatchers.any(Step.class));
         Mockito.verify(templateRepository, Mockito.never()).findById(org.mockito.ArgumentMatchers.any(UUID.class));
+    }
+
+    @Test
+    public void initJobConfiguration_withMatchingOrganizationTemplate_succeeds() {
+        String yaml = """
+            flow:
+              - type: terraformPlan
+                name: Plan
+                step: 100
+            """;
+        UUID templateId = UUID.randomUUID();
+        UUID orgId = UUID.randomUUID();
+        io.terrakube.api.rs.Organization org = new io.terrakube.api.rs.Organization();
+        org.setId(orgId);
+
+        Template template = templateWithTcl(encodeYaml(yaml));
+        template.setOrganization(org);
+
+        Job job = new Job();
+        job.setId(43);
+        job.setOrganization(org);
+        job.setTemplateReference(templateId.toString());
+
+        doReturn(java.util.Optional.of(template)).when(templateRepository).findById(templateId);
+        doReturn(job).when(jobRepository).lockForUpdate(43);
+        doReturn(Collections.emptyList()).when(stepRepository).findByJobId(43);
+        doReturn(job).when(jobRepository).getReferenceById(43);
+        doReturn(job).when(jobRepository).save(job);
+        doAnswer(invocation -> invocation.getArgument(0)).when(stepRepository).save(any(Step.class));
+
+        Job result = subject().initJobConfiguration(job);
+        Assertions.assertNotNull(result);
+    }
+
+    @Test
+    public void initJobConfiguration_withMismatchedOrganizationTemplate_marksJobFailed() {
+        UUID templateId = UUID.randomUUID();
+        UUID orgAId = UUID.randomUUID();
+        UUID orgBId = UUID.randomUUID();
+
+        io.terrakube.api.rs.Organization orgA = new io.terrakube.api.rs.Organization();
+        orgA.setId(orgAId);
+
+        io.terrakube.api.rs.Organization orgB = new io.terrakube.api.rs.Organization();
+        orgB.setId(orgBId);
+
+        Template template = templateWithTcl(encodeYaml("flow: []"));
+        template.setOrganization(orgB);
+
+        Job job = new Job();
+        job.setId(44);
+        job.setOrganization(orgA);
+        job.setTemplateReference(templateId.toString());
+
+        doReturn(java.util.Optional.of(template)).when(templateRepository).findById(templateId);
+        doReturn(job).when(jobRepository).lockForUpdate(44);
+        doReturn(Collections.emptyList()).when(stepRepository).findByJobId(44);
+        doReturn(job).when(jobRepository).save(job);
+
+        Job result = subject().initJobConfiguration(job);
+        Assertions.assertEquals(JobStatus.failed, result.getStatus());
+        Mockito.verify(jobRepository).save(job);
+        Mockito.verify(stepRepository, Mockito.never()).save(any(Step.class));
+    }
+
+    @Test
+    public void initJobConfiguration_withNonExistentTemplate_marksJobFailed() {
+        UUID templateId = UUID.randomUUID();
+        Job job = new Job();
+        job.setId(45);
+        job.setTemplateReference(templateId.toString());
+
+        doReturn(java.util.Optional.empty()).when(templateRepository).findById(templateId);
+        doReturn(job).when(jobRepository).lockForUpdate(45);
+        doReturn(Collections.emptyList()).when(stepRepository).findByJobId(45);
+        doReturn(job).when(jobRepository).save(job);
+
+        Job result = subject().initJobConfiguration(job);
+        Assertions.assertEquals(JobStatus.failed, result.getStatus());
+        Mockito.verify(jobRepository).save(job);
+        Mockito.verify(stepRepository, Mockito.never()).save(any(Step.class));
     }
 }

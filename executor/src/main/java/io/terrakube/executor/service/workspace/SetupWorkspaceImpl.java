@@ -32,6 +32,7 @@ import org.eclipse.jgit.errors.MissingObjectException;
 import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.Ref;
+import org.eclipse.jgit.lib.Repository;
 import org.eclipse.jgit.revwalk.RevCommit;
 import org.eclipse.jgit.revwalk.RevWalk;
 import org.eclipse.jgit.transport.CredentialsProvider;
@@ -210,8 +211,10 @@ public class SetupWorkspaceImpl implements SetupWorkspace {
 
         if (terraformJob.getCommitId() != null && !terraformJob.getCommitId().isBlank()) {
             checkoutCommitId(gitCloneFolder, terraformJob);
+            requireCommitOnBranch(gitCloneFolder, terraformJob);
             getCommitId(gitCloneFolder, terraformJob.getCommitId());
         } else {
+            requireCommitOnBranch(gitCloneFolder, terraformJob);
             getCommitId(gitCloneFolder, null);
         }
 
@@ -278,6 +281,57 @@ public class SetupWorkspaceImpl implements SetupWorkspace {
             command.setCredentialsProvider(credentialsProvider);
         }
         return command;
+    }
+
+    /**
+     * Refuses to go on unless the checked-out commit is on the branch the API named. A workspace that restricts apply
+     * to its configured branch sends it for apply and destroy steps: a commit fetched by id can live on another
+     * branch, or in a fork, and would otherwise run under the name of the configured one.
+     */
+    void requireCommitOnBranch(File gitCloneFolder, TerraformJob terraformJob) throws GitAPIException, IOException {
+        String branch = terraformJob.getRequireCommitOnBranch();
+        if (branch == null || branch.isBlank()) {
+            return;
+        }
+        try (Git git = Git.open(gitCloneFolder)) {
+            Repository repository = git.getRepository();
+            ObjectId commit = repository.resolve(Constants.HEAD);
+            ObjectId tip = branchTip(repository, branch);
+            if (tip == null) {
+                throw new IOException("Cannot check that commit " + shortId(commit) + " is on branch " + branch
+                        + " because that branch was not fetched.");
+            }
+            if (commit.equals(tip)) {
+                return;
+            }
+            if (!repository.getObjectDatabase().getShallowCommits().isEmpty()) {
+                // The history between the commit and the tip is not here yet.
+                unshallowRepository(git, gitCloneFolder, terraformJob);
+            }
+            try (RevWalk walk = new RevWalk(repository)) {
+                if (!walk.isMergedInto(walk.parseCommit(commit), walk.parseCommit(tip))) {
+                    throw new IOException("Commit " + shortId(commit) + " is not on branch " + branch
+                            + ". This workspace only runs apply and destroy from commits on that branch.");
+                }
+            }
+        }
+    }
+
+    /** The tip of the branch, or of the tag when the workspace branch names one. */
+    private static ObjectId branchTip(Repository repository, String branch) throws IOException {
+        Ref ref = repository.exactRef(Constants.R_REMOTES + "origin/" + branch);
+        if (ref == null) {
+            ref = repository.exactRef(Constants.R_TAGS + branch);
+        }
+        if (ref == null) {
+            return null;
+        }
+        Ref peeled = repository.getRefDatabase().peel(ref);
+        return peeled.getPeeledObjectId() != null ? peeled.getPeeledObjectId() : peeled.getObjectId();
+    }
+
+    private static String shortId(ObjectId id) {
+        return id == null ? "(none)" : id.abbreviate(8).name();
     }
 
     private void checkoutCommitId(File gitCloneFolder, TerraformJob terraformJob) throws GitAPIException, IOException {

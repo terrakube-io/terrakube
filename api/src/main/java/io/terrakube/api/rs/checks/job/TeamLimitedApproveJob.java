@@ -37,6 +37,15 @@ public class TeamLimitedApproveJob extends OperationCheck<Job> {
 
     @Override
     public boolean ok(Job job, RequestScope requestScope, Optional<ChangeSpec> optional) {
+        if (job == null || job.getWorkspace() == null || job.getWorkspace().getOrganization() == null || job.getOrganization() == null) {
+            log.warn("Job, workspace, or organization is null");
+            return false;
+        }
+        if (!job.getOrganization().getId().equals(job.getWorkspace().getOrganization().getId())) {
+            log.warn("Rejecting limited approve job: job organization {} does not match workspace organization {}",
+                    job.getOrganization().getId(), job.getWorkspace().getOrganization().getId());
+            return false;
+        }
         log.debug("team limited approve job {}", job.getId());
         if (!TeamApproveJob.isRbacUserTransition(optional)) return false;
 

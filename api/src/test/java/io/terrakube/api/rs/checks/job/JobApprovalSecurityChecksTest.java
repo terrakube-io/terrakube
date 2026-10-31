@@ -23,6 +23,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -79,10 +80,11 @@ class JobApprovalSecurityChecksTest {
     void organizationRbacRequiresValidApprovalTransition() {
         Team team = new Team();
         team.setName("organization-approvers");
-        Organization organization = new Organization();
+        Organization organization = organization();
         organization.setTeam(List.of(team));
-        Job job = new Job();
-        job.setOrganization(organization);
+        Workspace workspace = new Workspace();
+        workspace.setOrganization(organization);
+        Job job = jobIn(workspace);
 
         TeamApproveJobRbac check = new TeamApproveJobRbac();
         check.authenticatedUser = authenticatedUser;
@@ -101,10 +103,11 @@ class JobApprovalSecurityChecksTest {
     void organizationRbacDoesNotAllowPlanOnlyUsersToCancel() {
         Team team = new Team();
         team.setName("organization-planners");
-        Organization organization = new Organization();
+        Organization organization = organization();
         organization.setTeam(List.of(team));
-        Job job = new Job();
-        job.setOrganization(organization);
+        Workspace workspace = new Workspace();
+        workspace.setOrganization(organization);
+        Job job = jobIn(workspace);
 
         TeamApproveJobRbac check = new TeamApproveJobRbac();
         check.authenticatedUser = authenticatedUser;
@@ -122,9 +125,9 @@ class JobApprovalSecurityChecksTest {
         Access access = new Access();
         access.setName("workspace-approvers");
         Workspace workspace = new Workspace();
+        workspace.setOrganization(organization());
         workspace.setAccess(List.of(access));
-        Job job = new Job();
-        job.setWorkspace(workspace);
+        Job job = jobIn(workspace);
 
         TeamLimitedApproveJob check = new TeamLimitedApproveJob();
         check.authenticatedUser = authenticatedUser;
@@ -147,9 +150,9 @@ class JobApprovalSecurityChecksTest {
         Project project = new Project();
         project.setProjectAccess(accessList);
         Workspace workspace = new Workspace();
+        workspace.setOrganization(organization());
         workspace.setProject(project);
-        Job job = new Job();
-        job.setWorkspace(workspace);
+        Job job = jobIn(workspace);
 
         TeamProjectLimitedApproveJob check = new TeamProjectLimitedApproveJob();
         check.authenticatedUser = authenticatedUser;
@@ -177,6 +180,19 @@ class JobApprovalSecurityChecksTest {
 
     private static Optional<ChangeSpec> change(JobStatus original, JobStatus modified) {
         return Optional.of(new ChangeSpec(null, "status", original, modified));
+    }
+
+    private static Organization organization() {
+        Organization organization = new Organization();
+        organization.setId(UUID.randomUUID());
+        return organization;
+    }
+
+    private static Job jobIn(Workspace workspace) {
+        Job job = new Job();
+        job.setWorkspace(workspace);
+        job.setOrganization(workspace.getOrganization());
+        return job;
     }
 
     private static Stream<Arguments> approvalTransitions() {

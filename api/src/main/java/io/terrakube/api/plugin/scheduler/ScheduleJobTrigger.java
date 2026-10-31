@@ -21,6 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.text.ParseException;
 import java.util.Date;
+import java.util.Optional;
 import java.util.UUID;
 
 @AllArgsConstructor
@@ -55,7 +56,18 @@ public class ScheduleJobTrigger implements org.quartz.Job {
             job.setWorkspace(schedule.getWorkspace());
             job.setOrganization(schedule.getWorkspace().getOrganization());
             if (schedule.getTemplateReference() != null) {
-                Template template = templateRepository.getReferenceById(UUID.fromString(schedule.getTemplateReference()));
+                Optional<Template> templateOpt = templateRepository.findById(UUID.fromString(schedule.getTemplateReference()));
+                UUID workspaceOrgId = schedule.getWorkspace() != null && schedule.getWorkspace().getOrganization() != null
+                        ? schedule.getWorkspace().getOrganization().getId()
+                        : null;
+                if (templateOpt.isEmpty() || templateOpt.get().getOrganization() == null
+                        || workspaceOrgId == null
+                        || !templateOpt.get().getOrganization().getId().equals(workspaceOrgId)) {
+                    log.error("Rejecting scheduled job: template {} does not belong to workspace organization {}",
+                            schedule.getTemplateReference(), workspaceOrgId);
+                    return;
+                }
+                Template template = templateOpt.get();
                 job.setTcl(template.getTcl());
                 job.setTemplateReference(schedule.getTemplateReference());
             } else {

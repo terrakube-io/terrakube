@@ -12,6 +12,7 @@ import io.terrakube.executor.plugin.tfstate.TerraformStatePathService;
 import io.terrakube.executor.service.mode.TerraformJob;
 import org.apache.commons.io.FileUtils;
 import org.junit.jupiter.api.BeforeEach;
+import io.terrakube.executor.service.logs.StepOutputBuffer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Answers;
@@ -217,23 +218,6 @@ class AzureTerraformStateImplTest {
     }
 
     @Test
-    void testSaveOutput() {
-        String organizationId = "org1";
-        String jobId = "job1";
-        String stepId = "step1";
-        String output = "output-content";
-        String outputError = "error-content";
-
-        when(blobContainerClient.exists()).thenReturn(true);
-        when(terraformOutputPathService.getOutputPath(organizationId, jobId, stepId)).thenReturn("https://api/output");
-
-        String result = azureTerraformState.saveOutput(organizationId, jobId, stepId, output, outputError);
-
-        assertEquals("https://api/output", result);
-        verify(blobClient).upload(any(BinaryData.class), eq(true));
-    }
-
-    @Test
     void testSaveBufferedOutputStreamsToStorage() throws Exception {
         when(blobContainerClient.exists()).thenReturn(true);
         when(terraformOutputPathService.getOutputPath("org1", "job1", "step1")).thenReturn("https://api/output");
@@ -244,7 +228,7 @@ class AzureTerraformStateImplTest {
             return null;
         }).when(blobClient).upload(any(java.io.InputStream.class), length.capture(), eq(true));
 
-        try (io.terrakube.executor.service.logs.StepOutputBuffer buffer = new io.terrakube.executor.service.logs.StepOutputBuffer(4, null)) {
+        try (StepOutputBuffer buffer = new StepOutputBuffer(4, null)) {
             buffer.appendln("output-content");
             String result = azureTerraformState.saveBufferedOutput("org1", "job1", "step1", buffer, "error-content");
 
@@ -253,6 +237,59 @@ class AzureTerraformStateImplTest {
         assertEquals("output-content\nerror-content", uploaded.toString(java.nio.charset.StandardCharsets.UTF_8));
         assertEquals(uploaded.size(), length.getValue());
     }
+
+    @Test
+    void testSaveOutputPartGoesUnderThePartsFolderOfTheStep() {
+        when(blobContainerClient.exists()).thenReturn(true);
+        java.io.ByteArrayOutputStream uploaded = new java.io.ByteArrayOutputStream();
+        org.mockito.ArgumentCaptor<Long> length = org.mockito.ArgumentCaptor.forClass(Long.class);
+        doAnswer(invocation -> {
+            invocation.<java.io.InputStream>getArgument(0).transferTo(uploaded);
+            return null;
+        }).when(blobClient).upload(any(java.io.InputStream.class), length.capture(), eq(true));
+
+        assertTrue(azureTerraformState.saveOutputPart("org1", "job1", "step1", 3, PART_SOURCE));
+
+        verify(blobContainerClient).getBlobClient("org1/job1/step1.parts/000003.part");
+        assertEquals("part-content", uploaded.toString(java.nio.charset.StandardCharsets.UTF_8));
+        assertEquals(12L, length.getValue());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void testDeleteOutputPartsRemovesOnlyThePartsOfTheStep() {
+        com.azure.core.http.rest.PagedIterable<com.azure.storage.blob.models.BlobItem> listed = mock(com.azure.core.http.rest.PagedIterable.class);
+        java.util.List<com.azure.storage.blob.models.BlobItem> items = java.util.List.of(
+                new com.azure.storage.blob.models.BlobItem().setName("org1/job1/step1.parts/000001.part"),
+                new com.azure.storage.blob.models.BlobItem().setName("org1/job1/step1.parts/000002.part"));
+        doReturn(items.iterator()).when(listed).iterator();
+        org.mockito.ArgumentCaptor<com.azure.storage.blob.models.ListBlobsOptions> options = org.mockito.ArgumentCaptor.forClass(com.azure.storage.blob.models.ListBlobsOptions.class);
+        when(blobContainerClient.listBlobs(options.capture(), any())).thenReturn(listed);
+
+        azureTerraformState.deleteOutputParts("org1", "job1", "step1");
+
+        assertEquals("org1/job1/step1.parts/", options.getValue().getPrefix());
+        verify(blobContainerClient).getBlobClient("org1/job1/step1.parts/000001.part");
+        verify(blobContainerClient).getBlobClient("org1/job1/step1.parts/000002.part");
+        verify(blobClient, times(2)).deleteIfExists();
+    }
+
+    @Test
+    void testDeleteOutputPartsDoesNotThrowWhenStorageFails() {
+        when(blobContainerClient.listBlobs(any(com.azure.storage.blob.models.ListBlobsOptions.class), any())).thenThrow(new RuntimeException("down"));
+
+        assertDoesNotThrow(() -> azureTerraformState.deleteOutputParts("org1", "job1", "step1"));
+    }
+
+    private static final io.terrakube.executor.service.logs.StepOutputPartWriter.PartSource PART_SOURCE = new io.terrakube.executor.service.logs.StepOutputPartWriter.PartSource() {
+            public java.io.InputStream open() {
+                return new java.io.ByteArrayInputStream("part-content".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            }
+
+            public long length() {
+                return 12;
+            }
+        };
 
     @Test
     void testSpoolContextPatch() {

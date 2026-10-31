@@ -14,6 +14,7 @@ import io.terrakube.executor.service.executor.ExecutorJobResult;
 import io.terrakube.executor.service.logs.ExecutorLogsProperties;
 import io.terrakube.executor.service.logs.LogsConsumer;
 import io.terrakube.executor.service.logs.ProcessLogs;
+import io.terrakube.executor.service.logs.StepOutputArchiveService;
 import io.terrakube.executor.service.logs.StepOutputBuffer;
 import io.terrakube.executor.service.mode.TerraformJob;
 import io.terrakube.executor.service.scripts.ScriptEngineService;
@@ -107,6 +108,13 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
     // Most bytes of the rendered plan published to the job context (the PR comment copy).
     private long renderedPlanContextMaxBytes = new ExecutorLogsProperties().getRenderedPlanContextMaxBytes();
 
+    private StepOutputArchiveService stepOutputArchiveService;
+
+    @Autowired(required = false)
+    void setStepOutputArchiveService(StepOutputArchiveService stepOutputArchiveService) {
+        this.stepOutputArchiveService = stepOutputArchiveService;
+    }
+
     @Autowired(required = false)
     void setLogsProperties(ExecutorLogsProperties logsProperties) {
         this.renderedPlanContextMaxBytes = logsProperties.getRenderedPlanContextMaxBytes();
@@ -175,7 +183,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
 
     @Override
     public ExecutorJobResult plan(TerraformJob terraformJob, File executorTempDirectory, boolean isDestroy) {
-        return withStepOutput(executorTempDirectory, jobOutput -> plan(terraformJob, executorTempDirectory, isDestroy, jobOutput));
+        return withStepOutput(terraformJob, executorTempDirectory, jobOutput -> plan(terraformJob, executorTempDirectory, isDestroy, jobOutput));
     }
 
     private ExecutorJobResult plan(TerraformJob terraformJob, File executorTempDirectory, boolean isDestroy, StepOutputBuffer jobOutput) {
@@ -187,7 +195,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         // structured snapshot carrying whatever changes/diagnostics were parsed before it broke.
         List<Map<String, Object>> liveChanges = new ArrayList<>();
         List<Map<String, Object>> jobDiagnostics = new ArrayList<>();
-        TerraformJsonEventParser eventParser = new TerraformJsonEventParser(objectMapper);
+        TerraformJsonEventParser eventParser = TerraformJsonEventParser.forPlan(objectMapper);
         boolean planCommandExecuted = false;
         try {
             File terraformWorkingDir = getTerraformWorkingDir(terraformJob, executorTempDirectory);
@@ -522,7 +530,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
 
     @Override
     public ExecutorJobResult apply(TerraformJob terraformJob, File executorTempDirectory) {
-        return withStepOutput(executorTempDirectory, terraformOutput -> apply(terraformJob, executorTempDirectory, terraformOutput));
+        return withStepOutput(terraformJob, executorTempDirectory, terraformOutput -> apply(terraformJob, executorTempDirectory, terraformOutput));
     }
 
     private ExecutorJobResult apply(TerraformJob terraformJob, File executorTempDirectory, StepOutputBuffer terraformOutput) {
@@ -543,7 +551,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                     log.error("Plan artifacts could not be restored for job {} step {}: {}",
                             terraformJob.getJobId(), terraformJob.getStepId(), e.getMessage());
                     recordArtifactMetrics("restore_failed", 0);
-                    return generateJobResult(false, "", "Plan artifacts could not be restored: " + e.getMessage());
+                    return generateJobResult(false, terraformOutput, "Plan artifacts could not be restored: " + e.getMessage());
                 }
             }
 
@@ -562,7 +570,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                         + artifactsRestoration.sha256() + ").");
             }
 
-            HashMap<String, String> terraformParameters = getWorkspaceParameters(terraformJob.getVariables());
+            HashMap<String, String> terraformParameters = getWorkspaceParameters(argumentVariables(terraformJob));
 
             boolean execution = false;
             boolean scriptAfterSuccess;
@@ -587,24 +595,17 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                         }
                     }
                     terraformProcessData.setTerraformVariables(planFileDownloaded ? new HashMap<>() : terraformParameters);
+                    if (!planFileDownloaded && hasRunVariablesFile(terraformJob)) {
+                        // An apply without a saved plan takes the variables again. With a saved plan Terraform refuses them.
+                        HashMap<String, String> applyEnvironment = new HashMap<>(terraformProcessData.getTerraformEnvironmentVariables());
+                        applyEnvironment.put("TF_CLI_ARGS_apply", RunVariablesFile.addVarFile(applyEnvironment.get("TF_CLI_ARGS_apply"),
+                                new File(executorTempDirectory, RunVariablesFile.FILE_NAME)));
+                        terraformProcessData.setTerraformEnvironmentVariables(applyEnvironment);
+                    }
 
                     execution = runJsonApply(terraformJob, terraformProcessData, applyOutput);
 
                     handleTerraformStateChange(terraformJob, terraformWorkingDir, executorTempDirectory, applyOutput);
-
-                    // apply -json's event stream only ever carries terse per-resource one-liners
-                    // ("aws_instance.foo: Creating...", "...Creation complete after 3s [id=...]")
-                    // plus the final change-summary line - unlike plan(), which appends
-                    // the classic rendered diff, apply never appended anything
-                    // resembling a `terraform show`/CLI-style closing readout. Mirrors plan()'s
-                    // append (same reasoning: must run before logsService.flush() below), just
-                    // rendered from the plan file apply already downloaded above instead of one it
-                    // computed itself - real `terraform apply <planfile>` reprints this same diff
-                    // before executing it, so this restores that content even though Terrakube
-                    // renders it after the resource-by-resource lines rather than before.
-                    if (execution && planFileDownloaded) {
-                        planStructuredOutputService.streamPlanAsHumanText(terraformJob, terraformWorkingDir, applyOutput);
-                    }
 
                     if (execution) {
                         appendHumanReadableOutputs(terraformJob, applyOutput);
@@ -674,7 +675,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         List<Map<String, Object>> changes = new ArrayList<>(applyStructuredOutputService.seedFromPlan(
                 terraformJob.getOrganizationId(), terraformJob.getJobId()));
         List<Map<String, Object>> jobDiagnostics = new ArrayList<>();
-        TerraformJsonEventParser eventParser = new TerraformJsonEventParser(objectMapper);
+        TerraformJsonEventParser eventParser = TerraformJsonEventParser.forApply(objectMapper);
 
         if (!changes.isEmpty()) {
             applyStructuredOutputService.publishApplyProgress(
@@ -744,7 +745,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             throws IOException, ExecutionException, InterruptedException {
         List<Map<String, Object>> changes = new ArrayList<>();
         List<Map<String, Object>> jobDiagnostics = new ArrayList<>();
-        TerraformJsonEventParser eventParser = new TerraformJsonEventParser(objectMapper);
+        TerraformJsonEventParser eventParser = TerraformJsonEventParser.forPlan(objectMapper);
         AtomicLong lastFlush = new AtomicLong(0);
 
         Consumer<String> jsonLineConsumer = (line) -> {
@@ -893,7 +894,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
 
     @Override
     public ExecutorJobResult destroy(TerraformJob terraformJob, File executorTempDirectory) {
-        return withStepOutput(executorTempDirectory, jobOutput -> destroy(terraformJob, executorTempDirectory, jobOutput));
+        return withStepOutput(terraformJob, executorTempDirectory, jobOutput -> destroy(terraformJob, executorTempDirectory, jobOutput));
     }
 
     private ExecutorJobResult destroy(TerraformJob terraformJob, File executorTempDirectory, StepOutputBuffer jobOutput) {
@@ -995,13 +996,17 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
 
     // The buffer belongs to the result it was handed to. Anything else (an unchecked exception, an
     // error, an early return with a plain String) closes it here, so a spilled file is never left behind.
-    private ExecutorJobResult withStepOutput(File workingDirectory, java.util.function.Function<StepOutputBuffer, ExecutorJobResult> step) {
+    private ExecutorJobResult withStepOutput(TerraformJob terraformJob, File workingDirectory, java.util.function.Function<StepOutputBuffer, ExecutorJobResult> step) {
         StepOutputBuffer output = newStepOutput(workingDirectory);
+        if (stepOutputArchiveService != null) {
+            stepOutputArchiveService.start(output, terraformJob);
+        }
         ExecutorJobResult result = null;
         try {
             result = step.apply(output);
             return result;
         } finally {
+            RunVariablesFile.delete(workingDirectory);
             if (result == null || result.getOutputBuffer() != output) {
                 output.close();
             }
@@ -1011,15 +1016,9 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
     // The buffer travels with the result and is closed by whoever saves it (ExecutorJobImpl), once the
     // output has been uploaded.
     private ExecutorJobResult generateJobResult(boolean scriptAfterSuccess, StepOutputBuffer jobOutput, String jobErrorOutput) {
-        ExecutorJobResult jobResult = generateJobResult(scriptAfterSuccess, "", jobErrorOutput);
-        jobResult.setOutputBuffer(jobOutput);
-        return jobResult;
-    }
-
-    private ExecutorJobResult generateJobResult(boolean scriptAfterSuccess, String jobOutput, String jobErrorOutput) {
         ExecutorJobResult jobResult = new ExecutorJobResult();
         jobResult.setSuccessfulExecution(scriptAfterSuccess);
-        jobResult.setOutputLog(jobOutput);
+        jobResult.setOutputBuffer(jobOutput);
         jobResult.setOutputErrorLog(jobErrorOutput);
 
         return jobResult;
@@ -1219,13 +1218,9 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             });
             terraformVersion = terraformClient.version().get();
         } catch (IOException | ExecutionException | InterruptedException exception) {
-            setError(exception);
+            describeFailure(exception, null);
         }
         return terraformVersion;
-    }
-
-    private ExecutorJobResult setError(Exception exception) {
-        return setError(exception, "");
     }
 
     // Keep everything Terraform/OpenTofu already streamed to the console before the failure. The
@@ -1236,55 +1231,45 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
     // output stream" with none of the real Terraform output, and none of the real error (the
     // "Error: External Program Lookup Failed" / missing-python diagnostic, in the reported case)
     // that actually caused it.
-    ExecutorJobResult setError(Exception exception, StepOutputBuffer partialConsoleOutput) {
-        ExecutorJobResult error = setError(exception, "");
-        // The text version built the trailer on its own; put it after what was already streamed.
+    ExecutorJobResult setError(Exception exception, StepOutputBuffer streamedOutput) {
+        StepOutputBuffer partialConsoleOutput = streamedOutput != null ? streamedOutput : new StepOutputBuffer();
+        // Put the failure after what was already streamed, with a blank line between.
         if (partialConsoleOutput.sizeInBytes() > 0) {
             partialConsoleOutput.appendln("");
         }
-        for (String line : error.getOutputLog().split("\n")) {
-            partialConsoleOutput.appendln(line);
-        }
-        error.setOutputLog("");
-        error.setOutputBuffer(partialConsoleOutput);
-        return error;
+        String message = describeFailure(exception, partialConsoleOutput);
+        return generateJobResult(false, partialConsoleOutput, message);
     }
 
-    ExecutorJobResult setError(Exception exception, String partialConsoleOutput) {
+    // Logs and counts the failure and, when there is an output, writes the trailer that explains it.
+    // Returns the message to report as the error of the step.
+    private String describeFailure(Exception exception, StepOutputBuffer output) {
         String message = exception.getMessage() != null ? exception.getMessage() : exception.toString();
         log.error("Terraform operation failed: {}", message, exception);
 
         // A terraform-spring-boot stream-drain watchdog failure is an executor-side symptom, not the
         // Terraform diagnostic - the real error (an unset required variable, a missing provider) is
-        // already in partialConsoleOutput above. Count it and keep it clearly secondary so it never
+        // already in the output above. Count it and keep it clearly secondary so it never
         // masks the diagnostic the user actually needs.
         boolean streamDrainFailure = messageChainContains(exception, "Failed to capture process output stream");
         if (streamDrainFailure && meterRegistry != null) {
             meterRegistry.counter("terrakube.executor.process.stream.drain.timeouts").increment();
         }
 
-        TextStringBuilder consoleOutput = new TextStringBuilder();
-        if (partialConsoleOutput != null && !partialConsoleOutput.isBlank()) {
-            consoleOutput.append(partialConsoleOutput);
-            if (!partialConsoleOutput.endsWith("\n")) {
-                consoleOutput.appendNewLine();
+        if (output != null) {
+            output.appendln("Error: the Terrakube executor could not finish this operation");
+            if (streamDrainFailure) {
+                output.appendln("(secondary, executor-side) " + message);
+                output.appendln("The Terraform/OpenTofu diagnostic above is the primary error.");
+            } else {
+                output.appendln(message);
             }
-            consoleOutput.appendNewLine();
         }
-        consoleOutput.appendln("Error: the Terrakube executor could not finish this operation");
-        if (streamDrainFailure) {
-            consoleOutput.appendln("(secondary, executor-side) " + message);
-            consoleOutput.appendln("The Terraform/OpenTofu diagnostic above is the primary error.");
-        } else {
-            consoleOutput.appendln(message);
-        }
-
-        ExecutorJobResult error = generateJobResult(false, consoleOutput.toString(), message);
 
         if (exception instanceof InterruptedException) {
             Thread.currentThread().interrupt();
         }
-        return error;
+        return message;
     }
 
     private static boolean messageChainContains(Throwable throwable, String needle) {
@@ -1579,20 +1564,58 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             log.warn("Not using any SSH key to download modules");
         }
 
+        HashMap<String, String> environmentVariables = loadTempEnvironmentVariables(
+                workspaceRootDirectory,
+                terraformWorkingDir,
+                terraformJob
+        );
+        if (hasRunVariablesFile(terraformJob)) {
+            File runVariablesFile = writeRunVariablesFile(terraformJob, workspaceRootDirectory);
+            // Copied so the job's own map never accumulates arguments across the calls of one step.
+            environmentVariables = new HashMap<>(environmentVariables);
+            for (String command : List.of("plan", "destroy")) {
+                String name = "TF_CLI_ARGS_" + command;
+                environmentVariables.put(name, RunVariablesFile.addVarFile(environmentVariables.get(name), runVariablesFile));
+            }
+        }
+
         return TerraformProcessData.builder()
                 .terraformVersion(terraformJob.getTerraformVersion())
-                .terraformVariables(terraformJob.getVariables())
-                .terraformEnvironmentVariables(loadTempEnvironmentVariables(
-                        workspaceRootDirectory,
-                        terraformWorkingDir,
-                        terraformJob
-                ))
+                .terraformVariables(argumentVariables(terraformJob))
+                .terraformEnvironmentVariables(environmentVariables)
                 .workingDirectory(terraformWorkingDir)
                 .refresh(terraformJob.isRefresh())
                 .refreshOnly(terraformJob.isRefreshOnly())
                 .tofu(terraformJob.isTofu())
                 .sshFile(sshKeyFile)
                 .build();
+    }
+
+    private static boolean hasRunVariablesFile(TerraformJob terraformJob) {
+        return terraformJob.getHclVariables() != null && !terraformJob.getHclVariables().isEmpty();
+    }
+
+    private File writeRunVariablesFile(TerraformJob terraformJob, File workspaceRootDirectory) {
+        try {
+            return RunVariablesFile.write(workspaceRootDirectory, terraformJob.getHclVariables());
+        } catch (IOException e) {
+            // The message never carries a value.
+            throw new IllegalStateException("Could not write the variable file of the run", e);
+        }
+    }
+
+    /**
+     * The variables passed as {@code --var}. Those that also go to the variable file are left out: Terraform applies
+     * arguments in order, so a second definition of the same name would replace the typed one.
+     */
+    private static HashMap<String, String> argumentVariables(TerraformJob terraformJob) {
+        HashMap<String, String> variables = terraformJob.getVariables();
+        if (variables == null || !hasRunVariablesFile(terraformJob)) {
+            return variables;
+        }
+        HashMap<String, String> arguments = new HashMap<>(variables);
+        arguments.keySet().removeAll(terraformJob.getHclVariables().keySet());
+        return arguments;
     }
 
     private File getFile(File workspaceRootDirectory, File sshKeyFile) {

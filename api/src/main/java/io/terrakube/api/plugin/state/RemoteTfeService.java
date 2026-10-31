@@ -39,8 +39,13 @@ import io.terrakube.api.plugin.state.model.workspace.tags.TagDataList;
 import io.terrakube.api.plugin.state.model.workspace.tags.TagModel;
 import io.terrakube.api.plugin.state.model.workspace.vcs.VcsRepo;
 import io.terrakube.api.plugin.security.rbac.RbacService;
+import io.terrakube.api.plugin.logs.StepLogService;
 import io.terrakube.api.plugin.storage.StorageTypeService;
 import io.terrakube.api.plugin.storage.StorageUnavailableException;
+import io.terrakube.api.plugin.storage.model.ByteRange;
+import io.terrakube.api.plugin.storage.model.StepOutputStream;
+import org.springframework.util.StreamUtils;
+import java.util.stream.Collectors;
 import io.terrakube.api.plugin.token.team.TeamTokenService;
 import io.terrakube.api.repository.*;
 import io.terrakube.api.rs.ExecutionMode;
@@ -92,6 +97,14 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import com.yahoo.elide.core.security.User;
+import io.terrakube.api.plugin.execution.CliRunVariables;
+import io.terrakube.api.plugin.execution.JobVariablesAccess;
+import io.terrakube.api.rs.project.access.ProjectAccess;
+import io.terrakube.api.rs.checks.membership.MembershipService;
+import io.terrakube.api.plugin.execution.JobVariablesService;
+import io.terrakube.api.plugin.execution.WorkspaceBranchPolicy;
+import io.terrakube.api.plugin.execution.WorkspaceBranches;
 import java.text.ParseException;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -137,6 +150,7 @@ public class RemoteTfeService {
     private RbacService rbacService;
 
     private static final String LATEST_TERRAFORM_VERSION = "latest";
+    private static final int CLI_APPROVAL_STEP = 150;
     // HCP Terraform limits for direct tag bindings; tag.name is varchar(128) and workspacetag.tag_value varchar(256)
     private static final int TAG_KEY_MAX_LENGTH = 128;
     private static final int TAG_VALUE_MAX_LENGTH = 256;
@@ -157,11 +171,30 @@ public class RemoteTfeService {
     @Autowired(required = false)
     private PolicyOverrideRepository policyOverrideRepository;
 
+    @Autowired
+    private JobVariablesService jobVariablesService;
+
+    @Autowired
+    private JobVariablesAccess jobVariablesAccess;
+
+    @Autowired
+    private MembershipService membershipService;
+
+    @Autowired
+    private WorkspaceBranchPolicy workspaceBranchPolicy;
+
     @Autowired(required = false)
     private PolicySetRepository policySetRepository;
 
     @Autowired(required = false)
     private ConfigurationUploadTicketService uploadTicketService;
+
+    @Autowired(required = false)
+    private StepLogService stepLogService;
+
+    public void setStepLogService(StepLogService stepLogService) {
+        this.stepLogService = stepLogService;
+    }
 
     public void setUploadTicketService(ConfigurationUploadTicketService uploadTicketService) {
         this.uploadTicketService = uploadTicketService;
@@ -372,6 +405,20 @@ public class RemoteTfeService {
     }
 
     /**
+     * The third place a right can come from, next to the organization team and the workspace access: the access
+     * list of the project the workspace belongs to. Elide checks it for the same rights ("team project limited ..."),
+     * so the Terraform CLI has to as well, or a right granted through the project would work in the UI and not here.
+     */
+    private boolean hasProjectAccess(Workspace workspace, JwtAuthenticationToken currentUser,
+                                     java.util.function.Function<ProjectAccess, Boolean> allows) {
+        Project project = workspace.getProject();
+        if (project == null || project.getProjectAccess() == null || project.getProjectAccess().isEmpty()) {
+            return false;
+        }
+        return membershipService.checkProjectMembership(new User(currentUser), project.getProjectAccess(), allows);
+    }
+
+    /**
      * Validates that the current user has permission to plan (queue) jobs
      * in the workspace.
      */
@@ -402,7 +449,7 @@ public class RemoteTfeService {
                 }
             });
 
-        return userCanPlan.get();
+        return userCanPlan.get() || hasProjectAccess(workspace, currentUser, rbacService::canPlanJob);
     }
 
     /**
@@ -436,7 +483,7 @@ public class RemoteTfeService {
                 }
             });
 
-        return userCanApprove.get();
+        return userCanApprove.get() || hasProjectAccess(workspace, currentUser, rbacService::canApproveJob);
     }
 
     EntitlementData getOrgEntitlementSet(String organizationName, JwtAuthenticationToken currentUser) {
@@ -1113,7 +1160,7 @@ public class RemoteTfeService {
             }
             newWorkspace.setTerraformVersion(terraformVersion);
             newWorkspace.setSource("empty");
-            newWorkspace.setBranch("remote-content");
+            newWorkspace.setBranch(WorkspaceBranches.REMOTE_CONTENT);
             newWorkspace.setOrganization(organization);
 
             ExecutionMode fallbackMode = organization.getExecutionMode() != null
@@ -1714,6 +1761,28 @@ public class RemoteTfeService {
         }
 
         Workspace workspace = workspaceRepository.getReferenceById(UUID.fromString(workspaceId));
+
+        // Auto-approving skips the approval step, so it is the same act as approving the run: it needs the right to
+        // approve, not just the right to plan.
+        // A speculative plan never applies, so auto approving it asks for nothing.
+        boolean runsApply = isDestroy || !contentRepository.getReferenceById(UUID.fromString(configurationId)).isSpeculative();
+        if (autoApply && runsApply && !validateUserApproveJob(workspace, currentUser)) {
+            log.warn("User does not have permission to auto approve runs in workspace {}", workspace.getName());
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "Auto approving a run requires permission to approve runs in workspace " + workspace.getName()
+                            + ". Run it without auto approve and ask someone who can approve to confirm it.");
+        }
+
+        // -var, -var-file and TF_VAR_ inputs of the CLI arrive as run variables. They override the workspace
+        // variables for this run only, so they need the same right as setting variables on a job.
+        Map<String, String> runVariables = CliRunVariables.parse(runsData.getData().getAttributes().get("variables"));
+        jobVariablesService.validate(runVariables);
+        if (!runVariables.isEmpty() && !jobVariablesAccess.canSet(new User(currentUser), workspace)) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "Supplying variables with -var, -var-file or TF_VAR_ environment variables requires permission to "
+                            + "manage the workspace. Variables: " + String.join(", ", runVariables.keySet()));
+        }
+
         String sourceTarGz = String.format("https://%s/remote/tfe/v2/configuration-versions/%s/terraformContent.tar.gz",
                 hostname, configurationId);
         // We intentionally do NOT persist this configuration version onto workspace.source
@@ -1726,6 +1795,19 @@ public class RemoteTfeService {
         Template template = templateRepository.getByOrganizationNameAndName(
                 workspace.getOrganization().getName(),
                 getTemplateName(configurationId, isDestroy));
+
+        // On a workspace that restricts apply to its configured branch, a run of the local configuration may only
+        // plan. A VCS or SSH workspace runs the uploaded content under the branch "remote-content", which is not
+        // the workspace branch, so apply and destroy are refused and a speculative plan is allowed.
+        boolean runsUploadedContent = workspace.getVcs() != null || workspace.getSsh() != null;
+        workspaceBranchPolicy.violation(workspace, runsUploadedContent ? WorkspaceBranches.REMOTE_CONTENT : null, null,
+                        template.getId().toString())
+                .ifPresent(message -> {
+                    log.info("Run refused by the branch policy of workspace {}: {}", workspace.getName(), message);
+                    throw new org.springframework.security.access.AccessDeniedException(
+                            runsUploadedContent ? workspaceBranchPolicy.cliMessage(workspace) : message);
+                });
+
         log.info("Creating Job");
         Job job = new Job();
         job.setPlanChanges(true);
@@ -1741,17 +1823,22 @@ public class RemoteTfeService {
         job.setAutoApply(autoApply);
         job.setComments("terraform-cli");
         job.setVia(JobVia.CLI.getValue());
+        if (!runVariables.isEmpty()) {
+            job.setEncryptedVariables(jobVariablesService.encrypt(runVariables));
+            job.setVariableNames(runVariables.keySet().stream().sorted().toList());
+            job.setVariablesAsArguments(true);
+        }
         job.setTemplateReference(template.getId().toString());
         // if the vcs connection is not null, we need to override the value inside the
         // job
         if (workspace.getVcs() != null || workspace.getSsh() != null) {
             log.warn(
                     "Workspace is using VCS connection, overriding vcs source and branch to run job using a remote plan");
-            job.setOverrideBranch("remote-content");
+            job.setOverrideBranch(WorkspaceBranches.REMOTE_CONTENT);
             job.setOverrideSource(sourceTarGz);
         }
 
-        if (workspace.getVcs() == null && workspace.getBranch().equals("remote-content")) {
+        if (workspace.getVcs() == null && WorkspaceBranches.REMOTE_CONTENT.equals(workspace.getBranch())) {
             log.warn("Overriding source to run job using a remote configuration id: {}", configurationId);
             job.setOverrideSource(sourceTarGz);
         }
@@ -1894,6 +1981,13 @@ public class RemoteTfeService {
             runEventsModel.setData(new ArrayList<Resource>());
             relationships.setRunEventsModel(runEventsModel);
 
+            Set<String> includes = include != null
+                    ? Arrays.stream(include.split(","))
+                            .map(String::trim)
+                            .filter(s -> !s.isEmpty())
+                            .collect(Collectors.toSet())
+                    : Collections.emptySet();
+
             if (policyEvaluationRepository != null) {
                 List<PolicyEvaluation> evaluations = policyEvaluationRepository.findByJob(job);
                 if (evaluations != null && !evaluations.isEmpty()) {
@@ -1908,7 +2002,7 @@ public class RemoteTfeService {
                     policyChecksModel.setData(checkResources);
                     relationships.setPolicyChecks(policyChecksModel);
 
-                    if (include != null && include.contains("policy-checks")) {
+                    if (includes.contains("policy-checks")) {
                         if (runsData.getIncluded() == null) {
                             runsData.setIncluded(new ArrayList<>());
                         }
@@ -1917,6 +2011,19 @@ public class RemoteTfeService {
                         }
                     }
                 }
+            }
+
+            if (includes.contains("apply")) {
+                if (runsData.getIncluded() == null) {
+                    runsData.setIncluded(new ArrayList<>());
+                }
+                runsData.getIncluded().add(getApply(runId).getData());
+            }
+            if (includes.contains("plan")) {
+                if (runsData.getIncluded() == null) {
+                    runsData.setIncluded(new ArrayList<>());
+                }
+                runsData.getIncluded().add(getPlan(runId).getData());
             }
 
             log.info("Included: {}", include);
@@ -2022,7 +2129,7 @@ public class RemoteTfeService {
                 log.warn("Only a plan was executed, adding apply steps to job execution");
                 Step approvalStep = new Step();
                 approvalStep.setStatus(JobStatus.pending);
-                approvalStep.setStepNumber(150);
+                approvalStep.setStepNumber(CLI_APPROVAL_STEP);
                 approvalStep.setName("Approve Plan from Terraform CLI");
                 approvalStep.setJob(job);
                 approvalStep = stepRepository.save(approvalStep);
@@ -2047,7 +2154,7 @@ public class RemoteTfeService {
             }
 
             for (Step step : job.getStep()) {
-                if (step.getStepNumber() == 150) {
+                if (step.getStepNumber() == CLI_APPROVAL_STEP) {
                     if (step.getStatus() == JobStatus.completed) {
                         break;
                     }
@@ -2134,6 +2241,17 @@ public class RemoteTfeService {
             }
         }
 
+        // Terraform CLI approves as soon as its plan finishes. Keep it polling until
+        // the scheduler has reached the approval gate that runApply requires.
+        if ("finished".equals(planStatus) && job.getStatus() != JobStatus.waitingApproval
+                && job.getStatus() != JobStatus.completed && job.getStatus() != JobStatus.noChanges
+                && job.isPlanChanges()
+                && job.getStep().stream().anyMatch(step -> step.getStepNumber() == CLI_APPROVAL_STEP
+                        && step.getStatus() != JobStatus.completed)) {
+            planStatus = List.of(JobStatus.failed, JobStatus.cancelled, JobStatus.rejected).contains(job.getStatus())
+                    ? "errored" : "running";
+        }
+
         HashMap<String, Object> actions = new HashMap<>();
         actions.put("is-confirmable", true);
         actions.put("is-discardable", false);
@@ -2189,81 +2307,135 @@ public class RemoteTfeService {
     }
 
     byte[] getPlanLogs(String planId, int offset, int limit) {
-        planId = encryptionService.decrypt(planId);
-        log.info("Searching logs for plan {}", planId);
-        Optional<Job> job = jobRepository.findById(Integer.valueOf(planId));
-        byte[] logs = "".getBytes();
-        if(job.isPresent()) {
-            TextStringBuilder logsOutput = new TextStringBuilder();
-            if (job.get().getStep() != null && !job.get().getStep().isEmpty())
-                for (Step step : job.get().getStep()) {
-                    if (step.getStepNumber() == 100) {
-                        log.info("Checking logs for plan: {}", step.getId());
-
-                        try {
-                            @SuppressWarnings("unchecked")
-                            List<MapRecord<String, String, String>> messagesPlan = redisTemplate.opsForStream()
-                                    .read(StreamOffset.fromStart(String.valueOf(job.get().getId())));
-
-                            for (MapRecord<String, String, String> mapRecord : messagesPlan) {
-                                Map<String, String> streamData = (Map<String, String>) mapRecord.getValue();
-                                logsOutput.appendln(streamData.get("output"));
-                            }
-
-                            String logsOutputString = logsOutput.toString();
-                            int potentialEndIndex = limit + offset;
-                            int endIndex = logsOutputString.length() > potentialEndIndex ? potentialEndIndex
-                                    : logsOutputString.length();
-                            logs = logsOutputString.substring(offset, endIndex).getBytes(StandardCharsets.UTF_8);
-                            log.debug("{}", logs);
-                        } catch (Exception ex) {
-                            log.error("Could not read plan logs for job {}: {}", job.get().getId(), ex.getMessage());
-                        }
-                    }
-                }
-        } else {
-            log.warn("No logs found for plan {}", planId);
-        }
-        return logs;
+        return getStepLogs(planId, 100, offset, limit);
     }
 
     byte[] getApplyLogs(String applyId, int offset, int limit) {
-        applyId = encryptionService.decrypt(applyId);
-        log.info("Searching logs for apply {}", applyId);
-        Optional<Job> job = jobRepository.findById(Integer.valueOf(applyId));
-        byte[] logs = "".getBytes();
-        if (job.isPresent()) {
-            TextStringBuilder logsOutputApply = new TextStringBuilder();
-            if (job.get().getStep() != null && !job.get().getStep().isEmpty())
-                for (Step step : job.get().getStep()) {
-                    if (step.getStepNumber() == 100) {
-                        log.debug("Checking logs stepId for apply: {}", step.getId());
+        return getStepLogs(applyId, 200, offset, limit);
+    }
 
-                        try {
-                            @SuppressWarnings("unchecked")
-                            List<MapRecord<String, String, String>> messagesApply = redisTemplate.opsForStream().read(
-                                    StreamOffset.fromStart(String.valueOf(job.get().getId())));
+    private byte[] getStepLogs(String encryptedJobId, int stepNumber, int offset, int limit) {
+        if (offset < 0 || limit <= 0) {
+            return new byte[0];
+        }
+        String jobId = encryptionService.decrypt(encryptedJobId);
+        log.info("Searching logs for job {} stepNumber {}", jobId, stepNumber);
+        Optional<Job> job = jobRepository.findById(Integer.valueOf(jobId));
+        if (job.isEmpty()) {
+            log.warn("No logs found for job {}", jobId);
+            return new byte[0];
+        }
 
-                            for (MapRecord<String, String, String> mapRecord : messagesApply) {
-                                Map<String, String> streamData = (Map<String, String>) mapRecord.getValue();
-                                logsOutputApply.appendln(streamData.get("output"));
+        if (job.get().getStep() == null || job.get().getStep().isEmpty()) {
+            return new byte[0];
+        }
+
+        for (Step step : job.get().getStep()) {
+            if (step.getStepNumber() == stepNumber) {
+                log.debug("Checking logs for step: {}", step.getId());
+                try {
+                    TextStringBuilder logsOutput = new TextStringBuilder();
+                    @SuppressWarnings("unchecked")
+                    List<MapRecord<String, String, String>> messages = redisTemplate.opsForStream()
+                            .read(StreamOffset.fromStart(String.valueOf(job.get().getId())));
+
+                    if (messages != null) {
+                        for (MapRecord<String, String, String> mapRecord : messages) {
+                            Map<String, String> streamData = (Map<String, String>) mapRecord.getValue();
+                            if (streamData.get("stepId") == null || step.getId().toString().equals(streamData.get("stepId"))) {
+                                logsOutput.appendln(streamData.get("output"));
                             }
-
-                            String logsOutputString = logsOutputApply.toString();
-                            int potentialEndIndex = limit + offset;
-                            int endIndex = logsOutputString.length() > potentialEndIndex ? potentialEndIndex
-                                    : logsOutputString.length();
-                            logs = logsOutputString.substring(offset, endIndex).getBytes(StandardCharsets.UTF_8);
-                            log.debug("{}", logs);
-                        } catch (Exception ex) {
-                            log.error("Could not read apply logs for job {}: {}", job.get().getId(), ex.getMessage());
                         }
                     }
+
+                    if (logsOutput.length() > 0) {
+                        byte[] liveBytes = logsOutput.toString().getBytes(StandardCharsets.UTF_8);
+                        return sliceBytes(liveBytes, offset, limit);
+                    }
+
+                    // Empty live stream from Redis. Only fall back to storage if step is terminal.
+                    JobStatus stepStatus = step.getStatus();
+                    boolean isTerminal = stepStatus != null && stepStatus.isTerminal();
+                    if (!isTerminal || job.get().getOrganization() == null) {
+                        return new byte[0];
+                    }
+
+                    return readPersistedStepLogs(
+                            job.get().getOrganization().getId().toString(),
+                            String.valueOf(job.get().getId()),
+                            step.getId().toString(),
+                            offset,
+                            limit);
+                } catch (Exception ex) {
+                    log.error("Could not read logs for job {} step {}: {}", job.get().getId(), step.getId(), ex.getMessage());
                 }
-        } else {
-            log.warn("No logs found for apply {}", applyId);
+            }
         }
-        return logs;
+        return new byte[0];
+    }
+
+    private byte[] readPersistedStepLogs(String organizationId, String jobId, String stepId, int offset, int limit) {
+        if (offset < 0 || limit <= 0) {
+            return new byte[0];
+        }
+
+        if (stepLogService != null) {
+            try {
+                StepLogService.StepLog stepLog = stepLogService.resolve(organizationId, jobId, stepId);
+                if (!stepLog.isExists()) {
+                    return new byte[0];
+                }
+                if (stepLog.getBody() != null) {
+                    return sliceBytes(stepLog.getBody(), offset, limit);
+                }
+                long contentLength = stepLog.getContentLength();
+                if (contentLength >= 0 && offset >= contentLength) {
+                    return new byte[0];
+                }
+                long rangeEnd = (long) offset + limit - 1;
+                if (contentLength >= 0) {
+                    rangeEnd = Math.min(rangeEnd, contentLength - 1);
+                }
+                ByteRange range = ByteRange.parse("bytes=" + offset + "-" + rangeEnd).orElse(null);
+                try (StepOutputStream out = stepLogService.openStream(organizationId, jobId, stepId, range)) {
+                    if (out != null && out.isExists() && out.getContent() != null) {
+                        return StreamUtils.copyToByteArray(out.getContent());
+                    }
+                }
+                return new byte[0];
+            } catch (Exception e) {
+                log.warn("Could not read persisted logs via stepLogService for job {} step {}: {}", jobId, stepId, e.getMessage());
+                return new byte[0];
+            }
+        }
+
+        if (storageTypeService != null) {
+            try {
+                long rangeEnd = (long) offset + limit - 1;
+                ByteRange range = ByteRange.parse("bytes=" + offset + "-" + rangeEnd).orElse(null);
+                try (StepOutputStream out = storageTypeService.getStepOutputStream(organizationId, jobId, stepId, range)) {
+                    if (out != null && out.isExists() && out.getContent() != null) {
+                        return StreamUtils.copyToByteArray(out.getContent());
+                    }
+                }
+                byte[] fullOutput = storageTypeService.getStepOutput(organizationId, jobId, stepId);
+                if (fullOutput != null && fullOutput.length > 0) {
+                    return sliceBytes(fullOutput, offset, limit);
+                }
+            } catch (Exception e) {
+                log.warn("Could not read persisted logs via storageTypeService for job {} step {}: {}", jobId, stepId, e.getMessage());
+            }
+        }
+
+        return new byte[0];
+    }
+
+    private byte[] sliceBytes(byte[] bytes, int offset, int limit) {
+        if (bytes == null || offset < 0 || limit <= 0 || offset >= bytes.length) {
+            return new byte[0];
+        }
+        int endIndex = Math.min(bytes.length, offset + limit);
+        return Arrays.copyOfRange(bytes, offset, endIndex);
     }
 
     StateOutputs getCurrentOutputs(String workspaceId) {

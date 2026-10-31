@@ -10,9 +10,11 @@ import io.terrakube.api.rs.hooks.webhook.WebhookManageHook;
 import io.terrakube.api.rs.workspace.Workspace;
 
 import com.yahoo.elide.annotation.CreatePermission;
+import com.yahoo.elide.annotation.DeletePermission;
 import com.yahoo.elide.annotation.Include;
-import com.yahoo.elide.annotation.UpdatePermission;
 import com.yahoo.elide.annotation.LifeCycleHookBinding;
+import com.yahoo.elide.annotation.ReadPermission;
+import com.yahoo.elide.annotation.UpdatePermission;
 
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
@@ -26,6 +28,10 @@ import lombok.Getter;
 import lombok.Setter;
 
 @Include
+@ReadPermission(expression = "team view webhook")
+@CreatePermission(expression = "team manage webhook")
+@UpdatePermission(expression = "team manage webhook")
+@DeletePermission(expression = "team manage webhook")
 @Getter
 @Setter
 @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.CREATE, phase = LifeCycleHookBinding.TransactionPhase.PRECOMMIT, hook = WebhookManageHook.class)

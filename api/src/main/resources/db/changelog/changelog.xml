@@ -144,4 +144,5 @@
     <include file="/db/changelog/local/changelog-2.34.0-plan-artifacts.xml"/>
     <include file="/db/changelog/local/changelog-2.34.0-job-variables.xml"/>
     <include file="/db/changelog/local/changelog-2.34.0-webhook-sync-error.xml"/>
+    <include file="/db/changelog/local/changelog-2.34.0-workspace-restrict-apply-branch.xml"/>
 </databaseChangeLog>

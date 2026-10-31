@@ -1,4 +1,4 @@
-import { AutoComplete, Form, Input, Select, Space, Spin, message } from "antd";
+import { AutoComplete, Checkbox, Form, Input, Select, Space, Spin, message } from "antd";
 import { GlobalOutlined } from "@ant-design/icons";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
@@ -10,6 +10,7 @@ import {
   genericHeader,
   getIaCIconById,
   getIaCNameById,
+  gitRepoUrlPattern,
   iacTypes,
   validateTerraformVersion,
 } from "../Workspaces";
@@ -22,6 +23,7 @@ import { SettingsForm } from "@/components/settings/SettingsForm";
 import { RadioChoices } from "@/components/settings/RadioChoices";
 import { IdField } from "@/components/settings/IdField";
 import VcsLogo from "@/components/display/VcsLogo";
+import DeleteConfirmationModal from "@/components/modals/DeleteConfirmationModal/DeleteConfirmationModal";
 
 type Props = {
   workspaceData: Workspace;
@@ -39,9 +41,11 @@ type UpdateWorkspaceForm = {
   iacType: string;
   branch: string;
   defaultTemplate?: string;
+  restrictApplyToConfiguredBranch?: boolean;
   executorAgent?: string;
   project?: string;
   vcs?: string;
+  source?: string;
 };
 
 export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace, onWorkspaceUpdate }: Props) => {
@@ -50,11 +54,19 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace,
   const { Option } = Select;
   const [selectedIac, setSelectedIac] = useState("");
   const { permissions: orgPermissions } = useOrgPermissions();
+  // Terrakube before 2.34.0 does not know the setting and does not report it.
+  const supportsBranchRestriction = workspaceData.attributes?.restrictApplyToConfiguredBranch !== undefined;
   const [terraformVersions, setTerraformVersions] = useState<string[]>([]);
   const [agentList, setAgentList] = useState<Agent[]>([]);
   const [projectList, setProjectList] = useState<ProjectModel[]>([]);
   const [vcsList, setVcsList] = useState<VcsModel[]>([]);
   const [waiting, setWaiting] = useState(false);
+  // Values held back until the user confirms that the webhook on the old repository gets deleted.
+  const [pendingValues, setPendingValues] = useState<UpdateWorkspaceForm | null>(null);
+  const webhookId = workspaceData.relationships?.webhook?.data?.id;
+  const initialVcsId = workspaceData.relationships?.vcs?.data?.id ?? "public";
+  // CLI-driven workspaces have no repository to point at.
+  const vcsDriven = workspaceData.attributes?.source !== "empty";
 
   const loadVersions = (iacType: string) => {
     const versionsApi = `${new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin}/${iacType}/index.json`;
@@ -113,8 +125,39 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace,
     setSelectedIac(iac);
     loadVersions(iac);
   };
-  const onFinish = async (values: UpdateWorkspaceForm) => {
+  const onFinish = (values: UpdateWorkspaceForm) => {
+    const repoChanged = values.source !== undefined && values.source !== workspaceData.attributes?.source;
+    const vcsChanged = values.vcs !== undefined && values.vcs !== initialVcsId;
+    // The webhook lives on the old repository and was registered with the old connection, so it would keep
+    // starting runs from the wrong repository. Delete it first: the API removes the remote hook using the
+    // workspace's current repository and connection.
+    if (webhookId && (repoChanged || vcsChanged)) {
+      setPendingValues(values);
+      return;
+    }
+    return saveWorkspace(values, false);
+  };
+
+  const saveWorkspace = async (values: UpdateWorkspaceForm, deleteWebhook: boolean) => {
     setWaiting(true);
+    if (deleteWebhook) {
+      try {
+        await axiosInstance.delete(`organization/${organizationId}/workspace/${id}/webhook/${webhookId}`, {
+          headers: { "Content-Type": undefined },
+        });
+      } catch (error: any) {
+        // 404 means the row is already gone; remote cleanup may still have failed.
+        if (error?.response?.status !== 404) {
+          message.error(`Couldn't delete the webhook, the workspace was not changed: ${getErrorMessage(error)}`);
+          setWaiting(false);
+          return;
+        }
+      }
+      onWorkspaceUpdate?.();
+    }
+    const updateFailureMessage = deleteWebhook
+      ? "Workspace update failed after the webhook was deleted. Set it up again under Webhook."
+      : "Workspace update failed";
     const body = {
       "atomic:operations": [
         {
@@ -131,7 +174,13 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace,
               terraformVersion: values.terraformVersion,
               iacType: values.iacType,
               branch: values.branch,
+              source: values.source,
               defaultTemplate: values.defaultTemplate,
+              // Only sent to an API that has the setting (it reports it), so a newer UI still saves against an older
+              // API. A manager limited to this workspace cannot change it, and the API refuses a change from them.
+              ...(supportsBranchRestriction && orgPermissions.manageWorkspace
+                ? { restrictApplyToConfiguredBranch: Boolean(values.restrictApplyToConfiguredBranch) }
+                : {}),
             },
           },
         },
@@ -174,7 +223,6 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace,
       )
     );
 
-    const initialVcsId = workspaceData.relationships?.vcs?.data?.id ?? "public";
     if (values.vcs !== undefined && values.vcs !== initialVcsId) {
       const bodyVcs =
         values.vcs && values.vcs !== "public"
@@ -200,11 +248,11 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace,
         message.success("Workspace updated successfully");
         onWorkspaceUpdate?.();
       } else {
-        message.error("Workspace update failed");
+        message.error(updateFailureMessage);
       }
     } catch (error) {
       console.error("Error updating workspace:", error);
-      message.error(getErrorMessage(error));
+      message.error(deleteWebhook ? `${updateFailureMessage} ${getErrorMessage(error)}` : getErrorMessage(error));
     } finally {
       setWaiting(false);
     }
@@ -217,7 +265,7 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace,
       <SettingsPageHeader
         docUrl="https://docs.terrakube.io/user-guide/workspaces"
         title="General settings"
-        description="Adjust how this workspace behaves: identity, execution mode, IaC tool and version, VCS provider, default template and project."
+        description="Adjust how this workspace behaves: identity, execution mode, IaC tool and version, VCS provider and repository, default template and project."
       />
       <Spin spinning={waiting}>
         <SettingsForm
@@ -232,12 +280,14 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace,
             iacType: workspaceData.attributes?.iacType,
             branch: workspaceData.attributes?.branch,
             defaultTemplate: workspaceData.attributes?.defaultTemplate,
+            restrictApplyToConfiguredBranch: workspaceData.attributes?.restrictApplyToConfiguredBranch ?? false,
             executorAgent:
               workspaceData.relationships.agent?.data?.id == null
                 ? "default"
                 : workspaceData.relationships.agent.data?.id,
             project: workspaceData.relationships.project?.data?.id ?? "none",
             vcs: workspaceData.relationships?.vcs?.data?.id ?? "public",
+            source: workspaceData.attributes?.source,
           }}
           name="form-settings"
         >
@@ -339,6 +389,21 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace,
             >
               <Input disabled={!manageWorkspace} />
             </Form.Item>
+            {supportsBranchRestriction && (
+              <Form.Item
+                name="restrictApplyToConfiguredBranch"
+                valuePropName="checked"
+                extra={
+                  vcsDriven
+                    ? "Plan-only runs and terraform plan from the CLI still work on any branch. Webhook runs are not affected. Only a manager of every workspace in the organization can change this."
+                    : "This workspace is CLI-driven: its configuration is uploaded by the Terraform CLI, not read from a branch, so there is no branch to restrict. Connect a repository to use this setting."
+                }
+              >
+                <Checkbox disabled={!manageWorkspace || !orgPermissions.manageWorkspace || !vcsDriven}>
+                  Only run apply and destroy from the default branch
+                </Checkbox>
+              </Form.Item>
+            )}
           </SettingsSection>
 
           <SettingsSection
@@ -384,6 +449,24 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace,
                 ))}
               </Select>
             </Form.Item>
+            {vcsDriven && (
+              <Form.Item
+                name="source"
+                label="Repository URL"
+                normalize={(value) => value?.trim()}
+                extra="The Git repository this workspace clones, over https or ssh. The configured branch must exist in the new repository. State, variables and run history are kept when it changes."
+                rules={[
+                  { required: true, pattern: gitRepoUrlPattern, message: "Enter a valid https or ssh Git URL." },
+                  // "empty" marks a CLI-driven workspace; it is not a repository.
+                  {
+                    validator: (_, value) =>
+                      value?.trim() === "empty" ? Promise.reject(new Error("Enter a Git URL.")) : Promise.resolve(),
+                  },
+                ]}
+              >
+                <Input disabled={!manageWorkspace} placeholder="https://github.com/org/repo.git" />
+              </Form.Item>
+            )}
           </SettingsSection>
 
           <SettingsSection title="Default template">
@@ -416,6 +499,17 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace,
           </SettingsSection>
         </SettingsForm>
       </Spin>
+      <DeleteConfirmationModal
+        open={pendingValues !== null}
+        title="Delete webhook"
+        message="This workspace's webhook is set up on the current repository and VCS connection. Saving deletes it, and repository events stop starting runs until you set it up again under Webhook."
+        okText="Delete webhook and save"
+        onConfirm={() => {
+          if (pendingValues) saveWorkspace(pendingValues, true);
+          setPendingValues(null);
+        }}
+        onCancel={() => setPendingValues(null)}
+      />
     </div>
   );
 };

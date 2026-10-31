@@ -1,6 +1,10 @@
 package io.terrakube.api.rs.provider.implementation;
 
+import com.yahoo.elide.annotation.CreatePermission;
+import com.yahoo.elide.annotation.DeletePermission;
 import com.yahoo.elide.annotation.Include;
+import com.yahoo.elide.annotation.ReadPermission;
+import com.yahoo.elide.annotation.UpdatePermission;
 import lombok.Getter;
 import lombok.Setter;
 import org.hibernate.annotations.JdbcTypeCode;
@@ -11,6 +15,10 @@ import java.sql.Types;
 import java.util.UUID;
 
 @Include
+@ReadPermission(expression = "team view provider implementation OR user is a registry service")
+@CreatePermission(expression = "team manage provider implementation OR user is a registry service OR user is a super service")
+@UpdatePermission(expression = "team manage provider implementation OR user is a registry service OR user is a super service")
+@DeletePermission(expression = "team manage provider implementation OR user is a registry service OR user is a super service")
 @Getter
 @Setter
 @Entity(name = "implementation")

@@ -73,27 +73,24 @@ public class UpdateJobStatusImpl implements UpdateJobStatus {
     }
 
     @Override
-    public void setCompletedStatus(boolean successful, boolean isPlan, int exitCode, TerraformJob terraformJob, String jobOutput, String jobErrorOutput, String jobPlan, String commitId, boolean hasSoftMandatoryViolations, String approvalTeam, String deliveryState, Long deliveryRevision) {
-        complete(successful, isPlan, exitCode, terraformJob, jobOutput, null, jobErrorOutput, jobPlan, commitId, hasSoftMandatoryViolations, approvalTeam, deliveryState, deliveryRevision);
-    }
-
-    @Override
-    public void setCompletedStatusWithOutput(boolean successful, boolean isPlan, int exitCode, TerraformJob terraformJob, StepOutputBuffer jobOutput, String jobErrorOutput, String jobPlan, String commitId, boolean hasSoftMandatoryViolations, String approvalTeam, String deliveryState, Long deliveryRevision) {
-        complete(successful, isPlan, exitCode, terraformJob, "", jobOutput, jobErrorOutput, jobPlan, commitId, hasSoftMandatoryViolations, approvalTeam, deliveryState, deliveryRevision);
-    }
-
-    // jobOutputBuffer, when set, is the output of the step and jobOutput is empty.
-    private void complete(boolean successful, boolean isPlan, int exitCode, TerraformJob terraformJob, String jobOutput, StepOutputBuffer jobOutputBuffer, String jobErrorOutput, String jobPlan, String commitId, boolean hasSoftMandatoryViolations, String approvalTeam, String deliveryState, Long deliveryRevision) {
+    public void setCompletedStatus(boolean successful, boolean isPlan, int exitCode, TerraformJob terraformJob, StepOutputBuffer jobOutput, String jobErrorOutput, String jobPlan, String commitId, boolean hasSoftMandatoryViolations, String approvalTeam, String deliveryState, Long deliveryRevision) {
+        if (jobOutput == null) {
+            // A step that produced no buffer still has to be completed, otherwise the job stays running.
+            try (StepOutputBuffer empty = new StepOutputBuffer()) {
+                setCompletedStatus(successful, isPlan, exitCode, terraformJob, empty, jobErrorOutput, jobPlan, commitId, hasSoftMandatoryViolations, approvalTeam, deliveryState, deliveryRevision);
+            }
+            return;
+        }
         if (!executorFlagsProperties.isDisableAcknowledge()) {
             String currentJobStatus = getCurrentJobStatus(terraformJob);
             // A rejected run keeps showing its approval step as failed: onReject command
             // output is still saved, but its success must not repaint the step as completed.
             boolean rejected = currentJobStatus.equals("rejected");
-            updateStepStatus(successful && !rejected, terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), jobOutput, jobOutputBuffer, jobErrorOutput, deliveryState, deliveryRevision);
+            boolean outputSaved = updateStepStatus(successful && !rejected, terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), jobOutput, jobErrorOutput, deliveryState, deliveryRevision);
             if (rejected || currentJobStatus.equals("cancelled"))
                 log.warn("Job {} was {} when running executor, skipping job status update", terraformJob.getJobId(), currentJobStatus);
             else
-                updateJobStatus(successful, isPlan, exitCode, terraformJob, jobOutputBuffer != null ? jobOutputBuffer.sizeInBytes() : jobOutput.length(), jobErrorOutput, jobPlan, commitId, hasSoftMandatoryViolations, approvalTeam);
+                updateJobStatus(successful && outputSaved, isPlan, exitCode, terraformJob, jobOutput.sizeInBytes(), jobErrorOutput, jobPlan, commitId, hasSoftMandatoryViolations, approvalTeam);
         }
     }
 
@@ -185,11 +182,37 @@ public class UpdateJobStatusImpl implements UpdateJobStatus {
         terrakubeClient.updateJob(jobRequest, job.getRelationships().getOrganization().getData().getId(), job.getId());
     }
 
-    private void updateStepStatus(boolean status, String organizationId, String jobId, String stepId, String jobOutput, StepOutputBuffer jobOutputBuffer, String jobErrorOutput, String deliveryState, Long deliveryRevision) {
-        String output = jobOutputBuffer != null
-                ? this.terraformOutput.saveBufferedOutput(organizationId, jobId, stepId, jobOutputBuffer, jobErrorOutput)
-                : this.terraformOutput.saveOutput(organizationId, jobId, stepId, jobOutput, jobErrorOutput);
-        String stepStatus = status ? "completed" : "failed";
+    /**
+     * Saves the output of the step and completes the step. Returns false when the final output could not be
+     * saved but parts of it are in storage: the step is then completed as failed without a saved output, so
+     * the API serves the parts with the incomplete notice. Saving a short message in its place would hide them.
+     */
+    private boolean updateStepStatus(boolean status, String organizationId, String jobId, String stepId, StepOutputBuffer jobOutput, String jobErrorOutput, String deliveryState, Long deliveryRevision) {
+        // The parts written while the step ran are only for a step that never gets here. Stop them before
+        // the final upload, which has the whole output, and remove them once it has succeeded.
+        int archivedParts = jobOutput.finishArchiving();
+        String output;
+        boolean outputSaved = true;
+        try {
+            output = this.terraformOutput.saveBufferedOutput(organizationId, jobId, stepId, jobOutput, jobErrorOutput);
+        } catch (RuntimeException e) {
+            if (archivedParts == 0) {
+                throw e;
+            }
+            log.error("Could not save the output of step {}, its {} parts stay in storage: {}", stepId, archivedParts, e.getMessage());
+            output = null;
+            outputSaved = false;
+        }
+        if (outputSaved && archivedParts > 0) {
+            try {
+                this.terraformOutput.deleteOutputParts(organizationId, jobId, stepId);
+            } catch (RuntimeException e) {
+                log.warn("Could not delete the output parts of step {}: {}", stepId, e.getMessage());
+            }
+        }
+        // The step keeps the output path it was given when it started, so with no output saved here the API
+        // finds no final output and serves the parts.
+        String stepStatus = status && outputSaved ? "completed" : "failed";
 
         StepDeliveryAttributes stepAttributes = new StepDeliveryAttributes();
         stepAttributes.setOutput(output);
@@ -230,6 +253,7 @@ public class UpdateJobStatusImpl implements UpdateJobStatus {
                 throw e;
             }
         }
+        return outputSaved;
     }
 
     private void updateStepLogs(String organizationId, String jobId, String stepId) {

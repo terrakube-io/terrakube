@@ -11,6 +11,7 @@ import jakarta.persistence.*;
 import java.sql.Types;
 import java.util.UUID;
 
+@ReadPermission(expression = "user is a superuser OR team view agent")
 @CreatePermission(expression = "user is a superuser")
 @UpdatePermission(expression = "user is a superuser")
 @DeletePermission(expression = "user is a superuser")

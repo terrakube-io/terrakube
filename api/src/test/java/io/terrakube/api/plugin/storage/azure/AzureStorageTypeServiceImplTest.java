@@ -284,4 +284,51 @@ class AzureStorageTypeServiceImplTest {
         assertEquals(java.util.List.of("org1/ws1", "plan-artifacts/org1/ws1/"),
                 options.getAllValues().stream().map(ListBlobsOptions::getPrefix).toList());
     }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void listsTheOutputPartsOfAStepWithTheirSizes() {
+        when(blobServiceClient.getBlobContainerClient("tfoutput")).thenReturn(containerClient);
+        com.azure.core.http.rest.PagedIterable<com.azure.storage.blob.models.BlobItem> paged = mock(com.azure.core.http.rest.PagedIterable.class);
+        java.util.List<com.azure.storage.blob.models.BlobItem> items = java.util.List.of(
+                new com.azure.storage.blob.models.BlobItem().setName("org1/job1/step1.parts/000001.part")
+                        .setProperties(new com.azure.storage.blob.models.BlobItemProperties().setContentLength(5L)),
+                new com.azure.storage.blob.models.BlobItem().setName("org1/job1/step1.parts/000002.part")
+                        .setProperties(new com.azure.storage.blob.models.BlobItemProperties().setContentLength(7L)));
+        doAnswer(invocation -> {
+            items.forEach(invocation.<java.util.function.Consumer<com.azure.storage.blob.models.BlobItem>>getArgument(0));
+            return null;
+        }).when(paged).forEach(any());
+        when(containerClient.listBlobs(any(ListBlobsOptions.class), any())).thenReturn(paged);
+
+        var parts = azureStorageTypeService.listStepOutputParts("org1", "job1", "step1");
+
+        assertEquals(java.util.List.of(new io.terrakube.api.plugin.storage.model.StepOutputPart("000001.part", 5),
+                new io.terrakube.api.plugin.storage.model.StepOutputPart("000002.part", 7)), parts);
+        org.mockito.ArgumentCaptor<ListBlobsOptions> options = org.mockito.ArgumentCaptor.forClass(ListBlobsOptions.class);
+        verify(containerClient).listBlobs(options.capture(), any());
+        assertEquals("org1/job1/step1.parts/", options.getValue().getPrefix());
+    }
+
+    @Test
+    void anOutputPartNameThatIsNotGeneratedIsRefusedBeforeStorageIsAsked() {
+        assertThrows(java.io.IOException.class, () -> azureStorageTypeService.openStepOutputPart("org1", "job1", "step1", "../../state/terraform.tfstate", 0, 4));
+
+        verify(containerClient, never()).getBlobClient(any());
+    }
+
+    @Test
+    void opensARangeOfOneOutputPart() throws java.io.IOException {
+        when(blobServiceClient.getBlobContainerClient("tfoutput")).thenReturn(containerClient);
+        when(containerClient.getBlobClient("org1/job1/step1.parts/000002.part")).thenReturn(blobClient);
+        com.azure.storage.blob.specialized.BlobInputStream stream = mock(com.azure.storage.blob.specialized.BlobInputStream.class);
+        org.mockito.ArgumentCaptor<com.azure.storage.blob.options.BlobInputStreamOptions> options =
+                org.mockito.ArgumentCaptor.forClass(com.azure.storage.blob.options.BlobInputStreamOptions.class);
+        when(blobClient.openInputStream(options.capture())).thenReturn(stream);
+
+        assertSame(stream, azureStorageTypeService.openStepOutputPart("org1", "job1", "step1", "000002.part", 3, 4));
+
+        assertEquals(3L, options.getValue().getRange().getOffset());
+        assertEquals(4L, options.getValue().getRange().getCount());
+    }
 }

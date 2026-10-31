@@ -65,3 +65,6 @@ variables.auto.tfvars
 liquibase.properties
 
 ui/.yarn/install-state.gz
+
+# Local AI agent planning notes, not part of the repository
+docs/superpowers/

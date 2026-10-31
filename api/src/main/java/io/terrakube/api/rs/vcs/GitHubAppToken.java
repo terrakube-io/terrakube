@@ -7,8 +7,11 @@ import java.util.UUID;
 import org.hibernate.annotations.JdbcTypeCode;
 import io.terrakube.api.plugin.security.audit.GenericAuditFields;
 
+import com.yahoo.elide.annotation.CreatePermission;
+import com.yahoo.elide.annotation.DeletePermission;
 import com.yahoo.elide.annotation.Include;
 import com.yahoo.elide.annotation.ReadPermission;
+import com.yahoo.elide.annotation.UpdatePermission;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Convert;
@@ -23,6 +26,10 @@ import lombok.Setter;
 @Setter
 @Entity(name = "github_app_token")
 @Include(rootLevel = true)
+@ReadPermission(expression = "user is a registry service")
+@CreatePermission(expression = "NONE")
+@UpdatePermission(expression = "NONE")
+@DeletePermission(expression = "NONE")
 public class GitHubAppToken extends GenericAuditFields {
     @Id
     @JdbcTypeCode(Types.VARCHAR)

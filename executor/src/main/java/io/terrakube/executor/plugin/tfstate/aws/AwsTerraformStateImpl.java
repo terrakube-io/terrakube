@@ -1,5 +1,7 @@
 package io.terrakube.executor.plugin.tfstate.aws;
 
+import io.terrakube.executor.plugin.tfstate.OutputPartNames;
+import io.terrakube.executor.service.logs.StepOutputPartWriter;
 import io.terrakube.executor.service.logs.StepOutputBuffer;
 import lombok.Builder;
 import lombok.Getter;
@@ -39,6 +41,7 @@ import java.io.IOException;
 import java.net.URL;
 import java.nio.charset.Charset;
 import java.nio.file.Files;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.regex.Matcher;
@@ -51,6 +54,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @Slf4j
 public class AwsTerraformStateImpl implements TerraformState {
 
+    private static final String OUTPUT_PREFIX = "tfoutput/";
     private static final String TERRAFORM_PLAN_FILE = "terraformLibrary.tfPlan";
     private static final String BACKEND_FILE_NAME = "aws_backend_override.tf";
 
@@ -369,27 +373,8 @@ public class AwsTerraformStateImpl implements TerraformState {
     }
 
     @Override
-    public String saveOutput(String organizationId, String jobId, String stepId, String output, String outputError) {
-        String blobKey = "tfoutput/" + organizationId + "/" + jobId + "/" + stepId + ".tfoutput";
-        log.info("blobKey: {}", blobKey);
-
-        byte[] bytes = StringUtils.getBytesUtf8(output + outputError);
-        String utf8EncodedString = StringUtils.newStringUtf8(bytes);
-
-        PutObjectRequest putObjectRequest = PutObjectRequest.builder()
-                .bucket(bucketName)
-                .key(blobKey)
-                .build();
-
-        storageRetryMetrics.withRetry("aws", "output-write", () -> s3client.putObject(putObjectRequest, RequestBody.fromString(utf8EncodedString)));
-        log.info("Upload Object {} completed", blobKey);
-
-        return terraformOutputPathService.getOutputPath(organizationId, jobId, stepId);
-    }
-
-    @Override
     public String saveBufferedOutput(String organizationId, String jobId, String stepId, StepOutputBuffer output, String outputError) {
-        String blobKey = "tfoutput/" + organizationId + "/" + jobId + "/" + stepId + ".tfoutput";
+        String blobKey = OUTPUT_PREFIX + organizationId + "/" + jobId + "/" + stepId + ".tfoutput";
         log.info("blobKey: {}", blobKey);
 
         PutObjectRequest putObjectRequest = PutObjectRequest.builder()
@@ -410,6 +395,55 @@ public class AwsTerraformStateImpl implements TerraformState {
         log.info("Upload Object {} completed", blobKey);
 
         return terraformOutputPathService.getOutputPath(organizationId, jobId, stepId);
+    }
+
+    @Override
+    public boolean saveOutputPart(String organizationId, String jobId, String stepId, int partNumber, StepOutputPartWriter.PartSource data) {
+        String blobKey = outputPartsPrefix(organizationId, jobId, stepId) + OutputPartNames.part(partNumber);
+        PutObjectRequest putObjectRequest = PutObjectRequest.builder().bucket(bucketName).key(blobKey).build();
+        storageRetryMetrics.withRetry("aws", "output-part-write", () -> s3client.putObject(putObjectRequest,
+                RequestBody.fromContentProvider(() -> {
+                    try {
+                        return data.open();
+                    } catch (java.io.IOException e) {
+                        throw new java.io.UncheckedIOException(e);
+                    }
+                }, data.length(), "text/plain")));
+        return true;
+    }
+
+    @Override
+    public void deleteOutputParts(String organizationId, String jobId, String stepId) {
+        try {
+            String prefix = outputPartsPrefix(organizationId, jobId, stepId);
+            String continuationToken = null;
+            do {
+                ListObjectsV2Response page = s3client.listObjectsV2(ListObjectsV2Request.builder()
+                        .bucket(bucketName).prefix(prefix).continuationToken(continuationToken).build());
+                deleteKeys(page.contents());
+                continuationToken = Boolean.TRUE.equals(page.isTruncated()) ? page.nextContinuationToken() : null;
+            } while (continuationToken != null);
+        } catch (RuntimeException e) {
+            // Removed with the rest of the job's output when the workspace data is deleted.
+            log.warn("Could not delete the output parts of step {}: {}", stepId, e.getMessage());
+        }
+    }
+
+    /** One request for up to a page of keys, not one per part: a long step has hundreds of parts. */
+    private void deleteKeys(List<S3Object> objects) {
+        if (objects.isEmpty()) {
+            return;
+        }
+        List<ObjectIdentifier> keys = objects.stream().map(object -> ObjectIdentifier.builder().key(object.key()).build()).toList();
+        DeleteObjectsResponse deleted = s3client.deleteObjects(DeleteObjectsRequest.builder()
+                .bucket(bucketName).delete(delete -> delete.objects(keys).quiet(true)).build());
+        if (deleted != null && deleted.hasErrors()) {
+            log.warn("{} output parts could not be deleted", deleted.errors().size());
+        }
+    }
+
+    private String outputPartsPrefix(String organizationId, String jobId, String stepId) {
+        return OUTPUT_PREFIX + organizationId + "/" + jobId + "/" + OutputPartNames.folder(stepId) + "/";
     }
 
     @Override

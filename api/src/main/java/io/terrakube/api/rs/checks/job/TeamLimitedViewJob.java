@@ -27,11 +27,16 @@ public class TeamLimitedViewJob extends OperationCheck<Job> {
 
     @Override
     public boolean ok(Job job, RequestScope requestScope, Optional<ChangeSpec> optional) {
-        log.debug("team view job {}", job.getId());
-        if (job.getWorkspace() == null){
-            log.warn("Workspace is null for job {} this should not happen", job.getId());
+        if (job == null || job.getWorkspace() == null || job.getWorkspace().getOrganization() == null || job.getOrganization() == null) {
+            log.warn("Job, workspace, or organization is null");
             return false;
         }
+        if (!job.getOrganization().getId().equals(job.getWorkspace().getOrganization().getId())) {
+            log.warn("Rejecting limited view job: job organization {} does not match workspace organization {}",
+                    job.getOrganization().getId(), job.getWorkspace().getOrganization().getId());
+            return false;
+        }
+        log.debug("team limited view job {}", job.getId());
         List<Access> teamLimitedList = job.getWorkspace().getAccess();
         return authenticatedUser.isSuperUser(requestScope.getUser()) ? true : membershipService.checkLimitedMembership(requestScope.getUser(), teamLimitedList);
 

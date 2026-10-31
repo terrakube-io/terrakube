@@ -9,6 +9,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import io.terrakube.api.plugin.security.groups.GroupService;
 import io.terrakube.api.plugin.security.rbac.RbacService;
 import io.terrakube.api.plugin.security.user.AuthenticatedUser;
+import io.terrakube.api.rs.checks.workspace.WorkspaceCheckSupport;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.team.Team;
 
@@ -34,10 +35,26 @@ public class TeamPlanJob extends OperationCheck<Job> {
     @Autowired
     RbacService rbacService;
 
+    @Autowired
+    WorkspaceCheckSupport workspaceCheckSupport;
+
     @Override
     public boolean ok(Job job, RequestScope requestScope, Optional<ChangeSpec> optional) {
+        if (job == null || job.getWorkspace() == null || job.getWorkspace().getOrganization() == null || job.getOrganization() == null) {
+            log.warn("Job, workspace, or organization is null");
+            return false;
+        }
+        if (!job.getOrganization().getId().equals(job.getWorkspace().getOrganization().getId())) {
+            log.warn("Rejecting plan job: job organization {} does not match workspace organization {}",
+                    job.getOrganization().getId(), job.getWorkspace().getOrganization().getId());
+            return false;
+        }
         log.debug("team plan job {}", job.getId());
-        List<Team> teamList = job.getOrganization().getTeam();
+        if (!workspaceCheckSupport.isTemplateInJobOrganization(job)) {
+            log.warn("Rejecting plan job: templateReference does not belong to job organization");
+            return false;
+        }
+        List<Team> teamList = job.getWorkspace().getOrganization().getTeam();
         boolean isServiceAccount = authenticatedUser.isServiceAccount(requestScope.getUser());
         for (Team team : teamList) {
             if (isServiceAccount) {

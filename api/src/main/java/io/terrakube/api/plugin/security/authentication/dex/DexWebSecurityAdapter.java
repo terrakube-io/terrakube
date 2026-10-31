@@ -1,5 +1,6 @@
 package io.terrakube.api.plugin.security.authentication.dex;
 
+import io.terrakube.api.plugin.logs.StepLogResponses;
 import io.terrakube.api.plugin.token.login.TerraformLoginProperties;
 import io.terrakube.api.repository.FederatedRepository;
 import io.terrakube.api.repository.StepRepository;
@@ -143,6 +144,8 @@ public class DexWebSecurityAdapter {
                                                 "Origin", "Cache-Control",
                                                 "Content-Type", "Accept", "Authorization", "X-TFC-Token", "X-TFC-Url"));
                 configuration.setAllowedMethods(Arrays.asList("DELETE", "GET", "POST", "PATCH", "PUT", "OPTIONS"));
+                // The UI reads this header to tell that a step log is only the part that was saved.
+                configuration.setExposedHeaders(List.of(StepLogResponses.INCOMPLETE_HEADER));
                 UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
                 source.registerCorsConfiguration("/**", configuration);
                 return source;

@@ -7,6 +7,7 @@ import java.util.Date;
 import io.terrakube.api.plugin.security.audit.GenericAuditFields;
 import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.hooks.job.JobManageHook;
+import io.terrakube.api.rs.hooks.job.JobBranchPolicyHook;
 import io.terrakube.api.rs.hooks.job.JobVariablesHook;
 import io.terrakube.api.rs.hooks.job.JobApprovalHook;
 import io.terrakube.api.rs.hooks.job.JobArtifactsCleanupHook;
@@ -17,6 +18,7 @@ import io.terrakube.api.rs.workspace.Workspace;
 
 import com.yahoo.elide.annotation.ComputedAttribute;
 import com.yahoo.elide.annotation.CreatePermission;
+import com.yahoo.elide.annotation.DeletePermission;
 import com.yahoo.elide.annotation.Exclude;
 import com.yahoo.elide.annotation.Include;
 import com.yahoo.elide.annotation.LifeCycleHookBinding;
@@ -41,17 +43,30 @@ import lombok.Getter;
 import lombok.Setter;
 
 @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.CREATE, phase = LifeCycleHookBinding.TransactionPhase.PREFLUSH, hook = JobVariablesHook.class)
+@LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.CREATE, phase = LifeCycleHookBinding.TransactionPhase.PREFLUSH, hook = JobBranchPolicyHook.class)
 @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.CREATE, phase = LifeCycleHookBinding.TransactionPhase.POSTCOMMIT, hook = JobManageHook.class)
 @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.POSTCOMMIT, hook = JobManageHook.class)
 @ReadPermission(expression = "team view job OR team project limited view job OR team limited view job OR executor read job OR user is an executor service")
-@CreatePermission(expression = "team manage job OR team limited manage job OR team plan job OR team limited plan job OR team project limited plan job")
-@UpdatePermission(expression = "team manage job OR team limited manage job OR team project limited manage job OR user is a super service OR executor manage job OR user is an executor service")
+// Creating a job needs plan rights. "manage job" also matches approve-only access, which must not queue new runs.
+@CreatePermission(expression = "team plan job OR team limited plan job OR team project limited plan job")
+@UpdatePermission(expression = Job.UPDATE)
+@DeletePermission(expression = "user is a super service OR user is a superuser")
 @Include(rootLevel = false)
 @Getter
 @Setter
 @Entity(name = "job")
 @SQLRestriction(value = "deleted = false")
 public class Job extends GenericAuditFields {
+
+    // The class-level update expression, shared with the two fields below because a field-level expression
+    // replaces it instead of adding to it.
+    static final String UPDATE = "team manage job OR team limited manage job OR team project limited manage job"
+            + " OR user is a super service OR executor manage job OR user is an executor service";
+
+    // overrideBranch and commitId: the usual job managers may edit them only while the workspace does not restrict
+    // apply to its branch. Services and the executor always may.
+    private static final String BRANCH_FIELDS_UPDATE = "(" + UPDATE + ") AND (user is a super service"
+            + " OR user is an executor service OR executor manage job OR job branch fields editable)";
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -80,6 +95,14 @@ public class Job extends GenericAuditFields {
     @Column(name = "variable_names", columnDefinition = "text")
     private List<String> variableNames;
 
+    // True for the variables a Terraform CLI run supplied with -var, -var-file or TF_VAR_: the executor then passes
+    // them as --var arguments, which rank above the configuration's tfvars files like they do on a local run.
+    // False (the default) keeps the TF_VAR_ environment variables of jobs created through the job API.
+    @CreatePermission(expression = "NONE")
+    @UpdatePermission(expression = "NONE")
+    @Column(name = "variables_as_arguments", nullable = false)
+    private boolean variablesAsArguments = false;
+
     @Column(name = "comments")
     private String comments;
 
@@ -105,6 +128,7 @@ public class Job extends GenericAuditFields {
     @Column(name = "output")
     private String output;
 
+    @UpdatePermission(expression = BRANCH_FIELDS_UPDATE)
     @Column(name = "commit_id")
     private String commitId;
 
@@ -146,9 +170,11 @@ public class Job extends GenericAuditFields {
     @Column(name = "override_source")
     private String overrideSource;
 
+    @UpdatePermission(expression = BRANCH_FIELDS_UPDATE)
     @Column(name = "override_branch")
     private String overrideBranch;
 
+    @UpdatePermission(expression = "NONE")
     @Column(name = "template_reference")
     private String templateReference;
 
@@ -247,9 +273,11 @@ public class Job extends GenericAuditFields {
     @Column(name = "dispatch_last_error", length = 1024)
     private String dispatchLastError;
 
+    @UpdatePermission(expression = "user is a superuser")
     @ManyToOne
     private Organization organization;
 
+    @UpdatePermission(expression = "user is a superuser")
     @ManyToOne
     private Workspace workspace;
 

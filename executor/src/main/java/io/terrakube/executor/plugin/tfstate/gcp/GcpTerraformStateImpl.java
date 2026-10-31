@@ -1,5 +1,7 @@
 package io.terrakube.executor.plugin.tfstate.gcp;
 
+import io.terrakube.executor.plugin.tfstate.OutputPartNames;
+import io.terrakube.executor.service.logs.StepOutputPartWriter;
 import io.terrakube.executor.service.logs.StepOutputBuffer;
 import com.google.cloud.storage.BlobId;
 import com.google.cloud.storage.BlobInfo;
@@ -33,6 +35,8 @@ import java.io.IOException;
 import java.net.URL;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
@@ -249,21 +253,6 @@ public class GcpTerraformStateImpl implements TerraformState {
     }
 
     @Override
-    public String saveOutput(String organizationId, String jobId, String stepId, String output, String outputError) {
-        String blobKey = String.format("tfoutput/%s/%s/%s.tfoutput",organizationId, jobId, stepId);
-        log.info("blobKey: {}", blobKey);
-
-        byte[] bytes = StringUtils.getBytesUtf8(output + outputError);
-        String utf8EncodedString = StringUtils.newStringUtf8(bytes);
-        BlobId blobId = BlobId.of(bucketName, blobKey);
-        BlobInfo blobInfo = BlobInfo.newBuilder(blobId).build();
-        storageRetryMetrics.withRetry("gcp", "output-write", () -> storage.create(blobInfo, utf8EncodedString.getBytes()));
-        log.info("File uploaded to bucket {} as {}", bucketName, blobKey);
-
-        return terraformOutputPathService.getOutputPath(organizationId, jobId, stepId);
-    }
-
-    @Override
     public String saveBufferedOutput(String organizationId, String jobId, String stepId, StepOutputBuffer output, String outputError) {
         String blobKey = String.format("tfoutput/%s/%s/%s.tfoutput", organizationId, jobId, stepId);
         log.info("blobKey: {}", blobKey);
@@ -279,6 +268,39 @@ public class GcpTerraformStateImpl implements TerraformState {
         log.info("File uploaded to bucket {} as {}", bucketName, blobKey);
 
         return terraformOutputPathService.getOutputPath(organizationId, jobId, stepId);
+    }
+
+    @Override
+    public boolean saveOutputPart(String organizationId, String jobId, String stepId, int partNumber, StepOutputPartWriter.PartSource data) {
+        BlobInfo blobInfo = BlobInfo.newBuilder(BlobId.of(bucketName, outputPartsPrefix(organizationId, jobId, stepId) + OutputPartNames.part(partNumber))).build();
+        storageRetryMetrics.withRetry("gcp", "output-part-write", () -> {
+            try (java.io.InputStream in = data.open()) {
+                return storage.createFrom(blobInfo, in);
+            } catch (java.io.IOException e) {
+                throw new java.io.UncheckedIOException(e);
+            }
+        });
+        return true;
+    }
+
+    @Override
+    public void deleteOutputParts(String organizationId, String jobId, String stepId) {
+        try {
+            String prefix = outputPartsPrefix(organizationId, jobId, stepId);
+            List<BlobId> parts = new ArrayList<>();
+            for (com.google.cloud.storage.Blob blob : storage.list(bucketName, Storage.BlobListOption.prefix(prefix)).iterateAll()) {
+                parts.add(blob.getBlobId());
+            }
+            if (!parts.isEmpty()) {
+                storage.delete(parts);
+            }
+        } catch (RuntimeException e) {
+            log.warn("Could not delete the output parts of step {}: {}", stepId, e.getMessage());
+        }
+    }
+
+    private String outputPartsPrefix(String organizationId, String jobId, String stepId) {
+        return String.format("tfoutput/%s/%s/%s/", organizationId, jobId, OutputPartNames.folder(stepId));
     }
 
     @Override
