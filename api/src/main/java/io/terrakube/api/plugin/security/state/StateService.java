@@ -20,7 +20,24 @@ import io.terrakube.api.rs.workspace.access.Access;
 
 import io.terrakube.api.plugin.security.token.InternalTokenClassifier;
 import io.terrakube.api.plugin.security.token.InternalTokenType;
+import io.jsonwebtoken.io.Decoders;
+import io.jsonwebtoken.security.Keys;
+import io.terrakube.api.plugin.security.authentication.dex.ActiveStepTokenValidator;
+import io.terrakube.api.plugin.security.token.InternalTokenClassifier;
+import io.terrakube.api.plugin.security.token.InternalTokenType;
+import io.terrakube.api.repository.StepRepository;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
+import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.jwt.JwtException;
+import org.springframework.security.oauth2.jwt.JwtTimestampValidator;
+import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
+
+import javax.crypto.SecretKey;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
+import java.util.Map;
 
 @Slf4j
 @Service
@@ -35,7 +52,23 @@ public class StateService {
    private RbacService rbacService;
 
    @Value("${io.terrakube.owner:}")
+
    private String instanceOwner;
+
+   @Value("${io.terrakube.token.internal:}")
+   private String internalJwtSecret;
+
+   @Value("${io.terrakube.token.pat:}")
+   private String patJwtSecret;
+
+   @Autowired(required = false)
+   private StepRepository stepRepository;
+
+   public enum HttpBackendAccessDecision {
+      ALLOWED,
+      UNAUTHORIZED,
+      FORBIDDEN
+   }
 
    @Transactional(readOnly = true)
    public boolean hasManageStatePermission(Authentication authentication, String organizationId, String workspaceId) {
@@ -190,6 +223,139 @@ public class StateService {
       }
 
       log.warn("Workspace token {} not authorized to read remote state of workspace {}", tokenWorkspaceId, workspaceId);
+      return false;
+   }
+
+   @Transactional(readOnly = true)
+   public HttpBackendAccessDecision authorizeHttpBackendAccess(String authorizationHeader, String organizationId, String workspaceId) {
+      String rawToken = extractTokenFromAuthorizationHeader(authorizationHeader);
+      if (rawToken == null || rawToken.isBlank()) {
+         return HttpBackendAccessDecision.UNAUTHORIZED;
+      }
+
+      if (internalJwtSecret == null || internalJwtSecret.isBlank()) {
+         log.error("Internal JWT secret is not configured; failing closed for HTTP backend");
+         return HttpBackendAccessDecision.UNAUTHORIZED;
+      }
+
+      try {
+         Jwt jwt = buildInternalJwtDecoder().decode(rawToken);
+         return validateHttpBackendClaims(jwt.getClaims(), organizationId, workspaceId);
+      } catch (JwtException ex) {
+         if (isValidPatToken(rawToken)) {
+            log.warn("User PAT token rejected on executor-only HTTP backend endpoint for org={} workspace={}", organizationId, workspaceId);
+            return HttpBackendAccessDecision.FORBIDDEN;
+         }
+         log.warn("HTTP backend token authentication failed for org={} workspace={}: {}", organizationId, workspaceId, ex.getMessage());
+         return HttpBackendAccessDecision.UNAUTHORIZED;
+      } catch (RuntimeException ex) {
+         log.warn("Unexpected error validating HTTP backend token: {}", ex.getMessage());
+         return HttpBackendAccessDecision.UNAUTHORIZED;
+      }
+   }
+
+   public HttpBackendAccessDecision validateHttpBackendClaims(Map<String, Object> claims, String organizationId, String workspaceId) {
+      if (claims == null || claims.isEmpty()) {
+         return HttpBackendAccessDecision.UNAUTHORIZED;
+      }
+
+      InternalTokenType tokenType = InternalTokenClassifier.classify(claims);
+      if (tokenType != InternalTokenType.WORKSPACE_EXECUTOR) {
+         log.warn("Non-workspace-executor token ({}) denied on HTTP backend endpoint for org={} workspace={}",
+                 tokenType, organizationId, workspaceId);
+         return HttpBackendAccessDecision.FORBIDDEN;
+      }
+
+      Object tokenOrgId = claims.get("organizationId");
+      Object tokenWsId = claims.get("workspaceId");
+      if (organizationId == null || workspaceId == null || tokenOrgId == null || tokenWsId == null) {
+         return HttpBackendAccessDecision.FORBIDDEN;
+      }
+
+      if (!organizationId.equalsIgnoreCase(tokenOrgId.toString())
+              || !workspaceId.equalsIgnoreCase(tokenWsId.toString())) {
+         log.warn("HTTP backend scope mismatch: tokenOrg={} tokenWs={} reqOrg={} reqWs={}",
+                 tokenOrgId, tokenWsId, organizationId, workspaceId);
+         return HttpBackendAccessDecision.FORBIDDEN;
+      }
+
+      return HttpBackendAccessDecision.ALLOWED;
+   }
+
+   String extractTokenFromAuthorizationHeader(String authorizationHeader) {
+      if (authorizationHeader == null || authorizationHeader.isBlank()) {
+         return null;
+      }
+      String trimmed = authorizationHeader.trim();
+      if (trimmed.regionMatches(true, 0, "Basic ", 0, 6)) {
+         String base64Part = trimmed.substring(6).trim();
+         if (base64Part.isEmpty()) {
+            return null;
+         }
+         try {
+            String decoded = new String(Base64.getDecoder().decode(base64Part), StandardCharsets.UTF_8);
+            int colonIdx = decoded.indexOf(':');
+            if (colonIdx <= 0) {
+               return null;
+            }
+            String password = decoded.substring(colonIdx + 1).trim();
+            return password.isEmpty() ? null : password;
+         } catch (IllegalArgumentException e) {
+            return null;
+         }
+      }
+      if (trimmed.regionMatches(true, 0, "Bearer ", 0, 7)) {
+         String token = trimmed.substring(7).trim();
+         return token.isEmpty() ? null : token;
+      }
+      return null;
+   }
+
+   private NimbusJwtDecoder buildInternalJwtDecoder() {
+      byte[] secretBytes = Decoders.BASE64URL.decode(internalJwtSecret);
+      SecretKey jwtSecretKey = Keys.hmacShaKeyFor(secretBytes);
+      NimbusJwtDecoder decoder = NimbusJwtDecoder.withSecretKey(jwtSecretKey)
+              .macAlgorithm(resolveMacAlgorithm(secretBytes.length))
+              .build();
+      if (stepRepository != null) {
+         decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(
+                 new JwtTimestampValidator(),
+                 new ActiveStepTokenValidator(stepRepository)
+         ));
+      } else {
+         decoder.setJwtValidator(new JwtTimestampValidator());
+      }
+      return decoder;
+   }
+
+   private boolean isValidPatToken(String rawToken) {
+      if (patJwtSecret == null || patJwtSecret.isBlank()) {
+         return false;
+      }
+      try {
+         byte[] secretBytes = Decoders.BASE64URL.decode(patJwtSecret);
+         SecretKey jwtSecretKey = Keys.hmacShaKeyFor(secretBytes);
+         NimbusJwtDecoder decoder = NimbusJwtDecoder.withSecretKey(jwtSecretKey)
+                 .macAlgorithm(resolveMacAlgorithm(secretBytes.length))
+                 .build();
+         decoder.setJwtValidator(new JwtTimestampValidator());
+         Jwt jwt = decoder.decode(rawToken);
+         return "Terrakube".equals(jwt.getClaimAsString("iss"));
+      } catch (RuntimeException e) {
+         return false;
+      }
+   }
+
+   private static MacAlgorithm resolveMacAlgorithm(int keyLengthBytes) {
+      if (keyLengthBytes >= 64) {
+         return MacAlgorithm.HS512;
+      } else if (keyLengthBytes >= 48) {
+         return MacAlgorithm.HS384;
+      } else {
+         return MacAlgorithm.HS256;
+      }
+   }
+   private boolean noopEnd() {
       return false;
    }
 }

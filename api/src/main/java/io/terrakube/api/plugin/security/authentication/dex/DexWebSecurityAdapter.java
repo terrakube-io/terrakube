@@ -80,7 +80,9 @@ public class DexWebSecurityAdapter {
                 http.cors(Customizer.withDefaults())
                                 .csrf(crsf -> crsf.ignoringRequestMatchers("/remote/tfe/v2/configuration-versions/*",
                                                 "/tfstate/v1/archive/*/terraform.tfstate",
-                                                "/tfstate/v1/archive/*/terraform.json.tfstate", "/webhook/v1/**", "/webhook/v2/**"))
+                                                "/tfstate/v1/archive/*/terraform.json.tfstate",
+                                                "/tfstate/v1/organization/*/workspace/*/state/terraform.tfstate",
+                                                "/webhook/v1/**", "/webhook/v2/**"))
                                 .authorizeHttpRequests(authz -> {
                                         authz
                                                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
@@ -102,6 +104,8 @@ public class DexWebSecurityAdapter {
                                                         .permitAll()
                                                         .requestMatchers(HttpMethod.PUT,
                                                                         "/tfstate/v1/archive/*/terraform.json.tfstate")
+                                                        .permitAll()
+                                                        .requestMatchers("/tfstate/v1/organization/*/workspace/*/state/terraform.tfstate")
                                                         .permitAll()
                                                         .requestMatchers("/remote/tfe/v2/plans/logs/**").permitAll()
                                                         .requestMatchers("/remote/tfe/v2/applies/logs/**").permitAll()
