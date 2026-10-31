@@ -421,4 +421,62 @@ describe("WorkspaceWebhook", () => {
       expect(screen.getAllByRole("listitem")[1]).toHaveTextContent("Not saved");
     });
   });
+
+  describe("on a workspace that restricts apply to its configured branch", () => {
+    const restricted = (branch = "main") => {
+      const ws = JSON.parse(JSON.stringify(withVcs));
+      ws.attributes = { name: "prod", branch, restrictApplyToConfiguredBranch: true };
+      return ws;
+    };
+    const mockEvent = (attributes: Record<string, unknown>) =>
+      (axiosInstance.get as jest.Mock).mockImplementation((url: string) =>
+        Promise.resolve(
+          url.endsWith("/events")
+            ? {
+                data: {
+                  data: [{ id: "ev-1", attributes: { priority: 1, path: "*", templateId: "tpl-1", ...attributes } }],
+                },
+              }
+            : { data: { data: { attributes: { remoteHookId: "4242", migratedV2: false } } } }
+        )
+      );
+    const openTrigger = async () => {
+      fireEvent.click(await screen.findByRole("button", { name: "Edit trigger 1" }));
+    };
+
+    it("warns that a pull request trigger with a template that applies starts no run, and turns off apply by comment", async () => {
+      mockEvent({ event: "PULL_REQUEST", branch: "main", prWorkflowEnabled: true, prApplyEnabled: true });
+      renderWebhook(restricted());
+      await openTrigger();
+
+      expect(screen.getByText(/a pull request can only run a plan-only template/)).toBeInTheDocument();
+      expect(screen.getByRole("checkbox", { name: /Allow apply from a pull request comment/ })).toBeDisabled();
+    });
+
+    it("warns about a push trigger that matches other branches than the workspace branch", async () => {
+      mockEvent({ event: "PUSH", branch: "main,develop" });
+      renderWebhook(restricted());
+      await openTrigger();
+
+      expect(
+        screen.getByText(/A push to any other branch this trigger matches will not start a run/)
+      ).toBeInTheDocument();
+    });
+
+    it("says nothing for a push trigger on the workspace branch only", async () => {
+      mockEvent({ event: "PUSH", branch: "main" });
+      renderWebhook(restricted());
+      await openTrigger();
+
+      expect(screen.queryByText(/will not start a run/)).not.toBeInTheDocument();
+    });
+
+    it("says nothing for a release trigger", async () => {
+      mockEvent({ event: "RELEASE", branch: "*" });
+      renderWebhook(restricted());
+      await openTrigger();
+
+      expect(screen.queryByText(/will not start a run/)).not.toBeInTheDocument();
+    });
+  });
 });

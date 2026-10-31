@@ -395,7 +395,7 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace,
                 valuePropName="checked"
                 extra={
                   vcsDriven
-                    ? "Plan-only runs and terraform plan from the CLI still work on any branch. Webhook runs are not affected. Only a manager of every workspace in the organization can change this."
+                    ? "Plan-only runs and terraform plan from the CLI still work on any branch. A pull request or a push to another branch can only run a plan-only template, and a release only applies commits that are on the default branch. Only a manager of every workspace in the organization can change this."
                     : "This workspace is CLI-driven: its configuration is uploaded by the Terraform CLI, not read from a branch, so there is no branch to restrict. Connect a repository to use this setting."
                 }
               >
