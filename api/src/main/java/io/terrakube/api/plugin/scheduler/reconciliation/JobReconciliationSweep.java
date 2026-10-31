@@ -275,6 +275,11 @@ public class JobReconciliationSweep implements org.quartz.Job {
                         stepRepository.save(step);
                     }
                 }
+                JobKey key = new JobKey(PREFIX_JOB_CONTEXT + job.getId());
+                if (scheduler.checkExists(key)) {
+                    log.info("Deleting Quartz trigger for orphaned job {}", job.getId());
+                    scheduler.deleteJob(key);
+                }
             } catch (Exception e) {
                 log.error("Failed to cancel orphaned job {} during sweep: {}", job.getId(), e.getMessage(), e);
             }

@@ -36,6 +36,7 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.Transient;
@@ -275,10 +276,12 @@ public class Job extends GenericAuditFields {
 
     @UpdatePermission(expression = "user is a superuser")
     @ManyToOne
+    @JoinColumn(name = "organization_id", updatable = false)
     private Organization organization;
 
     @UpdatePermission(expression = "user is a superuser")
     @ManyToOne
+    @JoinColumn(name = "workspace_id", updatable = false)
     private Workspace workspace;
 
     @UpdatePermission(expression = "user is a super service OR executor manage job OR user is an executor service")
