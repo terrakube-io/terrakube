@@ -331,4 +331,20 @@ class AzureStorageTypeServiceImplTest {
         assertEquals(3L, options.getValue().getRange().getOffset());
         assertEquals(4L, options.getValue().getRange().getCount());
     }
+
+    @Test
+    void testCurrentTerraformStateLifecycle() {
+        byte[] stateData = "{\"version\":4}".getBytes(StandardCharsets.UTF_8);
+        when(blobServiceClient.getBlobContainerClient("tfstate")).thenReturn(containerClient);
+        when(containerClient.getBlobClient("org1/ws1/terraform.tfstate")).thenReturn(blobClient);
+
+        azureStorageTypeService.saveCurrentTerraformState("org1", "ws1", stateData);
+        verify(blobClient).upload(any(BinaryData.class), eq(true));
+
+        when(blobClient.downloadContent()).thenReturn(BinaryData.fromBytes(stateData));
+        assertArrayEquals(stateData, azureStorageTypeService.getCurrentTerraformState("org1", "ws1"));
+
+        azureStorageTypeService.deleteCurrentTerraformState("org1", "ws1");
+        verify(blobClient).deleteIfExists();
+    }
 }

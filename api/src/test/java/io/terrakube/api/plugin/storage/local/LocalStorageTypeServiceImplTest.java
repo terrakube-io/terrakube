@@ -403,4 +403,20 @@ class LocalStorageTypeServiceImplTest {
             assertTrue(otherJob.exists());
         }
     }
+
+    @Test
+    void testCurrentTerraformStateLifecycle() {
+        try (MockedStatic<FileUtils> mockedFileUtils = mockStatic(FileUtils.class, CALLS_REAL_METHODS)) {
+            mockedFileUtils.when(FileUtils::getUserDirectoryPath).thenReturn(tempDir.toString());
+            byte[] stateData = "{\"version\":4}".getBytes(StandardCharsets.UTF_8);
+
+            assertArrayEquals(new byte[0], localStorageTypeService.getCurrentTerraformState("org1", "ws1"));
+
+            localStorageTypeService.saveCurrentTerraformState("org1", "ws1", stateData);
+            assertArrayEquals(stateData, localStorageTypeService.getCurrentTerraformState("org1", "ws1"));
+
+            localStorageTypeService.deleteCurrentTerraformState("org1", "ws1");
+            assertArrayEquals(new byte[0], localStorageTypeService.getCurrentTerraformState("org1", "ws1"));
+        }
+    }
 }
