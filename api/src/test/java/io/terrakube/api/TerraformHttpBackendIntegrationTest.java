@@ -51,6 +51,7 @@ class TerraformHttpBackendIntegrationTest extends ServerApplicationTests {
         job.setOrganization(org);
         job.setWorkspace(ws);
         job.setStatus(JobStatus.running);
+        job.setTcl(createTclBase64(100, "terraformApply"));
         activeJob = jobRepository.save(job);
 
         Step step = new Step();
@@ -98,6 +99,11 @@ class TerraformHttpBackendIntegrationTest extends ServerApplicationTests {
     private String basicAuthHeader(String username, String password) {
         String credentials = username + ":" + password;
         return "Basic " + Base64.getEncoder().encodeToString(credentials.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static String createTclBase64(int stepNumber, String flowType) {
+        String yaml = String.format("flow:\n  - step: %d\n    type: \"%s\"\n", stepNumber, flowType);
+        return Base64.getEncoder().encodeToString(yaml.getBytes(StandardCharsets.UTF_8));
     }
 
     @Test
@@ -298,6 +304,55 @@ class TerraformHttpBackendIntegrationTest extends ServerApplicationTests {
                 .body("{\"version\":4}".getBytes(StandardCharsets.UTF_8))
                 .when()
                 .post(BACKEND_URL)
+                .then()
+                .statusCode(HttpStatus.FORBIDDEN.value());
+    }
+
+    @Test
+    void testHttpBackendRejectsPlanStepWriteWith403() {
+        // Change job template to terraformPlan
+        activeJob.setTcl(createTclBase64(100, "terraformPlan"));
+        activeJob = jobRepository.save(activeJob);
+
+        String scopedToken = generateWorkspaceExecutorToken(
+                ORG_ID, WS_ID, String.valueOf(activeJob.getId()), activeStep.getId().toString());
+        String authHeader = basicAuthHeader("terraform", scopedToken);
+
+        // GET is allowed for terraformPlan -> 204 No Content
+        given()
+                .header("Authorization", authHeader)
+                .when()
+                .get(BACKEND_URL)
+                .then()
+                .statusCode(HttpStatus.NO_CONTENT.value());
+
+        // POST write is forbidden for terraformPlan -> 403 Forbidden
+        String stateJson = "{\"version\":4,\"serial\":1}";
+        byte[] stateBytes = stateJson.getBytes(StandardCharsets.UTF_8);
+        given()
+                .header("Authorization", authHeader)
+                .contentType("application/json")
+                .body(stateBytes)
+                .when()
+                .post(BACKEND_URL)
+                .then()
+                .statusCode(HttpStatus.FORBIDDEN.value());
+
+        // PUT write is forbidden for terraformPlan -> 403 Forbidden
+        given()
+                .header("Authorization", authHeader)
+                .contentType("application/json")
+                .body(stateBytes)
+                .when()
+                .put(BACKEND_URL)
+                .then()
+                .statusCode(HttpStatus.FORBIDDEN.value());
+
+        // DELETE write is forbidden for terraformPlan -> 403 Forbidden
+        given()
+                .header("Authorization", authHeader)
+                .when()
+                .delete(BACKEND_URL)
                 .then()
                 .statusCode(HttpStatus.FORBIDDEN.value());
     }
