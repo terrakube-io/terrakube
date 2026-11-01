@@ -5,6 +5,7 @@ import io.terrakube.api.plugin.scheduler.reconciliation.JobReconciliationSweep;
 import io.terrakube.api.plugin.scheduler.spool.SpoolRecoveryProperties;
 import io.terrakube.api.plugin.scheduler.spool.SpoolRecoveryService;
 import io.terrakube.api.plugin.storage.StorageTypeService;
+import io.terrakube.api.repository.JobRepository;
 import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
@@ -19,6 +20,7 @@ import org.quartz.JobKey;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -39,6 +41,9 @@ import static org.mockito.Mockito.lenient;
 
 @Transactional
 class StructuredOutputSpoolRecoveryIntegrationTest extends ServerApplicationTests {
+
+    @MockitoSpyBean
+    private JobRepository sweepJobRepository;
 
     @Autowired
     private StorageTypeService storageTypeService;
@@ -359,6 +364,9 @@ class StructuredOutputSpoolRecoveryIntegrationTest extends ServerApplicationTest
         // Executor heartbeat is missing
         lenient().doReturn(false).when(redisTemplate).hasKey("executor-job-heartbeat:" + job.getId());
 
+        // The shared test database contains other classes' runs; recover only this test's job.
+        doReturn(List.of(jobRepository.findById(job.getId()).orElseThrow()))
+                .when(sweepJobRepository).findAllByStatusInOrderByIdAsc(any());
         jobReconciliationSweep.execute(null);
 
         // Verify dead executor probe recovered the step output

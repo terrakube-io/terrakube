@@ -103,6 +103,22 @@ public class UpdateJobStatusImplTest {
     }
 
     @Test
+    public void failedStepPersistsExecutionTimingAlongsideItsStatus() {
+        stubJobWithStatus("running");
+        doReturn("output-url").when(terraformState).saveBufferedOutput(anyString(), anyString(), anyString(), any(), any());
+        TerraformJob job = terraformJob();
+        job.setExecutionDurationMs(30_000L);
+        job.setExecutionPhase("plan");
+        complete(subject(), false, true, 1, job, "output", "failed", "", "0000000");
+        ArgumentCaptor<StepRequest> captor = ArgumentCaptor.forClass(StepRequest.class);
+        verify(terrakubeClient).updateStep(captor.capture(), anyString(), anyString(), anyString());
+        StepDeliveryAttributes attributes = (StepDeliveryAttributes) captor.getValue().getData().getAttributes();
+        Assertions.assertEquals(30_000L, attributes.getExecutionDurationMs());
+        Assertions.assertEquals("plan", attributes.getExecutionPhase());
+        Assertions.assertEquals("failed", attributes.getStatus());
+    }
+
+    @Test
     public void setCompletedStatusOnRejectedJobMarksStepFailedAndSkipsJob() {
         stubJobWithStatus("rejected");
         doReturn("output-url").when(terraformState).saveBufferedOutput(anyString(), anyString(), anyString(), any(StepOutputBuffer.class), anyString());

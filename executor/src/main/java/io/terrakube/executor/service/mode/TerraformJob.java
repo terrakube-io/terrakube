@@ -61,6 +61,10 @@ public class TerraformJob {
     private List<PolicyContext> policyList;
     private List<PolicyExemptionContext> policyExemptionList;
     private Long deliveryRevision;
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    private Long executionDurationMs;
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    private String executionPhase;
     // Globs of the files a plan step hands to its apply step (empty when the feature is off), and
     // whether the job has a later step that could use them.
     private List<String> artifactPatterns;
@@ -70,4 +74,3 @@ public class TerraformJob {
     private String artifactsChecksum;
 
 }
-
