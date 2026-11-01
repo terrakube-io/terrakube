@@ -474,22 +474,34 @@ public class ExecutorService {
             workspaceEnvVariables = loadDefault(job, Category.ENV, workspaceEnvVariables);
         }
 
+        boolean dynamicCredentials = workspaceEnvVariables.keySet().stream()
+                .anyMatch(key -> key.startsWith("ENABLE_DYNAMIC_CREDENTIALS_"));
+        // Null unless run-phase credentials are enabled, see DynamicCredentialsService.
+        String runPhase = dynamicCredentials ? dynamicCredentialsService.runPhase(flow.getType()) : null;
+        if (runPhase != null) {
+            // Lets the configuration pick phase-specific secrets, e.g. a Vault path per phase.
+            workspaceEnvVariables.put("TERRAKUBE_RUN_PHASE", runPhase);
+            workspaceEnvVariables.putIfAbsent("TF_VAR_terrakube_run_phase", runPhase);
+        }
+
         if (workspaceEnvVariables.containsKey("ENABLE_DYNAMIC_CREDENTIALS_AZURE")) {
             workspaceEnvVariables = dynamicCredentialsService.generateDynamicCredentialsAzure(job,
-                    workspaceEnvVariables);
+                    workspaceEnvVariables, runPhase);
         }
 
         if (workspaceEnvVariables.containsKey("ENABLE_DYNAMIC_CREDENTIALS_VAULT")) {
             workspaceEnvVariables = dynamicCredentialsService.generateDynamicCredentialsVault(job,
-                    workspaceEnvVariables);
+                    workspaceEnvVariables, runPhase);
         }
 
         if (workspaceEnvVariables.containsKey("ENABLE_DYNAMIC_CREDENTIALS_AWS")) {
-            workspaceEnvVariables = dynamicCredentialsService.generateDynamicCredentialsAws(job, workspaceEnvVariables);
+            workspaceEnvVariables = dynamicCredentialsService.generateDynamicCredentialsAws(job, workspaceEnvVariables,
+                    runPhase);
         }
 
         if (workspaceEnvVariables.containsKey("ENABLE_DYNAMIC_CREDENTIALS_GCP")) {
-            workspaceEnvVariables = dynamicCredentialsService.generateDynamicCredentialsGcp(job, workspaceEnvVariables);
+            workspaceEnvVariables = dynamicCredentialsService.generateDynamicCredentialsGcp(job, workspaceEnvVariables,
+                    runPhase);
         }
 
         if (workspaceEnvVariables.containsKey("PRIVATE_EXTENSION_VCS_ID_AUTH")) {
