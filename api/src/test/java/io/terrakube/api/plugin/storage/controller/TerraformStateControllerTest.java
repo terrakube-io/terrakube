@@ -8,6 +8,8 @@ import io.terrakube.api.repository.WorkspaceRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
@@ -188,6 +190,26 @@ class TerraformStateControllerTest {
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
         verify(storageTypeService).deleteCurrentTerraformState(ORG_ID, WS_ID);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"GET", "POST", "PUT", "DELETE"})
+    void allHttpMethods_Return401WhenMissingAuthorizationHeader(String httpMethod) throws Exception {
+        when(stateService.authorizeHttpBackendAccess(null, ORG_ID, WS_ID))
+                .thenReturn(StateService.HttpBackendAccessResult.unauthorized());
+
+        ResponseEntity<?> response = switch (httpMethod) {
+            case "GET" -> controller.getHttpBackendState(null, ORG_ID, WS_ID);
+            case "POST" -> controller.updateHttpBackendState(new MockHttpServletRequest(), null, null, ORG_ID, WS_ID);
+            case "PUT" -> controller.updateHttpBackendState(new MockHttpServletRequest(), null, null, ORG_ID, WS_ID);
+            case "DELETE" -> controller.deleteHttpBackendState(null, ORG_ID, WS_ID);
+            default -> throw new IllegalArgumentException("Unexpected method: " + httpMethod);
+        };
+
+        assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());
+        verify(storageTypeService, never()).getCurrentTerraformState(anyString(), anyString());
+        verify(storageTypeService, never()).saveCurrentTerraformState(anyString(), anyString(), any());
+        verify(storageTypeService, never()).deleteCurrentTerraformState(anyString(), anyString());
     }
 }
 
