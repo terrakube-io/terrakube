@@ -9,6 +9,8 @@ import org.apache.commons.io.FileUtils;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.MockitoAnnotations;
 import org.springframework.http.HttpStatus;
 
@@ -212,6 +214,16 @@ class TerraformHttpBackendIntegrationTest extends ServerApplicationTests {
                 .header("Authorization", basicAuthHeader("terraform", "not-a-valid-jwt"))
                 .when()
                 .get(BACKEND_URL)
+                .then()
+                .statusCode(HttpStatus.UNAUTHORIZED.value());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"GET", "POST", "PUT", "DELETE"})
+    void testAllHttpMethodsRejectMissingTokenWith401(String method) {
+        given()
+                .when()
+                .request(method, BACKEND_URL)
                 .then()
                 .statusCode(HttpStatus.UNAUTHORIZED.value());
     }
