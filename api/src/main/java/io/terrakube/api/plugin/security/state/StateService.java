@@ -20,6 +20,9 @@ import io.terrakube.api.rs.workspace.access.Access;
 
 import io.terrakube.api.plugin.security.token.InternalTokenClassifier;
 import io.terrakube.api.plugin.security.token.InternalTokenType;
+import io.terrakube.api.plugin.scheduler.job.tcl.TclService;
+import io.terrakube.api.rs.job.Job;
+import io.terrakube.api.rs.job.step.Step;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
 import io.terrakube.api.plugin.security.authentication.dex.ActiveStepTokenValidator;
@@ -36,6 +39,7 @@ import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 
 @Slf4j
 @Service
@@ -44,6 +48,7 @@ public class StateService {
    private final WorkspaceRepository workspaceRepository;
    private final RbacService rbacService;
    private final StepRepository stepRepository;
+   private final TclService tclService;
 
    @Value("${io.terrakube.owner:}")
    private String instanceOwner;
@@ -54,20 +59,29 @@ public class StateService {
    @Value("${io.terrakube.token.pat:}")
    private String patJwtSecret;
 
-   private volatile NimbusJwtDecoder cachedInternalJwtDecoder;
-   private volatile String cachedInternalSecret;
+   private record CachedDecoder(String secret, NimbusJwtDecoder decoder) {}
 
-   private volatile NimbusJwtDecoder cachedPatJwtDecoder;
-   private volatile String cachedPatSecret;
+   private final AtomicReference<CachedDecoder> internalDecoderRef = new AtomicReference<>();
+   private final AtomicReference<CachedDecoder> patDecoderRef = new AtomicReference<>();
+
+   @Autowired
+   public StateService(TeamRepository teamRepository,
+                       WorkspaceRepository workspaceRepository,
+                       RbacService rbacService,
+                       StepRepository stepRepository,
+                       @Autowired(required = false) TclService tclService) {
+      this.teamRepository = teamRepository;
+      this.workspaceRepository = workspaceRepository;
+      this.rbacService = rbacService;
+      this.stepRepository = stepRepository;
+      this.tclService = tclService;
+   }
 
    public StateService(TeamRepository teamRepository,
                        WorkspaceRepository workspaceRepository,
                        RbacService rbacService,
                        StepRepository stepRepository) {
-      this.teamRepository = teamRepository;
-      this.workspaceRepository = workspaceRepository;
-      this.rbacService = rbacService;
-      this.stepRepository = stepRepository;
+      this(teamRepository, workspaceRepository, rbacService, stepRepository, null);
    }
 
    public enum HttpBackendAccessDecision {
@@ -254,8 +268,36 @@ public class StateService {
       return false;
    }
 
+   public boolean isStepWriteAuthorized(UUID stepId) {
+      if (stepId == null || stepRepository == null || tclService == null) {
+         return false;
+      }
+      Optional<Step> stepOptional = stepRepository.findById(stepId);
+      if (stepOptional.isEmpty()) {
+         return false;
+      }
+      Step step = stepOptional.get();
+      Job job = step.getJob();
+      if (job == null) {
+         return false;
+      }
+      String flowType = tclService.getFlowTypeForStep(job, step.getStepNumber());
+      if (flowType == null) {
+         return false;
+      }
+      return switch (flowType) {
+         case "terraformApply", "terraformDestroy", "customScripts" -> true;
+         default -> false;
+      };
+   }
+
    @Transactional(readOnly = true)
    public HttpBackendAccessResult authorizeHttpBackendAccess(String authorizationHeader, String organizationId, String workspaceId) {
+      return authorizeHttpBackendAccess(authorizationHeader, organizationId, workspaceId, false);
+   }
+
+   @Transactional(readOnly = true)
+   public HttpBackendAccessResult authorizeHttpBackendAccess(String authorizationHeader, String organizationId, String workspaceId, boolean isWrite) {
       String rawToken = extractTokenFromAuthorizationHeader(authorizationHeader);
       if (rawToken == null || rawToken.isBlank()) {
          return HttpBackendAccessResult.unauthorized();
@@ -272,7 +314,21 @@ public class StateService {
          HttpBackendAccessDecision decision = validateHttpBackendClaims(jwt.getClaims(), organizationId, workspaceId);
          if (decision == HttpBackendAccessDecision.ALLOWED) {
             String jobId = jwt.getClaimAsString("jobId");
-            String stepId = jwt.getClaimAsString("stepId");
+            String stepId = ActiveStepTokenValidator.extractStepId(jwt);
+            if (isWrite) {
+               UUID stepUuid = null;
+               try {
+                  if (stepId != null && !stepId.isBlank()) {
+                     stepUuid = UUID.fromString(stepId);
+                  }
+               } catch (IllegalArgumentException _) {
+                  log.warn("Malformed stepId claim {} during write check", stepId);
+               }
+               if (stepUuid == null || !isStepWriteAuthorized(stepUuid)) {
+                  log.warn("Step {} denied write access to HTTP backend state for org={} workspace={}", stepId, organizationId, workspaceId);
+                  return HttpBackendAccessResult.forbidden();
+               }
+            }
             return HttpBackendAccessResult.allowed(jobId, stepId);
          }
          return decision == HttpBackendAccessDecision.UNAUTHORIZED
@@ -337,7 +393,7 @@ public class StateService {
             }
             String password = decoded.substring(colonIdx + 1).trim();
             return password.isEmpty() ? null : password;
-         } catch (IllegalArgumentException e) {
+         } catch (IllegalArgumentException _) {
             return null;
          }
       }
@@ -352,30 +408,36 @@ public class StateService {
       if (internalJwtSecret == null || internalJwtSecret.isBlank()) {
          return null;
       }
-      if (cachedInternalJwtDecoder == null || !internalJwtSecret.equals(cachedInternalSecret)) {
+      CachedDecoder current = internalDecoderRef.get();
+      if (current == null || !internalJwtSecret.equals(current.secret())) {
          synchronized (this) {
-            if (cachedInternalJwtDecoder == null || !internalJwtSecret.equals(cachedInternalSecret)) {
-               cachedInternalJwtDecoder = buildInternalJwtDecoder(internalJwtSecret);
-               cachedInternalSecret = internalJwtSecret;
+            current = internalDecoderRef.get();
+            if (current == null || !internalJwtSecret.equals(current.secret())) {
+               NimbusJwtDecoder newDecoder = buildInternalJwtDecoder(internalJwtSecret);
+               current = new CachedDecoder(internalJwtSecret, newDecoder);
+               internalDecoderRef.set(current);
             }
          }
       }
-      return cachedInternalJwtDecoder;
+      return current.decoder();
    }
 
    private NimbusJwtDecoder getPatJwtDecoder() {
       if (patJwtSecret == null || patJwtSecret.isBlank()) {
          return null;
       }
-      if (cachedPatJwtDecoder == null || !patJwtSecret.equals(cachedPatSecret)) {
+      CachedDecoder current = patDecoderRef.get();
+      if (current == null || !patJwtSecret.equals(current.secret())) {
          synchronized (this) {
-            if (cachedPatJwtDecoder == null || !patJwtSecret.equals(cachedPatSecret)) {
-               cachedPatJwtDecoder = buildPatJwtDecoder(patJwtSecret);
-               cachedPatSecret = patJwtSecret;
+            current = patDecoderRef.get();
+            if (current == null || !patJwtSecret.equals(current.secret())) {
+               NimbusJwtDecoder newDecoder = buildPatJwtDecoder(patJwtSecret);
+               current = new CachedDecoder(patJwtSecret, newDecoder);
+               patDecoderRef.set(current);
             }
          }
       }
-      return cachedPatJwtDecoder;
+      return current.decoder();
    }
 
    private NimbusJwtDecoder buildInternalJwtDecoder(String secret) {
@@ -409,7 +471,7 @@ public class StateService {
       try {
          Jwt jwt = decoder.decode(rawToken);
          return "Terrakube".equals(jwt.getClaimAsString("iss"));
-      } catch (RuntimeException e) {
+      } catch (RuntimeException _) {
          return false;
       }
    }
