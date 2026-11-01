@@ -164,4 +164,18 @@ class JobApprovalHookTest {
 
         verifyNoInteractions(policyApprovalGuard, jobApprovalService);
     }
+
+    @Test
+    void aDestroyOfAWorkspaceThatIsGoneIsRefusedWithAMessageNotAServerError() {
+        principal();
+        job.setWorkspace(null);
+        when(tclService.templateDestroys(any())).thenReturn(TclService.Destroys.AFTER_APPROVAL);
+
+        JobRightForbiddenException refused = assertThrows(JobRightForbiddenException.class, () -> hook.execute(
+                Operation.UPDATE, TransactionPhase.PRECOMMIT, job, scope,
+                statusChange(JobStatus.waitingApproval, JobStatus.approved)));
+
+        assertEquals(JobRunRights.approveDestroyRefusal(null), refused.getMessage());
+        verifyNoInteractions(jobApprovalService);
+    }
 }

@@ -49,7 +49,8 @@ public class JobRunRights {
     private boolean allowed(User user, Workspace workspace, Function<Team, Boolean> team,
                             Function<Access, Boolean> access, Function<ProjectAccess, Boolean> projectAccess) {
         if (workspace == null) return false;
-        if (authenticatedUser.isServiceAccountInternal(user) || authenticatedUser.isSuperUser(user)) return true;
+        // Internal machine tokens are never super users and get no pass here, like everywhere else.
+        if (authenticatedUser.isSuperUser(user)) return true;
         return hasOrganizationAccess(user, workspace, team) || hasWorkspaceAccess(user, workspace, access)
                 || hasProjectAccess(user, workspace, projectAccess);
     }
@@ -87,21 +88,26 @@ public class JobRunRights {
 
     /** For a user who may plan and starts a destroy that nobody has to approve. */
     public static String destroyRefusal(Workspace workspace) {
-        return "Your teams can plan in workspace " + workspace.getName() + " but cannot start a run that destroys "
+        return "Your teams can plan in workspace " + name(workspace) + " but cannot start a run that destroys "
                 + "without an approval step. Use a template that asks for an approval first, or ask an administrator of "
                 + "the workspace for the destroy permission.";
     }
 
     /** For a user who may plan and starts an apply that nobody has to approve, on a workspace that asks for approval. */
     public static String applyRefusal(Workspace workspace) {
-        return "Workspace " + workspace.getName() + " requires the permission to approve runs to start an apply that "
+        return "Workspace " + name(workspace) + " requires the permission to approve runs to start an apply that "
                 + "has no approval step. Use a template that asks for an approval first, or ask an administrator of the "
                 + "workspace for the approve permission.";
     }
 
     /** For a user who may approve and is not allowed to destroy. */
     public static String approveDestroyRefusal(Workspace workspace) {
-        return "Your teams cannot approve a run that destroys in workspace " + workspace.getName() + ". Ask an "
+        return "Your teams cannot approve a run that destroys in workspace " + name(workspace) + ". Ask an "
                 + "administrator of the workspace for the destroy permission.";
+    }
+
+    // A workspace that was deleted while a job still points at it reads as null.
+    private static String name(Workspace workspace) {
+        return workspace != null && workspace.getName() != null ? workspace.getName() : "(deleted workspace)";
     }
 }

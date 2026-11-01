@@ -380,10 +380,12 @@ public class TclService {
      * Whether a run of this template destroys, and whether an approval comes first. A step destroys when it is a
      * destroy, or when it is an apply that follows a plan of a destroy (the shape of the built-in destroy template of
      * the Terraform CLI). A template that cannot be read counts as one that destroys without approval, because the
-     * answer decides who may start it.
+     * answer decides who may start it. A job with no template reference has nothing to run, so it destroys nothing.
      */
     public Destroys templateDestroys(String templateId) {
-        if (templateId == null || templateId.isEmpty()) {
+        // A job a user creates through the API has no flow of its own (Job.tcl is not exposed), so without a template
+        // the scheduler has nothing to run: it runs the error flow. Jobs with an inline flow come from services.
+        if (templateId == null || templateId.isBlank()) {
             return Destroys.NO;
         }
         List<Flow> flows = orderedFlows(templateId);
@@ -418,7 +420,8 @@ public class TclService {
      * cannot be read counts as one that does, because the answer decides who may start it.
      */
     public boolean appliesWithoutApproval(String templateId) {
-        if (templateId == null || templateId.isEmpty()) {
+        // See templateDestroys: a job without a template has nothing to run.
+        if (templateId == null || templateId.isBlank()) {
             return false;
         }
         List<Flow> flows = orderedFlows(templateId);

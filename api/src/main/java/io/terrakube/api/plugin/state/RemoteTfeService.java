@@ -661,8 +661,10 @@ public class RemoteTfeService {
             defaultAttributes.put("can-manage-run-tasks", isManageWorkspace);
             defaultAttributes.put("can-manage-tags", isManageWorkspace);
             defaultAttributes.put("can-queue-apply", isApproveJob);
-            // A destroy with no approval in front of it also needs the destroy right (see JobRunRights).
-            defaultAttributes.put("can-queue-destroy", isManageWorkspace && jobRunRights.canDestroy(new User(currentUser), workspace));
+            // Same rule as createRun: the right to plan and the destroy right (see JobRunRights), from the organization
+            // team, the workspace access or the project access. It does not need the right to manage the workspace.
+            defaultAttributes.put("can-queue-destroy", validateUserPlanJob(workspace, currentUser)
+                    && jobRunRights.canDestroy(new User(currentUser), workspace));
             defaultAttributes.put("can-queue-run", isManageJob);
             defaultAttributes.put("can-read-settings", true);
             defaultAttributes.put("can-read-state-versions", isManageWorkspace);
@@ -1814,6 +1816,14 @@ public class RemoteTfeService {
             throw new org.springframework.security.access.AccessDeniedException(JobRunRights.destroyRefusal(workspace));
         }
 
+        // The CLI templates belong to the organization and can be edited, so one without an approval step is possible.
+        // On a workspace that asks for approval, starting an apply with no approval step needs the approve right.
+        if (workspace.isRequireApproveToApply() && tclService.appliesWithoutApproval(template.getId().toString())
+                && !jobRunRights.canApprove(new User(currentUser), workspace)) {
+            log.warn("User does not have permission to apply without approval in workspace {}", workspace.getName());
+            throw new org.springframework.security.access.AccessDeniedException(JobRunRights.applyRefusal(workspace));
+        }
+
         // On a workspace that restricts apply to its configured branch, a run of the local configuration may only
         // plan. A VCS or SSH workspace runs the uploaded content under the branch "remote-content", which is not
         // the workspace branch, so apply and destroy are refused and a speculative plan is allowed.
@@ -2128,6 +2138,12 @@ public class RemoteTfeService {
     RunsData runApply(int runId, JwtAuthenticationToken currentUser) {
 
         Job job = jobRepository.getReferenceById(Integer.valueOf(runId));
+
+        // The workspace of a deleted workspace reads as null: a clean refusal instead of a server error.
+        if (job.getWorkspace() == null) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "The workspace of this run no longer exists");
+        }
 
         // Authorize: user must have approve/apply permission for this workspace
         if (!validateUserApproveJob(job.getWorkspace(), currentUser)) {

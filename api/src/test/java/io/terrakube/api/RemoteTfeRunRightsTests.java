@@ -149,6 +149,49 @@ class RemoteTfeRunRightsTests extends ServerApplicationTests {
     }
 
     @Test
+    void theCliIsToldItCanDestroyWithThePlanAndDestroyRightsAloneLikeTheServerChecks() {
+        Workspace workspace = workspace("tfe-destroy-reported-plan-destroy");
+        Team planAndDestroy = new Team();
+        planAndDestroy.setName("TFE_DESTROY_REPORTED_PLAN_DESTROY");
+        planAndDestroy.setRole("custom");
+        planAndDestroy.setPlanJob(true);
+        planAndDestroy.setDestroyJob(true);
+        planAndDestroy.setOrganization(workspace.getOrganization());
+        teams.add(teamRepository.save(planAndDestroy));
+        String path = "/remote/tfe/v2/organizations/" + workspace.getOrganization().getName() + "/workspaces/" + workspace.getName();
+
+        // createRun accepts this team's destroy, so the permission it reports has to agree.
+        given().auth().oauth2(generatePAT("TFE_DESTROY_REPORTED_PLAN_DESTROY")).get(path).then().statusCode(200)
+                .body("data.attributes.permissions.can-queue-destroy", org.hamcrest.Matchers.equalTo(true));
+        assertEquals(201, run(generatePAT("TFE_DESTROY_REPORTED_PLAN_DESTROY"), workspace, true, false).statusCode());
+    }
+
+    @Test
+    void aWorkspaceThatAsksForApprovalAlsoCoversACliTemplateThatWasEditedToSkipIt() {
+        Workspace workspace = workspace("tfe-apply-edited-template");
+        workspace.setRequireApproveToApply(true);
+        workspaceRepository.save(workspace);
+        String planner = team("TFE_APPLY_EDITED_PLAN", "plan", workspace);
+        String writer = team("TFE_APPLY_EDITED_WRITE", "write", workspace);
+        io.terrakube.api.rs.template.Template template = templateRepository.getByOrganizationNameAndName(
+                workspace.getOrganization().getName(), "Terraform-Plan/Apply-Cli");
+        String original = template.getTcl();
+        template.setTcl(java.util.Base64.getEncoder().encodeToString(
+                "flow:\n- type: terraformPlan\n  step: 100\n- type: terraformApply\n  step: 200\n".getBytes()));
+        templateRepository.save(template);
+        try {
+            var refused = run(planner, workspace, false);
+            assertEquals(403, refused.statusCode(), refused.asString());
+            assertTrue(refused.asString().contains("requires the permission to approve runs"), refused.asString());
+
+            assertEquals(201, run(writer, workspace, false).statusCode());
+        } finally {
+            template.setTcl(original);
+            templateRepository.save(template);
+        }
+    }
+
+    @Test
     void aTeamWithTheWriteRoleCanDestroy() {
         Workspace workspace = workspace("tfe-destroy-write-role");
         String token = team("TFE_DESTROY_WRITE_ROLE", "write", workspace);

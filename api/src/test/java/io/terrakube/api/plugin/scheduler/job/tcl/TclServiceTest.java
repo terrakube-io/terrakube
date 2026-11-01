@@ -133,7 +133,10 @@ public class TclServiceTest {
         UUID missing = UUID.randomUUID();
         doReturn(java.util.Optional.empty()).when(templateRepository).findById(missing);
         Assertions.assertTrue(subject().appliesWithoutApproval(missing.toString()));
+        // A job a user creates without a template reference has no flow to run (Job.tcl is not exposed over the API).
         Assertions.assertFalse(subject().appliesWithoutApproval(null));
+        Assertions.assertFalse(subject().appliesWithoutApproval(""));
+        Assertions.assertFalse(subject().appliesWithoutApproval("  "));
     }
 
     @Test
@@ -142,7 +145,30 @@ public class TclServiceTest {
         UUID missing = UUID.randomUUID();
         doReturn(java.util.Optional.empty()).when(templateRepository).findById(missing);
         Assertions.assertEquals(TclService.Destroys.WITHOUT_APPROVAL, subject().templateDestroys(missing.toString()));
+        // A job a user creates without a template reference has no flow to run (Job.tcl is not exposed over the API).
         Assertions.assertEquals(TclService.Destroys.NO, subject().templateDestroys(null));
+        Assertions.assertEquals(TclService.Destroys.NO, subject().templateDestroys(""));
+        Assertions.assertEquals(TclService.Destroys.NO, subject().templateDestroys("  "));
+    }
+
+    @Test
+    public void templateDestroys_anApprovalAnywhereBeforeTheDestroyGatesIt() {
+        // The approval pauses the whole job, and approving a job that destroys needs the destroy right (see
+        // JobApprovalHook), so an earlier approval is enough even when it came after an apply.
+        Assertions.assertEquals(TclService.Destroys.AFTER_APPROVAL, destroys(
+                "flow:\n  - type: terraformPlan\n    step: 100\n  - type: approval\n    step: 150\n"
+                        + "  - type: terraformApply\n    step: 200\n  - type: terraformDestroy\n    step: 300\n"));
+    }
+
+    @Test
+    public void templateDestroys_anApplyAfterAPlanOfADestroyStaysADestroyEvenAfterAnotherPlan() {
+        // The more cautious reading: it asks for the destroy right, it never asks for less.
+        Assertions.assertEquals(TclService.Destroys.WITHOUT_APPROVAL, destroys(
+                "flow:\n  - type: terraformPlanDestroy\n    step: 100\n  - type: terraformPlan\n    step: 150\n"
+                        + "  - type: terraformApply\n    step: 200\n"));
+        Assertions.assertFalse(appliesWithoutApproval(
+                "flow:\n  - type: terraformPlanDestroy\n    step: 100\n  - type: terraformPlan\n    step: 150\n"
+                        + "  - type: terraformApply\n    step: 200\n"));
     }
 
     @Test

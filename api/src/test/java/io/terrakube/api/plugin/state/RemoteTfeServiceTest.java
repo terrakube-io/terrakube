@@ -1847,4 +1847,19 @@ class RemoteTfeServiceTest {
 
         assertThrows(AccessDeniedException.class, () -> service.getWorkspaceState(historyId.toString(), userToken));
     }
+
+    @Test
+    void confirmingARunWhoseWorkspaceWasDeletedIsRefusedWithAMessage() {
+        RemoteTfeService service = remoteTfeService();
+        Job job = new Job();
+        job.setId(4410);
+        job.setWorkspace(null);
+        when(jobRepository.getReferenceById(4410)).thenReturn(job);
+
+        org.springframework.security.access.AccessDeniedException refused = assertThrows(
+                org.springframework.security.access.AccessDeniedException.class,
+                () -> service.runApply(4410, null));
+
+        assertEquals("The workspace of this run no longer exists", refused.getMessage());
+    }
 }
