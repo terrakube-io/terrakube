@@ -93,7 +93,7 @@ public class TerraformStateController {
             @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorizationHeader,
             @PathVariable("organizationId") String organizationId,
             @PathVariable("workspaceId") String workspaceId) {
-        StateService.HttpBackendAccessResult accessResult = stateService.authorizeHttpBackendAccess(authorizationHeader, organizationId, workspaceId);
+        StateService.HttpBackendAccessResult accessResult = stateService.authorizeHttpBackendAccess(authorizationHeader, organizationId, workspaceId, false);
         if (accessResult.decision() == StateService.HttpBackendAccessDecision.UNAUTHORIZED) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
@@ -120,7 +120,7 @@ public class TerraformStateController {
             @RequestHeader(value = "Content-MD5", required = false) String contentMd5,
             @PathVariable("organizationId") String organizationId,
             @PathVariable("workspaceId") String workspaceId) throws IOException {
-        StateService.HttpBackendAccessResult accessResult = stateService.authorizeHttpBackendAccess(authorizationHeader, organizationId, workspaceId);
+        StateService.HttpBackendAccessResult accessResult = stateService.authorizeHttpBackendAccess(authorizationHeader, organizationId, workspaceId, true);
         if (accessResult.decision() == StateService.HttpBackendAccessDecision.UNAUTHORIZED) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
@@ -165,7 +165,7 @@ public class TerraformStateController {
             @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorizationHeader,
             @PathVariable("organizationId") String organizationId,
             @PathVariable("workspaceId") String workspaceId) {
-        StateService.HttpBackendAccessResult accessResult = stateService.authorizeHttpBackendAccess(authorizationHeader, organizationId, workspaceId);
+        StateService.HttpBackendAccessResult accessResult = stateService.authorizeHttpBackendAccess(authorizationHeader, organizationId, workspaceId, true);
         if (accessResult.decision() == StateService.HttpBackendAccessDecision.UNAUTHORIZED) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }

@@ -60,7 +60,7 @@ class TerraformStateControllerTest {
 
     @Test
     void getHttpBackendState_Returns204WhenNoStateExists() {
-        when(stateService.authorizeHttpBackendAccess(AUTH_HEADER, ORG_ID, WS_ID))
+        when(stateService.authorizeHttpBackendAccess(AUTH_HEADER, ORG_ID, WS_ID, false))
                 .thenReturn(StateService.HttpBackendAccessResult.allowed("100", "step-1"));
         when(storageTypeService.getCurrentTerraformState(ORG_ID, WS_ID))
                 .thenReturn(new byte[0]);
@@ -74,7 +74,7 @@ class TerraformStateControllerTest {
     @Test
     void getHttpBackendState_Returns200WithStatePayload() {
         byte[] statePayload = "{\"version\":4,\"serial\":1}".getBytes(StandardCharsets.UTF_8);
-        when(stateService.authorizeHttpBackendAccess(AUTH_HEADER, ORG_ID, WS_ID))
+        when(stateService.authorizeHttpBackendAccess(AUTH_HEADER, ORG_ID, WS_ID, false))
                 .thenReturn(StateService.HttpBackendAccessResult.allowed("100", "step-1"));
         when(storageTypeService.getCurrentTerraformState(ORG_ID, WS_ID))
                 .thenReturn(statePayload);
@@ -88,11 +88,11 @@ class TerraformStateControllerTest {
 
     @Test
     void getHttpBackendState_Returns401And403WhenDenied() {
-        when(stateService.authorizeHttpBackendAccess(null, ORG_ID, WS_ID))
+        when(stateService.authorizeHttpBackendAccess(null, ORG_ID, WS_ID, false))
                 .thenReturn(StateService.HttpBackendAccessResult.unauthorized());
         assertEquals(HttpStatus.UNAUTHORIZED, controller.getHttpBackendState(null, ORG_ID, WS_ID).getStatusCode());
 
-        when(stateService.authorizeHttpBackendAccess(AUTH_HEADER, ORG_ID, WS_ID))
+        when(stateService.authorizeHttpBackendAccess(AUTH_HEADER, ORG_ID, WS_ID, false))
                 .thenReturn(StateService.HttpBackendAccessResult.forbidden());
         assertEquals(HttpStatus.FORBIDDEN, controller.getHttpBackendState(AUTH_HEADER, ORG_ID, WS_ID).getStatusCode());
         verify(storageTypeService, never()).getCurrentTerraformState(anyString(), anyString());
@@ -102,7 +102,7 @@ class TerraformStateControllerTest {
     void updateHttpBackendState_SavesStateAndVerifiesContentMd5() throws Exception {
         byte[] statePayload = "{\"version\":4,\"serial\":2}".getBytes(StandardCharsets.UTF_8);
         String validMd5 = Base64.getEncoder().encodeToString(MessageDigest.getInstance("MD5").digest(statePayload));
-        when(stateService.authorizeHttpBackendAccess(AUTH_HEADER, ORG_ID, WS_ID))
+        when(stateService.authorizeHttpBackendAccess(AUTH_HEADER, ORG_ID, WS_ID, true))
                 .thenReturn(StateService.HttpBackendAccessResult.allowed("100", "step-1"));
 
         MockHttpServletRequest request = new MockHttpServletRequest();
@@ -117,7 +117,7 @@ class TerraformStateControllerTest {
     @Test
     void updateHttpBackendState_RejectsInvalidContentMd5With400() throws IOException {
         byte[] statePayload = "{\"version\":4,\"serial\":2}".getBytes(StandardCharsets.UTF_8);
-        when(stateService.authorizeHttpBackendAccess(AUTH_HEADER, ORG_ID, WS_ID))
+        when(stateService.authorizeHttpBackendAccess(AUTH_HEADER, ORG_ID, WS_ID, true))
                 .thenReturn(StateService.HttpBackendAccessResult.allowed("100", "step-1"));
 
         MockHttpServletRequest request = new MockHttpServletRequest();
@@ -131,7 +131,7 @@ class TerraformStateControllerTest {
 
     @Test
     void updateHttpBackendState_RejectsEmptyBodyWith400() throws IOException {
-        when(stateService.authorizeHttpBackendAccess(AUTH_HEADER, ORG_ID, WS_ID))
+        when(stateService.authorizeHttpBackendAccess(AUTH_HEADER, ORG_ID, WS_ID, true))
                 .thenReturn(StateService.HttpBackendAccessResult.allowed("100", "step-1"));
 
         MockHttpServletRequest request = new MockHttpServletRequest();
@@ -145,7 +145,7 @@ class TerraformStateControllerTest {
 
     @Test
     void updateHttpBackendState_RejectsPayloadExceedingLimitWith413_ContentLengthHeader() throws IOException {
-        when(stateService.authorizeHttpBackendAccess(AUTH_HEADER, ORG_ID, WS_ID))
+        when(stateService.authorizeHttpBackendAccess(AUTH_HEADER, ORG_ID, WS_ID, true))
                 .thenReturn(StateService.HttpBackendAccessResult.allowed("100", "step-1"));
         ReflectionTestUtils.setField(controller, "maxStateSizeBytes", 50L);
 
@@ -161,7 +161,7 @@ class TerraformStateControllerTest {
 
     @Test
     void updateHttpBackendState_RejectsPayloadExceedingLimitWith413_StreamedWithoutContentLength() throws IOException {
-        when(stateService.authorizeHttpBackendAccess(AUTH_HEADER, ORG_ID, WS_ID))
+        when(stateService.authorizeHttpBackendAccess(AUTH_HEADER, ORG_ID, WS_ID, true))
                 .thenReturn(StateService.HttpBackendAccessResult.allowed("100", "step-1"));
         ReflectionTestUtils.setField(controller, "maxStateSizeBytes", 50L);
 
@@ -183,7 +183,7 @@ class TerraformStateControllerTest {
 
     @Test
     void deleteHttpBackendState_DeletesStateWhenAuthorized() {
-        when(stateService.authorizeHttpBackendAccess(AUTH_HEADER, ORG_ID, WS_ID))
+        when(stateService.authorizeHttpBackendAccess(AUTH_HEADER, ORG_ID, WS_ID, true))
                 .thenReturn(StateService.HttpBackendAccessResult.allowed("100", "step-1"));
 
         ResponseEntity<Void> response = controller.deleteHttpBackendState(AUTH_HEADER, ORG_ID, WS_ID);
@@ -195,7 +195,7 @@ class TerraformStateControllerTest {
     @ParameterizedTest
     @ValueSource(strings = {"GET", "POST", "PUT", "DELETE"})
     void allHttpMethods_Return401WhenMissingAuthorizationHeader(String httpMethod) throws Exception {
-        when(stateService.authorizeHttpBackendAccess(null, ORG_ID, WS_ID))
+        when(stateService.authorizeHttpBackendAccess(eq(null), eq(ORG_ID), eq(WS_ID), anyBoolean()))
                 .thenReturn(StateService.HttpBackendAccessResult.unauthorized());
 
         ResponseEntity<?> response = switch (httpMethod) {
@@ -208,6 +208,24 @@ class TerraformStateControllerTest {
 
         assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());
         verify(storageTypeService, never()).getCurrentTerraformState(anyString(), anyString());
+        verify(storageTypeService, never()).saveCurrentTerraformState(anyString(), anyString(), any());
+        verify(storageTypeService, never()).deleteCurrentTerraformState(anyString(), anyString());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"POST", "PUT", "DELETE"})
+    void writeHttpMethods_Return403WhenWriteNotAllowed(String httpMethod) throws Exception {
+        when(stateService.authorizeHttpBackendAccess(AUTH_HEADER, ORG_ID, WS_ID, true))
+                .thenReturn(StateService.HttpBackendAccessResult.forbidden());
+
+        ResponseEntity<?> response = switch (httpMethod) {
+            case "POST" -> controller.updateHttpBackendState(new MockHttpServletRequest(), AUTH_HEADER, null, ORG_ID, WS_ID);
+            case "PUT" -> controller.updateHttpBackendState(new MockHttpServletRequest(), AUTH_HEADER, null, ORG_ID, WS_ID);
+            case "DELETE" -> controller.deleteHttpBackendState(AUTH_HEADER, ORG_ID, WS_ID);
+            default -> throw new IllegalArgumentException("Unexpected method: " + httpMethod);
+        };
+
+        assertEquals(HttpStatus.FORBIDDEN, response.getStatusCode());
         verify(storageTypeService, never()).saveCurrentTerraformState(anyString(), anyString(), any());
         verify(storageTypeService, never()).deleteCurrentTerraformState(anyString(), anyString());
     }
