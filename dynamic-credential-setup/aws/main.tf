@@ -30,10 +30,8 @@ resource "aws_iam_role" "terrakube_role" {
      ],
      "Condition": {
         "StringEquals": {
-        "${var.terrakube_api_hostname}:aud": "${var.terrakube_federated_credentials_audience}"
-        },
-        "StringLike": {
-        "${var.terrakube_api_hostname}:sub": "organization:${var.terrakube_organization_name}:workspace:*"
+        "${var.terrakube_api_hostname}:aud": "${var.terrakube_federated_credentials_audience}",
+        "${var.terrakube_api_hostname}:sub": "organization:${var.terrakube_organization_name}:workspace:${var.terrakube_workspace_name}"
         },
         "ForAllValues:StringEquals": {
         "aws:TagKeys": [

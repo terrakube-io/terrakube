@@ -33,7 +33,9 @@ resource "google_iam_workload_identity_pool_provider" "terrakube_provider" {
   oidc {
     issuer_uri = "https://${var.terrakube_hostname}"
   }
-  attribute_condition = "assertion.sub.startsWith(\"organization:${var.terrakube_organization_name}:workspace:${var.terrakube_workspace_name}\")"
+  # Match the subject exactly (a prefix match would also accept "<workspace>2") and pin the
+  # workspace id, so a workspace that later takes this name does not inherit the identity.
+  attribute_condition = "assertion.sub == \"organization:${var.terrakube_organization_name}:workspace:${var.terrakube_workspace_name}\" && assertion.terrakube_workspace_id == \"${terrakube_workspace_cli.dynamic_credentials_workspace.id}\""
 
   depends_on = [google_iam_workload_identity_pool.terrakube_pool]
 }
