@@ -29,6 +29,7 @@ const workspace = (source: string, relationships: Record<string, unknown> = {}) 
       iacType: "terraform",
       terraformVersion: "1.9.0",
       restrictApplyToConfiguredBranch: false,
+      requireApproveToApply: false,
     },
     relationships: {
       organization: { data: { id: "org-1" } },
@@ -282,5 +283,45 @@ describe("WorkspaceGeneral branch restriction", () => {
 
     await waitFor(() => expect(axiosInstance.post).toHaveBeenCalled());
     expect(savedAttributes()).not.toHaveProperty("restrictApplyToConfiguredBranch");
+  });
+});
+
+describe("WorkspaceGeneral approve rule", () => {
+  const savedAttributes = () =>
+    (axiosInstance.post as jest.Mock).mock.calls[0][1]["atomic:operations"][0].data.attributes;
+  const name = /Require the approve permission to start an apply with no approval step/;
+
+  it("saves the setting with the workspace for an organization manager", async () => {
+    renderGeneral(workspace(REPO));
+
+    fireEvent.click(await screen.findByRole("checkbox", { name }));
+    fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
+
+    await waitFor(() => expect(axiosInstance.post).toHaveBeenCalled());
+    expect(savedAttributes().requireApproveToApply).toBe(true);
+  });
+
+  it("is read-only and not sent for a manager limited to the workspace", async () => {
+    mockOrgPermissions = { manageVcs: false, manageWorkspace: false };
+    renderGeneral(workspace(REPO));
+
+    expect(await screen.findByRole("checkbox", { name })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
+
+    await waitFor(() => expect(axiosInstance.post).toHaveBeenCalled());
+    expect(savedAttributes()).not.toHaveProperty("requireApproveToApply");
+  });
+
+  it("is hidden and not sent to a Terrakube that does not report it", async () => {
+    const older = workspace(REPO);
+    delete older.attributes.requireApproveToApply;
+    renderGeneral(older);
+
+    await screen.findByRole("button", { name: "Save settings" });
+    expect(screen.queryByRole("checkbox", { name })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
+
+    await waitFor(() => expect(axiosInstance.post).toHaveBeenCalled());
+    expect(savedAttributes()).not.toHaveProperty("requireApproveToApply");
   });
 });

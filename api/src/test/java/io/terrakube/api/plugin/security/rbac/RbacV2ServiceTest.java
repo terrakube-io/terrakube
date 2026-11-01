@@ -70,4 +70,56 @@ class RbacV2ServiceTest {
         defaultTeamDenied.setManagePolicies(false);
         assertFalse(rbacService.canManagePolicies(defaultTeamDenied));
     }
+
+    @Test
+    void canDestroyJob_adminAndWriteAlwaysPlanAndReadNever() {
+        for (String role : new String[] {"admin", "write"}) {
+            Team team = new Team();
+            team.setRole(role);
+            team.setDestroyJob(false); // the role decides, not the flag
+            assertTrue(rbacService.canDestroyJob(team), role);
+        }
+        for (String role : new String[] {"plan", "read"}) {
+            Team team = new Team();
+            team.setRole(role);
+            team.setDestroyJob(true);
+            assertFalse(rbacService.canDestroyJob(team), role);
+        }
+    }
+
+    @Test
+    void canDestroyJob_customFollowsTheFlagAndSoDoesNoRole() {
+        Team granted = new Team();
+        granted.setRole("custom");
+        granted.setDestroyJob(true);
+        assertTrue(rbacService.canDestroyJob(granted));
+
+        Team denied = new Team();
+        denied.setRole("custom");
+        denied.setDestroyJob(false);
+        assertFalse(rbacService.canDestroyJob(denied));
+
+        Team noRole = new Team();
+        noRole.setDestroyJob(false);
+        assertFalse(rbacService.canDestroyJob(noRole));
+    }
+
+    @Test
+    void canDestroyJob_workspaceAndProjectAccessFollowTheSameRule() {
+        io.terrakube.api.rs.workspace.access.Access access = new io.terrakube.api.rs.workspace.access.Access();
+        access.setRole("custom");
+        access.setDestroyJob(false);
+        assertFalse(rbacService.canDestroyJob(access));
+        access.setDestroyJob(true);
+        assertTrue(rbacService.canDestroyJob(access));
+        access.setRole("plan");
+        assertFalse(rbacService.canDestroyJob(access));
+
+        io.terrakube.api.rs.project.access.ProjectAccess project = new io.terrakube.api.rs.project.access.ProjectAccess();
+        project.setRole("write");
+        assertTrue(rbacService.canDestroyJob(project));
+        project.setRole("custom");
+        project.setDestroyJob(false);
+        assertFalse(rbacService.canDestroyJob(project));
+    }
 }

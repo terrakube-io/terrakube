@@ -74,7 +74,7 @@ Two things are required in the role trust policy:
 - The `sts:TagSession` action must be allowed, otherwise the assume call fails.
 - A `ForAllValues:StringEquals` condition on `aws:TagKeys` restricts which tag keys are accepted. This prevents Terrakube from setting any tag key other than the ones listed. The `main.tf` in this folder already applies this guardrail:
 
-The `main.tf` in this folder uses a wildcard `sub` so a single role serves every workspace of the organization, and relies on the session tag to scope access per workspace:
+The `main.tf` in this folder trusts only the subject of its own workspace:
 
 ```json
 "Action": [
@@ -83,10 +83,8 @@ The `main.tf` in this folder uses a wildcard `sub` so a single role serves every
 ],
 "Condition": {
   "StringEquals": {
-    "terrakube-api.mydomain.com:aud": "aws.workload.identity"
-  },
-  "StringLike": {
-    "terrakube-api.mydomain.com:sub": "organization:my-org:workspace:*"
+    "terrakube-api.mydomain.com:aud": "aws.workload.identity",
+    "terrakube-api.mydomain.com:sub": "organization:my-org:workspace:my-workspace"
   },
   "ForAllValues:StringEquals": {
     "aws:TagKeys": [
@@ -112,5 +110,7 @@ Once the tags are set, you can reference them in permission policies. For exampl
   ]
 }
 ```
+
+To share one role across every workspace of an organization, you can relax the subject to `"StringLike": { "...:sub": "organization:my-org:workspace:*" }`. Then any workspace in the organization, including one created later, can assume the role, and only the `terrakube:workspace` tag in the permission policy separates them. Use it only when every policy attached to the role is scoped by that tag.
 
 You can also restrict the accepted tag values (not only the keys) with `aws:RequestTag/<key>` in the trust policy if you want to pin a role to a specific organization or workspace.

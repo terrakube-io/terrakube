@@ -33,6 +33,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import io.terrakube.api.plugin.execution.WorkspaceBranchPolicy;
 import io.terrakube.api.plugin.scheduler.ScheduleJobService;
 import io.terrakube.api.plugin.vcs.provider.azdevops.AzDevOpsWebhookService;
 import io.terrakube.api.plugin.vcs.provider.github.GitHubWebhookService;
@@ -66,6 +67,7 @@ class RepoWebhookServiceTest {
     JobRepository jobRepository;
     ScheduleJobService scheduleJobService;
     PrCommentService prCommentService;
+    WorkspaceBranchPolicy workspaceBranchPolicy;
     RepoWebhookDeliveryTransactions repoWebhookDeliveryTransactions;
     ObjectMapper objectMapper;
 
@@ -83,6 +85,7 @@ class RepoWebhookServiceTest {
         scheduleJobService = mock(ScheduleJobService.class);
         prCommentService = mock(PrCommentService.class);
         repoWebhookDeliveryTransactions = mock(RepoWebhookDeliveryTransactions.class);
+        workspaceBranchPolicy = mock(WorkspaceBranchPolicy.class);
         objectMapper = new ObjectMapper();
 
         subject = new RepoWebhookService(
@@ -97,7 +100,8 @@ class RepoWebhookServiceTest {
                 prCommentService,
                 repoWebhookDeliveryTransactions,
                 objectMapper,
-                Runnable::run);
+                Runnable::run,
+                workspaceBranchPolicy);
     }
 
     private Workspace workspaceWithSource(String source) {
@@ -982,6 +986,45 @@ class RepoWebhookServiceTest {
             assertThat(ws.isLocked()).isFalse();
             verify(prCommentService).postApplyDisabledNotice(ws, 13);
             verify(jobRepository, never()).save(any(Job.class));
+        }
+
+        @Test
+        void v2WebhookIssueCommentApplyIsRefusedBeforeTheLockWhenTheWorkspaceRestrictsApply() throws Exception {
+            String repoUrl = "https://github.com/owner/repo";
+            String payload = "{\"action\":\"created\", \"comment\": {\"body\": \"terrakube apply\"}}";
+            RepoWebhook rw = repoWebhookWith(repoUrl, "issue-comment-apply-restricted-secret");
+            Workspace ws = prCommentWorkspace(repoUrl, "ws-apply-restricted", "apply", 14, true, true);
+            ws.setDefaultTemplate("default-template-id");
+            when(workspaceRepository.findByNormalizedSourceWithMigratedWebhook(repoUrl)).thenReturn(List.of(ws));
+            when(gitHubWebhookService.parseGitHubPayload(eq(payload), any()))
+                    .thenReturn(resolvedCommentResult("apply", 14, "comment-apply-3"));
+            when(workspaceBranchPolicy.vcsViolation(eq(ws), eq(WorkspaceBranchPolicy.Source.PULL_REQUEST), any(),
+                    eq("default-template-id"))).thenReturn(Optional.of("restricted to main"));
+
+            subject.processClaimedDelivery(rw, payload, Map.of("x-github-event", "issue_comment"));
+
+            assertThat(ws.isLocked()).isFalse();
+            verify(workspaceRepository, never()).save(any(Workspace.class));
+            verify(jobRepository, never()).save(any(Job.class));
+            verify(prCommentService).postBranchPolicyNotice(ws, 14, "restricted to main");
+        }
+
+        @Test
+        void v2WebhookIssueCommentPlanIsRefusedWhenTheWorkspaceRestrictsApplyAndTheTemplateApplies() throws Exception {
+            String repoUrl = "https://github.com/owner/repo";
+            String payload = "{\"action\":\"created\", \"comment\": {\"body\": \"terrakube plan\"}}";
+            RepoWebhook rw = repoWebhookWith(repoUrl, "issue-comment-plan-restricted-secret");
+            Workspace ws = prCommentWorkspace(repoUrl, "ws-plan-restricted", "plan", 15, true, false);
+            when(workspaceRepository.findByNormalizedSourceWithMigratedWebhook(repoUrl)).thenReturn(List.of(ws));
+            when(gitHubWebhookService.parseGitHubPayload(eq(payload), any()))
+                    .thenReturn(resolvedCommentResult("plan", 15, "comment-plan-3"));
+            when(workspaceBranchPolicy.vcsViolation(eq(ws), eq(WorkspaceBranchPolicy.Source.PULL_REQUEST), any(),
+                    eq("plan-template"))).thenReturn(Optional.of("restricted to main"));
+
+            subject.processClaimedDelivery(rw, payload, Map.of("x-github-event", "issue_comment"));
+
+            verify(jobRepository, never()).save(any(Job.class));
+            verify(prCommentService).postBranchPolicyNotice(ws, 15, "restricted to main");
         }
 
         @Test

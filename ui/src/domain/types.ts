@@ -367,6 +367,7 @@ export type TeamAttributes = {
   role?: TeamRole;
   planJob?: boolean;
   approveJob?: boolean;
+  destroyJob?: boolean;
 };
 
 // Token
@@ -595,6 +596,7 @@ export type WorkspaceAttributes = {
   lastJobStatus?: string;
   /** Only plan-only runs may use a branch other than the workspace branch. */
   restrictApplyToConfiguredBranch?: boolean;
+  requireApproveToApply?: boolean;
 } & AuditFieldBase;
 
 export type Webhook = {

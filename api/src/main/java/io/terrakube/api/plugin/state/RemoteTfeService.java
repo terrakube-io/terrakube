@@ -99,7 +99,11 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import com.yahoo.elide.core.security.User;
 import io.terrakube.api.plugin.execution.CliRunVariables;
+import io.terrakube.api.plugin.execution.JobRunRights;
+import io.terrakube.api.plugin.scheduler.job.tcl.TclService;
 import io.terrakube.api.plugin.execution.JobVariablesAccess;
+import io.terrakube.api.rs.project.access.ProjectAccess;
+import io.terrakube.api.rs.checks.membership.MembershipService;
 import io.terrakube.api.plugin.execution.JobVariablesService;
 import io.terrakube.api.plugin.execution.WorkspaceBranchPolicy;
 import io.terrakube.api.plugin.execution.WorkspaceBranches;
@@ -174,6 +178,15 @@ public class RemoteTfeService {
 
     @Autowired
     private JobVariablesAccess jobVariablesAccess;
+
+    @Autowired
+    private MembershipService membershipService;
+
+    @Autowired
+    private JobRunRights jobRunRights;
+
+    @Autowired
+    private TclService tclService;
 
     @Autowired
     private WorkspaceBranchPolicy workspaceBranchPolicy;
@@ -400,6 +413,20 @@ public class RemoteTfeService {
     }
 
     /**
+     * The third place a right can come from, next to the organization team and the workspace access: the access
+     * list of the project the workspace belongs to. Elide checks it for the same rights ("team project limited ..."),
+     * so the Terraform CLI has to as well, or a right granted through the project would work in the UI and not here.
+     */
+    private boolean hasProjectAccess(Workspace workspace, JwtAuthenticationToken currentUser,
+                                     java.util.function.Function<ProjectAccess, Boolean> allows) {
+        Project project = workspace.getProject();
+        if (project == null || project.getProjectAccess() == null || project.getProjectAccess().isEmpty()) {
+            return false;
+        }
+        return membershipService.checkProjectMembership(new User(currentUser), project.getProjectAccess(), allows);
+    }
+
+    /**
      * Validates that the current user has permission to plan (queue) jobs
      * in the workspace.
      */
@@ -430,7 +457,7 @@ public class RemoteTfeService {
                 }
             });
 
-        return userCanPlan.get();
+        return userCanPlan.get() || hasProjectAccess(workspace, currentUser, rbacService::canPlanJob);
     }
 
     /**
@@ -464,7 +491,7 @@ public class RemoteTfeService {
                 }
             });
 
-        return userCanApprove.get();
+        return userCanApprove.get() || hasProjectAccess(workspace, currentUser, rbacService::canApproveJob);
     }
 
     EntitlementData getOrgEntitlementSet(String organizationName, JwtAuthenticationToken currentUser) {
@@ -634,7 +661,10 @@ public class RemoteTfeService {
             defaultAttributes.put("can-manage-run-tasks", isManageWorkspace);
             defaultAttributes.put("can-manage-tags", isManageWorkspace);
             defaultAttributes.put("can-queue-apply", isApproveJob);
-            defaultAttributes.put("can-queue-destroy", isManageWorkspace);
+            // Same rule as createRun: the right to plan and the destroy right (see JobRunRights), from the organization
+            // team, the workspace access or the project access. It does not need the right to manage the workspace.
+            defaultAttributes.put("can-queue-destroy", validateUserPlanJob(workspace, currentUser)
+                    && jobRunRights.canDestroy(new User(currentUser), workspace));
             defaultAttributes.put("can-queue-run", isManageJob);
             defaultAttributes.put("can-read-settings", true);
             defaultAttributes.put("can-read-state-versions", isManageWorkspace);
@@ -1743,6 +1773,17 @@ public class RemoteTfeService {
 
         Workspace workspace = workspaceRepository.getReferenceById(UUID.fromString(workspaceId));
 
+        // Auto-approving skips the approval step, so it is the same act as approving the run: it needs the right to
+        // approve, not just the right to plan.
+        // A speculative plan never applies, so auto approving it asks for nothing.
+        boolean runsApply = isDestroy || !contentRepository.getReferenceById(UUID.fromString(configurationId)).isSpeculative();
+        if (autoApply && runsApply && !validateUserApproveJob(workspace, currentUser)) {
+            log.warn("User does not have permission to auto approve runs in workspace {}", workspace.getName());
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "Auto approving a run requires permission to approve runs in workspace " + workspace.getName()
+                            + ". Run it without auto approve and ask someone who can approve to confirm it.");
+        }
+
         // -var, -var-file and TF_VAR_ inputs of the CLI arrive as run variables. They override the workspace
         // variables for this run only, so they need the same right as setting variables on a job.
         Map<String, String> runVariables = CliRunVariables.parse(runsData.getData().getAttributes().get("variables"));
@@ -1765,6 +1806,23 @@ public class RemoteTfeService {
         Template template = templateRepository.getByOrganizationNameAndName(
                 workspace.getOrganization().getName(),
                 getTemplateName(configurationId, isDestroy));
+
+        // Destroying with no approval in front of it is a separate right from planning. Auto-approving takes the
+        // approval away, so it counts as no approval.
+        TclService.Destroys destroys = tclService.templateDestroys(template.getId().toString());
+        if ((destroys == TclService.Destroys.WITHOUT_APPROVAL || (destroys == TclService.Destroys.AFTER_APPROVAL && autoApply))
+                && !jobRunRights.canDestroy(new User(currentUser), workspace)) {
+            log.warn("User does not have permission to destroy in workspace {}", workspace.getName());
+            throw new org.springframework.security.access.AccessDeniedException(JobRunRights.destroyRefusal(workspace));
+        }
+
+        // The CLI templates belong to the organization and can be edited, so one without an approval step is possible.
+        // On a workspace that asks for approval, starting an apply with no approval step needs the approve right.
+        if (workspace.isRequireApproveToApply() && tclService.appliesWithoutApproval(template.getId().toString())
+                && !jobRunRights.canApprove(new User(currentUser), workspace)) {
+            log.warn("User does not have permission to apply without approval in workspace {}", workspace.getName());
+            throw new org.springframework.security.access.AccessDeniedException(JobRunRights.applyRefusal(workspace));
+        }
 
         // On a workspace that restricts apply to its configured branch, a run of the local configuration may only
         // plan. A VCS or SSH workspace runs the uploaded content under the branch "remote-content", which is not
@@ -2081,11 +2139,23 @@ public class RemoteTfeService {
 
         Job job = jobRepository.getReferenceById(Integer.valueOf(runId));
 
+        // The workspace of a deleted workspace reads as null: a clean refusal instead of a server error.
+        if (job.getWorkspace() == null) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "The workspace of this run no longer exists");
+        }
+
         // Authorize: user must have approve/apply permission for this workspace
         if (!validateUserApproveJob(job.getWorkspace(), currentUser)) {
             log.warn("User does not have permission to apply job {} in workspace {}", runId, job.getWorkspace().getName());
             throw new org.springframework.security.access.AccessDeniedException(
                     "User does not have permission to apply runs in this workspace");
+        }
+        // Confirming a run that destroys is allowing the destroy.
+        if (tclService.templateDestroys(job.getTemplateReference()) != TclService.Destroys.NO
+                && !jobRunRights.canDestroy(new User(currentUser), job.getWorkspace())) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    JobRunRights.approveDestroyRefusal(job.getWorkspace()));
         }
         if (job.getStep() != null && !job.getStep().isEmpty()) {
 

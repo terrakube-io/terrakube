@@ -10,6 +10,7 @@ export type WorkspaceAccessModel = {
   manageState: boolean;
   planJob: boolean;
   approveJob: boolean;
+  destroyJob: boolean;
 };
 
 export type WorkspaceAccessPermissions = {
@@ -17,6 +18,7 @@ export type WorkspaceAccessPermissions = {
   manageState: boolean;
   planJob: boolean;
   approveJob: boolean;
+  destroyJob: boolean;
 };
 
 async function listWorkspaceAccess(
@@ -38,6 +40,7 @@ async function listWorkspaceAccess(
                   manageState
                   planJob
                   approveJob
+                  destroyJob
                 }
               }
             }
@@ -74,6 +77,8 @@ async function listWorkspaceAccess(
       manageState: edge.node.manageState ?? false,
       planJob: edge.node.planJob ?? false,
       approveJob: edge.node.approveJob ?? false,
+      // Before this permission existed, a custom team could destroy.
+      destroyJob: edge.node.destroyJob ?? true,
     })),
   };
 }
