@@ -110,6 +110,11 @@ public class Workspace extends GenericAuditFields {
     @Column(name = "restrict_apply_to_configured_branch", nullable = false)
     private boolean restrictApplyToConfiguredBranch = false;
 
+    // Opt-in: starting an apply that has no approval step in front of it needs the right to approve.
+    @UpdatePermission(expression = "user is a superuser OR team manage workspace")
+    @Column(name = "require_approve_to_apply", nullable = false)
+    private boolean requireApproveToApply = false;
+
     @Column(name = "lock_description")
     private String lockDescription;
 
