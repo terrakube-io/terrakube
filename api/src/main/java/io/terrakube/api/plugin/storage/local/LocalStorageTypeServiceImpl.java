@@ -157,6 +157,26 @@ public class LocalStorageTypeServiceImpl implements StorageTypeService {
     }
 
     @Override
+    public void saveCurrentTerraformState(String organizationId, String workspaceId, byte[] stateData) {
+        String currentStateFile = String.format(LOCAL_BACKEND_DIRECTORY, organizationId, workspaceId);
+        log.info("Saving current local state file: {}", currentStateFile);
+        writeFile(currentStateFile, stateData);
+    }
+
+    @Override
+    public void deleteCurrentTerraformState(String organizationId, String workspaceId) {
+        String currentStateFile = String.format(LOCAL_BACKEND_DIRECTORY, organizationId, workspaceId);
+        log.info("Deleting current local state file: {}", currentStateFile);
+        storageRetryMetrics.withRetry("local", "delete", () -> {
+            File file = new File(FileUtils.getUserDirectoryPath().concat(FilenameUtils.separatorsToSystem(currentStateFile)));
+            if (file.exists()) {
+                FileUtils.deleteQuietly(file);
+            }
+            return null;
+        });
+    }
+
+    @Override
     public void uploadState(String organizationId, String workspaceId, String terraformState, String historyId) {
         String newStateFile = String.format(LOCAL_BACKEND_DIRECTORY, organizationId, workspaceId);
         String newRawStateFile = String.format(LOCAL_HISTORY_BACKEND_DIRECTORY, organizationId, workspaceId, historyId);

@@ -288,4 +288,24 @@ class GcpStorageTypeServiceImplTest {
 
         assertThrows(IOException.class, () -> gcpStorageTypeService.openStepOutputPart("org1", "job1", "step1", "000002.part", 0, 4));
     }
+
+    @Test
+    void testCurrentTerraformStateLifecycle() {
+        byte[] stateData = "{\"version\":4}".getBytes(StandardCharsets.UTF_8);
+        String key = "tfstate/org1/ws1/terraform.tfstate/default.tfstate";
+
+        when(storage.get(BlobId.of(bucketName, key))).thenReturn(null);
+        gcpStorageTypeService.saveCurrentTerraformState("org1", "ws1", stateData);
+        verify(storage).create(argThat((BlobInfo info) ->
+                info.getBlobId().equals(BlobId.of(bucketName, key))
+                        && "application/json".equals(info.getContentType())
+        ), eq(stateData));
+
+        when(storage.get(BlobId.of(bucketName, key))).thenReturn(blob);
+        when(blob.getContent()).thenReturn(stateData);
+        assertArrayEquals(stateData, gcpStorageTypeService.getCurrentTerraformState("org1", "ws1"));
+
+        gcpStorageTypeService.deleteCurrentTerraformState("org1", "ws1");
+        verify(storage).delete(BlobId.of(bucketName, key));
+    }
 }
