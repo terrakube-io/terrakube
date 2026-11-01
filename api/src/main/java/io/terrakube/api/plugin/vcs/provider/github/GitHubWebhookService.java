@@ -138,7 +138,7 @@ public class GitHubWebhookService extends WebhookServiceBase {
                 }
             } else {
                 result.setValid(false);
-                log.error("No valid github pull request event: {} ", action);
+                log.info("Ignoring pull_request with action '{}': only 'opened', 'synchronize' and 'reopened' are handled", action);
             }
         } else if ("release".equals(event)) {
             String action = rootNode.path("action").asText();
@@ -149,7 +149,7 @@ public class GitHubWebhookService extends WebhookServiceBase {
                 result.setBranch(rootNode.path("release").path("tag_name").asText());
             } else {
                 result.setValid(false);
-                log.error("No valid github release event: {}", action);
+                log.info("Ignoring release with action '{}': only 'created' is handled", action);
             }
         } else if ("issue_comment".equals(event)) {
             String action = rootNode.path("action").asText();
