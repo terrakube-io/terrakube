@@ -8,7 +8,9 @@ jest.mock("../../../hooks", () => ({
 }));
 
 jest.mock("../TerminalOutput", () => ({
-  TerminalOutput: ({ outputLog }: { outputLog: string }) => <pre data-testid="terminal">{outputLog}</pre>,
+  TerminalOutput: ({ outputLog, emptyLabel }: { outputLog: string; emptyLabel?: string }) => (
+    <pre data-testid="terminal">{outputLog || emptyLabel}</pre>
+  ),
 }));
 
 jest.mock("../LiveTerminalOutput", () => ({
@@ -66,4 +68,43 @@ it("shows no warning while the log is loading or failed to load", () => {
   renderConsole();
 
   expect(screen.queryByTestId("console-output-incomplete")).not.toBeInTheDocument();
+});
+
+describe("a step that was not executed", () => {
+  const notExecutedApply = { ...(item as object), status: "notExecuted" } as never;
+
+  const renderNotExecuted = () =>
+    render(
+      <StepConsole
+        item={notExecutedApply}
+        jobId="j"
+        organizationId="o"
+        structured={{ hasStructuredView: false }}
+        uiType="structured"
+        contextAvailability="unavailable"
+      />
+    );
+
+  it("does not warn that structured output is unavailable", () => {
+    mockUseStepLog.mockReturnValue({ state: "error", text: "", truncated: false, incomplete: false, retry: jest.fn() });
+
+    renderNotExecuted();
+
+    expect(screen.queryByText("Structured output temporarily unavailable")).not.toBeInTheDocument();
+    expect(screen.getByTestId("terminal")).toHaveTextContent("This step was not executed.");
+  });
+
+  it("still shows a log when one exists", () => {
+    mockUseStepLog.mockReturnValue({
+      state: "success",
+      text: "partial output",
+      truncated: false,
+      incomplete: false,
+      retry: jest.fn(),
+    });
+
+    renderNotExecuted();
+
+    expect(screen.getByTestId("terminal")).toHaveTextContent("partial output");
+  });
 });
