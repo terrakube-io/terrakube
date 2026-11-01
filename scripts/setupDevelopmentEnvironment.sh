@@ -202,6 +202,7 @@ function generateExecutorVars() {
 	echo "ExecutorSecretsFile=/tmp/terrakube-executor-secrets/executor.env" >>.envExecutor
 
 	echo "TerraformStateType=$TerraformStateType" >>.envExecutor
+	echo "io.terrakube.executor.plugin.tfstate.http-backend=true" >>.envExecutor
 	echo "AwsTerraformStateBucketName=$AwsTerraformStateBucketName" >>.envExecutor
 	echo "AwsTerraformStateRegion=$AwsTerraformStateRegion" >>.envExecutor
 	echo "AwsEndpoint=$AwsEndpoint" >>.envExecutor
