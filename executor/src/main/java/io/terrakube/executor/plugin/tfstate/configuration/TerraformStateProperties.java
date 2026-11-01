@@ -15,5 +15,7 @@ import org.springframework.stereotype.Component;
 public class TerraformStateProperties {
 
     private TerraformStateType type;
+    private boolean httpBackend;
+    private int httpTokenTtlMinutes = 60;
 }
 

@@ -1110,7 +1110,15 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         TextStringBuilder statePullError = new TextStringBuilder();
         TerraformProcessData terraformProcessData = getTerraformProcessData(terraformJob, terraformWorkingDirectory, executorTempDirectory);
         terraformProcessData.setTerraformVariables(new HashMap());
-        terraformProcessData.setTerraformEnvironmentVariables(new HashMap());
+        HashMap<String, String> backendCredentials = new HashMap<>();
+        if (terraformJob.getEnvironmentVariables() != null) {
+            terraformJob.getEnvironmentVariables().forEach((key, value) -> {
+                if (key.startsWith("TF_HTTP_")) {
+                    backendCredentials.put(key, value);
+                }
+            });
+        }
+        terraformProcessData.setTerraformEnvironmentVariables(backendCredentials);
         Boolean showJsonState = terraformClient.show(terraformProcessData,
                 getStringConsumer(jsonState), getStringConsumer(showError)).get();
         Boolean showRawState = terraformClient.statePull(terraformProcessData,
@@ -1528,9 +1536,24 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         terraformState.getBackendStateFile(
                 terraformJob.getOrganizationId(),
                 terraformJob.getWorkspaceId(),
+                terraformJob.getJobId(),
+                terraformJob.getStepId(),
                 terraformWorkingDir,
                 terraformJob.getTerraformVersion()
         );
+
+        Map<String, String> backendEnv = terraformState.getBackendEnvironmentVariables(
+                terraformJob.getOrganizationId(),
+                terraformJob.getWorkspaceId(),
+                terraformJob.getJobId(),
+                terraformJob.getStepId()
+        );
+        if (backendEnv != null && !backendEnv.isEmpty()) {
+            if (terraformJob.getEnvironmentVariables() == null) {
+                terraformJob.setEnvironmentVariables(new HashMap<>());
+            }
+            terraformJob.getEnvironmentVariables().putAll(backendEnv);
+        }
 
         File sshKeyFile = null;
 

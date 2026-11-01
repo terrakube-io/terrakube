@@ -7,10 +7,20 @@ import io.terrakube.executor.service.logs.StepOutputPartWriter;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.Collections;
+import java.util.Map;
 
 public interface TerraformState {
 
     String getBackendStateFile(String organizationId, String workspaceId, File workingDirectory, String terraformVersion);
+
+    default String getBackendStateFile(String organizationId, String workspaceId, String jobId, String stepId, File workingDirectory, String terraformVersion) {
+        return getBackendStateFile(organizationId, workspaceId, workingDirectory, terraformVersion);
+    }
+
+    default Map<String, String> getBackendEnvironmentVariables(String organizationId, String workspaceId, String jobId, String stepId) {
+        return Collections.emptyMap();
+    }
 
     String saveTerraformPlan(String organizationId, String workspaceId, String jobId, String stepId, File workingDirectory);
 

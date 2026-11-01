@@ -18,6 +18,7 @@ import io.terrakube.executor.plugin.tfstate.azure.AzureTerraformStateImpl;
 import io.terrakube.executor.plugin.tfstate.azure.AzureTerraformStateProperties;
 import io.terrakube.executor.plugin.tfstate.gcp.GcpTerraformStateImpl;
 import io.terrakube.executor.plugin.tfstate.gcp.GcpTerraformStateProperties;
+import io.terrakube.executor.plugin.tfstate.http.HttpTerraformStateImpl;
 import io.terrakube.executor.plugin.tfstate.local.LocalTerraformStateImpl;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -168,6 +169,22 @@ public class TerraformStateAutoConfiguration {
                         log.error(e.getMessage());
                     }
                     break;
+                case HttpTerraformStateImpl:
+                    TerraformState localDelegate = LocalTerraformStateImpl.builder()
+                            .terrakubeClient(terrakubeClient)
+                            .terraformStatePathService(terraformStatePathService)
+                            .terraformOutputPathService(terraformOutputPathService)
+                            .terraformStateMetadataService(terraformStateMetadataService)
+                            .storageRetryMetrics(storageRetryMetrics)
+                            .workspaceSecurity(workspaceSecurity)
+                            .build();
+                    terraformState = HttpTerraformStateImpl.builder()
+                            .terraformStatePathService(terraformStatePathService)
+                            .workspaceSecurity(workspaceSecurity)
+                            .delegate(localDelegate)
+                            .tokenTtlMinutes(terraformStateProperties != null ? terraformStateProperties.getHttpTokenTtlMinutes() : 60)
+                            .build();
+                    break;
                 default:
                     terraformState = LocalTerraformStateImpl.builder()
                             .terrakubeClient(terrakubeClient)
@@ -186,6 +203,17 @@ public class TerraformStateAutoConfiguration {
                     .storageRetryMetrics(storageRetryMetrics)
                     .workspaceSecurity(workspaceSecurity)
                     .build();
+        if (terraformStateProperties != null && terraformStateProperties.isHttpBackend()
+                && terraformState != null && !(terraformState instanceof HttpTerraformStateImpl)) {
+            log.info("Wrapping {} with HttpTerraformStateImpl for HTTP backend override generation",
+                    terraformState.getClass().getSimpleName());
+            terraformState = HttpTerraformStateImpl.builder()
+                    .terraformStatePathService(terraformStatePathService)
+                    .workspaceSecurity(workspaceSecurity)
+                    .delegate(terraformState)
+                    .tokenTtlMinutes(terraformStateProperties.getHttpTokenTtlMinutes())
+                    .build();
+        }
         return terraformState;
     }
 
