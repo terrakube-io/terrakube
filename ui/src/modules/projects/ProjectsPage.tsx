@@ -3,7 +3,7 @@ import { PlusOutlined, SearchOutlined } from "@ant-design/icons";
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import PageWrapper from "@/components/layout/PageWrapper/PageWrapper";
-import projectService from "./projectService";
+import projectService, { ProjectListItem } from "./projectService";
 import useApiRequest from "@/modules/api/useApiRequest";
 import { ProjectModel } from "@/domain/types";
 import { ORGANIZATION_NAME } from "../../config/actionTypes";
@@ -25,7 +25,7 @@ type ProjectForm = {
 export default function ProjectsPage({ organizationName, setOrganizationName }: Props) {
   const { id } = useParams();
   const { permissions } = useOrgPermissions(id);
-  const [projects, setProjects] = useState<ProjectModel[]>([]);
+  const [projects, setProjects] = useState<ProjectListItem[]>([]);
   const [search, setSearch] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [modalOpen, setModalOpen] = useState(false);
@@ -33,7 +33,7 @@ export default function ProjectsPage({ organizationName, setOrganizationName }: 
   const [form] = Form.useForm<ProjectForm>();
 
   const { loading, execute, error } = useApiRequest({
-    action: () => projectService.listProjects(id!),
+    action: () => projectService.listProjects(id!, true),
     onReturn: (data) => {
       setProjects(data);
       setCurrentPage(1);
@@ -87,6 +87,32 @@ export default function ProjectsPage({ organizationName, setOrganizationName }: 
       title: "Description",
       dataIndex: "description",
       key: "description",
+    },
+    {
+      title: "Workspaces",
+      dataIndex: "workspaceCount",
+      key: "workspaceCount",
+      render: (count: number, record: ProjectListItem) => (
+        <Link
+          to={`/organizations/${id}/projects/${record.id}?tab=workspaces`}
+          aria-label={`${count} workspaces in ${record.name}`}
+        >
+          {count}
+        </Link>
+      ),
+    },
+    {
+      title: "Teams",
+      dataIndex: "teamCount",
+      key: "teamCount",
+      render: (count: number, record: ProjectListItem) => (
+        <Link
+          to={`/organizations/${id}/projects/${record.id}?tab=teams`}
+          aria-label={`${count} teams with permissions in ${record.name}`}
+        >
+          {count}
+        </Link>
+      ),
     },
   ];
 
