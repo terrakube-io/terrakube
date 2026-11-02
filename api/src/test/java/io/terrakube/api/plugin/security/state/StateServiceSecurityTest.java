@@ -1,12 +1,12 @@
 package io.terrakube.api.plugin.security.state;
 
+import io.terrakube.api.plugin.scheduler.job.tcl.TclService;
 import io.terrakube.api.repository.OrganizationRepository;
 import io.terrakube.api.repository.WorkspaceRepository;
 import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.workspace.Workspace;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.Mockito;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -14,8 +14,10 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 class StateServiceSecurityTest {
@@ -24,19 +26,20 @@ class StateServiceSecurityTest {
     private WorkspaceRepository workspaceRepository;
     private io.terrakube.api.repository.TeamRepository teamRepository;
     private io.terrakube.api.plugin.security.rbac.RbacService rbacService;
+    private io.terrakube.api.repository.StepRepository stepRepository;
+    private TclService tclService;
     private UUID orgId;
     private UUID wsId;
 
     @BeforeEach
     void setUp() {
-        stateService = new StateService();
-        workspaceRepository = Mockito.mock(WorkspaceRepository.class);
-        teamRepository = Mockito.mock(io.terrakube.api.repository.TeamRepository.class);
-        rbacService = Mockito.mock(io.terrakube.api.plugin.security.rbac.RbacService.class);
+        workspaceRepository = mock(WorkspaceRepository.class);
+        teamRepository = mock(io.terrakube.api.repository.TeamRepository.class);
+        rbacService = mock(io.terrakube.api.plugin.security.rbac.RbacService.class);
+        stepRepository = mock(io.terrakube.api.repository.StepRepository.class);
+        tclService = mock(TclService.class);
 
-        ReflectionTestUtils.setField(stateService, "workspaceRepository", workspaceRepository);
-        ReflectionTestUtils.setField(stateService, "teamRepository", teamRepository);
-        ReflectionTestUtils.setField(stateService, "rbacService", rbacService);
+        stateService = new StateService(teamRepository, workspaceRepository, rbacService, stepRepository, tclService);
 
         orgId = UUID.randomUUID();
         wsId = UUID.randomUUID();
@@ -44,7 +47,7 @@ class StateServiceSecurityTest {
 
     @Test
     void testManageStateOwnWorkspaceReturnsTrue() {
-        JwtAuthenticationToken jwt = Mockito.mock(JwtAuthenticationToken.class);
+        JwtAuthenticationToken jwt = mock(JwtAuthenticationToken.class);
         when(jwt.getTokenAttributes()).thenReturn(Map.of(
                 "iss", "TerrakubeInternal",
                 "organizationId", orgId.toString(),
@@ -56,7 +59,7 @@ class StateServiceSecurityTest {
 
     @Test
     void testManageStateDifferentWorkspaceReturnsFalse() {
-        JwtAuthenticationToken jwt = Mockito.mock(JwtAuthenticationToken.class);
+        JwtAuthenticationToken jwt = mock(JwtAuthenticationToken.class);
         when(jwt.getTokenAttributes()).thenReturn(Map.of(
                 "iss", "TerrakubeInternal",
                 "organizationId", orgId.toString(),
@@ -69,7 +72,7 @@ class StateServiceSecurityTest {
 
     @Test
     void testManageStateDifferentOrganizationReturnsFalse() {
-        JwtAuthenticationToken jwt = Mockito.mock(JwtAuthenticationToken.class);
+        JwtAuthenticationToken jwt = mock(JwtAuthenticationToken.class);
         when(jwt.getTokenAttributes()).thenReturn(Map.of(
                 "iss", "TerrakubeInternal",
                 "organizationId", orgId.toString(),
@@ -82,7 +85,7 @@ class StateServiceSecurityTest {
 
     @Test
     void testManageStateExecutorServiceReturnsTrue() {
-        JwtAuthenticationToken jwt = Mockito.mock(JwtAuthenticationToken.class);
+        JwtAuthenticationToken jwt = mock(JwtAuthenticationToken.class);
         when(jwt.getTokenAttributes()).thenReturn(Map.of(
                 "iss", "TerrakubeInternal",
                 "sub", "TerrakubeInternal (EXECUTOR)"
@@ -93,7 +96,7 @@ class StateServiceSecurityTest {
 
     @Test
     void testManageStateUnknownInternalFailsClosed() {
-        JwtAuthenticationToken jwt = Mockito.mock(JwtAuthenticationToken.class);
+        JwtAuthenticationToken jwt = mock(JwtAuthenticationToken.class);
         when(jwt.getTokenAttributes()).thenReturn(Map.of(
                 "iss", "TerrakubeInternal",
                 "sub", "TerrakubeInternal (TOKEN)"
@@ -104,7 +107,7 @@ class StateServiceSecurityTest {
 
     @Test
     void testReadStateOwnWorkspaceReturnsTrue() {
-        JwtAuthenticationToken jwt = Mockito.mock(JwtAuthenticationToken.class);
+        JwtAuthenticationToken jwt = mock(JwtAuthenticationToken.class);
         when(jwt.getTokenAttributes()).thenReturn(Map.of(
                 "iss", "TerrakubeInternal",
                 "organizationId", orgId.toString(),
@@ -119,7 +122,7 @@ class StateServiceSecurityTest {
         UUID consumerWsId = wsId;
         UUID targetWsId = UUID.randomUUID();
 
-        JwtAuthenticationToken jwt = Mockito.mock(JwtAuthenticationToken.class);
+        JwtAuthenticationToken jwt = mock(JwtAuthenticationToken.class);
         when(jwt.getTokenAttributes()).thenReturn(Map.of(
                 "iss", "TerrakubeInternal",
                 "organizationId", orgId.toString(),
@@ -145,7 +148,7 @@ class StateServiceSecurityTest {
         UUID targetWsId = UUID.randomUUID();
         UUID otherOrgId = UUID.randomUUID();
 
-        JwtAuthenticationToken jwt = Mockito.mock(JwtAuthenticationToken.class);
+        JwtAuthenticationToken jwt = mock(JwtAuthenticationToken.class);
         when(jwt.getTokenAttributes()).thenReturn(Map.of(
                 "iss", "TerrakubeInternal",
                 "organizationId", orgId.toString(),
@@ -170,7 +173,7 @@ class StateServiceSecurityTest {
         UUID consumerWsId = wsId;
         UUID targetWsId = UUID.randomUUID();
 
-        JwtAuthenticationToken jwt = Mockito.mock(JwtAuthenticationToken.class);
+        JwtAuthenticationToken jwt = mock(JwtAuthenticationToken.class);
         when(jwt.getTokenAttributes()).thenReturn(Map.of(
                 "iss", "TerrakubeInternal",
                 "organizationId", orgId.toString(),
@@ -196,7 +199,7 @@ class StateServiceSecurityTest {
         UUID consumerWsId = wsId;
         UUID targetWsId = UUID.randomUUID();
 
-        JwtAuthenticationToken jwt = Mockito.mock(JwtAuthenticationToken.class);
+        JwtAuthenticationToken jwt = mock(JwtAuthenticationToken.class);
         when(jwt.getTokenAttributes()).thenReturn(Map.of(
                 "iss", "TerrakubeInternal",
                 "organizationId", orgId.toString(),
@@ -223,7 +226,7 @@ class StateServiceSecurityTest {
         UUID consumerWsId = wsId;
         UUID targetWsId = UUID.randomUUID();
 
-        JwtAuthenticationToken jwt = Mockito.mock(JwtAuthenticationToken.class);
+        JwtAuthenticationToken jwt = mock(JwtAuthenticationToken.class);
         when(jwt.getTokenAttributes()).thenReturn(Map.of(
                 "iss", "TerrakubeInternal",
                 "organizationId", orgId.toString(),
@@ -235,7 +238,7 @@ class StateServiceSecurityTest {
 
     @Test
     void testManageStateMissingOrgIdReturnsFalse() {
-        JwtAuthenticationToken jwt = Mockito.mock(JwtAuthenticationToken.class);
+        JwtAuthenticationToken jwt = mock(JwtAuthenticationToken.class);
         when(jwt.getTokenAttributes()).thenReturn(Map.of(
                 "iss", "TerrakubeInternal",
                 "workspaceId", wsId.toString()
@@ -246,7 +249,7 @@ class StateServiceSecurityTest {
 
     @Test
     void testReadStateMissingOrgIdReturnsFalse() {
-        JwtAuthenticationToken jwt = Mockito.mock(JwtAuthenticationToken.class);
+        JwtAuthenticationToken jwt = mock(JwtAuthenticationToken.class);
         when(jwt.getTokenAttributes()).thenReturn(Map.of(
                 "iss", "TerrakubeInternal",
                 "workspaceId", wsId.toString()
@@ -257,7 +260,7 @@ class StateServiceSecurityTest {
 
     @Test
     void testManageStateUserTokenWithManageStatePermissionReturnsTrue() {
-        JwtAuthenticationToken jwt = Mockito.mock(JwtAuthenticationToken.class);
+        JwtAuthenticationToken jwt = mock(JwtAuthenticationToken.class);
         when(jwt.getTokenAttributes()).thenReturn(Map.of(
                 "iss", "https://dex.example.com",
                 "groups", java.util.List.of("dev-team")
@@ -273,7 +276,7 @@ class StateServiceSecurityTest {
 
     @Test
     void testManageStateUserTokenWithoutManageStatePermissionReturnsFalse() {
-        JwtAuthenticationToken jwt = Mockito.mock(JwtAuthenticationToken.class);
+        JwtAuthenticationToken jwt = mock(JwtAuthenticationToken.class);
         when(jwt.getTokenAttributes()).thenReturn(Map.of(
                 "iss", "https://dex.example.com",
                 "groups", java.util.List.of("dev-team")
@@ -289,8 +292,146 @@ class StateServiceSecurityTest {
     }
 
     @Test
+    void testHttpBackendAccessAllowedWithValidBasicAuthWorkspaceToken() {
+        ReflectionTestUtils.setField(stateService, "internalJwtSecret", TEST_INTERNAL_SECRET);
+        UUID stepId = UUID.randomUUID();
+        io.terrakube.api.rs.job.step.Step activeStep = new io.terrakube.api.rs.job.step.Step();
+        activeStep.setId(stepId);
+        activeStep.setStatus(io.terrakube.api.rs.job.JobStatus.running);
+        when(stepRepository.findById(stepId)).thenReturn(Optional.of(activeStep));
+
+        String token = signToken(TEST_INTERNAL_SECRET, "TerrakubeInternal", "TerrakubeInternal (TOKEN)", Map.of(
+                "organizationId", orgId.toString(),
+                "workspaceId", wsId.toString(),
+                "jobId", "101",
+                "stepId", stepId.toString()
+        ), 300);
+
+        StateService.HttpBackendAccessResult basicResult = stateService.authorizeHttpBackendAccess(basicHeader("terraform", token), orgId.toString(), wsId.toString());
+        assertEquals(StateService.HttpBackendAccessDecision.ALLOWED, basicResult.decision());
+        assertEquals("101", basicResult.jobId());
+        assertEquals(stepId.toString(), basicResult.stepId());
+
+        StateService.HttpBackendAccessResult bearerResult = stateService.authorizeHttpBackendAccess("Bearer " + token, orgId.toString(), wsId.toString());
+        assertEquals(StateService.HttpBackendAccessDecision.ALLOWED, bearerResult.decision());
+        assertEquals("101", bearerResult.jobId());
+        assertEquals(stepId.toString(), bearerResult.stepId());
+    }
+
+    @Test
+    void testHttpBackendAccessUnauthorizedWhenMissingOrMalformedHeaders() {
+        ReflectionTestUtils.setField(stateService, "internalJwtSecret", TEST_INTERNAL_SECRET);
+
+        assertEquals(StateService.HttpBackendAccessDecision.UNAUTHORIZED,
+                stateService.authorizeHttpBackendAccess(null, orgId.toString(), wsId.toString()).decision());
+        assertEquals(StateService.HttpBackendAccessDecision.UNAUTHORIZED,
+                stateService.authorizeHttpBackendAccess("", orgId.toString(), wsId.toString()).decision());
+        assertEquals(StateService.HttpBackendAccessDecision.UNAUTHORIZED,
+                stateService.authorizeHttpBackendAccess("Basic !!!not-base64!!!", orgId.toString(), wsId.toString()).decision());
+        assertEquals(StateService.HttpBackendAccessDecision.UNAUTHORIZED,
+                stateService.authorizeHttpBackendAccess(basicHeader("", "some-token"), orgId.toString(), wsId.toString()).decision());
+        assertEquals(StateService.HttpBackendAccessDecision.UNAUTHORIZED,
+                stateService.authorizeHttpBackendAccess(basicHeader("terraform", ""), orgId.toString(), wsId.toString()).decision());
+    }
+
+    @Test
+    void testHttpBackendAccessUnauthorizedWhenTokenExpiredOrStepCompleted() {
+        ReflectionTestUtils.setField(stateService, "internalJwtSecret", TEST_INTERNAL_SECRET);
+        UUID stepId = UUID.randomUUID();
+        io.terrakube.api.rs.job.step.Step completedStep = new io.terrakube.api.rs.job.step.Step();
+        completedStep.setId(stepId);
+        completedStep.setStatus(io.terrakube.api.rs.job.JobStatus.completed);
+        when(stepRepository.findById(stepId)).thenReturn(Optional.of(completedStep));
+
+        String activeTokenWithCompletedStep = signToken(TEST_INTERNAL_SECRET, "TerrakubeInternal", "TerrakubeInternal (TOKEN)", Map.of(
+                "organizationId", orgId.toString(),
+                "workspaceId", wsId.toString(),
+                "jobId", "101",
+                "stepId", stepId.toString()
+        ), 300);
+
+        assertEquals(StateService.HttpBackendAccessDecision.UNAUTHORIZED,
+                stateService.authorizeHttpBackendAccess(basicHeader("terraform", activeTokenWithCompletedStep), orgId.toString(), wsId.toString()).decision());
+
+        String expiredToken = signToken(TEST_INTERNAL_SECRET, "TerrakubeInternal", "TerrakubeInternal (TOKEN)", Map.of(
+                "organizationId", orgId.toString(),
+                "workspaceId", wsId.toString(),
+                "jobId", "101",
+                "stepId", stepId.toString()
+        ), -120);
+
+        assertEquals(StateService.HttpBackendAccessDecision.UNAUTHORIZED,
+                stateService.authorizeHttpBackendAccess(basicHeader("terraform", expiredToken), orgId.toString(), wsId.toString()).decision());
+    }
+
+    @Test
+    void testHttpBackendAccessForbiddenForMismatchedScopeOrNonWorkspaceTokens() {
+        ReflectionTestUtils.setField(stateService, "internalJwtSecret", TEST_INTERNAL_SECRET);
+        ReflectionTestUtils.setField(stateService, "patJwtSecret", TEST_PAT_SECRET);
+
+        UUID stepId = UUID.randomUUID();
+        io.terrakube.api.rs.job.step.Step activeStep = new io.terrakube.api.rs.job.step.Step();
+        activeStep.setId(stepId);
+        activeStep.setStatus(io.terrakube.api.rs.job.JobStatus.running);
+        when(stepRepository.findById(stepId)).thenReturn(Optional.of(activeStep));
+
+        String wsToken = signToken(TEST_INTERNAL_SECRET, "TerrakubeInternal", "TerrakubeInternal (TOKEN)", Map.of(
+                "organizationId", orgId.toString(),
+                "workspaceId", wsId.toString(),
+                "jobId", "101",
+                "stepId", stepId.toString()
+        ), 300);
+
+        // Mismatched workspace
+        assertEquals(StateService.HttpBackendAccessDecision.FORBIDDEN,
+                stateService.authorizeHttpBackendAccess(basicHeader("terraform", wsToken), orgId.toString(), UUID.randomUUID().toString()).decision());
+        // Mismatched organization
+        assertEquals(StateService.HttpBackendAccessDecision.FORBIDDEN,
+                stateService.authorizeHttpBackendAccess(basicHeader("terraform", wsToken), UUID.randomUUID().toString(), wsId.toString()).decision());
+
+        // EXECUTOR_SERVICE token (unscoped) must be rejected on HTTP backend
+        String executorServiceToken = signToken(TEST_INTERNAL_SECRET, "TerrakubeInternal", "TerrakubeInternal (EXECUTOR)", Map.of(), 300);
+        assertEquals(StateService.HttpBackendAccessDecision.FORBIDDEN,
+                stateService.authorizeHttpBackendAccess(basicHeader("terraform", executorServiceToken), orgId.toString(), wsId.toString()).decision());
+
+        // REGISTRY_SERVICE token must be rejected
+        String registryServiceToken = signToken(TEST_INTERNAL_SECRET, "TerrakubeInternal", "TerrakubeInternal (REGISTRY)", Map.of(), 300);
+        assertEquals(StateService.HttpBackendAccessDecision.FORBIDDEN,
+                stateService.authorizeHttpBackendAccess(basicHeader("terraform", registryServiceToken), orgId.toString(), wsId.toString()).decision());
+
+        // User PAT token must be rejected with FORBIDDEN
+        String userPatToken = signToken(TEST_PAT_SECRET, "Terrakube", "user@example.com", Map.of(
+                "groups", java.util.List.of("TERRAKUBE_ADMIN")
+        ), 300);
+        assertEquals(StateService.HttpBackendAccessDecision.FORBIDDEN,
+                stateService.authorizeHttpBackendAccess(basicHeader("terraform", userPatToken), orgId.toString(), wsId.toString()).decision());
+    }
+
+    private static final String TEST_INTERNAL_SECRET = "dGVycmFrdWJlLWludGVybmFsLXNlY3JldC1rZXktZm9yLXRlc3RpbmctMjU2Yml0cw";
+    private static final String TEST_PAT_SECRET = "dGVycmFrdWJlLXBhdC1zZWNyZXQta2V5LWZvci10ZXN0aW5nLTI1NmJpdHMtdG9rZW4";
+
+    private String signToken(String base64UrlSecret, String issuer, String subject, Map<String, Object> extraClaims, long expirySecondsOffset) {
+        javax.crypto.SecretKey key = io.jsonwebtoken.security.Keys.hmacShaKeyFor(io.jsonwebtoken.io.Decoders.BASE64URL.decode(base64UrlSecret));
+        java.time.Instant now = java.time.Instant.now();
+        var builder = io.jsonwebtoken.Jwts.builder()
+                .setIssuer(issuer)
+                .setSubject(subject)
+                .setIssuedAt(java.util.Date.from(now.minusSeconds(10)))
+                .setExpiration(java.util.Date.from(now.plusSeconds(expirySecondsOffset)));
+        if (extraClaims != null) {
+            extraClaims.forEach(builder::claim);
+        }
+        return builder.signWith(key).compact();
+    }
+
+    private String basicHeader(String username, String password) {
+        String raw = username + ":" + password;
+        return "Basic " + java.util.Base64.getEncoder().encodeToString(raw.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    }
+
+    @Test
     void testReadStateUserTokenDelegatesToManageState() {
-        JwtAuthenticationToken jwt = Mockito.mock(JwtAuthenticationToken.class);
+        JwtAuthenticationToken jwt = mock(JwtAuthenticationToken.class);
         when(jwt.getTokenAttributes()).thenReturn(Map.of(
                 "iss", "https://dex.example.com",
                 "groups", java.util.List.of("dev-team")
@@ -302,5 +443,92 @@ class StateServiceSecurityTest {
         when(rbacService.canManageState(team)).thenReturn(true);
 
         assertTrue(stateService.hasReadStatePermission(jwt, orgId.toString(), wsId.toString()));
+    }
+
+    @Test
+    void testHttpBackendStepWriteAuthorizationForDifferentFlowTypes() {
+        ReflectionTestUtils.setField(stateService, "internalJwtSecret", TEST_INTERNAL_SECRET);
+
+        UUID stepId = UUID.randomUUID();
+        io.terrakube.api.rs.job.Job job = new io.terrakube.api.rs.job.Job();
+        job.setId(101);
+
+        io.terrakube.api.rs.job.step.Step activeStep = new io.terrakube.api.rs.job.step.Step();
+        activeStep.setId(stepId);
+        activeStep.setStepNumber(100);
+        activeStep.setStatus(io.terrakube.api.rs.job.JobStatus.running);
+        activeStep.setJob(job);
+        when(stepRepository.findById(stepId)).thenReturn(Optional.of(activeStep));
+
+        String token = signToken(TEST_INTERNAL_SECRET, "TerrakubeInternal", "TerrakubeInternal (TOKEN)", Map.of(
+                "organizationId", orgId.toString(),
+                "workspaceId", wsId.toString(),
+                "jobId", "101",
+                "stepId", stepId.toString()
+        ), 300);
+        String header = basicHeader("terraform", token);
+
+        // 1. terraformPlan: Read (isWrite=false) -> ALLOWED, Write (isWrite=true) -> FORBIDDEN
+        when(tclService.getFlowTypeForStep(job, 100)).thenReturn("terraformPlan");
+        assertEquals(StateService.HttpBackendAccessDecision.ALLOWED,
+                stateService.authorizeHttpBackendAccess(header, orgId.toString(), wsId.toString(), false).decision());
+        assertEquals(StateService.HttpBackendAccessDecision.FORBIDDEN,
+                stateService.authorizeHttpBackendAccess(header, orgId.toString(), wsId.toString(), true).decision());
+
+        // 2. terraformPlanDestroy: Write -> FORBIDDEN
+        when(tclService.getFlowTypeForStep(job, 100)).thenReturn("terraformPlanDestroy");
+        assertEquals(StateService.HttpBackendAccessDecision.FORBIDDEN,
+                stateService.authorizeHttpBackendAccess(header, orgId.toString(), wsId.toString(), true).decision());
+
+        // 3. terraformApply: Read -> ALLOWED, Write -> ALLOWED
+        when(tclService.getFlowTypeForStep(job, 100)).thenReturn("terraformApply");
+        assertEquals(StateService.HttpBackendAccessDecision.ALLOWED,
+                stateService.authorizeHttpBackendAccess(header, orgId.toString(), wsId.toString(), false).decision());
+        assertEquals(StateService.HttpBackendAccessDecision.ALLOWED,
+                stateService.authorizeHttpBackendAccess(header, orgId.toString(), wsId.toString(), true).decision());
+
+        // 4. terraformDestroy: Write -> ALLOWED
+        when(tclService.getFlowTypeForStep(job, 100)).thenReturn("terraformDestroy");
+        assertEquals(StateService.HttpBackendAccessDecision.ALLOWED,
+                stateService.authorizeHttpBackendAccess(header, orgId.toString(), wsId.toString(), true).decision());
+
+        // 5. customScripts: Write -> ALLOWED
+        when(tclService.getFlowTypeForStep(job, 100)).thenReturn("customScripts");
+        assertEquals(StateService.HttpBackendAccessDecision.ALLOWED,
+                stateService.authorizeHttpBackendAccess(header, orgId.toString(), wsId.toString(), true).decision());
+
+        // 6. Unknown or unmatched flow type: fails closed -> FORBIDDEN
+        when(tclService.getFlowTypeForStep(job, 100)).thenReturn("someCustomFlow");
+        assertEquals(StateService.HttpBackendAccessDecision.FORBIDDEN,
+                stateService.authorizeHttpBackendAccess(header, orgId.toString(), wsId.toString(), true).decision());
+
+        // 7. Null flow type: fails closed -> FORBIDDEN
+        when(tclService.getFlowTypeForStep(job, 100)).thenReturn(null);
+        assertEquals(StateService.HttpBackendAccessDecision.FORBIDDEN,
+                stateService.authorizeHttpBackendAccess(header, orgId.toString(), wsId.toString(), true).decision());
+    }
+
+    @Test
+    void testHttpBackendStepWriteFailsClosedWhenStepOrJobMissing() {
+        ReflectionTestUtils.setField(stateService, "internalJwtSecret", TEST_INTERNAL_SECRET);
+
+        UUID stepId = UUID.randomUUID();
+        String token = signToken(TEST_INTERNAL_SECRET, "TerrakubeInternal", "TerrakubeInternal (TOKEN)", Map.of(
+                "organizationId", orgId.toString(),
+                "workspaceId", wsId.toString(),
+                "jobId", "101",
+                "stepId", stepId.toString()
+        ), 300);
+        String header = basicHeader("terraform", token);
+
+        // Step has null job -> write fails closed
+        io.terrakube.api.rs.job.step.Step stepWithoutJob = new io.terrakube.api.rs.job.step.Step();
+        stepWithoutJob.setId(stepId);
+        stepWithoutJob.setStatus(io.terrakube.api.rs.job.JobStatus.running);
+        stepWithoutJob.setJob(null);
+        when(stepRepository.findById(stepId)).thenReturn(Optional.of(stepWithoutJob));
+
+        assertEquals(StateService.HttpBackendAccessDecision.FORBIDDEN,
+                stateService.authorizeHttpBackendAccess(header, orgId.toString(), wsId.toString(), true).decision());
     }
 }
