@@ -1,12 +1,15 @@
 package io.terrakube.api.plugin.proxy;
 
 import io.terrakube.api.plugin.notification.sender.DestinationUrlValidator;
+import io.terrakube.api.plugin.security.federated.FederatedLookupService;
+import io.terrakube.api.plugin.security.groups.dex.DexGroupServiceImpl;
 import io.terrakube.api.plugin.security.rbac.RbacService;
 import io.terrakube.api.repository.GlobalVarRepository;
 import io.terrakube.api.repository.TeamRepository;
 import io.terrakube.api.repository.VariableRepository;
 import io.terrakube.api.repository.WorkspaceRepository;
 import io.terrakube.api.rs.Organization;
+import io.terrakube.api.rs.federated.Federated;
 import io.terrakube.api.rs.globalvar.Globalvar;
 import io.terrakube.api.rs.team.Team;
 import io.terrakube.api.rs.workspace.Workspace;
@@ -35,6 +38,7 @@ class ProxySecurityTest {
     private DestinationUrlValidator destinationUrlValidator;
     private TeamRepository teamRepository;
     private RbacService rbacService;
+    private FederatedLookupService federatedLookupService;
 
     private ProxyService proxyService;
     private ProxyAccessService proxyAccessService;
@@ -49,9 +53,11 @@ class ProxySecurityTest {
         destinationUrlValidator = mock(DestinationUrlValidator.class);
         teamRepository = mock(TeamRepository.class);
         rbacService = mock(RbacService.class);
+        federatedLookupService = mock(FederatedLookupService.class);
 
         proxyService = new ProxyService(workspaceRepository, variableRepository, globalVarRepository, destinationUrlValidator);
-        proxyAccessService = new ProxyAccessService(workspaceRepository, teamRepository, rbacService, INSTANCE_OWNER);
+        proxyAccessService = new ProxyAccessService(workspaceRepository, teamRepository, rbacService,
+                new DexGroupServiceImpl(null, null, null, federatedLookupService), INSTANCE_OWNER);
     }
 
     private JwtAuthenticationToken createAuthToken(List<String> groups) {
@@ -122,6 +128,19 @@ class ProxySecurityTest {
         UUID workspaceId = UUID.randomUUID();
         JwtAuthenticationToken auth = createAuthToken(List.of(INSTANCE_OWNER));
         assertTrue(proxyAccessService.hasProxyPermission(auth, workspaceId));
+    }
+
+    @Test
+    void testFederatedTokenWithInstanceOwnerGroupsClaimIsNotSuperuser() {
+        // The external identity provider decides the groups claim; the token acts as its credential only
+        Federated federated = new Federated();
+        federated.setName("CI_TEAM");
+        when(federatedLookupService.findAllAuthorized(any())).thenReturn(List.of(federated));
+        UUID workspaceId = UUID.randomUUID();
+        when(workspaceRepository.findById(workspaceId)).thenReturn(Optional.empty());
+
+        JwtAuthenticationToken auth = createAuthToken(List.of(INSTANCE_OWNER));
+        assertFalse(proxyAccessService.hasProxyPermission(auth, workspaceId));
     }
 
     @Test

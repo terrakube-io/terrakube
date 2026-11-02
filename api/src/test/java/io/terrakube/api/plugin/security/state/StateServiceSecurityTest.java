@@ -1,9 +1,13 @@
 package io.terrakube.api.plugin.security.state;
 
 import io.terrakube.api.plugin.scheduler.job.tcl.TclService;
+import io.terrakube.api.plugin.security.federated.FederatedLookupService;
+import io.terrakube.api.plugin.security.groups.dex.DexGroupServiceImpl;
+import io.terrakube.api.plugin.security.user.AuthenticatedUser;
 import io.terrakube.api.repository.OrganizationRepository;
 import io.terrakube.api.repository.WorkspaceRepository;
 import io.terrakube.api.rs.Organization;
+import io.terrakube.api.rs.federated.Federated;
 import io.terrakube.api.rs.workspace.Workspace;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -17,6 +21,7 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -28,6 +33,8 @@ class StateServiceSecurityTest {
     private io.terrakube.api.plugin.security.rbac.RbacService rbacService;
     private io.terrakube.api.repository.StepRepository stepRepository;
     private TclService tclService;
+    private FederatedLookupService federatedLookupService;
+    private AuthenticatedUser authenticatedUser;
     private UUID orgId;
     private UUID wsId;
 
@@ -40,6 +47,12 @@ class StateServiceSecurityTest {
         tclService = mock(TclService.class);
 
         stateService = new StateService(teamRepository, workspaceRepository, rbacService, stepRepository, tclService);
+        federatedLookupService = mock(FederatedLookupService.class);
+        ReflectionTestUtils.setField(stateService, "groupService",
+                new DexGroupServiceImpl(null, null, null, federatedLookupService));
+        authenticatedUser = mock(AuthenticatedUser.class);
+        ReflectionTestUtils.setField(stateService, "authenticatedUser", authenticatedUser);
+        ReflectionTestUtils.setField(stateService, "instanceOwner", "owner@example.com");
 
         orgId = UUID.randomUUID();
         wsId = UUID.randomUUID();
@@ -443,6 +456,52 @@ class StateServiceSecurityTest {
         when(rbacService.canManageState(team)).thenReturn(true);
 
         assertTrue(stateService.hasReadStatePermission(jwt, orgId.toString(), wsId.toString()));
+    }
+
+    @Test
+    void testManageStateOwnerEmailReturnsTrue() {
+        JwtAuthenticationToken jwt = mock(JwtAuthenticationToken.class);
+        when(jwt.getTokenAttributes()).thenReturn(Map.of(
+                "iss", "https://dex.example.com",
+                "email", "owner@example.com"
+        ));
+
+        assertTrue(stateService.hasManageStatePermission(jwt, orgId.toString(), wsId.toString()));
+    }
+
+    @Test
+    void testManageStateFederatedTokenWithOwnerEmailIsNotOwner() {
+        // The external identity provider decides the email claim
+        JwtAuthenticationToken jwt = mock(JwtAuthenticationToken.class);
+        when(jwt.getTokenAttributes()).thenReturn(Map.of(
+                "iss", "https://token.actions.githubusercontent.com",
+                "email", "owner@example.com"
+        ));
+        when(authenticatedUser.isFederatedAccount(any())).thenReturn(true);
+        when(workspaceRepository.findById(wsId)).thenReturn(Optional.empty());
+
+        assertFalse(stateService.hasManageStatePermission(jwt, orgId.toString(), wsId.toString()));
+    }
+
+    @Test
+    void testManageStateFederatedTokenIgnoresGroupsClaim() {
+        // The external identity provider puts a Terrakube team into "groups"; the token acts as its credential only
+        JwtAuthenticationToken jwt = mock(JwtAuthenticationToken.class);
+        when(jwt.getTokenAttributes()).thenReturn(Map.of(
+                "iss", "https://token.actions.githubusercontent.com",
+                "groups", java.util.List.of("dev-team")
+        ));
+        Federated federated = new Federated();
+        federated.setName("ci-team");
+        when(federatedLookupService.findAllAuthorized(any())).thenReturn(java.util.List.of(federated));
+
+        io.terrakube.api.rs.team.Team team = new io.terrakube.api.rs.team.Team();
+        when(teamRepository.findAllByOrganizationIdAndNameIn(orgId, java.util.List.of("dev-team")))
+                .thenReturn(java.util.List.of(team));
+        when(rbacService.canManageState(team)).thenReturn(true);
+        when(workspaceRepository.findById(wsId)).thenReturn(Optional.empty());
+
+        assertFalse(stateService.hasManageStatePermission(jwt, orgId.toString(), wsId.toString()));
     }
 
     @Test

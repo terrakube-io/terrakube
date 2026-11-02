@@ -92,7 +92,7 @@ public class DexGroupServiceImpl implements GroupService {
                     tokenAttributes.get("sub"), group);
             return false;
         }
-        // Federated tokens usually carry no "groups" claim; getEffectiveGroups merges the federated names in.
+        // For a federated token getEffectiveGroups returns the names of its Federated credentials.
         return isMember(user, group);
     }
 
@@ -114,6 +114,17 @@ public class DexGroupServiceImpl implements GroupService {
             return groups;
         }
 
+        // A federated token acts as its Federated credentials only: the groups claim of the external
+        // identity provider is not a Terrakube team membership.
+        List<Federated> federatedList = federatedLookupService.findAllAuthorized(tokenAttributes);
+        if (!federatedList.isEmpty()) {
+            federatedList.stream()
+                    .map(Federated::getName)
+                    .filter(Objects::nonNull)
+                    .forEach(groups::add);
+            return groups;
+        }
+
         Object tokenGroups = tokenAttributes.get("groups");
         if (tokenGroups instanceof Object[] values) {
             tokenGroups = Arrays.asList(values);
@@ -127,11 +138,6 @@ public class DexGroupServiceImpl implements GroupService {
                     .filter(group -> !group.isBlank())
                     .forEach(groups::add);
         }
-
-        federatedLookupService.findAllAuthorized(tokenAttributes).stream()
-                .map(Federated::getName)
-                .filter(Objects::nonNull)
-                .forEach(groups::add);
 
         return groups;
     }

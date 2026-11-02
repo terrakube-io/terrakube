@@ -26,6 +26,8 @@ import org.springframework.security.authentication.ProviderManager;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
+import org.springframework.security.oauth2.jwt.BadJwtException;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtDecoders;
 import org.springframework.security.oauth2.jwt.JwtTimestampValidator;
@@ -54,6 +56,7 @@ public class DexAuthenticationManagerResolver implements AuthenticationManagerRe
     private static final String jwtTypePat = "Terrakube";
     private static final String jwtTypeInternal = "TerrakubeInternal";
     private String dexIssuerUri;
+    private List<String> dexAudiences;
     private String patJwtSecret;
     private String internalJwtSecret;
     private PatRepository patRepository;
@@ -74,9 +77,9 @@ public class DexAuthenticationManagerResolver implements AuthenticationManagerRe
 
         // Only Terrakube-issued PAT and team tokens are stored in the revocation tables. External
         // OIDC providers are free to use a non-UUID jti and must never be rejected for doing so.
-        if (jwtTypePat.equals(issuer) && isTokenDeleted(claimAsString(tokenAttributes, "jti"))) {
-            // Force a revoked token to use the wrong key so authentication always fails.
-            issuer = jwtTypeInternal;
+        if (jwtTypePat.equals(issuer) && !isTokenActive(claimAsString(tokenAttributes, "jti"))) {
+            // A Terrakube token without an active row (revoked, unknown or missing jti) is rejected.
+            throw new BadCredentialsException("Token is revoked or unknown");
         }
 
         boolean federatedCredentialFound = false;
@@ -115,8 +118,24 @@ public class DexAuthenticationManagerResolver implements AuthenticationManagerRe
             }
             default -> {
                 log.debug("Using Dex JWT Authentication Provider");
-                yield new ProviderManager(new JwtAuthenticationProvider(getIssuerDecoder(this.dexIssuerUri)));
+                yield new ProviderManager(new JwtAuthenticationProvider(getDexDecoder()));
             }
+        };
+    }
+
+    // An empty dexAudiences list keeps the previous behaviour (issuer and expiry checks only).
+    private JwtDecoder getDexDecoder() {
+        JwtDecoder issuerDecoder = getIssuerDecoder(this.dexIssuerUri);
+        if (dexAudiences == null || dexAudiences.isEmpty()) {
+            return issuerDecoder;
+        }
+        return token -> {
+            Jwt jwt = issuerDecoder.decode(token);
+            List<String> audiences = jwt.getAudience();
+            if (audiences == null || audiences.stream().noneMatch(dexAudiences::contains)) {
+                throw new BadJwtException("Token audience is not accepted");
+            }
+            return jwt;
         };
     }
 
@@ -211,23 +230,18 @@ public class DexAuthenticationManagerResolver implements AuthenticationManagerRe
         return value instanceof String ? (String) value : "";
     }
 
-    private boolean isTokenDeleted(String tokenId) {
-        if (tokenId != null && !tokenId.isEmpty()) {
-            UUID id;
-            try {
-                id = UUID.fromString(tokenId);
-            } catch (IllegalArgumentException ex) {
-                return false;
-            }
-            Optional<Pat> searchPat = patRepository.findById(id);
-            Optional<Group> searchGroupToken = teamTokenRepository.findById(id);
-            if (searchPat.isPresent()) {
-                return searchPat.get().isDeleted();
-            }
-            if (searchGroupToken.isPresent()) {
-                return searchGroupToken.get().isDeleted();
-            }
+    private boolean isTokenActive(String tokenId) {
+        UUID id;
+        try {
+            id = UUID.fromString(tokenId);
+        } catch (IllegalArgumentException ex) {
+            return false;
         }
-        return false;
+        Optional<Pat> searchPat = patRepository.findById(id);
+        if (searchPat.isPresent()) {
+            return !searchPat.get().isDeleted();
+        }
+        Optional<Group> searchGroupToken = teamTokenRepository.findById(id);
+        return searchGroupToken.isPresent() && !searchGroupToken.get().isDeleted();
     }
 }

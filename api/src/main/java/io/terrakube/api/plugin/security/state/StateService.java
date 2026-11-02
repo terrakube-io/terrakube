@@ -10,7 +10,10 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.yahoo.elide.core.security.User;
+import io.terrakube.api.plugin.security.groups.GroupService;
 import io.terrakube.api.plugin.security.rbac.RbacService;
+import io.terrakube.api.plugin.security.user.AuthenticatedUser;
 import io.terrakube.api.repository.TeamRepository;
 import io.terrakube.api.repository.WorkspaceRepository;
 import io.terrakube.api.rs.project.access.ProjectAccess;
@@ -49,6 +52,12 @@ public class StateService {
    private final RbacService rbacService;
    private final StepRepository stepRepository;
    private final TclService tclService;
+
+   @Autowired
+   private GroupService groupService;
+
+   @Autowired
+   private AuthenticatedUser authenticatedUser;
 
    @Value("${io.terrakube.owner:}")
    private String instanceOwner;
@@ -123,8 +132,11 @@ public class StateService {
          return validateInternalTokenStateAccess(jwt, organizationId, workspaceId, false);
       }
 
+      // The email counts only for a token that is not matched by a federated credential: the other provider
+      // decides what its tokens say.
       Object email = jwt.getTokenAttributes().get("email");
-      if (instanceOwner != null && !instanceOwner.isBlank() && instanceOwner.equals(email)) {
+      if (instanceOwner != null && !instanceOwner.isBlank() && instanceOwner.equals(email)
+              && !authenticatedUser.isFederatedAccount(new User(jwt))) {
          return true;
       }
 
@@ -137,12 +149,11 @@ public class StateService {
          return false;
       }
 
-      Object groupNames = jwt.getTokenAttributes().get("groups");
-      if (groupNames == null) {
+      // Effective groups: a federated token acts as its Federated credentials, not as its groups claim
+      List<String> groups = List.copyOf(groupService.getEffectiveGroups(new User(jwt)));
+      if (groups.isEmpty()) {
          return false;
       }
-      @SuppressWarnings("unchecked")
-      List<String> groups = (List<String>) groupNames;
       List<Team> teams = teamRepository.findAllByOrganizationIdAndNameIn(orgUuid, groups);
       for (Team team : teams) {
          if (rbacService.canManageState(team)) {

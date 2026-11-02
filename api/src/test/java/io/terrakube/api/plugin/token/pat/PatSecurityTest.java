@@ -1,6 +1,10 @@
 package io.terrakube.api.plugin.token.pat;
 
+import io.terrakube.api.plugin.security.federated.FederatedLookupService;
+import io.terrakube.api.plugin.security.groups.dex.DexGroupServiceImpl;
+import io.terrakube.api.plugin.security.user.AuthenticatedUser;
 import io.terrakube.api.repository.PatRepository;
+import io.terrakube.api.rs.federated.Federated;
 import io.terrakube.api.rs.token.pat.Pat;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -27,6 +31,12 @@ class PatSecurityTest {
     @Mock
     private PatRepository patRepository;
 
+    @Mock
+    private FederatedLookupService federatedLookupService;
+
+    @Mock
+    private AuthenticatedUser authenticatedUser;
+
     @InjectMocks
     private PatService patService;
 
@@ -38,6 +48,8 @@ class PatSecurityTest {
     @BeforeEach
     void setUp() {
         ReflectionTestUtils.setField(patService, "instanceOwner", SUPERUSER_ROLE);
+        ReflectionTestUtils.setField(patService, "groupService",
+                new DexGroupServiceImpl(null, null, null, federatedLookupService));
     }
 
     private JwtAuthenticationToken createJwtAuth(String email, List<String> groups) {
@@ -112,6 +124,90 @@ class PatSecurityTest {
         assertTrue(result);
         assertTrue(pat.isDeleted());
         verify(patRepository).save(pat);
+    }
+
+    @Test
+    void testFederatedTokenWithInstanceOwnerGroupsClaimCannotRevokeOtherUserToken() {
+        UUID patId = UUID.randomUUID();
+        Pat pat = new Pat();
+        pat.setId(patId);
+        pat.setCreatedBy(OWNER_EMAIL);
+        pat.setDeleted(false);
+
+        when(patRepository.findById(patId)).thenReturn(Optional.of(pat));
+        // The external identity provider decides the groups claim; the token acts as its credential only
+        Federated federated = new Federated();
+        federated.setName("CI_TEAM");
+        when(federatedLookupService.findAllAuthorized(any())).thenReturn(List.of(federated));
+
+        JwtAuthenticationToken federatedAuth = createJwtAuth(ATTACKER_EMAIL, List.of(SUPERUSER_ROLE));
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class, () ->
+                patService.deleteToken(patId.toString(), federatedAuth)
+        );
+
+        assertEquals(HttpStatus.FORBIDDEN, ex.getStatusCode());
+        assertFalse(pat.isDeleted());
+        verify(patRepository, never()).save(any());
+    }
+
+    @Test
+    void testFederatedTokenWithOwnersEmailCannotRevokeTheirToken() {
+        UUID patId = UUID.randomUUID();
+        Pat pat = new Pat();
+        pat.setId(patId);
+        pat.setCreatedBy(OWNER_EMAIL);
+        pat.setDeleted(false);
+
+        when(patRepository.findById(patId)).thenReturn(Optional.of(pat));
+        // The external identity provider decides the email claim
+        when(authenticatedUser.isFederatedAccount(any())).thenReturn(true);
+
+        JwtAuthenticationToken federatedAuth = createJwtAuth(OWNER_EMAIL, List.of("DEV_TEAM"));
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class, () ->
+                patService.deleteToken(patId.toString(), federatedAuth)
+        );
+
+        assertEquals(HttpStatus.FORBIDDEN, ex.getStatusCode());
+        assertFalse(pat.isDeleted());
+        verify(patRepository, never()).save(any());
+    }
+
+    @Test
+    void testFederatedTokenWithInstanceOwnerEmailCannotRevokeOtherUserToken() {
+        UUID patId = UUID.randomUUID();
+        Pat pat = new Pat();
+        pat.setId(patId);
+        pat.setCreatedBy(OWNER_EMAIL);
+        pat.setDeleted(false);
+
+        when(patRepository.findById(patId)).thenReturn(Optional.of(pat));
+        when(authenticatedUser.isFederatedAccount(any())).thenReturn(true);
+
+        JwtAuthenticationToken federatedAuth = createJwtAuth(SUPERUSER_ROLE, List.of("DEV_TEAM"));
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class, () ->
+                patService.deleteToken(patId.toString(), federatedAuth)
+        );
+
+        assertEquals(HttpStatus.FORBIDDEN, ex.getStatusCode());
+        assertFalse(pat.isDeleted());
+        verify(patRepository, never()).save(any());
+    }
+
+    @Test
+    void testFederatedTokenCannotListTokensByEmail() {
+        when(authenticatedUser.isFederatedAccount(any())).thenReturn(true);
+
+        JwtAuthenticationToken federatedAuth = createJwtAuth(OWNER_EMAIL, null);
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class, () ->
+                patService.searchToken(federatedAuth)
+        );
+
+        assertEquals(HttpStatus.FORBIDDEN, ex.getStatusCode());
+        verify(patRepository, never()).findByCreatedBy(any());
     }
 
     @Test

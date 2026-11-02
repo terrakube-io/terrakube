@@ -8,6 +8,9 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.yahoo.elide.core.security.User;
+
+import io.terrakube.api.plugin.security.groups.GroupService;
 import io.terrakube.api.plugin.security.token.InternalTokenClassifier;
 import io.terrakube.api.plugin.security.token.InternalTokenType;
 import io.terrakube.api.plugin.security.rbac.RbacService;
@@ -39,16 +42,18 @@ public class NotificationConfigurationAccessService {
     private final OrganizationRepository organizationRepository;
     private final WorkspaceRepository workspaceRepository;
     private final RbacService rbacService;
+    private final GroupService groupService;
 
     public NotificationConfigurationAccessService(TeamRepository teamRepository,
             NotificationConfigurationRepository notificationConfigurationRepository,
             OrganizationRepository organizationRepository, WorkspaceRepository workspaceRepository,
-            RbacService rbacService) {
+            RbacService rbacService, GroupService groupService) {
         this.teamRepository = teamRepository;
         this.notificationConfigurationRepository = notificationConfigurationRepository;
         this.organizationRepository = organizationRepository;
         this.workspaceRepository = workspaceRepository;
         this.rbacService = rbacService;
+        this.groupService = groupService;
     }
 
     @Transactional
@@ -114,10 +119,9 @@ public class NotificationConfigurationAccessService {
         return false;
     }
 
-    @SuppressWarnings("unchecked")
+    // Effective groups: a federated token acts as its Federated credentials, not as its groups claim
     private List<String> groupNames(Authentication authentication) {
-        Object groupNames = ((JwtAuthenticationToken) authentication).getTokenAttributes().get("groups");
-        return groupNames == null ? List.of() : (List<String>) groupNames;
+        return List.copyOf(groupService.getEffectiveGroups(new User(authentication)));
     }
 
     private boolean hasManagePermissionForOrganization(Authentication authentication, Organization organization) {

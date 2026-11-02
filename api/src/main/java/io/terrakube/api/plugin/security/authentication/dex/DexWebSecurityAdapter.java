@@ -26,6 +26,8 @@ import io.terrakube.api.repository.TeamTokenRepository;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
+import java.util.stream.Stream;
 
 @Slf4j
 @Configuration
@@ -73,6 +75,9 @@ public class DexWebSecurityAdapter {
         @Order(2)
         public SecurityFilterChain filterChain(HttpSecurity http,
                                                @Value("${io.terrakube.token.issuer-uri}") String issuerUri,
+                                               @Value("${io.terrakube.token.client-id}") String clientId,
+                                               @Value("${io.terrakube.token.audience-validation:false}") boolean audienceValidation,
+                                               @Value("${io.terrakube.token.extra-audiences:}") String extraAudiences,
                                                @Value("${io.terrakube.token.pat}") String patJwtSecret,
                                                @Value("${io.terrakube.token.internal}") String internalJwtSecret, PatRepository patRepository,
                                                TeamTokenRepository teamTokenRepository, FederatedRepository federatedRepository,
@@ -122,6 +127,7 @@ public class DexWebSecurityAdapter {
                                         AuthenticationManagerResolver<HttpServletRequest> authenticationManagerResolver = DexAuthenticationManagerResolver
                                                         .builder()
                                                         .dexIssuerUri(issuerUri)
+                                                        .dexAudiences(audienceValidation ? acceptedAudiences(clientId, extraAudiences) : List.of())
                                                         .patJwtSecret(patJwtSecret)
                                                         .internalJwtSecret(internalJwtSecret)
                                                         .patRepository(patRepository)
@@ -133,6 +139,16 @@ public class DexWebSecurityAdapter {
                                 });
 
                 return http.build();
+        }
+
+        static List<String> acceptedAudiences(String clientId, String extraAudiences) {
+                Stream<String> extraStream = extraAudiences == null ? Stream.empty() : Arrays.stream(extraAudiences.split(","));
+                return Stream.concat(Stream.of(clientId), extraStream)
+                                .filter(Objects::nonNull)
+                                .map(String::trim)
+                                .filter(audience -> !audience.isEmpty())
+                                .distinct()
+                                .toList();
         }
 
         @Bean

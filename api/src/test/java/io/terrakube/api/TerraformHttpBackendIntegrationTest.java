@@ -59,6 +59,7 @@ class TerraformHttpBackendIntegrationTest extends ServerApplicationTests {
         step.setStepNumber(100);
         step.setStatus(JobStatus.running);
         activeStep = stepRepository.save(step);
+        activeJob.setStep(java.util.List.of(activeStep));
     }
 
     @AfterEach
@@ -312,6 +313,7 @@ class TerraformHttpBackendIntegrationTest extends ServerApplicationTests {
     void testHttpBackendRejectsPlanStepWriteWith403() {
         // Change job template to terraformPlan
         activeJob.setTcl(createTclBase64(100, "terraformPlan"));
+        activeJob.setStep(java.util.List.of(activeStep));
         activeJob = jobRepository.save(activeJob);
 
         String scopedToken = generateWorkspaceExecutorToken(

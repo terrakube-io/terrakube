@@ -1,9 +1,12 @@
 package io.terrakube.api.plugin.migrate;
 
+import io.terrakube.api.plugin.security.federated.FederatedLookupService;
+import io.terrakube.api.plugin.security.groups.dex.DexGroupServiceImpl;
 import io.terrakube.api.plugin.security.rbac.RbacService;
 import io.terrakube.api.plugin.storage.StorageTypeService;
 import io.terrakube.api.repository.*;
 import io.terrakube.api.rs.Organization;
+import io.terrakube.api.rs.federated.Federated;
 import io.terrakube.api.rs.team.Team;
 import io.terrakube.api.rs.workspace.Workspace;
 import io.terrakube.api.rs.workspace.access.Access;
@@ -26,6 +29,7 @@ class MigrateSecurityTest {
     private HistoryRepository historyRepository;
     private StorageTypeService storageTypeService;
     private RbacService rbacService;
+    private FederatedLookupService federatedLookupService;
 
     private MigrateAccessService migrateAccessService;
     private MigrateService migrateService;
@@ -41,12 +45,14 @@ class MigrateSecurityTest {
         historyRepository = mock(HistoryRepository.class);
         storageTypeService = mock(StorageTypeService.class);
         rbacService = mock(RbacService.class);
+        federatedLookupService = mock(FederatedLookupService.class);
 
         migrateAccessService = new MigrateAccessService(
                 workspaceRepository,
                 organizationRepository,
                 teamRepository,
                 rbacService,
+                new DexGroupServiceImpl(null, null, null, federatedLookupService),
                 INSTANCE_OWNER
         );
 
@@ -75,6 +81,20 @@ class MigrateSecurityTest {
 
         JwtAuthenticationToken auth = createAuthToken(List.of(INSTANCE_OWNER));
         assertTrue(migrateAccessService.hasMigrationPermission(auth, wsId.toString(), targetOrgId.toString()));
+    }
+
+    @Test
+    void testFederatedTokenWithInstanceOwnerGroupsClaimIsNotSuperuser() {
+        // The external identity provider decides the groups claim; the token acts as its credential only
+        Federated federated = new Federated();
+        federated.setName("CI_TEAM");
+        when(federatedLookupService.findAllAuthorized(any())).thenReturn(List.of(federated));
+        UUID wsId = UUID.randomUUID();
+        UUID targetOrgId = UUID.randomUUID();
+        when(workspaceRepository.findById(wsId)).thenReturn(Optional.empty());
+
+        JwtAuthenticationToken auth = createAuthToken(List.of(INSTANCE_OWNER));
+        assertFalse(migrateAccessService.hasMigrationPermission(auth, wsId.toString(), targetOrgId.toString()));
     }
 
     @Test

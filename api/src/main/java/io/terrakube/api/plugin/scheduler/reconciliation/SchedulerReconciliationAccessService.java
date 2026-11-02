@@ -1,13 +1,13 @@
 package io.terrakube.api.plugin.scheduler.reconciliation;
 
+import com.yahoo.elide.core.security.User;
+import io.terrakube.api.plugin.security.groups.GroupService;
 import io.terrakube.api.plugin.security.token.InternalTokenClassifier;
 import io.terrakube.api.plugin.security.token.InternalTokenType;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.stereotype.Service;
-
-import java.util.List;
 
 /**
  * Gate for the scheduler reconciliation admin endpoint. Only backend service tokens (EXECUTOR_SERVICE)
@@ -18,9 +18,12 @@ import java.util.List;
 public class SchedulerReconciliationAccessService {
 
     private final String instanceOwner;
+    private final GroupService groupService;
 
-    public SchedulerReconciliationAccessService(@Value("${io.terrakube.owner}") String instanceOwner) {
+    public SchedulerReconciliationAccessService(@Value("${io.terrakube.owner}") String instanceOwner,
+            GroupService groupService) {
         this.instanceOwner = instanceOwner;
+        this.groupService = groupService;
     }
 
     public boolean isAdmin(Authentication authentication) {
@@ -33,7 +36,7 @@ public class SchedulerReconciliationAccessService {
         } else if (tokenType != InternalTokenType.NOT_INTERNAL) {
             return false;
         }
-        Object groups = token.getTokenAttributes().get("groups");
-        return groups instanceof List<?> list && list.contains(instanceOwner);
+        // Effective groups: a federated token acts as its Federated credentials, not as its groups claim
+        return groupService.getEffectiveGroups(new User(token)).contains(instanceOwner);
     }
 }
