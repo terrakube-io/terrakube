@@ -78,7 +78,8 @@ public class DexGroupServiceImpl implements GroupService {
 
     @Override
     public boolean isMember(User user, String group) {
-        boolean isMember = getEffectiveGroups(user).contains(group);
+        // Identity providers do not always preserve the casing of group names (e.g. Keycloak sends them lowercase).
+        boolean isMember = getEffectiveGroups(user).stream().anyMatch(effectiveGroup -> effectiveGroup.equalsIgnoreCase(group));
         log.debug("{} is member {} {}", ((JwtAuthenticationToken) user.getPrincipal()).getTokenAttributes().get("name"), group, isMember);
         return isMember;
     }

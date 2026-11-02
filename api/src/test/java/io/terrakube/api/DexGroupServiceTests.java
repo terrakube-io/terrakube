@@ -305,6 +305,15 @@ class DexGroupServiceTests {
     }
 
     @Test
+    void membershipChecksIgnoreGroupNameCase() {
+        DexGroupServiceImpl service = new DexGroupServiceImpl(null, null, null, mock(FederatedLookupService.class));
+        User user = userWith(Map.of("iss", "https://dex.example.com", "groups", List.of("terrakube_admin")));
+        assertTrue(service.isMember(user, "TERRAKUBE_ADMIN"));
+        assertTrue(service.isServiceMember(user, "Terrakube_Admin"));
+        assertFalse(service.isMember(user, "TERRAKUBE_DEVELOPERS"));
+    }
+
+    @Test
     void effectiveGroupsAcceptArraysAndIgnoreNullOrBlankEntries() {
         DexGroupServiceImpl service = new DexGroupServiceImpl(null, null, null, mock(FederatedLookupService.class));
         for (Object groups : List.of(
