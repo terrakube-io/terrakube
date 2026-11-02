@@ -169,9 +169,11 @@ function generateExecutorVars() {
 		AwsTerraformOutputBucketName="sample"
 		AwsTerraformOutputRegion="us-east-1"
 		AwsEndpoint="http://minio:9000"
-  else
-		TerraformStateType=LocalTerraformStateImpl
+		TerraformStateHttpBackend=false
+	else
+		TerraformStateType=HttpTerraformStateImpl
 		TerraformOutputType=LocalTerraformOutputImpl
+		TerraformStateHttpBackend=true
 	fi
 
   TerrakubeRedisHostname=terrakube-redis
@@ -202,6 +204,7 @@ function generateExecutorVars() {
 	echo "ExecutorSecretsFile=/tmp/terrakube-executor-secrets/executor.env" >>.envExecutor
 
 	echo "TerraformStateType=$TerraformStateType" >>.envExecutor
+	echo "TerraformStateHttpBackend=$TerraformStateHttpBackend" >>.envExecutor
 	echo "AwsTerraformStateBucketName=$AwsTerraformStateBucketName" >>.envExecutor
 	echo "AwsTerraformStateRegion=$AwsTerraformStateRegion" >>.envExecutor
 	echo "AwsEndpoint=$AwsEndpoint" >>.envExecutor
