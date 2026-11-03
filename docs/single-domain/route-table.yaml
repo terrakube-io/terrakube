@@ -52,6 +52,7 @@ routes:
       - /terraform/index.json
       - /tofu/index.json
       - /registry/v1
+      - /module/v1
       - /proxy/v1
       - /notification/v1
       - /vcs/v1

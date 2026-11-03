@@ -25,7 +25,7 @@ class SoftDeleteServiceTest {
     private final ScheduleJobService scheduleJobService = mock(ScheduleJobService.class);
     private final JobRepository jobRepository = mock(JobRepository.class);
     private final JobStatusChangeService jobStatusChangeService = mock(JobStatusChangeService.class);
-    private final SoftDeleteService subject = new SoftDeleteService(scheduleJobService, null, null, null, null,
+    private final SoftDeleteService subject = new SoftDeleteService(scheduleJobService, null, null,
             jobRepository, null, jobStatusChangeService);
 
     private Workspace workspace() {

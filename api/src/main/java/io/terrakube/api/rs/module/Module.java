@@ -11,9 +11,11 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
+import org.hibernate.annotations.DynamicUpdate;
 import org.hibernate.annotations.JdbcTypeCode;
 
 import java.sql.Types;
+import java.util.Date;
 import java.util.List;
 import java.util.UUID;
 
@@ -29,6 +31,9 @@ import java.util.UUID;
 @Getter
 @Setter
 @Entity(name = "module")
+// Only changed columns are written, so a PATCH (including the registry download count) never writes
+// back refresh columns that the poller changed after the entity was loaded.
+@DynamicUpdate
 @Slf4j
 public class Module extends GenericAuditFields {
     @Id
@@ -45,9 +50,13 @@ public class Module extends GenericAuditFields {
     @Column(name = "provider")
     private String provider;
 
+    // A change to source, tagPrefix, vcs or ssh can change which tags the module has, so ModuleManageHook
+    // makes the module due for a refresh.
+    @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.PREFLUSH, hook = ModuleManageHook.class)
     @Column(name = "source")
     private String source;
 
+    @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.PREFLUSH, hook = ModuleManageHook.class)
     @Column(name = "tag_prefix")
     private String tagPrefix;
 
@@ -60,9 +69,11 @@ public class Module extends GenericAuditFields {
     @ManyToOne
     private Organization organization;
 
+    @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.PREFLUSH, hook = ModuleManageHook.class)
     @OneToOne
     private Vcs vcs;
 
+    @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.PREFLUSH, hook = ModuleManageHook.class)
     @OneToOne
     private Ssh ssh;
 
@@ -77,4 +88,30 @@ public class Module extends GenericAuditFields {
 
     @Column(name = "latest_version")
     private String latestVersion;
+
+    // Refresh state, written by the module refresh poller only. NULL next_refresh means due now; while a
+    // refresh runs it holds the lease expiry.
+    @CreatePermission(expression = "NONE")
+    @UpdatePermission(expression = "NONE")
+    @Column(name = "next_refresh")
+    @Temporal(TemporalType.TIMESTAMP)
+    private Date nextRefresh;
+
+    @CreatePermission(expression = "NONE")
+    @UpdatePermission(expression = "NONE")
+    @Column(name = "last_refresh")
+    @Temporal(TemporalType.TIMESTAMP)
+    private Date lastRefresh;
+
+    @CreatePermission(expression = "NONE")
+    @UpdatePermission(expression = "NONE")
+    @Column(name = "last_tag_detected_at")
+    @Temporal(TemporalType.TIMESTAMP)
+    private Date lastTagDetectedAt;
+
+    // Why the last refresh failed, null when it worked.
+    @CreatePermission(expression = "NONE")
+    @UpdatePermission(expression = "NONE")
+    @Column(name = "last_refresh_error", length = 1024)
+    private String lastRefreshError;
 }

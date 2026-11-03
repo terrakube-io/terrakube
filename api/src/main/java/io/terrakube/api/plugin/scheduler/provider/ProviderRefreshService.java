@@ -20,7 +20,7 @@ import java.util.List;
 
 /**
  * Schedules Quartz jobs to periodically refresh provider versions from the public
- * Terraform Registry. Mirrors the ModuleRefreshService pattern.
+ * Terraform Registry, one job per provider.
  *
  * On startup, creates a refresh job for every provider that has no versions yet.
  * The ProviderManageHook also calls createTask() when a new provider is created.
