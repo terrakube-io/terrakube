@@ -21,7 +21,7 @@
     "html-react-parser": "^6.1.9",
     "html-to-image": "^1.11.13",
     "luxon": "^3.7.2",
-    "minimatch": "^10.2.6",
+    "minimatch": "^11.0.3",
     "monaco-editor": "^0.57.0",
     "oidc-client-ts": "3.5.0",
     "react": "19.3.1",
