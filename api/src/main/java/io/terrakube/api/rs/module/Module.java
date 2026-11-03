@@ -24,6 +24,7 @@ import java.util.UUID;
 @UpdatePermission(expression = "team manage module OR user is a super service OR user is a registry service")
 @DeletePermission(expression = "team manage module")
 @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.DELETE, hook = ModuleManageHook.class)
+@LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.DELETE, phase = LifeCycleHookBinding.TransactionPhase.POSTCOMMIT, hook = ModuleManageHook.class)
 @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.CREATE, phase = LifeCycleHookBinding.TransactionPhase.POSTCOMMIT, hook = ModuleManageHook.class)
 @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.CREATE, phase = LifeCycleHookBinding.TransactionPhase.PRECOMMIT, hook = ModuleManageHook.class)
 @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, hook = ModuleManageHook.class)
@@ -51,8 +52,10 @@ public class Module extends GenericAuditFields {
     private String provider;
 
     // A change to source, tagPrefix, vcs or ssh can change which tags the module has, so ModuleManageHook
-    // makes the module due for a refresh.
+    // makes the module due for a refresh. A change to source or vcs also syncs the repository webhook when module
+    // webhooks are enabled.
     @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.PREFLUSH, hook = ModuleManageHook.class)
+    @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.POSTCOMMIT, hook = ModuleManageHook.class)
     @Column(name = "source")
     private String source;
 
@@ -70,6 +73,7 @@ public class Module extends GenericAuditFields {
     private Organization organization;
 
     @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.PREFLUSH, hook = ModuleManageHook.class)
+    @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.POSTCOMMIT, hook = ModuleManageHook.class)
     @OneToOne
     private Vcs vcs;
 

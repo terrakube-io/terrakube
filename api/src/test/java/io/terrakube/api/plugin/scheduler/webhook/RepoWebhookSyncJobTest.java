@@ -19,13 +19,18 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.client.HttpClientErrorException;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.quartz.JobDataMap;
 import org.quartz.JobDetail;
 import org.quartz.JobExecutionContext;
 
+import io.terrakube.api.plugin.scheduler.module.ModuleRefreshProperties;
+import io.terrakube.api.plugin.scheduler.module.ModuleRefreshTransactions;
 import io.terrakube.api.plugin.vcs.RepoWebhookService;
 import io.terrakube.api.repository.RepoWebhookRepository;
+import io.terrakube.api.rs.module.Module;
+import io.terrakube.api.rs.vcs.Vcs;
 import io.terrakube.api.repository.WorkspaceRepository;
 import io.terrakube.api.rs.webhook.RepoWebhook;
 import io.terrakube.api.rs.workspace.Workspace;
@@ -46,6 +51,12 @@ class RepoWebhookSyncJobTest {
 
     @Mock
     RepoWebhookSyncStatus syncStatus;
+
+    @Mock
+    ModuleRefreshTransactions moduleRefreshTransactions;
+
+    @Spy
+    ModuleRefreshProperties moduleRefreshProperties = new ModuleRefreshProperties();
 
     @InjectMocks
     RepoWebhookSyncJob subject;
@@ -168,6 +179,51 @@ class RepoWebhookSyncJobTest {
         verify(syncStatus).recordStatus(eq(repositoryUrl), message.capture());
         org.junit.jupiter.api.Assertions.assertTrue(message.getValue().contains("permission"), message.getValue());
         org.junit.jupiter.api.Assertions.assertFalse(message.getValue().contains("ghp_secret"));
+    }
+
+    @Test
+    void modulesAloneCreateTheHookFromTheModuleConnectionWhenEnabled() throws Exception {
+        String repositoryUrl = "https://github.com/owner/modules";
+        moduleRefreshProperties.getWebhook().setEnabled(true);
+        Module module = new Module();
+        module.setSource("https://github.com/owner/modules.git");
+        Vcs vcs = new Vcs();
+        module.setVcs(vcs);
+        RepoWebhook repoWebhook = new RepoWebhook();
+        doReturn(List.of()).when(workspaceRepository).findByNormalizedSourceWithMigratedWebhook(repositoryUrl);
+        doReturn(List.of(module)).when(moduleRefreshTransactions).findWebhookEligibleBySource(repositoryUrl);
+        doReturn(repoWebhook).when(repoWebhookService).getOrCreateRepoWebhook(module.getSource(), vcs);
+
+        subject.execute(jobExecutionContext(repositoryUrl, null));
+
+        verify(repoWebhookService).createOrUpdateSharedWebhook(repoWebhook);
+        verify(repoWebhookService, never()).cleanupIfOrphan(any());
+    }
+
+    @Test
+    void modulesAreIgnoredWhenDisabled() throws Exception {
+        String repositoryUrl = "https://github.com/owner/modules";
+        doReturn(List.of()).when(workspaceRepository).findByNormalizedSourceWithMigratedWebhook(repositoryUrl);
+        doReturn(Optional.empty()).when(repoWebhookRepository).findByRepositoryUrl(repositoryUrl);
+
+        subject.execute(jobExecutionContext(repositoryUrl, null));
+
+        verify(moduleRefreshTransactions, never()).findWebhookEligibleBySource(any());
+        verify(repoWebhookService, never()).createOrUpdateSharedWebhook(any());
+    }
+
+    @Test
+    void noWorkspacesAndNoModulesCleansUpWhenEnabled() throws Exception {
+        String repositoryUrl = "https://github.com/owner/modules";
+        moduleRefreshProperties.getWebhook().setEnabled(true);
+        RepoWebhook repoWebhook = new RepoWebhook();
+        doReturn(List.of()).when(workspaceRepository).findByNormalizedSourceWithMigratedWebhook(repositoryUrl);
+        doReturn(List.of()).when(moduleRefreshTransactions).findWebhookEligibleBySource(repositoryUrl);
+        doReturn(Optional.of(repoWebhook)).when(repoWebhookRepository).findByRepositoryUrl(repositoryUrl);
+
+        subject.execute(jobExecutionContext(repositoryUrl, null));
+
+        verify(repoWebhookService).cleanupIfOrphan(repoWebhook);
     }
 
     private Workspace workspace(UUID id) {

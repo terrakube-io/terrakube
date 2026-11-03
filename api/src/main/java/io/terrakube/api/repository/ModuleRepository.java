@@ -2,9 +2,11 @@ package io.terrakube.api.repository;
 
 import java.util.Date;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 import io.terrakube.api.rs.Organization;
+import io.terrakube.api.rs.vcs.VcsType;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
@@ -65,6 +67,18 @@ public interface ModuleRepository extends JpaRepository<Module, UUID> {
     @Modifying(clearAutomatically = true)
     @Query("UPDATE module m SET m.nextRefresh = NULL WHERE m.id = :id")
     int markDue(@Param("id") UUID id);
+
+    // Webhook-triggered refresh (RepoWebhookService). No clearing: it runs inside webhook transactions that keep
+    // using the entities they loaded, and no module entity is saved there.
+    @Modifying
+    @Query("UPDATE module m SET m.nextRefresh = NULL WHERE m.id IN :ids")
+    int markDueIds(@Param("ids") List<UUID> ids);
+
+    @Query("SELECT m.id, m.source, m.tagPrefix FROM module m WHERE m.organization.disabled = false")
+    List<Object[]> findIdSourceAndTagPrefix();
+
+    @Query("SELECT m FROM module m WHERE m.organization.disabled = false AND m.vcs.vcsType IN :types")
+    List<Module> findAllWithVcsTypeIn(@Param("types") Set<VcsType> types);
 
     // Back the module.refresh.overdue.* gauges (ModuleRefreshMetrics). MIN skips NULLs, so modules that
     // are due because they are new or changed count with age 0.

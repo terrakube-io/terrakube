@@ -174,6 +174,7 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
             result.setEvent("release");
             result.setRelease(true);
             result.setBranch(refName.substring(REF_TAGS_PREFIX.length()));
+            result.setTag(refName.substring(REF_TAGS_PREFIX.length()));
         } else {
             result.setEvent("push");
             result.setBranch(stripRefPrefix(refName));
@@ -997,6 +998,7 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
             result.setEvent("release");
             result.setRelease(true);
             result.setBranch(refName.substring(REF_TAGS_PREFIX.length()));
+            result.setTag(refName.substring(REF_TAGS_PREFIX.length()));
         } else {
             result.setEvent("push");
             result.setBranch(stripRefPrefix(refName));
@@ -1055,7 +1057,8 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
      * DevOps event types and creates one subscription per event type, storing
      * their IDs comma-separated in {@link RepoWebhook#getRemoteHookId()}.
      */
-    public String createOrUpdateRepoWebhook(RepoWebhook repoWebhook, Set<WebhookEventType> eventTypes) {
+    public String createOrUpdateRepoWebhook(RepoWebhook repoWebhook, Set<WebhookEventType> eventTypes,
+            boolean tagEvents) {
         String remoteHookId = repoWebhook.getRemoteHookId();
         AzureRepo repo = parseSource(repoWebhook.getRepositoryUrl());
         if (repo == null) {
@@ -1082,7 +1085,7 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
         String webhookUrl = String.format("%s/webhook/v2/%s", apiBaseUrl, repoWebhook.getId().toString());
         String secret = repoWebhook.getWebhookSecret();
 
-        Set<String> azureEventTypes = resolveAzureEventTypesFromSet(eventTypes);
+        Set<String> azureEventTypes = resolveAzureEventTypesFromSet(eventTypes, tagEvents);
 
         List<String> subscriptionIds = new ArrayList<>();
         for (String azureEventType : azureEventTypes) {
@@ -1196,10 +1199,14 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
 
     /**
      * Resolves the set of Azure DevOps event type strings from aggregated
-     * {@link WebhookEventType}s (used by the shared v2 webhook flow).
+     * {@link WebhookEventType}s (used by the shared v2 webhook flow). Tags for modules arrive as pushes of
+     * refs/tags/*, so tagEvents subscribes to pushes.
      */
-    private Set<String> resolveAzureEventTypesFromSet(Set<WebhookEventType> eventTypes) {
+    static Set<String> resolveAzureEventTypesFromSet(Set<WebhookEventType> eventTypes, boolean tagEvents) {
         Set<String> azureEventTypes = new LinkedHashSet<>();
+        if (tagEvents) {
+            azureEventTypes.add(EVENT_PUSH);
+        }
         for (WebhookEventType eventType : eventTypes) {
             switch (eventType) {
                 case PUSH:

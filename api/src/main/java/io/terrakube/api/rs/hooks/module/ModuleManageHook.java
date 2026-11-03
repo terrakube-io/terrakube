@@ -24,6 +24,10 @@ import com.yahoo.elide.core.security.ChangeSpec;
 import com.yahoo.elide.core.security.RequestScope;
 
 import io.terrakube.api.plugin.scheduler.module.DeleteStorageCacheJob;
+import io.terrakube.api.plugin.scheduler.module.ModuleRefreshProperties;
+import io.terrakube.api.plugin.scheduler.module.ModuleRefreshTransactions;
+import io.terrakube.api.plugin.scheduler.webhook.RepoWebhookSyncScheduler;
+import io.terrakube.api.plugin.vcs.RepoUrlNormalizer;
 import io.terrakube.api.plugin.vcs.provider.exception.VcsTokenAcquisitionException;
 import io.terrakube.api.plugin.vcs.provider.github.GitHubTokenService;
 import io.terrakube.api.repository.ModuleRepository;
@@ -44,6 +48,8 @@ public class ModuleManageHook implements LifeCycleHook<Module> {
     Scheduler scheduler;
     GitHubTokenService gitHubTokenService;
     ModuleRepository moduleRepository;
+    RepoWebhookSyncScheduler repoWebhookSyncScheduler;
+    ModuleRefreshProperties moduleRefreshProperties;
 
     @Override
     public void execute(LifeCycleHookBinding.Operation operation,
@@ -60,6 +66,11 @@ public class ModuleManageHook implements LifeCycleHook<Module> {
                         validateNoDuplicateModule(module);
                         checkAndCreateGitHubAppToken(module);
                         break;
+                    case POSTCOMMIT:
+                        if (usesWebhook(module)) {
+                            scheduleWebhookSync(module.getSource());
+                        }
+                        break;
                     default:
                         break;
                 }
@@ -71,10 +82,28 @@ public class ModuleManageHook implements LifeCycleHook<Module> {
                     module.setNextRefresh(null);
                     break;
                 }
+                // Bound on source and vcs: the webhook of the old and the new repository may change. The sync
+                // job decides from the committed rows, so the module's eligibility is not checked here.
+                if (transactionPhase == LifeCycleHookBinding.TransactionPhase.POSTCOMMIT) {
+                    if (moduleRefreshProperties.getWebhook().isEnabled()) {
+                        scheduleWebhookSync(module.getSource());
+                        optional.filter(change -> "source".equals(change.getFieldName()))
+                                .map(change -> (String) change.getOriginal())
+                                .ifPresent(this::scheduleWebhookSync);
+                    }
+                    break;
+                }
                 validateRegistrySystem(module);
                 validateNoDuplicateModule(module);
                 break;
             case DELETE:
+                // POSTCOMMIT: the module row is gone, so the sync job can drop a webhook nothing uses any more.
+                if (transactionPhase == LifeCycleHookBinding.TransactionPhase.POSTCOMMIT) {
+                    if (usesWebhook(module)) {
+                        scheduleWebhookSync(module.getSource());
+                    }
+                    break;
+                }
                 try {
                     log.warn("ModuleManageHook Delete Storage for {}/{}/{}", module.getOrganization().getName(),
                             module.getName(), module.getProvider());
@@ -107,6 +136,17 @@ public class ModuleManageHook implements LifeCycleHook<Module> {
             default:
                 log.warn("Hook not supported in module");
                 break;
+        }
+    }
+
+    private boolean usesWebhook(Module module) {
+        return moduleRefreshProperties.getWebhook().isEnabled() && ModuleRefreshTransactions.canRegisterWebhook(module);
+    }
+
+    private void scheduleWebhookSync(String source) {
+        String normalizedUrl = RepoUrlNormalizer.normalize(source);
+        if (normalizedUrl != null && !normalizedUrl.isBlank()) {
+            repoWebhookSyncScheduler.scheduleSync(normalizedUrl, null);
         }
     }
 
