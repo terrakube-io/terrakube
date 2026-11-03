@@ -53,4 +53,8 @@ Both must be at least 1. Lower values make new versions show up sooner and incre
 
 ## Upgrade notes
 
-No schema change and no required action. After upgrading, responses carry the new headers and provider lookups are cached for 60 s.
+No required action.
+
+* Responses carry the new headers and provider lookups are cached for 60 s.
+* On startup the API adds two indexes: `idx_team_organization_id` on `team(organization_id)`, used by permission checks, and `idx_federated_issuer_url` on `federated(issuer_url)`, used to look up federated credentials on each request. Both tables are small, so the migration is quick. An index of the same name that was added by hand is kept.
+* Listing provider versions loads the platforms of up to 100 versions in one query instead of one query per version.
