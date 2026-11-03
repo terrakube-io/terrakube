@@ -10,6 +10,8 @@ import io.terrakube.client.model.organization.module.Relationships;
 import io.terrakube.client.model.organization.module.SshData;
 import io.terrakube.client.model.organization.module.version.ModuleVersion;
 import io.terrakube.client.model.organization.module.version.ModuleVersionAttributes;
+import io.terrakube.client.model.organization.vcs.Vcs;
+import io.terrakube.client.model.organization.vcs.VcsAttributes;
 import io.terrakube.client.model.organization.workspace.VcsData;
 import io.terrakube.client.model.response.Response;
 import io.terrakube.registry.configuration.CacheConfig;
@@ -232,6 +234,54 @@ class ModuleServiceImplCacheTest {
         verify(commonSearchService, times(1)).getOrganizationId("org");
         verify(terrakubeClient, times(1)).getModuleByNameAndProvider(anyString(), anyString(), anyString());
         verify(storageService, times(1)).searchModule(anyString(), anyString(), anyString(), any());
+    }
+
+    @Test
+    void vcsIsFetchedOncePerPathResolution() {
+        context = new AnnotationConfigApplicationContext(TestConfig.class);
+        TerrakubeClient terrakubeClient = context.getBean(TerrakubeClient.class);
+        CommonSearchService commonSearchService = context.getBean(CommonSearchService.class);
+        StorageService storageService = context.getBean(StorageService.class);
+        ModuleService moduleService = context.getBean(ModuleService.class);
+
+        when(commonSearchService.getOrganizationId("org")).thenReturn("org-id");
+
+        Vcs vcs = new Vcs();
+        vcs.setId("vcs-id");
+        VcsAttributes vcsAttributes = new VcsAttributes();
+        vcsAttributes.setVcsType("GITHUB");
+        vcsAttributes.setConnectionType("OAUTH");
+        vcsAttributes.setAccessToken("token");
+        vcs.setAttributes(vcsAttributes);
+        Response<Vcs> vcsResponse = new Response<>();
+        vcsResponse.setData(vcs);
+        when(terrakubeClient.getVcsById("org-id", "vcs-id")).thenReturn(vcsResponse);
+
+        Module module = new Module();
+        module.setId("module-id");
+        ModuleAttributes attributes = new ModuleAttributes();
+        attributes.setSource("https://example.com/org/module.git");
+        module.setAttributes(attributes);
+        Relationships relationships = new Relationships();
+        VcsData vcsData = new VcsData();
+        vcsData.setData(vcs);
+        relationships.setVcs(vcsData);
+        relationships.setSsh(new SshData());
+        module.setRelationships(relationships);
+
+        Response<List<Module>> moduleResponse = new Response<>();
+        moduleResponse.setData(List.of(module));
+        when(terrakubeClient.getModuleByNameAndProvider("org-id", "module", "aws")).thenReturn(moduleResponse);
+
+        org.mockito.ArgumentCaptor<io.terrakube.registry.service.git.ModuleVersionDownload> captor =
+                org.mockito.ArgumentCaptor.forClass(io.terrakube.registry.service.git.ModuleVersionDownload.class);
+        when(storageService.searchModule(anyString(), anyString(), anyString(), captor.capture()))
+                .thenReturn("https://registry.example.com/terraform/modules/v1/download/org/module/aws/1.0.0/module.zip");
+
+        moduleService.getModuleVersionPath("org", "module", "aws", "1.0.0");
+
+        verify(terrakubeClient, times(1)).getVcsById("org-id", "vcs-id");
+        assertEquals("token", captor.getValue().accessToken());
     }
 
     @Test
