@@ -14,7 +14,7 @@ The full user and administrator documentation is at [docs.terrakube.io](https://
 | [Zero-pending job reconciliation](ops/zero-pending-job-reconciliation.md) | A run is stuck with nothing left to execute and the executor queue is blocked. |
 | [Per-job Terraform variables](ops/job-variables.md) | You want to pass `TF_VAR_*` values to a single run. |
 | [Module version refresh](ops/module-version-refresh.md) | A new module tag does not show up as a version, a module page shows a refresh error, or you are upgrading from the fixed refresh interval. |
-| [Registry caching and revalidation](ops/registry-caching.md) | You want to know how long the registry caches module and provider lookups, or how `ETag` and `Cache-Control` behave. |
+| [Registry caching and revalidation](ops/registry-caching.md) | You want to know how long the registry caches module and provider lookups, how `ETag` and `Cache-Control` behave, or why a module's download count lags. |
 | [Registry direct storage download](ops/registry-direct-storage-download.md) | You want module downloads to go straight to object storage instead of through the registry. |
 
 ## Templates

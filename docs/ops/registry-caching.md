@@ -42,19 +42,31 @@ The `ETag` is computed over the response body, and the body comes from the serve
 * A provider version list or download detail can be up to `ProviderCacheTtlSeconds` (60 s by default) behind.
 * Renaming or recreating an organization can serve the old id for up to 60 s.
 
+## Module download counts
+
+Each registry replica counts module downloads in memory and writes them to the API every `DownloadCountFlushIntervalSeconds` (30 s by default): one read and one update per downloaded module, however many downloads it had. Before, every download cost one read and one update. The count on the module page can therefore lag by up to one interval.
+
+The count is a display figure and can come out a little low:
+
+* A graceful shutdown writes the pending counts, for at most 10 seconds (plus one API call timeout); counts it could not write in that time are dropped with a warning. A registry that is killed (`SIGKILL`, out of memory) loses up to one interval of its counts.
+* The update is a read followed by a write of the new total. When two replicas write the same module at the same moment, one overwrites the other and up to one interval of that replica's counts is lost.
+* When the API is unreachable, the counts are kept and retried on the next interval. Counts for a module or organization that was deleted are dropped.
+
 ## Configuration
 
 | Setting | Environment variable | Default |
 | --- | --- | --- |
 | `io.terrakube.registry.moduleVersionsCacheTtlSeconds` | `ModuleVersionsCacheTtlSeconds` | `600` |
 | `io.terrakube.registry.providerCacheTtlSeconds` | `ProviderCacheTtlSeconds` | `60` |
+| `io.terrakube.registry.download-count.flush-interval-seconds` | `DownloadCountFlushIntervalSeconds` | `30` |
 
-Both must be at least 1. Lower values make new versions show up sooner and increase the load on the API.
+The cache lifetimes must be at least 1. Lower values make new versions show up sooner and increase the load on the API.
 
 ## Upgrade notes
 
 No required action.
 
 * Responses carry the new headers and provider lookups are cached for 60 s.
+* Download counts are written every 30 s instead of on each download. `DownloadCountExecutorCorePoolSize`, `DownloadCountExecutorMaxPoolSize` and `DownloadCountExecutorQueueCapacity` are no longer read and can be removed.
 * On startup the API adds two indexes: `idx_team_organization_id` on `team(organization_id)`, used by permission checks, and `idx_federated_issuer_url` on `federated(issuer_url)`, used to look up federated credentials on each request. Both tables are small, so the migration is quick. An index of the same name that was added by hand is kept.
 * Listing provider versions loads the platforms of up to 100 versions in one query instead of one query per version.
