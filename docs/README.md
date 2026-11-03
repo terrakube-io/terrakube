@@ -16,6 +16,7 @@ The full user and administrator documentation is at [docs.terrakube.io](https://
 | [Module version refresh](ops/module-version-refresh.md) | A new module tag does not show up as a version, a module page shows a refresh error, or you are upgrading from the fixed refresh interval. |
 | [Registry caching and revalidation](ops/registry-caching.md) | You want to know how long the registry caches module and provider lookups, how `ETag` and `Cache-Control` behave, or why a module's download count lags. |
 | [Registry direct storage download](ops/registry-direct-storage-download.md) | You want module downloads to go straight to object storage instead of through the registry. |
+| [Registry provider network mirror](ops/registry-provider-mirror.md) | You want Terraform or OpenTofu to install providers through the registry, from uploaded files or by pull-through from a public registry. |
 
 ## Templates
 
