@@ -1,5 +1,5 @@
 import { CopyOutlined, DeleteOutlined, DownOutlined, SettingOutlined } from "@ant-design/icons";
-import { Button, Dropdown, message, Select, Spin, Table, Tabs, Tooltip, Typography } from "antd";
+import { Alert, Button, Dropdown, message, Select, Spin, Table, Tabs, Tooltip, Typography } from "antd";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import LoadingFallback from "@/components/feedback/LoadingFallback";
@@ -8,6 +8,7 @@ import DeleteConfirmationModal from "@/components/modals/DeleteConfirmationModal
 import { copyValue } from "@/components/settings/IdField/IdField";
 import { ORGANIZATION_ARCHIVE } from "../../config/actionTypes";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
+import { getApiOrigin } from "../Settings/vcsProviders";
 import { ModuleModel, ModuleVersionAttributes, VcsType } from "../types";
 import { compareVersions } from "../Workspaces/Workspaces";
 import { providerIcon, registryHostname } from "./registryHelpers";
@@ -134,6 +135,14 @@ export const ModuleDetails = ({ organizationName }: Props) => {
   const onSelectSubmodule = (name: string) => {
     setSubmodule(name);
     loadModuleDetails(module!.attributes.registryPath, version, name);
+  };
+
+  // The API only marks the module due; the refresh poller reads its tags within a minute.
+  const checkForNewVersions = () => {
+    axiosInstance
+      .post(`${getApiOrigin()}/module/v1/organization/${orgid}/module/${id}/sync`)
+      .then(() => message.success("Version check queued"))
+      .catch((error) => message.error("Failed to queue the version check: " + getErrorMessage(error)));
   };
 
   const onDelete = () => {
@@ -307,6 +316,17 @@ export const ModuleDetails = ({ organizationName }: Props) => {
             <Typography.Paragraph type="secondary" className="registry-detail-description">
               {attributes.description}
             </Typography.Paragraph>
+          )}
+
+          {attributes.lastRefreshError && (
+            <div className="registry-detail-alert">
+              <Alert
+                type="warning"
+                showIcon
+                title="Could not read versions from the repository"
+                description={attributes.lastRefreshError}
+              />
+            </div>
           )}
 
           {selectedVersion && (
@@ -541,6 +561,17 @@ export const ModuleDetails = ({ organizationName }: Props) => {
                 <li>
                   <span className="registry-rail-label">Versions</span>
                   <span>{allVersions.length}</span>
+                </li>
+                <li>
+                  <span className="registry-rail-label">Last checked</span>
+                  <span title={attributes.lastRefresh ?? undefined}>
+                    {attributes.lastRefresh ? relativeTime(attributes.lastRefresh) : "Not yet"}
+                  </span>
+                  {permissions.manageModule && (
+                    <Button type="link" size="small" className="registry-rail-action" onClick={checkForNewVersions}>
+                      Check for new versions
+                    </Button>
+                  )}
                 </li>
                 {(attributes.updatedDate || attributes.createdDate) && (
                   <li>

@@ -31,7 +31,7 @@ import static io.restassured.RestAssured.given;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.doReturn;
 
 /**
  * Creating a job needs plan rights. Approving or rejecting an existing job needs approval rights.
@@ -53,8 +53,11 @@ class JobCreationPermissionTests extends ServerApplicationTests {
     @BeforeEach
     void setup() {
         MockitoAnnotations.openMocks(this);
-        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
-        when(valueOperations.setIfAbsent(any(), any(), any(Duration.class))).thenReturn(true);
+        // doReturn, not when(mock.call()): the live Quartz scheduler can call redisTemplate between when(...) and
+        // thenReturn(...), and Mockito then stubs that call instead (WrongTypeOfReturnValue). valueOperations is
+        // stubbed before opsForValue() hands it to those threads, for the same reason.
+        doReturn(true).when(valueOperations).setIfAbsent(any(), any(), any(Duration.class));
+        doReturn(valueOperations).when(redisTemplate).opsForValue();
         wireMockServer.resetAll();
         stubFor(post(urlPathEqualTo("/api/v1/terraform-rs"))
                 .willReturn(aResponse().withStatus(HttpStatus.ACCEPTED.value()).withBody("")));

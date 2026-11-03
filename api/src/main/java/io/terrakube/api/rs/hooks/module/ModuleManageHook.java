@@ -5,7 +5,6 @@ import java.net.URISyntaxException;
 import java.security.NoSuchAlgorithmException;
 import java.security.spec.InvalidKeySpecException;
 import java.util.Arrays;
-import java.util.Date;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -17,7 +16,6 @@ import org.quartz.Scheduler;
 import org.quartz.SchedulerException;
 import org.quartz.Trigger;
 import org.quartz.TriggerBuilder;
-import org.quartz.TriggerKey;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.yahoo.elide.annotation.LifeCycleHookBinding;
@@ -26,7 +24,6 @@ import com.yahoo.elide.core.security.ChangeSpec;
 import com.yahoo.elide.core.security.RequestScope;
 
 import io.terrakube.api.plugin.scheduler.module.DeleteStorageCacheJob;
-import io.terrakube.api.plugin.scheduler.module.ModuleRefreshService;
 import io.terrakube.api.plugin.vcs.provider.exception.VcsTokenAcquisitionException;
 import io.terrakube.api.plugin.vcs.provider.github.GitHubTokenService;
 import io.terrakube.api.repository.ModuleRepository;
@@ -46,7 +43,6 @@ public class ModuleManageHook implements LifeCycleHook<Module> {
 
     Scheduler scheduler;
     GitHubTokenService gitHubTokenService;
-    ModuleRefreshService moduleRefreshService;
     ModuleRepository moduleRepository;
 
     @Override
@@ -64,23 +60,19 @@ public class ModuleManageHook implements LifeCycleHook<Module> {
                         validateNoDuplicateModule(module);
                         checkAndCreateGitHubAppToken(module);
                         break;
-                    case POSTCOMMIT:
-                        try {
-                            log.info("Create module refresh task for {}/{}/{}", module.getOrganization().getName(), module.getName(), module.getProvider());
-                            moduleRefreshService.createRefreshTask(module.getId().toString(), true);
-                        } catch (SchedulerException e) {
-                            log.error("Failed to create module refresh task for {}/{}/{}, error {}",
-                                    module.getOrganization().getName(), module.getName(), module.getProvider(), e.getMessage());
-                        }
-                        break;
                     default:
                         break;
                 }
                 break;
             case UPDATE:
+                // Bound on source, tagPrefix, vcs and ssh. Changes made after the flush (PRECOMMIT) are not
+                // written, so the refresh reset runs before it.
+                if (transactionPhase == LifeCycleHookBinding.TransactionPhase.PREFLUSH) {
+                    module.setNextRefresh(null);
+                    break;
+                }
                 validateRegistrySystem(module);
                 validateNoDuplicateModule(module);
-                checkNextModuleRefresh(module);
                 break;
             case DELETE:
                 try {
@@ -94,14 +86,14 @@ public class ModuleManageHook implements LifeCycleHook<Module> {
                     JobDetail jobDetail = JobBuilder.newJob().ofType(DeleteStorageCacheJob.class)
                             .storeDurably()
                             .setJobData(jobDataMap)
-                            .withIdentity(moduleRefreshService.getJobPrefix() + "_" + UUID.randomUUID())
+                            .withIdentity(DeleteStorageCacheJob.JOB_PREFIX + UUID.randomUUID())
                             .withDescription("ModuleDeleteStorage")
                             .build();
 
                     Trigger trigger = TriggerBuilder.newTrigger()
                             .startNow()
                             .forJob(jobDetail)
-                            .withIdentity(moduleRefreshService.getJobPrefix() + "_" + UUID.randomUUID())
+                            .withIdentity(DeleteStorageCacheJob.JOB_PREFIX + UUID.randomUUID())
                             .withDescription("ModuleDeleteStorageV1")
                             .startNow()
                             .build();
@@ -135,32 +127,6 @@ public class ModuleManageHook implements LifeCycleHook<Module> {
             throw new ModuleManagementException(HttpStatus.SC_CONFLICT,
                     "Module " + module.getName() + " with provider " + module.getProvider()
                             + " already exists in this organization.");
-        }
-    }
-
-    private void checkNextModuleRefresh(Module module) {
-        log.info("ModuleManageHook update hook for {}/{}/{}", module.getOrganization().getName(),
-                module.getName(),
-                module.getProvider());
-        try {
-            Trigger trigger = scheduler
-                    .getTrigger(TriggerKey.triggerKey(moduleRefreshService.getJobPrefix() + module.getId()));
-
-            if (trigger != null) {
-                Date nextFireTime = trigger.getNextFireTime();
-                log.info("Next trigger fire time for module {}/{}/{}: {}",
-                        module.getOrganization().getName(),
-                        module.getName(),
-                        module.getProvider(),
-                        nextFireTime);
-            } else {
-                log.info("Create module refresh task for {}/{}/{}", module.getOrganization().getName(),
-                        module.getName(),
-                        module.getProvider());
-                moduleRefreshService.createRefreshTask(module.getId().toString(), true);
-            }
-        } catch (SchedulerException e) {
-            log.error("Failed to get next trigger time: {}", e.getMessage());
         }
     }
 
