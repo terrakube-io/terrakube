@@ -80,6 +80,30 @@ public class GitLabWebhookServiceTest {
         assertTrue(result.isRelease());
         assertTrue(result.isValid());
         assertEquals("Release 1.0.0", result.getBranch());
+        assertEquals("v1.0.0", result.getTag());
+    }
+
+    @Test
+    public void parseGitLabPayloadParsesTagPushForModulesOnly() {
+        String payload = "{\"object_kind\":\"tag_push\",\"ref\":\"refs/tags/vpc/v1.4.0\",\"user_username\":\"jdoe\"}";
+
+        WebhookResult result = newService().parseGitLabPayload(payload, Map.of());
+
+        assertEquals("tag_push", result.getEvent());
+        assertEquals("vpc/v1.4.0", result.getTag());
+        assertTrue(result.isValid());
+        assertTrue(result.isModuleOnly());
+        assertFalse(result.isRelease());
+    }
+
+    @Test
+    public void parseGitLabPayloadBranchPushHasNoTag() {
+        String payload = "{\"object_kind\":\"push\",\"ref\":\"refs/heads/main\",\"checkout_sha\":\"abc123\",\"commits\":[]}";
+
+        WebhookResult result = newService().parseGitLabPayload(payload, Map.of());
+
+        assertEquals(null, result.getTag());
+        assertFalse(result.isModuleOnly());
     }
 
     @Test
@@ -208,7 +232,7 @@ public class GitLabWebhookServiceTest {
         }
 
         private String sync() {
-            return subject.createOrUpdateRepoWebhook(repoWebhook, EnumSet.of(WebhookEventType.PUSH), false);
+            return subject.createOrUpdateRepoWebhook(repoWebhook, EnumSet.of(WebhookEventType.PUSH), false, false);
         }
 
         @Test
@@ -260,6 +284,34 @@ public class GitLabWebhookServiceTest {
             assertThrows(HttpClientErrorException.Forbidden.class, this::sync);
 
             wireMockServer.verify(0, postRequestedFor(urlEqualTo(HOOKS)));
+        }
+
+        @Test
+        void tagEventsEnableTagPushEvents() throws Exception {
+            wireMockServer.stubFor(post(urlEqualTo(HOOKS))
+                    .willReturn(aResponse().withStatus(201).withHeader("Content-Type", "application/json")
+                            .withBody("{\"id\":222}")));
+
+            subject.createOrUpdateRepoWebhook(repoWebhook, EnumSet.noneOf(WebhookEventType.class), false, true);
+
+            var body = new ObjectMapper().readTree(
+                    wireMockServer.findAll(postRequestedFor(urlEqualTo(HOOKS))).getFirst().getBodyAsString());
+            assertTrue(body.path("tag_push_events").asBoolean());
+            assertFalse(body.path("push_events").asBoolean());
+        }
+
+        @Test
+        void tagPushEventsStayOffWithoutTagEvents() throws Exception {
+            wireMockServer.stubFor(post(urlEqualTo(HOOKS))
+                    .willReturn(aResponse().withStatus(201).withHeader("Content-Type", "application/json")
+                            .withBody("{\"id\":222}")));
+
+            sync();
+
+            var body = new ObjectMapper().readTree(
+                    wireMockServer.findAll(postRequestedFor(urlEqualTo(HOOKS))).getFirst().getBodyAsString());
+            assertFalse(body.path("tag_push_events").asBoolean());
+            assertTrue(body.path("push_events").asBoolean());
         }
     }
 }

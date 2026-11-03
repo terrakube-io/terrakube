@@ -16,10 +16,12 @@ import org.hibernate.Hibernate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import io.terrakube.api.plugin.vcs.RepoUrlNormalizer;
 import io.terrakube.api.repository.ModuleRepository;
 import io.terrakube.api.repository.ModuleVersionRepository;
 import io.terrakube.api.rs.module.Module;
 import io.terrakube.api.rs.module.ModuleVersion;
+import io.terrakube.api.rs.vcs.VcsType;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -35,6 +37,10 @@ import lombok.extern.slf4j.Slf4j;
 public class ModuleRefreshTransactions {
 
     static final int MAX_ERROR_LENGTH = 1024;
+    // The connections whose shared repository webhook the API can register (RepoWebhookService). Bitbucket has
+    // none, so its modules rely on polling.
+    public static final Set<VcsType> WEBHOOK_VCS_TYPES =
+            Set.of(VcsType.GITHUB, VcsType.GITLAB, VcsType.AZURE_DEVOPS, VcsType.AZURE_SP_MI);
     // scheme://user:secret@host: JGit messages quote the remote URL, which can carry credentials.
     private static final Pattern URL_USER_INFO = Pattern.compile("([a-zA-Z][a-zA-Z0-9+.-]*://)[^/@\\s]+@");
 
@@ -72,6 +78,52 @@ public class ModuleRefreshTransactions {
     @Transactional
     public void markDue(UUID id) {
         moduleRepository.markDue(id);
+    }
+
+    /** Makes the modules of a repository due after a webhook reported a new tag. */
+    @Transactional
+    public int markDueBySource(String normalizedSource, String tag) {
+        List<UUID> ids = findIdsByNormalizedSource(normalizedSource, tag);
+        if (ids.isEmpty()) {
+            return 0;
+        }
+        int count = moduleRepository.markDueIds(ids);
+        log.info("Tag {} of {} made {} module(s) due for a refresh", tag, normalizedSource, count);
+        return count;
+    }
+
+    /**
+     * Modules whose source is the repository normalizedSource (see RepoUrlNormalizer) and whose tag prefix,
+     * if any, the tag starts with. Other tags never become versions of the module.
+     */
+    // ponytail: reads every module per tag event, like WorkspaceRepository.findByNormalizedSourceWithMigratedWebhook.
+    // Add a normalized_source column when module counts make this slow.
+    private List<UUID> findIdsByNormalizedSource(String normalizedSource, String tag) {
+        if (normalizedSource == null) {
+            return List.of();
+        }
+        return moduleRepository.findIdSourceAndTagPrefix().stream()
+                .filter(row -> normalizedSource.equalsIgnoreCase(RepoUrlNormalizer.normalize((String) row[1])))
+                .filter(row -> row[2] == null || ((String) row[2]).isEmpty() || tag.startsWith((String) row[2]))
+                .map(row -> (UUID) row[0])
+                .toList();
+    }
+
+    public static boolean canRegisterWebhook(Module module) {
+        return module.getVcs() != null && WEBHOOK_VCS_TYPES.contains(module.getVcs().getVcsType());
+    }
+
+    /**
+     * Modules of the repository normalizedSource that need its webhook, when module webhooks are enabled. Runs
+     * in the caller's transaction, which keeps using the returned entities.
+     */
+    public List<Module> findWebhookEligibleBySource(String normalizedSource) {
+        if (normalizedSource == null) {
+            return List.of();
+        }
+        return moduleRepository.findAllWithVcsTypeIn(WEBHOOK_VCS_TYPES).stream()
+                .filter(m -> normalizedSource.equalsIgnoreCase(RepoUrlNormalizer.normalize(m.getSource())))
+                .toList();
     }
 
     /** @return null when the module or its organization is gone, so there is nothing to refresh */

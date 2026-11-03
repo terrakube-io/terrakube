@@ -59,6 +59,7 @@ public class ModuleRefreshProperties implements EnvironmentAware {
     private int leaseMinutes = 5;
     @Valid
     private Executor executor = new Executor();
+    private Webhook webhook = new Webhook();
 
     // The removed fixed interval in seconds, when an operator still sets it.
     @Getter(AccessLevel.NONE)
@@ -72,6 +73,16 @@ public class ModuleRefreshProperties implements EnvironmentAware {
         private int poolSize = 4;
         @Positive
         private int queueCapacity = 16;
+    }
+
+    @Getter
+    @Setter
+    public static class Webhook {
+        /**
+         * Register the repository webhook (with tag events) for modules that have a GitHub, GitLab or Azure DevOps
+         * connection. Tags received on a webhook refresh modules either way.
+         */
+        private boolean enabled = false;
     }
 
     // Read directly: application.properties no longer maps the old environment variable onto the property.

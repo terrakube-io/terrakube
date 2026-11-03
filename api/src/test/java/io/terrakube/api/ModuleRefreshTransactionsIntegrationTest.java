@@ -31,6 +31,8 @@ import io.terrakube.api.repository.ModuleVersionRepository;
 import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.module.Module;
 import io.terrakube.api.rs.module.ModuleVersion;
+import io.terrakube.api.rs.vcs.Vcs;
+import io.terrakube.api.rs.vcs.VcsType;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -295,5 +297,69 @@ class ModuleRefreshTransactionsIntegrationTest extends ServerApplicationTests {
         Module stored = reload(module);
         assertThat(stored.getNextRefresh().getTime()).isLessThanOrEqualTo(System.currentTimeMillis());
         assertThat(moduleRepository.findDueIds(nowSeconds(), PageRequest.of(0, 1000))).contains(module.getId());
+    }
+
+    private Module seedSource(String source, String tagPrefix, Date nextRefresh) {
+        Module module = seed(nextRefresh);
+        module.setSource(source);
+        module.setTagPrefix(tagPrefix);
+        return moduleRepository.save(module);
+    }
+
+    @Test
+    void markDueBySourceMatchesTheNormalizedRepositoryUrl() {
+        String repo = "https://github.com/acme/net-" + UUID.randomUUID().toString().substring(0, 8);
+        Date later = plusMinutes(nowSeconds(), 60);
+        Module plain = seedSource(repo + ".git", null, later);
+        Module upperCase = seedSource(repo.toUpperCase().replace("HTTPS", "https"), null, later);
+        Module withUser = seedSource(repo.replace("https://", "https://user@") + "/", null, later);
+        Module other = seedSource(repo + "-other.git", null, later);
+
+        assertThat(transactions.markDueBySource(repo, "v1.0.0")).isEqualTo(3);
+
+        assertThat(reload(plain).getNextRefresh()).isNull();
+        assertThat(reload(upperCase).getNextRefresh()).isNull();
+        assertThat(reload(withUser).getNextRefresh()).isNull();
+        assertThat(reload(other).getNextRefresh().getTime()).isEqualTo(later.getTime());
+    }
+
+    @Test
+    void markDueBySourceSkipsModulesWhoseTagPrefixDoesNotMatch() {
+        String repo = "https://gitlab.com/acme/mono-" + UUID.randomUUID().toString().substring(0, 8);
+        Date later = plusMinutes(nowSeconds(), 60);
+        Module vpc = seedSource(repo, "vpc/", later);
+        Module eks = seedSource(repo, "eks/", later);
+        Module noPrefix = seedSource(repo, "", later);
+
+        transactions.markDueBySource(repo, "vpc/v1.4.0");
+
+        assertThat(reload(vpc).getNextRefresh()).isNull();
+        assertThat(reload(noPrefix).getNextRefresh()).isNull();
+        assertThat(reload(eks).getNextRefresh().getTime()).isEqualTo(later.getTime());
+    }
+
+    @Test
+    void webhookEligibleModulesHaveAConnectionThatCanRegisterIt() {
+        String repo = "https://github.com/acme/eligible-" + UUID.randomUUID().toString().substring(0, 8);
+        Organization organization = organizationRepository.findById(DEMO_ORGANIZATION_ID).orElseThrow();
+        Module github = seedSource(repo + ".git", null, null);
+        github.setVcs(vcs(organization, VcsType.GITHUB));
+        moduleRepository.save(github);
+        Module bitbucket = seedSource(repo, null, null);
+        bitbucket.setVcs(vcs(organization, VcsType.BITBUCKET));
+        moduleRepository.save(bitbucket);
+        seedSource(repo, null, null);
+
+        assertThat(transactions.findWebhookEligibleBySource(repo)).extracting(Module::getId)
+                .containsExactly(github.getId());
+    }
+
+    private Vcs vcs(Organization organization, VcsType type) {
+        Vcs vcs = new Vcs();
+        vcs.setName("module-webhook-" + type);
+        vcs.setDescription("module webhook test");
+        vcs.setVcsType(type);
+        vcs.setOrganization(organization);
+        return vcsRepository.saveAndFlush(vcs);
     }
 }

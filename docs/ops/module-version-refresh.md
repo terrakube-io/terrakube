@@ -35,7 +35,8 @@ After a successful read, the interval depends on when a new tag was last found
 After a failed read, the module is read again after `error-interval-minutes` (60). Every interval is
 moved by up to `jitter` (15 %) either way, so modules do not refresh in lockstep.
 
-A change to a module's source, VCS connection, SSH key or tag prefix makes it due at once.
+A change to a module's source, VCS connection, SSH key or tag prefix makes it due at once, and so does
+a tag webhook (see [Tag webhooks](#tag-webhooks)).
 
 ## Failures
 
@@ -54,6 +55,53 @@ POST /module/v1/organization/{organizationId}/module/{moduleId}/sync
 The API answers `202 Accepted` and marks the module due; the next poll (within a minute) reads it. It
 requires the "manage modules" permission in the module's organization, and internal tokens are refused.
 
+## Tag webhooks
+
+A repository webhook that reports a new tag makes every module of that repository due, so the next
+poll (within a minute) reads it. The webhook never reads tags itself, and polling keeps running as the
+fallback for tags a webhook missed.
+
+A module belongs to the repository when its source, normalized the same way as workspace sources
+(lowercase, without a trailing `/` or `.git`, without user info, without the Azure DevOps `_git`
+segment), is the webhook's repository URL. A module with a tag prefix is only made due by tags that start
+with that prefix. Sources in SSH form (`git@host:org/repo.git`) never match and rely on polling.
+
+Receiving is always on. Tags arrive on the webhooks Terrakube already has for workspaces:
+
+| Provider | Shared repository webhook | Per-workspace webhook |
+|---|---|---|
+| GitHub | `push` of `refs/tags/*`, `create` of a tag, `release` created | `push` of `refs/tags/*`, `release` created |
+| GitLab | `tag_push`, `release` created | `release` created |
+| Azure DevOps | `git.push` of `refs/tags/*` | `git.push` of `refs/tags/*` |
+| Bitbucket | none (no shared webhook) | `repo:push` with a tag |
+
+Workspaces see tag events exactly as before: a tag push still reaches them as a push (or a release on
+Azure DevOps and Bitbucket), and the module-only `create` and `tag_push` events never start a run.
+
+GitHub sends no `push` or `create` event for tags when more than three are pushed at once. Those, and any
+tag of a repository without a webhook, are found by polling.
+
+### Registering webhooks for modules
+
+With `webhook.enabled` (`ModuleRefreshWebhookEnabled`) set to `true`, a module with a GitHub, GitLab or
+Azure DevOps connection also takes part in the shared repository webhook of its source:
+
+- The webhook is created or updated when such a module is created, when its source or connection
+  changes, and on **Check for new versions**. It is deleted only when no workspace and no such module
+  uses the repository any more.
+- On top of the workspace events it subscribes to tag events: `create` on GitHub, `tag_push_events` on
+  GitLab and `git.push` on Azure DevOps.
+- The module's connection needs permission to manage the repository's webhooks. When it does not, the
+  sync fails with a logged error and the module keeps polling.
+
+Bitbucket modules and modules without a VCS connection are not registered and rely on polling (or on a
+per-workspace webhook of the same repository).
+
+The setting is off by default. Turning it off later does not delete hooks that only modules use; remove
+them on the provider if they are no longer wanted (their deliveries keep refreshing modules until then).
+A hook shared with workspaces drops the tag subscription the next time a workspace webhook of that
+repository is saved.
+
 ## Settings
 
 All settings have the prefix `io.terrakube.api.module.refresh.`
@@ -70,6 +118,7 @@ All settings have the prefix `io.terrakube.api.module.refresh.`
 | `lease-minutes` | `ModuleRefreshLeaseMinutes` | `5` |
 | `executor.pool-size` | `ModuleRefreshExecutorPoolSize` | `4` |
 | `executor.queue-capacity` | `ModuleRefreshExecutorQueueCapacity` | `16` |
+| `webhook.enabled` | `ModuleRefreshWebhookEnabled` | `false` |
 
 The lease must cover every refresh a replica has queued, each of which can take up to a minute (two
 30-second Git timeouts). At startup the API raises `lease-minutes` to
@@ -105,6 +154,10 @@ threads; more replicas add little, since only one of them claims modules each mi
 - **Old per-module jobs are removed.** At startup the API deletes the stored `TerrakubeV2_ModuleRefresh_*`
   jobs of the old refresh job class. Module storage cleanup jobs now use the prefix
   `TerrakubeV2_ModuleDeleteStorage_`.
+- **Tag webhooks.** Repositories whose shared webhook already includes `push` (GitHub, Azure DevOps)
+  refresh their modules on tag pushes right after the upgrade, without any change on the provider. To
+  register webhooks for modules, set `ModuleRefreshWebhookEnabled=true`; existing modules join on their
+  next **Check for new versions** or source/connection change.
 - **Rolling deploys.** While old and new replicas run side by side, an old replica that picks up the
   poller trigger cannot load the poller class, and Quartz can put the trigger in an error state, in
   which it stops firing. Every new replica recreates the poller job when it starts, and checks the

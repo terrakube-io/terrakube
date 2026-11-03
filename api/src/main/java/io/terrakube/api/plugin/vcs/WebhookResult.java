@@ -31,6 +31,8 @@ public class WebhookResult {
     private String prFilesUrl;
     private String rawPayload;
     private String prDetailsUrl;
+    /** The tag that was pushed or created, or null. Marks the modules of the repository due for a refresh. */
+    private String tag;
 
     /** What started the run, for the workspace branch policy. Derived from the other fields, so not serialized. */
     @JsonIgnore
@@ -41,6 +43,15 @@ public class WebhookResult {
         boolean pullRequest = isPrComment || prNumber != null
                 || "pull_request".equals(event) || "merge_request".equals(event);
         return pullRequest ? WorkspaceBranchPolicy.Source.PULL_REQUEST : WorkspaceBranchPolicy.Source.PUSH;
+    }
+
+    /**
+     * Tag creation events (GitHub create, GitLab tag_push) only refresh modules. Workspaces never received them,
+     * so they must not reach the workspace matching.
+     */
+    @JsonIgnore
+    public boolean isModuleOnly() {
+        return "create".equals(event) || "tag_push".equals(event);
     }
 
     public String getNormalizedEvent() {
