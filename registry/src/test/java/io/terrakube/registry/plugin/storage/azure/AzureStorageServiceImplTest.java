@@ -106,4 +106,32 @@ class AzureStorageServiceImplTest {
 
         assertArrayEquals(expectedData, result);
     }
+
+    @Test
+    void readWriteExistsObject() throws IOException {
+        BlobServiceClient blobServiceClient = mock(BlobServiceClient.class);
+        BlobContainerClient container = mock(BlobContainerClient.class);
+        BlobClient blobClient = mock(BlobClient.class);
+        AzureStorageServiceImpl storage = AzureStorageServiceImpl.builder()
+                .blobServiceClient(blobServiceClient).gitService(mock(GitService.class)).registryHostname("host").build();
+        String key = "mirror/registry.terraform.io/hashicorp/random/index.json";
+        when(blobServiceClient.getBlobContainerClient("registry")).thenReturn(container);
+        when(container.getBlobClient(key)).thenReturn(blobClient);
+
+        com.azure.storage.blob.models.BlobStorageException notFound = mock(com.azure.storage.blob.models.BlobStorageException.class);
+        when(notFound.getErrorCode()).thenReturn(com.azure.storage.blob.models.BlobErrorCode.BLOB_NOT_FOUND);
+        when(blobClient.openInputStream()).thenThrow(notFound);
+        assertTrue(storage.readObject(key).isEmpty());
+
+        when(container.exists()).thenReturn(true);
+        when(blobClient.exists()).thenReturn(true);
+        assertTrue(storage.objectExists(key));
+
+        Path file = tempDir.resolve("index.json");
+        java.nio.file.Files.writeString(file, "{}");
+        storage.writeObject(key, file, "application/json");
+        verify(container).createIfNotExists();
+        verify(blobClient).uploadFromFile(file.toString(), true);
+        assertTrue(storage.presignObject(key).isEmpty());
+    }
 }

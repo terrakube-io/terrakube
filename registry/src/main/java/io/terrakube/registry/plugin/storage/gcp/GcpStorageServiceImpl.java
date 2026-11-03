@@ -1,5 +1,6 @@
 package io.terrakube.registry.plugin.storage.gcp;
 
+import com.google.cloud.storage.Blob;
 import com.google.cloud.storage.BlobId;
 import com.google.cloud.storage.BlobInfo;
 import com.google.cloud.storage.Storage;
@@ -14,8 +15,11 @@ import io.terrakube.registry.service.git.GitService;
 import io.terrakube.registry.service.git.ModuleVersionDownload;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.URI;
 import java.net.URL;
+import java.nio.channels.Channels;
+import java.nio.file.Path;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
@@ -94,12 +98,16 @@ public class GcpStorageServiceImpl implements StorageService {
     @Override
     public Optional<URI> getPresignedDownloadUrl(String organizationName, String moduleName, String providerName,
             String moduleVersion) {
+        return presignObject(String.format(GCP_ZIP_MODULE_LOCATION, organizationName, moduleName, providerName,
+                moduleVersion));
+    }
+
+    @Override
+    public Optional<URI> presignObject(String blobKey) {
         if (!presignedRedirectEnabled) {
             return Optional.empty();
         }
 
-        String blobKey = String.format(GCP_ZIP_MODULE_LOCATION, organizationName, moduleName, providerName,
-                moduleVersion);
         try {
             BlobInfo blobInfo = BlobInfo.newBuilder(BlobId.of(bucketName, blobKey)).build();
             URL signedUrl = storage.signUrl(
@@ -133,6 +141,34 @@ public class GcpStorageServiceImpl implements StorageService {
         } catch (StorageException e) {
             log.error("GCP Storage download failed for key {} in bucket {}: {}", blobKey, bucketName, e.getMessage());
             throw new StorageUnavailableException("Failed to download module ZIP for key " + blobKey, e);
+        }
+    }
+
+    @Override
+    public Optional<InputStream> readObject(String key) {
+        try {
+            Blob blob = storage.get(BlobId.of(bucketName, key));
+            return blob == null ? Optional.empty() : Optional.of(Channels.newInputStream(blob.reader()));
+        } catch (StorageException e) {
+            throw new StorageUnavailableException("Failed to read GCS object " + key, e);
+        }
+    }
+
+    @Override
+    public boolean objectExists(String key) {
+        try {
+            return storage.get(BlobId.of(bucketName, key)) != null;
+        } catch (StorageException e) {
+            throw new StorageUnavailableException("Failed to check GCS object " + key, e);
+        }
+    }
+
+    @Override
+    public void writeObject(String key, Path file, String contentType) {
+        try {
+            storage.createFrom(BlobInfo.newBuilder(BlobId.of(bucketName, key)).setContentType(contentType).build(), file);
+        } catch (StorageException | IOException e) {
+            throw new StorageUnavailableException("Failed to write GCS object " + key, e);
         }
     }
 }
