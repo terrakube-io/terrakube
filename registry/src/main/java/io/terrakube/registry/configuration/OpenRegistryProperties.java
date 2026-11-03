@@ -36,6 +36,12 @@ public class OpenRegistryProperties {
     /** Seconds provider versions and file details are kept. */
     private long providerCacheTtlSeconds = 60;
 
+    /**
+     * When true, X-Terraform-Get is the presigned storage URL instead of the registry module.zip URL.
+     * Only takes effect when the storage backend's presignedRedirectEnabled is true; otherwise the registry URL is kept.
+     */
+    private boolean directStorageDownload = false;
+
     /** Single-domain public URL (TerrakubePublicUrl); empty in split-domain mode. */
     @Value("${io.terrakube.public-url:}")
     private String publicUrl;

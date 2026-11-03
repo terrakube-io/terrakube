@@ -1,10 +1,12 @@
 package io.terrakube.registry.controller;
 
+import io.terrakube.registry.configuration.OpenRegistryProperties;
 import io.terrakube.registry.controller.model.module.ModuleDTO;
 import io.terrakube.registry.controller.model.module.ModuleDetailsDTO;
 import io.terrakube.registry.controller.model.module.VersionDTO;
 import io.terrakube.registry.controller.model.module.VersionsDTO;
 import io.terrakube.registry.plugin.storage.StorageService;
+import io.terrakube.registry.plugin.storage.StorageUnavailableException;
 import io.terrakube.registry.service.inspect.ModuleInspectorService;
 import io.terrakube.registry.service.module.ModuleAuthorizationService;
 import io.terrakube.registry.service.module.ModuleDownloadTicketService;
@@ -46,6 +48,9 @@ public class ModuleWebServiceImpl {
 
     @Autowired
     ModuleInspectorService moduleInspectorService;
+
+    @Autowired(required = false)
+    OpenRegistryProperties openRegistryProperties;
 
     public ModuleWebServiceImpl() {}
 
@@ -110,7 +115,10 @@ public class ModuleWebServiceImpl {
         }
 
         String downloadPath = moduleService.getModuleVersionPath(organization, module, provider, version);
-        if (ticketService != null) {
+        Optional<URI> directUrl = directStorageUrl(organization, module, provider, version);
+        if (directUrl.isPresent()) {
+            downloadPath = directUrl.get().toString();
+        } else if (ticketService != null) {
             String ticket = ticketService.generateTicket(organization, module, provider, version);
             downloadPath = downloadPath.contains("?") ?
                     downloadPath + "&ticket=" + ticket :
@@ -122,6 +130,20 @@ public class ModuleWebServiceImpl {
         responseHeaders.set("Access-Control-Expose-Headers", "X-Terraform-Get");
         moduleService.updateModuleDownloadCount(organization, module, provider);
         return ResponseEntity.noContent().headers(responseHeaders).cacheControl(CacheControl.noStore()).build();
+    }
+
+    /** Presigned storage URL for X-Terraform-Get, only when enabled; empty keeps the ticket flow. */
+    private Optional<URI> directStorageUrl(String organization, String module, String provider, String version) {
+        if (openRegistryProperties == null || !openRegistryProperties.isDirectStorageDownload()) {
+            return Optional.empty();
+        }
+        try {
+            return storageService.getPresignedDownloadUrl(organization, module, provider, version);
+        } catch (StorageUnavailableException e) {
+            log.warn("Presign failed for {}/{}/{}/{}, falling back to the registry download URL",
+                    organization, module, provider, version);
+            return Optional.empty();
+        }
     }
 
     /** Inputs, outputs, resources and submodules of one module version, parsed server-side. */
