@@ -9,14 +9,17 @@ import io.terrakube.registry.service.inspect.ModuleInspectorService;
 import io.terrakube.registry.service.module.ModuleAuthorizationService;
 import io.terrakube.registry.service.module.ModuleDownloadTicketService;
 import io.terrakube.registry.service.module.ModuleService;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.filter.ShallowEtagHeaderFilter;
 
 import java.net.URI;
 import java.util.ArrayList;
@@ -85,7 +88,7 @@ public class ModuleWebServiceImpl {
         versionsDTO.setVersions(versionDTOList);
         ModuleDTO moduleDTO = new ModuleDTO();
         moduleDTO.setModules(Arrays.asList(versionsDTO));
-        return ResponseEntity.ok(moduleDTO);
+        return ResponseEntity.ok().cacheControl(CacheControl.noCache().cachePrivate()).varyBy("Authorization").body(moduleDTO);
     }
 
     @GetMapping(value = "/{organization}/{module}/{provider}/{version}/download", produces = "application/json")
@@ -118,7 +121,7 @@ public class ModuleWebServiceImpl {
         responseHeaders.set("X-Terraform-Get", downloadPath);
         responseHeaders.set("Access-Control-Expose-Headers", "X-Terraform-Get");
         moduleService.updateModuleDownloadCount(organization, module, provider);
-        return ResponseEntity.noContent().headers(responseHeaders).build();
+        return ResponseEntity.noContent().headers(responseHeaders).cacheControl(CacheControl.noStore()).build();
     }
 
     /** Inputs, outputs, resources and submodules of one module version, parsed server-side. */
@@ -134,7 +137,8 @@ public class ModuleWebServiceImpl {
         if (moduleService.isVersionRemoved(organization, module, provider, version)) {
             return ResponseEntity.notFound().build();
         }
-        return ResponseEntity.ok(moduleInspectorService.details(organization, module, provider, version, submodule));
+        return ResponseEntity.ok().cacheControl(CacheControl.noCache().cachePrivate()).varyBy("Authorization")
+                .body(moduleInspectorService.details(organization, module, provider, version, submodule));
     }
 
     @GetMapping(value = "/download/{organizationName}/{moduleName}/{providerName}/{version}/module.zip")
@@ -144,7 +148,10 @@ public class ModuleWebServiceImpl {
             @PathVariable String providerName,
             @PathVariable String version,
             @RequestParam(name = "ticket", required = false) String ticket,
-            Authentication authentication) {
+            Authentication authentication,
+            HttpServletRequest request) {
+        // The ETag filter maps this path too; without this it would hold the whole archive in memory.
+        ShallowEtagHeaderFilter.disableContentCaching(request);
 
         if (ticket != null && !ticket.isBlank()) {
             if (ticketService == null || !ticketService.validateTicket(ticket, organizationName, moduleName, providerName, version)) {
@@ -167,11 +174,12 @@ public class ModuleWebServiceImpl {
         }
         Optional<URI> presignedDownloadUrl = storageService.getPresignedDownloadUrl(organizationName, moduleName, providerName, version);
         if (presignedDownloadUrl.isPresent()) {
-            return ResponseEntity.status(HttpStatus.FOUND).location(presignedDownloadUrl.get()).build();
+            return ResponseEntity.status(HttpStatus.FOUND).location(presignedDownloadUrl.get())
+                    .cacheControl(CacheControl.noStore()).build();
         }
 
         byte[] data = storageService.downloadModule(organizationName, moduleName, providerName, version);
-        return ResponseEntity.ok().contentType(MediaType.APPLICATION_OCTET_STREAM).body(data);
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).contentType(MediaType.APPLICATION_OCTET_STREAM).body(data);
     }
 }
 

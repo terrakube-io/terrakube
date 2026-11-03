@@ -7,6 +7,7 @@ import io.terrakube.registry.plugin.storage.StorageService;
 import io.terrakube.registry.service.module.ModuleAuthorizationService;
 import io.terrakube.registry.service.module.ModuleService;
 import io.terrakube.registry.service.ReadMeServiceImpl;
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -49,6 +50,6 @@ public class ReadMeWebServiceImpl {
         String moduleURL = moduleService.getModuleVersionPath(organization, module, provider, version);
         readMe.setUrl(moduleURL);
         readMe.setContent(readMeService.getContent(new ByteArrayInputStream(storageService.downloadModule(organization, module, provider, version))));
-        return ResponseEntity.ok().body(readMe);
+        return ResponseEntity.ok().cacheControl(CacheControl.noCache().cachePrivate()).varyBy("Authorization").body(readMe);
     }
 }

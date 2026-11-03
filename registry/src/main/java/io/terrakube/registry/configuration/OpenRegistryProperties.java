@@ -33,6 +33,9 @@ public class OpenRegistryProperties {
     /** Seconds the module version list is kept. This is the delay before a new version is served. */
     private long moduleVersionsCacheTtlSeconds = 600;
 
+    /** Seconds provider versions and file details are kept. */
+    private long providerCacheTtlSeconds = 60;
+
     /** Single-domain public URL (TerrakubePublicUrl); empty in split-domain mode. */
     @Value("${io.terrakube.public-url:}")
     private String publicUrl;
@@ -43,6 +46,10 @@ public class OpenRegistryProperties {
         if (moduleVersionsCacheTtlSeconds <= 0) {
             throw new IllegalStateException("io.terrakube.registry.moduleVersionsCacheTtlSeconds must be at least 1, "
                     + "got " + moduleVersionsCacheTtlSeconds);
+        }
+        if (providerCacheTtlSeconds <= 0) {
+            throw new IllegalStateException("io.terrakube.registry.providerCacheTtlSeconds must be at least 1, "
+                    + "got " + providerCacheTtlSeconds);
         }
         if (publicUrl != null && !publicUrl.isBlank()) {
             if (!publicUrl.matches("https?://[^/?#@]+")) {
