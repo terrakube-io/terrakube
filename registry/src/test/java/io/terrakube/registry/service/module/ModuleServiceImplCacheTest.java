@@ -75,7 +75,20 @@ class ModuleServiceImplCacheTest {
         @Bean
         org.springframework.cache.CacheManager cacheManager(CacheConfig cacheConfig,
                 OpenRegistryProperties openRegistryProperties) {
-            return cacheConfig.cacheManager(openRegistryProperties);
+            org.springframework.cache.CacheManager real = cacheConfig.cacheManager(openRegistryProperties);
+            // The mocked CommonSearchService keeps its @Cacheable; its cache is turned off so verify() reaches the mock.
+            return new org.springframework.cache.CacheManager() {
+                @Override
+                public org.springframework.cache.Cache getCache(String name) {
+                    return CacheConfig.ORGANIZATION_ID_CACHE.equals(name)
+                            ? new org.springframework.cache.support.NoOpCache(name) : real.getCache(name);
+                }
+
+                @Override
+                public java.util.Collection<String> getCacheNames() {
+                    return real.getCacheNames();
+                }
+            };
         }
 
         @Bean
