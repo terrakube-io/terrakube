@@ -1,6 +1,8 @@
 package io.terrakube.registry.controller;
 
+import io.terrakube.registry.configuration.OpenRegistryProperties;
 import io.terrakube.registry.controller.model.module.ModuleDetailsDTO;
+import io.terrakube.registry.service.module.ModuleDownloadTicketService;
 import io.terrakube.registry.plugin.storage.StorageService;
 import io.terrakube.registry.service.inspect.ModuleInspectorService;
 import io.terrakube.registry.plugin.storage.StorageUnavailableException;
@@ -41,6 +43,7 @@ class ModuleWebServiceImplTest {
     private StorageService storageService;
     private ModuleAuthorizationService moduleAuthorizationService;
     private ModuleInspectorService moduleInspectorService;
+    private ModuleWebServiceImpl controller;
     private MockMvc mockMvc;
 
     @BeforeEach
@@ -52,7 +55,7 @@ class ModuleWebServiceImplTest {
         moduleInspectorService = mock(ModuleInspectorService.class);
         when(moduleService.isVersionRemoved("org", "module", "aws", "2.0.0")).thenReturn(true);
 
-        ModuleWebServiceImpl controller = new ModuleWebServiceImpl();
+        controller = new ModuleWebServiceImpl();
         controller.moduleService = moduleService;
         controller.storageService = storageService;
         controller.moduleAuthorizationService = moduleAuthorizationService;
@@ -152,6 +155,70 @@ class ModuleWebServiceImplTest {
                 .andExpect(header().string("Cache-Control", "no-store"))
                 .andExpect(header().doesNotExist("ETag"));
         verify(moduleService, never()).getAvailableVersions(anyString(), anyString(), anyString());
+    }
+
+    private void enableDirectDownload() {
+        OpenRegistryProperties properties = new OpenRegistryProperties();
+        properties.setDirectStorageDownload(true);
+        controller.openRegistryProperties = properties;
+        controller.ticketService = mock(ModuleDownloadTicketService.class);
+        when(controller.ticketService.generateTicket("org", "module", "aws", "1.0.0")).thenReturn("t1");
+        when(moduleService.getModuleVersionPath("org", "module", "aws", "1.0.0"))
+                .thenReturn("https://registry/module.zip");
+    }
+
+    @Test
+    void directDownloadUsesPresignedUrlWithoutTicket() throws Exception {
+        enableDirectDownload();
+        URI presigned = URI.create("https://bucket.s3.amazonaws.com/registry/org/module/aws/1.0.0/module.zip?X-Amz-Signature=x");
+        when(storageService.getPresignedDownloadUrl("org", "module", "aws", "1.0.0")).thenReturn(Optional.of(presigned));
+
+        mockMvc.perform(get("/terraform/modules/v1/org/module/aws/1.0.0/download"))
+                .andExpect(status().isNoContent())
+                .andExpect(header().string("X-Terraform-Get", presigned.toString()))
+                .andExpect(header().string("Cache-Control", "no-store"));
+        verify(controller.ticketService, never()).generateTicket(anyString(), anyString(), anyString(), anyString());
+    }
+
+    @Test
+    void directDownloadFallsBackToTicketUrlWhenPresignEmpty() throws Exception {
+        enableDirectDownload();
+        when(storageService.getPresignedDownloadUrl("org", "module", "aws", "1.0.0")).thenReturn(Optional.empty());
+
+        mockMvc.perform(get("/terraform/modules/v1/org/module/aws/1.0.0/download"))
+                .andExpect(status().isNoContent())
+                .andExpect(header().string("X-Terraform-Get", "https://registry/module.zip?ticket=t1"));
+    }
+
+    @Test
+    void directDownloadFallsBackToTicketUrlWhenPresignFails() throws Exception {
+        enableDirectDownload();
+        when(storageService.getPresignedDownloadUrl("org", "module", "aws", "1.0.0"))
+                .thenThrow(new StorageUnavailableException("boom", new RuntimeException()));
+
+        mockMvc.perform(get("/terraform/modules/v1/org/module/aws/1.0.0/download"))
+                .andExpect(status().isNoContent())
+                .andExpect(header().string("X-Terraform-Get", "https://registry/module.zip?ticket=t1"));
+    }
+
+    @Test
+    void directDownloadOffNeverPresigns() throws Exception {
+        controller.openRegistryProperties = new OpenRegistryProperties();
+        when(moduleService.getModuleVersionPath("org", "module", "aws", "1.0.0")).thenReturn("s3::path");
+
+        mockMvc.perform(get("/terraform/modules/v1/org/module/aws/1.0.0/download"))
+                .andExpect(header().string("X-Terraform-Get", "s3::path"));
+        verify(storageService, never()).getPresignedDownloadUrl(anyString(), anyString(), anyString(), anyString());
+    }
+
+    @Test
+    void removedVersionNeverPresigns() throws Exception {
+        enableDirectDownload();
+        when(moduleService.isVersionRemoved("org", "module", "aws", "1.0.0")).thenReturn(true);
+
+        mockMvc.perform(get("/terraform/modules/v1/org/module/aws/1.0.0/download"))
+                .andExpect(status().isNotFound());
+        verify(storageService, never()).getPresignedDownloadUrl(anyString(), anyString(), anyString(), anyString());
     }
 
     @Test
