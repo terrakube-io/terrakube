@@ -38,6 +38,15 @@ public class BitBucketWebhookService extends WebhookServiceBase {
     @Value("${io.terrakube.hostname}")
     private String hostname;
 
+    @Value("${io.terrakube.vcs.hostname:}")
+    private String vcsHostname;
+
+    private String getVcsHostname() {
+        return vcsHostname == null || vcsHostname.isEmpty()
+                ? hostname
+                : vcsHostname;
+    }
+
     private WorkspaceRepository workspaceRepository;
 
     public BitBucketWebhookService(WorkspaceRepository workspaceRepository, ObjectMapper objectMapper) {
@@ -323,7 +332,7 @@ public class BitBucketWebhookService extends WebhookServiceBase {
             String secret = Base64.getEncoder()
                     .encodeToString(workspace.getId().toString().getBytes(StandardCharsets.UTF_8));
             String[] ownerAndRepo = extractOwnerAndRepo(workspace.getSource());
-            String webhookUrl = String.format("https://%s/webhook/v1/%s", hostname, webhook.getId().toString());
+            String webhookUrl = String.format("https://%s/webhook/v1/%s", getVcsHostname(), webhook.getId().toString());
 
             // Check if any event has PR workflow enabled
             boolean hasPrWorkflow = webhook.getEvents() != null && webhook.getEvents().stream()

@@ -1,3 +1,4 @@
+
 package io.terrakube.api.plugin.vcs.provider.github;
 
 import java.nio.charset.StandardCharsets;
@@ -47,8 +48,19 @@ public class GitHubWebhookService extends WebhookServiceBase {
 
     @Value("${io.terrakube.hostname}")
     private String hostname;
+
+    @Value("${io.terrakube.vcs.hostname:}")
+    private String vcsHostname;
+
+    private String getVcsHostname() {
+        return vcsHostname == null || vcsHostname.isEmpty()
+                ? hostname
+                : vcsHostname;
+    }
+
     @Value("${io.terrakube.ui.url}")
     private String uiUrl;
+
     @Value("${io.terrakube.webhook.insecure-ssl:1}")
     private String insecureSsl;
 
@@ -129,7 +141,7 @@ public class GitHubWebhookService extends WebhookServiceBase {
                 // Set createdBy to the user who created the PR
                 String prUser = rootNode.path("pull_request").path("user").path("login").asText();
                 result.setCreatedBy(prUser);
-                
+
                 String prFilesUrl = rootNode.path("pull_request").path("url").asText() + "/files";
                 result.setPrFilesUrl(prFilesUrl);
                 if (vcs != null) {
@@ -362,7 +374,7 @@ public class GitHubWebhookService extends WebhookServiceBase {
         String id = webhook.getRemoteHookId();
         String secret = Base64.getEncoder()
                 .encodeToString(workspace.getId().toString().getBytes(StandardCharsets.UTF_8));
-        String webhookUrl = String.format("https://%s/webhook/v1/%s", hostname, webhook.getId().toString());
+        String webhookUrl = String.format("https://%s/webhook/v1/%s", getVcsHostname(), webhook.getId().toString());
         String[] ownerAndRepo = extractOwnerAndRepo(workspace.getSource());
 
         String events = webhook.getEvents().stream().map(WebhookEvent::getEvent).distinct()
@@ -534,7 +546,7 @@ public class GitHubWebhookService extends WebhookServiceBase {
     public String createOrUpdateRepoWebhook(RepoWebhook repoWebhook, Set<WebhookEventType> eventTypes,
             boolean hasPrWorkflow) {
         String id = repoWebhook.getRemoteHookId();
-        String webhookUrl = String.format("https://%s/webhook/v2/%s", hostname, repoWebhook.getId().toString());
+        String webhookUrl = String.format("https://%s/webhook/v2/%s", getVcsHostname(), repoWebhook.getId().toString());
         String[] ownerAndRepo = extractOwnerAndRepo(repoWebhook.getRepositoryUrl());
 
         String events = eventTypes.stream()

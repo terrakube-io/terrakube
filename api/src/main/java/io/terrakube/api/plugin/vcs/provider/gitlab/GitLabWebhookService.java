@@ -48,18 +48,33 @@ public class GitLabWebhookService extends WebhookServiceBase {
 
     private ObjectMapper objectMapper;
     private String hostname;
+    private String vcsHostname;
     private WebClient.Builder webClientBuilder;
     private String uiUrl;
     private int pagesize = 25;
     private int timeout = 30;
 
-    public GitLabWebhookService(ObjectMapper objectMapper, @Value("${io.terrakube.hostname}") String hostname, @Value("${io.terrakube.ui.url}") String uiUrl, WebClient.Builder webClientBuilder, @Value("${io.terrakube.vcs.gitlab.timeout}") int timeout, @Value("${io.terrakube.vcs.gitlab.pageSize}") int pageSize) {
-        this.objectMapper = objectMapper;
-        this.hostname = hostname;
-        this.webClientBuilder = webClientBuilder;
-        this.uiUrl = uiUrl;
-        this.pagesize = pageSize;
-        this.timeout = timeout;
+    public GitLabWebhookService(
+        ObjectMapper objectMapper,
+        @Value("${io.terrakube.hostname}") String hostname,
+        @Value("${io.terrakube.vcs.hostname:}") String vcsHostname,
+        @Value("${io.terrakube.ui.url}") String uiUrl,
+        WebClient.Builder webClientBuilder,
+        @Value("${io.terrakube.vcs.gitlab.timeout}") int timeout,
+        @Value("${io.terrakube.vcs.gitlab.pageSize}") int pageSize) {
+            this.objectMapper = objectMapper;
+            this.hostname = hostname;
+            this.vcsHostname = vcsHostname;
+            this.webClientBuilder = webClientBuilder;
+            this.uiUrl = uiUrl;
+            this.pagesize = pageSize;
+            this.timeout = timeout;
+    }
+
+    private String getVcsHostname() {
+    return vcsHostname == null || vcsHostname.isEmpty()
+            ? hostname
+            : vcsHostname;
     }
 
     public WebhookResult processWebhook(String jsonPayload, Map<String, String> headers, String token, Workspace workspace) {
@@ -440,7 +455,7 @@ public class GitLabWebhookService extends WebhookServiceBase {
 
         String ownerAndRepo = extractOwnerAndRepoGitlab(workspace.getSource());
         String token = workspace.getVcs().getAccessToken();
-        String webhookUrl = String.format("https://%s/webhook/v1/%s", hostname, webhook.getId());
+        String webhookUrl = String.format("https://%s/webhook/v1/%s", getVcsHostname(), webhook.getId());
         RestTemplate restTemplate = new RestTemplate();
 
         // Create the headers
@@ -992,7 +1007,7 @@ public class GitLabWebhookService extends WebhookServiceBase {
         Vcs vcs = repoWebhook.getVcs();
         String token = vcs.getAccessToken();
         String ownerAndRepo = extractOwnerAndRepoGitlab(repoWebhook.getRepositoryUrl());
-        String webhookUrl = String.format("https://%s/webhook/v2/%s", hostname, repoWebhook.getId().toString());
+        String webhookUrl = String.format("https://%s/webhook/v2/%s", getVcsHostname(), repoWebhook.getId().toString());
 
         boolean pushEvents = eventTypes.contains(WebhookEventType.PUSH);
         boolean mergeRequestsEvents = eventTypes.contains(WebhookEventType.PULL_REQUEST);
