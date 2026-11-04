@@ -24,6 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import io.terrakube.api.plugin.execution.JobBranchPolicyException;
 import io.terrakube.api.plugin.execution.WorkspaceBranchPolicy;
+import io.terrakube.api.plugin.execution.WorkspaceBranches;
 import io.terrakube.api.plugin.scheduler.ScheduleJobService;
 import io.terrakube.api.plugin.security.audit.AuditActorContext;
 import io.terrakube.api.plugin.vcs.provider.azdevops.AzDevOpsWebhookService;
@@ -45,10 +46,11 @@ import io.terrakube.api.rs.workspace.Workspace;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-import lombok.AllArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 
-@AllArgsConstructor
 @Slf4j
 @Service
 public class RepoWebhookService {
@@ -66,6 +68,62 @@ public class RepoWebhookService {
     ObjectMapper objectMapper;
     Executor workspaceFanoutExecutor;
     WorkspaceBranchPolicy workspaceBranchPolicy;
+
+    @Setter
+    @Value("${io.terrakube.webhook.pr-base-branch-filter:true}")
+    private boolean prBaseBranchFilter = true;
+
+    @Autowired
+    public RepoWebhookService(
+            RepoWebhookRepository repoWebhookRepository,
+            WorkspaceRepository workspaceRepository,
+            WebhookEventRepository webhookEventRepository,
+            GitHubWebhookService gitHubWebhookService,
+            GitLabWebhookService gitLabWebhookService,
+            AzDevOpsWebhookService azDevOpsWebhookService,
+            JobRepository jobRepository,
+            ScheduleJobService scheduleJobService,
+            PrCommentService prCommentService,
+            RepoWebhookDeliveryTransactions repoWebhookDeliveryTransactions,
+            ObjectMapper objectMapper,
+            Executor workspaceFanoutExecutor,
+            WorkspaceBranchPolicy workspaceBranchPolicy) {
+        this(repoWebhookRepository, workspaceRepository, webhookEventRepository, gitHubWebhookService,
+                gitLabWebhookService, azDevOpsWebhookService, jobRepository, scheduleJobService,
+                prCommentService, repoWebhookDeliveryTransactions, objectMapper, workspaceFanoutExecutor,
+                workspaceBranchPolicy, true);
+    }
+
+    public RepoWebhookService(
+            RepoWebhookRepository repoWebhookRepository,
+            WorkspaceRepository workspaceRepository,
+            WebhookEventRepository webhookEventRepository,
+            GitHubWebhookService gitHubWebhookService,
+            GitLabWebhookService gitLabWebhookService,
+            AzDevOpsWebhookService azDevOpsWebhookService,
+            JobRepository jobRepository,
+            ScheduleJobService scheduleJobService,
+            PrCommentService prCommentService,
+            RepoWebhookDeliveryTransactions repoWebhookDeliveryTransactions,
+            ObjectMapper objectMapper,
+            Executor workspaceFanoutExecutor,
+            WorkspaceBranchPolicy workspaceBranchPolicy,
+            boolean prBaseBranchFilter) {
+        this.repoWebhookRepository = repoWebhookRepository;
+        this.workspaceRepository = workspaceRepository;
+        this.webhookEventRepository = webhookEventRepository;
+        this.gitHubWebhookService = gitHubWebhookService;
+        this.gitLabWebhookService = gitLabWebhookService;
+        this.azDevOpsWebhookService = azDevOpsWebhookService;
+        this.jobRepository = jobRepository;
+        this.scheduleJobService = scheduleJobService;
+        this.prCommentService = prCommentService;
+        this.repoWebhookDeliveryTransactions = repoWebhookDeliveryTransactions;
+        this.objectMapper = objectMapper;
+        this.workspaceFanoutExecutor = workspaceFanoutExecutor;
+        this.workspaceBranchPolicy = workspaceBranchPolicy;
+        this.prBaseBranchFilter = prBaseBranchFilter;
+    }
 
     private boolean isGitLab(RepoWebhook repoWebhook) {
         return repoWebhook.getVcs() != null && repoWebhook.getVcs().getVcsType() == VcsType.GITLAB;
@@ -302,6 +360,13 @@ public class RepoWebhookService {
             }
         }
 
+        if (prBaseBranchFilter && webhookResult.isPullRequestOrComment()
+                && !WorkspaceBranches.matchesConfiguredBranch(workspace.getBranch(), webhookResult.getBaseBranch())) {
+            log.info("Skipping PR webhook event for workspace {}: PR target branch '{}' does not match workspace branch '{}'",
+                    workspace.getName(), webhookResult.getBaseBranch(), workspace.getBranch());
+            return;
+        }
+
         // Azure DevOps: file changes require per-workspace API calls (push payloads
         // don't include changed files, and PR changes need workspace VCS credentials).
         if (isAzureDevOps(workspace) && workspace.getVcs() != null) {
@@ -348,7 +413,7 @@ public class RepoWebhookService {
             // on PR" would never actually post a comment for a repo on the shared v2 webhook.
             WebhookEvent matchedEvent = webhookResult.isRelease() ? null
                     : WebhookEventMatcher.findMatchingEvent(webhookResult, workspace.getWebhook(),
-                            webhookEventRepository);
+                            webhookEventRepository, prBaseBranchFilter);
 
             // Mirrors WebhookService.handlePrCommentCommand: a "terrakube plan"/"terrakube apply"
             // comment only starts a job when PR workflow is actually enabled on the matched event.

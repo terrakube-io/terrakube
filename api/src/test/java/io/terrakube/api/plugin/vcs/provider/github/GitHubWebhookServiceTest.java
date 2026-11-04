@@ -95,6 +95,7 @@ public class GitHubWebhookServiceTest {
                       "pull_request": {
                         "user": {"login": "octocat"},
                         "head": {"sha": "abc123", "ref": "feature"},
+                        "base": {"ref": "main"},
                         "url": "https://api.github.com/repos/owner/repo/pulls/42"
                       }
                     }
@@ -104,6 +105,8 @@ public class GitHubWebhookServiceTest {
 
             assertTrue(result.isValid());
             assertEquals("octocat", result.getCreatedBy());
+            assertEquals("feature", result.getBranch());
+            assertEquals("main", result.getBaseBranch());
         }
 
         private static Stream<Arguments> pushAuthors() {
@@ -337,11 +340,14 @@ public class GitHubWebhookServiceTest {
             String path = "/repos/owner/repo/pulls/42";
             wireMockServer.stubFor(get(urlPathMatching(path))
                     .willReturn(aResponse().withHeader("Content-Type", "application/json")
-                            .withBody("{\"head\":{\"sha\":\"abc123\",\"ref\":\"main\"}}")));
+                            .withBody("{\"head\":{\"sha\":\"abc123\",\"ref\":\"feature\"},\"base\":{\"ref\":\"main\"}}")));
             Workspace workspace = job.getWorkspace();
 
+            WebhookResult result = new WebhookResult();
             assertTrue(subjectWithRestTemplate.resolvePrDetails(workspace.getVcs(), workspace.getSource(),
-                    workspace.getVcs().getApiUrl() + path, new WebhookResult()));
+                    workspace.getVcs().getApiUrl() + path, result));
+            assertEquals("feature", result.getBranch());
+            assertEquals("main", result.getBaseBranch());
 
             assertNull(wireMockServer.getAllServeEvents().getFirst().getRequest()
                     .getHeader(HttpHeaders.CONTENT_TYPE));

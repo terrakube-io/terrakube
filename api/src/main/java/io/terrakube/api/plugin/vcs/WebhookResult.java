@@ -16,6 +16,7 @@ import java.util.List;
 public class WebhookResult {
     private String workspaceId;
     private String branch;
+    private String baseBranch;
     private boolean isValid;
     private String event;
     private String createdBy;
@@ -32,15 +33,20 @@ public class WebhookResult {
     private String rawPayload;
     private String prDetailsUrl;
 
+    /** Whether this result is for a pull request or a comment command on one. */
+    @JsonIgnore
+    public boolean isPullRequestOrComment() {
+        return isPrComment || prNumber != null
+                || "pull_request".equals(event) || "merge_request".equals(event);
+    }
+
     /** What started the run, for the workspace branch policy. Derived from the other fields, so not serialized. */
     @JsonIgnore
     public WorkspaceBranchPolicy.Source getBranchPolicySource() {
         if (isRelease) {
             return WorkspaceBranchPolicy.Source.RELEASE;
         }
-        boolean pullRequest = isPrComment || prNumber != null
-                || "pull_request".equals(event) || "merge_request".equals(event);
-        return pullRequest ? WorkspaceBranchPolicy.Source.PULL_REQUEST : WorkspaceBranchPolicy.Source.PUSH;
+        return isPullRequestOrComment() ? WorkspaceBranchPolicy.Source.PULL_REQUEST : WorkspaceBranchPolicy.Source.PUSH;
     }
 
     public String getNormalizedEvent() {

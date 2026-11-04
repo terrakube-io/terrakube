@@ -255,6 +255,7 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
         int prNumber = resource.path("pullRequestId").asInt();
         result.setPrNumber(prNumber);
         result.setBranch(stripRefPrefix(resource.path("sourceRefName").asText()));
+        result.setBaseBranch(stripRefPrefix(resource.path("targetRefName").asText(null)));
         result.setCommit(resource.path("lastMergeSourceCommit").path(FIELD_COMMIT_ID).asText());
         result.setCreatedBy(resolveUser(resource.path("createdBy")));
 
@@ -289,6 +290,7 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
         result.setPrNumber(prNumber);
         result.setCreatedBy(resolveUser(resource.path("comment").path("author")));
         result.setBranch(stripRefPrefix(pullRequest.path("sourceRefName").asText()));
+        result.setBaseBranch(stripRefPrefix(pullRequest.path("targetRefName").asText(null)));
         result.setCommit(pullRequest.path("lastMergeSourceCommit").path(FIELD_COMMIT_ID).asText());
 
         JsonNode repository = pullRequest.path(FIELD_REPOSITORY);
@@ -948,6 +950,7 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
         int prNumber = resource.path("pullRequestId").asInt();
         result.setPrNumber(prNumber);
         result.setBranch(stripRefPrefix(resource.path("sourceRefName").asText()));
+        result.setBaseBranch(stripRefPrefix(resource.path("targetRefName").asText(null)));
         result.setCommit(resource.path("lastMergeSourceCommit").path(FIELD_COMMIT_ID).asText());
         result.setCreatedBy(resolveUser(resource.path("createdBy")));
         // File changes are deferred — fetched per-workspace via fetchPrFileChanges().
@@ -974,6 +977,7 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
         result.setPrNumber(prNumber);
         result.setCreatedBy(resolveUser(resource.path("comment").path("author")));
         result.setBranch(stripRefPrefix(pullRequest.path("sourceRefName").asText()));
+        result.setBaseBranch(stripRefPrefix(pullRequest.path("targetRefName").asText(null)));
         result.setCommit(pullRequest.path("lastMergeSourceCommit").path(FIELD_COMMIT_ID).asText());
         // File changes are deferred — fetched per-workspace via fetchPrFileChanges().
         return result;

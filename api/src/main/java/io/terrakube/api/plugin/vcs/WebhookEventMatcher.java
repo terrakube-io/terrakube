@@ -2,6 +2,7 @@ package io.terrakube.api.plugin.vcs;
 
 import java.util.List;
 
+import io.terrakube.api.plugin.execution.WorkspaceBranches;
 import io.terrakube.api.repository.WebhookEventRepository;
 import io.terrakube.api.rs.webhook.Webhook;
 import io.terrakube.api.rs.webhook.WebhookEvent;
@@ -103,19 +104,34 @@ public final class WebhookEventMatcher {
      */
     public static WebhookEvent findMatchingEvent(WebhookResult result, Webhook webhook,
             WebhookEventRepository webhookEventRepository) {
+        return findMatchingEvent(result, webhook, webhookEventRepository, true);
+    }
+
+    public static WebhookEvent findMatchingEvent(WebhookResult result, Webhook webhook,
+            WebhookEventRepository webhookEventRepository, boolean matchPrBaseBranch) {
         WebhookEventType eventType = result.isPrComment()
                 ? WebhookEventType.PULL_REQUEST
                 : WebhookEventType.valueOf(result.getNormalizedEvent().toUpperCase());
 
+        String branchToMatch = resolveBranchToMatch(result, eventType, matchPrBaseBranch);
+
         return webhookEventRepository
                 .findByWebhookAndEventOrderByPriorityAsc(webhook, eventType)
                 .stream()
-                .filter(webhookEvent -> checkBranch(result.getBranch(), webhookEvent)
+                .filter(webhookEvent -> checkBranch(branchToMatch, webhookEvent)
                         && checkFileChanges(result.getFileChanges(), webhookEvent))
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException(
                         "No valid template found for the configured webhook event " + result.getEvent()
                                 + " normalized " + result.getNormalizedEvent()));
+    }
+
+    public static String resolveBranchToMatch(WebhookResult result, WebhookEventType eventType, boolean matchPrBaseBranch) {
+        if (matchPrBaseBranch && eventType == WebhookEventType.PULL_REQUEST
+                && result.getBaseBranch() != null && !result.getBaseBranch().isBlank()) {
+            return WorkspaceBranches.shortName(result.getBaseBranch());
+        }
+        return result.getBranch();
     }
 
     public static String findTemplateId(WebhookResult result, Webhook webhook,

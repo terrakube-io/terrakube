@@ -120,6 +120,37 @@ public class WebhookResultTest {
     }
 
     @Test
+    public void baseBranchCanBeStoredAndRetrieved() {
+        WebhookResult result = new WebhookResult();
+        assertNull(result.getBaseBranch());
+        result.setBaseBranch("main");
+        assertEquals("main", result.getBaseBranch());
+    }
+
+    @Test
+    public void isPullRequestOrCommentIdentifiesPrsAndComments() {
+        WebhookResult push = new WebhookResult();
+        push.setEvent("push");
+        assertFalse(push.isPullRequestOrComment());
+
+        WebhookResult pr = new WebhookResult();
+        pr.setEvent("pull_request");
+        assertTrue(pr.isPullRequestOrComment());
+
+        WebhookResult mr = new WebhookResult();
+        mr.setEvent("merge_request");
+        assertTrue(mr.isPullRequestOrComment());
+
+        WebhookResult comment = new WebhookResult();
+        comment.setPrComment(true);
+        assertTrue(comment.isPullRequestOrComment());
+
+        WebhookResult withNumber = new WebhookResult();
+        withNumber.setPrNumber(10);
+        assertTrue(withNumber.isPullRequestOrComment());
+    }
+
+    @Test
     void theBranchPolicySourceIsNotSerialized() throws Exception {
         String json = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(new WebhookResult());
 

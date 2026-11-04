@@ -33,4 +33,30 @@ class WorkspaceBranchesTest {
     void remoteContentIsTheBranchOfUploadedContent() {
         assertEquals("remote-content", WorkspaceBranches.REMOTE_CONTENT);
     }
+
+    @Test
+    void matchesConfiguredBranchAllowsUnsetOrRemoteContentWorkspaceBranch() {
+        org.junit.jupiter.api.Assertions.assertTrue(WorkspaceBranches.matchesConfiguredBranch(null, "main"));
+        org.junit.jupiter.api.Assertions.assertTrue(WorkspaceBranches.matchesConfiguredBranch("", "main"));
+        org.junit.jupiter.api.Assertions.assertTrue(WorkspaceBranches.matchesConfiguredBranch("   ", "main"));
+        org.junit.jupiter.api.Assertions.assertTrue(WorkspaceBranches.matchesConfiguredBranch("remote-content", "main"));
+    }
+
+    @Test
+    void matchesConfiguredBranchAllowsUnsetTargetBranch() {
+        org.junit.jupiter.api.Assertions.assertTrue(WorkspaceBranches.matchesConfiguredBranch("main", null));
+        org.junit.jupiter.api.Assertions.assertTrue(WorkspaceBranches.matchesConfiguredBranch("main", ""));
+        org.junit.jupiter.api.Assertions.assertTrue(WorkspaceBranches.matchesConfiguredBranch("main", "   "));
+    }
+
+    @Test
+    void matchesConfiguredBranchChecksExactAndPrefixNormalizedNames() {
+        org.junit.jupiter.api.Assertions.assertTrue(WorkspaceBranches.matchesConfiguredBranch("main", "main"));
+        org.junit.jupiter.api.Assertions.assertTrue(WorkspaceBranches.matchesConfiguredBranch("refs/heads/main", "main"));
+        org.junit.jupiter.api.Assertions.assertTrue(WorkspaceBranches.matchesConfiguredBranch("main", "refs/heads/main"));
+        org.junit.jupiter.api.Assertions.assertTrue(WorkspaceBranches.matchesConfiguredBranch("main, develop", "develop"));
+        org.junit.jupiter.api.Assertions.assertTrue(WorkspaceBranches.matchesConfiguredBranch("main, develop", "refs/heads/develop"));
+        org.junit.jupiter.api.Assertions.assertFalse(WorkspaceBranches.matchesConfiguredBranch("main", "develop"));
+        org.junit.jupiter.api.Assertions.assertFalse(WorkspaceBranches.matchesConfiguredBranch("main, staging", "develop"));
+    }
 }

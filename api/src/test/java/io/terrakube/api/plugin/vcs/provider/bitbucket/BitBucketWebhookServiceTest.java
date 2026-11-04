@@ -78,6 +78,62 @@ class BitBucketWebhookServiceTest {
         assertUtf8JsonBody(markdown);
     }
 
+    @Test
+    void pullRequestParsesSourceAndDestinationBranches() {
+        String payload = """
+                {
+                  "pullrequest": {
+                    "id": 15,
+                    "source": {
+                      "branch": {"name": "feature/branch"},
+                      "commit": {"hash": "abc1234"}
+                    },
+                    "destination": {
+                      "branch": {"name": "main"}
+                    }
+                  }
+                }
+                """;
+        io.terrakube.api.plugin.vcs.WebhookResult result = subject.handleEvent(payload,
+                new io.terrakube.api.plugin.vcs.WebhookResult(), java.util.Map.of("x-event-key", "pullrequest:created"));
+
+        assertEquals("pull_request", result.getEvent());
+        assertEquals(15, result.getPrNumber());
+        assertEquals("feature/branch", result.getBranch());
+        assertEquals("main", result.getBaseBranch());
+        assertEquals("abc1234", result.getCommit());
+    }
+
+    @Test
+    void pullRequestCommentParsesSourceAndDestinationBranches() {
+        String payload = """
+                {
+                  "comment": {
+                    "id": 99,
+                    "content": {"raw": "terrakube plan"},
+                    "user": {"display_name": "Bitbucket User"}
+                  },
+                  "pullrequest": {
+                    "id": 15,
+                    "source": {
+                      "branch": {"name": "feature/branch"},
+                      "commit": {"hash": "abc1234"}
+                    },
+                    "destination": {
+                      "branch": {"name": "develop"}
+                    }
+                  }
+                }
+                """;
+        io.terrakube.api.plugin.vcs.WebhookResult result = subject.handleEvent(payload,
+                new io.terrakube.api.plugin.vcs.WebhookResult(), java.util.Map.of("x-event-key", "pullrequest:comment_created"));
+
+        assertTrue(result.isPrComment());
+        assertEquals("plan", result.getCommentCommand());
+        assertEquals("feature/branch", result.getBranch());
+        assertEquals("develop", result.getBaseBranch());
+    }
+
     private void assertUtf8JsonBody(String markdown) throws Exception {
         assertEquals(1, server.getAllServeEvents().size());
         var request = server.getAllServeEvents().getFirst().getRequest();
