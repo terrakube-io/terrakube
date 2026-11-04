@@ -52,6 +52,8 @@ public class TeamApproveJobRbac extends OperationCheck<Job> {
             return false;
         }
         log.debug("team approve job rbac {}", job.getId());
+        if (!TeamApproveJob.isRbacUserTransition(optional)) return false;
+
         List<Team> teamList = job.getWorkspace().getOrganization().getTeam();
         boolean isServiceAccount = authenticatedUser.isServiceAccount(requestScope.getUser());
         for (Team team : teamList) {
