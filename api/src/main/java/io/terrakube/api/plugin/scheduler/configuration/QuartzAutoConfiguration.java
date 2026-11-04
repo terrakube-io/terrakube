@@ -39,9 +39,16 @@ public class QuartzAutoConfiguration {
         }
     }
 
+    public SchedulerFactoryBean schedulerFactoryBean(ApplicationContext applicationContext, DataSource dataSource, DataSourceConfigurationProperties dataSourceConfigurationProperties,
+            String schedulerInstanceName,
+            int schedulerThreadCount) {
+        return schedulerFactoryBean(applicationContext, dataSource, dataSourceConfigurationProperties, schedulerInstanceName, "AUTO", schedulerThreadCount);
+    }
+
     @Bean
     public SchedulerFactoryBean schedulerFactoryBean(ApplicationContext applicationContext, DataSource dataSource, DataSourceConfigurationProperties dataSourceConfigurationProperties,
             @Value("${io.terrakube.api.plugin.scheduler.instanceName:schedulerFactoryBean}") String schedulerInstanceName,
+            @Value("${io.terrakube.api.plugin.scheduler.instanceId:AUTO}") String schedulerInstanceId,
             @Value("${io.terrakube.scheduler.thread-count:8}") int schedulerThreadCount) {
         SchedulerFactoryBean schedulerFactoryBean = new SchedulerFactoryBean();
         schedulerFactoryBean.setJobFactory(new AutowireCapableBeanJobFactory(applicationContext.getAutowireCapableBeanFactory()));
@@ -50,7 +57,7 @@ public class QuartzAutoConfiguration {
         properties.put("org.quartz.jobStore.class","org.springframework.scheduling.quartz.LocalDataSourceJobStore");
         properties.put("org.quartz.jobStore.isClustered","true");
         properties.put("org.quartz.scheduler.instanceName",schedulerInstanceName);
-        properties.put("org.quartz.scheduler.instanceId","AUTO");
+        properties.put("org.quartz.scheduler.instanceId",schedulerInstanceId);
         // Same property and default SchedulerThreadPoolValidation checks against the DB pool size;
         // this bean replaces Spring Boot's, so spring.quartz.properties.* never reaches Quartz.
         properties.put("org.quartz.threadPool.threadCount",String.valueOf(schedulerThreadCount));

@@ -499,7 +499,7 @@ public class AccessTests extends ServerApplicationTests {
                 .all()
                 .statusCode(HttpStatus.NO_CONTENT.value());
 
-        given()
+        String jobId = given()
                 .headers("Authorization", "Bearer " + generatePAT("MANAGE_WITH_LIMITED_ACCESS"), "Content-Type", "application/vnd.api+json")
                 .body("{\n" +
                         "  \"data\": {\n" +
@@ -523,7 +523,8 @@ public class AccessTests extends ServerApplicationTests {
                 .assertThat()
                 .log()
                 .all()
-                .statusCode(HttpStatus.CREATED.value());
+                .statusCode(HttpStatus.CREATED.value())
+                .extract().path("data.id");
 
         given()
                 .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_ADMIN"))
@@ -533,6 +534,18 @@ public class AccessTests extends ServerApplicationTests {
                 .assertThat()
                 .log()
                 .all()
+                .statusCode(HttpStatus.NO_CONTENT.value());
+
+        // Cleanup job and workspace to avoid leaving orphaned active runs
+        stepRepository.deleteAll(stepRepository.findByJobId(Integer.parseInt(jobId)));
+        jobRepository.deleteById(Integer.parseInt(jobId));
+
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+                .when()
+                .delete("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/workspace/" + workspaceId)
+                .then()
+                .assertThat()
                 .statusCode(HttpStatus.NO_CONTENT.value());
     }
 
