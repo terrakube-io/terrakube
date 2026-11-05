@@ -7,6 +7,7 @@ import io.terrakube.api.rs.webhook.Webhook;
 import io.terrakube.api.rs.webhook.WebhookEvent;
 import io.terrakube.api.rs.webhook.WebhookEventPathType;
 import io.terrakube.api.rs.webhook.WebhookEventType;
+import io.terrakube.api.rs.workspace.Workspace;
 
 import org.junit.jupiter.api.Test;
 
@@ -139,23 +140,23 @@ class WebhookEventMatcherTest {
     }
 
     @Test
-    void resolveBranchToMatch_pullRequest_fallsBackToHeadBranchWhenDisabledOrBlank() {
+    void resolveBranchToMatch_pullRequest_failsClosedWhenBaseBranchIsBlank() {
         WebhookResult result = new WebhookResult();
         result.setBranch("feature/login");
         result.setBaseBranch("main");
 
-        // Disabled
+        // Disabled filter falls back to source branch
         assertThat(WebhookEventMatcher.resolveBranchToMatch(result, WebhookEventType.PULL_REQUEST, false))
                 .isEqualTo("feature/login");
 
-        // Blank baseBranch
+        // When enabled, blank or null baseBranch returns null (never the source branch)
         result.setBaseBranch("   ");
         assertThat(WebhookEventMatcher.resolveBranchToMatch(result, WebhookEventType.PULL_REQUEST, true))
-                .isEqualTo("feature/login");
+                .isNull();
 
         result.setBaseBranch(null);
         assertThat(WebhookEventMatcher.resolveBranchToMatch(result, WebhookEventType.PULL_REQUEST, true))
-                .isEqualTo("feature/login");
+                .isNull();
     }
 
     @Test
@@ -196,5 +197,96 @@ class WebhookEventMatcherTest {
         result.setBaseBranch("develop");
         assertThatThrownBy(() -> WebhookEventMatcher.findMatchingEvent(result, webhook, repository, true))
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void shouldProcessPullRequest_disabledFilter_alwaysReturnsTrue() {
+        Workspace ws = new Workspace();
+        ws.setBranch("main");
+        WebhookResult result = new WebhookResult();
+        result.setEvent("pull_request");
+        result.setBaseBranch("other");
+
+        assertThat(WebhookEventMatcher.shouldProcessPullRequest(ws, result, null, false)).isTrue();
+    }
+
+    @Test
+    void shouldProcessPullRequest_nonPrEvent_alwaysReturnsTrue() {
+        Workspace ws = new Workspace();
+        ws.setBranch("main");
+        WebhookResult result = new WebhookResult();
+        result.setEvent("push");
+        result.setBranch("other");
+
+        assertThat(WebhookEventMatcher.shouldProcessPullRequest(ws, result, null, true)).isTrue();
+    }
+
+    @Test
+    void shouldProcessPullRequest_missingBaseBranch_failsClosed() {
+        Workspace ws = new Workspace();
+        ws.setName("test-ws");
+        ws.setBranch("main");
+        WebhookResult result = new WebhookResult();
+        result.setEvent("pull_request");
+        result.setBranch("main"); // attacker-controlled source branch
+        result.setBaseBranch(null);
+
+        assertThat(WebhookEventMatcher.shouldProcessPullRequest(ws, result, null, true)).isFalse();
+
+        result.setBaseBranch("   ");
+        assertThat(WebhookEventMatcher.shouldProcessPullRequest(ws, result, null, true)).isFalse();
+    }
+
+    @Test
+    void shouldProcessPullRequest_explicitPrTriggerRegexAllowsEvaluationEvenIfWorkspaceBranchDiffers() {
+        Workspace ws = new Workspace();
+        ws.setName("multi-target-ws");
+        ws.setBranch("main");
+        Webhook webhook = new Webhook();
+        ws.setWebhook(webhook);
+
+        WebhookEvent trigger = new WebhookEvent();
+        trigger.setEvent(WebhookEventType.PULL_REQUEST);
+        trigger.setBranch("release/.*");
+
+        WebhookEventRepository repository = mock(WebhookEventRepository.class);
+        when(repository.findByWebhookAndEventOrderByPriorityAsc(webhook, WebhookEventType.PULL_REQUEST))
+                .thenReturn(List.of(trigger));
+
+        WebhookResult result = new WebhookResult();
+        result.setEvent("pull_request");
+        result.setBranch("feature/1");
+        result.setBaseBranch("release/v2.0");
+
+        // Even though ws.branch is "main", having an explicit PR trigger branch pattern delegates
+        // to event-level matching rather than rejecting upfront.
+        assertThat(WebhookEventMatcher.shouldProcessPullRequest(ws, result, repository, true)).isTrue();
+    }
+
+    @Test
+    void shouldProcessPullRequest_fallsBackToWorkspaceBranchWhenNoExplicitPrTriggerBranch() {
+        Workspace ws = new Workspace();
+        ws.setName("test-ws");
+        ws.setBranch("main");
+        Webhook webhook = new Webhook();
+        ws.setWebhook(webhook);
+
+        WebhookEvent trigger = new WebhookEvent();
+        trigger.setEvent(WebhookEventType.PULL_REQUEST);
+        trigger.setBranch(""); // no branch pattern configured
+
+        WebhookEventRepository repository = mock(WebhookEventRepository.class);
+        when(repository.findByWebhookAndEventOrderByPriorityAsc(webhook, WebhookEventType.PULL_REQUEST))
+                .thenReturn(List.of(trigger));
+
+        WebhookResult result = new WebhookResult();
+        result.setEvent("pull_request");
+        result.setBranch("feature/1");
+        result.setBaseBranch("main");
+
+        assertThat(WebhookEventMatcher.shouldProcessPullRequest(ws, result, repository, true)).isTrue();
+
+        result.setBaseBranch("develop");
+        assertThat(WebhookEventMatcher.shouldProcessPullRequest(ws, result, repository, true)).isFalse();
     }
 }

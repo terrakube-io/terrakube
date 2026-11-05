@@ -1,6 +1,7 @@
 package io.terrakube.api.plugin.vcs;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import io.terrakube.api.plugin.execution.WorkspaceBranchPolicy;
 import lombok.Getter;
 import lombok.Setter;
@@ -13,6 +14,7 @@ import java.util.List;
 @Setter
 @ToString
 @Slf4j
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class WebhookResult {
     private String workspaceId;
     private String branch;
@@ -36,6 +38,9 @@ public class WebhookResult {
     /** Whether this result is for a pull request or a comment command on one. */
     @JsonIgnore
     public boolean isPullRequestOrComment() {
+        if (isRelease) {
+            return false;
+        }
         return isPrComment || prNumber != null
                 || "pull_request".equals(event) || "merge_request".equals(event);
     }

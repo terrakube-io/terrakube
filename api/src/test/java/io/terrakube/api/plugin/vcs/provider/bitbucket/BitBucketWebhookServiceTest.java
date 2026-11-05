@@ -21,9 +21,12 @@ import org.springframework.web.client.RestTemplate;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.tomakehurst.wiremock.WireMockServer;
 
+import io.terrakube.api.plugin.vcs.WebhookResult;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.vcs.Vcs;
 import io.terrakube.api.rs.workspace.Workspace;
+
+import java.util.Map;
 
 class BitBucketWebhookServiceTest {
 
@@ -95,8 +98,8 @@ class BitBucketWebhookServiceTest {
                   }
                 }
                 """;
-        io.terrakube.api.plugin.vcs.WebhookResult result = subject.handleEvent(payload,
-                new io.terrakube.api.plugin.vcs.WebhookResult(), java.util.Map.of("x-event-key", "pullrequest:created"));
+        WebhookResult result = subject.handleEvent(payload,
+                new WebhookResult(), Map.of("x-event-key", "pullrequest:created"));
 
         assertEquals("pull_request", result.getEvent());
         assertEquals(15, result.getPrNumber());
@@ -126,8 +129,8 @@ class BitBucketWebhookServiceTest {
                   }
                 }
                 """;
-        io.terrakube.api.plugin.vcs.WebhookResult result = subject.handleEvent(payload,
-                new io.terrakube.api.plugin.vcs.WebhookResult(), java.util.Map.of("x-event-key", "pullrequest:comment_created"));
+        WebhookResult result = subject.handleEvent(payload,
+                new WebhookResult(), Map.of("x-event-key", "pullrequest:comment_created"));
 
         assertTrue(result.isPrComment());
         assertEquals("plan", result.getCommentCommand());

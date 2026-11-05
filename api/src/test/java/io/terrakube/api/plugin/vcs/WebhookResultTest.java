@@ -148,6 +148,26 @@ public class WebhookResultTest {
         WebhookResult withNumber = new WebhookResult();
         withNumber.setPrNumber(10);
         assertTrue(withNumber.isPullRequestOrComment());
+
+        WebhookResult release = new WebhookResult();
+        release.setRelease(true);
+        release.setPrNumber(10);
+        release.setEvent("release");
+        assertFalse(release.isPullRequestOrComment());
+    }
+
+    @Test
+    void deserializationIgnoresUnknownPropertiesForRollingUpgrades() throws Exception {
+        String json = """
+                {
+                    "branch": "main",
+                    "baseBranch": "release/1.0",
+                    "someFutureField": "futureValue"
+                }
+                """;
+        WebhookResult result = new com.fasterxml.jackson.databind.ObjectMapper().readValue(json, WebhookResult.class);
+        assertEquals("main", result.getBranch());
+        assertEquals("release/1.0", result.getBaseBranch());
     }
 
     @Test

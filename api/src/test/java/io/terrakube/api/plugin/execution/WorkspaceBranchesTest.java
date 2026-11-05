@@ -3,6 +3,8 @@ package io.terrakube.api.plugin.execution;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class WorkspaceBranchesTest {
 
@@ -36,27 +38,27 @@ class WorkspaceBranchesTest {
 
     @Test
     void matchesConfiguredBranchAllowsUnsetOrRemoteContentWorkspaceBranch() {
-        org.junit.jupiter.api.Assertions.assertTrue(WorkspaceBranches.matchesConfiguredBranch(null, "main"));
-        org.junit.jupiter.api.Assertions.assertTrue(WorkspaceBranches.matchesConfiguredBranch("", "main"));
-        org.junit.jupiter.api.Assertions.assertTrue(WorkspaceBranches.matchesConfiguredBranch("   ", "main"));
-        org.junit.jupiter.api.Assertions.assertTrue(WorkspaceBranches.matchesConfiguredBranch("remote-content", "main"));
+        assertTrue(WorkspaceBranches.matchesConfiguredBranch(null, "main"));
+        assertTrue(WorkspaceBranches.matchesConfiguredBranch("", "main"));
+        assertTrue(WorkspaceBranches.matchesConfiguredBranch("   ", "main"));
+        assertTrue(WorkspaceBranches.matchesConfiguredBranch("remote-content", "main"));
     }
 
     @Test
-    void matchesConfiguredBranchAllowsUnsetTargetBranch() {
-        org.junit.jupiter.api.Assertions.assertTrue(WorkspaceBranches.matchesConfiguredBranch("main", null));
-        org.junit.jupiter.api.Assertions.assertTrue(WorkspaceBranches.matchesConfiguredBranch("main", ""));
-        org.junit.jupiter.api.Assertions.assertTrue(WorkspaceBranches.matchesConfiguredBranch("main", "   "));
+    void matchesConfiguredBranchFailsClosedOnUnsetOrBlankTargetBranchWhenConfigured() {
+        assertFalse(WorkspaceBranches.matchesConfiguredBranch("main", null));
+        assertFalse(WorkspaceBranches.matchesConfiguredBranch("main", ""));
+        assertFalse(WorkspaceBranches.matchesConfiguredBranch("main", "   "));
     }
 
     @Test
     void matchesConfiguredBranchChecksExactAndPrefixNormalizedNames() {
-        org.junit.jupiter.api.Assertions.assertTrue(WorkspaceBranches.matchesConfiguredBranch("main", "main"));
-        org.junit.jupiter.api.Assertions.assertTrue(WorkspaceBranches.matchesConfiguredBranch("refs/heads/main", "main"));
-        org.junit.jupiter.api.Assertions.assertTrue(WorkspaceBranches.matchesConfiguredBranch("main", "refs/heads/main"));
-        org.junit.jupiter.api.Assertions.assertTrue(WorkspaceBranches.matchesConfiguredBranch("main, develop", "develop"));
-        org.junit.jupiter.api.Assertions.assertTrue(WorkspaceBranches.matchesConfiguredBranch("main, develop", "refs/heads/develop"));
-        org.junit.jupiter.api.Assertions.assertFalse(WorkspaceBranches.matchesConfiguredBranch("main", "develop"));
-        org.junit.jupiter.api.Assertions.assertFalse(WorkspaceBranches.matchesConfiguredBranch("main, staging", "develop"));
+        assertTrue(WorkspaceBranches.matchesConfiguredBranch("main", "main"));
+        assertTrue(WorkspaceBranches.matchesConfiguredBranch("refs/heads/main", "main"));
+        assertTrue(WorkspaceBranches.matchesConfiguredBranch("main", "refs/heads/main"));
+        assertTrue(WorkspaceBranches.matchesConfiguredBranch("main, develop", "develop"));
+        assertTrue(WorkspaceBranches.matchesConfiguredBranch("main, develop", "refs/heads/develop"));
+        assertFalse(WorkspaceBranches.matchesConfiguredBranch("main", "develop"));
+        assertFalse(WorkspaceBranches.matchesConfiguredBranch("main, staging", "develop"));
     }
 }

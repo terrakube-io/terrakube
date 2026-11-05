@@ -70,6 +70,7 @@ class RepoWebhookServiceTest {
     WorkspaceBranchPolicy workspaceBranchPolicy;
     RepoWebhookDeliveryTransactions repoWebhookDeliveryTransactions;
     ObjectMapper objectMapper;
+    WebhookProperties webhookProperties;
 
     RepoWebhookService subject;
 
@@ -87,6 +88,7 @@ class RepoWebhookServiceTest {
         repoWebhookDeliveryTransactions = mock(RepoWebhookDeliveryTransactions.class);
         workspaceBranchPolicy = mock(WorkspaceBranchPolicy.class);
         objectMapper = new ObjectMapper();
+        webhookProperties = new WebhookProperties();
 
         subject = new RepoWebhookService(
                 repoWebhookRepository,
@@ -101,7 +103,8 @@ class RepoWebhookServiceTest {
                 repoWebhookDeliveryTransactions,
                 objectMapper,
                 Runnable::run,
-                workspaceBranchPolicy);
+                workspaceBranchPolicy,
+                webhookProperties);
     }
 
     private Workspace workspaceWithSource(String source) {
@@ -1951,6 +1954,7 @@ class RepoWebhookServiceTest {
 
         @Test
         void v2WebhookPullRequestMatchesWorkspaceTargetBranchAndSkipsOtherWorkspaces() throws Exception {
+            webhookProperties.setPrBaseBranchFilter(true);
             String repoUrl = "https://github.com/owner/repo";
             String payload = "{\"action\":\"opened\"}";
             RepoWebhook rw = repoWebhookWith(repoUrl, "secret");
@@ -1962,7 +1966,7 @@ class RepoWebhookServiceTest {
             whProd.setMigratedV2(true);
             WebhookEvent evProd = new WebhookEvent();
             evProd.setEvent(WebhookEventType.PULL_REQUEST);
-            evProd.setBranch(".*");
+            evProd.setBranch("main");
             evProd.setPath("*");
             evProd.setPathType(WebhookEventPathType.PATTERN);
             evProd.setTemplateId("prod-plan");
@@ -1985,6 +1989,8 @@ class RepoWebhookServiceTest {
 
             when(workspaceRepository.findByNormalizedSourceWithMigratedWebhook(repoUrl))
                     .thenReturn(List.of(wsProd, wsDev));
+            when(webhookEventRepository.findByWebhookAndEventOrderByPriorityAsc(whProd, WebhookEventType.PULL_REQUEST))
+                    .thenReturn(List.of(evProd));
             when(webhookEventRepository.findByWebhookAndEventOrderByPriorityAsc(whDev, WebhookEventType.PULL_REQUEST))
                     .thenReturn(List.of(evDev));
             when(jobRepository.save(any(Job.class))).thenAnswer(inv -> {
@@ -2005,10 +2011,7 @@ class RepoWebhookServiceTest {
 
             subject.processClaimedDelivery(rw, payload, Map.of("x-github-event", "pull_request"));
 
-            // wsProd was skipped because its branch (main) does not match baseBranch (develop)
-            verify(webhookEventRepository, never()).findByWebhookAndEventOrderByPriorityAsc(whProd, WebhookEventType.PULL_REQUEST);
-
-            // wsDev was executed
+            // wsDev was executed, wsProd was skipped
             ArgumentCaptor<Job> jobCaptor = ArgumentCaptor.forClass(Job.class);
             verify(jobRepository, times(1)).save(jobCaptor.capture());
             Job devJob = jobCaptor.getValue();
@@ -2021,6 +2024,7 @@ class RepoWebhookServiceTest {
 
         @Test
         void v2WebhookPullRequestMatchesUnsetWorkspaceBranch() throws Exception {
+            webhookProperties.setPrBaseBranchFilter(true);
             String repoUrl = "https://github.com/owner/repo";
             String payload = "{\"action\":\"opened\"}";
             RepoWebhook rw = repoWebhookWith(repoUrl, "secret");
@@ -2062,6 +2066,7 @@ class RepoWebhookServiceTest {
 
         @Test
         void v2WebhookPullRequestWithTargetBranchFilterDisabledDoesNotFilterWorkspacesByBaseBranch() throws Exception {
+            webhookProperties.setPrBaseBranchFilter(false);
             String repoUrl = "https://github.com/owner/repo";
             String payload = "{\"action\":\"opened\"}";
             RepoWebhook rw = repoWebhookWith(repoUrl, "secret");
@@ -2096,13 +2101,86 @@ class RepoWebhookServiceTest {
             prResult.setFileChanges(List.of("main.tf"));
             when(gitHubWebhookService.parseGitHubPayload(eq(payload), any())).thenReturn(prResult);
 
-            // Turn filter OFF
-            subject.setPrBaseBranchFilter(false);
-
             subject.processClaimedDelivery(rw, payload, Map.of("x-github-event", "pull_request"));
 
             // Because filter is off, legacy behavior allows wsProd to match against source branch feature/login
             verify(jobRepository, times(1)).save(any(Job.class));
+        }
+
+        @Test
+        void v2WebhookPullRequestFailsClosedWhenBaseBranchIsMissingWithFilterEnabled() throws Exception {
+            webhookProperties.setPrBaseBranchFilter(true);
+            String repoUrl = "https://github.com/owner/repo";
+            String payload = "{\"action\":\"opened\"}";
+            RepoWebhook rw = repoWebhookWith(repoUrl, "secret");
+
+            Workspace wsProd = workspaceWithSource(repoUrl);
+            wsProd.setName("prod");
+            wsProd.setBranch("main");
+            Webhook whProd = new Webhook();
+            whProd.setMigratedV2(true);
+            WebhookEvent evProd = new WebhookEvent();
+            evProd.setEvent(WebhookEventType.PULL_REQUEST);
+            evProd.setBranch("main");
+            whProd.setEvents(List.of(evProd));
+            wsProd.setWebhook(whProd);
+
+            when(workspaceRepository.findByNormalizedSourceWithMigratedWebhook(repoUrl))
+                    .thenReturn(List.of(wsProd));
+
+            WebhookResult prResult = new WebhookResult();
+            prResult.setEvent("pull_request");
+            prResult.setValid(true);
+            prResult.setBranch("main"); // attacker-controlled source branch
+            prResult.setBaseBranch(null); // missing base branch
+            prResult.setCommit("sha-login");
+            prResult.setPrNumber(53);
+            prResult.setFileChanges(List.of("main.tf"));
+            when(gitHubWebhookService.parseGitHubPayload(eq(payload), any())).thenReturn(prResult);
+
+            subject.processClaimedDelivery(rw, payload, Map.of("x-github-event", "pull_request"));
+
+            verify(jobRepository, never()).save(any(Job.class));
+        }
+
+        @Test
+        void v2WebhookPullRequestCommentSkipsWorkspaceWithMismatchedTargetBranch() throws Exception {
+            webhookProperties.setPrBaseBranchFilter(true);
+            String repoUrl = "https://github.com/owner/repo";
+            String payload = "{\"action\":\"created\"}";
+            RepoWebhook rw = repoWebhookWith(repoUrl, "secret");
+
+            Workspace wsProd = workspaceWithSource(repoUrl);
+            wsProd.setName("prod");
+            wsProd.setBranch("main");
+            Webhook whProd = new Webhook();
+            whProd.setMigratedV2(true);
+            WebhookEvent evProd = new WebhookEvent();
+            evProd.setEvent(WebhookEventType.PULL_REQUEST);
+            evProd.setBranch("main");
+            evProd.setPrWorkflowEnabled(true);
+            whProd.setEvents(List.of(evProd));
+            wsProd.setWebhook(whProd);
+
+            when(workspaceRepository.findByNormalizedSourceWithMigratedWebhook(repoUrl))
+                    .thenReturn(List.of(wsProd));
+
+            WebhookResult commentResult = new WebhookResult();
+            commentResult.setEvent("issue_comment");
+            commentResult.setValid(true);
+            commentResult.setPrComment(true);
+            commentResult.setCommentCommand("plan");
+            commentResult.setCommentId("c-1");
+            commentResult.setPrNumber(54);
+            commentResult.setBranch("feature/login");
+            commentResult.setBaseBranch("develop"); // does not match wsProd.branch (main)
+            commentResult.setCommit("sha-login");
+            commentResult.setFileChanges(List.of("main.tf"));
+            when(gitHubWebhookService.parseGitHubPayload(eq(payload), any())).thenReturn(commentResult);
+
+            subject.processClaimedDelivery(rw, payload, Map.of("x-github-event", "issue_comment"));
+
+            verify(jobRepository, never()).save(any(Job.class));
         }
     }
 }

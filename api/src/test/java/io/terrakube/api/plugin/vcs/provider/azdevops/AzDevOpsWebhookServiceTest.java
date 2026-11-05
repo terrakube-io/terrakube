@@ -2,6 +2,7 @@ package io.terrakube.api.plugin.vcs.provider.azdevops;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Map;
@@ -110,6 +111,48 @@ public class AzDevOpsWebhookServiceTest {
         assertEquals("apply", result.getCommentCommand());
         assertEquals("feature/azure", result.getBranch());
         assertEquals("main", result.getBaseBranch());
+    }
+
+    @Test
+    public void parseAzDevOpsPayloadPullRequestHandlesMissingTargetRefNameGracefully() {
+        String payload = """
+                {
+                  "eventType": "git.pullrequest.created",
+                  "resource": {
+                    "pullRequestId": 10,
+                    "sourceRefName": "refs/heads/feature/azure",
+                    "lastMergeSourceCommit": {"commitId": "commit123"}
+                  }
+                }
+                """;
+        WebhookResult result = subject.parseAzDevOpsPayload(payload, Map.of());
+        assertEquals("pull_request", result.getEvent());
+        assertEquals("feature/azure", result.getBranch());
+        assertNull(result.getBaseBranch());
+    }
+
+    @Test
+    public void parseAzDevOpsPayloadPullRequestCommentHandlesMissingTargetRefNameGracefully() {
+        String payload = """
+                {
+                  "eventType": "ms.vss-code.git-pullrequest-comment-event",
+                  "resource": {
+                    "comment": {
+                      "content": "terrakube plan",
+                      "author": {"displayName": "Azure User"}
+                    },
+                    "pullRequest": {
+                      "pullRequestId": 10,
+                      "sourceRefName": "refs/heads/feature/azure",
+                      "lastMergeSourceCommit": {"commitId": "commit123"}
+                    }
+                  }
+                }
+                """;
+        WebhookResult result = subject.parseAzDevOpsPayload(payload, Map.of());
+        assertTrue(result.isPrComment());
+        assertEquals("feature/azure", result.getBranch());
+        assertNull(result.getBaseBranch());
     }
 
     @Nested

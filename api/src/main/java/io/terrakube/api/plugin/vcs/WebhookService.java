@@ -8,8 +8,6 @@ import io.terrakube.api.plugin.execution.WorkspaceBranchPolicy;
 import io.terrakube.api.plugin.execution.WorkspaceBranches;
 import io.terrakube.api.rs.webhook.WebhookEvent;
 import io.terrakube.api.plugin.security.audit.AuditActorContext;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import io.terrakube.api.plugin.scheduler.ScheduleJobService;
@@ -31,9 +29,10 @@ import io.terrakube.api.rs.workspace.Workspace;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-import lombok.Setter;
+import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
+@AllArgsConstructor
 @Slf4j
 @Service
 public class WebhookService {
@@ -52,58 +51,7 @@ public class WebhookService {
     WorkspaceRepository workspaceRepository;
     PrCommentService prCommentService;
     WorkspaceBranchPolicy workspaceBranchPolicy;
-
-    @Setter
-    @Value("${io.terrakube.webhook.pr-base-branch-filter:true}")
-    private boolean prBaseBranchFilter = true;
-
-    @Autowired
-    public WebhookService(
-            WebhookRepository webhookRepository,
-            WebhookEventRepository webhookEventRepository,
-            GitHubWebhookService gitHubWebhookService,
-            GitLabWebhookService gitLabWebhookService,
-            BitBucketWebhookService bitBucketWebhookService,
-            AzDevOpsWebhookService azDevOpsWebhookService,
-            JobRepository jobRepository,
-            ScheduleJobService scheduleJobService,
-            ObjectMapper objectMapper,
-            WorkspaceRepository workspaceRepository,
-            PrCommentService prCommentService,
-            WorkspaceBranchPolicy workspaceBranchPolicy) {
-        this(webhookRepository, webhookEventRepository, gitHubWebhookService, gitLabWebhookService,
-                bitBucketWebhookService, azDevOpsWebhookService, jobRepository, scheduleJobService,
-                objectMapper, workspaceRepository, prCommentService, workspaceBranchPolicy, true);
-    }
-
-    public WebhookService(
-            WebhookRepository webhookRepository,
-            WebhookEventRepository webhookEventRepository,
-            GitHubWebhookService gitHubWebhookService,
-            GitLabWebhookService gitLabWebhookService,
-            BitBucketWebhookService bitBucketWebhookService,
-            AzDevOpsWebhookService azDevOpsWebhookService,
-            JobRepository jobRepository,
-            ScheduleJobService scheduleJobService,
-            ObjectMapper objectMapper,
-            WorkspaceRepository workspaceRepository,
-            PrCommentService prCommentService,
-            WorkspaceBranchPolicy workspaceBranchPolicy,
-            boolean prBaseBranchFilter) {
-        this.webhookRepository = webhookRepository;
-        this.webhookEventRepository = webhookEventRepository;
-        this.gitHubWebhookService = gitHubWebhookService;
-        this.gitLabWebhookService = gitLabWebhookService;
-        this.bitBucketWebhookService = bitBucketWebhookService;
-        this.azDevOpsWebhookService = azDevOpsWebhookService;
-        this.jobRepository = jobRepository;
-        this.scheduleJobService = scheduleJobService;
-        this.objectMapper = objectMapper;
-        this.workspaceRepository = workspaceRepository;
-        this.prCommentService = prCommentService;
-        this.workspaceBranchPolicy = workspaceBranchPolicy;
-        this.prBaseBranchFilter = prBaseBranchFilter;
-    }
+    WebhookProperties webhookProperties;
 
     @Transactional
     public String processWebhook(String webhookId, String jsonPayload, Map<String, String> headers) {
@@ -154,10 +102,13 @@ public class WebhookService {
                 || webhookResult.getEvent().equals(String.valueOf(WebhookEventType.PING).toLowerCase()))
             return result;
 
-        if (prBaseBranchFilter && webhookResult.isPullRequestOrComment()
-                && !WorkspaceBranches.matchesConfiguredBranch(workspace.getBranch(), webhookResult.getBaseBranch())) {
-            log.info("Skipping PR webhook event for workspace {}: PR target branch '{}' does not match workspace branch '{}'",
-                    workspace.getName(), webhookResult.getBaseBranch(), workspace.getBranch());
+        if (!WebhookEventMatcher.shouldProcessPullRequest(workspace, webhookResult, webhookEventRepository,
+                webhookProperties.isPrBaseBranchFilter())) {
+            if (webhookResult.isPrComment() && webhookResult.getPrNumber() != null) {
+                prCommentService.postBranchPolicyNotice(workspace, webhookResult.getPrNumber().intValue(),
+                        String.format("Workspace '%s' tracks branch '%s', but this pull request targets '%s'.",
+                                workspace.getName(), workspace.getBranch(), webhookResult.getBaseBranch()));
+            }
             return result;
         }
 
@@ -347,20 +298,8 @@ public class WebhookService {
     }
 
     private WebhookEvent findMatchingEvent(WebhookResult result, Webhook webhook) {
-        WebhookEventType eventType = result.isPrComment()
-                ? WebhookEventType.PULL_REQUEST
-                : WebhookEventType.valueOf(result.getNormalizedEvent().toUpperCase());
-
-        String branchToMatch = WebhookEventMatcher.resolveBranchToMatch(result, eventType, prBaseBranchFilter);
-
-        return webhookEventRepository
-                .findByWebhookAndEventOrderByPriorityAsc(webhook, eventType)
-                .stream()
-                .filter(webhookEvent -> checkBranch(branchToMatch, webhookEvent)
-                        && checkFileChanges(result.getFileChanges(), webhookEvent))
-                .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException(
-                        "No valid template found for webhook event " + result.getEvent()));
+        return WebhookEventMatcher.findMatchingEvent(result, webhook, webhookEventRepository,
+                webhookProperties.isPrBaseBranchFilter());
     }
 
     @Transactional

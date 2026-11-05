@@ -9,6 +9,8 @@ import io.terrakube.api.rs.webhook.WebhookEvent;
 import io.terrakube.api.rs.webhook.WebhookEventPathType;
 import io.terrakube.api.rs.webhook.WebhookEventType;
 
+import io.terrakube.api.rs.workspace.Workspace;
+
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
@@ -18,6 +20,9 @@ public final class WebhookEventMatcher {
     }
 
     public static boolean checkBranch(String webhookBranch, WebhookEvent webhookEvent) {
+        if (webhookBranch == null || webhookEvent == null || webhookEvent.getBranch() == null) {
+            return false;
+        }
         String[] branchList = webhookEvent.getBranch().split(",");
         for (String branch : branchList) {
             branch = branch.trim();
@@ -95,6 +100,51 @@ public final class WebhookEventMatcher {
     }
 
     /**
+     * Centralized guard for pull request webhooks and PR comments.
+     * Evaluates whether a workspace should process the event when target branch filtering is active.
+     */
+    public static boolean shouldProcessPullRequest(
+            Workspace workspace,
+            WebhookResult result,
+            WebhookEventRepository webhookEventRepository,
+            boolean prBaseBranchFilter) {
+        if (!prBaseBranchFilter || !result.isPullRequestOrComment()) {
+            return true;
+        }
+
+        if (result.getBaseBranch() == null || result.getBaseBranch().isBlank()) {
+            log.warn("Skipping PR webhook event for workspace {}: PR target branch is missing or could not be determined",
+                    workspace.getName());
+            return false;
+        }
+
+        if (WorkspaceBranches.matchesConfiguredBranch(workspace.getBranch(), result.getBaseBranch())) {
+            return true;
+        }
+
+        // Double-filtering resolution: if workspace branch does not match, check if the workspace
+        // has an explicit PR trigger branch pattern configured that matches the target branch.
+        if (workspace.getWebhook() != null && webhookEventRepository != null) {
+            List<WebhookEvent> prEvents = webhookEventRepository
+                    .findByWebhookAndEventOrderByPriorityAsc(workspace.getWebhook(), WebhookEventType.PULL_REQUEST);
+            if (prEvents != null) {
+                String targetShort = WorkspaceBranches.shortName(result.getBaseBranch());
+                for (WebhookEvent prEvent : prEvents) {
+                    if (prEvent.getBranch() != null && !prEvent.getBranch().isBlank()) {
+                        if (checkBranch(targetShort, prEvent)) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+
+        log.debug("Skipping PR webhook event for workspace {}: PR target branch '{}' does not match workspace branch '{}'",
+                workspace.getName(), result.getBaseBranch(), workspace.getBranch());
+        return false;
+    }
+
+    /**
      * Resolves the WebhookEvent row (template + PR-workflow settings) matching this result, not
      * just its template id - callers that create a Job need isPrWorkflowEnabled()/isPrApplyEnabled()
      * too, so a PR-triggered job gets prNumber wired up and a PR comment actually gets posted.
@@ -127,9 +177,11 @@ public final class WebhookEventMatcher {
     }
 
     public static String resolveBranchToMatch(WebhookResult result, WebhookEventType eventType, boolean matchPrBaseBranch) {
-        if (matchPrBaseBranch && eventType == WebhookEventType.PULL_REQUEST
-                && result.getBaseBranch() != null && !result.getBaseBranch().isBlank()) {
-            return WorkspaceBranches.shortName(result.getBaseBranch());
+        if (matchPrBaseBranch && eventType == WebhookEventType.PULL_REQUEST) {
+            if (result.getBaseBranch() != null && !result.getBaseBranch().isBlank()) {
+                return WorkspaceBranches.shortName(result.getBaseBranch());
+            }
+            return null;
         }
         return result.getBranch();
     }

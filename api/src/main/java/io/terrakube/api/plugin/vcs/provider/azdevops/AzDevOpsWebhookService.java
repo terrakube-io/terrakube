@@ -788,7 +788,7 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
 
     private String stripRefPrefix(String ref) {
         if (ref == null) {
-            return "";
+            return null;
         }
         if (ref.startsWith(REF_HEADS_PREFIX)) {
             return ref.substring(REF_HEADS_PREFIX.length());
