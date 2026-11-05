@@ -16,6 +16,6 @@ public class TerraformStateProperties {
 
     private TerraformStateType type;
     private boolean httpBackend;
-    private int httpTokenTtlMinutes = 60;
+    private int httpTokenTtlMinutes = 360;
 }
 

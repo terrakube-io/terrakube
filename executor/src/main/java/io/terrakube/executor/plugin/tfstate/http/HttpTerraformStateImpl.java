@@ -35,7 +35,7 @@ public class HttpTerraformStateImpl implements TerraformState {
     private static final String TF_HTTP_PASSWORD = "TF_HTTP_PASSWORD";
 
     @Builder.Default
-    private int tokenTtlMinutes = 60;
+    private int tokenTtlMinutes = 360;
 
     @NonNull
     private TerraformStatePathService terraformStatePathService;

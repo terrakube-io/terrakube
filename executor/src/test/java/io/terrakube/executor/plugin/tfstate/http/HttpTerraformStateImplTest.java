@@ -89,7 +89,7 @@ class HttpTerraformStateImplTest {
     @Test
     void testGetBackendEnvironmentVariablesProvidesBasicAuthCredentials() {
         String expectedToken = "scoped.jwt.token.value";
-        when(workspaceSecurity.generateAccessToken(60, ORG_ID, WS_ID, JOB_ID, STEP_ID)).thenReturn(expectedToken);
+        when(workspaceSecurity.generateAccessToken(360, ORG_ID, WS_ID, JOB_ID, STEP_ID)).thenReturn(expectedToken);
 
         Map<String, String> env = httpTerraformState.getBackendEnvironmentVariables(ORG_ID, WS_ID, JOB_ID, STEP_ID);
 
@@ -101,7 +101,7 @@ class HttpTerraformStateImplTest {
     @Test
     void testGetBackendEnvironmentVariablesWithoutJobIdGeneratesScopedTokenWithNullJobAndStep() {
         String expectedToken = "fallback.jwt.token";
-        when(workspaceSecurity.generateAccessToken(60, ORG_ID, WS_ID, null, null)).thenReturn(expectedToken);
+        when(workspaceSecurity.generateAccessToken(360, ORG_ID, WS_ID, null, null)).thenReturn(expectedToken);
 
         Map<String, String> env = httpTerraformState.getBackendEnvironmentVariables(ORG_ID, WS_ID, null, null);
 
@@ -112,7 +112,7 @@ class HttpTerraformStateImplTest {
 
     @Test
     void testGetBackendEnvironmentVariablesGeneratesTokenDirectlyWithoutCaching() {
-        when(workspaceSecurity.generateAccessToken(60, ORG_ID, WS_ID, JOB_ID, STEP_ID))
+        when(workspaceSecurity.generateAccessToken(360, ORG_ID, WS_ID, JOB_ID, STEP_ID))
                 .thenReturn("first.token")
                 .thenReturn("second.token");
 
@@ -121,7 +121,7 @@ class HttpTerraformStateImplTest {
 
         assertEquals("first.token", env1.get("TF_HTTP_PASSWORD"));
         assertEquals("second.token", env2.get("TF_HTTP_PASSWORD"));
-        verify(workspaceSecurity, times(2)).generateAccessToken(60, ORG_ID, WS_ID, JOB_ID, STEP_ID);
+        verify(workspaceSecurity, times(2)).generateAccessToken(360, ORG_ID, WS_ID, JOB_ID, STEP_ID);
     }
 
     @Test
