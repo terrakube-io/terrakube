@@ -155,6 +155,14 @@ public class AzDevOpsWebhookServiceTest {
         assertNull(result.getBaseBranch());
     }
 
+    @Test
+    public void stripRefPrefixNormalizesBranchAndTagRefs() {
+        assertEquals("main", subject.stripRefPrefix("refs/heads/main"));
+        assertEquals("v1.0", subject.stripRefPrefix("refs/tags/v1.0"));
+        assertEquals("feature/azure", subject.stripRefPrefix("feature/azure"));
+        assertNull(subject.stripRefPrefix(null));
+    }
+
     @Nested
     class ParseChangesPage {
 

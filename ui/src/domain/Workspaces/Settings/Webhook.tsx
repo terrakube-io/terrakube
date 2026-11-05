@@ -571,7 +571,7 @@ export const WorkspaceWebhook = ({
                                             {isRelease
                                               ? "tag"
                                               : trigger.event === "pull_request"
-                                                ? "target branch name"
+                                                ? "target branch name (or source branch if target filtering is disabled)"
                                                 : "branch name"}
                                             : <code>main</code> only matches main, <code>release/.*</code> matches every
                                             release branch. Enter or comma adds another.

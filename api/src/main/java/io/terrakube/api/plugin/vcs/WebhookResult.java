@@ -3,16 +3,19 @@ package io.terrakube.api.plugin.vcs;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import io.terrakube.api.plugin.execution.WorkspaceBranchPolicy;
+import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
 
+import java.util.ArrayList;
 import java.util.List;
 
 @Getter
 @Setter
 @ToString
+@EqualsAndHashCode
 @Slf4j
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class WebhookResult {
@@ -34,6 +37,29 @@ public class WebhookResult {
     private String prFilesUrl;
     private String rawPayload;
     private String prDetailsUrl;
+
+    public WebhookResult copy() {
+        WebhookResult copy = new WebhookResult();
+        copy.workspaceId = this.workspaceId;
+        copy.branch = this.branch;
+        copy.baseBranch = this.baseBranch;
+        copy.isValid = this.isValid;
+        copy.event = this.event;
+        copy.createdBy = this.createdBy;
+        copy.via = this.via;
+        copy.fileChanges = this.fileChanges != null ? new ArrayList<>(this.fileChanges) : null;
+        copy.commit = this.commit;
+        copy.prNumber = this.prNumber;
+        copy.isRelease = this.isRelease;
+        copy.commentBody = this.commentBody;
+        copy.commentCommand = this.commentCommand;
+        copy.commentId = this.commentId;
+        copy.isPrComment = this.isPrComment;
+        copy.prFilesUrl = this.prFilesUrl;
+        copy.rawPayload = this.rawPayload;
+        copy.prDetailsUrl = this.prDetailsUrl;
+        return copy;
+    }
 
     /** Whether this result is for a pull request or a comment command on one. */
     @JsonIgnore

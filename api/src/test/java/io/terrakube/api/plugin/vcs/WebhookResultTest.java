@@ -171,6 +171,30 @@ public class WebhookResultTest {
     }
 
     @Test
+    void copyCreatesIndependentCopy() {
+        WebhookResult original = new WebhookResult();
+        original.setBranch("feature/test");
+        original.setBaseBranch("main");
+        original.setCommit("abc123");
+        original.setPrNumber(42);
+        original.setFileChanges(new java.util.ArrayList<>(java.util.List.of("main.tf")));
+
+        WebhookResult copied = original.copy();
+        assertEquals(original, copied);
+        assertEquals(original.getBranch(), copied.getBranch());
+        assertEquals(original.getBaseBranch(), copied.getBaseBranch());
+        assertEquals(original.getCommit(), copied.getCommit());
+        assertEquals(original.getPrNumber(), copied.getPrNumber());
+        assertEquals(original.getFileChanges(), copied.getFileChanges());
+
+        // Modifying the copy doesn't mutate original
+        copied.setBaseBranch("develop");
+        copied.getFileChanges().add("variables.tf");
+        assertEquals("main", original.getBaseBranch());
+        assertEquals(1, original.getFileChanges().size());
+    }
+
+    @Test
     void theBranchPolicySourceIsNotSerialized() throws Exception {
         String json = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(new WebhookResult());
 

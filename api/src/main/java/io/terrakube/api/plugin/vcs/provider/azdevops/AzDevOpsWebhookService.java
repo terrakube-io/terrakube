@@ -265,6 +265,9 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
 
         if (repo != null && !repositoryId.isEmpty() && prNumber > 0) {
             result.setFileChanges(getPullRequestChanges(workspace.getVcs(), repo, repositoryId, prNumber));
+            if (result.getBaseBranch() == null && workspace.getVcs() != null) {
+                result.setBaseBranch(fetchPrTargetBranch(workspace.getVcs(), repo, repositoryId, prNumber));
+            }
         }
 
         return result;
@@ -299,6 +302,9 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
 
         if (repo != null && !repositoryId.isEmpty() && prNumber > 0) {
             result.setFileChanges(getPullRequestChanges(workspace.getVcs(), repo, repositoryId, prNumber));
+            if (result.getBaseBranch() == null && workspace.getVcs() != null) {
+                result.setBaseBranch(fetchPrTargetBranch(workspace.getVcs(), repo, repositoryId, prNumber));
+            }
         }
 
         return result;
@@ -786,7 +792,38 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
         return displayName == null || displayName.isEmpty() ? "system" : displayName;
     }
 
-    private String stripRefPrefix(String ref) {
+    public String fetchPrTargetBranch(Vcs vcs, String source, int prNumber) {
+        AzureRepo repo = parseSource(source);
+        if (repo == null) {
+            return null;
+        }
+        String[] repositoryAndProject = resolveRepository(vcs, repo);
+        if (repositoryAndProject.length == 0) {
+            return null;
+        }
+        return fetchPrTargetBranch(vcs, repo, repositoryAndProject[0], prNumber);
+    }
+
+    public String fetchPrTargetBranch(Vcs vcs, AzureRepo repo, String repositoryId, int prNumber) {
+        String encodedProject = UriUtils.encodePathSegment(repo.project, StandardCharsets.UTF_8);
+        String prUrl = String.format(
+                "%s/%s/_apis/git/repositories/%s/pullRequests/%s?api-version=%s",
+                repo.orgBaseUrl, encodedProject, repositoryId, prNumber, API_VERSION);
+
+        ResponseEntity<String> response = callAzureApi(vcs, "", prUrl, HttpMethod.GET);
+        if (response != null && response.getStatusCode().is2xxSuccessful()) {
+            try {
+                JsonNode rootNode = objectMapper.readTree(response.getBody());
+                String targetRef = rootNode.path("targetRefName").asText(null);
+                return stripRefPrefix(targetRef);
+            } catch (Exception e) {
+                log.error("Error parsing Azure DevOps pull request target branch", e);
+            }
+        }
+        return null;
+    }
+
+    public String stripRefPrefix(String ref) {
         if (ref == null) {
             return null;
         }

@@ -238,6 +238,10 @@ public class GitLabWebhookService extends WebhookServiceBase {
             result.setCreatedBy(rootNode.path("user").path("username").asText());
 
             JsonNode mrNode = rootNode.path("merge_request");
+            if (mrNode.isMissingNode() || !mrNode.has("iid")) {
+                result.setValid(false);
+                return result;
+            }
             result.setBranch(mrNode.path("source_branch").asText());
             result.setBaseBranch(mrNode.path("target_branch").asText(null));
             result.setPrNumber(mrNode.path("iid").asInt());
@@ -954,6 +958,10 @@ public class GitLabWebhookService extends WebhookServiceBase {
         result.setCreatedBy(rootNode.path("user").path("username").asText());
 
         JsonNode mrNode = rootNode.path("merge_request");
+        if (mrNode.isMissingNode() || !mrNode.has("iid")) {
+            result.setValid(false);
+            return;
+        }
         result.setBranch(mrNode.path("source_branch").asText());
         result.setBaseBranch(mrNode.path("target_branch").asText(null));
         result.setPrNumber(mrNode.path("iid").asInt());

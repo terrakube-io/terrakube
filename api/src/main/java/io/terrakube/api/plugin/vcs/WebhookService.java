@@ -104,7 +104,9 @@ public class WebhookService {
 
         if (!WebhookEventMatcher.shouldProcessPullRequest(workspace, webhookResult, webhookEventRepository,
                 webhookProperties.isPrBaseBranchFilter())) {
-            if (webhookResult.isPrComment() && webhookResult.getPrNumber() != null) {
+            if (webhookResult.isPrComment() && webhookResult.getPrNumber() != null
+                    && webhookResult.getPrNumber().intValue() > 0
+                    && webhookResult.getBaseBranch() != null && !webhookResult.getBaseBranch().isBlank()) {
                 prCommentService.postBranchPolicyNotice(workspace, webhookResult.getPrNumber().intValue(),
                         String.format("Workspace '%s' tracks branch '%s', but this pull request targets '%s'.",
                                 workspace.getName(), workspace.getBranch(), webhookResult.getBaseBranch()));

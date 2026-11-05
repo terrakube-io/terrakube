@@ -71,6 +71,21 @@ public class GitLabWebhookServiceTest {
     }
 
     @Test
+    public void parseGitLabPayloadIgnoresNoteWithoutMergeRequest() {
+        String payload = """
+                {
+                  "object_kind": "note",
+                  "object_attributes": {
+                    "noteable_type": "Issue",
+                    "note": "terrakube plan"
+                  }
+                }
+                """;
+        WebhookResult result = newService().parseGitLabPayload(payload, Map.of());
+        assertFalse(result.isValid());
+    }
+
+    @Test
     public void parseGitLabPayloadParsesReleaseCreate() {
         String payload = "{\"object_kind\":\"release\",\"action\":\"create\",\"tag\":\"v1.0.0\","
                 + "\"name\":\"Release 1.0.0\"}";

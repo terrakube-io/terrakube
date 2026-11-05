@@ -550,4 +550,24 @@ public class WebhookServiceTest {
                 eq("Workspace 'test-workspace' tracks branch 'main', but this pull request targets 'develop'."));
         verify(jobRepository, never()).save(any());
     }
+
+    @Test
+    public void processWebhookDoesNotPostNoticeWhenPrNumberIsZeroOrMissing() throws Exception {
+        webhookProperties.setPrBaseBranchFilter(true);
+        UUID webhookId = UUID.randomUUID();
+        workspace.setId(UUID.randomUUID());
+        workspace.setBranch("main");
+        doReturn(webhook).when(webhookRepository).getReferenceById(webhookId);
+
+        WebhookResult commentResult = createCommentResult("plan", 0);
+        commentResult.setValid(true);
+        commentResult.setEvent("issue_comment");
+        commentResult.setBaseBranch("develop");
+        doReturn(commentResult).when(gitHubWebhookService).processWebhook(any(), any(), any(), any());
+
+        assertDoesNotThrow(() -> subject.processWebhook(webhookId.toString(), "{}", Map.of()));
+
+        verify(prCommentService, never()).postBranchPolicyNotice(any(), any(), any());
+        verify(jobRepository, never()).save(any());
+    }
 }

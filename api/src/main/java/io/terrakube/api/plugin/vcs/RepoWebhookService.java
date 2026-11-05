@@ -275,7 +275,7 @@ public class RepoWebhookService {
         List<CompletableFuture<Void>> tasks = workspaces.stream()
                 .map(workspace -> CompletableFuture.runAsync(() -> {
                     try {
-                        processWorkspaceWebhook(workspace, webhookResult);
+                        processWorkspaceWebhook(workspace, webhookResult.copy());
                     } catch (Exception e) {
                         log.error("Error processing v2 webhook for workspace {}: {}", workspace.getName(),
                                 e.getMessage(), e);
@@ -301,6 +301,16 @@ public class RepoWebhookService {
             if (!resolved) {
                 log.warn("Failed to resolve PR comment details for workspace {}, skipping", workspace.getName());
                 return;
+            }
+        }
+
+        if (isAzureDevOps(workspace) && workspace.getVcs() != null && webhookResult.isPullRequestOrComment()
+                && (webhookResult.getBaseBranch() == null || webhookResult.getBaseBranch().isBlank())
+                && webhookResult.getPrNumber() != null) {
+            String targetBranch = azDevOpsWebhookService.fetchPrTargetBranch(
+                    workspace.getVcs(), workspace.getSource(), webhookResult.getPrNumber().intValue());
+            if (targetBranch != null) {
+                webhookResult.setBaseBranch(targetBranch);
             }
         }
 

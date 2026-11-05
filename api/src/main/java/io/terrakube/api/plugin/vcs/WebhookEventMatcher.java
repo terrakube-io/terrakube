@@ -38,6 +38,9 @@ public final class WebhookEventMatcher {
     }
 
     public static boolean checkFileChanges(List<String> files, WebhookEvent webhookEvent) {
+        if (files == null || files.isEmpty() || webhookEvent == null || webhookEvent.getPath() == null) {
+            return false;
+        }
         WebhookEventPathType pathType = webhookEvent.getPathType() != null
                 ? webhookEvent.getPathType()
                 : WebhookEventPathType.REGEX;
@@ -120,23 +123,6 @@ public final class WebhookEventMatcher {
 
         if (WorkspaceBranches.matchesConfiguredBranch(workspace.getBranch(), result.getBaseBranch())) {
             return true;
-        }
-
-        // Double-filtering resolution: if workspace branch does not match, check if the workspace
-        // has an explicit PR trigger branch pattern configured that matches the target branch.
-        if (workspace.getWebhook() != null && webhookEventRepository != null) {
-            List<WebhookEvent> prEvents = webhookEventRepository
-                    .findByWebhookAndEventOrderByPriorityAsc(workspace.getWebhook(), WebhookEventType.PULL_REQUEST);
-            if (prEvents != null) {
-                String targetShort = WorkspaceBranches.shortName(result.getBaseBranch());
-                for (WebhookEvent prEvent : prEvents) {
-                    if (prEvent.getBranch() != null && !prEvent.getBranch().isBlank()) {
-                        if (checkBranch(targetShort, prEvent)) {
-                            return true;
-                        }
-                    }
-                }
-            }
         }
 
         log.debug("Skipping PR webhook event for workspace {}: PR target branch '{}' does not match workspace branch '{}'",

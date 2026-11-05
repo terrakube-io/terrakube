@@ -63,6 +63,11 @@ class WebhookEventMatcherTest {
     // --- checkFileChanges tests ---
 
     @Test
+    void checkFileChanges_nullFiles_returnsFalseWithoutNpe() {
+        assertThat(WebhookEventMatcher.checkFileChanges(null, eventWithPath("src/*"))).isFalse();
+    }
+
+    @Test
     void checkFileChanges_fileMatchesPattern_returnsTrue() {
         assertThat(WebhookEventMatcher.checkFileChanges(
                 List.of("src/main/App.java"), eventWithPath("src/main/*", WebhookEventPathType.PATTERN))).isTrue();
@@ -238,55 +243,34 @@ class WebhookEventMatcherTest {
     }
 
     @Test
-    void shouldProcessPullRequest_explicitPrTriggerRegexAllowsEvaluationEvenIfWorkspaceBranchDiffers() {
+    void shouldProcessPullRequest_rejectsWhenWorkspaceBranchDiffersEvenIfPrTriggerHasWildcardPattern() {
         Workspace ws = new Workspace();
         ws.setName("multi-target-ws");
         ws.setBranch("main");
-        Webhook webhook = new Webhook();
-        ws.setWebhook(webhook);
-
-        WebhookEvent trigger = new WebhookEvent();
-        trigger.setEvent(WebhookEventType.PULL_REQUEST);
-        trigger.setBranch("release/.*");
-
-        WebhookEventRepository repository = mock(WebhookEventRepository.class);
-        when(repository.findByWebhookAndEventOrderByPriorityAsc(webhook, WebhookEventType.PULL_REQUEST))
-                .thenReturn(List.of(trigger));
 
         WebhookResult result = new WebhookResult();
         result.setEvent("pull_request");
         result.setBranch("feature/1");
         result.setBaseBranch("release/v2.0");
 
-        // Even though ws.branch is "main", having an explicit PR trigger branch pattern delegates
-        // to event-level matching rather than rejecting upfront.
-        assertThat(WebhookEventMatcher.shouldProcessPullRequest(ws, result, repository, true)).isTrue();
+        // Workspace tracks 'main', so a PR targeting 'release/v2.0' must be rejected upfront
+        assertThat(WebhookEventMatcher.shouldProcessPullRequest(ws, result, null, true)).isFalse();
     }
 
     @Test
-    void shouldProcessPullRequest_fallsBackToWorkspaceBranchWhenNoExplicitPrTriggerBranch() {
+    void shouldProcessPullRequest_matchesWhenTargetBranchMatchesWorkspaceBranch() {
         Workspace ws = new Workspace();
         ws.setName("test-ws");
         ws.setBranch("main");
-        Webhook webhook = new Webhook();
-        ws.setWebhook(webhook);
-
-        WebhookEvent trigger = new WebhookEvent();
-        trigger.setEvent(WebhookEventType.PULL_REQUEST);
-        trigger.setBranch(""); // no branch pattern configured
-
-        WebhookEventRepository repository = mock(WebhookEventRepository.class);
-        when(repository.findByWebhookAndEventOrderByPriorityAsc(webhook, WebhookEventType.PULL_REQUEST))
-                .thenReturn(List.of(trigger));
 
         WebhookResult result = new WebhookResult();
         result.setEvent("pull_request");
         result.setBranch("feature/1");
         result.setBaseBranch("main");
 
-        assertThat(WebhookEventMatcher.shouldProcessPullRequest(ws, result, repository, true)).isTrue();
+        assertThat(WebhookEventMatcher.shouldProcessPullRequest(ws, result, null, true)).isTrue();
 
         result.setBaseBranch("develop");
-        assertThat(WebhookEventMatcher.shouldProcessPullRequest(ws, result, repository, true)).isFalse();
+        assertThat(WebhookEventMatcher.shouldProcessPullRequest(ws, result, null, true)).isFalse();
     }
 }
