@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+
+    <changeSet id="2-34-0-announcements" author="alfespa17">
+        <validCheckSum>ANY</validCheckSum>
+        <createTable tableName="announcement">
+            <column name="id" type="varchar(36)">
+                <constraints primaryKey="true"/>
+            </column>
+            <column name="title" type="varchar(120)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="message" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="severity" type="varchar(32)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="scope" type="varchar(32)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="organization_id" type="varchar(36)">
+                <constraints foreignKeyName="fk_announcement_organization"
+                             references="organization(id)"
+                             deleteCascade="true"/>
+            </column>
+            <column name="starts_at" type="datetime"/>
+            <column name="ends_at" type="datetime"/>
+            <column name="is_active" type="boolean" defaultValueBoolean="true">
+                <constraints nullable="false"/>
+            </column>
+            <column name="is_dismissible" type="boolean" defaultValueBoolean="true">
+                <constraints nullable="false"/>
+            </column>
+            <column name="display_on_login" type="boolean" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_date" type="datetime"/>
+            <column name="created_by" type="varchar(255)"/>
+            <column name="updated_date" type="datetime"/>
+            <column name="updated_by" type="varchar(255)"/>
+        </createTable>
+
+        <createIndex tableName="announcement" indexName="idx_announcement_scope_active">
+            <column name="scope"/>
+            <column name="is_active"/>
+            <column name="starts_at"/>
+            <column name="ends_at"/>
+        </createIndex>
+
+        <createIndex tableName="announcement" indexName="idx_announcement_org_active">
+            <column name="organization_id"/>
+            <column name="is_active"/>
+        </createIndex>
+
+        <createIndex tableName="announcement" indexName="idx_announcement_login">
+            <column name="display_on_login"/>
+            <column name="is_active"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>
+

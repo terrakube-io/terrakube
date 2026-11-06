@@ -11,6 +11,7 @@ import {
 } from "../../config/themeConfig";
 import logo from "./logo.svg";
 import logoDark from "./logo-dark.svg";
+import LoginAnnouncementBanner from "./LoginAnnouncementBanner";
 import "./Login.css";
 
 const { Title, Text } = Typography;
@@ -44,6 +45,7 @@ const LoginContent = ({ themeMode }: { themeMode: ThemeMode }) => {
     <div className="login-container">
       <div className="login-card">
         <img src={themeMode === "dark" ? logoDark : logo} alt="Terrakube" className="login-logo" />
+        <LoginAnnouncementBanner />
         <Title level={3}>Sign in to Terrakube</Title>
         <Text type="secondary">Click below to continue with your identity provider.</Text>
         <Button type="primary" block size="large" loading={isSigningIn} onClick={handleSignIn}>

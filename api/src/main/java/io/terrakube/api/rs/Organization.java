@@ -1,7 +1,9 @@
 package io.terrakube.api.rs;
 
 import com.yahoo.elide.annotation.*;
+import io.terrakube.api.rs.action.Action;
 import io.terrakube.api.rs.agent.Agent;
+import io.terrakube.api.rs.announcement.Announcement;
 import io.terrakube.api.rs.collection.Collection;
 import io.terrakube.api.rs.globalvar.Globalvar;
 import io.terrakube.api.rs.hooks.organization.OrganizationManageHook;
@@ -121,4 +123,8 @@ public class Organization {
     @UpdatePermission(expression = "user belongs organization")
     @OneToMany(mappedBy = "organization")
     private List<io.terrakube.api.rs.policy.PolicyExemption> policyExemption;
+
+    @UpdatePermission(expression = "user belongs organization")
+    @OneToMany(mappedBy = "organization")
+    private List<Announcement> announcement;
 }

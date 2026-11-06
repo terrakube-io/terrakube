@@ -96,3 +96,12 @@ Object.defineProperty(window, "matchMedia", {
     dispatchEvent: () => false,
   }),
 });
+
+jest.mock("@/modules/announcements/announcementService", () => {
+  const actual = jest.requireActual("@/modules/announcements/announcementService");
+  return {
+    ...actual,
+    fetchAnnouncements: jest.fn().mockResolvedValue([]),
+    fetchPublicLoginAnnouncements: jest.fn().mockResolvedValue([]),
+  };
+});

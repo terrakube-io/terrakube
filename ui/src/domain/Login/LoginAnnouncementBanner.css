@@ -1,0 +1,11 @@
+.login-announcements-wrapper {
+  margin-bottom: 20px;
+  width: 100%;
+}
+
+.login-announcements-wrapper .announcement-banner {
+  border-radius: 6px;
+  border: 1px solid;
+  margin-bottom: 8px;
+}
+

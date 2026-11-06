@@ -14,6 +14,8 @@ export default {
     "\\.(png|jpe?g|gif|webp)$": "<rootDir>/jest.fileMock.js",
     "\\?worker$": "<rootDir>/jest.fileMock.js",
     "^monaco-editor$": "<rootDir>/jest.fileMock.js",
+    "^react-markdown$": "<rootDir>/src/__mocks__/react-markdown.tsx",
+    "^rehype-sanitize$": "<rootDir>/src/__mocks__/rehype-sanitize.ts",
     "^@/(.*)$": "<rootDir>/src/$1",
   },
   setupFilesAfterEnv: ["<rootDir>/jest.setup.ts"],

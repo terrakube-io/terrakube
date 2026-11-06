@@ -27,6 +27,8 @@ import organizationService from "@/modules/organizations/organizationService";
 import { OrganizationSummaryProvider } from "@/modules/organizations/OrganizationSummaryContext";
 import { useOrganizationSummaries } from "@/modules/organizations/useOrganizationSummaries";
 import { useOrganizationName } from "@/hooks/useOrganizationName";
+import { useAnnouncements } from "@/modules/announcements/useAnnouncements";
+import AnnouncementTray from "@/modules/announcements/AnnouncementTray";
 const { Footer } = Layout;
 
 type AppRouteContext = {
@@ -177,6 +179,7 @@ const AppLayout = () => {
   const segments = location.pathname.split("/").filter(Boolean);
   const urlOrgId = getOrgIdFromPathname(location.pathname);
   const urlOrgName = useOrganizationName(urlOrgId);
+  const { announcements } = useAnnouncements(urlOrgId);
   // On organization URLs the name always belongs to the id in the URL, never to a previously visited organization.
   const currentOrgName = urlOrgId ? (urlOrgName ?? "") : organizationName;
   const noOrgContext =
@@ -262,6 +265,7 @@ const AppLayout = () => {
           workspaceManageState={workspaceManageState}
         />
         <Layout className="app-content-shell">
+          <AnnouncementTray announcements={announcements} />
           <div className="app-content-scroll">
             {backendError ? (
               <ErrorState

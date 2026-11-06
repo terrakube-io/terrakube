@@ -1,0 +1,27 @@
+.announcement-tray {
+  width: 100%;
+  position: relative;
+  z-index: 100;
+}
+
+.announcement-tray-collapsible {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 4px 16px;
+  background-color: rgba(0, 0, 0, 0.03);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.announcement-tray-toggle-btn {
+  font-size: 12px;
+  padding: 2px 8px;
+  height: auto;
+}
+
+.announcement-tray-stack {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+

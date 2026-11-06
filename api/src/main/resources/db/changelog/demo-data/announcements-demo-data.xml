@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+
+    <changeSet author="demo-data" id="demo-announcements">
+        <!-- 1. Global informational announcement on login page -->
+        <insert tableName="announcement">
+            <column name="id" value="a1000000-0000-4000-8000-000000000001"/>
+            <column name="title" value="Welcome to Terrakube Demo Environment"/>
+            <column name="message" value="Explore workspaces, modules, and templates. View documentation at [Terrakube Docs](https://docs.terrakube.io)."/>
+            <column name="severity" value="info"/>
+            <column name="scope" value="GLOBAL"/>
+            <column name="is_active" valueBoolean="true"/>
+            <column name="is_dismissible" valueBoolean="true"/>
+            <column name="display_on_login" valueBoolean="true"/>
+            <column name="created_date" valueDate="2026-01-01T00:00:00"/>
+            <column name="updated_date" valueDate="2026-01-01T00:00:00"/>
+        </insert>
+
+        <!-- 2. Global critical scheduled maintenance announcement -->
+        <insert tableName="announcement">
+            <column name="id" value="a1000000-0000-4000-8000-000000000002"/>
+            <column name="title" value="Scheduled Database Maintenance Window"/>
+            <column name="message" value="Platform infrastructure upgrades scheduled. Active workspace runs will not be interrupted, but API response times may be degraded."/>
+            <column name="severity" value="critical"/>
+            <column name="scope" value="GLOBAL"/>
+            <column name="starts_at" valueDate="2026-01-01T00:00:00"/>
+            <column name="ends_at" valueDate="2030-12-31T23:59:59"/>
+            <column name="is_active" valueBoolean="true"/>
+            <column name="is_dismissible" valueBoolean="false"/>
+            <column name="display_on_login" valueBoolean="false"/>
+            <column name="created_date" valueDate="2026-01-01T00:00:00"/>
+            <column name="updated_date" valueDate="2026-01-01T00:00:00"/>
+        </insert>
+
+        <!-- 3. Organization-scoped warning banner for demo organization 'simple' -->
+        <insert tableName="announcement">
+            <column name="id" value="a1000000-0000-4000-8000-000000000003"/>
+            <column name="title" value="Cloud Provider Credential Rotation Notice"/>
+            <column name="message" value="Please update any expired AWS credentials in workspace environment variables before the upcoming sprint deadline."/>
+            <column name="severity" value="warning"/>
+            <column name="scope" value="ORGANIZATION"/>
+            <column name="organization_id" value="d9b58bd3-f3fc-4056-a026-1163297e80a8"/>
+            <column name="is_active" valueBoolean="true"/>
+            <column name="is_dismissible" valueBoolean="true"/>
+            <column name="display_on_login" valueBoolean="false"/>
+            <column name="created_date" valueDate="2026-01-01T00:00:00"/>
+            <column name="updated_date" valueDate="2026-01-01T00:00:00"/>
+        </insert>
+    </changeSet>
+</databaseChangeLog>
+

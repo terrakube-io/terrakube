@@ -1,0 +1,63 @@
+.announcement-banner {
+  border-radius: 0;
+  border-left: none;
+  border-right: none;
+  border-top: none;
+  padding: 8px 16px;
+  position: relative;
+  z-index: 100;
+}
+
+.announcement-banner-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.announcement-title-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.announcement-title {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.announcement-schedule-tag {
+  font-size: 12px;
+  opacity: 0.85;
+}
+
+.announcement-message {
+  margin-top: 4px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.announcement-message p {
+  margin: 0;
+  display: inline;
+}
+
+.announcement-message a {
+  text-decoration: underline;
+  color: inherit;
+  font-weight: 500;
+}
+
+.announcement-dismiss-btn {
+  padding: 0;
+  height: auto;
+  line-height: 1;
+  color: inherit;
+  opacity: 0.7;
+}
+
+.announcement-dismiss-btn:hover {
+  opacity: 1;
+}
+
