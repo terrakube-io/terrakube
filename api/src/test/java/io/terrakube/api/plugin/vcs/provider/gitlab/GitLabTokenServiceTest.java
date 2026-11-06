@@ -45,7 +45,7 @@ class GitLabTokenServiceTest {
     @Test
     void repeatedTokenRequestsMustNotAccumulateAcceptHeaders() throws TokenException {
         GitLabTokenService service = new GitLabTokenService();
-        ReflectionTestUtils.setField(service, "hostname", "localhost");
+        ReflectionTestUtils.setField(service, "apiBaseUrl", "https://localhost");
         ReflectionTestUtils.setField(service, "webClientBuilder", WebClient.builder());
 
         String endpoint = "http://127.0.0.1:" + server.getAddress().getPort();
