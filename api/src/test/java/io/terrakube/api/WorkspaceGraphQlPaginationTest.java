@@ -91,7 +91,9 @@ class WorkspaceGraphQlPaginationTest extends ServerApplicationTests {
             List<String> names = response.jsonPath().getList("data.organization.edges[0].node.workspace.edges.node.name", String.class);
             assertThat(names).as(response.asPrettyString()).contains("sample_simple", "simple_tag1", "simple_tag2", "simple_tag3");
             assertThat(names).isSorted();
-            assertThat(response.jsonPath().getInt("data.organization.edges[0].node.statusAll.pageInfo.totalRecords")).isEqualTo(names.size());
+            // The request asks for a page of 20; leftover rows from other suites can push the total past it.
+            int totalRecords = response.jsonPath().getInt("data.organization.edges[0].node.statusAll.pageInfo.totalRecords");
+            assertThat(names).hasSize(Math.min(totalRecords, 20));
         }
     }
 
