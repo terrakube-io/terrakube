@@ -23,15 +23,15 @@ public class PolicyNotificationService {
 
     private final NotificationOutboxRepository notificationOutboxRepository;
     private final NotificationPayloadRenderer notificationPayloadRenderer;
-    private final String hostname;
+    private final String uiUrl;
 
     public PolicyNotificationService(
             NotificationOutboxRepository notificationOutboxRepository,
             NotificationPayloadRenderer notificationPayloadRenderer,
-            @Value("${io.terrakube.hostname:localhost:8080}") String hostname) {
+            @Value("${io.terrakube.ui.url}") String uiUrl) {
         this.notificationOutboxRepository = notificationOutboxRepository;
         this.notificationPayloadRenderer = notificationPayloadRenderer;
-        this.hostname = hostname;
+        this.uiUrl = uiUrl;
     }
 
     public void sendPolicyViolationNotification(Job job, List<PolicySet> violatedPolicySets, String summaryReason) {
@@ -43,16 +43,10 @@ public class PolicyNotificationService {
             NotificationConfiguration config = policySet.getNotificationConfiguration();
             if (config != null) {
                 try {
-                    String runUrl = String.format("https://%s/app/organizations/%s/workspaces/%s/runs/%s",
-                            hostname,
-                            job.getOrganization().getName(),
-                            job.getWorkspace().getName(),
-                            job.getId());
-
-                    String workspaceUrl = String.format("https://%s/app/organizations/%s/workspaces/%s",
-                            hostname,
-                            job.getOrganization().getName(),
-                            job.getWorkspace().getName());
+                    // UI links, built like JobNotificationTrigger (the API host does not serve UI routes).
+                    String workspaceUrl = String.format("%s/organizations/%s/workspaces/%s", uiUrl,
+                            job.getOrganization().getId(), job.getWorkspace().getId());
+                    String runUrl = workspaceUrl + "/runs/" + job.getId();
 
                     NotificationContext context = new NotificationContext(
                             job.getOrganization().getName(),
