@@ -88,4 +88,3 @@ describe("announcementStorage", () => {
     expect(isAnnouncementDismissed(sampleAnnouncement)).toBe(false);
   });
 });
-

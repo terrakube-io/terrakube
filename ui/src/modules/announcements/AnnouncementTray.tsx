@@ -66,4 +66,3 @@ export const AnnouncementTray = ({ announcements, onDismissOverride }: Announcem
 };
 
 export default AnnouncementTray;
-

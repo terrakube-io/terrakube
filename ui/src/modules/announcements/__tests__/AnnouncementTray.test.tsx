@@ -75,4 +75,3 @@ describe("AnnouncementTray", () => {
     expect(screen.queryByText("Critical Outage")).not.toBeInTheDocument();
   });
 });
-

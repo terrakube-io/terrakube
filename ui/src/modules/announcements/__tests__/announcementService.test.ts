@@ -1,5 +1,14 @@
-import { filterAndSortAnnouncements } from "../announcementService";
+import { filterAndSortAnnouncements, fetchAnnouncements } from "../announcementService";
 import { Announcement } from "../announcementTypes";
+import { axiosGraphQL } from "@/config/axiosConfig";
+
+jest.unmock("@/modules/announcements/announcementService");
+
+jest.mock("@/config/axiosConfig", () => ({
+  axiosGraphQL: {
+    post: jest.fn(),
+  },
+}));
 
 describe("announcementService - filterAndSortAnnouncements", () => {
   const baseTime = new Date("2026-11-05T12:00:00Z");
@@ -104,5 +113,46 @@ describe("announcementService - filterAndSortAnnouncements", () => {
 
     expect(result.map((a) => a.severity)).toEqual(["critical", "warning", "info"]);
     expect(result.map((a) => a.id)).toEqual(["2", "3", "1"]);
+  });
+
+  test("fetchAnnouncements queries GraphQL with organization connection and parses edges node", async () => {
+    (axiosGraphQL.post as jest.Mock).mockResolvedValue({
+      data: {
+        data: {
+          announcement: {
+            edges: [
+              {
+                node: {
+                  id: "ann-1",
+                  title: "Org Banner",
+                  message: "Body",
+                  severity: "warning",
+                  scope: "ORGANIZATION",
+                  active: true,
+                  dismissible: true,
+                  displayOnLogin: false,
+                  organization: {
+                    edges: [
+                      {
+                        node: {
+                          id: "org-simple",
+                          name: "simple",
+                        },
+                      },
+                    ],
+                  },
+                },
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    const result = await fetchAnnouncements();
+    expect(result).toHaveLength(1);
+    expect(result[0]?.id).toBe("ann-1");
+    expect(result[0]?.organization?.id).toBe("org-simple");
+    expect(result[0]?.organization?.name).toBe("simple");
   });
 });

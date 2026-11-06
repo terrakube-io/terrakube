@@ -34,4 +34,3 @@ export function useAnnouncements(currentOrgId?: string) {
     refresh: loadAnnouncements,
   };
 }
-

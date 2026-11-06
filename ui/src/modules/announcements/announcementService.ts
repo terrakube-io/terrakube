@@ -64,8 +64,12 @@ export async function fetchAnnouncements(): Promise<Announcement[]> {
             createdDate
             updatedDate
             organization {
-              id
-              name
+              edges {
+                node {
+                  id
+                  name
+                }
+              }
             }
           }
         }
@@ -88,6 +92,7 @@ export async function fetchAnnouncements(): Promise<Announcement[]> {
 
   return edges.map((edge: { node: any }) => {
     const node = edge.node;
+    const orgNode = node.organization?.edges?.[0]?.node ?? null;
     return {
       id: node.id,
       title: node.title,
@@ -101,10 +106,10 @@ export async function fetchAnnouncements(): Promise<Announcement[]> {
       endsAt: node.endsAt,
       createdAt: node.createdDate,
       updatedAt: node.updatedDate,
-      organization: node.organization
+      organization: orgNode
         ? {
-            id: node.organization.id,
-            name: node.organization.name,
+            id: orgNode.id,
+            name: orgNode.name,
           }
         : null,
     };
@@ -116,4 +121,3 @@ export async function fetchPublicLoginAnnouncements(): Promise<PublicAnnouncemen
   const response = await axios.get<PublicAnnouncement[]>(`${baseUrl}/public/v1/announcements`);
   return response.data || [];
 }
-

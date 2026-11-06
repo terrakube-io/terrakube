@@ -60,4 +60,3 @@ export function clearDismissal(announcementId: string): void {
   }));
   localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
 }
-

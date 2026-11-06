@@ -35,4 +35,3 @@ export interface PublicAnnouncement {
   updatedAt?: string | null;
   dismissible: boolean;
 }
-

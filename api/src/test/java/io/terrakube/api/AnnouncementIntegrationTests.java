@@ -85,6 +85,22 @@ public class AnnouncementIntegrationTests extends ServerApplicationTests {
     }
 
     @Test
+    void testGraphQLAnnouncements() {
+        String query = "{\"query\":\"{ announcement { edges { node { id title message severity scope active dismissible displayOnLogin startsAt endsAt createdDate updatedDate organization { edges { node { id name } } } } } } }\"}";
+        given()
+                .headers("Authorization", "Bearer " + generatePAT(GROUP_SUPERUSER))
+                .contentType("application/json")
+                .body(query)
+                .when()
+                .post("/graphql/api/v1")
+                .then()
+                .log().all()
+                .assertThat()
+                .statusCode(HttpStatus.OK.value())
+                .body("errors", nullValue());
+    }
+
+    @Test
     void orgAdminCanCreateOrgAnnouncement() {
         String payload = "{\"data\":{\"type\":\"announcement\",\"attributes\":{" +
                 "\"title\":\"Test Org Notice\"," +
