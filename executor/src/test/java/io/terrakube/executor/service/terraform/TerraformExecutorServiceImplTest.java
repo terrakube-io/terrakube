@@ -249,6 +249,7 @@ class TerraformExecutorServiceImplTest {
 
         TerraformDownloader downloader = Mockito.mock(TerraformDownloader.class);
         when(terraformClient.createTerraformDownloader()).thenReturn(downloader);
+        // The OpenTofu release list names versions with a "v" prefix
         when(downloader.resolveTofuVersion("1.12.5")).thenReturn("v1.12.5");
 
         subject.resolveTerraformVersion(terraformJob);
@@ -269,6 +270,7 @@ class TerraformExecutorServiceImplTest {
 
         TerraformDownloader downloader = Mockito.mock(TerraformDownloader.class);
         when(terraformClient.createTerraformDownloader()).thenReturn(downloader);
+        // The OpenTofu release list names versions with a "v" prefix
         when(downloader.resolveTofuVersion("~> 1.12")).thenReturn("v1.12.5");
 
         subject.resolveTerraformVersion(terraformJob);

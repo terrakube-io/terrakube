@@ -1385,9 +1385,9 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         }
 
         try {
-            String resolvedVersion = withoutVersionPrefix(terraformJob.isTofu()
-                    ? downloader.resolveTofuVersion(requestedVersion)
-                    : downloader.resolveTerraformVersion(requestedVersion));
+            String resolvedVersion = terraformJob.isTofu()
+                    ? withoutVersionPrefix(downloader.resolveTofuVersion(requestedVersion))
+                    : downloader.resolveTerraformVersion(requestedVersion);
 
             if (resolvedVersion != null && !resolvedVersion.isBlank() && !resolvedVersion.equals(requestedVersion)) {
                 log.info("Resolved {} version \"{}\" to {} for job {}", getIaCType(terraformJob), requestedVersion,
