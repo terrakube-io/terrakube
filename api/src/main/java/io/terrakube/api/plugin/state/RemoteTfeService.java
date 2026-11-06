@@ -131,6 +131,10 @@ public class RemoteTfeService {
     // Relative links are resolved by the CLI against the host it called: /api on a single-domain host.
     @Value("#{@publicUrls.apiPathPrefix()}")
     private String apiPathPrefix = "";
+
+    // Uploads are spooled to disk (#3852), so cap their size to keep a client from filling it.
+    @Value("${io.terrakube.configuration.max-size-bytes:1073741824}")
+    private long maxConfigurationBytes = 1073741824L;
     private StorageTypeService storageTypeService;
     private StepRepository stepRepository;
     @SuppressWarnings("rawtypes")
@@ -1720,7 +1724,7 @@ public class RemoteTfeService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Configuration version has already been uploaded or is not pending");
         }
 
-        storageTypeService.createContentFile(contentId, inputStream);
+        storageTypeService.createContentFile(contentId, new SizeLimitedInputStream(inputStream, maxConfigurationBytes));
         log.info("Content file created in storage for contentId {}", contentId);
 
         content.setStatus("uploaded");
@@ -2813,5 +2817,42 @@ public class RemoteTfeService {
         PolicyCheckData data = new PolicyCheckData();
         data.setData(buildPolicyCheckModel(evaluation, currentUser));
         return data;
+    }
+
+    /** Fails the upload with 413 once more than {@code limit} bytes have been read. */
+    static final class SizeLimitedInputStream extends java.io.FilterInputStream {
+        private final long limit;
+        private long count;
+
+        SizeLimitedInputStream(InputStream in, long limit) {
+            super(in);
+            this.limit = limit;
+        }
+
+        @Override
+        public int read() throws java.io.IOException {
+            int b = super.read();
+            if (b != -1) {
+                count(1);
+            }
+            return b;
+        }
+
+        @Override
+        public int read(byte[] b, int off, int len) throws java.io.IOException {
+            int n = super.read(b, off, len);
+            if (n > 0) {
+                count(n);
+            }
+            return n;
+        }
+
+        private void count(int n) {
+            count += n;
+            if (count > limit) {
+                throw new ResponseStatusException(HttpStatus.PAYLOAD_TOO_LARGE,
+                        "Configuration upload exceeds " + limit + " bytes");
+            }
+        }
     }
 }

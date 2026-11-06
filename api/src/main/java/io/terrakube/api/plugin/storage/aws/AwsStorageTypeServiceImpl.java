@@ -4,11 +4,10 @@ import lombok.Builder;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.codec.binary.StringUtils;
-import org.apache.sshd.common.util.io.IoUtils;
 import io.terrakube.api.plugin.storage.StepOutputPartsReader;
 import io.terrakube.api.plugin.storage.StorageRetryMetrics;
 import io.terrakube.api.plugin.storage.StorageTypeService;
-import io.terrakube.api.plugin.storage.StorageUnavailableException;
+import io.terrakube.api.plugin.storage.UploadSpool;
 import io.terrakube.api.plugin.storage.model.ByteRange;
 import io.terrakube.api.plugin.storage.model.StepOutputPart;
 import io.terrakube.api.plugin.storage.model.StepOutputStream;
@@ -22,6 +21,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.util.List;
 
 @Slf4j
@@ -71,19 +71,20 @@ public class AwsStorageTypeServiceImpl implements StorageTypeService {
     }
 
     private void uploadStringToBucket(String bucketName, String blobKey, String data) {
-        uploadBytesToBucket(bucketName, blobKey, data.getBytes(StandardCharsets.UTF_8), null);
+        uploadToBucket(bucketName, blobKey, RequestBody.fromBytes(data.getBytes(StandardCharsets.UTF_8)), null);
     }
 
     // Shared by every write path (state, context, policy evaluation, and the CLI-driven
     // configuration tarball) - a failed write now fails the caller instead of logging and
-    // returning as if it succeeded (#3671).
-    private void uploadBytesToBucket(String bucketName, String blobKey, byte[] data, String contentType) {
+    // returning as if it succeeded (#3671). The body must be re-readable (bytes or a file) so a
+    // retry can resend it.
+    private void uploadToBucket(String bucketName, String blobKey, RequestBody body, String contentType) {
         storageRetryMetrics.withRetry("aws", "write", () -> {
             PutObjectRequest.Builder requestBuilder = PutObjectRequest.builder().bucket(bucketName).key(blobKey);
             if (contentType != null) {
                 requestBuilder.contentType(contentType);
             }
-            s3client.putObject(requestBuilder.build(), RequestBody.fromBytes(data));
+            s3client.putObject(requestBuilder.build(), body);
             log.info("Upload Object {} completed", blobKey);
             return null;
         });
@@ -190,7 +191,7 @@ public class AwsStorageTypeServiceImpl implements StorageTypeService {
     public void saveCurrentTerraformState(String organizationId, String workspaceId, byte[] stateData) {
         String blobKey = String.format("tfstate/%s/%s/terraform.tfstate", organizationId, workspaceId);
         log.info("Saving current terraformStateFile: {}", blobKey);
-        uploadBytesToBucket(bucketName, blobKey, stateData, "application/json");
+        uploadToBucket(bucketName, blobKey, RequestBody.fromBytes(stateData), "application/json");
     }
 
     @Override
@@ -244,16 +245,12 @@ public class AwsStorageTypeServiceImpl implements StorageTypeService {
         String blobKey = String.format(TERRAFORM_TAR_GZ, contentId);
         log.info("context file: {}", blobKey);
 
-        byte[] content;
+        Path spooled = UploadSpool.spool(contentId, inputStream, null);
         try {
-            content = IoUtils.toByteArray(inputStream);
-        } catch (IOException e) {
-            // Reading the upload's own request body failed - can't be retried (it's a one-shot
-            // stream), so fail the upload instead of silently marking it uploaded (#3671).
-            throw new StorageUnavailableException("Unable to read uploaded content for " + contentId, e);
+            uploadToBucket(bucketName, blobKey, RequestBody.fromFile(spooled), "application/gzip");
+        } finally {
+            UploadSpool.delete(spooled);
         }
-
-        uploadBytesToBucket(bucketName, blobKey, content, "application/gzip");
     }
 
     @Override
