@@ -197,6 +197,62 @@ class TerraformExecutorServiceImplTest {
     }
 
     @Test
+    void planLeavesOutBackendConfigArgumentsWhenTheBackendRejectsThem() throws Exception {
+        TerraformExecutorServiceImpl subject = subject();
+        TerraformJob terraformJob = createJob();
+        when(terraformState.rejectsBackendConfigArguments()).thenReturn(true);
+        String original = "-upgrade -backend-config=cfg.hcl -backend-config=role_arn=arn:secret";
+        terraformJob.getEnvironmentVariables().put("TF_CLI_ARGS_init", original);
+        terraformJob.getEnvironmentVariables().put("TF_CLI_ARGS_plan", "-backend-config=kept-on-plan");
+
+        when(terraformClient.init(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(false));
+
+        subject.plan(terraformJob, tempDir.toFile(), false);
+
+        verify(terraformClient).init(
+                argThat(data -> "-upgrade".equals(data.getTerraformEnvironmentVariables().get("TF_CLI_ARGS_init"))
+                        && "-backend-config=kept-on-plan".equals(data.getTerraformEnvironmentVariables().get("TF_CLI_ARGS_plan"))),
+                any(), any());
+        // the job keeps what the user set
+        assertEquals(original, terraformJob.getEnvironmentVariables().get("TF_CLI_ARGS_init"));
+    }
+
+    @Test
+    void planDropsTheInitArgumentsVariableWhenOnlyBackendConfigWasInIt() throws Exception {
+        TerraformExecutorServiceImpl subject = subject();
+        TerraformJob terraformJob = createJob();
+        when(terraformState.rejectsBackendConfigArguments()).thenReturn(true);
+        terraformJob.getEnvironmentVariables().put("TF_CLI_ARGS_init", "-backend-config=cfg.hcl");
+
+        when(terraformClient.init(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(false));
+
+        subject.plan(terraformJob, tempDir.toFile(), false);
+
+        verify(terraformClient).init(
+                argThat(data -> !data.getTerraformEnvironmentVariables().containsKey("TF_CLI_ARGS_init")),
+                any(), any());
+    }
+
+    @Test
+    void planKeepsBackendConfigArgumentsWhenTheBackendAcceptsThem() throws Exception {
+        TerraformExecutorServiceImpl subject = subject();
+        TerraformJob terraformJob = createJob();
+        String original = "-upgrade -backend-config=cfg.hcl";
+        terraformJob.getEnvironmentVariables().put("TF_CLI_ARGS_init", original);
+
+        when(terraformClient.init(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(false));
+
+        subject.plan(terraformJob, tempDir.toFile(), false);
+
+        verify(terraformClient).init(
+                argThat(data -> original.equals(data.getTerraformEnvironmentVariables().get("TF_CLI_ARGS_init"))),
+                any(), any());
+    }
+
+    @Test
     void planResolvesVersionConstraintBeforeBuildingTerraformProcesses() throws Exception {
         TerraformExecutorServiceImpl subject = subject();
         TerraformJob terraformJob = createJob();
