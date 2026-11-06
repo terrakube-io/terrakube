@@ -1,0 +1,92 @@
+# Shared-host route table for single-domain deployment (see README.md in this folder).
+# Ingress templates (Helm, Compose, dev) and the drift tests in api/registry consume this file.
+# Most specific entries win; order below is evaluation order for proxies without
+# longest-prefix matching.
+version: 1
+routes:
+  - prefix: /.well-known/terraform.json
+    match: exact
+    component: api
+    status: canonical
+    auth: public
+  - prefix: /.well-known/openid-configuration
+    match: exact
+    component: api
+    status: canonical
+    auth: public
+  - prefix: /.well-known/jwks
+    match: exact
+    component: api
+    status: canonical
+    auth: public
+  - prefix: /api/private-registry/
+    match: prefix
+    component: registry
+    strip: /api/private-registry
+    status: canonical
+    auth: mixed            # module downloads public, metadata authenticated
+    served_roots: [/terraform/modules/v1, /terraform/providers/v1, /terraform/readme/v1, /.well-known]
+  - prefix: /api/
+    match: prefix
+    component: api
+    strip: /api            # except /api/v1/** (Elide, served as is) and /api/actuator/** (404)
+    status: canonical
+    auth: mixed
+    served_roots:
+      - /api/v1            # Elide JSON:API, not stripped
+      - /graphql
+      - /subscriptions
+      - /doc
+      - /remote
+      - /tfstate
+      - /tfoutput
+      - /context
+      - /logs
+      - /version
+      - /oauth
+      - /webhook
+      - /callback
+      - /app
+      - /access-token
+      - /pat
+      - /terraform/index.json
+      - /tofu/index.json
+      - /registry/v1
+      - /proxy/v1
+      - /notification/v1
+      - /vcs/v1
+      - /policy/v1
+      - /importer
+      - /admin/v1
+      - /migrate/v1
+      - /execution/v1
+      - /.well-known
+  - prefix: /dex/
+    match: prefix
+    component: dex
+    status: canonical
+    auth: public
+  - prefix: /webhook/
+    match: prefix
+    component: api
+    status: legacy-alias   # webhooks registered with VCS providers before migration (FR-007b)
+    auth: public
+  - prefix: /callback/
+    match: prefix
+    component: api
+    status: legacy-alias   # VCS OAuth redirect URIs registered before migration (FR-007b)
+    auth: public
+  - prefix: /access-token/
+    match: prefix
+    component: api
+    status: legacy-alias   # team tokens; released provider/CLI/terrakube-go call this root path
+    auth: authenticated
+  - prefix: /
+    match: prefix
+    component: ui
+    status: canonical
+    auth: public
+# Not on the shared host: /actuator/** (probes use the internal service address),
+# executor /api/v1/terraform-rs (internal only).
+# served_roots is regenerated from the live handler mappings by the drift test; the list
+# above is the inventory at baseline 052407d8 and must be confirmed by that test.
