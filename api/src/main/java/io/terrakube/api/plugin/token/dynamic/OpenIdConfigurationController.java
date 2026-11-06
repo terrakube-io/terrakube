@@ -1,5 +1,6 @@
 package io.terrakube.api.plugin.token.dynamic;
 
+import io.terrakube.api.plugin.routing.PublicUrls;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Getter;
 import lombok.Setter;
@@ -19,8 +20,8 @@ import java.util.Optional;
 @RequestMapping("/.well-known/openid-configuration")
 public class OpenIdConfigurationController {
 
-    @Value("#{@publicUrls.issuerHost()}")
-    String hostname;
+    @org.springframework.beans.factory.annotation.Autowired
+    PublicUrls publicUrls;
 
     @Value("${io.terrakube.dynamic.credentials.hostname}")
     String overrideHostname;
@@ -41,7 +42,7 @@ public class OpenIdConfigurationController {
         log.info("Loading default OpenId Configuration data...");
         OpenIdConfiguration openIdData = new OpenIdConfiguration();
 
-        String issuer = String.format("https://%s", overrideHostname.isEmpty() ? hostname: overrideHostname);
+        String issuer = publicUrls.dynamicCredentialIssuer(overrideHostname);
 
         openIdData.setIssuer(issuer);
         openIdData.setJwksUri(issuer + "/.well-known/jwks");

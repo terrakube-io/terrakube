@@ -54,12 +54,32 @@ public class PublicUrls {
     }
 
     /**
-     * Default host for the dynamic-credential token issuer when DynamicCredentialHostname is unset:
-     * an explicitly set hostname first (so migrating installations keep their issuer), then the
-     * public URL's host.
+     * Default dynamic-credential token issuer when DynamicCredentialHostname is unset: an explicitly
+     * set hostname first, as {@code https://<hostname>} (so existing issuers never change), then the
+     * public URL with its own scheme.
      */
-    public String issuerHost() {
-        return hostname.isEmpty() ? publicHost() : hostname;
+    public String issuerBaseUrl() {
+        return hostname.isEmpty() ? publicUrl : "https://" + hostname;
+    }
+
+    /** Dynamic-credential issuer: the explicit override when set, otherwise {@link #issuerBaseUrl()}. */
+    public String dynamicCredentialIssuer(String override) {
+        return override == null || override.isBlank() ? issuerBaseUrl() : issuerUrl(override);
+    }
+
+    /**
+     * Issuer for an explicit DynamicCredentialHostname: a full {@code http(s)://} URL is used as is
+     * (without a trailing slash), a bare host keeps the {@code https://} default.
+     */
+    public static String issuerUrl(String override) {
+        String value = override.trim();
+        if (value.contains("://")) {
+            if (!value.startsWith("https://") && !value.startsWith("http://")) {
+                throw new IllegalStateException("DynamicCredentialHostname must be a host or an http(s):// URL (got: " + value + ")");
+            }
+            return value.endsWith("/") ? value.substring(0, value.length() - 1) : value;
+        }
+        return "https://" + value;
     }
 
     /** Prefix for relative API paths handed to clients: {@code /api} in single-domain mode. */
