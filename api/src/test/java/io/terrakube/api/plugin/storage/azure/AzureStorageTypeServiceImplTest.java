@@ -12,11 +12,14 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import io.terrakube.api.plugin.storage.StorageUnavailableException;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Collections;
 import java.util.List;
 import java.util.stream.Stream;
@@ -138,15 +141,38 @@ class AzureStorageTypeServiceImplTest {
     }
 
     @Test
-    void testCreateContentFile() throws IOException {
+    void createContentFileUploadsFromATempFileAndDeletesIt() {
         when(blobServiceClient.getBlobContainerClient("content")).thenReturn(containerClient);
-        when(containerClient.getBlobClient(anyString())).thenReturn(blobClient);
-        InputStream is = new ByteArrayInputStream("data".getBytes());
+        when(containerClient.getBlobClient("content/id1/terraformContent.tar.gz")).thenReturn(blobClient);
+        byte[] data = "data".getBytes(StandardCharsets.UTF_8);
+        String[] uploadedPath = new String[1];
+        doAnswer(invocation -> {
+            uploadedPath[0] = invocation.getArgument(0);
+            assertArrayEquals(data, Files.readAllBytes(Path.of(uploadedPath[0])));
+            return null;
+        }).when(blobClient).uploadFromFile(anyString(), eq(true));
 
-        azureStorageTypeService.createContentFile("id1", is);
+        azureStorageTypeService.createContentFile("id1", new ByteArrayInputStream(data));
 
         verify(containerClient).createIfNotExists();
-        verify(blobClient).upload(any(BinaryData.class), eq(true));
+        verify(blobClient).uploadFromFile(anyString(), eq(true));
+        assertFalse(Files.exists(Path.of(uploadedPath[0])));
+    }
+
+    @Test
+    void createContentFileFailsWithoutUploadingWhenTheRequestBodyCannotBeRead() {
+        InputStream failing = new InputStream() {
+            @Override
+            public int read() throws IOException {
+                throw new IOException("connection reset");
+            }
+        };
+
+        StorageUnavailableException e = assertThrows(StorageUnavailableException.class,
+                () -> azureStorageTypeService.createContentFile("id1", failing));
+
+        assertEquals("Unable to read uploaded content for id1", e.getMessage());
+        verifyNoInteractions(blobServiceClient);
     }
 
     @Test

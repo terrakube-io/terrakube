@@ -12,6 +12,7 @@ import io.terrakube.api.plugin.storage.StepOutputPartsReader;
 import io.terrakube.api.plugin.storage.StorageRetryMetrics;
 import io.terrakube.api.plugin.storage.StorageTypeService;
 import io.terrakube.api.plugin.storage.StorageUnavailableException;
+import io.terrakube.api.plugin.storage.UploadSpool;
 import io.terrakube.api.plugin.storage.model.ByteRange;
 import io.terrakube.api.plugin.storage.model.StepOutputPart;
 import io.terrakube.api.plugin.storage.model.StepOutputStream;
@@ -21,6 +22,9 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.List;
 
 @Slf4j
@@ -212,16 +216,21 @@ public class LocalStorageTypeServiceImpl implements StorageTypeService {
         String contentFile = String.format(CONTENT_DIRECTORY, contentId);
         log.info("contentFile: {}", contentFile);
 
-        byte[] content;
+        // Streamed to a temp file next to the target, then renamed over it: never held in memory,
+        // and a failed read leaves no partial content behind (#3852).
+        Path target = Path.of(FileUtils.getUserDirectoryPath().concat(FilenameUtils.separatorsToSystem(contentFile)));
         try {
-            content = inputStream.readAllBytes();
+            Files.createDirectories(target.getParent());
         } catch (IOException e) {
-            // Reading the upload's own request body failed - can't be retried (it's a one-shot
-            // stream), so fail the upload instead of silently marking it uploaded (#3671).
-            throw new StorageUnavailableException("Unable to read uploaded content for " + contentId, e);
+            throw new StorageUnavailableException("Unable to create the content directory for " + contentId, e);
         }
-
-        writeFile(contentFile, content);
+        Path spooled = UploadSpool.spool(contentId, inputStream, target.getParent());
+        try {
+            storageRetryMetrics.withRetry("local", "write", () -> Files.move(spooled, target, StandardCopyOption.REPLACE_EXISTING));
+            log.info("Write file {} completed", contentFile);
+        } finally {
+            UploadSpool.delete(spooled);
+        }
     }
 
     @Override
