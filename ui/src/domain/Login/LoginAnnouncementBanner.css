@@ -1,11 +1,19 @@
 .login-announcements-wrapper {
-  margin-bottom: 20px;
   width: 100%;
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
 
 .login-announcements-wrapper .announcement-banner {
-  border-radius: 6px;
-  border: 1px solid;
-  margin-bottom: 8px;
+  border-radius: 0;
+  border-top: none;
+  border-left: none;
+  border-right: none;
+  padding: 10px 24px;
 }
 
+.login-announcements-wrapper .announcement-tray-collapsible {
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+}
