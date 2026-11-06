@@ -20,6 +20,7 @@ import java.util.Date;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class WorkspaceSecurityTest {
@@ -99,5 +100,31 @@ class WorkspaceSecurityTest {
         }
         workspaceSecurity.cleanTerraformCredentials();
         assertFalse(terraformrcFile.exists());
+    }
+
+    @Test
+    void writesOneCredentialsBlockWhenRegistryAndApiShareAHost() throws Exception {
+        WorkspaceSecurityImpl singleDomain = new WorkspaceSecurityImpl(
+                new RestClientProperties(), "app.example.com", "https://app.example.com/api", SECRET);
+        singleDomain.addTerraformCredentials("ws-1");
+        String content = FileUtils.readFileToString(terraformrcFile, StandardCharsets.UTF_8);
+        assertEquals(1, content.split("credentials \"app.example.com\"", -1).length - 1, content);
+    }
+
+    @Test
+    void writesBothCredentialsBlocksInSplitDomain() throws Exception {
+        workspaceSecurity.addTerraformCredentials("ws-1");
+        String content = FileUtils.readFileToString(terraformrcFile, StandardCharsets.UTF_8);
+        assertTrue(content.contains("credentials \"registry.example.com\""), content);
+        assertTrue(content.contains("credentials \"api.example.com\""), content);
+    }
+
+    @Test
+    void registryDomainFallsBackToPublicUrlHost() {
+        assertEquals("registry.example.com",
+                WorkspaceSecurityImpl.resolveRegistryDomain("registry.example.com", "https://app.example.com"));
+        assertEquals("app.example.com", WorkspaceSecurityImpl.resolveRegistryDomain("", "https://app.example.com"));
+        assertEquals("localhost:8443", WorkspaceSecurityImpl.resolveRegistryDomain(null, "https://localhost:8443"));
+        assertThrows(IllegalStateException.class, () -> WorkspaceSecurityImpl.resolveRegistryDomain("", ""));
     }
 }
