@@ -172,6 +172,24 @@ x-traefik_dev_labels: &traefik_dev_labels
   traefik.http.routers.terrakube-ui-http.service: terrakube-ui-https
   traefik.http.routers.terrakube-ui-http.middlewares: terrakube-ui-redirect-https
   traefik.http.middlewares.terrakube-ui-redirect-https.redirectscheme.scheme: https
+  ## Single-domain routes on terrakube.${DOMAIN} (docs/single-domain/route-table.yaml), used with
+  ## scripts/setupDevelopmentEnvironment.sh --single-domain. They are harmless in split-domain mode:
+  ## the UI never requests these paths on its own host.
+  traefik.http.routers.terrakube-sd-api.rule: Host(`terrakube.${DOMAIN}`) && (Path(`/.well-known/terraform.json`) || Path(`/.well-known/openid-configuration`) || Path(`/.well-known/jwks`) || PathPrefix(`/api/`) || PathPrefix(`/webhook/`) || PathPrefix(`/callback/`) || PathPrefix(`/access-token/`))
+  traefik.http.routers.terrakube-sd-api.entrypoints: websecure
+  traefik.http.routers.terrakube-sd-api.tls: true
+  traefik.http.routers.terrakube-sd-api.priority: 100
+  traefik.http.routers.terrakube-sd-api.service: terrakube-api-https
+  traefik.http.routers.terrakube-sd-registry.rule: Host(`terrakube.${DOMAIN}`) && PathPrefix(`/api/private-registry/`)
+  traefik.http.routers.terrakube-sd-registry.entrypoints: websecure
+  traefik.http.routers.terrakube-sd-registry.tls: true
+  traefik.http.routers.terrakube-sd-registry.priority: 200
+  traefik.http.routers.terrakube-sd-registry.service: terrakube-registry-https
+  traefik.http.routers.terrakube-sd-dex.rule: Host(`terrakube.${DOMAIN}`) && PathPrefix(`/dex/`)
+  traefik.http.routers.terrakube-sd-dex.entrypoints: websecure
+  traefik.http.routers.terrakube-sd-dex.tls: true
+  traefik.http.routers.terrakube-sd-dex.priority: 100
+  traefik.http.routers.terrakube-sd-dex.service: terrakube-dex-https
   ## Terrakube registry
   ## Terrakube registry HTTPS
   traefik.http.routers.terrakube-registry-https.rule: Host(`terrakube-registry.${DOMAIN}`)

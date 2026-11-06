@@ -45,6 +45,22 @@ applications on the same ports.
 Rebuild the Dev Container only after changing `.devcontainer/`, its Dockerfile,
 features, or trusted CA files.
 
+### Single-domain mode
+
+To run the stack with the UI, API, registry and Dex all on
+<https://terrakube.localhost> (see [docs/single-domain](../docs/single-domain/README.md)),
+regenerate the environment files with the extra flag, restart Dex, and restart
+the **Terrakube Postgresql** compound:
+
+```sh
+./scripts/setupDevelopmentEnvironment.sh -s MINIO -d POSTGRESQL --single-domain
+(cd scripts/setup/devcontainer && docker compose up -d --force-recreate)
+```
+
+Run the same command without `--single-domain` to switch back. The single-domain
+Playwright check runs with `TERRAKUBE_SINGLE_DOMAIN=1 npx playwright test single-domain`
+from `e2e/`.
+
 ## Validate before a pull request
 
 Run the checks relevant to the change from the repository root:
