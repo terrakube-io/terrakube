@@ -10,6 +10,8 @@ declare global {
       REACT_APP_TERRAKUBE_SEND_COOKIES?: string;
       REACT_APP_TERRAKUBE_VERSION: string;
       REACT_APP_REGISTRY_URI: string;
+      // Set only for single-domain deployments; the UI then calls canonical /api/... backend paths.
+      REACT_APP_TERRAKUBE_PUBLIC_URL?: string;
     };
   }
 }

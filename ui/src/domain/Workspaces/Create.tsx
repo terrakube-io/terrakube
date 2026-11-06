@@ -1,3 +1,4 @@
+import { apiUrl } from "@/config/apiUrls";
 import { DownOutlined, GithubOutlined, GitlabOutlined, LockOutlined } from "@ant-design/icons";
 import {
   Alert,
@@ -198,7 +199,7 @@ export const CreateWorkspace = () => {
     setLoading(true);
     getIacTypes();
 
-    const versionsApi = `${new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin}/${iacType.id}/index.json`;
+    const versionsApi = `${apiUrl("")}/${iacType.id}/index.json`;
 
     // Parallel load: versions, SSH keys, templates, VCS, and projects
     Promise.all([
@@ -286,7 +287,7 @@ export const CreateWorkspace = () => {
     setStep3Hidden(false);
   };
 
-  const vcsApiUrl = (path: string) => `${new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin}${path}`;
+  const vcsApiUrl = (path: string) => `${apiUrl("")}${path}`;
 
   const fetchVcsGroups = (id: string) => {
     setGroupsLoading(true);
@@ -401,7 +402,7 @@ export const CreateWorkspace = () => {
   };
 
   const loadVersions = (iacType: IacType) => {
-    const versionsApi = `${new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin}/${iacType.id}/index.json`;
+    const versionsApi = `${apiUrl("")}/${iacType.id}/index.json`;
     axiosInstance.get(versionsApi).then((resp) => {
       const tfVersions = [];
       if (iacType.id === "tofu") {

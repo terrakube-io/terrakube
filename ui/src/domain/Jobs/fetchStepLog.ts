@@ -1,5 +1,6 @@
 import { axiosAuxiliary, axiosClient } from "../../config/axiosConfig";
-import { getJobOutputRequestUrl, getPublicApiOrigin, isTerrakubeApiUrl } from "./outputUrl";
+import { apiUrl } from "@/config/apiUrls";
+import { getJobOutputRequestUrl, isTerrakubeApiUrl } from "./outputUrl";
 
 /** Objects at or above this size are fetched tail-first via a Range request. */
 export const LARGE_LOG_THRESHOLD = 2 * 1024 * 1024;
@@ -45,8 +46,7 @@ function resolveUrl(params: FetchStepLogParams): { url: string; terrakubeApi: bo
     return { url, terrakubeApi: isTerrakubeApiUrl(url) };
   }
   const url =
-    `${getPublicApiOrigin()}/tfoutput/v1/organization/${params.organizationId}` +
-    `/job/${params.jobId}/step/${params.stepId}`;
+    `${apiUrl("")}/tfoutput/v1/organization/${params.organizationId}` + `/job/${params.jobId}/step/${params.stepId}`;
   return { url, terrakubeApi: true };
 }
 
