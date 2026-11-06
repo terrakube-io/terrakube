@@ -5,6 +5,7 @@
     xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
 
     <changeSet author="demo-data" id="demo-announcements">
+        <validCheckSum>ANY</validCheckSum>
         <!-- 1. Global informational announcement on login page -->
         <insert tableName="announcement">
             <column name="id" value="a1000000-0000-4000-8000-000000000001"/>
@@ -43,6 +44,39 @@
             <column name="severity" value="warning"/>
             <column name="scope" value="ORGANIZATION"/>
             <column name="organization_id" value="d9b58bd3-f3fc-4056-a026-1163297e80a8"/>
+            <column name="is_active" valueBoolean="true"/>
+            <column name="is_dismissible" valueBoolean="true"/>
+            <column name="display_on_login" valueBoolean="false"/>
+            <column name="created_date" valueDate="2026-01-01T00:00:00"/>
+            <column name="updated_date" valueDate="2026-01-01T00:00:00"/>
+        </insert>
+    </changeSet>
+
+    <changeSet author="demo-data" id="demo-announcements-org-scenarios">
+        <validCheckSum>ANY</validCheckSum>
+        <!-- 4. Organization-scoped warning banner for demo organization 'simple-governance' -->
+        <insert tableName="announcement">
+            <column name="id" value="a1000000-0000-4000-8000-000000000004"/>
+            <column name="title" value="Mandatory OPA Policy Enforcement Active"/>
+            <column name="message" value="All pull request runs in `simple-governance` now enforce CIS benchmark policy sets. Please review the [Governance Guidelines](https://docs.terrakube.io) before requesting plan overrides."/>
+            <column name="severity" value="warning"/>
+            <column name="scope" value="ORGANIZATION"/>
+            <column name="organization_id" value="70000000-0000-0000-0000-000000000001"/>
+            <column name="is_active" valueBoolean="true"/>
+            <column name="is_dismissible" valueBoolean="true"/>
+            <column name="display_on_login" valueBoolean="false"/>
+            <column name="created_date" valueDate="2026-01-01T00:00:00"/>
+            <column name="updated_date" valueDate="2026-01-01T00:00:00"/>
+        </insert>
+
+        <!-- 5. Organization-scoped info banner for demo organization 'simple-trigger' -->
+        <insert tableName="announcement">
+            <column name="id" value="a1000000-0000-4000-8000-000000000005"/>
+            <column name="title" value="Run Trigger Dependency Pipeline Updates"/>
+            <column name="message" value="Downstream workspace execution graph has been reconfigured with new flow controls. Monitor the workspace dependency graph for automated cascading executions."/>
+            <column name="severity" value="info"/>
+            <column name="scope" value="ORGANIZATION"/>
+            <column name="organization_id" value="b0f1c2d3-0000-4000-8000-000000000001"/>
             <column name="is_active" valueBoolean="true"/>
             <column name="is_dismissible" valueBoolean="true"/>
             <column name="display_on_login" valueBoolean="false"/>
