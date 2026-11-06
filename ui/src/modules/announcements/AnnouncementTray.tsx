@@ -9,9 +9,14 @@ import "./AnnouncementTray.css";
 export interface AnnouncementTrayProps {
   announcements: (Announcement | PublicAnnouncement)[];
   onDismissOverride?: (announcement: Announcement | PublicAnnouncement) => void;
+  defaultExpanded?: boolean;
 }
 
-export const AnnouncementTray = ({ announcements, onDismissOverride }: AnnouncementTrayProps) => {
+export const AnnouncementTray = ({
+  announcements,
+  onDismissOverride,
+  defaultExpanded = false,
+}: AnnouncementTrayProps) => {
   const [dismissedMap, setDismissedMap] = useState<Record<string, boolean>>({});
   const [isExpanded, setIsExpanded] = useState(false);
 
@@ -36,7 +41,7 @@ export const AnnouncementTray = ({ announcements, onDismissOverride }: Announcem
 
   return (
     <div className="announcement-tray" data-testid="announcement-tray">
-      <AnnouncementBanner announcement={topBanner} onDismiss={handleDismiss} />
+      <AnnouncementBanner announcement={topBanner} onDismiss={handleDismiss} defaultExpanded={defaultExpanded} />
       {remainingBanners.length > 0 && (
         <>
           <div className="announcement-tray-collapsible">
@@ -55,7 +60,12 @@ export const AnnouncementTray = ({ announcements, onDismissOverride }: Announcem
           {isExpanded && (
             <div className="announcement-tray-stack">
               {remainingBanners.map((a) => (
-                <AnnouncementBanner key={a.id} announcement={a} onDismiss={handleDismiss} />
+                <AnnouncementBanner
+                  key={a.id}
+                  announcement={a}
+                  onDismiss={handleDismiss}
+                  defaultExpanded={defaultExpanded}
+                />
               ))}
             </div>
           )}

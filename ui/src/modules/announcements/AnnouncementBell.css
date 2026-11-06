@@ -1,0 +1,31 @@
+.announcement-bell-button {
+  background-color: var(--tk-sidebar-control-bg);
+  border: 1px solid var(--tk-sidebar-control-border);
+  border-radius: 6px;
+  color: rgba(255, 255, 255, 0.85);
+  cursor: pointer;
+  padding: 4px 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    color 0.2s ease;
+  height: 32px;
+}
+
+.announcement-bell-button:hover {
+  background-color: var(--tk-sidebar-control-bg-hover);
+  border-color: var(--tk-sidebar-control-border-hover);
+  color: #fff;
+}
+
+.announcement-bell-icon {
+  font-size: 16px;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.announcement-bell-button:hover .announcement-bell-icon {
+  color: #fff;
+}

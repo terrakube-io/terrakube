@@ -1,4 +1,5 @@
-import { Alert, Button, Typography, Tag } from "antd";
+import { useState } from "react";
+import { Alert, Button, Typography, Tag, Tooltip } from "antd";
 import ReactMarkdown from "react-markdown";
 import rehypeSanitize from "rehype-sanitize";
 import {
@@ -7,8 +8,11 @@ import {
   AlertOutlined,
   CloseOutlined,
   ClockCircleOutlined,
+  DownOutlined,
+  UpOutlined,
 } from "@ant-design/icons";
 import { Announcement, AnnouncementSeverity, PublicAnnouncement } from "./announcementTypes";
+import { formatSchedule } from "./announcementStorage";
 import "./AnnouncementBanner.css";
 
 const { Text } = Typography;
@@ -19,35 +23,24 @@ const SEVERITY_CONFIG: Record<AnnouncementSeverity, { icon: React.ReactNode; typ
   critical: { icon: <AlertOutlined />, type: "error" },
 };
 
-function formatSchedule(startsAt?: string | null, endsAt?: string | null): string | null {
-  if (!startsAt && !endsAt) return null;
-  const formatDate = (iso: string) => {
-    try {
-      const d = new Date(iso);
-      return d.toUTCString().replace("GMT", "UTC");
-    } catch {
-      return iso;
-    }
-  };
-
-  if (startsAt && endsAt) {
-    return `${formatDate(startsAt)} – ${formatDate(endsAt)}`;
-  }
-  if (startsAt) {
-    return `From ${formatDate(startsAt)}`;
-  }
-  return `Until ${formatDate(endsAt!)}`;
-}
-
 export interface AnnouncementBannerProps {
   announcement: Announcement | PublicAnnouncement;
   onDismiss?: (announcement: Announcement | PublicAnnouncement) => void;
   className?: string;
+  defaultExpanded?: boolean;
 }
 
-export const AnnouncementBanner = ({ announcement, onDismiss, className }: AnnouncementBannerProps) => {
+export const AnnouncementBanner = ({
+  announcement,
+  onDismiss,
+  className,
+  defaultExpanded = false,
+}: AnnouncementBannerProps) => {
+  const [isExpanded, setIsExpanded] = useState(defaultExpanded);
   const config = SEVERITY_CONFIG[announcement.severity] || SEVERITY_CONFIG.info;
   const scheduleText = formatSchedule(announcement.startsAt, announcement.endsAt);
+  const hasScope = "scope" in announcement && Boolean(announcement.scope);
+  const isGlobal = hasScope && (announcement as Announcement).scope === "GLOBAL";
 
   return (
     <Alert
@@ -58,31 +51,51 @@ export const AnnouncementBanner = ({ announcement, onDismiss, className }: Annou
       title={
         <div className="announcement-banner-header">
           <div className="announcement-title-group">
+            {hasScope && (
+              <Tag color={isGlobal ? "blue" : "purple"} className="announcement-scope-tag">
+                {isGlobal ? "Platform" : "Organization"}
+              </Tag>
+            )}
             <Text strong className="announcement-title">
               {announcement.title}
             </Text>
             {scheduleText && (
-              <Tag icon={<ClockCircleOutlined />} className="announcement-schedule-tag">
-                {scheduleText}
-              </Tag>
+              <Tooltip title={scheduleText}>
+                <Tag icon={<ClockCircleOutlined />} className="announcement-schedule-tag">
+                  {scheduleText}
+                </Tag>
+              </Tooltip>
             )}
           </div>
-          {announcement.dismissible && onDismiss && (
+          <div className="announcement-actions-group">
             <Button
-              type="text"
+              type="link"
               size="small"
-              className="announcement-dismiss-btn"
-              icon={<CloseOutlined />}
-              onClick={() => onDismiss(announcement)}
-              aria-label="Dismiss banner"
-            />
-          )}
+              className="announcement-details-btn"
+              onClick={() => setIsExpanded(!isExpanded)}
+              icon={isExpanded ? <UpOutlined /> : <DownOutlined />}
+            >
+              {isExpanded ? "Hide details" : "Details"}
+            </Button>
+            {announcement.dismissible && onDismiss && (
+              <Button
+                type="text"
+                size="small"
+                className="announcement-dismiss-btn"
+                icon={<CloseOutlined />}
+                onClick={() => onDismiss(announcement)}
+                aria-label="Dismiss banner"
+              />
+            )}
+          </div>
         </div>
       }
       description={
-        <div className="announcement-message">
-          <ReactMarkdown rehypePlugins={[rehypeSanitize]}>{announcement.message}</ReactMarkdown>
-        </div>
+        isExpanded ? (
+          <div className="announcement-message" data-testid="announcement-description">
+            <ReactMarkdown rehypePlugins={[rehypeSanitize]}>{announcement.message}</ReactMarkdown>
+          </div>
+        ) : null
       }
     />
   );

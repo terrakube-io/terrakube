@@ -1,0 +1,67 @@
+.announcement-drawer .ant-drawer-body {
+  padding: 16px 24px;
+}
+
+.announcement-drawer-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-top: 8px;
+}
+
+.announcement-drawer-card {
+  border-radius: 8px;
+  border: 1px solid var(--tk-border-secondary, #e8e8e8);
+  padding: 14px 16px;
+  background-color: var(--tk-bg-container, #ffffff);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.announcement-drawer-card.announcement-card-critical {
+  border-left: 4px solid #ff4d4f;
+}
+
+.announcement-drawer-card.announcement-card-warning {
+  border-left: 4px solid #faad14;
+}
+
+.announcement-drawer-card.announcement-card-info {
+  border-left: 4px solid #1677ff;
+}
+
+.announcement-drawer-card.announcement-card-dismissed {
+  border-left: 4px solid #8c8c8c;
+  opacity: 0.9;
+}
+
+.announcement-drawer-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.announcement-drawer-badges {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.announcement-drawer-title {
+  font-size: 14px;
+}
+
+.announcement-drawer-schedule {
+  font-size: 12px;
+}
+
+.announcement-drawer-message {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--tk-text-secondary, #595959);
+}
+
+.announcement-drawer-message p {
+  margin: 0;
+}

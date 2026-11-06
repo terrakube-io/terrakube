@@ -60,3 +60,23 @@ export function clearDismissal(announcementId: string): void {
   }));
   localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
 }
+
+export function formatSchedule(startsAt?: string | null, endsAt?: string | null): string | null {
+  if (!startsAt && !endsAt) return null;
+  const formatDate = (iso: string) => {
+    try {
+      const d = new Date(iso);
+      return d.toUTCString().replace("GMT", "UTC");
+    } catch {
+      return iso;
+    }
+  };
+
+  if (startsAt && endsAt) {
+    return `${formatDate(startsAt)} – ${formatDate(endsAt)}`;
+  }
+  if (startsAt) {
+    return `From ${formatDate(startsAt)}`;
+  }
+  return `Until ${formatDate(endsAt!)}`;
+}

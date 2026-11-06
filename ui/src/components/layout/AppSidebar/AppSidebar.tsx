@@ -20,6 +20,7 @@ import {
   LockOutlined,
   MenuOutlined,
   NodeIndexOutlined,
+  NotificationOutlined,
   ProjectOutlined,
   RobotOutlined,
   SafetyCertificateOutlined,
@@ -41,6 +42,7 @@ import { FlatOrganization } from "@/domain/types";
 import { OrganizationSelector } from "@/components/layout/OrganizationSelector";
 import { HelpMenu } from "@/components/layout/HelpMenu";
 import { UserMenu } from "@/components/layout/UserMenu";
+import { AnnouncementBell } from "@/modules/announcements/AnnouncementBell";
 import { getStoredSidebarCollapsed, setStoredSidebarCollapsed } from "./sidebarPreference";
 import logo from "@/domain/Home/white_logo.png";
 import "./AppSidebar.css";
@@ -218,6 +220,7 @@ export default function AppSidebar({
         { key: "tags", label: "Tags", path: "tags", icon: <TagsOutlined /> },
         { key: "variables", label: "Global variables", path: "variables", icon: <CodeOutlined /> },
         { key: "collection", label: "Variable collections", path: "collection", icon: <FolderOutlined /> },
+        { key: "announcements", label: "Announcements", path: "announcements", icon: <NotificationOutlined /> },
       ],
     },
     {
@@ -516,6 +519,7 @@ export default function AppSidebar({
             <div className="app-sidebar-header-actions">
               {!effectiveCollapsed && (
                 <div className="app-sidebar-utility">
+                  <AnnouncementBell organizationId={organizationId} />
                   <HelpMenu />
                   <UserMenu />
                 </div>

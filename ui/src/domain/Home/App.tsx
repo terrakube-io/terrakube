@@ -640,6 +640,10 @@ const router = createBrowserRouter(
           element: <CollectionSettingsWrapper mode="detail" />,
         },
         {
+          path: "/organizations/:orgid/settings/announcements",
+          element: <OrganizationSettings selectedTab="14" />,
+        },
+        {
           path: "*",
           element: <ErrorState status={404} message="This page does not exist or has moved." />,
         },

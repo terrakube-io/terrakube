@@ -46,7 +46,7 @@ export const LoginAnnouncementBanner = () => {
 
   return (
     <div className="login-announcements-wrapper" data-testid="login-announcements">
-      <AnnouncementTray announcements={announcements} />
+      <AnnouncementTray announcements={announcements} defaultExpanded={true} />
     </div>
   );
 };

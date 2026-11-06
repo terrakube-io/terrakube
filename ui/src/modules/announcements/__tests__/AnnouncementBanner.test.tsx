@@ -16,12 +16,42 @@ describe("AnnouncementBanner", () => {
     endsAt: "2026-11-05T04:00:00Z",
   };
 
-  test("renders title, schedule and markdown link", () => {
+  test("renders title, scope badge, schedule, and expands description on click", () => {
     render(<AnnouncementBanner announcement={baseAnnouncement} />);
 
     expect(screen.getByText("Database Migration")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Documentation" })).toHaveAttribute("href", "https://docs.terrakube.io");
+    expect(screen.getByText("Platform")).toBeInTheDocument();
     expect(screen.getByText(/02:00:00 UTC –/i)).toBeInTheDocument();
+
+    // Initially collapsed in compact mode
+    expect(screen.queryByRole("link", { name: "Documentation" })).not.toBeInTheDocument();
+
+    // Expand details
+    const detailsBtn = screen.getByRole("button", { name: /details/i });
+    fireEvent.click(detailsBtn);
+
+    expect(screen.getByRole("link", { name: "Documentation" })).toHaveAttribute("href", "https://docs.terrakube.io");
+
+    // Collapse back
+    fireEvent.click(detailsBtn);
+    expect(screen.queryByRole("link", { name: "Documentation" })).not.toBeInTheDocument();
+  });
+
+  test("renders description immediately when defaultExpanded is true", () => {
+    render(<AnnouncementBanner announcement={baseAnnouncement} defaultExpanded={true} />);
+
+    expect(screen.getByText("Database Migration")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Documentation" })).toHaveAttribute("href", "https://docs.terrakube.io");
+  });
+
+  test("renders Organization scope tag for scoped announcements", () => {
+    const orgAnnouncement: Announcement = {
+      ...baseAnnouncement,
+      scope: "ORGANIZATION",
+      organization: { id: "org-1", name: "simple" },
+    };
+    render(<AnnouncementBanner announcement={orgAnnouncement} />);
+    expect(screen.getByText("Organization")).toBeInTheDocument();
   });
 
   test("renders dismiss button and triggers onDismiss when clicked", () => {
@@ -51,7 +81,7 @@ describe("AnnouncementBanner", () => {
       ...baseAnnouncement,
       message: 'Notice with <script>alert("xss")</script> and [bad link](javascript:alert(1))',
     };
-    const { container } = render(<AnnouncementBanner announcement={maliciousAnnouncement} />);
+    const { container } = render(<AnnouncementBanner announcement={maliciousAnnouncement} defaultExpanded={true} />);
 
     expect(container.querySelector("script")).toBeNull();
     // rehype-sanitize strips javascript: schemes from links

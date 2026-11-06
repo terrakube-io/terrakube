@@ -3,16 +3,17 @@
   border-left: none;
   border-right: none;
   border-top: none;
-  padding: 8px 16px;
+  padding: 6px 16px;
   position: relative;
   z-index: 100;
+  transition: all 0.2s ease-in-out;
 }
 
 .announcement-banner-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 12px;
 }
 
 .announcement-title-group {
@@ -20,20 +21,47 @@
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.announcement-scope-tag {
+  font-weight: 500;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  margin-right: 0;
 }
 
 .announcement-title {
   font-weight: 600;
-  font-size: 14px;
+  font-size: 13px;
+  line-height: 1.4;
 }
 
 .announcement-schedule-tag {
-  font-size: 12px;
+  font-size: 11px;
   opacity: 0.85;
+  margin-right: 0;
+}
+
+.announcement-actions-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.announcement-details-btn {
+  padding: 0 4px;
+  height: 22px;
+  font-size: 12px;
 }
 
 .announcement-message {
-  margin-top: 4px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed rgba(0, 0, 0, 0.08);
   font-size: 13px;
   line-height: 1.5;
 }
