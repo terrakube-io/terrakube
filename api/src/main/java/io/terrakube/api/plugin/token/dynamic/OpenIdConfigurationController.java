@@ -19,7 +19,7 @@ import java.util.Optional;
 @RequestMapping("/.well-known/openid-configuration")
 public class OpenIdConfigurationController {
 
-    @Value("${io.terrakube.hostname}")
+    @Value("#{@publicUrls.issuerHost()}")
     String hostname;
 
     @Value("${io.terrakube.dynamic.credentials.hostname}")
