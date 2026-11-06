@@ -95,7 +95,7 @@ export const StepConsole = ({
     if (!terminal) {
       return <TerminalOutput outputLog="" stepName={item.name} isRunning={false} emptyLabel="Waiting for output…" />;
     }
-    if (notExecuted && (state === "error" || (state === "success" && text === ""))) {
+    if (notExecuted && (state === "error" || state === "empty")) {
       return (
         <TerminalOutput outputLog="" stepName={item.name} isRunning={false} emptyLabel="This step was not executed." />
       );

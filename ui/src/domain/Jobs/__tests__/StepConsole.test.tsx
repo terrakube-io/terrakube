@@ -107,4 +107,19 @@ describe("a step that was not executed", () => {
 
     expect(screen.getByTestId("terminal")).toHaveTextContent("partial output");
   });
+
+  it("says the step was not executed when the log comes back empty", () => {
+    mockUseStepLog.mockReturnValue({
+      state: "empty",
+      text: "",
+      truncated: false,
+      incomplete: false,
+      retry: jest.fn(),
+    });
+
+    renderNotExecuted();
+
+    expect(screen.queryByText("Structured output temporarily unavailable")).not.toBeInTheDocument();
+    expect(screen.getByTestId("terminal")).toHaveTextContent("This step was not executed.");
+  });
 });
