@@ -1,3 +1,4 @@
+import { apiUrl } from "@/config/apiUrls";
 import { AxiosInstance } from "axios";
 import { axiosAuxiliary } from "../../config/axiosConfig";
 import { ORGANIZATION_ARCHIVE, WORKSPACE_ARCHIVE } from "../../config/actionTypes";
@@ -240,9 +241,9 @@ export async function setupWorkspaceIncludes(
   if (currentStateId !== lastState?.id) {
     const organizationId = sessionStorage.getItem(ORGANIZATION_ARCHIVE);
     const workspaceId = sessionStorage.getItem(WORKSPACE_ARCHIVE);
-    const url = `${
-      new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin
-    }/access-token/v1/teams/permissions/organization/${organizationId}/workspace/${workspaceId}`;
+    const url = `${apiUrl(
+      ""
+    )}/access-token/v1/teams/permissions/organization/${organizationId}/workspace/${workspaceId}`;
     axiosInstance
       .get(url)
       .then((response: any) => {
@@ -291,9 +292,7 @@ export function loadState(
       if (result.outputs.length < 1 && result.resources.length < 1) {
         axiosAuxiliary
           .get(
-            `${
-              new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin
-            }/tfstate/v1/organization/${organizationId}/workspace/${workspaceId}/state/terraform.tfstate`,
+            `${apiUrl("")}/tfstate/v1/organization/${organizationId}/workspace/${workspaceId}/state/terraform.tfstate`,
             { auxClass: "workspace-state-preview" }
           )
           .then((currentStateData) => {
