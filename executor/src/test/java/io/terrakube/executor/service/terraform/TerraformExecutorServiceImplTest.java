@@ -164,6 +164,7 @@ class TerraformExecutorServiceImplTest {
 
         assertFalse(result.isSuccessfulExecution());
         assertEquals(1, result.getExitCode());
+        org.junit.jupiter.api.Assertions.assertNull(terraformJob.getExecutionDurationMs());
         verify(terraformClient, never()).planDetailExitCode(any(TerraformProcessData.class), any(Consumer.class), any());
     }
 
@@ -995,10 +996,12 @@ class TerraformExecutorServiceImplTest {
                         && "Resource creation failed".equals(diagnostics.get(0).get("summary"))));
     }
 
-    @Test
-    void applyWithExecutionExceptionPublishesFinalSnapshotWithErroredStatusBeforeQueueDrain() throws Exception {
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void applyWithExecutionExceptionPublishesFinalSnapshotWithErroredStatusBeforeQueueDrain(boolean tofu) throws Exception {
         TerraformExecutorServiceImpl subject = spy(subject());
         TerraformJob terraformJob = createJob();
+        terraformJob.setTofu(tofu);
 
         Map<String, Object> seededChange = new HashMap<>();
         seededChange.put("address", "aws_instance.failed");
@@ -1024,6 +1027,8 @@ class TerraformExecutorServiceImplTest {
         ExecutorJobResult result = subject.apply(terraformJob, tempDir.toFile());
 
         assertFalse(result.isSuccessfulExecution());
+        assertNotNull(terraformJob.getExecutionDurationMs());
+        assertEquals("apply", terraformJob.getExecutionPhase());
         verify(applyStructuredOutputService).finalizeResourceStatuses(any(), eq(false), eq(false));
         verify(applyStructuredOutputService).publishFinalApplySnapshot(
                 eq("org"), eq("42"), eq("1"),
@@ -1061,6 +1066,7 @@ class TerraformExecutorServiceImplTest {
         ExecutorJobResult result = subject.apply(terraformJob, tempDir.toFile());
 
         assertFalse(result.isSuccessfulExecution());
+        org.junit.jupiter.api.Assertions.assertNull(terraformJob.getExecutionDurationMs());
         verify(applyStructuredOutputService).finalizeResourceStatuses(any(), eq(false), eq(true));
         verify(applyStructuredOutputService).publishFinalApplySnapshot(
                 eq("org"), eq("42"), eq("1"),
@@ -1239,10 +1245,12 @@ class TerraformExecutorServiceImplTest {
     // per-resource status view plan()/apply() get. It now goes through the same JSON event
     // parser and publishes under the same "apply" phase/key the UI's applyMode rendering already
     // understands, starting from an empty change list (there's no prior plan step to seed from).
-    @Test
-    void destroyPublishesStructuredOutputFromJsonEvents() throws Exception {
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void destroyPublishesStructuredOutputFromJsonEvents(boolean tofu) throws Exception {
         TerraformExecutorServiceImpl subject = spy(subject());
         TerraformJob terraformJob = createJob();
+        terraformJob.setTofu(tofu);
 
         when(terraformClient.init(any(TerraformProcessData.class), any(Consumer.class), any()))
                 .thenReturn(CompletableFuture.completedFuture(true));
@@ -1267,6 +1275,8 @@ class TerraformExecutorServiceImplTest {
         ExecutorJobResult result = subject.destroy(terraformJob, tempDir.toFile());
 
         assertTrue(result.isSuccessfulExecution());
+        assertNotNull(terraformJob.getExecutionDurationMs());
+        assertEquals("apply", terraformJob.getExecutionPhase());
         verify(applyStructuredOutputService, Mockito.atLeastOnce()).publishApplyProgress(
                 eq("org"), eq("42"), eq("1"),
                 argThat(changes -> changes.size() == 1
@@ -1323,10 +1333,12 @@ class TerraformExecutorServiceImplTest {
         verify(inFlightClient, Mockito.times(1)).close();
     }
 
-    @Test
-    void closesJsonPlanClientWhenTheOperationFinishes() throws Exception {
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void closesJsonPlanClientWhenTheOperationFinishes(boolean tofu) throws Exception {
         TerraformExecutorServiceImpl subject = spy(subject());
         TerraformJob terraformJob = createJob();
+        terraformJob.setTofu(tofu);
 
         when(terraformClient.init(any(TerraformProcessData.class), any(Consumer.class), any()))
                 .thenReturn(CompletableFuture.completedFuture(true));
@@ -1339,6 +1351,8 @@ class TerraformExecutorServiceImplTest {
         subject.plan(terraformJob, tempDir.toFile(), false);
 
         verify(jsonPlanClient).close();
+        assertEquals("plan", terraformJob.getExecutionPhase());
+        assertNotNull(terraformJob.getExecutionDurationMs());
     }
 
     @Test
@@ -1412,6 +1426,8 @@ class TerraformExecutorServiceImplTest {
 
         verify(planStructuredOutputService, Mockito.atLeastOnce()).publishFinalPlanSnapshot(
                 eq("org"), eq("42"), eq("1"), any(), any());
+        assertEquals("plan", terraformJob.getExecutionPhase());
+        assertNotNull(terraformJob.getExecutionDurationMs());
     }
 
     // Regression test for #3602: when the plan never streamed -json (e.g. a version constraint made

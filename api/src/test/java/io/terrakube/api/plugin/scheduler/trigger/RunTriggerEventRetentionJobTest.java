@@ -31,10 +31,11 @@ class RunTriggerEventRetentionJobTest {
         Date before = new Date(System.currentTimeMillis() - (30L * 24 * 60 * 60 * 1000));
 
         subject.execute(null);
+        Date after = new Date(System.currentTimeMillis() - (30L * 24 * 60 * 60 * 1000));
 
         ArgumentCaptor<Date> cutoff = ArgumentCaptor.forClass(Date.class);
         verify(runTriggerEventTransactions).pruneTerminalRowsOlderThan(cutoff.capture());
-        assertThat(cutoff.getValue()).isBeforeOrEqualTo(before).isAfter(new Date(before.getTime() - 5_000));
+        assertThat(cutoff.getValue()).isAfterOrEqualTo(before).isBeforeOrEqualTo(after);
     }
 
     /**

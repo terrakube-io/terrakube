@@ -86,7 +86,7 @@ public class UpdateJobStatusImpl implements UpdateJobStatus {
             // A rejected run keeps showing its approval step as failed: onReject command
             // output is still saved, but its success must not repaint the step as completed.
             boolean rejected = currentJobStatus.equals("rejected");
-            boolean outputSaved = updateStepStatus(successful && !rejected, terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), jobOutput, jobErrorOutput, deliveryState, deliveryRevision);
+            boolean outputSaved = updateStepStatus(successful && !rejected, terraformJob, jobOutput, jobErrorOutput, deliveryState, deliveryRevision);
             if (rejected || currentJobStatus.equals("cancelled"))
                 log.warn("Job {} was {} when running executor, skipping job status update", terraformJob.getJobId(), currentJobStatus);
             else
@@ -187,7 +187,10 @@ public class UpdateJobStatusImpl implements UpdateJobStatus {
      * saved but parts of it are in storage: the step is then completed as failed without a saved output, so
      * the API serves the parts with the incomplete notice. Saving a short message in its place would hide them.
      */
-    private boolean updateStepStatus(boolean status, String organizationId, String jobId, String stepId, StepOutputBuffer jobOutput, String jobErrorOutput, String deliveryState, Long deliveryRevision) {
+    private boolean updateStepStatus(boolean status, TerraformJob terraformJob, StepOutputBuffer jobOutput, String jobErrorOutput, String deliveryState, Long deliveryRevision) {
+        String organizationId = terraformJob.getOrganizationId();
+        String jobId = terraformJob.getJobId();
+        String stepId = terraformJob.getStepId();
         // The parts written while the step ran are only for a step that never gets here. Stop them before
         // the final upload, which has the whole output, and remove them once it has succeeded.
         int archivedParts = jobOutput.finishArchiving();
@@ -217,6 +220,8 @@ public class UpdateJobStatusImpl implements UpdateJobStatus {
         StepDeliveryAttributes stepAttributes = new StepDeliveryAttributes();
         stepAttributes.setOutput(output);
         stepAttributes.setStatus(stepStatus);
+        stepAttributes.setExecutionDurationMs(terraformJob.getExecutionDurationMs());
+        stepAttributes.setExecutionPhase(terraformJob.getExecutionPhase());
         if (deliveryState != null) {
             stepAttributes.setDeliveryState(deliveryState);
             stepAttributes.setDeliveryTimestamp(System.currentTimeMillis());
@@ -233,8 +238,8 @@ public class UpdateJobStatusImpl implements UpdateJobStatus {
         try {
             terrakubeClient.updateStep(stepRequest, organizationId, jobId, stepId);
         } catch (FeignException e) {
-            if (deliveryState != null && (e.status() == 400 || e.status() == 404)) {
-                log.warn("Step PATCH with delivery attributes rejected (status {}) by API for step {}, retrying without delivery attributes (older API compatibility)",
+            if ((deliveryState != null || terraformJob.getExecutionDurationMs() != null) && (e.status() == 400 || e.status() == 404)) {
+                log.warn("Step PATCH with delivery/timing attributes rejected (status {}) by API for step {}, retrying without these attributes (older API compatibility)",
                         e.status(), stepId);
                 StepAttributes fallbackAttributes = new StepAttributes();
                 fallbackAttributes.setOutput(output);
