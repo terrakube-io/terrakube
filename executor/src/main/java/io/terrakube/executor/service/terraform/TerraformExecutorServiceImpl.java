@@ -1601,6 +1601,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                 terraformWorkingDir,
                 terraformJob
         );
+        environmentVariables = withoutRejectedBackendConfig(environmentVariables, terraformJob);
         if (hasRunVariablesFile(terraformJob)) {
             File runVariablesFile = writeRunVariablesFile(terraformJob, workspaceRootDirectory);
             // Copied so the job's own map never accumulates arguments across the calls of one step.
@@ -1621,6 +1622,31 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                 .tofu(terraformJob.isTofu())
                 .sshFile(sshKeyFile)
                 .build();
+    }
+
+    /**
+     * The HTTP backend replaces the workspace's own backend, and Terraform rejects any {@code -backend-config} key it
+     * does not know. State no longer goes through the arguments written for S3, azurerm or gcs, so they are left out.
+     */
+    private HashMap<String, String> withoutRejectedBackendConfig(HashMap<String, String> environmentVariables, TerraformJob terraformJob) {
+        String name = "TF_CLI_ARGS_init";
+        if (!terraformState.rejectsBackendConfigArguments() || environmentVariables == null) {
+            return environmentVariables;
+        }
+        BackendConfigArguments.Stripped stripped = BackendConfigArguments.strip(environmentVariables.get(name));
+        if (stripped.removed().isEmpty()) {
+            return environmentVariables;
+        }
+        log.warn("Job {} ignores the -backend-config arguments of {} ({}): state is kept by the Terrakube HTTP backend, which does not accept them",
+                terraformJob.getJobId(), name, String.join(", ", stripped.removed()));
+        // Copied so the job's own map keeps what the user set.
+        HashMap<String, String> copy = new HashMap<>(environmentVariables);
+        if (stripped.arguments() == null) {
+            copy.remove(name);
+        } else {
+            copy.put(name, stripped.arguments());
+        }
+        return copy;
     }
 
     private static boolean hasRunVariablesFile(TerraformJob terraformJob) {
