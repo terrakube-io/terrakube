@@ -239,6 +239,46 @@ class TerraformExecutorServiceImplTest {
     }
 
     @Test
+    void anExactTofuVersionStaysAsItIsWhenTheReleaseListPrefixesIt() throws Exception {
+        TerraformExecutorServiceImpl subject = subject();
+        JobVersionPinner pinner = Mockito.mock(JobVersionPinner.class);
+        subject.setJobVersionPinner(pinner);
+        TerraformJob terraformJob = createJob();
+        terraformJob.setTofu(true);
+        terraformJob.setTerraformVersion("1.12.5");
+
+        TerraformDownloader downloader = Mockito.mock(TerraformDownloader.class);
+        when(terraformClient.createTerraformDownloader()).thenReturn(downloader);
+        when(downloader.resolveTofuVersion("1.12.5")).thenReturn("v1.12.5");
+
+        subject.resolveTerraformVersion(terraformJob);
+
+        // BashEngine would otherwise put tofu/vv1.12.5 on the PATH of scripts
+        assertEquals("1.12.5", terraformJob.getTerraformVersion());
+        verify(pinner, never()).pin(anyString(), anyString(), anyString());
+    }
+
+    @Test
+    void pinsATofuConstraintAsAPlainVersionNumber() throws Exception {
+        TerraformExecutorServiceImpl subject = subject();
+        JobVersionPinner pinner = Mockito.mock(JobVersionPinner.class);
+        subject.setJobVersionPinner(pinner);
+        TerraformJob terraformJob = createJob();
+        terraformJob.setTofu(true);
+        terraformJob.setTerraformVersion("~> 1.12");
+
+        TerraformDownloader downloader = Mockito.mock(TerraformDownloader.class);
+        when(terraformClient.createTerraformDownloader()).thenReturn(downloader);
+        when(downloader.resolveTofuVersion("~> 1.12")).thenReturn("v1.12.5");
+
+        subject.resolveTerraformVersion(terraformJob);
+
+        // The API answers 400 to anything but a plain version number
+        assertEquals("1.12.5", terraformJob.getTerraformVersion());
+        verify(pinner).pin("org", "42", "1.12.5");
+    }
+
+    @Test
     void pinsTheVersionAConstraintResolvedToOnTheJob() throws Exception {
         TerraformExecutorServiceImpl subject = subject();
         JobVersionPinner pinner = Mockito.mock(JobVersionPinner.class);

@@ -1385,9 +1385,9 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         }
 
         try {
-            String resolvedVersion = terraformJob.isTofu()
+            String resolvedVersion = withoutVersionPrefix(terraformJob.isTofu()
                     ? downloader.resolveTofuVersion(requestedVersion)
-                    : downloader.resolveTerraformVersion(requestedVersion);
+                    : downloader.resolveTerraformVersion(requestedVersion));
 
             if (resolvedVersion != null && !resolvedVersion.isBlank() && !resolvedVersion.equals(requestedVersion)) {
                 log.info("Resolved {} version \"{}\" to {} for job {}", getIaCType(terraformJob), requestedVersion,
@@ -1403,6 +1403,15 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             log.warn("Unable to resolve {} version \"{}\" for job {}, using it as-is: {}", getIaCType(terraformJob),
                     requestedVersion, terraformJob.getJobId(), e.getMessage());
         }
+    }
+
+    /**
+     * The OpenTofu release list names versions "v1.12.5". The rest of the job expects a plain number:
+     * the API refuses to pin anything else, and BashEngine adds its own "v" to the tofu directory on
+     * the PATH of scripts.
+     */
+    private static String withoutVersionPrefix(String version) {
+        return version != null && version.startsWith("v") ? version.substring(1) : version;
     }
 
     /**
