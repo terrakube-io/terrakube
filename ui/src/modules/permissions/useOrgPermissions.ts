@@ -1,3 +1,4 @@
+import { apiUrl } from "@/config/apiUrls";
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import axiosInstance from "../../config/axiosConfig";
@@ -60,9 +61,7 @@ export function useOrgPermissions(orgIdOverride?: string) {
     setPermissions(defaultPermissions);
     setLoading(true);
 
-    const url = `${
-      new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin
-    }/access-token/v1/teams/permissions/organization/${orgId}`;
+    const url = `${apiUrl("")}/access-token/v1/teams/permissions/organization/${orgId}`;
 
     axiosInstance
       .get(url)

@@ -1,6 +1,7 @@
 import axios, { AxiosError, AxiosResponse } from "axios";
 import { mgr } from "./authConfig";
 import getUserFromStorage from "./authUser";
+import { apiUrl, graphqlUrl } from "./apiUrls";
 import { setBackendError, FATAL_API_STATUSES } from "@/modules/api/backendStatus";
 import {
   classifyRequestOutcome,
@@ -35,13 +36,13 @@ export const axiosClient = axios.create({
 });
 
 export const axiosGraphQL = axios.create({
-  baseURL: new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin + "/graphql/api/v1",
+  baseURL: graphqlUrl(),
   withCredentials: sendCookiesWithRequests,
 });
 
 // Axios instance for Terraform Registry proxy (without /api/v1 prefix)
 export const axiosRegistry = axios.create({
-  baseURL: new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin,
+  baseURL: apiUrl(""),
   withCredentials: sendCookiesWithRequests,
 });
 

@@ -1,3 +1,4 @@
+import { apiPrefix } from "@/config/apiUrls";
 import { DeleteOutlined, DownOutlined, GithubOutlined, GitlabOutlined, PlusOutlined } from "@ant-design/icons";
 import {
   Button,
@@ -378,7 +379,7 @@ export const ImportWorkspace = () => {
     }
 
     try {
-      return `${new URL(apiUrl).origin}/importer/tfcloud`;
+      return `${new URL(apiUrl).origin}${apiPrefix()}/importer/tfcloud`;
     } catch {
       throw new Error("Terrakube API URL is invalid.");
     }

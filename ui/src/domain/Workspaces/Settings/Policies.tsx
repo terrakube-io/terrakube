@@ -1,3 +1,4 @@
+import { apiUrl } from "@/config/apiUrls";
 import { PlayCircleOutlined, PlusOutlined } from "@ant-design/icons";
 import { Alert, Button, Tooltip, message } from "antd";
 import { useEffect, useMemo, useState } from "react";
@@ -154,7 +155,7 @@ export const WorkspacePolicies = ({ workspace, manageWorkspace, planJob = false,
     if (isDisabled) return;
 
     setLoading(true);
-    const origin = new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin;
+    const origin = apiUrl("");
     axiosInstance
       .post(`${origin}/policy/v1/organization/${organizationId}/workspace/${workspaceId}/evaluation`)
       .then((response) => {
