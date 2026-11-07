@@ -73,6 +73,11 @@ public interface JobRepository extends JpaRepository<Job, Integer> {
     @Query("update job j set j.prCommentId = :commentId, j.prCommentError = :error where j.id = :jobId")
     int updatePrComment(@Param("jobId") int jobId, @Param("commentId") String commentId, @Param("error") String error);
 
+    @Transactional
+    @Modifying(flushAutomatically = true)
+    @Query("update job j set j.prCommentInterim = :interim where j.id = :jobId")
+    int updatePrCommentInterim(@Param("jobId") int jobId, @Param("interim") boolean interim);
+
     // Bulk update on purpose: the plan artifacts are already deleted when this runs, after the job's
     // own update has committed, so it must not trigger the job's hooks again.
     @Transactional

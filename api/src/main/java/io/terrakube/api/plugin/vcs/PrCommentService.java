@@ -101,20 +101,49 @@ public class PrCommentService {
         }
     }
 
-    private void publishPlanComment(Job job) {
-        if (alreadyPublished(job)) return;
+    /**
+     * Publishes the plan when the job starts waiting for approval, so the reviewer can read it on the
+     * pull request before approving. The job's final result then replaces this comment in place. A job
+     * started by the "terrakube apply" command is left out: it has already been reviewed, and its
+     * comment is an apply result (see {@link #postApplyResult}).
+     */
+    public void postPlanAwaitingApproval(Job job) {
+        if (job.getPrNumber() == null || job.getPrNumber() == 0 || job.isAutoApply()) return;
 
+        // A failure here must not stop the job from waiting for its approval.
+        try {
+            publishPlanComment(job, true);
+        } catch (Exception e) {
+            log.error("Error posting PR comment for job {} waiting for approval: {}", job.getId(), e.getMessage());
+        }
+    }
+
+    private void publishPlanComment(Job job) {
+        if (!job.isPrCommentInterim() && alreadyPublished(job)) return;
+
+        publishPlanComment(job, false);
+    }
+
+    private void publishPlanComment(Job job, boolean interim) {
         String planOutput = fetchPlanDiffText(job);
         String markdownComment = formatPlanComment(job, planOutput);
 
-        String existingThreadCommentId = findReusablePlanCommentId(job);
-        String commentId = existingThreadCommentId != null
-                ? attemptUpdateComment(job, existingThreadCommentId, markdownComment)
+        String existingCommentId = job.getPrCommentId() != null && !job.getPrCommentId().isBlank()
+                ? job.getPrCommentId()
+                : findReusablePlanCommentId(job);
+        String commentId = existingCommentId != null
+                ? attemptUpdateComment(job, existingCommentId, markdownComment)
                 : attemptPostComment(job, markdownComment);
+        boolean wasInterim = job.isPrCommentInterim();
+        // A failed final result stays marked as interim, so that the next pass tries it again.
         if (commentId != null) {
             job.setPrCommentId(commentId);
+            job.setPrCommentInterim(interim);
         }
         recordCommentOutcome(job);
+        if (job.isPrCommentInterim() != wasInterim) {
+            jobRepository.updatePrCommentInterim(job.getId(), job.isPrCommentInterim());
+        }
     }
 
     /**
@@ -429,6 +458,8 @@ public class PrCommentService {
                 return "✅";
             case failed:
                 return "❌";
+            case waitingApproval:
+                return "⏳";
             default:
                 return "⚠️";
         }
@@ -507,6 +538,15 @@ public class PrCommentService {
         };
     }
 
+    /** How a run that waited for approval ended, for the comment that was published during the wait. */
+    private String approvalOutcome(JobStatus status) {
+        return switch (status) {
+            case completed -> "This run was approved and finished.";
+            case rejected -> "This run was rejected.";
+            default -> "This run did not finish. Check the Terrakube UI for details.";
+        };
+    }
+
     private String formatPlanComment(Job job, String planOutput) {
         StringBuilder sb = new StringBuilder();
         sb.append("## Terrakube Plan Output\n\n");
@@ -534,6 +574,9 @@ public class PrCommentService {
             sb.append("```diff\n");
             sb.append(content);
             sb.append("\n```\n\n</details>\n\n");
+        } else if (job.getStatus() == JobStatus.waitingApproval) {
+            sb.append(icon).append(" See the plan in the Terrakube UI.\n\n");
+            renderPolicyGuardrailsSummary(job).ifPresent(pSummary -> sb.append(pSummary).append("\n\n"));
         } else if (job.getStatus() == JobStatus.completed) {
             sb.append(icon).append(" No changes detected.\n\n");
             renderPolicyGuardrailsSummary(job).ifPresent(pSummary -> sb.append(pSummary).append("\n\n"));
@@ -543,7 +586,11 @@ public class PrCommentService {
         }
 
         sb.append("---\n");
-        if (job.isPrApplyEnabled()) {
+        if (job.getStatus() == JobStatus.waitingApproval) {
+            sb.append("This run is waiting for approval. Approve or reject it in the Terrakube UI.\n");
+        } else if (job.isPrCommentInterim()) {
+            sb.append(approvalOutcome(job.getStatus())).append("\n");
+        } else if (job.isPrApplyEnabled()) {
             sb.append("To apply this plan, comment: `terrakube apply`\n");
         } else {
             sb.append("Apply via PR comment is disabled for this workspace. Apply this plan from the Terrakube UI, ")

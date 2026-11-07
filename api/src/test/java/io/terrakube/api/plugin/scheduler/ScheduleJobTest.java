@@ -143,6 +143,7 @@ public class ScheduleJobTest {
         lenient().doReturn(Optional.empty()).when(jobRepository).findFirstByWorkspaceAndIdNotAndStatusInOrderByIdAsc(any(), anyInt(), any());
         lenient().doReturn(Optional.empty()).when(jobRepository).findFirstByWorkspaceOrderByIdDesc(any());
         lenient().doReturn(Optional.empty()).when(prCommentService).extractRunSummary(any());
+        lenient().doNothing().when(prCommentService).postPlanAwaitingApproval(any());
 
         redisTemplate = mock(RedisTemplate.class, new FailUnkownMethod<RedisTemplate>());
         valueOperations = mock(ValueOperations.class, new FailUnkownMethod<ValueOperations>());
@@ -909,6 +910,7 @@ public class ScheduleJobTest {
 
         Assertions.assertEquals(JobStatus.waitingApproval, job.getStatus());
         Assertions.assertEquals("ze-team", job.getApprovalTeam());
+        verify(prCommentService, times(1)).postPlanAwaitingApproval(job);
     }
 
     @Test

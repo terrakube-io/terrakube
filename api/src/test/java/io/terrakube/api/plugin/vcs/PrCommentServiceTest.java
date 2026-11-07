@@ -1015,6 +1015,123 @@ public class PrCommentServiceTest {
     }
 
     @Test
+    public void postPlanAwaitingApprovalPublishesThePlanBeforeTheApproval() {
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.waitingApproval);
+        stubStepOutput("Plan: 1 to add, 0 to change, 0 to destroy.");
+        doReturn("12345").when(gitHubWebhookService).postPrComment(any(), any());
+
+        subject.postPlanAwaitingApproval(job);
+
+        ArgumentCaptor<String> markdown = ArgumentCaptor.forClass(String.class);
+        verify(gitHubWebhookService).postPrComment(eq(job), markdown.capture());
+        assertTrue(markdown.getValue().contains("**Status:** waitingApproval"));
+        assertTrue(markdown.getValue().contains("Plan: 1 to add"));
+        assertTrue(markdown.getValue().contains("waiting for approval"));
+        assertFalse(markdown.getValue().contains("`terrakube apply`"));
+        assertEquals("12345", job.getPrCommentId());
+        assertTrue(job.isPrCommentInterim());
+        verify(jobRepository).updatePrCommentInterim(job.getId(), true);
+    }
+
+    @Test
+    public void postPlanAwaitingApprovalDoesNotCallAMissingPlanAFailure() {
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.waitingApproval);
+        stubStepOutput(null);
+        doReturn("12345").when(gitHubWebhookService).postPrComment(any(), any());
+
+        subject.postPlanAwaitingApproval(job);
+
+        ArgumentCaptor<String> markdown = ArgumentCaptor.forClass(String.class);
+        verify(gitHubWebhookService).postPrComment(eq(job), markdown.capture());
+        assertFalse(markdown.getValue().contains("Plan failed"));
+    }
+
+    @Test
+    public void postPlanAwaitingApprovalSkipsAJobStartedByTheApplyCommand() {
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.waitingApproval);
+        job.setAutoApply(true);
+
+        subject.postPlanAwaitingApproval(job);
+
+        verify(gitHubWebhookService, never()).postPrComment(any(), any());
+    }
+
+    @Test
+    public void postPlanAwaitingApprovalSkipsAJobWithoutAPullRequest() {
+        Job job = createJob(VcsType.GITHUB, null, JobStatus.waitingApproval);
+
+        subject.postPlanAwaitingApproval(job);
+
+        verify(gitHubWebhookService, never()).postPrComment(any(), any());
+    }
+
+    @Test
+    public void postPlanAwaitingApprovalSurvivesAFailureWhileBuildingTheComment() {
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.waitingApproval);
+        doThrow(new RuntimeException("database down")).when(stepRepository).findByJobId(job.getId());
+
+        assertDoesNotThrow(() -> subject.postPlanAwaitingApproval(job));
+
+        assertFalse(job.isPrCommentInterim());
+    }
+
+    @Test
+    public void theFinalResultReplacesTheCommentPublishedForTheApproval() {
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.waitingApproval);
+        stubStepOutput("Plan: 1 to add, 0 to change, 0 to destroy.");
+        doReturn("12345").when(gitHubWebhookService).postPrComment(any(), any());
+        doReturn(true).when(gitHubWebhookService).updatePrComment(any(), any(), any());
+
+        subject.postPlanAwaitingApproval(job);
+        job.setStatus(JobStatus.completed);
+        subject.postPlanResult(job);
+        subject.postPlanResult(job);
+
+        ArgumentCaptor<String> markdown = ArgumentCaptor.forClass(String.class);
+        verify(gitHubWebhookService, times(1)).postPrComment(any(), any());
+        verify(gitHubWebhookService, times(1)).updatePrComment(eq(job), eq("12345"), markdown.capture());
+        assertTrue(markdown.getValue().contains("**Status:** completed"));
+        assertTrue(markdown.getValue().contains("approved and finished"));
+        assertFalse(markdown.getValue().contains("Apply this plan"));
+        assertEquals("12345", job.getPrCommentId());
+        assertFalse(job.isPrCommentInterim());
+        verify(jobRepository).updatePrCommentInterim(job.getId(), false);
+    }
+
+    @Test
+    public void theFinalResultOfARejectedRunSaysItWasRejected() {
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.rejected);
+        job.setPrCommentId("12345");
+        job.setPrCommentInterim(true);
+        stubStepOutput("Plan: 1 to add, 0 to change, 0 to destroy.");
+        doReturn(true).when(gitHubWebhookService).updatePrComment(any(), any(), any());
+
+        subject.postPlanResult(job);
+
+        ArgumentCaptor<String> markdown = ArgumentCaptor.forClass(String.class);
+        verify(gitHubWebhookService).updatePrComment(eq(job), eq("12345"), markdown.capture());
+        assertTrue(markdown.getValue().contains("This run was rejected."));
+    }
+
+    @Test
+    public void aFinalResultThatFailsIsTriedAgainOnTheNextPass() {
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
+        job.setPrCommentId("12345");
+        job.setPrCommentInterim(true);
+        stubStepOutput("Plan: 1 to add, 0 to change, 0 to destroy.");
+        doReturn(false, true).when(gitHubWebhookService).updatePrComment(any(), any(), any());
+        doReturn(null).when(gitHubWebhookService).postPrComment(any(), any());
+
+        subject.postPlanResult(job);
+        assertTrue(job.isPrCommentInterim());
+
+        subject.postPlanResult(job);
+
+        verify(gitHubWebhookService, times(2)).updatePrComment(eq(job), eq("12345"), any());
+        assertFalse(job.isPrCommentInterim());
+    }
+
+    @Test
     public void processingACompletedPlanJobTwicePostsOneComment() {
         Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
         stubStepOutput("Plan: 1 to add, 0 to change, 0 to destroy.");
