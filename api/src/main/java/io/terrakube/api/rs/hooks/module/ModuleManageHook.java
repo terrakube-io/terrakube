@@ -5,7 +5,6 @@ import java.net.URISyntaxException;
 import java.security.NoSuchAlgorithmException;
 import java.security.spec.InvalidKeySpecException;
 import java.util.Arrays;
-import java.util.Date;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -17,7 +16,6 @@ import org.quartz.Scheduler;
 import org.quartz.SchedulerException;
 import org.quartz.Trigger;
 import org.quartz.TriggerBuilder;
-import org.quartz.TriggerKey;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.yahoo.elide.annotation.LifeCycleHookBinding;
@@ -26,7 +24,10 @@ import com.yahoo.elide.core.security.ChangeSpec;
 import com.yahoo.elide.core.security.RequestScope;
 
 import io.terrakube.api.plugin.scheduler.module.DeleteStorageCacheJob;
-import io.terrakube.api.plugin.scheduler.module.ModuleRefreshService;
+import io.terrakube.api.plugin.scheduler.module.ModuleRefreshProperties;
+import io.terrakube.api.plugin.scheduler.module.ModuleRefreshTransactions;
+import io.terrakube.api.plugin.scheduler.webhook.RepoWebhookSyncScheduler;
+import io.terrakube.api.plugin.vcs.RepoUrlNormalizer;
 import io.terrakube.api.plugin.vcs.provider.exception.VcsTokenAcquisitionException;
 import io.terrakube.api.plugin.vcs.provider.github.GitHubTokenService;
 import io.terrakube.api.repository.ModuleRepository;
@@ -46,8 +47,9 @@ public class ModuleManageHook implements LifeCycleHook<Module> {
 
     Scheduler scheduler;
     GitHubTokenService gitHubTokenService;
-    ModuleRefreshService moduleRefreshService;
     ModuleRepository moduleRepository;
+    RepoWebhookSyncScheduler repoWebhookSyncScheduler;
+    ModuleRefreshProperties moduleRefreshProperties;
 
     @Override
     public void execute(LifeCycleHookBinding.Operation operation,
@@ -65,12 +67,8 @@ public class ModuleManageHook implements LifeCycleHook<Module> {
                         checkAndCreateGitHubAppToken(module);
                         break;
                     case POSTCOMMIT:
-                        try {
-                            log.info("Create module refresh task for {}/{}/{}", module.getOrganization().getName(), module.getName(), module.getProvider());
-                            moduleRefreshService.createRefreshTask(module.getId().toString(), true);
-                        } catch (SchedulerException e) {
-                            log.error("Failed to create module refresh task for {}/{}/{}, error {}",
-                                    module.getOrganization().getName(), module.getName(), module.getProvider(), e.getMessage());
+                        if (usesWebhook(module)) {
+                            scheduleWebhookSync(module.getSource());
                         }
                         break;
                     default:
@@ -78,11 +76,34 @@ public class ModuleManageHook implements LifeCycleHook<Module> {
                 }
                 break;
             case UPDATE:
+                // Bound on source, tagPrefix, vcs and ssh. Changes made after the flush (PRECOMMIT) are not
+                // written, so the refresh reset runs before it.
+                if (transactionPhase == LifeCycleHookBinding.TransactionPhase.PREFLUSH) {
+                    module.setNextRefresh(null);
+                    break;
+                }
+                // Bound on source and vcs: the webhook of the old and the new repository may change. The sync
+                // job decides from the committed rows, so the module's eligibility is not checked here.
+                if (transactionPhase == LifeCycleHookBinding.TransactionPhase.POSTCOMMIT) {
+                    if (moduleRefreshProperties.getWebhook().isEnabled()) {
+                        scheduleWebhookSync(module.getSource());
+                        optional.filter(change -> "source".equals(change.getFieldName()))
+                                .map(change -> (String) change.getOriginal())
+                                .ifPresent(this::scheduleWebhookSync);
+                    }
+                    break;
+                }
                 validateRegistrySystem(module);
                 validateNoDuplicateModule(module);
-                checkNextModuleRefresh(module);
                 break;
             case DELETE:
+                // POSTCOMMIT: the module row is gone, so the sync job can drop a webhook nothing uses any more.
+                if (transactionPhase == LifeCycleHookBinding.TransactionPhase.POSTCOMMIT) {
+                    if (usesWebhook(module)) {
+                        scheduleWebhookSync(module.getSource());
+                    }
+                    break;
+                }
                 try {
                     log.warn("ModuleManageHook Delete Storage for {}/{}/{}", module.getOrganization().getName(),
                             module.getName(), module.getProvider());
@@ -94,14 +115,14 @@ public class ModuleManageHook implements LifeCycleHook<Module> {
                     JobDetail jobDetail = JobBuilder.newJob().ofType(DeleteStorageCacheJob.class)
                             .storeDurably()
                             .setJobData(jobDataMap)
-                            .withIdentity(moduleRefreshService.getJobPrefix() + "_" + UUID.randomUUID())
+                            .withIdentity(DeleteStorageCacheJob.JOB_PREFIX + UUID.randomUUID())
                             .withDescription("ModuleDeleteStorage")
                             .build();
 
                     Trigger trigger = TriggerBuilder.newTrigger()
                             .startNow()
                             .forJob(jobDetail)
-                            .withIdentity(moduleRefreshService.getJobPrefix() + "_" + UUID.randomUUID())
+                            .withIdentity(DeleteStorageCacheJob.JOB_PREFIX + UUID.randomUUID())
                             .withDescription("ModuleDeleteStorageV1")
                             .startNow()
                             .build();
@@ -115,6 +136,17 @@ public class ModuleManageHook implements LifeCycleHook<Module> {
             default:
                 log.warn("Hook not supported in module");
                 break;
+        }
+    }
+
+    private boolean usesWebhook(Module module) {
+        return moduleRefreshProperties.getWebhook().isEnabled() && ModuleRefreshTransactions.canRegisterWebhook(module);
+    }
+
+    private void scheduleWebhookSync(String source) {
+        String normalizedUrl = RepoUrlNormalizer.normalize(source);
+        if (normalizedUrl != null && !normalizedUrl.isBlank()) {
+            repoWebhookSyncScheduler.scheduleSync(normalizedUrl, null);
         }
     }
 
@@ -135,32 +167,6 @@ public class ModuleManageHook implements LifeCycleHook<Module> {
             throw new ModuleManagementException(HttpStatus.SC_CONFLICT,
                     "Module " + module.getName() + " with provider " + module.getProvider()
                             + " already exists in this organization.");
-        }
-    }
-
-    private void checkNextModuleRefresh(Module module) {
-        log.info("ModuleManageHook update hook for {}/{}/{}", module.getOrganization().getName(),
-                module.getName(),
-                module.getProvider());
-        try {
-            Trigger trigger = scheduler
-                    .getTrigger(TriggerKey.triggerKey(moduleRefreshService.getJobPrefix() + module.getId()));
-
-            if (trigger != null) {
-                Date nextFireTime = trigger.getNextFireTime();
-                log.info("Next trigger fire time for module {}/{}/{}: {}",
-                        module.getOrganization().getName(),
-                        module.getName(),
-                        module.getProvider(),
-                        nextFireTime);
-            } else {
-                log.info("Create module refresh task for {}/{}/{}", module.getOrganization().getName(),
-                        module.getName(),
-                        module.getProvider());
-                moduleRefreshService.createRefreshTask(module.getId().toString(), true);
-            }
-        } catch (SchedulerException e) {
-            log.error("Failed to get next trigger time: {}", e.getMessage());
         }
     }
 

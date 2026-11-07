@@ -7,7 +7,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
 import static io.restassured.RestAssured.when;
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.emptyOrNullString;
 import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.notNullValue;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -110,6 +113,35 @@ public class ModuleTests extends OpenRegistryApplicationTests{
         // Anything that could change the RSQL filter is refused without asking the API.
         assertTrue(moduleService.isVersionRemoved("aws", "vpc", "aws", "3.3.0;status==active,version==x"));
         wireMockServer.verify(2, postRequestedFor(urlPathEqualTo(GRAPHQL_ENDPOINT)));
+    }
+
+    private void stubModuleVersions() {
+        wireMockServer.resetAll();
+        stubFor(post(urlPathEqualTo(GRAPHQL_ENDPOINT))
+                .withRequestBody(not(containing("module(filter: \"name==vpc;provider==aws\")")))
+                .willReturn(aResponse().withStatus(HttpStatus.SC_OK).withBody(ORGANIZATION_SEARCH_BODY)));
+        stubFor(post(urlPathEqualTo(GRAPHQL_ENDPOINT))
+                .withRequestBody(containing("provider"))
+                .willReturn(aResponse().withStatus(HttpStatus.SC_OK).withBody(MODULE_SEARCH_BODY)));
+    }
+
+    @Test
+    void moduleVersionsHaveEtagAndReturn304() {
+        stubModuleVersions();
+
+        io.restassured.response.Response first = when().get("/terraform/modules/v1/aws/vpc/aws/versions");
+        first.then().statusCode(HttpStatus.SC_OK)
+                .header("ETag", notNullValue())
+                .header("Cache-Control", containsString("private"))
+                .header("Cache-Control", containsString("no-cache"))
+                .header("Vary", containsString("Authorization"));
+
+        io.restassured.RestAssured.given().header("If-None-Match", first.getHeader("ETag"))
+                .get("/terraform/modules/v1/aws/vpc/aws/versions")
+                .then().statusCode(HttpStatus.SC_NOT_MODIFIED).body(emptyOrNullString());
+        io.restassured.RestAssured.given().header("If-None-Match", "\"stale\"")
+                .get("/terraform/modules/v1/aws/vpc/aws/versions")
+                .then().statusCode(HttpStatus.SC_OK);
     }
 
     private static final String MODULE_WITHOUT_VERSIONS_BODY = """

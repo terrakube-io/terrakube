@@ -284,6 +284,7 @@ public class GitLabWebhookService extends WebhookServiceBase {
                     result.setValid(true);
                     result.setRelease(true);
                     result.setBranch(releaseName);
+                    result.setTag(tagName);
                     break;
                 default:
                     log.info("Release action '{}' for: {} not specifically handled", action, releaseName);
@@ -860,6 +861,10 @@ public class GitLabWebhookService extends WebhookServiceBase {
                 case "note":
                     parseNoteEvent(result, rootNode);
                     break;
+                case "tag_push":
+                    result.setTag(rootNode.path("ref").asText().replaceFirst("^refs/tags/", ""));
+                    result.setCreatedBy(rootNode.path("user_username").asText());
+                    break;
                 default:
                     result.setValid(false);
                     log.error("No valid gitlab event {}", event);
@@ -987,7 +992,7 @@ public class GitLabWebhookService extends WebhookServiceBase {
      * are enabled.
      */
     public String createOrUpdateRepoWebhook(RepoWebhook repoWebhook, Set<WebhookEventType> eventTypes,
-            boolean hasPrWorkflow) {
+            boolean hasPrWorkflow, boolean tagEvents) {
         String remoteHookId = repoWebhook.getRemoteHookId();
         Vcs vcs = repoWebhook.getVcs();
         String token = vcs.getAccessToken();
@@ -1006,6 +1011,7 @@ public class GitLabWebhookService extends WebhookServiceBase {
                 + ",\"merge_requests_events\":" + mergeRequestsEvents
                 + ",\"releases_events\":" + releasesEvents
                 + ",\"note_events\":" + noteEvents
+                + ",\"tag_push_events\":" + tagEvents
                 + ",\"enable_ssl_verification\":false,\"token\":\"" + repoWebhook.getWebhookSecret() + "\"}";
 
         String projectId;

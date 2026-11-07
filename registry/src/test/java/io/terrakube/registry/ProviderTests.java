@@ -10,6 +10,9 @@ import org.springframework.cache.CacheManager;
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
 import static io.restassured.RestAssured.when;
 import static org.hamcrest.Matchers.contains;
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.emptyOrNullString;
+import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.hasKey;
 import static org.hamcrest.Matchers.hasSize;
@@ -181,6 +184,8 @@ public class ProviderTests extends OpenRegistryApplicationTests{
     private void stubVersions(ResponseDefinitionBuilder deprecatedVersionsResponse) {
         wireMockServer.resetAll();
         cacheManager.getCache(CacheConfig.PROVIDER_WARNINGS_CACHE).clear();
+        cacheManager.getCache(CacheConfig.PROVIDER_VERSIONS_CACHE).clear();
+        cacheManager.getCache(CacheConfig.PROVIDER_FILE_CACHE).clear();
         stubFor(post(urlPathEqualTo(GRAPHQL_ENDPOINT))
                 .withRequestBody(containing("status!=removed"))
                 .willReturn(aResponse().withStatus(HttpStatus.SC_OK).withBody(PROVIDER_SEARCH_VERSION)));
@@ -261,5 +266,49 @@ public class ProviderTests extends OpenRegistryApplicationTests{
                 .get("/terraform/providers/v1/simple/random/2.0.0/download/linux/amd64")
                 .then()
                 .statusCode(HttpStatus.SC_NOT_FOUND);
+    }
+
+    @Test
+    void providerVersionsAreCachedServerSide() {
+        stubVersions(aResponse().withStatus(HttpStatus.SC_OK).withBody(deprecatedVersions()));
+
+        when().get("/terraform/providers/v1/simple/random/versions").then().statusCode(HttpStatus.SC_OK);
+        when().get("/terraform/providers/v1/simple/random/versions").then().statusCode(HttpStatus.SC_OK);
+
+        wireMockServer.verify(1, postRequestedFor(urlPathEqualTo(GRAPHQL_ENDPOINT)).withRequestBody(containing("status!=removed")).withRequestBody(notMatching("(?s).*implementation\\(filter.*")));
+    }
+
+    @Test
+    void providerVersionsRevalidateWith304() {
+        stubVersions(aResponse().withStatus(HttpStatus.SC_OK).withBody(deprecatedVersions()));
+
+        io.restassured.response.Response first = when().get("/terraform/providers/v1/simple/random/versions");
+        first.then().statusCode(HttpStatus.SC_OK)
+                .header("Cache-Control", containsString("private"))
+                .header("Cache-Control", containsString("no-cache"))
+                .header("Vary", containsString("Authorization"))
+                .header("ETag", notNullValue());
+
+        io.restassured.RestAssured.given().header("If-None-Match", first.getHeader("ETag"))
+                .get("/terraform/providers/v1/simple/random/versions")
+                .then().statusCode(HttpStatus.SC_NOT_MODIFIED).body(emptyOrNullString());
+    }
+
+    @Test
+    void providerFileInformationIsCachedAndRevalidates() {
+        wireMockServer.resetAll();
+        cacheManager.getCache(CacheConfig.PROVIDER_FILE_CACHE).clear();
+        stubFor(post(urlPathEqualTo(GRAPHQL_ENDPOINT))
+                .willReturn(aResponse().withStatus(HttpStatus.SC_OK).withBody(PROVIDER_SEARCH_IMPLEMENTATION)));
+
+        String path = "/terraform/providers/v1/sampleOrganization/simple/3.0.1/download/linux/amd64";
+        io.restassured.response.Response first = when().get(path);
+        first.then().statusCode(HttpStatus.SC_OK).header("ETag", notNullValue())
+                .header("Cache-Control", containsString("no-cache"));
+        when().get(path).then().statusCode(HttpStatus.SC_OK);
+        io.restassured.RestAssured.given().header("If-None-Match", first.getHeader("ETag"))
+                .get(path).then().statusCode(HttpStatus.SC_NOT_MODIFIED);
+
+        wireMockServer.verify(1, postRequestedFor(urlPathEqualTo(GRAPHQL_ENDPOINT)));
     }
 }

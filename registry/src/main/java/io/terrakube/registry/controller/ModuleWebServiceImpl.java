@@ -1,22 +1,27 @@
 package io.terrakube.registry.controller;
 
+import io.terrakube.registry.configuration.OpenRegistryProperties;
 import io.terrakube.registry.controller.model.module.ModuleDTO;
 import io.terrakube.registry.controller.model.module.ModuleDetailsDTO;
 import io.terrakube.registry.controller.model.module.VersionDTO;
 import io.terrakube.registry.controller.model.module.VersionsDTO;
 import io.terrakube.registry.plugin.storage.StorageService;
+import io.terrakube.registry.plugin.storage.StorageUnavailableException;
 import io.terrakube.registry.service.inspect.ModuleInspectorService;
 import io.terrakube.registry.service.module.ModuleAuthorizationService;
 import io.terrakube.registry.service.module.ModuleDownloadTicketService;
 import io.terrakube.registry.service.module.ModuleService;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.filter.ShallowEtagHeaderFilter;
 
 import java.net.URI;
 import java.util.ArrayList;
@@ -43,6 +48,9 @@ public class ModuleWebServiceImpl {
 
     @Autowired
     ModuleInspectorService moduleInspectorService;
+
+    @Autowired(required = false)
+    OpenRegistryProperties openRegistryProperties;
 
     public ModuleWebServiceImpl() {}
 
@@ -85,7 +93,7 @@ public class ModuleWebServiceImpl {
         versionsDTO.setVersions(versionDTOList);
         ModuleDTO moduleDTO = new ModuleDTO();
         moduleDTO.setModules(Arrays.asList(versionsDTO));
-        return ResponseEntity.ok(moduleDTO);
+        return ResponseEntity.ok().cacheControl(CacheControl.noCache().cachePrivate()).varyBy("Authorization").body(moduleDTO);
     }
 
     @GetMapping(value = "/{organization}/{module}/{provider}/{version}/download", produces = "application/json")
@@ -107,7 +115,10 @@ public class ModuleWebServiceImpl {
         }
 
         String downloadPath = moduleService.getModuleVersionPath(organization, module, provider, version);
-        if (ticketService != null) {
+        Optional<URI> directUrl = directStorageUrl(organization, module, provider, version);
+        if (directUrl.isPresent()) {
+            downloadPath = directUrl.get().toString();
+        } else if (ticketService != null) {
             String ticket = ticketService.generateTicket(organization, module, provider, version);
             downloadPath = downloadPath.contains("?") ?
                     downloadPath + "&ticket=" + ticket :
@@ -118,7 +129,21 @@ public class ModuleWebServiceImpl {
         responseHeaders.set("X-Terraform-Get", downloadPath);
         responseHeaders.set("Access-Control-Expose-Headers", "X-Terraform-Get");
         moduleService.updateModuleDownloadCount(organization, module, provider);
-        return ResponseEntity.noContent().headers(responseHeaders).build();
+        return ResponseEntity.noContent().headers(responseHeaders).cacheControl(CacheControl.noStore()).build();
+    }
+
+    /** Presigned storage URL for X-Terraform-Get, only when enabled; empty keeps the ticket flow. */
+    private Optional<URI> directStorageUrl(String organization, String module, String provider, String version) {
+        if (openRegistryProperties == null || !openRegistryProperties.isDirectStorageDownload()) {
+            return Optional.empty();
+        }
+        try {
+            return storageService.getPresignedDownloadUrl(organization, module, provider, version);
+        } catch (StorageUnavailableException e) {
+            log.warn("Presign failed for {}/{}/{}/{}, falling back to the registry download URL",
+                    organization, module, provider, version);
+            return Optional.empty();
+        }
     }
 
     /** Inputs, outputs, resources and submodules of one module version, parsed server-side. */
@@ -134,7 +159,8 @@ public class ModuleWebServiceImpl {
         if (moduleService.isVersionRemoved(organization, module, provider, version)) {
             return ResponseEntity.notFound().build();
         }
-        return ResponseEntity.ok(moduleInspectorService.details(organization, module, provider, version, submodule));
+        return ResponseEntity.ok().cacheControl(CacheControl.noCache().cachePrivate()).varyBy("Authorization")
+                .body(moduleInspectorService.details(organization, module, provider, version, submodule));
     }
 
     @GetMapping(value = "/download/{organizationName}/{moduleName}/{providerName}/{version}/module.zip")
@@ -144,7 +170,10 @@ public class ModuleWebServiceImpl {
             @PathVariable String providerName,
             @PathVariable String version,
             @RequestParam(name = "ticket", required = false) String ticket,
-            Authentication authentication) {
+            Authentication authentication,
+            HttpServletRequest request) {
+        // The ETag filter maps this path too; without this it would hold the whole archive in memory.
+        ShallowEtagHeaderFilter.disableContentCaching(request);
 
         if (ticket != null && !ticket.isBlank()) {
             if (ticketService == null || !ticketService.validateTicket(ticket, organizationName, moduleName, providerName, version)) {
@@ -167,11 +196,12 @@ public class ModuleWebServiceImpl {
         }
         Optional<URI> presignedDownloadUrl = storageService.getPresignedDownloadUrl(organizationName, moduleName, providerName, version);
         if (presignedDownloadUrl.isPresent()) {
-            return ResponseEntity.status(HttpStatus.FOUND).location(presignedDownloadUrl.get()).build();
+            return ResponseEntity.status(HttpStatus.FOUND).location(presignedDownloadUrl.get())
+                    .cacheControl(CacheControl.noStore()).build();
         }
 
         byte[] data = storageService.downloadModule(organizationName, moduleName, providerName, version);
-        return ResponseEntity.ok().contentType(MediaType.APPLICATION_OCTET_STREAM).body(data);
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).contentType(MediaType.APPLICATION_OCTET_STREAM).body(data);
     }
 }
 
