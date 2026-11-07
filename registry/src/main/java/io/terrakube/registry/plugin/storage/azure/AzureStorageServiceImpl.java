@@ -4,6 +4,7 @@ import com.azure.storage.blob.BlobClient;
 import com.azure.storage.blob.BlobContainerClient;
 import com.azure.storage.blob.BlobServiceClient;
 import com.azure.storage.blob.models.BlobErrorCode;
+import com.azure.storage.blob.models.BlobHttpHeaders;
 import com.azure.storage.blob.models.BlobStorageException;
 import com.azure.storage.blob.sas.BlobSasPermission;
 import com.azure.storage.blob.sas.BlobServiceSasSignatureValues;
@@ -16,7 +17,10 @@ import io.terrakube.registry.service.git.GitService;
 import io.terrakube.registry.service.git.ModuleVersionDownload;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.UncheckedIOException;
 import java.net.URI;
+import java.nio.file.Path;
 import java.time.OffsetDateTime;
 import java.util.Optional;
 
@@ -99,12 +103,16 @@ public class AzureStorageServiceImpl implements StorageService {
     @Override
     public Optional<URI> getPresignedDownloadUrl(String organizationName, String moduleName, String providerName,
             String moduleVersion) {
+        return presignObject(String.format(BLOB_ZIP_MODULE_LOCATION, organizationName, moduleName, providerName,
+                moduleVersion));
+    }
+
+    @Override
+    public Optional<URI> presignObject(String blobName) {
         if (!presignedRedirectEnabled) {
             return Optional.empty();
         }
 
-        String blobName = String.format(BLOB_ZIP_MODULE_LOCATION, organizationName, moduleName, providerName,
-                moduleVersion);
         try {
             BlobContainerClient blobContainerClient = blobServiceClient.getBlobContainerClient(CONTAINER_NAME);
             BlobClient blobClient = blobContainerClient.getBlobClient(blobName);
@@ -147,6 +155,42 @@ public class AzureStorageServiceImpl implements StorageService {
             log.error("Azure Blob download failed for blob {} in container {}: {}", blobName, CONTAINER_NAME,
                     e.getMessage());
             throw new StorageUnavailableException("Failed to download module ZIP for blob " + blobName, e);
+        }
+    }
+
+    @Override
+    public Optional<InputStream> readObject(String key) {
+        try {
+            return Optional.of(blobServiceClient.getBlobContainerClient(CONTAINER_NAME).getBlobClient(key)
+                    .openInputStream());
+        } catch (BlobStorageException e) {
+            if (e.getErrorCode() == BlobErrorCode.BLOB_NOT_FOUND || e.getErrorCode() == BlobErrorCode.CONTAINER_NOT_FOUND) {
+                return Optional.empty();
+            }
+            throw new StorageUnavailableException("Failed to read blob " + key, e);
+        }
+    }
+
+    @Override
+    public boolean objectExists(String key) {
+        try {
+            BlobContainerClient container = blobServiceClient.getBlobContainerClient(CONTAINER_NAME);
+            return container.exists() && container.getBlobClient(key).exists();
+        } catch (BlobStorageException e) {
+            throw new StorageUnavailableException("Failed to check blob " + key, e);
+        }
+    }
+
+    @Override
+    public void writeObject(String key, Path file, String contentType) {
+        try {
+            BlobContainerClient container = blobServiceClient.getBlobContainerClient(CONTAINER_NAME);
+            container.createIfNotExists();
+            BlobClient blobClient = container.getBlobClient(key);
+            blobClient.uploadFromFile(file.toString(), true);
+            blobClient.setHttpHeaders(new BlobHttpHeaders().setContentType(contentType));
+        } catch (BlobStorageException | UncheckedIOException e) {
+            throw new StorageUnavailableException("Failed to write blob " + key, e);
         }
     }
 }

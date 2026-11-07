@@ -100,4 +100,26 @@ class GcpStorageServiceImplTest {
 
         assertArrayEquals(expectedData, result);
     }
+
+    @Test
+    void readWriteExistsObject() throws IOException {
+        Storage storage = mock(Storage.class);
+        GcpStorageServiceImpl gcp = GcpStorageServiceImpl.builder()
+                .storage(storage).bucketName("test-bucket").gitService(mock(GitService.class)).registryHostname("host").build();
+        String key = "mirror/registry.terraform.io/hashicorp/random/index.json";
+        BlobId blobId = BlobId.of("test-bucket", key);
+
+        when(storage.get(blobId)).thenReturn(null);
+        assertTrue(gcp.readObject(key).isEmpty());
+        assertFalse(gcp.objectExists(key));
+
+        when(storage.get(blobId)).thenReturn(mock(Blob.class));
+        assertTrue(gcp.objectExists(key));
+
+        Path file = tempDir.resolve("index.json");
+        java.nio.file.Files.writeString(file, "{}");
+        gcp.writeObject(key, file, "application/json");
+        verify(storage).createFrom(BlobInfo.newBuilder(blobId).setContentType("application/json").build(), file);
+        assertTrue(gcp.presignObject(key).isEmpty());
+    }
 }

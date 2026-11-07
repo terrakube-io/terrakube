@@ -6,6 +6,7 @@ import io.terrakube.registry.controller.model.provider.VersionDTO;
 import io.terrakube.registry.service.provider.ProviderService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.CacheControl;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -33,7 +34,7 @@ public class ProviderWebServiceImpl {
         } catch (RuntimeException e) {
             log.warn("Failed to load version warnings for provider {}/{}: {}", organization, provider, e.getMessage());
         }
-        return ResponseEntity.ok(versionsDTO);
+        return ResponseEntity.ok().cacheControl(CacheControl.noCache().cachePrivate()).varyBy("Authorization").body(versionsDTO);
     }
 
     @GetMapping(value = "/{organization}/{provider}/{version}/download/{os}/{arch}", produces = "application/json")
@@ -42,6 +43,6 @@ public class ProviderWebServiceImpl {
         if (fileDTO.getFilename() == null) {
             return ResponseEntity.notFound().build();
         }
-        return ResponseEntity.ok().body(fileDTO);
+        return ResponseEntity.ok().cacheControl(CacheControl.noCache().cachePrivate()).varyBy("Authorization").body(fileDTO);
     }
 }

@@ -77,6 +77,26 @@ class GcpStorageServiceImplPresignedTest {
         assertTrue(uriStr.contains("X-Goog-Signature"), "Should include GCS signature parameter");
     }
 
+    @Test
+    void getPresignedDownloadUrl_pathEndsInZipWithoutDoubleSlash() throws Exception {
+        java.security.KeyPairGenerator generator = java.security.KeyPairGenerator.getInstance("RSA");
+        generator.initialize(2048);
+        com.google.auth.oauth2.ServiceAccountCredentials credentials =
+                com.google.auth.oauth2.ServiceAccountCredentials.newBuilder()
+                        .setClientEmail("signer@test-project.iam.gserviceaccount.com")
+                        .setPrivateKey(generator.generateKeyPair().getPrivate())
+                        .build();
+        Storage realStorage = com.google.cloud.storage.StorageOptions.newBuilder()
+                .setProjectId("test-project").setCredentials(credentials).build().getService();
+
+        URI uri = buildService(realStorage, mock(GitService.class), true)
+                .getPresignedDownloadUrl("org", "module", "gcp", "1.0.0").orElseThrow();
+
+        assertEquals("https", uri.getScheme());
+        assertTrue(uri.getRawPath().endsWith("/module.zip"), uri.getRawPath());
+        assertFalse(uri.getRawPath().contains("//"), uri.getRawPath());
+    }
+
     // ---- getPresignedDownloadUrl: signUrl fails → StorageUnavailableException ----
 
     @Test

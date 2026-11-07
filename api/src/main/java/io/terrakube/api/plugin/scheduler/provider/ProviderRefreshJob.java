@@ -27,7 +27,7 @@ import java.util.stream.Collectors;
  * Quartz job that periodically checks the public Terraform Registry (registry.terraform.io)
  * for new versions of a provider and imports them into the Terrakube private registry.
  *
- * This mirrors the ModuleRefreshJob pattern but instead of using git ls-remote,
+ * Instead of a git ls-remote, as modules use,
  * it queries the Terraform Registry v1 API for provider versions and platform downloads.
  */
 @Slf4j

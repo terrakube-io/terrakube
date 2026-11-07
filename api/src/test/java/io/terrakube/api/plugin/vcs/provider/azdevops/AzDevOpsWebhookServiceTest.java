@@ -2,6 +2,11 @@ package io.terrakube.api.plugin.vcs.provider.azdevops;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.util.EnumSet;
+import java.util.Map;
 
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -9,7 +14,9 @@ import org.junit.jupiter.api.Test;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import io.terrakube.api.plugin.vcs.provider.azdevops.AzDevOpsWebhookService.ChangesPage;
+import io.terrakube.api.plugin.vcs.WebhookResult;
 import io.terrakube.api.rs.job.JobStatus;
+import io.terrakube.api.rs.webhook.WebhookEventType;
 
 public class AzDevOpsWebhookServiceTest {
 
@@ -59,6 +66,42 @@ public class AzDevOpsWebhookServiceTest {
         String description = AzDevOpsWebhookService.buildCommitStatusDescription(JobStatus.queue, null);
 
         assertEquals("Your task is in Terrakube queue.", description);
+    }
+
+    @Nested
+    class TagEvents {
+
+        private static final String PUSH = """
+                {"eventType": "git.push", "resource": {"refUpdates": [{"name": "%s", "newObjectId": "abc123"}],
+                  "pushedBy": {"uniqueName": "jane@example.com"}}}
+                """;
+
+        @Test
+        void tagPushSetsTheTag() {
+            WebhookResult result = subject.parseAzDevOpsPayload(PUSH.formatted("refs/tags/v2.1.0"), Map.of());
+
+            assertTrue(result.isValid());
+            assertEquals("v2.1.0", result.getTag());
+            assertEquals("release", result.getEvent());
+        }
+
+        @Test
+        void branchPushHasNoTag() {
+            WebhookResult result = subject.parseAzDevOpsPayload(PUSH.formatted("refs/heads/main"), Map.of());
+
+            assertEquals("push", result.getEvent());
+            assertNull(result.getTag());
+        }
+
+        @Test
+        void tagEventsSubscribeToPushes() {
+            assertThat(AzDevOpsWebhookService.resolveAzureEventTypesFromSet(
+                    EnumSet.of(WebhookEventType.PULL_REQUEST), true))
+                    .containsExactlyInAnyOrder("git.push", "git.pullrequest.created", "git.pullrequest.updated");
+            assertThat(AzDevOpsWebhookService.resolveAzureEventTypesFromSet(
+                    EnumSet.of(WebhookEventType.PULL_REQUEST), false))
+                    .doesNotContain("git.push");
+        }
     }
 
     @Nested

@@ -324,6 +324,9 @@ export type ModuleAttributes = {
   registryPath: string;
   tagPrefix?: string;
   updatedDate?: string;
+  lastRefresh?: string | null;
+  nextRefresh?: string | null;
+  lastRefreshError?: string | null;
 } & AuditFieldBase;
 
 export type ModuleVersionAttributes = {

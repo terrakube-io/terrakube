@@ -74,4 +74,33 @@ class ModuleDownloadTicketServiceTest {
         org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class, () -> new ModuleDownloadTicketService("", 300));
         org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class, () -> new ModuleDownloadTicketService(null, 300));
     }
+
+    @Test
+    void mirrorTicketRoundTrip() {
+        String ticket = ticketService.generateMirrorTicket("my-org", "registry.terraform.io", "hashicorp", "aws", "5.0.0", "linux_amd64");
+        assertTrue(ticketService.validateMirrorTicket(ticket, "my-org", "registry.terraform.io", "hashicorp", "aws", "5.0.0", "linux_amd64"));
+        assertFalse(ticketService.validateMirrorTicket(ticket, "my-org", "registry.terraform.io", "hashicorp", "aws", "5.0.0", "darwin_arm64"));
+        assertFalse(ticketService.validateMirrorTicket(ticket, "other-org", "registry.terraform.io", "hashicorp", "aws", "5.0.0", "linux_amd64"));
+    }
+
+    @Test
+    void moduleTicketIsNotAMirrorTicket() {
+        String ticket = ticketService.generateTicket("my-org", "my-mod", "aws", "1.0.0");
+        assertFalse(ticketService.validateMirrorTicket(ticket, "my-org", "my-mod", "aws", "1.0.0", "x", "y"));
+        assertFalse(ticketService.validateMirrorTicket(ticket, "my-org", "registry.terraform.io", "my-mod", "aws", "1.0.0", "linux_amd64"));
+    }
+
+    @Test
+    void mirrorTicketIsNotAModuleTicket() {
+        String ticket = ticketService.generateMirrorTicket("my-org", "registry.terraform.io", "hashicorp", "aws", "5.0.0", "linux_amd64");
+        assertFalse(ticketService.validateTicket(ticket, "my-org", "registry.terraform.io", "hashicorp", "aws"));
+        assertFalse(ticketService.validateTicket(ticket, "mirror", "my-org", "registry.terraform.io", "hashicorp"));
+    }
+
+    @Test
+    void expiredMirrorTicketFails() {
+        ModuleDownloadTicketService expired = new ModuleDownloadTicketService(secret, -10);
+        String ticket = expired.generateMirrorTicket("my-org", "registry.terraform.io", "hashicorp", "aws", "5.0.0", "linux_amd64");
+        assertFalse(ticketService.validateMirrorTicket(ticket, "my-org", "registry.terraform.io", "hashicorp", "aws", "5.0.0", "linux_amd64"));
+    }
 }

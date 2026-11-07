@@ -10,9 +10,12 @@ import org.quartz.JobExecutionException;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import io.terrakube.api.plugin.scheduler.module.ModuleRefreshProperties;
+import io.terrakube.api.plugin.scheduler.module.ModuleRefreshTransactions;
 import io.terrakube.api.plugin.vcs.RepoWebhookService;
 import io.terrakube.api.repository.RepoWebhookRepository;
 import io.terrakube.api.repository.WorkspaceRepository;
+import io.terrakube.api.rs.module.Module;
 import io.terrakube.api.rs.webhook.RepoWebhook;
 import io.terrakube.api.rs.workspace.Workspace;
 
@@ -22,7 +25,8 @@ import lombok.extern.slf4j.Slf4j;
  * Reconciles the shared GitHub webhook for a single repository URL: creates
  * or fetches its {@link RepoWebhook} row, then either registers/updates the
  * GitHub-side webhook (if any workspace still shares this URL with a
- * migrated v2 webhook) or deletes it as an orphan (if none do).
+ * migrated v2 webhook, or, with module webhooks enabled, any module with a
+ * supported VCS connection uses it) or deletes it as an orphan (if none do).
  *
  * <p>Runs cluster-wide at most once per repository URL at a time.
  * {@link RepoWebhookSyncScheduler} keys every job deterministically by a
@@ -47,12 +51,19 @@ public class RepoWebhookSyncJob implements Job {
 
     private final RepoWebhookSyncStatus syncStatus;
 
+    private final ModuleRefreshTransactions moduleRefreshTransactions;
+
+    private final ModuleRefreshProperties moduleRefreshProperties;
+
     public RepoWebhookSyncJob(RepoWebhookRepository repoWebhookRepository, WorkspaceRepository workspaceRepository,
-            RepoWebhookService repoWebhookService, RepoWebhookSyncStatus syncStatus) {
+            RepoWebhookService repoWebhookService, RepoWebhookSyncStatus syncStatus,
+            ModuleRefreshTransactions moduleRefreshTransactions, ModuleRefreshProperties moduleRefreshProperties) {
         this.repoWebhookRepository = repoWebhookRepository;
         this.workspaceRepository = workspaceRepository;
         this.repoWebhookService = repoWebhookService;
         this.syncStatus = syncStatus;
+        this.moduleRefreshTransactions = moduleRefreshTransactions;
+        this.moduleRefreshProperties = moduleRefreshProperties;
     }
 
     @Override
@@ -64,8 +75,11 @@ public class RepoWebhookSyncJob implements Job {
                 .getString(RepoWebhookSyncScheduler.DATA_KEY_WORKSPACE_ID);
 
         List<Workspace> workspaces = workspaceRepository.findByNormalizedSourceWithMigratedWebhook(repositoryUrl);
+        List<Module> modules = moduleRefreshProperties.getWebhook().isEnabled()
+                ? moduleRefreshTransactions.findWebhookEligibleBySource(repositoryUrl)
+                : List.of();
 
-        if (workspaces.isEmpty()) {
+        if (workspaces.isEmpty() && modules.isEmpty()) {
             repoWebhookRepository.findByRepositoryUrl(repositoryUrl)
                     .ifPresentOrElse(
                             repoWebhookService::cleanupIfOrphan,
@@ -73,10 +87,10 @@ public class RepoWebhookSyncJob implements Job {
             return;
         }
 
-        Workspace seedWorkspace = findSeedWorkspace(workspaces, workspaceId);
-
         try {
-            RepoWebhook repoWebhook = repoWebhookService.getOrCreateRepoWebhook(seedWorkspace);
+            RepoWebhook repoWebhook = workspaces.isEmpty()
+                    ? repoWebhookService.getOrCreateRepoWebhook(modules.get(0).getSource(), modules.get(0).getVcs())
+                    : repoWebhookService.getOrCreateRepoWebhook(findSeedWorkspace(workspaces, workspaceId));
             repoWebhookService.createOrUpdateSharedWebhook(repoWebhook);
         } catch (RuntimeException e) {
             // Saved before the transaction rolls back, so the workspace settings can show it.
@@ -84,7 +98,8 @@ public class RepoWebhookSyncJob implements Job {
             throw e;
         }
         syncStatus.recordStatus(repositoryUrl, null);
-        log.info("Synced shared webhook for {} across {} workspace(s)", repositoryUrl, workspaces.size());
+        log.info("Synced shared webhook for {} across {} workspace(s) and {} module(s)", repositoryUrl,
+                workspaces.size(), modules.size());
     }
 
     private Workspace findSeedWorkspace(List<Workspace> workspaces, String workspaceId) {

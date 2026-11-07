@@ -8,8 +8,11 @@ import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.options
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.Map;
+
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.http.HttpHeaders;
@@ -20,6 +23,7 @@ import org.springframework.web.client.RestTemplate;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.tomakehurst.wiremock.WireMockServer;
 
+import io.terrakube.api.plugin.vcs.WebhookResult;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.vcs.Vcs;
 import io.terrakube.api.rs.workspace.Workspace;
@@ -52,6 +56,19 @@ class BitBucketWebhookServiceTest {
     @AfterEach
     void tearDown() {
         server.stop();
+    }
+
+    @Test
+    void tagPushSetsTheTag() {
+        String payload = """
+                {"push": {"changes": [{"new": {"type": "tag", "name": "v1.5.0",
+                  "target": {"hash": "abc123", "author": {"raw": "Jane <jane@example.com>"}}}}]}}
+                """;
+
+        WebhookResult result = subject.handleEvent(payload, new WebhookResult(), Map.of("x-event-key", "repo:push"));
+
+        assertEquals("v1.5.0", result.getTag());
+        assertTrue(result.isRelease());
     }
 
     @ParameterizedTest
