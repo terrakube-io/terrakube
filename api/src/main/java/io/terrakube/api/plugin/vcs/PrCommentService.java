@@ -121,7 +121,25 @@ public class PrCommentService {
     private void publishPlanComment(Job job) {
         if (!job.isPrCommentInterim() && alreadyPublished(job)) return;
 
+        if (job.isPrCommentInterim() && commentTakenByNewerJob(job)) {
+            log.info("Comment {} on PR #{} now belongs to a newer job, leaving it as it is for job {}",
+                    job.getPrCommentId(), job.getPrNumber(), job.getId());
+            job.setPrCommentInterim(false);
+            jobRepository.updatePrCommentInterim(job.getId(), false);
+            return;
+        }
+
         publishPlanComment(job, false);
+    }
+
+    /**
+     * Jobs of one pull request share a comment (see {@link #findReusablePlanCommentId}), and a plan-only job
+     * does not queue behind a job that waits for approval. The newer job's plan must not be overwritten when
+     * the older one ends.
+     */
+    private boolean commentTakenByNewerJob(Job job) {
+        return jobRepository.existsByWorkspaceAndPrNumberAndIdGreaterThanAndPrCommentId(
+                job.getWorkspace(), job.getPrNumber(), job.getId(), job.getPrCommentId());
     }
 
     private void publishPlanComment(Job job, boolean interim) {

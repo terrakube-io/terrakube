@@ -66,6 +66,9 @@ public interface JobRepository extends JpaRepository<Job, Integer> {
     Optional<Job> findFirstByWorkspaceAndPrNumberAndIdNotAndAutoApplyFalseAndPrCommentIdIsNotNullOrderByIdDesc(
             Workspace workspace, Integer prNumber, int id);
 
+    boolean existsByWorkspaceAndPrNumberAndIdGreaterThanAndPrCommentId(
+            Workspace workspace, Integer prNumber, int id, String prCommentId);
+
     // Only the PR comment columns, so a service that holds an old copy of the job cannot write the rest of
     // it back, and a job that was pruned meanwhile is not written again (0 rows, not a new row).
     @Transactional

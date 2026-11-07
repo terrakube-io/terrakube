@@ -1114,6 +1114,46 @@ public class PrCommentServiceTest {
     }
 
     @Test
+    public void theFinalResultOfAFailedRunSaysItDidNotFinish() {
+        assertFinalOutcome(JobStatus.failed, "This run did not finish.");
+    }
+
+    @Test
+    public void theFinalResultOfACancelledRunSaysItDidNotFinish() {
+        assertFinalOutcome(JobStatus.cancelled, "This run did not finish.");
+    }
+
+    private void assertFinalOutcome(JobStatus status, String expected) {
+        Job job = createJob(VcsType.GITHUB, 5, status);
+        job.setPrCommentId("12345");
+        job.setPrCommentInterim(true);
+        stubStepOutput("Plan: 1 to add, 0 to change, 0 to destroy.");
+        doReturn(true).when(gitHubWebhookService).updatePrComment(any(), any(), any());
+
+        subject.postPlanResult(job);
+
+        ArgumentCaptor<String> markdown = ArgumentCaptor.forClass(String.class);
+        verify(gitHubWebhookService).updatePrComment(eq(job), eq("12345"), markdown.capture());
+        assertTrue(markdown.getValue().contains(expected));
+    }
+
+    @Test
+    public void theFinalResultLeavesACommentThatANewerJobTookOver() {
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.rejected);
+        job.setPrCommentId("12345");
+        job.setPrCommentInterim(true);
+        doReturn(true).when(jobRepository).existsByWorkspaceAndPrNumberAndIdGreaterThanAndPrCommentId(
+                job.getWorkspace(), 5, job.getId(), "12345");
+
+        subject.postPlanResult(job);
+
+        verify(gitHubWebhookService, never()).updatePrComment(any(), any(), any());
+        verify(gitHubWebhookService, never()).postPrComment(any(), any());
+        assertFalse(job.isPrCommentInterim());
+        verify(jobRepository).updatePrCommentInterim(job.getId(), false);
+    }
+
+    @Test
     public void aFinalResultThatFailsIsTriedAgainOnTheNextPass() {
         Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
         job.setPrCommentId("12345");
