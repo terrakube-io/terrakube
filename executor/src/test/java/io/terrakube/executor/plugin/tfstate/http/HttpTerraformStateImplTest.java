@@ -185,4 +185,9 @@ class HttpTerraformStateImplTest {
         assertEquals("spool-key", httpTerraformState.spoolContextPatch(ORG_ID, JOB_ID, STEP_ID, "post", patchBytes));
         assertNotNull(httpTerraformState.getDelegate());
     }
+
+    @Test
+    void rejectsBackendConfigArgumentsBecauseItReplacesTheWorkspaceBackend() {
+        assertTrue(httpTerraformState.rejectsBackendConfigArguments());
+    }
 }
