@@ -12,12 +12,18 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
+import org.springframework.test.context.TestPropertySource;
+
 import io.restassured.specification.RequestSpecification;
 
 /**
  * Every legacy path is also served as /api/&lt;legacy&gt; for single-domain hosts, with the same
  * authorization: the forward happens before Spring Security evaluates the request.
  */
+@TestPropertySource(properties = {
+    "io.terrakube.public-url=https://app.example.com",
+    "io.terrakube.hostname="
+})
 class CanonicalPathAliasSecurityTests extends ServerApplicationTests {
 
     private static final String ID = "00000000-0000-0000-0000-000000000000";
