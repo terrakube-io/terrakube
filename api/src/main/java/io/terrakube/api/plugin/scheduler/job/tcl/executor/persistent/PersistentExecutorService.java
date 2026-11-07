@@ -144,28 +144,38 @@ public class PersistentExecutorService {
                 || status.equals(HttpStatus.GATEWAY_TIMEOUT);
     }
 
-    private String getExecutorUrl(Job job) throws URISyntaxException {
-        String agentUrl = job.getWorkspace().getAgent() != null
-                ? job.getWorkspace().getAgent().getUrl() + "/api/v1/terraform-rs"
-                : validateDefaultExecutor(job);
-        log.info("Job {} Executor agent url: {}", job.getId(), agentUrl);
-        if (agentUrlValidator == null) {
-            agentUrlValidator = new AgentUrlValidator(false);
-        }
-        agentUrlValidator.validate("agent", agentUrl);
-        return new URI(agentUrl).normalize().toString();
+    /**
+     * @param url     where the job is sent
+     * @param trusted whether an operator set it ({@code io.terrakube.executor.url}); the others are set by the users of
+     *                an organization and are checked against the SSRF rules
+     */
+    private record ExecutorTarget(String url, boolean trusted) {
     }
 
-    private String validateDefaultExecutor(Job job) {
+    private String getExecutorUrl(Job job) throws URISyntaxException {
+        ExecutorTarget target = job.getWorkspace().getAgent() != null
+                ? new ExecutorTarget(job.getWorkspace().getAgent().getUrl() + "/api/v1/terraform-rs", false)
+                : defaultExecutor(job);
+        log.info("Job {} Executor agent url: {}", job.getId(), target.url());
+        if (!target.trusted()) {
+            if (agentUrlValidator == null) {
+                agentUrlValidator = new AgentUrlValidator(false);
+            }
+            agentUrlValidator.validate("agent", target.url());
+        }
+        return new URI(target.url()).normalize().toString();
+    }
+
+    private ExecutorTarget defaultExecutor(Job job) {
         Optional<Globalvar> executor = globalVarRepository.findByOrganizationAndKey(job.getOrganization(),
                 "TERRAKUBE_DEFAULT_EXECUTOR");
         if (executor.isPresent()) {
             log.info("Found executor url {}", executor.get().getValue());
-            return executor.get().getValue() + "/api/v1/terraform-rs";
-        } else {
-            log.info("No default executor found, using default executor url {}", this.executorUrl);
-            return this.executorUrl;
+            return new ExecutorTarget(executor.get().getValue() + "/api/v1/terraform-rs", false);
         }
+        // The chart's default is the executor Service, a private address by design.
+        log.info("No default executor found, using default executor url {}", this.executorUrl);
+        return new ExecutorTarget(this.executorUrl, true);
     }
 
     public String generateSystemToken() {
