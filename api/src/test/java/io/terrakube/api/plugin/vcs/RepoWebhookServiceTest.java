@@ -994,6 +994,7 @@ class RepoWebhookServiceTest {
             verify(workspaceRepository, never()).save(any());
             verify(jobRepository, never()).save(any(Job.class));
             verify(prCommentService).postApplyNotAuthorizedNotice(ws, 14, "`reader` cannot apply");
+            verify(prCommentService).acknowledgeRefusal(ws, "comment-apply-3", 14);
         }
 
         @Test

@@ -413,6 +413,7 @@ public class RepoWebhookService {
         if (refusal.isPresent()) {
             prCommentService.postApplyNotAuthorizedNotice(workspace, prNumber != null ? prNumber.intValue() : null,
                     refusal.get());
+            prCommentService.acknowledgeRefusal(workspace, webhookResult.getCommentId(), prNumber);
             return;
         }
 

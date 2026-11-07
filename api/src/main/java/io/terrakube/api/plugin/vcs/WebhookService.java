@@ -169,6 +169,7 @@ public class WebhookService {
             Optional<String> refusal = prApplyAuthorizationService.refusalReason(workspace, webhookResult);
             if (refusal.isPresent()) {
                 prCommentService.postApplyNotAuthorizedNotice(workspace, prNumber, refusal.get());
+                prCommentService.acknowledgeRefusal(workspace, webhookResult.getCommentId(), webhookResult.getPrNumber());
                 return;
             }
             String templateId = workspace.getDefaultTemplate();

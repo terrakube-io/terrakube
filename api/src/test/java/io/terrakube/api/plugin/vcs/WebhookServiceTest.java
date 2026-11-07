@@ -244,6 +244,7 @@ public class WebhookServiceTest {
         pullRequestEvent.setPrWorkflowEnabled(true);
         pullRequestEvent.setPrApplyEnabled(true);
         WebhookResult result = createCommentResult("apply", 7);
+        result.setCommentId("comment-7");
         doReturn(Optional.of("`reader` cannot apply")).when(prApplyAuthorizationService)
                 .refusalReason(workspace, result);
 
@@ -254,6 +255,7 @@ public class WebhookServiceTest {
         verify(jobRepository, never()).save(any());
         verify(scheduleJobService, never()).createJobContext(any());
         verify(prCommentService).postApplyNotAuthorizedNotice(workspace, 7, "`reader` cannot apply");
+        verify(prCommentService).acknowledgeRefusal(workspace, "comment-7", 7);
     }
 
     @Test
