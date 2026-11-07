@@ -142,7 +142,7 @@ public class ProviderMirrorService {
 
     /** Storage key of the archive, fetching it first when pull-through applies. Empty when there is none. */
     public Optional<String> archiveKey(String hostname, String namespace, String type, String version, String platform) {
-        String key = directory(hostname, namespace, type) + "terraform-provider-" + type + "_" + version + "_" + platform + ".zip";
+        String key = directory(hostname, namespace, type) + archiveFileName(type, version, platform);
         if (storageService.objectExists(key)) {
             return Optional.of(key);
         }
@@ -196,7 +196,7 @@ public class ProviderMirrorService {
             for (JsonNode platform : platforms) {
                 String name = platform.path("os").asText() + "_" + platform.path("arch").asText();
                 ObjectNode archive = archives.putObject(name);
-                String sum = sums.get("terraform-provider-" + type + "_" + version + "_" + name + ".zip");
+                String sum = sums.get(archiveFileName(type, version, name));
                 if (sum != null) {
                     archive.putArray("hashes").add("zh:" + sum.toLowerCase());
                 }
@@ -208,7 +208,12 @@ public class ProviderMirrorService {
     /** File name to SHA-256 from the release SHA256SUMS, found through the download details of any one platform. */
     private Map<String, String> shasums(URI base, String namespace, String type, String version, JsonNode platform) {
         URI download = downloadUri(base, namespace, type, version, platform.path("os").asText(), platform.path("arch").asText());
-        String url = cachedJson(download).map(info -> info.path("shasums_url").asText("")).orElse("");
+        return cachedJson(download).map(info -> shasums(download, info)).orElse(Map.of());
+    }
+
+    /** File name to SHA-256 from the SHA256SUMS that the download details {@code info} point at. */
+    private Map<String, String> shasums(URI download, JsonNode info) {
+        String url = info.path("shasums_url").asText("");
         if (url.isBlank()) {
             return Map.of();
         }
@@ -220,6 +225,10 @@ public class ProviderMirrorService {
             }
         }
         return sums;
+    }
+
+    private static String archiveFileName(String type, String version, String platform) {
+        return "terraform-provider-" + type + "_" + version + "_" + platform + ".zip";
     }
 
     private static URI downloadUri(URI base, String namespace, String type, String version, String os, String arch) {
@@ -280,6 +289,13 @@ public class ProviderMirrorService {
         String shasum = info.get().path("shasum").asText("");
         if (url.isBlank() || !SHA256.matcher(shasum).matches()) {
             throw new MirrorUpstreamException("Incomplete download details for " + key + " on " + upstream.getHost());
+        }
+        // The zh: hashes served to clients come from SHA256SUMS under this same file name, so the archive must
+        // match that entry as well as the shasum next to download_url. Without a SHA256SUMS there are no zh:
+        // hashes to disagree with.
+        Map<String, String> sums = shasums(download, info.get());
+        if (!sums.isEmpty() && !shasum.equalsIgnoreCase(sums.get(archiveFileName(type, version, platform)))) {
+            throw new MirrorUpstreamException("SHA256SUMS has no matching entry for " + key + " on " + upstream.getHost());
         }
         Path temp = null;
         try {

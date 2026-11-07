@@ -152,9 +152,33 @@ class ProviderMirrorServiceTest {
     @Test
     void shaMismatchStoresNothing() {
         stubDownloadDetails("c".repeat(64));
+        upstream.stubFor(get("/files/SHA256SUMS").willReturn(aResponse().withBody(
+                "c".repeat(64) + "  terraform-provider-random_3.6.0_linux_amd64.zip\n")));
 
         assertThatThrownBy(() -> service().archiveKey("localhost", "hashicorp", "random", "3.6.0", "linux_amd64"))
                 .isInstanceOf(MirrorUpstreamException.class).hasMessageContaining("Checksum mismatch");
+        verify(storage, never()).writeObject(anyString(), any(), anyString());
+    }
+
+    @Test
+    void downloadDetailsDisagreeingWithShasumsStoresNothing() {
+        // The archive matches the shasum next to download_url, but not the SHA256SUMS behind the zh: hashes.
+        upstream.stubFor(get("/files/SHA256SUMS").willReturn(aResponse().withBody(
+                "d".repeat(64) + "  terraform-provider-random_3.6.0_linux_amd64.zip\n")));
+
+        assertThatThrownBy(() -> service().archiveKey("localhost", "hashicorp", "random", "3.6.0", "linux_amd64"))
+                .isInstanceOf(MirrorUpstreamException.class).hasMessageContaining("SHA256SUMS has no matching entry");
+        verify(storage, never()).writeObject(anyString(), any(), anyString());
+        upstream.verify(0, getRequestedFor(urlEqualTo(ARCHIVE_PATH)));
+    }
+
+    @Test
+    void archiveMissingFromShasumsStoresNothing() {
+        upstream.stubFor(get("/files/SHA256SUMS").willReturn(aResponse().withBody(
+                "b".repeat(64) + "  terraform-provider-random_3.6.0_darwin_arm64.zip\n")));
+
+        assertThatThrownBy(() -> service().archiveKey("localhost", "hashicorp", "random", "3.6.0", "linux_amd64"))
+                .isInstanceOf(MirrorUpstreamException.class).hasMessageContaining("SHA256SUMS has no matching entry");
         verify(storage, never()).writeObject(anyString(), any(), anyString());
     }
 

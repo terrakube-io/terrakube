@@ -20,7 +20,7 @@ credentials "terrakube-registry.example.com" {
 }
 ```
 
-OpenTofu reads `~/.tofurc` (`%APPDATA%\tofu.rc` on Windows) or the file named in `TF_CLI_CONFIG_FILE`. The block is the same:
+OpenTofu reads `~/.tofurc` (`%APPDATA%\tofu.rc` on Windows) or the file named in `TF_CLI_CONFIG_FILE`. The blocks are the same, including the credentials (or run `tofu login` first):
 
 ```hcl
 provider_installation {
@@ -28,7 +28,15 @@ provider_installation {
     url = "https://terrakube-registry.example.com/terraform/providers/mirror/v1/simple/"
   }
 }
+
+credentials "terrakube-registry.example.com" {
+  token = "<terrakube token>"
+}
 ```
+
+Both CLIs report a missing or invalid token and a token without membership in the organization the same way: "host ... rejected the given authentication credentials". Check that the token's user belongs to the organization in the mirror URL.
+
+Through a network mirror, `init` records only the hashes it computes for the current platform, and prints "Incomplete lock file information". To lock other platforms, run `terraform providers lock -platform=linux_amd64 -platform=darwin_arm64 ...` (or `tofu providers lock`) against the mirror.
 
 Add `include = ["registry.terraform.io/*/*"]` to the `network_mirror` block, plus a `direct {}` block, if only some providers should come from the mirror.
 
@@ -37,7 +45,7 @@ Add `include = ["registry.terraform.io/*/*"]` to the `network_mirror` block, plu
 | Request | Answer |
 | --- | --- |
 | `GET .../v1/{org}/{hostname}/{namespace}/{type}/index.json` | `{"versions":{"<version>":{}}}` |
-| `GET .../v1/{org}/{hostname}/{namespace}/{type}/{version}.json` | `{"archives":{"<os>_<arch>":{"url":"...","hashes":["h1:...","zh:..."]}}}` |
+| `GET .../v1/{org}/{hostname}/{namespace}/{type}/{version}.json` | `{"archives":{"<os>_<arch>":{"url":"...","hashes":["zh:..."]}}}` (pull-through gives `zh:` hashes; uploaded files keep the hashes they were uploaded with) |
 | `GET .../v1/{org}/{hostname}/{namespace}/{type}/{version}/{os}_{arch}.zip?ticket=...` | The archive, or a redirect to a presigned storage URL |
 
 - The JSON endpoints answer `403` when the caller is not a member of the organization, and `401` without a token.
@@ -80,7 +88,7 @@ Pull-through is off by default. When it is on and a provider's hostname matches 
 
 1. Lists versions from the upstream registry API (`/.well-known/terraform.json`, then `{providers.v1}{namespace}/{type}/versions`) for `index.json`.
 2. Builds `{version}.json` from the upstream platforms, with `zh:` hashes from the release `SHA256SUMS`.
-3. On the first request for an archive that is not in storage, downloads it, checks its SHA-256 against the `shasum` from the upstream registry, and stores it under `mirror/`. A mismatch stores nothing and answers `502`. Later requests are served from storage.
+3. On the first request for an archive that is not in storage, downloads it, checks its SHA-256 against the `shasum` from the upstream registry and against the archive's entry in the release `SHA256SUMS`, and stores it under `mirror/`. A mismatch stores nothing and answers `502`. Later requests are served from storage.
 
 The first download of a platform blocks until the archive is stored, which can take a while for large providers. Each replica runs at most `RegistryMirrorMaxConcurrentFetches` downloads at once; a request for another archive waits up to 10 s for a slot and then gets `503` with `Retry-After`; run `init` again once the running downloads finish. Concurrent requests for the same archive on one replica share one download (and one slot); replicas that download the same archive at the same time write identical objects. Upstream metadata is cached for `RegistryMirrorMetadataCacheTtlSeconds`, so a new upstream release can take that long to appear. The cache holds at most 64 Mi characters of documents per replica. A hostname that is not an upstream is served from uploaded files only.
 
@@ -97,7 +105,7 @@ The registry needs outbound HTTPS to the upstream registries and to the hosts th
 
 ### Integrity
 
-The registry checks each archive against the SHA-256 in the upstream's download details, and `{version}.json` carries `zh:` hashes from the release `SHA256SUMS`. It does not verify the upstream GPG signature (`SHA256SUMS.sig` and the `signing_keys` of the download details). Integrity rests on fetching the checksums over TLS from an allowlisted upstream: a compromised upstream, or a compromised TLS connection to it, could serve a matching archive and checksum.
+The registry checks each archive against the SHA-256 in the upstream's download details and against the release `SHA256SUMS`, which is also where the `zh:` hashes in `{version}.json` come from, so a stored archive matches the hashes clients are given. An upstream without a `SHA256SUMS` gets neither the cross-check nor `zh:` hashes. It does not verify the upstream GPG signature (`SHA256SUMS.sig` and the `signing_keys` of the download details). Integrity rests on fetching the checksums over TLS from an allowlisted upstream: a compromised upstream, or a compromised TLS connection to it, could serve a matching archive and checksum.
 
 ### Safeguards for outbound requests
 
@@ -107,6 +115,10 @@ The registry checks each archive against the SHA-256 in the upstream's download 
 - Downloads are capped by `RegistryMirrorMaxArchiveSizeMb`. Connecting times out after 10 s, and every request has the overall deadline above.
 
 Known limit: the address check and the connection resolve the host separately. A DNS answer that changes between the two (DNS rebinding) is not caught. This is acceptable because upstreams come from the operator's allowlist; do not add upstreams you do not trust.
+
+### Temporary disk
+
+A pull-through download is streamed to a temporary file in `java.io.tmpdir` (`/tmp` by default), checked, uploaded to storage and deleted. The registry therefore needs a writable temporary directory, also with a read-only root filesystem (mount an `emptyDir` at `/tmp` in Kubernetes). Size it, and any `ephemeral-storage` limit, for `RegistryMirrorMaxConcurrentFetches` times the largest archive you expect; the worst case is `RegistryMirrorMaxConcurrentFetches × RegistryMirrorMaxArchiveSizeMb` (4 GB with the defaults). In practice it is far lower: six of the largest HashiCorp providers fetched at once peaked at about 150 MB. If the JVM is killed during a download, the partial file stays in the temporary directory until the container restarts (or the directory is cleaned); nothing is written to storage.
 
 ### Storage growth
 
