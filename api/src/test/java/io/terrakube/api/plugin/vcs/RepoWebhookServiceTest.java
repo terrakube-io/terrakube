@@ -807,9 +807,7 @@ class RepoWebhookServiceTest {
             commentResult.setPrFilesUrl("https://api.github.com/repos/owner/repo/pulls/9/files");
             when(gitHubWebhookService.parseGitHubPayload(eq(payload), any())).thenReturn(commentResult);
 
-            // any(), not eq(ws.getVcs()): processClaimedDelivery tries this once repo-wide with
-            // the repo webhook's own Vcs before any workspace loop iteration is reached
-            when(gitHubWebhookService.resolvePrDetails(any(), eq(repoUrl),
+            when(gitHubWebhookService.resolvePrDetails(eq(ws.getVcs()), eq(repoUrl),
                     eq("https://api.github.com/repos/owner/repo/pulls/9"), any(WebhookResult.class)))
                     .thenAnswer(inv -> {
                         WebhookResult res = inv.getArgument(3);
@@ -829,7 +827,7 @@ class RepoWebhookServiceTest {
 
             subject.processClaimedDelivery(rw, payload, headers);
 
-            verify(gitHubWebhookService).resolvePrDetails(any(), eq(repoUrl),
+            verify(gitHubWebhookService).resolvePrDetails(eq(ws.getVcs()), eq(repoUrl),
                     eq("https://api.github.com/repos/owner/repo/pulls/9"), any(WebhookResult.class));
 
             ArgumentCaptor<Job> jobCaptor = ArgumentCaptor.forClass(Job.class);

@@ -259,12 +259,6 @@ public class RepoWebhookService {
             webhookResult.setFileChanges(prFiles);
         }
 
-        if (!azureDevOps && !gitlab && webhookResult.getPrDetailsUrl() != null && webhookResult.getCommit() == null
-                && repoWebhook.getVcs() != null) {
-            gitHubWebhookService.resolvePrDetails(repoWebhook.getVcs(), repoWebhook.getRepositoryUrl(),
-                    webhookResult.getPrDetailsUrl(), webhookResult);
-        }
-
         if (azureDevOps && webhookProperties.isPrBaseBranchFilter()
                 && webhookResult.isPullRequestOrComment()
                 && (webhookResult.getBaseBranch() == null || webhookResult.getBaseBranch().isBlank())
@@ -278,7 +272,7 @@ public class RepoWebhookService {
         }
 
         if (webhookProperties.isPrBaseBranchFilter() && webhookResult.isPullRequestOrComment()
-                && (webhookResult.getPrDetailsUrl() == null || webhookResult.getCommit() != null)
+                && webhookResult.getPrDetailsUrl() == null
                 && (webhookResult.getBaseBranch() == null || webhookResult.getBaseBranch().isBlank())) {
             log.warn("PR webhook delivery for repository {} has no target branch (baseBranch); workspaces will fail closed and skip speculative plans", normalizedUrl);
         }
