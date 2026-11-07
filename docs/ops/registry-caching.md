@@ -39,7 +39,7 @@ The registry sends an `ETag` on successful `GET` responses of the discovery, mod
 The `ETag` is computed over the response body, and the body comes from the server caches above. Revalidation therefore never shows data fresher than the cache behind it:
 
 * A module version list can be up to `ModuleVersionsCacheTtlSeconds` (600 s by default) behind, on each replica. A removed version stops being downloadable within 30 s, and the replica that serves such a request drops its cached list.
-* A provider version list or download detail can be up to `ProviderCacheTtlSeconds` (60 s by default) behind.
+* A provider version list or download detail can be up to `ProviderCacheTtlSeconds` (60 s by default) behind. That works both ways: a new version can take that long to appear, and a removed version can still be listed and its download details served for that long.
 * Renaming or recreating an organization can serve the old id for up to 60 s.
 
 ## Module download counts
