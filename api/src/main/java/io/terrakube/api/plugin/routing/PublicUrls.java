@@ -5,13 +5,18 @@ import java.net.URI;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+import lombok.extern.slf4j.Slf4j;
+
 /**
  * Public addresses of the API for split-domain and single-domain deployments.
  *
  * <p>Single-domain mode is on exactly when {@code io.terrakube.public-url} is set. An explicitly
  * set {@code io.terrakube.hostname} still wins for generated API URLs, so existing installations
- * and dedicated API hostnames keep their URLs.
+ * and dedicated API hostnames keep their URLs. That is the migration path: with both set, discovery
+ * advertises the {@code /api} paths while state, upload, log and webhook URLs stay on the old API
+ * host until TerrakubeHostname is removed.
  */
+@Slf4j
 @Component
 public class PublicUrls {
 
@@ -25,6 +30,12 @@ public class PublicUrls {
         if (this.publicUrl.isEmpty() && this.hostname.isEmpty()) {
             throw new IllegalStateException(
                     "Set TerrakubeHostname (split-domain) or TerrakubePublicUrl (single-domain)");
+        }
+        if (!this.publicUrl.isEmpty() && !this.hostname.isEmpty()) {
+            log.warn("Both TerrakubePublicUrl ({}) and TerrakubeHostname ({}) are set: discovery uses {}/api paths, "
+                    + "but generated state, upload, log and webhook URLs still point at https://{}. "
+                    + "Unset TerrakubeHostname once clients have moved to the shared host.",
+                    this.publicUrl, this.hostname, this.publicUrl, this.hostname);
         }
     }
 
