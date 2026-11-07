@@ -30,7 +30,7 @@ import java.util.*;
 @Service
 public class DynamicCredentialsService {
 
-    @Value("${io.terrakube.hostname}")
+    @Value("#{@publicUrls.issuerHost()}")
     String hostname;
 
     @Value("${io.terrakube.dynamic.credentials.hostname}")

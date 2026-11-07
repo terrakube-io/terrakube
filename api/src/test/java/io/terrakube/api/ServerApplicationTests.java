@@ -138,6 +138,27 @@ class ServerApplicationTests {
     }
 
 
+    /**
+     * Runs stubbing of the shared Redis mocks with Quartz paused. Scheduled jobs left by earlier
+     * tests call the same mocks, and Mockito stubbing is not thread-safe: a job hitting a mock
+     * mid-stubbing fails the test with UnfinishedStubbingException.
+     */
+    protected void stubWithSchedulerPaused(Runnable stubbing) throws Exception {
+        boolean running = scheduler.isStarted() && !scheduler.isInStandbyMode();
+        scheduler.standby();
+        try {
+            long deadline = System.currentTimeMillis() + 10_000;
+            while (!scheduler.getCurrentlyExecutingJobs().isEmpty() && System.currentTimeMillis() < deadline) {
+                Thread.sleep(10);
+            }
+            stubbing.run();
+        } finally {
+            if (running) {
+                scheduler.start();
+            }
+        }
+    }
+
     @AfterAll
     public void stopServer() {
         wireMockServer.stop();

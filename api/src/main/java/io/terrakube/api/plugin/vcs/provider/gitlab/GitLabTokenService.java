@@ -16,8 +16,8 @@ public class GitLabTokenService {
 
     private static final String DEFAULT_ENDPOINT="https://gitlab.com";
 
-    @Value("${io.terrakube.hostname}")
-    private String hostname;
+    @Value("#{@publicUrls.apiBaseUrl()}")
+    private String apiBaseUrl;
 
     @Autowired
     private WebClient.Builder webClientBuilder;
@@ -28,7 +28,7 @@ public class GitLabTokenService {
                         .queryParam("client_secret", clientSecret)
                         .queryParam("code",tempCode)
                         .queryParam("grant_type", "authorization_code")
-                        .queryParam("redirect_uri", String.format("https://%s/callback/v1/vcs/%s", hostname, callback == null ? vcsId: callback))
+                        .queryParam("redirect_uri", String.format("%s/callback/v1/vcs/%s", apiBaseUrl, callback == null ? vcsId: callback))
                         .build())
                 .retrieve().bodyToMono(GitLabToken.class).block(Duration.ofSeconds(30));
 
@@ -41,7 +41,7 @@ public class GitLabTokenService {
                         .queryParam("client_secret", clientSecret)
                         .queryParam("refresh_token", refreshToken)
                         .queryParam("grant_type", "refresh_token")
-                        .queryParam("redirect_uri", String.format("https://%s/callback/v1/vcs/%s", hostname, callback == null ? vcsId: callback))
+                        .queryParam("redirect_uri", String.format("%s/callback/v1/vcs/%s", apiBaseUrl, callback == null ? vcsId: callback))
                         .build())
                 .retrieve().bodyToMono(GitLabToken.class).block(Duration.ofSeconds(30));
 

@@ -45,8 +45,8 @@ public class GitHubWebhookService extends WebhookServiceBase {
     private final ObjectMapper objectMapper;
     private final TokenService tokenService;
 
-    @Value("${io.terrakube.hostname}")
-    private String hostname;
+    @Value("#{@publicUrls.apiBaseUrl()}")
+    private String apiBaseUrl;
     @Value("${io.terrakube.ui.url}")
     private String uiUrl;
     @Value("${io.terrakube.webhook.insecure-ssl:1}")
@@ -362,7 +362,7 @@ public class GitHubWebhookService extends WebhookServiceBase {
         String id = webhook.getRemoteHookId();
         String secret = Base64.getEncoder()
                 .encodeToString(workspace.getId().toString().getBytes(StandardCharsets.UTF_8));
-        String webhookUrl = String.format("https://%s/webhook/v1/%s", hostname, webhook.getId().toString());
+        String webhookUrl = String.format("%s/webhook/v1/%s", apiBaseUrl, webhook.getId().toString());
         String[] ownerAndRepo = extractOwnerAndRepo(workspace.getSource());
 
         String events = webhook.getEvents().stream().map(WebhookEvent::getEvent).distinct()
@@ -534,7 +534,7 @@ public class GitHubWebhookService extends WebhookServiceBase {
     public String createOrUpdateRepoWebhook(RepoWebhook repoWebhook, Set<WebhookEventType> eventTypes,
             boolean hasPrWorkflow) {
         String id = repoWebhook.getRemoteHookId();
-        String webhookUrl = String.format("https://%s/webhook/v2/%s", hostname, repoWebhook.getId().toString());
+        String webhookUrl = String.format("%s/webhook/v2/%s", apiBaseUrl, repoWebhook.getId().toString());
         String[] ownerAndRepo = extractOwnerAndRepo(repoWebhook.getRepositoryUrl());
 
         String events = eventTypes.stream()

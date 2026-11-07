@@ -1,12 +1,12 @@
 import { Client, createClient } from "graphql-ws";
 import getUserFromStorage from "../../config/authUser";
-import { getPublicApiOrigin } from "../../domain/Jobs/outputUrl";
+import { subscriptionsUrl } from "../../config/apiUrls";
 
 let client: Client | undefined;
 
 export function getSubscriptionClient(): Client {
   if (client == null) {
-    const wsUrl = getPublicApiOrigin().replace(/^http/, "ws") + "/subscriptions";
+    const wsUrl = subscriptionsUrl();
 
     client = createClient({
       url: wsUrl,

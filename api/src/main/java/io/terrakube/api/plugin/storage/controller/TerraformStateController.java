@@ -50,7 +50,7 @@ public class TerraformStateController {
     @SuppressWarnings("unused")
     @Autowired
     private StateService stateService;
-    private final String hostname;
+    private final String apiBaseUrl;
 
     @Value("${io.terrakube.state.max-size-bytes:104857600}")
     private long maxStateSizeBytes = 104857600L; 
@@ -59,12 +59,12 @@ public class TerraformStateController {
                                     ArchiveRepository archiveRepository, 
                                     WorkspaceRepository workspaceRepository, 
                                     HistoryRepository historyRepository, 
-                                    @Value("${io.terrakube.hostname}") String hostname) {
+                                    @Value("#{@publicUrls.apiBaseUrl()}") String apiBaseUrl) {
         this.storageTypeService = storageTypeService;
         this.archiveRepository = archiveRepository;
         this.workspaceRepository = workspaceRepository;
         this.historyRepository = historyRepository;
-        this.hostname = hostname;  
+        this.apiBaseUrl = apiBaseUrl;  
     }
     @GetMapping(value = "/organization/{organizationId}/workspace/{workspaceId}/jobId/{jobId}/step/{stepId}/terraform.tfstate", produces = MediaType.APPLICATION_OCTET_STREAM_VALUE)
     @PreAuthorize("@stateService.hasManageStatePermission(authentication, #organizationId, #workspaceId)")
@@ -306,8 +306,8 @@ public class TerraformStateController {
                     newHistory.getId().toString());
 
             // Update history output with new state URL
-            newHistory.setOutput(String.format("https://%s/tfstate/v1/organization/%s/workspace/%s/state/%s.json",
-                    hostname,
+            newHistory.setOutput(String.format("%s/tfstate/v1/organization/%s/workspace/%s/state/%s.json",
+                    apiBaseUrl,
                     organizationId,
                     workspaceId,
                     newHistory.getId().toString()));

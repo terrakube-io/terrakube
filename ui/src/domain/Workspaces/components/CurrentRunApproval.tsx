@@ -3,7 +3,7 @@ import { Button, Flex, message, Modal, Typography } from "antd";
 import type { AxiosRequestConfig } from "axios";
 import { useEffect, useRef, useState } from "react";
 import axiosInstance, { axiosAuxiliary } from "../../../config/axiosConfig";
-import { getPublicApiOrigin } from "../../Jobs/outputUrl";
+import { apiUrl } from "@/config/apiUrls";
 import { hasBlockingPolicyViolations } from "../../Jobs/policyViolations";
 import {
   computePlanTotals,
@@ -70,7 +70,7 @@ export const CurrentRunApproval = ({
     let retry: ReturnType<typeof setTimeout> | undefined;
     const config: AxiosRequestConfig = { signal: controller.signal, auxClass: "context" };
     axiosAuxiliary
-      .get(`${getPublicApiOrigin()}/context/v1/${jobId}`, config)
+      .get(`${apiUrl("")}/context/v1/${jobId}`, config)
       .then((response) => {
         setPlanTotals(computePlanTotals(normalizeStructuredPlanOutput(response?.data?.planStructuredOutput)));
         setPolicyCheck(hasBlockingPolicyViolations(response?.data?.policyEvaluation) ? "needs-review" : "clear");
