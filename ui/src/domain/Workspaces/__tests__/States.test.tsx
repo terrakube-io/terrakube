@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
 import { MemoryRouter } from "react-router-dom";
-import { States } from "../States";
+import { States, stateRequestUrl } from "../States";
 import { FlatJobHistory, Workspace } from "../../types";
 
 const apiGet = jest.fn();
@@ -103,5 +103,40 @@ describe("States", () => {
     expect(clientGet).toHaveBeenCalledTimes(1);
     expect(clientGet).toHaveBeenCalledWith(`${storage}/2.json?sv=2024&sig=abc.json`);
     expect(apiGet).not.toHaveBeenCalled();
+  });
+});
+
+describe("stateRequestUrl", () => {
+  const originalEnv = window._env_;
+  const setEnv = (extra: Partial<typeof window._env_>) => {
+    window._env_ = { ...originalEnv, ...extra } as typeof window._env_;
+  };
+
+  afterEach(() => {
+    window._env_ = originalEnv;
+  });
+
+  it("leaves split-domain state URLs unchanged", () => {
+    setEnv({ REACT_APP_TERRAKUBE_API_URL: "https://api.example.com/api/v1/", REACT_APP_TERRAKUBE_PUBLIC_URL: "" });
+    const url = "https://api.example.com/tfstate/v1/organization/o/workspace/w/state/1.json";
+    expect(stateRequestUrl(url)).toBe(url);
+  });
+
+  it("rebuilds state URLs written with an old API host on the single-domain API", () => {
+    setEnv({
+      REACT_APP_TERRAKUBE_API_URL: "https://app.example.com/api/v1/",
+      REACT_APP_TERRAKUBE_PUBLIC_URL: "https://app.example.com",
+    });
+    expect(stateRequestUrl("https://old-api.example.com/tfstate/v1/organization/o/workspace/w/state/1.json")).toBe(
+      "https://app.example.com/api/tfstate/v1/organization/o/workspace/w/state/1.json"
+    );
+    expect(stateRequestUrl("https://app.example.com/api/tfstate/v1/archive/a/terraform.tfstate")).toBe(
+      "https://app.example.com/api/tfstate/v1/archive/a/terraform.tfstate"
+    );
+  });
+
+  it("leaves storage URLs alone", () => {
+    const presigned = "https://bucket.s3.amazonaws.com/tfstate/o/w/state.json?X-Amz-Signature=x";
+    expect(stateRequestUrl(presigned)).toBe(presigned);
   });
 });

@@ -2,7 +2,7 @@ import { useCallback, useMemo, useState } from "react";
 import axiosInstance from "../../config/axiosConfig";
 import { useLogStream, usePolling } from "../../hooks";
 import { splitLines } from "./ansiChunks";
-import { getPublicApiOrigin } from "./outputUrl";
+import { apiUrl } from "@/config/apiUrls";
 import { isRunningStatus } from "./stepStatus";
 import { TerminalOutput } from "./TerminalOutput";
 import { JobStep } from "../types";
@@ -21,7 +21,7 @@ const POLL_INTERVAL_MS = 3000;
 
 export const LiveTerminalOutput = ({ jobId, organizationId, item }: Props) => {
   const isRunning = isRunningStatus(item.status);
-  const stepBaseUrl = `${getPublicApiOrigin()}/tfoutput/v1/organization/${organizationId}/job/${jobId}/step/${item.id}`;
+  const stepBaseUrl = `${apiUrl("")}/tfoutput/v1/organization/${organizationId}/job/${jobId}/step/${item.id}`;
 
   const [sseFailed, setSseFailed] = useState(false);
   const onStatus = useCallback((status: { failed: boolean }) => setSseFailed(status.failed), []);

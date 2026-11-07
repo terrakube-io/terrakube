@@ -40,7 +40,7 @@ class PolicyNotificationServiceTest {
         policyNotificationService = new PolicyNotificationService(
                 notificationOutboxRepository,
                 notificationPayloadRenderer,
-                "terrakube.example.com"
+                "https://terrakube.example.com"
         );
     }
 
@@ -72,6 +72,12 @@ class PolicyNotificationServiceTest {
                 .thenReturn("{\"text\": \"Policy Violation\"}");
 
         policyNotificationService.sendPolicyViolationNotification(job, List.of(policySet), "Mandatory policy violations detected");
+
+        ArgumentCaptor<NotificationContext> contextCaptor = ArgumentCaptor.forClass(NotificationContext.class);
+        verify(notificationPayloadRenderer).render(eq(NotificationChannelType.SLACK), contextCaptor.capture());
+        String expectedWorkspaceUrl = "https://terrakube.example.com/organizations/" + org.getId() + "/workspaces/" + ws.getId();
+        assertEquals(expectedWorkspaceUrl, contextCaptor.getValue().workspaceUrl());
+        assertEquals(expectedWorkspaceUrl + "/runs/42", contextCaptor.getValue().runUrl());
 
         ArgumentCaptor<NotificationOutbox> outboxCaptor = ArgumentCaptor.forClass(NotificationOutbox.class);
         verify(notificationOutboxRepository).save(outboxCaptor.capture());

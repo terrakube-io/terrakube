@@ -92,7 +92,7 @@ class WorkspaceServiceTest {
     @BeforeEach
     void setUp() {
         workspaceService = new WorkspaceService(
-                "localhost:8080",
+                "https://localhost:8080",
                 workspaceRepository,
                 historyRepository,
                 storageTypeService,

@@ -11,7 +11,13 @@ public class TerraformOutputPathService {
     @Value("${io.terrakube.api.url}")
     private String apiUrl;
 
+    // Single-domain public URL. Output URLs are handed to the UI and other clients, so they use
+    // <public>/api instead of the executor's (possibly internal) API URL.
+    @Value("${io.terrakube.public-url:}")
+    private String publicUrl;
+
     public String getOutputPath(String organizationId, String jobId, String stepId){
-        return String.format(GENERIC_OUTPUT_PATH, this.apiUrl, organizationId, jobId, stepId);
+        String base = publicUrl == null || publicUrl.isBlank() ? this.apiUrl : publicUrl + "/api";
+        return String.format(GENERIC_OUTPUT_PATH, base, organizationId, jobId, stepId);
     }
 }

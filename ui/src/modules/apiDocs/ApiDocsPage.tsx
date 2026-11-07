@@ -1,3 +1,4 @@
+import { apiUrl } from "@/config/apiUrls";
 import { LeftOutlined } from "@ant-design/icons";
 import { Spin } from "antd";
 import { useEffect, useState } from "react";
@@ -43,7 +44,7 @@ export const ApiDocsPage = () => {
               // The spec's `servers` entry is a relative path (Elide doesn't know its own public
               // hostname when generating it) - without this, Scalar resolves it against the docs
               // page's own origin instead of the API's.
-              baseServerURL: new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin,
+              baseServerURL: apiUrl(""),
               onBeforeRequest: attachBearerToken,
             }}
           />
