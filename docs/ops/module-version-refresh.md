@@ -1,16 +1,17 @@
 # Module version refresh
 
 The API reads the Git tags of every registry module and publishes each SemVer tag as a module version.
-One Quartz job (`TerrakubeV2_ModuleRefreshPoller`, every minute, clustered) does this for all modules.
+A poller on every API replica does this for all modules. It is a plain scheduled task, not a Quartz job,
+so replicas of an older release that share the database cannot stall it.
 Releases before this one used one job per module; see [Upgrading](#upgrading).
 
 ## How a refresh runs
 
-1. Each minute, one replica selects the modules that are due: `next_refresh` is empty (new or changed
+1. Every 2 seconds, each replica selects the modules that are due: `next_refresh` is empty (new or changed
    modules) or in the past. Empty ones go first. Modules of disabled organizations are skipped.
-2. It claims each module by writing a lease expiry into `next_refresh`. Only one replica can claim a
-   module, and it claims no more modules than its refresh pool has room for. As pool threads free up it
-   claims more, for up to 50 seconds per run, while due modules remain.
+2. It claims each module by writing a lease expiry into `next_refresh`, as a conditional update. Only
+   one replica can claim a module, even when several poll at once, and each claims no more modules than
+   its refresh pool has room for. As pool threads free up, the next poll claims more.
 3. A pool thread runs one `ls-remote` per module. No database transaction is open during the read.
 4. The result is written only if the module still holds the same lease. A refresh that outlived its
    lease, or a module that was synced or changed meanwhile, writes nothing and is read again.
@@ -52,13 +53,13 @@ The module page has a **Check for new versions** action for users who can manage
 POST /module/v1/organization/{organizationId}/module/{moduleId}/sync
 ```
 
-The API answers `202 Accepted` and marks the module due; the next poll (within a minute) reads it. It
+The API answers `202 Accepted` and marks the module due; the next poll (within a few seconds) reads it. It
 requires the "manage modules" permission in the module's organization, and internal tokens are refused.
 
 ## Tag webhooks
 
 A repository webhook that reports a new tag makes every module of that repository due, so the next
-poll (within a minute) reads it. The webhook never reads tags itself, and polling keeps running as the
+poll (within a few seconds) reads it. The webhook never reads tags itself, and polling keeps running as the
 fallback for tags a webhook missed.
 
 A module belongs to the repository when its source, normalized the same way as workspace sources
@@ -124,12 +125,12 @@ The lease must cover every refresh a replica has queued, each of which can take 
 30-second Git timeouts). At startup the API raises `lease-minutes` to
 `ceil(queue-capacity / pool-size) + 1` if it is lower, and logs a warning.
 
-Each run happens on one replica and uses that replica's pool, so throughput is set by `pool-size` and
-the `ls-remote` time, not by the queue: about `pool-size × 60 / seconds per ls-remote` modules a minute.
+Throughput per replica is set by `pool-size` and the `ls-remote` time, not by the queue: about
+`pool-size × 60 / seconds per ls-remote` modules a minute.
 With the default 4 threads and 1 s reads that is about 240 a minute, enough for roughly 3600 modules on
 the 15-minute interval; with 5 s reads it is about 48 a minute, or about 700 such modules. Watch
 `module.refresh.lsremote.duration`. If `module.refresh.overdue.oldest.age.seconds` keeps growing, add
-threads; more replicas add little, since only one of them claims modules each minute.
+threads or replicas; every replica claims modules.
 
 ## Metrics
 
@@ -158,9 +159,6 @@ threads; more replicas add little, since only one of them claims modules each mi
   refresh their modules on tag pushes right after the upgrade, without any change on the provider. To
   register webhooks for modules, set `ModuleRefreshWebhookEnabled=true`; existing modules join on their
   next **Check for new versions** or source/connection change.
-- **Rolling deploys.** While old and new replicas run side by side, an old replica that picks up the
-  poller trigger cannot load the poller class, and Quartz can put the trigger in an error state, in
-  which it stops firing. Every new replica recreates the poller job when it starts, and checks the
-  trigger once a minute and resets it from the error state. Polling can pause while old replicas are
-  still running and resumes within about a minute of the reset. Old replicas keep refreshing through their per-module jobs until the new ones
-  delete those jobs; a per-module job that fires on a new replica deletes itself.
+- **Rolling deploys.** Old and new replicas can run side by side. New replicas poll on their own, so old
+  ones do not slow them down. Old replicas keep refreshing through their per-module jobs until the new
+  ones delete those jobs; a per-module job that fires on a new replica deletes itself.

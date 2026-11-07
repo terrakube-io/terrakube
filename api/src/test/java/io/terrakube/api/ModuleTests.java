@@ -1,13 +1,10 @@
 package io.terrakube.api;
 
-import io.terrakube.api.plugin.scheduler.module.ModuleRefreshPollerScheduler;
 import io.terrakube.api.plugin.scheduler.module.ModuleRefreshTransactions;
 import io.terrakube.api.repository.ModuleRepository;
 import io.terrakube.api.rs.module.Module;
 import org.hamcrest.Matchers;
 import org.hamcrest.core.IsEqual;
-import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.MockitoAnnotations;
@@ -28,7 +25,6 @@ import static org.mockito.Mockito.when;
 class ModuleTests extends ServerApplicationTests {
 
     private static final String ORGANIZATION_ID = "f5365c9e-bc11-4781-b649-45a281ccdd4a";
-    private static final JobKey POLLER = new JobKey(ModuleRefreshPollerScheduler.PREFIX_MODULE_REFRESH_POLLER);
     private static final Date LEASE = Date.from(Instant.now().truncatedTo(ChronoUnit.SECONDS).plus(1, ChronoUnit.DAYS));
 
     @Autowired
@@ -36,17 +32,6 @@ class ModuleTests extends ServerApplicationTests {
 
     @Autowired
     ModuleRefreshTransactions moduleRefreshTransactions;
-
-    // The real poller would claim the modules created here and change next_refresh under the assertions.
-    @BeforeAll
-    void pausePoller() throws SchedulerException {
-        scheduler.pauseJob(POLLER);
-    }
-
-    @AfterAll
-    void resumePoller() throws SchedulerException {
-        scheduler.resumeJob(POLLER);
-    }
 
     @BeforeEach
     public void setup() {

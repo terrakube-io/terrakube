@@ -20,7 +20,7 @@ public interface ModuleRepository extends JpaRepository<Module, UUID> {
     List<Module> findByOrganizationIn(List<Organization> organizations);
     List<Module> findAllByOrganizationIdAndNameAndProvider(UUID organizationId, String name, String provider);
 
-    // The module refresh poller (ModuleRefreshPollerJob) and its writes (ModuleRefreshTransactions).
+    // The module refresh poller (ModuleRefreshPoller) and its writes (ModuleRefreshTransactions).
     // next_refresh NULL means due now; a claimed module holds its lease expiry there, so every write of
     // a refresh result is keyed on that exact lease and becomes a no-op once another claim replaced it.
 

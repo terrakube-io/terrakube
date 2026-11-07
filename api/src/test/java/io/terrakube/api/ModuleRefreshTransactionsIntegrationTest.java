@@ -12,18 +12,13 @@ import java.util.stream.Collectors;
 import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.ObjectIdRef;
 import org.eclipse.jgit.lib.Ref;
-import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.quartz.JobKey;
-import org.quartz.SchedulerException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 
-import io.terrakube.api.plugin.scheduler.module.ModuleRefreshPollerScheduler;
 import io.terrakube.api.plugin.scheduler.module.ModuleRefreshTransactions;
 import io.terrakube.api.plugin.scheduler.module.ModuleVersionNormalizer.NormalizedVersion;
 import io.terrakube.api.repository.ModuleRepository;
@@ -39,7 +34,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ModuleRefreshTransactionsIntegrationTest extends ServerApplicationTests {
 
     private static final UUID DEMO_ORGANIZATION_ID = UUID.fromString("f5365c9e-bc11-4781-b649-45a281ccdd4a");
-    private static final JobKey POLLER = new JobKey(ModuleRefreshPollerScheduler.PREFIX_MODULE_REFRESH_POLLER);
 
     @Autowired
     ModuleRefreshTransactions transactions;
@@ -52,17 +46,6 @@ class ModuleRefreshTransactionsIntegrationTest extends ServerApplicationTests {
 
     @Autowired
     PlatformTransactionManager transactionManager;
-
-    // The real poller would claim the modules seeded here between the steps of a test.
-    @BeforeAll
-    void pausePoller() throws SchedulerException {
-        scheduler.pauseJob(POLLER);
-    }
-
-    @AfterAll
-    void resumePoller() throws SchedulerException {
-        scheduler.resumeJob(POLLER);
-    }
 
     private static Date nowSeconds() {
         return Date.from(Instant.now().truncatedTo(ChronoUnit.SECONDS));

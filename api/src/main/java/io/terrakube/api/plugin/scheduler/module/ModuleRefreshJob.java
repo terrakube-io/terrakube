@@ -7,7 +7,7 @@ import org.quartz.JobExecutionException;
 import org.quartz.SchedulerException;
 
 /**
- * The old per-module refresh job, replaced by {@link ModuleRefreshPollerJob}. Kept so Quartz can still load
+ * The old per-module refresh job, replaced by {@link ModuleRefreshPoller}. Kept so Quartz can still load
  * the jobs stored before the upgrade: {@link LegacyModuleRefreshJobCleanup} deletes them at startup, and any
  * that fires before that deletes itself here.
  */
