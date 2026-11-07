@@ -608,7 +608,10 @@ public class PrCommentService {
                     for (JsonNode item : results) {
                         String policySetName = item.has("policySetName") ? item.get("policySetName").asText()
                                 : (item.has("policySetId") ? item.get("policySetId").asText() : "default");
-                        String enforcementLevel = item.has("enforcementLevel") ? item.get("enforcementLevel").asText() : "hard-mandatory";
+                        // The executor sends the enum name (SOFT_MANDATORY); accept the hyphenated form as well.
+                        String enforcementLevel = item.hasNonNull("enforcementLevel")
+                                ? item.get("enforcementLevel").asText().replace('_', '-')
+                                : "hard-mandatory";
 
                         // Exempted violations
                         if (item.has("exemptedViolations") && item.get("exemptedViolations").isArray()) {
@@ -619,17 +622,17 @@ public class PrCommentService {
                                 if (ev.has("ruleId")) {
                                     details.append("Rule: `").append(ev.get("ruleId").asText()).append("`");
                                 }
-                                if (ev.has("ticketReference")) {
+                                if (ev.hasNonNull("ticketReference")) {
                                     details.append("<br/>Ticket: **").append(ev.get("ticketReference").asText()).append("**");
                                 }
-                                if (ev.has("expiresAt")) {
+                                if (ev.hasNonNull("expiresAt")) {
                                     String exp = ev.get("expiresAt").asText();
                                     if (exp.length() >= 10) exp = exp.substring(0, 10);
                                     details.append(" (Expires: ").append(exp).append(")");
                                 }
-                                if (ev.has("justification")) {
+                                if (ev.hasNonNull("justification")) {
                                     details.append("<br/>_").append(ev.get("justification").asText()).append("_");
-                                } else if (ev.has("message")) {
+                                } else if (ev.hasNonNull("message")) {
                                     details.append("<br/>").append(ev.get("message").asText());
                                 }
                                 tableRows.add(String.format("| `%s` | 🛡️ **EXEMPTED** | `%s` | %s |",
@@ -655,18 +658,18 @@ public class PrCommentService {
                                 if (v.has("ruleId")) {
                                     details.append("Rule: `").append(v.get("ruleId").asText()).append("`");
                                 }
-                                if (v.has("message")) {
+                                if (v.hasNonNull("message")) {
                                     details.append("<br/>").append(v.get("message").asText());
                                 }
-                                if (v.has("ticketReference")) {
+                                if (v.hasNonNull("ticketReference")) {
                                     details.append("<br/>Ticket: **").append(v.get("ticketReference").asText()).append("**");
                                 }
-                                if (v.has("expiresAt")) {
+                                if (v.hasNonNull("expiresAt")) {
                                     String exp = v.get("expiresAt").asText();
                                     if (exp.length() >= 10) exp = exp.substring(0, 10);
                                     details.append(" (Expires: ").append(exp).append(")");
                                 }
-                                if (v.has("justification")) {
+                                if (v.hasNonNull("justification")) {
                                     details.append("<br/>_").append(v.get("justification").asText()).append("_");
                                 }
 

@@ -215,6 +215,67 @@ class PrCommentPolicyTest {
     }
 
     @Test
+    void testPolicyGuardrailsSummaryAsSentByExecutor() {
+        Job job = createTestJob(VcsType.GITHUB);
+
+        // The executor serializes every PolicyViolation field, so violations without an
+        // exemption carry explicit nulls, and enforcementLevel is the enum name.
+        String contextJson = """
+                {
+                  "policyEvaluation": {
+                    "status": "FAILED",
+                    "warningRules": 1,
+                    "softMandatoryViolations": 1,
+                    "hardMandatoryViolations": 0,
+                    "results": [
+                      {
+                        "policySetName": "destructive-changes",
+                        "enforcementLevel": "ADVISORY",
+                        "violations": [
+                          {
+                            "ruleId": "resource_deleted",
+                            "address": "uptimekuma_monitor_http.speedtest",
+                            "message": "plan destroys uptimekuma_monitor_http.speedtest",
+                            "status": "WARNING",
+                            "ticketReference": null,
+                            "expiresAt": null,
+                            "justification": null
+                          }
+                        ]
+                      },
+                      {
+                        "policySetName": "change-window",
+                        "enforcementLevel": "SOFT_MANDATORY",
+                        "violations": [
+                          {
+                            "ruleId": "outside_change_window",
+                            "address": "global",
+                            "message": "apply outside the change window",
+                            "status": "FAILED",
+                            "ticketReference": null,
+                            "expiresAt": null,
+                            "justification": null
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                }
+                """;
+
+        when(storageTypeService.getContext(456)).thenReturn(contextJson);
+        when(policyEvaluationRepository.findByJob(job)).thenReturn(List.of());
+
+        String summary = prCommentService.renderPolicyGuardrailsSummary(job).orElseThrow();
+
+        assertTrue(summary.contains("| `destructive-changes` | ℹ️ Advisory | `uptimekuma_monitor_http.speedtest` | "
+                + "Rule: `resource_deleted`<br/>plan destroys uptimekuma_monitor_http.speedtest |"));
+        assertTrue(summary.contains("| `change-window` | ⚠️ **FAILED** (Soft) | `global` |"));
+        assertFalse(summary.contains("❌ **FAILED** (Hard)"));
+        assertFalse(summary.contains("null"));
+    }
+
+    @Test
     void testPolicyCommitStatusGitHubExemptedSuccess() {
         Job job = createTestJob(VcsType.GITHUB);
 
