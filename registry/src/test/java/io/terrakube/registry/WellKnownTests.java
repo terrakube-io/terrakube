@@ -20,6 +20,16 @@ public class WellKnownTests extends OpenRegistryApplicationTests {
     }
 
     @Test
+    void wellKnownIsPubliclyCacheable() {
+        when()
+                .get("/.well-known/terraform.json")
+                .then()
+                .statusCode(HttpStatus.SC_OK)
+                .header("Cache-Control", "max-age=300, public")
+                .header("ETag", org.hamcrest.Matchers.notNullValue());
+    }
+
+    @Test
     void brokerDisabled_pointsAtDex() {
         when()
                 .get("/.well-known/terraform.json")

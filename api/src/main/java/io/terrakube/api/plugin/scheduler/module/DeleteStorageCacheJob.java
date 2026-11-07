@@ -13,6 +13,8 @@ import io.terrakube.api.plugin.storage.StorageTypeService;
 @Component
 public class DeleteStorageCacheJob implements Job {
 
+    public static final String JOB_PREFIX = "TerrakubeV2_ModuleDeleteStorage_";
+
     StorageTypeService storageTypeService;
 
     @Override

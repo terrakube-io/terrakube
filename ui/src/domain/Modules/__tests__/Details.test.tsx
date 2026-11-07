@@ -1,8 +1,10 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { ModuleDetails } from "../Details";
 
 const permissions = { manageModule: false };
+const mockModuleAttributes: Record<string, unknown> = {};
+const mockPost = jest.fn(() => Promise.resolve({}));
 
 jest.mock("@/modules/permissions/useOrgPermissions", () => ({
   useOrgPermissions: () => ({ permissions, loading: false }),
@@ -23,6 +25,7 @@ jest.mock("../../../config/axiosConfig", () => ({
                   provider: "aws",
                   registryPath: "acme/network/aws",
                   latestVersion: "1.0.0",
+                  ...mockModuleAttributes,
                 },
               },
               included: [{ id: "v1", type: "version", attributes: { version: "1.0.0" } }],
@@ -30,6 +33,7 @@ jest.mock("../../../config/axiosConfig", () => ({
       }),
     delete: jest.fn(),
     patch: jest.fn(),
+    post: (...args: unknown[]) => mockPost(...(args as [])),
   },
   getErrorMessage: (error: Error) => error.message,
 }));
@@ -57,5 +61,47 @@ describe("ModuleDetails delete action", () => {
     fireEvent.click(item);
     if (allowed) expect(await screen.findByRole("dialog")).toBeInTheDocument();
     else expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+});
+
+describe("ModuleDetails version refresh", () => {
+  afterEach(() => {
+    Object.keys(mockModuleAttributes).forEach((key) => delete mockModuleAttributes[key]);
+    mockPost.mockClear();
+  });
+
+  it("shows why the last refresh failed", async () => {
+    mockModuleAttributes.lastRefreshError = "auth: https://github.com/acme/network.git: not authorized";
+    renderPage();
+
+    expect(await screen.findByText("Could not read versions from the repository")).toBeInTheDocument();
+    expect(screen.getByText("auth: https://github.com/acme/network.git: not authorized")).toBeInTheDocument();
+  });
+
+  it("shows no warning when the last refresh worked", async () => {
+    mockModuleAttributes.lastRefresh = new Date().toISOString();
+    renderPage();
+
+    expect(await screen.findByText("Last checked")).toBeInTheDocument();
+    expect(screen.queryByText("Could not read versions from the repository")).not.toBeInTheDocument();
+  });
+
+  it("queues a version check through the sync endpoint", async () => {
+    permissions.manageModule = true;
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Check for new versions" }));
+
+    await waitFor(() =>
+      expect(mockPost).toHaveBeenCalledWith("https://terrakube-api.test/module/v1/organization/org-1/module/m1/sync")
+    );
+  });
+
+  it("offers the version check only with manageModule", async () => {
+    permissions.manageModule = false;
+    renderPage();
+
+    expect(await screen.findByText("Last checked")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Check for new versions" })).not.toBeInTheDocument();
   });
 });

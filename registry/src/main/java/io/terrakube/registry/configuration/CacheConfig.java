@@ -32,6 +32,15 @@ public class CacheConfig {
     /** Parsed inputs/outputs/resources of one module version (and submodule). Immutable per version. */
     public static final String MODULE_DETAILS_CACHE = "getModuleDetails";
 
+    /** Version list of one provider with its platforms. Short-lived so a new release shows up quickly. */
+    public static final String PROVIDER_VERSIONS_CACHE = "getProviderVersions";
+
+    /** Download details of one provider version, os and arch. */
+    public static final String PROVIDER_FILE_CACHE = "getProviderFileInformation";
+
+    /** Organization name to id, looked up on every authorized module request. */
+    public static final String ORGANIZATION_ID_CACHE = "getOrganizationId";
+
     @Bean
     public CacheManager cacheManager(OpenRegistryProperties openRegistryProperties) {
         Duration versionsTtl = Duration.ofSeconds(openRegistryProperties.getModuleVersionsCacheTtlSeconds());
@@ -39,7 +48,8 @@ public class CacheConfig {
 
         // Naming the caches keeps the manager static: an unknown @Cacheable name then fails loudly.
         CaffeineCacheManager cacheManager = new CaffeineCacheManager(MODULE_VERSIONS_CACHE,
-                MODULE_VERSION_PATH_CACHE, MODULE_VERSION_REMOVED_CACHE, PROVIDER_WARNINGS_CACHE, MODULE_DETAILS_CACHE);
+                MODULE_VERSION_PATH_CACHE, MODULE_VERSION_REMOVED_CACHE, PROVIDER_WARNINGS_CACHE, MODULE_DETAILS_CACHE,
+                PROVIDER_VERSIONS_CACHE, PROVIDER_FILE_CACHE, ORGANIZATION_ID_CACHE);
         cacheManager.setCaffeine(Caffeine.newBuilder().recordStats()
                 .expireAfterWrite(10, TimeUnit.MINUTES)
                 .maximumSize(1000));
@@ -52,6 +62,17 @@ public class CacheConfig {
         cacheManager.registerCustomCache(MODULE_VERSION_REMOVED_CACHE, Caffeine.newBuilder().recordStats()
                 .expireAfterWrite(30, TimeUnit.SECONDS)
                 .maximumSize(10000)
+                .build());
+        Duration providerTtl = Duration.ofSeconds(openRegistryProperties.getProviderCacheTtlSeconds());
+        for (String name : new String[]{PROVIDER_VERSIONS_CACHE, PROVIDER_FILE_CACHE}) {
+            cacheManager.registerCustomCache(name, Caffeine.newBuilder().recordStats()
+                    .expireAfterWrite(providerTtl)
+                    .maximumSize(1000)
+                    .build());
+        }
+        cacheManager.registerCustomCache(ORGANIZATION_ID_CACHE, Caffeine.newBuilder().recordStats()
+                .expireAfterWrite(60, TimeUnit.SECONDS)
+                .maximumSize(1000)
                 .build());
         return cacheManager;
     }

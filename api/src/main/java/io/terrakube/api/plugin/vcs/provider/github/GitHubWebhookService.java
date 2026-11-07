@@ -41,6 +41,7 @@ import lombok.extern.slf4j.Slf4j;
 public class GitHubWebhookService extends WebhookServiceBase {
 
     private static final String PATH_COMMENT = "comment";
+    private static final String REF_TAGS_PREFIX = "refs/tags/";
 
     private final ObjectMapper objectMapper;
     private final TokenService tokenService;
@@ -83,10 +84,15 @@ public class GitHubWebhookService extends WebhookServiceBase {
 
         // Handle push event
         if ("push".equals(event)) {
-            // Extract branch from the ref
-            String[] ref = rootNode.path("ref").asText().split("/");
+            // Extract branch from the ref. A tag push keeps its tag name as the branch too: workspaces have
+            // always matched tag pushes that way.
+            String rawRef = rootNode.path("ref").asText();
+            String[] ref = rawRef.split("/");
             String[] extractedBranch = Arrays.copyOfRange(ref, 2, ref.length);
             result.setBranch(String.join("/", extractedBranch));
+            if (rawRef.startsWith(REF_TAGS_PREFIX)) {
+                result.setTag(rawRef.substring(REF_TAGS_PREFIX.length()));
+            }
 
             // Extract the user who triggered the webhook
             String pusher = rootNode.path("sender").path("login").asText("");
@@ -147,9 +153,19 @@ public class GitHubWebhookService extends WebhookServiceBase {
                 result.setValid(true);
                 result.setRelease(true);
                 result.setBranch(rootNode.path("release").path("tag_name").asText());
+                result.setTag(rootNode.path("release").path("tag_name").asText());
             } else {
                 result.setValid(false);
                 log.error("No valid github release event: {}", action);
+            }
+        } else if ("create".equals(event)) {
+            // Sent for new branches and tags. Only tags matter, and only to modules.
+            if ("tag".equals(rootNode.path("ref_type").asText())) {
+                result.setTag(rootNode.path("ref").asText());
+                result.setCreatedBy(rootNode.path("sender").path("login").asText(""));
+            } else {
+                result.setValid(false);
+                log.info("Ignoring github create event for a {}", rootNode.path("ref_type").asText());
             }
         } else if ("issue_comment".equals(event)) {
             String action = rootNode.path("action").asText();
@@ -531,19 +547,21 @@ public class GitHubWebhookService extends WebhookServiceBase {
         }
     }
 
+    /** @param tagEvents also subscribe to "create", so modules of the repository hear about new tags */
     public String createOrUpdateRepoWebhook(RepoWebhook repoWebhook, Set<WebhookEventType> eventTypes,
-            boolean hasPrWorkflow) {
+            boolean hasPrWorkflow, boolean tagEvents) {
         String id = repoWebhook.getRemoteHookId();
         String webhookUrl = String.format("https://%s/webhook/v2/%s", hostname, repoWebhook.getId().toString());
         String[] ownerAndRepo = extractOwnerAndRepo(repoWebhook.getRepositoryUrl());
 
-        String events = eventTypes.stream()
-                .map(e -> "\"" + e.name().toLowerCase() + "\"")
-                .collect(Collectors.joining(","));
-
-        if (hasPrWorkflow && !events.contains("issue_comment")) {
-            events += ",\"issue_comment\"";
+        List<String> eventNames = new ArrayList<>(eventTypes.stream().map(e -> e.name().toLowerCase()).toList());
+        if (hasPrWorkflow && !eventNames.contains("issue_comment")) {
+            eventNames.add("issue_comment");
         }
+        if (tagEvents) {
+            eventNames.add("create");
+        }
+        String events = eventNames.stream().map(e -> "\"" + e + "\"").collect(Collectors.joining(","));
 
         String hooksUrl = repoWebhook.getVcs().getApiUrl() + "/repos/" + String.join("/", ownerAndRepo) + "/hooks";
 

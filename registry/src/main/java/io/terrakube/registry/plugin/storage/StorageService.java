@@ -14,8 +14,8 @@ public interface StorageService {
     /**
      * Returns a short-lived, directly-downloadable URL for the module ZIP when the storage
      * backend supports redirecting clients instead of proxying bytes through the registry pod.
-     * Empty by default; only AWS S3 storage currently supports this, and only when explicitly
-     * enabled.
+     * Empty by default; S3, Azure Blob and GCS support this when their presignedRedirectEnabled
+     * flag is on.
      */
     default Optional<URI> getPresignedDownloadUrl(String organizationName, String moduleName, String providerName,
             String moduleVersion) {

@@ -464,7 +464,7 @@ public class GitHubWebhookServiceTest {
         }
 
         private String sync() {
-            return subjectWithRestTemplate.createOrUpdateRepoWebhook(repoWebhook, EnumSet.of(WebhookEventType.PUSH), false);
+            return subjectWithRestTemplate.createOrUpdateRepoWebhook(repoWebhook, EnumSet.of(WebhookEventType.PUSH), false, false);
         }
 
         @Test
@@ -477,10 +477,10 @@ public class GitHubWebhookServiceTest {
             repoWebhook.setRemoteHookId("111");
 
             org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class,
-                    () -> noToken.createOrUpdateRepoWebhook(repoWebhook, EnumSet.of(WebhookEventType.PUSH), false));
+                    () -> noToken.createOrUpdateRepoWebhook(repoWebhook, EnumSet.of(WebhookEventType.PUSH), false, false));
             repoWebhook.setRemoteHookId(null);
             org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class,
-                    () -> noToken.createOrUpdateRepoWebhook(repoWebhook, EnumSet.of(WebhookEventType.PUSH), false));
+                    () -> noToken.createOrUpdateRepoWebhook(repoWebhook, EnumSet.of(WebhookEventType.PUSH), false, false));
         }
 
         @Test
@@ -564,6 +564,100 @@ public class GitHubWebhookServiceTest {
             assertEquals("333", sync());
 
             wireMockServer.verify(0, patchRequestedFor(urlPathMatching(HOOKS + "/.*")));
+        }
+
+        @Test
+        void tagEventsSubscribeCreate() throws Exception {
+            wireMockServer.stubFor(post(urlEqualTo(HOOKS))
+                    .willReturn(aResponse().withStatus(201).withHeader("Content-Type", "application/json")
+                            .withBody("{\"id\":333}")));
+
+            subjectWithRestTemplate.createOrUpdateRepoWebhook(repoWebhook, EnumSet.of(WebhookEventType.PUSH), true, true);
+
+            var request = wireMockServer.findAll(postRequestedFor(urlEqualTo(HOOKS))).getFirst();
+            assertThat(new ObjectMapper().readTree(request.getBodyAsString()).path("events").toString())
+                    .isEqualTo("[\"push\",\"issue_comment\",\"create\"]");
+        }
+
+        @Test
+        void modulesAloneSubscribeOnlyCreate() throws Exception {
+            wireMockServer.stubFor(post(urlEqualTo(HOOKS))
+                    .willReturn(aResponse().withStatus(201).withHeader("Content-Type", "application/json")
+                            .withBody("{\"id\":333}")));
+
+            subjectWithRestTemplate.createOrUpdateRepoWebhook(repoWebhook, EnumSet.noneOf(WebhookEventType.class),
+                    false, true);
+
+            var request = wireMockServer.findAll(postRequestedFor(urlEqualTo(HOOKS))).getFirst();
+            assertThat(new ObjectMapper().readTree(request.getBodyAsString()).path("events").toString())
+                    .isEqualTo("[\"create\"]");
+        }
+    }
+
+    @Nested
+    class TagEvents {
+
+        private WebhookResult parse(String event, String payload) {
+            return subject.parseGitHubPayload(payload, Map.of("x-github-event", event));
+        }
+
+        @Test
+        void pushOfATagSetsTheTagAndKeepsTheBranchWorkspacesMatchOn() {
+            WebhookResult result = parse("push", """
+                    {"ref": "refs/tags/v1.2.3", "sender": {"login": "octocat"},
+                     "head_commit": {"id": "abc123"}, "commits": []}
+                    """);
+
+            assertTrue(result.isValid());
+            assertEquals("v1.2.3", result.getTag());
+            assertEquals("v1.2.3", result.getBranch());
+            assertEquals("push", result.getEvent());
+            assertThat(result.isModuleOnly()).isFalse();
+        }
+
+        @Test
+        void pushOfABranchHasNoTag() {
+            WebhookResult result = parse("push", """
+                    {"ref": "refs/heads/release/v1", "head_commit": {"id": "abc123"}, "commits": []}
+                    """);
+
+            assertTrue(result.isValid());
+            assertNull(result.getTag());
+            assertEquals("release/v1", result.getBranch());
+        }
+
+        @Test
+        void createOfATagSetsTheTagForModulesOnly() {
+            WebhookResult result = parse("create", """
+                    {"ref": "v2.0.0", "ref_type": "tag", "sender": {"login": "octocat"}}
+                    """);
+
+            assertTrue(result.isValid());
+            assertEquals("v2.0.0", result.getTag());
+            assertTrue(result.isModuleOnly());
+        }
+
+        @Test
+        void createOfABranchIsIgnored() {
+            WebhookResult result = parse("create", """
+                    {"ref": "feature", "ref_type": "branch"}
+                    """);
+
+            assertThat(result.isValid()).isFalse();
+            assertNull(result.getTag());
+        }
+
+        @Test
+        void releaseCreatedSetsTheTag() {
+            WebhookResult result = parse("release", """
+                    {"action": "created", "repository": {"full_name": "owner/repo"},
+                     "release": {"tag_name": "v3.1.0"}}
+                    """);
+
+            assertTrue(result.isValid());
+            assertTrue(result.isRelease());
+            assertEquals("v3.1.0", result.getTag());
+            assertEquals("v3.1.0", result.getBranch());
         }
     }
 }

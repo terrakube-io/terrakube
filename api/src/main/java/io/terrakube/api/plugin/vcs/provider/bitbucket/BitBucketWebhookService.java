@@ -165,6 +165,7 @@ public class BitBucketWebhookService extends WebhookServiceBase {
 
             String tagName = newNode.path("name").asText();
             result.setBranch(tagName);
+            result.setTag(tagName);
             result.setRelease(true);
 
             JsonNode targetNode = newNode.path("target");

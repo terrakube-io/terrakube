@@ -130,6 +130,7 @@ public class ProviderServiceImpl implements ProviderService {
 
     private static final int MAX_LISTED_VERSIONS = 5;
 
+    @Cacheable(cacheNames = CacheConfig.PROVIDER_VERSIONS_CACHE, sync = true)
     @Override
     public List<VersionDTO> getAvailableVersions(String organization, String provider) {
         log.info("Organization Provider: {} {}", organization, provider);
@@ -182,6 +183,7 @@ public class ProviderServiceImpl implements ProviderService {
                 + (deprecated.size() == 1 ? " is" : " are") + " deprecated. See the private registry for details.");
     }
 
+    @Cacheable(cacheNames = CacheConfig.PROVIDER_FILE_CACHE, sync = true)
     @Override
     public FileDTO getFileInformation(String organization, String provider, String version, String os, String arch) {
         FileDTO fileDTO = new FileDTO();

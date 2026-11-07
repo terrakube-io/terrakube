@@ -6,14 +6,11 @@ import org.quartz.*;
 import org.springframework.stereotype.Service;
 import io.terrakube.api.plugin.scheduler.JobStatusChangeService;
 import io.terrakube.api.plugin.scheduler.ScheduleJobService;
-import io.terrakube.api.plugin.scheduler.module.ModuleRefreshService;
 import io.terrakube.api.plugin.scheduler.workspace.DeleteStorageBackendJob;
 import io.terrakube.api.repository.JobRepository;
-import io.terrakube.api.repository.ModuleRepository;
 import io.terrakube.api.repository.ScheduleRepository;
 import io.terrakube.api.repository.WorkspaceRepository;
 import io.terrakube.api.rs.Organization;
-import io.terrakube.api.rs.module.Module;
 import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.workspace.Workspace;
 import io.terrakube.api.rs.workspace.schedule.Schedule;
@@ -30,10 +27,6 @@ public class SoftDeleteService {
     private static final String PREFIX_JOB_MODULE_DELETE_STORAGE="TerrakubeV2_WorkspaceDeleteStorage";
 
     ScheduleJobService scheduleJobService;
-
-    ModuleRefreshService moduleRefreshService;
-
-    ModuleRepository moduleRepository;
 
     ScheduleRepository scheduleRepository;
 
@@ -118,7 +111,6 @@ public class SoftDeleteService {
 
     public void disableOrganization(Organization organization){
         log.info("Disable Organization Id: {}", organization.getId().toString());
-        disableOrganizationModules(organization);
 
         for(Workspace workspace: organization.getWorkspace()){
             log.info("Disable Workspace: {}", workspace.getId().toString());
@@ -127,17 +119,5 @@ public class SoftDeleteService {
             workspaceRepository.save(workspace);
         }
 
-    }
-
-    private void disableOrganizationModules(Organization organization) {
-        for (Module module : moduleRepository.findByOrganizationId(organization.getId())) {
-            try {
-                log.info("Disable module refresh schedule for module {}", module.getId());
-                moduleRefreshService.deleteTask(module.getId().toString());
-            } catch (SchedulerException e) {
-                log.error("Failed to delete module refresh task for module {}, error {}", module.getId(),
-                        e.getMessage());
-            }
-        }
     }
 }
