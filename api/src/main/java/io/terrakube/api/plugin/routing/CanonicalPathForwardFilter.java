@@ -3,6 +3,7 @@ package io.terrakube.api.plugin.routing;
 import java.io.IOException;
 import java.util.Locale;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -23,6 +24,11 @@ import jakarta.servlet.http.HttpServletResponse;
  * <p>The filter runs before Spring Security, so the security chain only ever evaluates the legacy
  * path on the FORWARD dispatch and authorization is identical for both spellings. Because it also
  * runs before Spring Security's request firewall, it rejects suspicious raw paths itself.
+ *
+ * <p>Registered only in single-domain mode (TerrakubePublicUrl set), so split-domain installs do
+ * not grow a second spelling of every path that ingress or WAF rules would not match.
+ *
+ * <p>A near-identical copy lives in registry/src/main/java/io/terrakube/registry/routing/CanonicalPathForwardFilter.java; keep the two in step.
  */
 public class CanonicalPathForwardFilter extends OncePerRequestFilter {
 
@@ -69,6 +75,7 @@ public class CanonicalPathForwardFilter extends OncePerRequestFilter {
     }
 
     @Configuration
+    @ConditionalOnExpression("!'${io.terrakube.public-url:}'.isBlank()")
     static class Registration {
         @Bean
         FilterRegistrationBean<CanonicalPathForwardFilter> canonicalPathForwardFilter() {

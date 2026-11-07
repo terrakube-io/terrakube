@@ -16,6 +16,7 @@ import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.http.HttpStatus;
+import org.springframework.test.context.TestPropertySource;
 
 import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.job.Job;
@@ -27,6 +28,10 @@ import io.terrakube.api.rs.workspace.Workspace;
  * Live log streams (SSE, async dispatch) and the GraphQL WebSocket must work when reached through
  * the canonical /api prefix, which forwards before Spring Security.
  */
+@TestPropertySource(properties = {
+    "io.terrakube.public-url=https://app.example.com",
+    "io.terrakube.hostname="
+})
 class StreamingUnderForwardTests extends ServerApplicationTests {
 
     @ParameterizedTest

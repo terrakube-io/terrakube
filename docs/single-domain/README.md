@@ -14,3 +14,11 @@ hostname, routed by path. Setup, configuration and migration are documented at
 
 When you add a controller under a new root path, add the root to the api (or registry) entry's
 `served_roots`. New root paths are served on the shared host as `/api/<root>` automatically.
+
+The `/api/<legacy>` aliases exist only when `TerrakubePublicUrl` is set. Split-domain installs serve
+the legacy paths alone, so ingress or WAF rules that match those paths keep covering every
+endpoint. `CanonicalPathForwardFilter` exists in both `api` and `registry`; keep the two copies in
+step.
+
+`/callback/` and `/webhook/` stay on the shared host as legacy paths because VCS providers have
+those URLs registered. Do not move them in a later release.

@@ -5,6 +5,8 @@ import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.equalTo;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * Pins the split-domain discovery document (TerrakubePublicUrl unset): it must stay exactly as in
@@ -24,5 +26,14 @@ class WellKnownSplitDomainTests extends ServerApplicationTests {
                 .body("'login.v1'.authz", equalTo("http://localhost:5556/dev/auth?scope=openid+profile+email+offline_access+groups"))
                 .body("'login.v1'.token", equalTo("http://localhost:5556/dev/token"))
                 .body("'login.v1'.ports", contains(10000, 10001));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"/api/pat/v1", "/api/access-token/v1/teams", "/api/remote/tfe/v2/ping"})
+    void canonicalAliasesAreOffWithoutPublicUrl(String path) {
+        // Split-domain installs must not grow /api/<legacy> next to the legacy paths that ingress or
+        // WAF rules match on.
+        given().headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_ADMIN"))
+                .when().get(path).then().statusCode(404);
     }
 }
