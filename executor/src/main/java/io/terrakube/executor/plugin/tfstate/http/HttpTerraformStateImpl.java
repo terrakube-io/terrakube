@@ -92,6 +92,11 @@ public class HttpTerraformStateImpl implements TerraformState {
         return httpBackend;
     }
 
+    @Override
+    public boolean rejectsBackendConfigArguments() {
+        return true;
+    }
+
     private String resolveScopedToken(String organizationId, String workspaceId, String jobId, String stepId) {
         if (workspaceSecurity == null) {
             return "";
