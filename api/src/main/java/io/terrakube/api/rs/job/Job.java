@@ -213,6 +213,11 @@ public class Job extends GenericAuditFields {
     @Column(name = "pr_comment_id")
     private String prCommentId;
 
+    // The comment was published while the job waited for approval: the final result still has to replace it.
+    @Exclude
+    @Column(name = "pr_comment_interim", nullable = false)
+    private boolean prCommentInterim = false;
+
     @Exclude
     @Column(name = "command_comment_id")
     private String commandCommentId;

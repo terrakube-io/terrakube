@@ -66,12 +66,20 @@ public interface JobRepository extends JpaRepository<Job, Integer> {
     Optional<Job> findFirstByWorkspaceAndPrNumberAndIdNotAndAutoApplyFalseAndPrCommentIdIsNotNullOrderByIdDesc(
             Workspace workspace, Integer prNumber, int id);
 
+    boolean existsByWorkspaceAndPrNumberAndIdGreaterThanAndPrCommentId(
+            Workspace workspace, Integer prNumber, int id, String prCommentId);
+
     // Only the PR comment columns, so a service that holds an old copy of the job cannot write the rest of
     // it back, and a job that was pruned meanwhile is not written again (0 rows, not a new row).
     @Transactional
     @Modifying(flushAutomatically = true)
     @Query("update job j set j.prCommentId = :commentId, j.prCommentError = :error where j.id = :jobId")
     int updatePrComment(@Param("jobId") int jobId, @Param("commentId") String commentId, @Param("error") String error);
+
+    @Transactional
+    @Modifying(flushAutomatically = true)
+    @Query("update job j set j.prCommentInterim = :interim where j.id = :jobId")
+    int updatePrCommentInterim(@Param("jobId") int jobId, @Param("interim") boolean interim);
 
     // Bulk update on purpose: the plan artifacts are already deleted when this runs, after the job's
     // own update has committed, so it must not trigger the job's hooks again.
