@@ -18,6 +18,7 @@ import org.mockito.MockitoAnnotations;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -41,6 +42,9 @@ class WebhookTests extends ServerApplicationTests {
     private WebhookEventRepository webhookEventRepository;
 
     private String workspaceIdCreated;
+    private final List<UUID> webhookIdsCreated = new ArrayList<>();
+    private final List<UUID> eventIdsCreated = new ArrayList<>();
+    private final List<UUID> workspaceIdsCreated = new ArrayList<>();
     @Autowired
     private WorkspaceRepository workspaceRepository;
 
@@ -53,11 +57,30 @@ class WebhookTests extends ServerApplicationTests {
 
     @org.junit.jupiter.api.AfterEach
     public void tearDown() {
+        for (UUID eventId : eventIdsCreated) {
+            webhookEventRepository.findById(eventId).ifPresent(webhookEventRepository::delete);
+        }
+        eventIdsCreated.clear();
+
+        for (UUID webhookId : webhookIdsCreated) {
+            webhookRepository.findById(webhookId).ifPresent(webhookRepository::delete);
+        }
+        webhookIdsCreated.clear();
+
+        for (UUID workspaceId : workspaceIdsCreated) {
+            workspaceRepository.findById(workspaceId).ifPresent(workspace -> {
+                workspace.setDeleted(true);
+                workspaceRepository.save(workspace);
+            });
+        }
+        workspaceIdsCreated.clear();
+
         if (workspaceIdCreated != null) {
             workspaceRepository.findById(UUID.fromString(workspaceIdCreated)).ifPresent(workspace -> {
                 workspace.setDeleted(true);
                 workspaceRepository.save(workspace);
             });
+            workspaceIdCreated = null;
         }
     }
 
@@ -69,6 +92,8 @@ class WebhookTests extends ServerApplicationTests {
 
         String webhookId = UUID.randomUUID().toString();
         String eventId = UUID.randomUUID().toString();
+        webhookIdsCreated.add(UUID.fromString(webhookId));
+        eventIdsCreated.add(UUID.fromString(eventId));
 
         given()
                 .headers(
@@ -116,6 +141,8 @@ class WebhookTests extends ServerApplicationTests {
 
         String webhookId = UUID.randomUUID().toString();
         String eventId = UUID.randomUUID().toString();
+        webhookIdsCreated.add(UUID.fromString(webhookId));
+        eventIdsCreated.add(UUID.fromString(eventId));
 
         given()
                 .headers(
@@ -262,6 +289,8 @@ class WebhookTests extends ServerApplicationTests {
 
         workspace.setVcs(vcs);
         workspaceRepository.saveAndFlush(workspace);
+
+        workspaceIdsCreated.add(UUID.fromString(workspaceId));
 
         return workspaceId;
     }
