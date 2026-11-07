@@ -12,7 +12,7 @@ import {
   UpOutlined,
 } from "@ant-design/icons";
 import { Announcement, AnnouncementSeverity, PublicAnnouncement } from "./announcementTypes";
-import { formatSchedule } from "./announcementStorage";
+import { formatSchedule, formatFullSchedule } from "./announcementStorage";
 import "./AnnouncementBanner.css";
 
 const { Text } = Typography;
@@ -39,6 +39,7 @@ export const AnnouncementBanner = ({
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
   const config = SEVERITY_CONFIG[announcement.severity] || SEVERITY_CONFIG.info;
   const scheduleText = formatSchedule(announcement.startsAt, announcement.endsAt);
+  const fullScheduleText = formatFullSchedule(announcement.startsAt, announcement.endsAt);
   const hasScope = "scope" in announcement && Boolean(announcement.scope);
   const isGlobal = hasScope && (announcement as Announcement).scope === "GLOBAL";
 
@@ -60,7 +61,7 @@ export const AnnouncementBanner = ({
               {announcement.title}
             </Text>
             {scheduleText && (
-              <Tooltip title={scheduleText}>
+              <Tooltip title={fullScheduleText ?? scheduleText}>
                 <Tag icon={<ClockCircleOutlined />} className="announcement-schedule-tag">
                   {scheduleText}
                 </Tag>

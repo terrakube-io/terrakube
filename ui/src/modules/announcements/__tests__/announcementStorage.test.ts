@@ -5,6 +5,11 @@ import {
   clearDismissal,
   getDismissals,
   STORAGE_KEY,
+  formatSchedule,
+  formatFullSchedule,
+  isAnnouncementViewed,
+  markAnnouncementsViewed,
+  VIEWED_STORAGE_KEY,
 } from "../announcementStorage";
 import { Announcement } from "../announcementTypes";
 
@@ -86,5 +91,61 @@ describe("announcementStorage", () => {
     localStorage.setItem(STORAGE_KEY, "invalid-json{{");
     expect(getDismissals()).toEqual({});
     expect(isAnnouncementDismissed(sampleAnnouncement)).toBe(false);
+  });
+
+  describe("smart formatSchedule", () => {
+    test("formats same-day window compactly with hours and UTC", () => {
+      const schedule = formatSchedule("2026-11-05T02:00:00Z", "2026-11-05T04:00:00Z");
+      expect(schedule).toBe("Nov 5, 02:00 – 04:00 UTC");
+    });
+
+    test("formats same-year multi-day span compactly", () => {
+      const schedule = formatSchedule("2026-11-05T00:00:00Z", "2026-11-12T23:59:59Z");
+      expect(schedule).toBe("Nov 5 – Nov 12, 2026");
+    });
+
+    test("formats multi-year span compactly", () => {
+      const schedule = formatSchedule("2026-01-01T00:00:00Z", "2030-12-31T23:59:59Z");
+      expect(schedule).toBe("Jan 2026 – Dec 2030");
+    });
+
+    test("formats single startsAt", () => {
+      const schedule = formatSchedule("2026-11-05T00:00:00Z", null);
+      expect(schedule).toBe("From Nov 5, 2026");
+    });
+
+    test("formats single endsAt", () => {
+      const schedule = formatSchedule(null, "2030-12-31T23:59:59Z");
+      expect(schedule).toBe("Until Dec 31, 2030");
+    });
+
+    test("formatFullSchedule provides detailed UTC timestamps", () => {
+      const full = formatFullSchedule("2026-11-05T02:00:00Z", "2026-11-05T04:00:00Z");
+      expect(full).toContain("Thu, 05 Nov 2026 02:00:00 UTC – Thu, 05 Nov 2026 04:00:00 UTC");
+    });
+  });
+
+  describe("viewed announcements tracking", () => {
+    test("tracks viewed announcements and checks viewed state", () => {
+      expect(isAnnouncementViewed(sampleAnnouncement)).toBe(false);
+      markAnnouncementsViewed([sampleAnnouncement]);
+      expect(isAnnouncementViewed(sampleAnnouncement)).toBe(true);
+    });
+
+    test("becomes unviewed when announcement hash changes", () => {
+      markAnnouncementsViewed([sampleAnnouncement]);
+      expect(isAnnouncementViewed(sampleAnnouncement)).toBe(true);
+
+      const modified: Announcement = {
+        ...sampleAnnouncement,
+        title: "New Title",
+      };
+      expect(isAnnouncementViewed(modified)).toBe(false);
+    });
+
+    test("handles corrupted viewed storage gracefully", () => {
+      localStorage.setItem(VIEWED_STORAGE_KEY, "invalid-json{{");
+      expect(isAnnouncementViewed(sampleAnnouncement)).toBe(false);
+    });
   });
 });

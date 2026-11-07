@@ -1,9 +1,9 @@
-import { Drawer, Tabs, Button, Tag, Empty, Typography } from "antd";
+import { Drawer, Tabs, Button, Tag, Empty, Typography, Tooltip } from "antd";
 import { UndoOutlined, CloseOutlined } from "@ant-design/icons";
 import ReactMarkdown from "react-markdown";
 import rehypeSanitize from "rehype-sanitize";
 import { Announcement } from "./announcementTypes";
-import { formatSchedule } from "./announcementStorage";
+import { formatSchedule, formatFullSchedule } from "./announcementStorage";
 import "./AnnouncementDrawer.css";
 
 const { Text } = Typography;
@@ -36,7 +36,9 @@ export const AnnouncementDrawer = ({
           ) : (
             activeAnnouncements.map((a) => {
               const schedule = formatSchedule(a.startsAt, a.endsAt);
+              const fullSchedule = formatFullSchedule(a.startsAt, a.endsAt);
               const isGlobal = a.scope === "GLOBAL";
+              const isPinnedToBanner = a.severity === "critical" || a.severity === "warning";
               return (
                 <div
                   key={a.id}
@@ -51,6 +53,11 @@ export const AnnouncementDrawer = ({
                       >
                         {a.severity.toUpperCase()}
                       </Tag>
+                      {isPinnedToBanner && (
+                        <Tag color="orange" className="announcement-pinned-tag">
+                          Pinned to Banner
+                        </Tag>
+                      )}
                     </div>
                     {a.dismissible && (
                       <Button
@@ -67,7 +74,9 @@ export const AnnouncementDrawer = ({
                   </Text>
                   {schedule && (
                     <div className="announcement-drawer-schedule">
-                      <Text type="secondary">{schedule}</Text>
+                      <Tooltip title={fullSchedule ?? schedule}>
+                        <Text type="secondary">{schedule}</Text>
+                      </Tooltip>
                     </div>
                   )}
                   <div className="announcement-drawer-message">
@@ -100,6 +109,7 @@ export const AnnouncementDrawer = ({
                     <div className="announcement-drawer-badges">
                       <Tag color={isGlobal ? "blue" : "purple"}>{isGlobal ? "Platform" : "Organization"}</Tag>
                       <Tag>{a.severity.toUpperCase()}</Tag>
+                      <Tag>Dismissed</Tag>
                     </div>
                     <Button
                       type="link"
@@ -130,7 +140,7 @@ export const AnnouncementDrawer = ({
     <Drawer
       title="Announcements & Notices"
       placement="right"
-      size="large"
+      size="default"
       open={open}
       onClose={onClose}
       className="announcement-drawer"

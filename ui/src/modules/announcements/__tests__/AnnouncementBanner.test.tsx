@@ -21,7 +21,7 @@ describe("AnnouncementBanner", () => {
 
     expect(screen.getByText("Database Migration")).toBeInTheDocument();
     expect(screen.getByText("Platform")).toBeInTheDocument();
-    expect(screen.getByText(/02:00:00 UTC –/i)).toBeInTheDocument();
+    expect(screen.getByText("Nov 5, 02:00 – 04:00 UTC")).toBeInTheDocument();
 
     // Initially collapsed in compact mode
     expect(screen.queryByRole("link", { name: "Documentation" })).not.toBeInTheDocument();

@@ -1,6 +1,13 @@
 import { Announcement, DismissalRecord, PublicAnnouncement } from "./announcementTypes";
 
 export const STORAGE_KEY = "terrakube_dismissed_announcements";
+export const VIEWED_STORAGE_KEY = "terrakube_viewed_announcements";
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+function pad2(n: number) {
+  return n < 10 ? `0${n}` : `${n}`;
+}
 
 export function computeAnnouncementHash(announcement: Announcement | PublicAnnouncement): string {
   const content = `${announcement.id}_${announcement.updatedAt ?? ""}_${announcement.title}_${announcement.message}_${announcement.severity}_${announcement.startsAt ?? ""}_${announcement.endsAt ?? ""}`;
@@ -61,7 +68,30 @@ export function clearDismissal(announcementId: string): void {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
 }
 
-export function formatSchedule(startsAt?: string | null, endsAt?: string | null): string | null {
+export function getViewedAnnouncements(): Record<string, string> {
+  try {
+    const raw = localStorage.getItem(VIEWED_STORAGE_KEY);
+    if (!raw) return {};
+    return JSON.parse(raw);
+  } catch {
+    return {};
+  }
+}
+
+export function isAnnouncementViewed(announcement: Announcement | PublicAnnouncement): boolean {
+  const viewed = getViewedAnnouncements();
+  return viewed[announcement.id] === computeAnnouncementHash(announcement);
+}
+
+export function markAnnouncementsViewed(announcements: (Announcement | PublicAnnouncement)[]): void {
+  const current = getViewedAnnouncements();
+  for (const a of announcements) {
+    current[a.id] = computeAnnouncementHash(a);
+  }
+  localStorage.setItem(VIEWED_STORAGE_KEY, JSON.stringify(current));
+}
+
+export function formatFullSchedule(startsAt?: string | null, endsAt?: string | null): string | null {
   if (!startsAt && !endsAt) return null;
   const formatDate = (iso: string) => {
     try {
@@ -79,4 +109,51 @@ export function formatSchedule(startsAt?: string | null, endsAt?: string | null)
     return `From ${formatDate(startsAt)}`;
   }
   return `Until ${formatDate(endsAt!)}`;
+}
+
+export function formatSchedule(startsAt?: string | null, endsAt?: string | null): string | null {
+  if (!startsAt && !endsAt) return null;
+  const dStart = startsAt ? new Date(startsAt) : null;
+  const dEnd = endsAt ? new Date(endsAt) : null;
+
+  if (dStart && isNaN(dStart.getTime())) return startsAt ?? null;
+  if (dEnd && isNaN(dEnd.getTime())) return endsAt ?? null;
+
+  if (dStart && dEnd) {
+    const sYear = dStart.getUTCFullYear();
+    const eYear = dEnd.getUTCFullYear();
+    const sMonth = MONTHS[dStart.getUTCMonth()];
+    const eMonth = MONTHS[dEnd.getUTCMonth()];
+    const sDay = dStart.getUTCDate();
+    const eDay = dEnd.getUTCDate();
+    const sTime = `${pad2(dStart.getUTCHours())}:${pad2(dStart.getUTCMinutes())}`;
+    const eTime = `${pad2(dEnd.getUTCHours())}:${pad2(dEnd.getUTCMinutes())}`;
+
+    // Same day window (e.g. 2-hour maintenance):
+    if (sYear === eYear && dStart.getUTCMonth() === dEnd.getUTCMonth() && sDay === eDay) {
+      return `${sMonth} ${sDay}, ${sTime} – ${eTime} UTC`;
+    }
+    // Same year:
+    if (sYear === eYear) {
+      return `${sMonth} ${sDay} – ${eMonth} ${eDay}, ${sYear}`;
+    }
+    // Multi-year window (e.g. Jan 2026 – Dec 2030):
+    return `${sMonth} ${sYear} – ${eMonth} ${eYear}`;
+  }
+
+  if (dStart) {
+    const sYear = dStart.getUTCFullYear();
+    const sMonth = MONTHS[dStart.getUTCMonth()];
+    const sDay = dStart.getUTCDate();
+    return `From ${sMonth} ${sDay}, ${sYear}`;
+  }
+
+  if (dEnd) {
+    const eYear = dEnd.getUTCFullYear();
+    const eMonth = MONTHS[dEnd.getUTCMonth()];
+    const eDay = dEnd.getUTCDate();
+    return `Until ${eMonth} ${eDay}, ${eYear}`;
+  }
+
+  return null;
 }

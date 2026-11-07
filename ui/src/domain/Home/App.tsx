@@ -179,7 +179,7 @@ const AppLayout = () => {
   const segments = location.pathname.split("/").filter(Boolean);
   const urlOrgId = getOrgIdFromPathname(location.pathname);
   const urlOrgName = useOrganizationName(urlOrgId);
-  const { announcements } = useAnnouncements(urlOrgId);
+  const { bannerAnnouncements, dismissAnnouncement } = useAnnouncements(urlOrgId);
   // On organization URLs the name always belongs to the id in the URL, never to a previously visited organization.
   const currentOrgName = urlOrgId ? (urlOrgName ?? "") : organizationName;
   const noOrgContext =
@@ -265,7 +265,7 @@ const AppLayout = () => {
           workspaceManageState={workspaceManageState}
         />
         <Layout className="app-content-shell">
-          <AnnouncementTray announcements={announcements} />
+          <AnnouncementTray announcements={bannerAnnouncements} onDismissOverride={dismissAnnouncement} />
           <div className="app-content-scroll">
             {backendError ? (
               <ErrorState

@@ -1,12 +1,19 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { Announcement } from "./announcementTypes";
 import { fetchAnnouncements, filterAndSortAnnouncements } from "./announcementService";
-import { isAnnouncementDismissed, dismissAnnouncement, clearDismissal } from "./announcementStorage";
+import {
+  isAnnouncementDismissed,
+  dismissAnnouncement,
+  clearDismissal,
+  isAnnouncementViewed,
+  markAnnouncementsViewed,
+} from "./announcementStorage";
 
 export function useAnnouncements(currentOrgId?: string | null) {
   const [allAnnouncements, setAllAnnouncements] = useState<Announcement[]>([]);
   const [loading, setLoading] = useState(true);
   const [dismissTick, setDismissTick] = useState(0);
+  const [viewedTick, setViewedTick] = useState(0);
 
   const loadAnnouncements = useCallback(async () => {
     try {
@@ -35,9 +42,20 @@ export function useAnnouncements(currentOrgId?: string | null) {
     return orgFiltered.filter((a) => !isAnnouncementDismissed(a));
   }, [orgFiltered, dismissTick]);
 
+  // Top banners are reserved for Critical and Warning ambient broadcast alerts
+  const bannerAnnouncements = useMemo(() => {
+    return activeAnnouncements.filter((a) => a.severity === "critical" || a.severity === "warning");
+  }, [activeAnnouncements]);
+
   const dismissedAnnouncements = useMemo(() => {
     return orgFiltered.filter((a) => isAnnouncementDismissed(a));
   }, [orgFiltered, dismissTick]);
+
+  // Unread count: notices not yet viewed in drawer and NOT already pinned on screen
+  const unreadCount = useMemo(() => {
+    const bannerIds = new Set(bannerAnnouncements.map((b) => b.id));
+    return activeAnnouncements.filter((a) => !isAnnouncementViewed(a) && !bannerIds.has(a.id)).length;
+  }, [activeAnnouncements, bannerAnnouncements, viewedTick]);
 
   const handleDismiss = useCallback((a: Announcement) => {
     dismissAnnouncement(a);
@@ -49,13 +67,21 @@ export function useAnnouncements(currentOrgId?: string | null) {
     setDismissTick((t) => t + 1);
   }, []);
 
+  const handleMarkViewed = useCallback(() => {
+    markAnnouncementsViewed(activeAnnouncements);
+    setViewedTick((t) => t + 1);
+  }, [activeAnnouncements]);
+
   return {
     announcements: activeAnnouncements,
+    bannerAnnouncements,
     dismissedAnnouncements,
     allAnnouncements,
+    unreadCount,
     loading,
     refresh: loadAnnouncements,
     dismissAnnouncement: handleDismiss,
     restoreAnnouncement: handleRestore,
+    markViewed: handleMarkViewed,
   };
 }

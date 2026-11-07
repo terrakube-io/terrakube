@@ -42,6 +42,7 @@ describe("AnnouncementDrawer", () => {
     expect(screen.getByText("Scheduled Maintenance")).toBeInTheDocument();
     expect(screen.getByText("Platform")).toBeInTheDocument();
     expect(screen.getByText("WARNING")).toBeInTheDocument();
+    expect(screen.getByText("Pinned to Banner")).toBeInTheDocument();
     expect(screen.getByText("System upgrade tonight.")).toBeInTheDocument();
   });
 

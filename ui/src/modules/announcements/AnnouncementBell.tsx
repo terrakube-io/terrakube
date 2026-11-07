@@ -11,10 +11,13 @@ export interface AnnouncementBellProps {
 
 export const AnnouncementBell = ({ organizationId }: AnnouncementBellProps) => {
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const { announcements, dismissedAnnouncements, restoreAnnouncement, dismissAnnouncement } =
+  const { announcements, dismissedAnnouncements, restoreAnnouncement, dismissAnnouncement, unreadCount, markViewed } =
     useAnnouncements(organizationId);
 
-  const activeCount = announcements.length;
+  const handleOpenDrawer = () => {
+    setDrawerOpen(true);
+    markViewed();
+  };
 
   return (
     <>
@@ -23,10 +26,10 @@ export const AnnouncementBell = ({ organizationId }: AnnouncementBellProps) => {
           type="button"
           className="announcement-bell-button"
           aria-label="Announcements & Notices"
-          onClick={() => setDrawerOpen(true)}
+          onClick={handleOpenDrawer}
           data-testid="announcement-bell-button"
         >
-          <Badge count={activeCount} size="small" offset={[2, -2]}>
+          <Badge count={unreadCount} size="small" offset={[2, -2]}>
             <BellOutlined className="announcement-bell-icon" />
           </Badge>
         </button>
