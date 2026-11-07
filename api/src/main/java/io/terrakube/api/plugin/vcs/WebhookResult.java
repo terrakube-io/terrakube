@@ -3,7 +3,6 @@ package io.terrakube.api.plugin.vcs;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import io.terrakube.api.plugin.execution.WorkspaceBranchPolicy;
-import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.ToString;
@@ -15,7 +14,6 @@ import java.util.List;
 @Getter
 @Setter
 @ToString
-@EqualsAndHashCode
 @Slf4j
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class WebhookResult {

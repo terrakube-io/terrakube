@@ -4,17 +4,25 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 
+import java.util.ArrayList;
 import java.util.Map;
+import java.util.UUID;
 
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import io.terrakube.api.plugin.vcs.WebhookProperties;
 import io.terrakube.api.plugin.vcs.WebhookResult;
 import io.terrakube.api.plugin.vcs.provider.azdevops.AzDevOpsWebhookService.ChangesPage;
 import io.terrakube.api.rs.job.JobStatus;
+import io.terrakube.api.rs.vcs.Vcs;
+import io.terrakube.api.rs.workspace.Workspace;
 
 public class AzDevOpsWebhookServiceTest {
 
@@ -161,6 +169,76 @@ public class AzDevOpsWebhookServiceTest {
         assertEquals("v1.0", subject.stripRefPrefix("refs/tags/v1.0"));
         assertEquals("feature/azure", subject.stripRefPrefix("feature/azure"));
         assertNull(subject.stripRefPrefix(null));
+    }
+
+    @Test
+    public void processWebhookDoesNotCallFetchPrTargetBranchWhenFlagIsFalse() {
+        WebhookProperties properties = new WebhookProperties();
+        properties.setPrBaseBranchFilter(false);
+        AzDevOpsWebhookService service = Mockito.spy(new AzDevOpsWebhookService(new ObjectMapper(), null, properties));
+        Mockito.doReturn(new ArrayList<>()).when(service).getPullRequestChanges(any(), any(), any(), anyInt());
+        Mockito.doReturn("main").when(service).fetchPrTargetBranch(any(), any(), any(), anyInt());
+
+        Workspace workspace = new Workspace();
+        workspace.setId(UUID.randomUUID());
+        workspace.setSource("https://dev.azure.com/myorg/myproject/_git/myrepo");
+        Vcs vcs = new Vcs();
+        workspace.setVcs(vcs);
+
+        String payload = """
+                {
+                  "eventType": "git.pullrequest.created",
+                  "resource": {
+                    "pullRequestId": 10,
+                    "sourceRefName": "refs/heads/feature/azure",
+                    "lastMergeSourceCommit": {"commitId": "commit123"},
+                    "repository": {"id": "repo-id-123"}
+                  }
+                }
+                """;
+
+        String token = "dummyToken";
+        WebhookResult result = service.processWebhook(payload, Map.of("x-terrakube-token", token), token, workspace);
+
+        assertEquals("pull_request", result.getEvent());
+        assertEquals("feature/azure", result.getBranch());
+        assertNull(result.getBaseBranch());
+        Mockito.verify(service, Mockito.never()).fetchPrTargetBranch(any(), any(), any(), anyInt());
+    }
+
+    @Test
+    public void processWebhookCallsFetchPrTargetBranchWhenFlagIsTrueAndTargetMissing() {
+        WebhookProperties properties = new WebhookProperties();
+        properties.setPrBaseBranchFilter(true);
+        AzDevOpsWebhookService service = Mockito.spy(new AzDevOpsWebhookService(new ObjectMapper(), null, properties));
+        Mockito.doReturn(new ArrayList<>()).when(service).getPullRequestChanges(any(), any(), any(), anyInt());
+        Mockito.doReturn("main").when(service).fetchPrTargetBranch(any(), any(), any(), anyInt());
+
+        Workspace workspace = new Workspace();
+        workspace.setId(UUID.randomUUID());
+        workspace.setSource("https://dev.azure.com/myorg/myproject/_git/myrepo");
+        Vcs vcs = new Vcs();
+        workspace.setVcs(vcs);
+
+        String payload = """
+                {
+                  "eventType": "git.pullrequest.created",
+                  "resource": {
+                    "pullRequestId": 10,
+                    "sourceRefName": "refs/heads/feature/azure",
+                    "lastMergeSourceCommit": {"commitId": "commit123"},
+                    "repository": {"id": "repo-id-123"}
+                  }
+                }
+                """;
+
+        String token = "dummyToken";
+        WebhookResult result = service.processWebhook(payload, Map.of("x-terrakube-token", token), token, workspace);
+
+        assertEquals("pull_request", result.getEvent());
+        assertEquals("feature/azure", result.getBranch());
+        assertEquals("main", result.getBaseBranch());
+        Mockito.verify(service, Mockito.times(1)).fetchPrTargetBranch(any(), any(), any(), anyInt());
     }
 
     @Nested

@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -1951,6 +1952,103 @@ class RepoWebhookServiceTest {
             verify(gitHubWebhookService, never()).deleteRepoWebhook(any());
             verify(gitLabWebhookService, never()).deleteRepoWebhook(any());
             assertThat(webhook.getRemoteHookId()).isNull();
+        }
+
+        @Test
+        void v2WebhookAzDevOpsPullRequestDoesNotFetchTargetBranchWhenFlagIsFalse() throws Exception {
+            webhookProperties.setPrBaseBranchFilter(false);
+            String repoUrl = "https://dev.azure.com/org/proj/repo";
+            String payload = "{\"eventType\":\"git.pullrequest.created\"}";
+            RepoWebhook rw = azDevOpsRepoWebhookWith(repoUrl, "secret");
+
+            Workspace ws = azDevOpsWorkspaceWithSource(repoUrl);
+            ws.setName("az-ws");
+            ws.setBranch("main");
+            Webhook wh = new Webhook();
+            wh.setMigratedV2(true);
+            WebhookEvent ev = new WebhookEvent();
+            ev.setEvent(WebhookEventType.PULL_REQUEST);
+            ev.setBranch(".*");
+            ev.setTemplateId("az-plan");
+            wh.setEvents(List.of(ev));
+            ws.setWebhook(wh);
+
+            when(workspaceRepository.findByNormalizedSourceWithMigratedWebhook(repoUrl))
+                    .thenReturn(List.of(ws));
+
+            WebhookResult prResult = new WebhookResult();
+            prResult.setEvent("pull_request");
+            prResult.setValid(true);
+            prResult.setBranch("feature/az");
+            prResult.setBaseBranch(null); // missing targetRefName
+            prResult.setPrNumber(50);
+            prResult.setFileChanges(List.of("main.tf"));
+            when(azDevOpsWebhookService.parseAzDevOpsPayload(eq(payload), any())).thenReturn(prResult);
+
+            subject.processClaimedDelivery(rw, payload, Map.of());
+
+            // With flag off, fetchPrTargetBranch must NEVER be called
+            verify(azDevOpsWebhookService, never()).fetchPrTargetBranch(any(), any(), anyInt());
+        }
+
+        @Test
+        void v2WebhookAzDevOpsPullRequestFetchesTargetBranchOnceAtRepoLevelWhenFlagIsTrue() throws Exception {
+            webhookProperties.setPrBaseBranchFilter(true);
+            String repoUrl = "https://dev.azure.com/org/proj/repo";
+            String payload = "{\"eventType\":\"git.pullrequest.created\"}";
+            RepoWebhook rw = azDevOpsRepoWebhookWith(repoUrl, "secret");
+
+            Workspace ws1 = azDevOpsWorkspaceWithSource(repoUrl);
+            ws1.setName("az-ws-1");
+            ws1.setBranch("main");
+            Webhook wh1 = new Webhook();
+            wh1.setMigratedV2(true);
+            WebhookEvent ev1 = new WebhookEvent();
+            ev1.setEvent(WebhookEventType.PULL_REQUEST);
+            ev1.setBranch("main");
+            ev1.setPath("*");
+            ev1.setPathType(WebhookEventPathType.PATTERN);
+            ev1.setTemplateId("az-plan-1");
+            wh1.setEvents(List.of(ev1));
+            ws1.setWebhook(wh1);
+
+            Workspace ws2 = azDevOpsWorkspaceWithSource(repoUrl);
+            ws2.setName("az-ws-2");
+            ws2.setBranch("develop");
+            Webhook wh2 = new Webhook();
+            wh2.setMigratedV2(true);
+            WebhookEvent ev2 = new WebhookEvent();
+            ev2.setEvent(WebhookEventType.PULL_REQUEST);
+            ev2.setBranch("develop");
+            ev2.setTemplateId("az-plan-2");
+            wh2.setEvents(List.of(ev2));
+            ws2.setWebhook(wh2);
+
+            when(workspaceRepository.findByNormalizedSourceWithMigratedWebhook(repoUrl))
+                    .thenReturn(List.of(ws1, ws2));
+            when(webhookEventRepository.findByWebhookAndEventOrderByPriorityAsc(wh1, WebhookEventType.PULL_REQUEST))
+                    .thenReturn(List.of(ev1));
+            when(jobRepository.save(any(Job.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            WebhookResult prResult = new WebhookResult();
+            prResult.setEvent("pull_request");
+            prResult.setValid(true);
+            prResult.setBranch("feature/az");
+            prResult.setBaseBranch(null); // missing targetRefName
+            prResult.setPrNumber(50);
+            prResult.setFileChanges(List.of("main.tf"));
+            when(azDevOpsWebhookService.parseAzDevOpsPayload(eq(payload), any())).thenReturn(prResult);
+            when(azDevOpsWebhookService.fetchPrTargetBranch(eq(rw.getVcs()), eq(repoUrl), eq(50)))
+                    .thenReturn("main");
+            when(azDevOpsWebhookService.fetchPrFileChanges(any(), eq(repoUrl), eq(50)))
+                    .thenReturn(List.of("main.tf"));
+
+            subject.processClaimedDelivery(rw, payload, Map.of());
+
+            // With flag on, fetchPrTargetBranch is called exactly ONCE before fan-out at repo level (not once per workspace)
+            verify(azDevOpsWebhookService, times(1)).fetchPrTargetBranch(eq(rw.getVcs()), eq(repoUrl), eq(50));
+            // ws1 (main) scheduled, ws2 (develop) skipped
+            verify(jobRepository, times(1)).save(any(Job.class));
         }
 
         @Test

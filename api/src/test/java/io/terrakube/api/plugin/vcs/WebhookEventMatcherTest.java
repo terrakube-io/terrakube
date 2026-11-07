@@ -205,6 +205,32 @@ class WebhookEventMatcherTest {
     }
 
     @Test
+    void findMatchingEvent_threeArgOverloadDefaultsToFlagOff() {
+        Webhook webhook = new Webhook();
+        WebhookEventRepository repository = mock(WebhookEventRepository.class);
+
+        WebhookEvent event = new WebhookEvent();
+        event.setEvent(WebhookEventType.PULL_REQUEST);
+        event.setBranch("feature/.*");
+        event.setPath(".*");
+        event.setPathType(WebhookEventPathType.REGEX);
+        event.setTemplateId("template-1");
+
+        when(repository.findByWebhookAndEventOrderByPriorityAsc(webhook, WebhookEventType.PULL_REQUEST))
+                .thenReturn(List.of(event));
+
+        WebhookResult result = new WebhookResult();
+        result.setEvent("pull_request");
+        result.setBranch("feature/new-feature");
+        result.setBaseBranch("main");
+        result.setFileChanges(List.of("main.tf"));
+
+        // With 3-argument overload, matchPrBaseBranch defaults to false, matching source branch feature/.*
+        WebhookEvent matched = WebhookEventMatcher.findMatchingEvent(result, webhook, repository);
+        assertThat(matched).isSameAs(event);
+    }
+
+    @Test
     void shouldProcessPullRequest_disabledFilter_alwaysReturnsTrue() {
         Workspace ws = new Workspace();
         ws.setBranch("main");
@@ -212,7 +238,7 @@ class WebhookEventMatcherTest {
         result.setEvent("pull_request");
         result.setBaseBranch("other");
 
-        assertThat(WebhookEventMatcher.shouldProcessPullRequest(ws, result, null, false)).isTrue();
+        assertThat(WebhookEventMatcher.shouldProcessPullRequest(ws, result, false)).isTrue();
     }
 
     @Test
@@ -223,7 +249,7 @@ class WebhookEventMatcherTest {
         result.setEvent("push");
         result.setBranch("other");
 
-        assertThat(WebhookEventMatcher.shouldProcessPullRequest(ws, result, null, true)).isTrue();
+        assertThat(WebhookEventMatcher.shouldProcessPullRequest(ws, result, true)).isTrue();
     }
 
     @Test
@@ -236,10 +262,10 @@ class WebhookEventMatcherTest {
         result.setBranch("main"); // attacker-controlled source branch
         result.setBaseBranch(null);
 
-        assertThat(WebhookEventMatcher.shouldProcessPullRequest(ws, result, null, true)).isFalse();
+        assertThat(WebhookEventMatcher.shouldProcessPullRequest(ws, result, true)).isFalse();
 
         result.setBaseBranch("   ");
-        assertThat(WebhookEventMatcher.shouldProcessPullRequest(ws, result, null, true)).isFalse();
+        assertThat(WebhookEventMatcher.shouldProcessPullRequest(ws, result, true)).isFalse();
     }
 
     @Test
@@ -254,7 +280,7 @@ class WebhookEventMatcherTest {
         result.setBaseBranch("release/v2.0");
 
         // Workspace tracks 'main', so a PR targeting 'release/v2.0' must be rejected upfront
-        assertThat(WebhookEventMatcher.shouldProcessPullRequest(ws, result, null, true)).isFalse();
+        assertThat(WebhookEventMatcher.shouldProcessPullRequest(ws, result, true)).isFalse();
     }
 
     @Test
@@ -268,9 +294,9 @@ class WebhookEventMatcherTest {
         result.setBranch("feature/1");
         result.setBaseBranch("main");
 
-        assertThat(WebhookEventMatcher.shouldProcessPullRequest(ws, result, null, true)).isTrue();
+        assertThat(WebhookEventMatcher.shouldProcessPullRequest(ws, result, true)).isTrue();
 
         result.setBaseBranch("develop");
-        assertThat(WebhookEventMatcher.shouldProcessPullRequest(ws, result, null, true)).isFalse();
+        assertThat(WebhookEventMatcher.shouldProcessPullRequest(ws, result, true)).isFalse();
     }
 }

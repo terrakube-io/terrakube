@@ -260,6 +260,18 @@ public class RepoWebhookService {
             webhookResult.setFileChanges(prFiles);
         }
 
+        if (azureDevOps && webhookProperties.isPrBaseBranchFilter()
+                && webhookResult.isPullRequestOrComment()
+                && (webhookResult.getBaseBranch() == null || webhookResult.getBaseBranch().isBlank())
+                && webhookResult.getPrNumber() != null
+                && repoWebhook.getVcs() != null) {
+            String targetBranch = azDevOpsWebhookService.fetchPrTargetBranch(
+                    repoWebhook.getVcs(), repoWebhook.getRepositoryUrl(), webhookResult.getPrNumber().intValue());
+            if (targetBranch != null) {
+                webhookResult.setBaseBranch(targetBranch);
+            }
+        }
+
         List<Workspace> workspaces = workspaceRepository
                 .findByNormalizedSourceWithMigratedWebhook(normalizedUrl);
 
@@ -304,7 +316,8 @@ public class RepoWebhookService {
             }
         }
 
-        if (isAzureDevOps(workspace) && workspace.getVcs() != null && webhookResult.isPullRequestOrComment()
+        if (webhookProperties.isPrBaseBranchFilter()
+                && isAzureDevOps(workspace) && workspace.getVcs() != null && webhookResult.isPullRequestOrComment()
                 && (webhookResult.getBaseBranch() == null || webhookResult.getBaseBranch().isBlank())
                 && webhookResult.getPrNumber() != null) {
             String targetBranch = azDevOpsWebhookService.fetchPrTargetBranch(
@@ -314,7 +327,7 @@ public class RepoWebhookService {
             }
         }
 
-        if (!WebhookEventMatcher.shouldProcessPullRequest(workspace, webhookResult, webhookEventRepository,
+        if (!WebhookEventMatcher.shouldProcessPullRequest(workspace, webhookResult,
                 webhookProperties.isPrBaseBranchFilter())) {
             return;
         }

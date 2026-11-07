@@ -23,6 +23,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import io.terrakube.api.plugin.vcs.WebhookProperties;
 import io.terrakube.api.plugin.vcs.WebhookResult;
 import io.terrakube.api.plugin.vcs.WebhookServiceBase;
 import io.terrakube.api.rs.job.Job;
@@ -85,15 +86,22 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
 
     private final ObjectMapper objectMapper;
     private final AzDevOpsTokenService azDevOpsTokenService;
+    private final WebhookProperties webhookProperties;
 
     @Value("${io.terrakube.hostname}")
     private String hostname;
     @Value("${io.terrakube.ui.url}")
     private String uiUrl;
 
-    public AzDevOpsWebhookService(ObjectMapper objectMapper, AzDevOpsTokenService azDevOpsTokenService) {
+    public AzDevOpsWebhookService(ObjectMapper objectMapper, AzDevOpsTokenService azDevOpsTokenService,
+            WebhookProperties webhookProperties) {
         this.objectMapper = objectMapper;
         this.azDevOpsTokenService = azDevOpsTokenService;
+        this.webhookProperties = webhookProperties;
+    }
+
+    public AzDevOpsWebhookService(ObjectMapper objectMapper, AzDevOpsTokenService azDevOpsTokenService) {
+        this(objectMapper, azDevOpsTokenService, new WebhookProperties());
     }
 
     public WebhookResult processWebhook(String jsonPayload, Map<String, String> headers, String token,
@@ -265,7 +273,8 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
 
         if (repo != null && !repositoryId.isEmpty() && prNumber > 0) {
             result.setFileChanges(getPullRequestChanges(workspace.getVcs(), repo, repositoryId, prNumber));
-            if (result.getBaseBranch() == null && workspace.getVcs() != null) {
+            if (webhookProperties != null && webhookProperties.isPrBaseBranchFilter()
+                    && result.getBaseBranch() == null && workspace.getVcs() != null) {
                 result.setBaseBranch(fetchPrTargetBranch(workspace.getVcs(), repo, repositoryId, prNumber));
             }
         }
@@ -302,7 +311,8 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
 
         if (repo != null && !repositoryId.isEmpty() && prNumber > 0) {
             result.setFileChanges(getPullRequestChanges(workspace.getVcs(), repo, repositoryId, prNumber));
-            if (result.getBaseBranch() == null && workspace.getVcs() != null) {
+            if (webhookProperties != null && webhookProperties.isPrBaseBranchFilter()
+                    && result.getBaseBranch() == null && workspace.getVcs() != null) {
                 result.setBaseBranch(fetchPrTargetBranch(workspace.getVcs(), repo, repositoryId, prNumber));
             }
         }
@@ -657,7 +667,7 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
         return changedFiles;
     }
 
-    private List<String> getPullRequestChanges(Vcs vcs, AzureRepo repo, String repositoryId, int prNumber) {
+    List<String> getPullRequestChanges(Vcs vcs, AzureRepo repo, String repositoryId, int prNumber) {
         List<String> changedFiles = new ArrayList<>();
         String encodedProject = UriUtils.encodePathSegment(repo.project, StandardCharsets.UTF_8);
         String iterationsUrl = String.format(

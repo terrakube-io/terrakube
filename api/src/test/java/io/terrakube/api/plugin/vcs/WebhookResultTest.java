@@ -180,7 +180,6 @@ public class WebhookResultTest {
         original.setFileChanges(new java.util.ArrayList<>(java.util.List.of("main.tf")));
 
         WebhookResult copied = original.copy();
-        assertEquals(original, copied);
         assertEquals(original.getBranch(), copied.getBranch());
         assertEquals(original.getBaseBranch(), copied.getBaseBranch());
         assertEquals(original.getCommit(), copied.getCommit());

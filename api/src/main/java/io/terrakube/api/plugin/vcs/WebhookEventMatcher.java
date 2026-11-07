@@ -109,7 +109,6 @@ public final class WebhookEventMatcher {
     public static boolean shouldProcessPullRequest(
             Workspace workspace,
             WebhookResult result,
-            WebhookEventRepository webhookEventRepository,
             boolean prBaseBranchFilter) {
         if (!prBaseBranchFilter || !result.isPullRequestOrComment()) {
             return true;
@@ -140,7 +139,7 @@ public final class WebhookEventMatcher {
      */
     public static WebhookEvent findMatchingEvent(WebhookResult result, Webhook webhook,
             WebhookEventRepository webhookEventRepository) {
-        return findMatchingEvent(result, webhook, webhookEventRepository, true);
+        return findMatchingEvent(result, webhook, webhookEventRepository, false);
     }
 
     public static WebhookEvent findMatchingEvent(WebhookResult result, Webhook webhook,

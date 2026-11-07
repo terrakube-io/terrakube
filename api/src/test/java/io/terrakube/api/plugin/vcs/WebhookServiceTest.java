@@ -529,7 +529,7 @@ public class WebhookServiceTest {
     }
 
     @Test
-    public void processWebhookPostsNoticeWhenPrCommentMismatchesTargetBranch() throws Exception {
+    public void processWebhookQuietlySkipsWhenPrCommentMismatchesTargetBranch() throws Exception {
         webhookProperties.setPrBaseBranchFilter(true);
         UUID webhookId = UUID.randomUUID();
         workspace.setId(UUID.randomUUID());
@@ -544,10 +544,8 @@ public class WebhookServiceTest {
 
         assertDoesNotThrow(() -> subject.processWebhook(webhookId.toString(), "{}", Map.of()));
 
-        verify(prCommentService, times(1)).postBranchPolicyNotice(
-                eq(workspace),
-                eq(7),
-                eq("Workspace 'test-workspace' tracks branch 'main', but this pull request targets 'develop'."));
+        // Quiet skip: no branch policy warning posted and no job scheduled
+        verify(prCommentService, never()).postBranchPolicyNotice(any(), any(), any());
         verify(jobRepository, never()).save(any());
     }
 
