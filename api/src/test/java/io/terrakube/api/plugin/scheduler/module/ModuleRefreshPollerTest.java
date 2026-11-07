@@ -13,7 +13,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.quartz.JobExecutionContext;
 import org.springframework.data.domain.Pageable;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
@@ -25,7 +24,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
-class ModuleRefreshPollerJobTest {
+class ModuleRefreshPollerTest {
 
     @Mock
     ModuleRepository moduleRepository;
@@ -37,19 +36,14 @@ class ModuleRefreshPollerJobTest {
     ThreadPoolTaskExecutor moduleRefreshExecutor;
     @Mock
     ThreadPoolExecutor threadPoolExecutor;
-    @Mock
-    JobExecutionContext jobExecutionContext;
 
     ModuleRefreshProperties properties = new ModuleRefreshProperties();
-    ModuleRefreshPollerJob subject;
+    ModuleRefreshPoller subject;
 
     @BeforeEach
     void setUp() {
-        subject = new ModuleRefreshPollerJob(moduleRepository, moduleRefreshTransactions, moduleRefreshWorker,
+        subject = new ModuleRefreshPoller(moduleRepository, moduleRefreshTransactions, moduleRefreshWorker,
                 moduleRefreshExecutor, properties);
-        // One round per run unless a test asks for more.
-        subject.runMillis = 0;
-        subject.pauseMillis = 0;
     }
 
     // An executor of 2 threads and a queue of 3.
@@ -77,7 +71,7 @@ class ModuleRefreshPollerJobTest {
         executorBusy(2, 1);
         when(moduleRepository.findDueIds(any(), any())).thenReturn(List.of());
 
-        subject.execute(jobExecutionContext);
+        subject.poll();
 
         ArgumentCaptor<Pageable> page = ArgumentCaptor.forClass(Pageable.class);
         verify(moduleRepository).findDueIds(any(), page.capture());
@@ -85,38 +79,24 @@ class ModuleRefreshPollerJobTest {
     }
 
     @Test
-    void keepsClaimingWhileDueModulesFillEveryFreeSlot() throws Exception {
-        subject.runMillis = 10_000;
-        executorBusy(0, 0);
-        List<UUID> firstRound = List.of(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),
-                UUID.randomUUID(), UUID.randomUUID());
-        List<UUID> lastRound = List.of(UUID.randomUUID(), UUID.randomUUID());
-        when(moduleRepository.findDueIds(any(), any())).thenReturn(firstRound, lastRound);
-        when(moduleRefreshTransactions.claim(any(), any(), any())).thenReturn(true);
-
-        subject.execute(jobExecutionContext);
-
-        verify(moduleRepository, times(2)).findDueIds(any(), any());
-        verify(moduleRefreshExecutor, times(7)).execute(any(Runnable.class));
-    }
-
-    @Test
-    void stopsAtTheDeadlineEvenWhenModulesRemainDue() throws Exception {
+    void claimsOnePageOfFreeSlotsPerPoll() throws Exception {
         executorBusy(0, 0);
         when(moduleRepository.findDueIds(any(), any())).thenAnswer(invocation -> List.of(UUID.randomUUID(),
                 UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID()));
         when(moduleRefreshTransactions.claim(any(), any(), any())).thenReturn(true);
 
-        subject.execute(jobExecutionContext);
+        subject.poll();
 
+        // The next poll takes the rest; a poll must not hold Spring's shared scheduler thread.
         verify(moduleRepository, times(1)).findDueIds(any(), any());
+        verify(moduleRefreshExecutor, times(5)).execute(any(Runnable.class));
     }
 
     @Test
     void fullExecutorClaimsNothing() throws Exception {
         executorBusy(2, 3);
 
-        subject.execute(jobExecutionContext);
+        subject.poll();
 
         verifyNoInteractions(moduleRepository, moduleRefreshTransactions);
     }
@@ -130,7 +110,7 @@ class ModuleRefreshPollerJobTest {
         when(moduleRepository.findDueIds(any(), any())).thenReturn(List.of(first, second));
         when(moduleRefreshTransactions.claim(any(), any(), any())).thenReturn(true);
 
-        subject.execute(jobExecutionContext);
+        subject.poll();
 
         ArgumentCaptor<Date> lease = ArgumentCaptor.forClass(Date.class);
         ArgumentCaptor<Date> now = ArgumentCaptor.forClass(Date.class);
@@ -139,7 +119,8 @@ class ModuleRefreshPollerJobTest {
         verify(moduleRefreshWorker).refresh(first, lease.getValue());
         verify(moduleRefreshWorker).refresh(second, lease.getValue());
         assertThat(now.getValue().getTime() % 1000).isZero();
-        assertThat(lease.getValue().getTime() - now.getValue().getTime()).isEqualTo(5 * 60_000L);
+        assertThat(lease.getValue().getTime() - now.getValue().getTime()).isBetween(5 * 60_000L, 5 * 60_000L + 59_000L);
+        assertThat(lease.getValue().getTime() % 1000).isZero();
     }
 
     @Test
@@ -152,7 +133,7 @@ class ModuleRefreshPollerJobTest {
         when(moduleRefreshTransactions.claim(eq(taken), any(), any())).thenReturn(false);
         when(moduleRefreshTransactions.claim(eq(ours), any(), any())).thenReturn(true);
 
-        subject.execute(jobExecutionContext);
+        subject.poll();
 
         verify(moduleRefreshWorker).refresh(eq(ours), any());
         verify(moduleRefreshWorker, never()).refresh(eq(taken), any());
@@ -169,7 +150,7 @@ class ModuleRefreshPollerJobTest {
         doNothing().doThrow(new RejectedExecutionException("full")).when(moduleRefreshExecutor)
                 .execute(any(Runnable.class));
 
-        subject.execute(jobExecutionContext);
+        subject.poll();
 
         ArgumentCaptor<Date> lease = ArgumentCaptor.forClass(Date.class);
         verify(moduleRefreshTransactions).claim(eq(first), lease.capture(), any());
@@ -186,7 +167,7 @@ class ModuleRefreshPollerJobTest {
         when(moduleRefreshTransactions.claim(any(), any(), any())).thenReturn(true);
         doThrow(new IllegalStateException("database down")).when(moduleRefreshWorker).refresh(eq(id), any());
 
-        subject.execute(jobExecutionContext);
+        subject.poll();
 
         verify(moduleRefreshWorker).refresh(eq(id), any());
     }

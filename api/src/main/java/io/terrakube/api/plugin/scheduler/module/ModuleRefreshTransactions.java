@@ -25,9 +25,8 @@ import io.terrakube.api.rs.vcs.VcsType;
 
 import lombok.extern.slf4j.Slf4j;
 
-// A separate bean for the same reason as RepoWebhookDeliveryTransactions: ModuleRefreshPollerJob is a
-// Quartz Job, which Spring instantiates without an AOP proxy, and ModuleRefreshWorker must call these
-// through a proxy so each write is its own transaction. Keeping them short is the point: ls-remote runs
+// A separate bean so ModuleRefreshPoller and ModuleRefreshWorker call these through a proxy and each
+// write is its own transaction. Keeping them short is the point: ls-remote runs
 // between loadTarget and the record* call with no transaction (and no pooled connection) held.
 //
 // Every date written to module is truncated to whole seconds: the result writes match the lease by

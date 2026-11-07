@@ -1,6 +1,5 @@
 package io.terrakube.api;
 
-import io.terrakube.api.plugin.scheduler.module.ModuleRefreshPollerScheduler;
 import io.terrakube.api.repository.ModuleRepository;
 import io.terrakube.api.repository.ModuleVersionRepository;
 import io.terrakube.api.repository.ProviderImplementationRepository;
@@ -15,14 +14,10 @@ import io.terrakube.api.rs.provider.implementation.Version;
 import jakarta.persistence.EntityManagerFactory;
 import org.hibernate.SessionFactory;
 import org.hibernate.stat.Statistics;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.MockitoAnnotations;
-import org.quartz.JobKey;
-import org.quartz.SchedulerException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 
@@ -73,18 +68,6 @@ class RegistryLookupQueryCountTests extends ServerApplicationTests {
     private final List<Provider> providers = new ArrayList<>();
     private final List<Module> modules = new ArrayList<>();
 
-    private static final JobKey POLLER = new JobKey(ModuleRefreshPollerScheduler.PREFIX_MODULE_REFRESH_POLLER);
-
-    // The poller's statements would otherwise land in the counting window.
-    @BeforeAll
-    void pausePoller() throws SchedulerException {
-        scheduler.pauseJob(POLLER);
-    }
-
-    @AfterAll
-    void resumePoller() throws SchedulerException {
-        scheduler.resumeJob(POLLER);
-    }
 
     @BeforeEach
     void setup() {
