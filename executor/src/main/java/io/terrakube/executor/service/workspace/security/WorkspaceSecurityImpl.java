@@ -141,9 +141,11 @@ public class WorkspaceSecurityImpl implements WorkspaceSecurity {
         String credentialFileContent = String.format(CREDENTIALS_CONTENT, registryDomain, token);
         String credentialFileContent2 = "";
         try {
-            String apiHost = new URL(apiUrl).getHost();
+            URL api = new URL(apiUrl);
+            String apiHost = api.getHost();
             // On a single-domain host the registry and the API share one hostname: one block is enough.
-            if (!apiHost.equalsIgnoreCase(registryDomain)) {
+            // registryDomain may carry a port (from the public URL's authority), so compare both forms.
+            if (!apiHost.equalsIgnoreCase(registryDomain) && !api.getAuthority().equalsIgnoreCase(registryDomain)) {
                 credentialFileContent2 = String.format(CREDENTIALS_CONTENT, apiHost, token);
             }
         } catch (MalformedURLException e) {

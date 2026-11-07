@@ -112,6 +112,15 @@ class WorkspaceSecurityTest {
     }
 
     @Test
+    void writesOneCredentialsBlockWhenTheSharedHostHasAPort() throws Exception {
+        WorkspaceSecurityImpl singleDomain = new WorkspaceSecurityImpl(
+                new RestClientProperties(), "localhost:8443", "https://localhost:8443/api", SECRET);
+        singleDomain.addTerraformCredentials("ws-1");
+        String content = FileUtils.readFileToString(terraformrcFile, StandardCharsets.UTF_8);
+        assertEquals(1, content.split("credentials \"", -1).length - 1, content);
+    }
+
+    @Test
     void writesBothCredentialsBlocksInSplitDomain() throws Exception {
         workspaceSecurity.addTerraformCredentials("ws-1");
         String content = FileUtils.readFileToString(terraformrcFile, StandardCharsets.UTF_8);
