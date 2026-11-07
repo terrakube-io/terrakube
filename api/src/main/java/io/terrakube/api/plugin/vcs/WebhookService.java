@@ -50,6 +50,7 @@ public class WebhookService {
     WorkspaceRepository workspaceRepository;
     PrCommentService prCommentService;
     WorkspaceBranchPolicy workspaceBranchPolicy;
+    PrApplyAuthorizationService prApplyAuthorizationService;
 
     @Transactional
     public String processWebhook(String webhookId, String jsonPayload, Map<String, String> headers) {
@@ -162,6 +163,12 @@ public class WebhookService {
             if (!matchedEvent.isPrWorkflowEnabled() || !matchedEvent.isPrApplyEnabled()) {
                 log.info("Rejecting PR apply comment for workspace {}: apply via PR comment is not enabled", workspace.getName());
                 prCommentService.postApplyDisabledNotice(workspace, prNumber);
+                return;
+            }
+            // The job auto-approves, so its approval step does not stop anyone: check the author first.
+            Optional<String> refusal = prApplyAuthorizationService.refusalReason(workspace, webhookResult);
+            if (refusal.isPresent()) {
+                prCommentService.postApplyNotAuthorizedNotice(workspace, prNumber, refusal.get());
                 return;
             }
             String templateId = workspace.getDefaultTemplate();

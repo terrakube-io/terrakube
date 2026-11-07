@@ -323,6 +323,26 @@ public class PrCommentService {
     }
 
     /**
+     * Tells the pull request that a "terrakube apply" comment was not run because its author may not apply
+     * (see {@link PrApplyAuthorizationService}). Used by the per-workspace (v1) and shared (v2) webhook paths.
+     */
+    public void postApplyNotAuthorizedNotice(Workspace workspace, Integer prNumber, String reason) {
+        if (prNumber == null || prNumber == 0) return;
+
+        Job transientJob = new Job();
+        transientJob.setWorkspace(workspace);
+        transientJob.setPrNumber(prNumber);
+
+        String markdown = """
+                ## Terrakube Apply
+
+                ⛔ %s
+                """.formatted(reason);
+
+        postComment(transientJob, markdown);
+    }
+
+    /**
      * Tells the pull request that a command was not run because the workspace restricts apply and destroy to its
      * configured branch. Used by the per-workspace (v1) and shared (v2) webhook paths.
      */

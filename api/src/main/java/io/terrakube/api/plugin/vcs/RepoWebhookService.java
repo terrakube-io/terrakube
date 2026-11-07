@@ -9,6 +9,7 @@ import java.util.Date;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -66,6 +67,7 @@ public class RepoWebhookService {
     ObjectMapper objectMapper;
     Executor workspaceFanoutExecutor;
     WorkspaceBranchPolicy workspaceBranchPolicy;
+    PrApplyAuthorizationService prApplyAuthorizationService;
 
     private boolean isGitLab(RepoWebhook repoWebhook) {
         return repoWebhook.getVcs() != null && repoWebhook.getVcs().getVcsType() == VcsType.GITLAB;
@@ -403,6 +405,14 @@ public class RepoWebhookService {
         if (!matchedEvent.isPrApplyEnabled()) {
             log.info("Rejecting PR apply comment for workspace {}: apply via PR comment is not enabled", workspace.getName());
             prCommentService.postApplyDisabledNotice(workspace, prNumber != null ? prNumber.intValue() : null);
+            return;
+        }
+
+        // The job auto-approves, so its approval step does not stop anyone: check the author first.
+        Optional<String> refusal = prApplyAuthorizationService.refusalReason(workspace, webhookResult);
+        if (refusal.isPresent()) {
+            prCommentService.postApplyNotAuthorizedNotice(workspace, prNumber != null ? prNumber.intValue() : null,
+                    refusal.get());
             return;
         }
 

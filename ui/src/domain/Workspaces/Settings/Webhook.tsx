@@ -746,7 +746,9 @@ export const WorkspaceWebhook = ({
                                             extra={
                                               <>
                                                 Comment <code>terrakube apply</code> on the pull request to apply this
-                                                workspace. Needs the plan on pull requests.
+                                                workspace. Needs the plan on pull requests. The run skips the
+                                                template&apos;s approval step, so on GitHub the author needs write
+                                                access to the repository, and on GitLab the Developer role.
                                                 {restrictApply &&
                                                   ` Not available while this workspace only applies from ${workspaceBranch}: merge the pull request to apply it.`}
                                               </>

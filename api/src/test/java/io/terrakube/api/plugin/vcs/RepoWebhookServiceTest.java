@@ -70,6 +70,7 @@ class RepoWebhookServiceTest {
     WorkspaceBranchPolicy workspaceBranchPolicy;
     RepoWebhookDeliveryTransactions repoWebhookDeliveryTransactions;
     ObjectMapper objectMapper;
+    PrApplyAuthorizationService prApplyAuthorizationService;
 
     RepoWebhookService subject;
 
@@ -87,6 +88,8 @@ class RepoWebhookServiceTest {
         repoWebhookDeliveryTransactions = mock(RepoWebhookDeliveryTransactions.class);
         workspaceBranchPolicy = mock(WorkspaceBranchPolicy.class);
         objectMapper = new ObjectMapper();
+        // A mock answers Optional.empty(): every comment author may apply unless a test says otherwise.
+        prApplyAuthorizationService = mock(PrApplyAuthorizationService.class);
 
         subject = new RepoWebhookService(
                 repoWebhookRepository,
@@ -101,7 +104,8 @@ class RepoWebhookServiceTest {
                 repoWebhookDeliveryTransactions,
                 objectMapper,
                 Runnable::run,
-                workspaceBranchPolicy);
+                workspaceBranchPolicy,
+                prApplyAuthorizationService);
     }
 
     private Workspace workspaceWithSource(String source) {
@@ -964,6 +968,32 @@ class RepoWebhookServiceTest {
             assertThat(savedJob.getCommandCommentId()).isEqualTo("comment-apply-1");
             verify(gitHubWebhookService).sendCommitStatus(eq(savedJob), eq(JobStatus.pending), any());
             verify(prCommentService, never()).postApplyDisabledNotice(any(), any());
+        }
+
+        @Test
+        void v2WebhookIssueCommentApplyIsRefusedBeforeTheLockWhenTheAuthorMayNotApply() throws Exception {
+            String repoUrl = "https://github.com/owner/repo";
+            String payload = "{\"action\":\"created\", \"comment\": {\"body\": \"terrakube apply\"}}";
+
+            RepoWebhook rw = repoWebhookWith(repoUrl, "issue-comment-apply-unauthorized-secret");
+
+            Workspace ws = prCommentWorkspace(repoUrl, "ws-apply-unauthorized", "apply", 14, true, true);
+            ws.setDefaultTemplate("default-template-id");
+            when(workspaceRepository.findByNormalizedSourceWithMigratedWebhook(repoUrl)).thenReturn(List.of(ws));
+
+            WebhookResult commentResult = resolvedCommentResult("apply", 14, "comment-apply-3");
+            when(gitHubWebhookService.parseGitHubPayload(eq(payload), any())).thenReturn(commentResult);
+            when(prApplyAuthorizationService.refusalReason(ws, commentResult))
+                    .thenReturn(Optional.of("`reader` cannot apply"));
+
+            Map<String, String> headers = Map.of("x-github-event", "issue_comment");
+
+            subject.processClaimedDelivery(rw, payload, headers);
+
+            assertThat(ws.isLocked()).isFalse();
+            verify(workspaceRepository, never()).save(any());
+            verify(jobRepository, never()).save(any(Job.class));
+            verify(prCommentService).postApplyNotAuthorizedNotice(ws, 14, "`reader` cannot apply");
         }
 
         @Test
