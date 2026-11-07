@@ -132,80 +132,8 @@ class WebhookEventMatcherTest {
         assertThat(regex).isEqualTo("\\(a\\+\\)\\+\\$");
     }
 
-    // --- resolveBranchToMatch and target-branch tests ---
-
     @Test
-    void resolveBranchToMatch_pullRequest_usesBaseBranchWhenEnabled() {
-        WebhookResult result = new WebhookResult();
-        result.setBranch("feature/login");
-        result.setBaseBranch("refs/heads/main");
-
-        String resolved = WebhookEventMatcher.resolveBranchToMatch(result, WebhookEventType.PULL_REQUEST, true);
-        assertThat(resolved).isEqualTo("main");
-    }
-
-    @Test
-    void resolveBranchToMatch_pullRequest_failsClosedWhenBaseBranchIsBlank() {
-        WebhookResult result = new WebhookResult();
-        result.setBranch("feature/login");
-        result.setBaseBranch("main");
-
-        // Disabled filter falls back to source branch
-        assertThat(WebhookEventMatcher.resolveBranchToMatch(result, WebhookEventType.PULL_REQUEST, false))
-                .isEqualTo("feature/login");
-
-        // When enabled, blank or null baseBranch returns null (never the source branch)
-        result.setBaseBranch("   ");
-        assertThat(WebhookEventMatcher.resolveBranchToMatch(result, WebhookEventType.PULL_REQUEST, true))
-                .isNull();
-
-        result.setBaseBranch(null);
-        assertThat(WebhookEventMatcher.resolveBranchToMatch(result, WebhookEventType.PULL_REQUEST, true))
-                .isNull();
-    }
-
-    @Test
-    void resolveBranchToMatch_pushEvent_alwaysUsesPushBranch() {
-        WebhookResult result = new WebhookResult();
-        result.setBranch("feature/login");
-        result.setBaseBranch("main");
-
-        assertThat(WebhookEventMatcher.resolveBranchToMatch(result, WebhookEventType.PUSH, true))
-                .isEqualTo("feature/login");
-    }
-
-    @Test
-    void findMatchingEvent_pullRequest_matchesTriggerBranchAgainstBaseBranch() {
-        Webhook webhook = new Webhook();
-        WebhookEventRepository repository = mock(WebhookEventRepository.class);
-
-        WebhookEvent event = new WebhookEvent();
-        event.setEvent(WebhookEventType.PULL_REQUEST);
-        event.setBranch("main");
-        event.setPath(".*");
-        event.setPathType(WebhookEventPathType.REGEX);
-        event.setTemplateId("template-1");
-
-        when(repository.findByWebhookAndEventOrderByPriorityAsc(webhook, WebhookEventType.PULL_REQUEST))
-                .thenReturn(List.of(event));
-
-        WebhookResult result = new WebhookResult();
-        result.setEvent("pull_request");
-        result.setBranch("feature/new-feature");
-        result.setBaseBranch("main");
-        result.setFileChanges(List.of("main.tf"));
-
-        WebhookEvent matched = WebhookEventMatcher.findMatchingEvent(result, webhook, repository, true);
-        assertThat(matched).isSameAs(event);
-
-        // When baseBranch does not match
-        result.setBaseBranch("develop");
-        assertThatThrownBy(() -> WebhookEventMatcher.findMatchingEvent(result, webhook, repository, true))
-                .isInstanceOf(IllegalArgumentException.class);
-    }
-
-    @Test
-    void findMatchingEvent_threeArgOverloadDefaultsToFlagOff() {
+    void findMatchingEvent_pullRequest_matchesTriggerBranchAgainstSourceBranch() {
         Webhook webhook = new Webhook();
         WebhookEventRepository repository = mock(WebhookEventRepository.class);
 
@@ -225,9 +153,13 @@ class WebhookEventMatcherTest {
         result.setBaseBranch("main");
         result.setFileChanges(List.of("main.tf"));
 
-        // With 3-argument overload, matchPrBaseBranch defaults to false, matching source branch feature/.*
         WebhookEvent matched = WebhookEventMatcher.findMatchingEvent(result, webhook, repository);
         assertThat(matched).isSameAs(event);
+
+        // When source branch does not match trigger pattern
+        result.setBranch("bugfix/fix-1");
+        assertThatThrownBy(() -> WebhookEventMatcher.findMatchingEvent(result, webhook, repository))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test

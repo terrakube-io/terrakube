@@ -479,12 +479,12 @@ describe("WorkspaceWebhook", () => {
       expect(screen.queryByText(/will not start a run/)).not.toBeInTheDocument();
     });
 
-    it("mentions target branch name in branch helper text for pull request trigger", async () => {
+    it("mentions PR source branch name in branch helper text for pull request trigger", async () => {
       mockEvent({ event: "PULL_REQUEST", branch: "main" });
       renderWebhook();
       await openTrigger();
 
-      expect(screen.getByText(/Regexes matching the whole target branch name/)).toBeInTheDocument();
+      expect(screen.getByText(/Regexes matching the whole PR source branch name/)).toBeInTheDocument();
     });
   });
 });

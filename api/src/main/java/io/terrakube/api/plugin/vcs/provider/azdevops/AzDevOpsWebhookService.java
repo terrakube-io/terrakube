@@ -275,7 +275,7 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
             result.setFileChanges(getPullRequestChanges(workspace.getVcs(), repo, repositoryId, prNumber));
             if (webhookProperties != null && webhookProperties.isPrBaseBranchFilter()
                     && result.getBaseBranch() == null && workspace.getVcs() != null) {
-                result.setBaseBranch(fetchPrTargetBranch(workspace.getVcs(), repo, repositoryId, prNumber));
+                result.setBaseBranch(fetchPrTargetBranch(workspace.getVcs(), workspace.getSource(), repositoryId, prNumber));
             }
         }
 
@@ -313,7 +313,7 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
             result.setFileChanges(getPullRequestChanges(workspace.getVcs(), repo, repositoryId, prNumber));
             if (webhookProperties != null && webhookProperties.isPrBaseBranchFilter()
                     && result.getBaseBranch() == null && workspace.getVcs() != null) {
-                result.setBaseBranch(fetchPrTargetBranch(workspace.getVcs(), repo, repositoryId, prNumber));
+                result.setBaseBranch(fetchPrTargetBranch(workspace.getVcs(), workspace.getSource(), repositoryId, prNumber));
             }
         }
 
@@ -766,7 +766,7 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
         }
     }
 
-    private ResponseEntity<String> callAzureApi(Vcs vcs, String body, String apiUrl, HttpMethod httpMethod) {
+    ResponseEntity<String> callAzureApi(Vcs vcs, String body, String apiUrl, HttpMethod httpMethod) {
         String token = resolveToken(vcs);
         if (token == null || token.isEmpty()) {
             log.error("No Azure DevOps access token available for vcs {}", vcs.getId());
@@ -802,19 +802,35 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
         return displayName == null || displayName.isEmpty() ? "system" : displayName;
     }
 
-    public String fetchPrTargetBranch(Vcs vcs, String source, int prNumber) {
+    public String resolveRepositoryId(Vcs vcs, String source) {
         AzureRepo repo = parseSource(source);
         if (repo == null) {
             return null;
         }
         String[] repositoryAndProject = resolveRepository(vcs, repo);
-        if (repositoryAndProject.length == 0) {
-            return null;
-        }
-        return fetchPrTargetBranch(vcs, repo, repositoryAndProject[0], prNumber);
+        return repositoryAndProject.length > 0 ? repositoryAndProject[0] : null;
     }
 
-    public String fetchPrTargetBranch(Vcs vcs, AzureRepo repo, String repositoryId, int prNumber) {
+    public String fetchPrTargetBranch(Vcs vcs, String source, int prNumber) {
+        return fetchPrTargetBranch(vcs, source, null, prNumber);
+    }
+
+    public String fetchPrTargetBranch(Vcs vcs, String source, String repositoryId, int prNumber) {
+        AzureRepo repo = parseSource(source);
+        if (repo == null) {
+            return null;
+        }
+        if (repositoryId == null || repositoryId.isBlank()) {
+            String[] repositoryAndProject = resolveRepository(vcs, repo);
+            if (repositoryAndProject.length == 0) {
+                return null;
+            }
+            repositoryId = repositoryAndProject[0];
+        }
+        return fetchPrTargetBranchForRepo(vcs, repo, repositoryId, prNumber);
+    }
+
+    private String fetchPrTargetBranchForRepo(Vcs vcs, AzureRepo repo, String repositoryId, int prNumber) {
         String encodedProject = UriUtils.encodePathSegment(repo.project, StandardCharsets.UTF_8);
         String prUrl = String.format(
                 "%s/%s/_apis/git/repositories/%s/pullRequests/%s?api-version=%s",
@@ -1154,10 +1170,18 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
      * per-workspace during v2 webhook fanout.
      */
     public List<String> fetchPrFileChanges(Vcs vcs, String source, int prNumber) {
+        return fetchPrFileChanges(vcs, source, null, prNumber);
+    }
+
+    public List<String> fetchPrFileChanges(Vcs vcs, String source, String repositoryId, int prNumber) {
         AzureRepo repo = parseSource(source);
         if (repo == null) {
             log.error(UNABLE_TO_PARSE_SOURCE_MESSAGE, source);
             return new ArrayList<>();
+        }
+
+        if (repositoryId != null && !repositoryId.isBlank()) {
+            return getPullRequestChanges(vcs, repo, repositoryId, prNumber);
         }
 
         String[] repositoryAndProject = resolveRepository(vcs, repo);

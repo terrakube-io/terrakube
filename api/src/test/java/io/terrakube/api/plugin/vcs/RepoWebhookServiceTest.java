@@ -14,6 +14,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -2005,7 +2006,7 @@ class RepoWebhookServiceTest {
             wh1.setMigratedV2(true);
             WebhookEvent ev1 = new WebhookEvent();
             ev1.setEvent(WebhookEventType.PULL_REQUEST);
-            ev1.setBranch("main");
+            ev1.setBranch("feature/.*");
             ev1.setPath("*");
             ev1.setPathType(WebhookEventPathType.PATTERN);
             ev1.setTemplateId("az-plan-1");
@@ -2019,7 +2020,7 @@ class RepoWebhookServiceTest {
             wh2.setMigratedV2(true);
             WebhookEvent ev2 = new WebhookEvent();
             ev2.setEvent(WebhookEventType.PULL_REQUEST);
-            ev2.setBranch("develop");
+            ev2.setBranch("feature/.*");
             ev2.setTemplateId("az-plan-2");
             wh2.setEvents(List.of(ev2));
             ws2.setWebhook(wh2);
@@ -2052,6 +2053,113 @@ class RepoWebhookServiceTest {
         }
 
         @Test
+        void v2WebhookAzDevOpsPullRequestPerWorkspaceFallbackWhenRepoTargetBranchFails() throws Exception {
+            webhookProperties.setPrBaseBranchFilter(true);
+            String repoUrl = "https://dev.azure.com/org/proj/repo";
+            String payload = "{\"eventType\":\"git.pullrequest.created\"}";
+            RepoWebhook rw = azDevOpsRepoWebhookWith(repoUrl, "secret");
+
+            Workspace ws = azDevOpsWorkspaceWithSource(repoUrl);
+            ws.setName("az-ws");
+            ws.setBranch("main");
+            Webhook wh = new Webhook();
+            wh.setMigratedV2(true);
+            WebhookEvent ev = new WebhookEvent();
+            ev.setEvent(WebhookEventType.PULL_REQUEST);
+            ev.setBranch(".*");
+            ev.setPath("*");
+            ev.setPathType(WebhookEventPathType.PATTERN);
+            ev.setTemplateId("az-plan");
+            wh.setEvents(List.of(ev));
+            ws.setWebhook(wh);
+
+            when(workspaceRepository.findByNormalizedSourceWithMigratedWebhook(repoUrl))
+                    .thenReturn(List.of(ws));
+            when(webhookEventRepository.findByWebhookAndEventOrderByPriorityAsc(wh, WebhookEventType.PULL_REQUEST))
+                    .thenReturn(List.of(ev));
+            when(jobRepository.save(any(Job.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            WebhookResult prResult = new WebhookResult();
+            prResult.setEvent("pull_request");
+            prResult.setValid(true);
+            prResult.setBranch("feature/az");
+            prResult.setBaseBranch(null); // missing targetRefName
+            prResult.setPrNumber(50);
+            when(azDevOpsWebhookService.parseAzDevOpsPayload(eq(payload), any())).thenReturn(prResult);
+            // Repo-level fetch returns null (e.g. repo credential failed or lacked permissions)
+            when(azDevOpsWebhookService.fetchPrTargetBranch(eq(rw.getVcs()), eq(repoUrl), eq(50)))
+                    .thenReturn(null);
+            // Workspace-level fallback resolves repo id and fetches target branch successfully
+            when(azDevOpsWebhookService.resolveRepositoryId(eq(ws.getVcs()), eq(repoUrl)))
+                    .thenReturn("repo-id-ws");
+            when(azDevOpsWebhookService.fetchPrTargetBranch(eq(ws.getVcs()), eq(repoUrl), eq("repo-id-ws"), eq(50)))
+                    .thenReturn("main");
+            when(azDevOpsWebhookService.fetchPrFileChanges(eq(ws.getVcs()), eq(repoUrl), eq("repo-id-ws"), eq(50)))
+                    .thenReturn(List.of("main.tf"));
+
+            subject.processClaimedDelivery(rw, payload, Map.of());
+
+            // Repo-level was tried once, workspace-level fallback was called, and job was scheduled
+            verify(azDevOpsWebhookService).fetchPrTargetBranch(eq(rw.getVcs()), eq(repoUrl), eq(50));
+            verify(azDevOpsWebhookService).fetchPrTargetBranch(eq(ws.getVcs()), eq(repoUrl), eq("repo-id-ws"), eq(50));
+            verify(azDevOpsWebhookService).fetchPrFileChanges(eq(ws.getVcs()), eq(repoUrl), eq("repo-id-ws"), eq(50));
+            verify(jobRepository, times(1)).save(any(Job.class));
+        }
+
+        @Test
+        void v2WebhookFanoutConcurrencyIsolatesCopiesAcrossWorkspaces() throws Exception {
+            webhookProperties.setPrBaseBranchFilter(false);
+            String repoUrl = "https://dev.azure.com/org/proj/repo";
+            String payload = "{\"eventType\":\"git.pullrequest.created\"}";
+            RepoWebhook rw = azDevOpsRepoWebhookWith(repoUrl, "secret");
+
+            List<Workspace> workspaces = new ArrayList<>();
+            for (int i = 1; i <= 5; i++) {
+                Workspace ws = azDevOpsWorkspaceWithSource(repoUrl);
+                ws.setName("az-ws-" + i);
+                ws.getVcs().setId(UUID.randomUUID());
+                Webhook wh = new Webhook();
+                wh.setMigratedV2(true);
+                WebhookEvent ev = new WebhookEvent();
+                ev.setEvent(WebhookEventType.PULL_REQUEST);
+                ev.setBranch(".*");
+                ev.setPath("file-for-" + ws.getVcs().getId());
+                ev.setPathType(WebhookEventPathType.PATTERN);
+                ev.setTemplateId("template-" + i);
+                wh.setEvents(List.of(ev));
+                ws.setWebhook(wh);
+                when(webhookEventRepository.findByWebhookAndEventOrderByPriorityAsc(wh, WebhookEventType.PULL_REQUEST))
+                        .thenReturn(List.of(ev));
+                workspaces.add(ws);
+            }
+
+            when(workspaceRepository.findByNormalizedSourceWithMigratedWebhook(repoUrl))
+                    .thenReturn(workspaces);
+            when(jobRepository.save(any(Job.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            WebhookResult prResult = new WebhookResult();
+            prResult.setEvent("pull_request");
+            prResult.setValid(true);
+            prResult.setBranch("feature/az");
+            prResult.setPrNumber(50);
+            when(azDevOpsWebhookService.parseAzDevOpsPayload(eq(payload), any())).thenReturn(prResult);
+
+            when(azDevOpsWebhookService.fetchPrFileChanges(any(), eq(repoUrl), eq(50)))
+                    .thenAnswer(inv -> {
+                        Vcs vcs = inv.getArgument(0);
+                        Thread.sleep(15);
+                        return List.of("file-for-" + vcs.getId());
+                    });
+
+            subject.processClaimedDelivery(rw, payload, Map.of());
+
+            // All 5 workspaces matched their own isolated file changes without crosstalk
+            ArgumentCaptor<Job> captor = ArgumentCaptor.forClass(Job.class);
+            verify(jobRepository, times(5)).save(captor.capture());
+            assertThat(captor.getAllValues()).hasSize(5);
+        }
+
+        @Test
         void v2WebhookPullRequestMatchesWorkspaceTargetBranchAndSkipsOtherWorkspaces() throws Exception {
             webhookProperties.setPrBaseBranchFilter(true);
             String repoUrl = "https://github.com/owner/repo";
@@ -2065,7 +2173,7 @@ class RepoWebhookServiceTest {
             whProd.setMigratedV2(true);
             WebhookEvent evProd = new WebhookEvent();
             evProd.setEvent(WebhookEventType.PULL_REQUEST);
-            evProd.setBranch("main");
+            evProd.setBranch("feature/.*");
             evProd.setPath("*");
             evProd.setPathType(WebhookEventPathType.PATTERN);
             evProd.setTemplateId("prod-plan");
@@ -2079,7 +2187,7 @@ class RepoWebhookServiceTest {
             whDev.setMigratedV2(true);
             WebhookEvent evDev = new WebhookEvent();
             evDev.setEvent(WebhookEventType.PULL_REQUEST);
-            evDev.setBranch("develop");
+            evDev.setBranch("feature/.*");
             evDev.setPath("*");
             evDev.setPathType(WebhookEventPathType.PATTERN);
             evDev.setTemplateId("dev-plan");
@@ -2133,7 +2241,7 @@ class RepoWebhookServiceTest {
             whUnset.setMigratedV2(true);
             WebhookEvent ev = new WebhookEvent();
             ev.setEvent(WebhookEventType.PULL_REQUEST);
-            ev.setBranch("main");
+            ev.setBranch("feature/.*");
             ev.setPath("*");
             ev.setPathType(WebhookEventPathType.PATTERN);
             ev.setTemplateId("untracked-plan");

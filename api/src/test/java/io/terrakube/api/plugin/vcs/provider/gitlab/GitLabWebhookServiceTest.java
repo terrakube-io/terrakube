@@ -86,6 +86,79 @@ public class GitLabWebhookServiceTest {
     }
 
     @Test
+    public void parseGitLabPayloadMarksInvalidWhenMergeRequestNoteLacksMergeRequestNodeOrIid() {
+        String payloadMissingMr = """
+                {
+                  "object_kind": "note",
+                  "object_attributes": {
+                    "noteable_type": "MergeRequest",
+                    "note": "terrakube plan",
+                    "id": 123
+                  },
+                  "user": {"username": "jdoe"}
+                }
+                """;
+        WebhookResult result1 = newService().parseGitLabPayload(payloadMissingMr, Map.of());
+        assertFalse(result1.isValid());
+
+        String payloadMissingIid = """
+                {
+                  "object_kind": "note",
+                  "object_attributes": {
+                    "noteable_type": "MergeRequest",
+                    "note": "terrakube plan",
+                    "id": 123
+                  },
+                  "user": {"username": "jdoe"},
+                  "merge_request": {
+                    "source_branch": "feature"
+                  }
+                }
+                """;
+        WebhookResult result2 = newService().parseGitLabPayload(payloadMissingIid, Map.of());
+        assertFalse(result2.isValid());
+    }
+
+    @Test
+    public void processWebhookMarksInvalidWhenMergeRequestNoteLacksMergeRequestNodeOrIid() {
+        String token = "gitlab-test-token";
+        Map<String, String> headers = Map.of("x-gitlab-token", token);
+        io.terrakube.api.rs.workspace.Workspace workspace = new io.terrakube.api.rs.workspace.Workspace();
+        workspace.setId(UUID.randomUUID());
+
+        String payloadMissingMr = """
+                {
+                  "object_kind": "note",
+                  "object_attributes": {
+                    "noteable_type": "MergeRequest",
+                    "note": "terrakube plan",
+                    "id": 123
+                  },
+                  "user": {"username": "jdoe"}
+                }
+                """;
+        WebhookResult result1 = newService().processWebhook(payloadMissingMr, headers, token, workspace);
+        assertFalse(result1.isValid());
+
+        String payloadMissingIid = """
+                {
+                  "object_kind": "note",
+                  "object_attributes": {
+                    "noteable_type": "MergeRequest",
+                    "note": "terrakube plan",
+                    "id": 123
+                  },
+                  "user": {"username": "jdoe"},
+                  "merge_request": {
+                    "source_branch": "feature"
+                  }
+                }
+                """;
+        WebhookResult result2 = newService().processWebhook(payloadMissingIid, headers, token, workspace);
+        assertFalse(result2.isValid());
+    }
+
+    @Test
     public void parseGitLabPayloadParsesReleaseCreate() {
         String payload = "{\"object_kind\":\"release\",\"action\":\"create\",\"tag\":\"v1.0.0\","
                 + "\"name\":\"Release 1.0.0\"}";

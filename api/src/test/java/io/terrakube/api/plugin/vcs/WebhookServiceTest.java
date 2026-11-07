@@ -489,7 +489,7 @@ public class WebhookServiceTest {
         prResult.setFileChanges(List.of("main.tf"));
         doReturn(prResult).when(gitHubWebhookService).processWebhook(any(), any(), any(), any());
 
-        pullRequestEvent.setBranch("develop");
+        pullRequestEvent.setBranch("feature/.*");
         Job savedJob = new Job();
         savedJob.setWorkspace(workspace);
         doReturn(savedJob).when(jobRepository).save(any());

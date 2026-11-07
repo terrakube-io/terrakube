@@ -272,6 +272,11 @@ public class RepoWebhookService {
             }
         }
 
+        if (webhookProperties.isPrBaseBranchFilter() && webhookResult.isPullRequestOrComment()
+                && (webhookResult.getBaseBranch() == null || webhookResult.getBaseBranch().isBlank())) {
+            log.warn("PR webhook delivery for repository {} has no target branch (baseBranch); workspaces will fail closed and skip speculative plans", normalizedUrl);
+        }
+
         List<Workspace> workspaces = workspaceRepository
                 .findByNormalizedSourceWithMigratedWebhook(normalizedUrl);
 
@@ -316,14 +321,19 @@ public class RepoWebhookService {
             }
         }
 
-        if (webhookProperties.isPrBaseBranchFilter()
-                && isAzureDevOps(workspace) && workspace.getVcs() != null && webhookResult.isPullRequestOrComment()
-                && (webhookResult.getBaseBranch() == null || webhookResult.getBaseBranch().isBlank())
-                && webhookResult.getPrNumber() != null) {
-            String targetBranch = azDevOpsWebhookService.fetchPrTargetBranch(
-                    workspace.getVcs(), workspace.getSource(), webhookResult.getPrNumber().intValue());
-            if (targetBranch != null) {
-                webhookResult.setBaseBranch(targetBranch);
+        String azRepoId = null;
+        if (isAzureDevOps(workspace) && workspace.getVcs() != null) {
+            if (webhookProperties.isPrBaseBranchFilter() && webhookResult.isPullRequestOrComment()
+                    && (webhookResult.getBaseBranch() == null || webhookResult.getBaseBranch().isBlank())
+                    && webhookResult.getPrNumber() != null) {
+                azRepoId = azDevOpsWebhookService.resolveRepositoryId(workspace.getVcs(), workspace.getSource());
+                if (azRepoId != null) {
+                    String targetBranch = azDevOpsWebhookService.fetchPrTargetBranch(
+                            workspace.getVcs(), workspace.getSource(), azRepoId, webhookResult.getPrNumber().intValue());
+                    if (targetBranch != null) {
+                        webhookResult.setBaseBranch(targetBranch);
+                    }
+                }
             }
         }
 
@@ -341,9 +351,15 @@ public class RepoWebhookService {
                         azDevOpsWebhookService.fetchPushFileChanges(
                                 workspace.getVcs(), workspace.getSource(), webhookResult.getRawPayload()));
             } else if ("pull_request".equals(normalizedEvent) && webhookResult.getPrNumber() != null) {
-                webhookResult.setFileChanges(
-                        azDevOpsWebhookService.fetchPrFileChanges(
-                                workspace.getVcs(), workspace.getSource(), webhookResult.getPrNumber().intValue()));
+                if (azRepoId != null && !azRepoId.isBlank()) {
+                    webhookResult.setFileChanges(
+                            azDevOpsWebhookService.fetchPrFileChanges(
+                                    workspace.getVcs(), workspace.getSource(), azRepoId, webhookResult.getPrNumber().intValue()));
+                } else {
+                    webhookResult.setFileChanges(
+                            azDevOpsWebhookService.fetchPrFileChanges(
+                                    workspace.getVcs(), workspace.getSource(), webhookResult.getPrNumber().intValue()));
+                }
             }
         } else if (webhookResult.getPrFilesUrl() != null
                 && (webhookResult.getFileChanges() == null || webhookResult.getFileChanges().isEmpty())) {
@@ -378,7 +394,7 @@ public class RepoWebhookService {
             // on PR" would never actually post a comment for a repo on the shared v2 webhook.
             WebhookEvent matchedEvent = webhookResult.isRelease() ? null
                     : WebhookEventMatcher.findMatchingEvent(webhookResult, workspace.getWebhook(),
-                            webhookEventRepository, webhookProperties.isPrBaseBranchFilter());
+                            webhookEventRepository);
 
             // Mirrors WebhookService.handlePrCommentCommand: a "terrakube plan"/"terrakube apply"
             // comment only starts a job when PR workflow is actually enabled on the matched event.

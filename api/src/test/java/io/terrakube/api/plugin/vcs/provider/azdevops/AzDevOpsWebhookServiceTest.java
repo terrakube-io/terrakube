@@ -6,6 +6,8 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 
 import java.util.ArrayList;
 import java.util.Map;
@@ -14,6 +16,8 @@ import java.util.UUID;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.ResponseEntity;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -239,6 +243,47 @@ public class AzDevOpsWebhookServiceTest {
         assertEquals("feature/azure", result.getBranch());
         assertEquals("main", result.getBaseBranch());
         Mockito.verify(service, Mockito.times(1)).fetchPrTargetBranch(any(), any(), any(), anyInt());
+    }
+
+    @Test
+    public void fetchPrTargetBranchParsesTargetRefNameAndStripsPrefix() {
+        AzDevOpsWebhookService service = Mockito.spy(new AzDevOpsWebhookService(new ObjectMapper(), null));
+        Vcs vcs = new Vcs();
+        vcs.setAccessToken("token123");
+
+        String prResponseJson = """
+                {
+                  "pullRequestId": 42,
+                  "targetRefName": "refs/heads/release/2.0",
+                  "sourceRefName": "refs/heads/feature/login"
+                }
+                """;
+        Mockito.doReturn(ResponseEntity.ok(prResponseJson))
+                .when(service).callAzureApi(eq(vcs), eq(""), anyString(), eq(HttpMethod.GET));
+
+        String target = service.fetchPrTargetBranch(vcs, "https://dev.azure.com/myorg/myproject/_git/myrepo", "repo-id-123", 42);
+        assertEquals("release/2.0", target);
+    }
+
+    @Test
+    public void fetchPrTargetBranchHandlesMissingOrInvalidTargetRefName() {
+        AzDevOpsWebhookService service = Mockito.spy(new AzDevOpsWebhookService(new ObjectMapper(), null));
+        Vcs vcs = new Vcs();
+        vcs.setAccessToken("token123");
+
+        // When Azure API returns 404
+        Mockito.doReturn(ResponseEntity.status(404).body("Not found"))
+                .when(service).callAzureApi(eq(vcs), eq(""), anyString(), eq(HttpMethod.GET));
+
+        String target = service.fetchPrTargetBranch(vcs, "https://dev.azure.com/myorg/myproject/_git/myrepo", "repo-id-123", 42);
+        assertNull(target);
+
+        // When JSON has no targetRefName
+        Mockito.doReturn(ResponseEntity.ok("{\"pullRequestId\": 42}"))
+                .when(service).callAzureApi(eq(vcs), eq(""), anyString(), eq(HttpMethod.GET));
+
+        target = service.fetchPrTargetBranch(vcs, "https://dev.azure.com/myorg/myproject/_git/myrepo", "repo-id-123", 42);
+        assertNull(target);
     }
 
     @Nested

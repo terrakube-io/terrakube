@@ -293,8 +293,7 @@ public class WebhookService {
     }
 
     private WebhookEvent findMatchingEvent(WebhookResult result, Webhook webhook) {
-        return WebhookEventMatcher.findMatchingEvent(result, webhook, webhookEventRepository,
-                webhookProperties.isPrBaseBranchFilter());
+        return WebhookEventMatcher.findMatchingEvent(result, webhook, webhookEventRepository);
     }
 
     @Transactional
