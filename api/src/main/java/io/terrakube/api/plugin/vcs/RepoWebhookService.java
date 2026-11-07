@@ -24,6 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import io.terrakube.api.plugin.execution.JobBranchPolicyException;
 import io.terrakube.api.plugin.execution.WorkspaceBranchPolicy;
+import io.terrakube.api.plugin.execution.WorkspaceBranches;
 import io.terrakube.api.plugin.scheduler.ScheduleJobService;
 import io.terrakube.api.plugin.security.audit.AuditActorContext;
 import io.terrakube.api.plugin.vcs.provider.azdevops.AzDevOpsWebhookService;
@@ -66,6 +67,7 @@ public class RepoWebhookService {
     ObjectMapper objectMapper;
     Executor workspaceFanoutExecutor;
     WorkspaceBranchPolicy workspaceBranchPolicy;
+    WebhookProperties webhookProperties;
 
     private boolean isGitLab(RepoWebhook repoWebhook) {
         return repoWebhook.getVcs() != null && repoWebhook.getVcs().getVcsType() == VcsType.GITLAB;
@@ -273,7 +275,7 @@ public class RepoWebhookService {
         List<CompletableFuture<Void>> tasks = workspaces.stream()
                 .map(workspace -> CompletableFuture.runAsync(() -> {
                     try {
-                        processWorkspaceWebhook(workspace, webhookResult);
+                        processWorkspaceWebhook(workspace, webhookResult.copy());
                     } catch (Exception e) {
                         log.error("Error processing v2 webhook for workspace {}: {}", workspace.getName(),
                                 e.getMessage(), e);
@@ -300,6 +302,21 @@ public class RepoWebhookService {
                 log.warn("Failed to resolve PR comment details for workspace {}, skipping", workspace.getName());
                 return;
             }
+        }
+
+        if (isAzureDevOps(workspace) && workspace.getVcs() != null && webhookResult.isPullRequestOrComment()
+                && (webhookResult.getBaseBranch() == null || webhookResult.getBaseBranch().isBlank())
+                && webhookResult.getPrNumber() != null) {
+            String targetBranch = azDevOpsWebhookService.fetchPrTargetBranch(
+                    workspace.getVcs(), workspace.getSource(), webhookResult.getPrNumber().intValue());
+            if (targetBranch != null) {
+                webhookResult.setBaseBranch(targetBranch);
+            }
+        }
+
+        if (!WebhookEventMatcher.shouldProcessPullRequest(workspace, webhookResult, webhookEventRepository,
+                webhookProperties.isPrBaseBranchFilter())) {
+            return;
         }
 
         // Azure DevOps: file changes require per-workspace API calls (push payloads
@@ -348,7 +365,7 @@ public class RepoWebhookService {
             // on PR" would never actually post a comment for a repo on the shared v2 webhook.
             WebhookEvent matchedEvent = webhookResult.isRelease() ? null
                     : WebhookEventMatcher.findMatchingEvent(webhookResult, workspace.getWebhook(),
-                            webhookEventRepository);
+                            webhookEventRepository, webhookProperties.isPrBaseBranchFilter());
 
             // Mirrors WebhookService.handlePrCommentCommand: a "terrakube plan"/"terrakube apply"
             // comment only starts a job when PR workflow is actually enabled on the matched event.

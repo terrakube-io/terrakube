@@ -567,8 +567,13 @@ export const WorkspaceWebhook = ({
                                         dependencies={[["events", name, "anyBranch"]]}
                                         extra={
                                           <>
-                                            Regexes matching the whole {isRelease ? "tag" : "branch name"}:{" "}
-                                            <code>main</code> only matches main, <code>release/.*</code> matches every
+                                            Regexes matching the whole{" "}
+                                            {isRelease
+                                              ? "tag"
+                                              : trigger.event === "pull_request"
+                                                ? "target branch name (or source branch if target filtering is disabled)"
+                                                : "branch name"}
+                                            : <code>main</code> only matches main, <code>release/.*</code> matches every
                                             release branch. Enter or comma adds another.
                                           </>
                                         }

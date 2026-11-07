@@ -120,6 +120,81 @@ public class WebhookResultTest {
     }
 
     @Test
+    public void baseBranchCanBeStoredAndRetrieved() {
+        WebhookResult result = new WebhookResult();
+        assertNull(result.getBaseBranch());
+        result.setBaseBranch("main");
+        assertEquals("main", result.getBaseBranch());
+    }
+
+    @Test
+    public void isPullRequestOrCommentIdentifiesPrsAndComments() {
+        WebhookResult push = new WebhookResult();
+        push.setEvent("push");
+        assertFalse(push.isPullRequestOrComment());
+
+        WebhookResult pr = new WebhookResult();
+        pr.setEvent("pull_request");
+        assertTrue(pr.isPullRequestOrComment());
+
+        WebhookResult mr = new WebhookResult();
+        mr.setEvent("merge_request");
+        assertTrue(mr.isPullRequestOrComment());
+
+        WebhookResult comment = new WebhookResult();
+        comment.setPrComment(true);
+        assertTrue(comment.isPullRequestOrComment());
+
+        WebhookResult withNumber = new WebhookResult();
+        withNumber.setPrNumber(10);
+        assertTrue(withNumber.isPullRequestOrComment());
+
+        WebhookResult release = new WebhookResult();
+        release.setRelease(true);
+        release.setPrNumber(10);
+        release.setEvent("release");
+        assertFalse(release.isPullRequestOrComment());
+    }
+
+    @Test
+    void deserializationIgnoresUnknownPropertiesForRollingUpgrades() throws Exception {
+        String json = """
+                {
+                    "branch": "main",
+                    "baseBranch": "release/1.0",
+                    "someFutureField": "futureValue"
+                }
+                """;
+        WebhookResult result = new com.fasterxml.jackson.databind.ObjectMapper().readValue(json, WebhookResult.class);
+        assertEquals("main", result.getBranch());
+        assertEquals("release/1.0", result.getBaseBranch());
+    }
+
+    @Test
+    void copyCreatesIndependentCopy() {
+        WebhookResult original = new WebhookResult();
+        original.setBranch("feature/test");
+        original.setBaseBranch("main");
+        original.setCommit("abc123");
+        original.setPrNumber(42);
+        original.setFileChanges(new java.util.ArrayList<>(java.util.List.of("main.tf")));
+
+        WebhookResult copied = original.copy();
+        assertEquals(original, copied);
+        assertEquals(original.getBranch(), copied.getBranch());
+        assertEquals(original.getBaseBranch(), copied.getBaseBranch());
+        assertEquals(original.getCommit(), copied.getCommit());
+        assertEquals(original.getPrNumber(), copied.getPrNumber());
+        assertEquals(original.getFileChanges(), copied.getFileChanges());
+
+        // Modifying the copy doesn't mutate original
+        copied.setBaseBranch("develop");
+        copied.getFileChanges().add("variables.tf");
+        assertEquals("main", original.getBaseBranch());
+        assertEquals(1, original.getFileChanges().size());
+    }
+
+    @Test
     void theBranchPolicySourceIsNotSerialized() throws Exception {
         String json = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(new WebhookResult());
 

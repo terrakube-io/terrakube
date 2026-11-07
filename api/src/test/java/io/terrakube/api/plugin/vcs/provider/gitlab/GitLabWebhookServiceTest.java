@@ -56,17 +56,33 @@ public class GitLabWebhookServiceTest {
     @Test
     public void parseGitLabPayloadStoresMergeRequestIidForFileFetch() {
         String payload = "{\"object_kind\":\"merge_request\",\"object_attributes\":{\"iid\":42,"
-                + "\"action\":\"open\",\"source_branch\":\"feature\",\"last_commit\":{\"id\":\"def456\"}}}";
+                + "\"action\":\"open\",\"source_branch\":\"feature\",\"target_branch\":\"main\",\"last_commit\":{\"id\":\"def456\"}}}";
 
         WebhookResult result = newService().parseGitLabPayload(payload, Map.of());
 
         assertEquals("merge_request", result.getEvent());
         assertEquals("feature", result.getBranch());
+        assertEquals("main", result.getBaseBranch());
         assertEquals("def456", result.getCommit());
         assertEquals(42L, result.getPrNumber());
         // The MR iid is the marker used later to resolve the changed files per workspace
         assertEquals("42", result.getPrFilesUrl());
         assertTrue(result.isValid());
+    }
+
+    @Test
+    public void parseGitLabPayloadIgnoresNoteWithoutMergeRequest() {
+        String payload = """
+                {
+                  "object_kind": "note",
+                  "object_attributes": {
+                    "noteable_type": "Issue",
+                    "note": "terrakube plan"
+                  }
+                }
+                """;
+        WebhookResult result = newService().parseGitLabPayload(payload, Map.of());
+        assertFalse(result.isValid());
     }
 
     @Test

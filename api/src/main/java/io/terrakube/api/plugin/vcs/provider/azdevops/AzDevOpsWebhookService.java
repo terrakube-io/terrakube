@@ -255,6 +255,7 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
         int prNumber = resource.path("pullRequestId").asInt();
         result.setPrNumber(prNumber);
         result.setBranch(stripRefPrefix(resource.path("sourceRefName").asText()));
+        result.setBaseBranch(stripRefPrefix(resource.path("targetRefName").asText(null)));
         result.setCommit(resource.path("lastMergeSourceCommit").path(FIELD_COMMIT_ID).asText());
         result.setCreatedBy(resolveUser(resource.path("createdBy")));
 
@@ -264,6 +265,9 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
 
         if (repo != null && !repositoryId.isEmpty() && prNumber > 0) {
             result.setFileChanges(getPullRequestChanges(workspace.getVcs(), repo, repositoryId, prNumber));
+            if (result.getBaseBranch() == null && workspace.getVcs() != null) {
+                result.setBaseBranch(fetchPrTargetBranch(workspace.getVcs(), repo, repositoryId, prNumber));
+            }
         }
 
         return result;
@@ -289,6 +293,7 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
         result.setPrNumber(prNumber);
         result.setCreatedBy(resolveUser(resource.path("comment").path("author")));
         result.setBranch(stripRefPrefix(pullRequest.path("sourceRefName").asText()));
+        result.setBaseBranch(stripRefPrefix(pullRequest.path("targetRefName").asText(null)));
         result.setCommit(pullRequest.path("lastMergeSourceCommit").path(FIELD_COMMIT_ID).asText());
 
         JsonNode repository = pullRequest.path(FIELD_REPOSITORY);
@@ -297,6 +302,9 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
 
         if (repo != null && !repositoryId.isEmpty() && prNumber > 0) {
             result.setFileChanges(getPullRequestChanges(workspace.getVcs(), repo, repositoryId, prNumber));
+            if (result.getBaseBranch() == null && workspace.getVcs() != null) {
+                result.setBaseBranch(fetchPrTargetBranch(workspace.getVcs(), repo, repositoryId, prNumber));
+            }
         }
 
         return result;
@@ -784,9 +792,40 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
         return displayName == null || displayName.isEmpty() ? "system" : displayName;
     }
 
-    private String stripRefPrefix(String ref) {
+    public String fetchPrTargetBranch(Vcs vcs, String source, int prNumber) {
+        AzureRepo repo = parseSource(source);
+        if (repo == null) {
+            return null;
+        }
+        String[] repositoryAndProject = resolveRepository(vcs, repo);
+        if (repositoryAndProject.length == 0) {
+            return null;
+        }
+        return fetchPrTargetBranch(vcs, repo, repositoryAndProject[0], prNumber);
+    }
+
+    public String fetchPrTargetBranch(Vcs vcs, AzureRepo repo, String repositoryId, int prNumber) {
+        String encodedProject = UriUtils.encodePathSegment(repo.project, StandardCharsets.UTF_8);
+        String prUrl = String.format(
+                "%s/%s/_apis/git/repositories/%s/pullRequests/%s?api-version=%s",
+                repo.orgBaseUrl, encodedProject, repositoryId, prNumber, API_VERSION);
+
+        ResponseEntity<String> response = callAzureApi(vcs, "", prUrl, HttpMethod.GET);
+        if (response != null && response.getStatusCode().is2xxSuccessful()) {
+            try {
+                JsonNode rootNode = objectMapper.readTree(response.getBody());
+                String targetRef = rootNode.path("targetRefName").asText(null);
+                return stripRefPrefix(targetRef);
+            } catch (Exception e) {
+                log.error("Error parsing Azure DevOps pull request target branch", e);
+            }
+        }
+        return null;
+    }
+
+    public String stripRefPrefix(String ref) {
         if (ref == null) {
-            return "";
+            return null;
         }
         if (ref.startsWith(REF_HEADS_PREFIX)) {
             return ref.substring(REF_HEADS_PREFIX.length());
@@ -948,6 +987,7 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
         int prNumber = resource.path("pullRequestId").asInt();
         result.setPrNumber(prNumber);
         result.setBranch(stripRefPrefix(resource.path("sourceRefName").asText()));
+        result.setBaseBranch(stripRefPrefix(resource.path("targetRefName").asText(null)));
         result.setCommit(resource.path("lastMergeSourceCommit").path(FIELD_COMMIT_ID).asText());
         result.setCreatedBy(resolveUser(resource.path("createdBy")));
         // File changes are deferred — fetched per-workspace via fetchPrFileChanges().
@@ -974,6 +1014,7 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
         result.setPrNumber(prNumber);
         result.setCreatedBy(resolveUser(resource.path("comment").path("author")));
         result.setBranch(stripRefPrefix(pullRequest.path("sourceRefName").asText()));
+        result.setBaseBranch(stripRefPrefix(pullRequest.path("targetRefName").asText(null)));
         result.setCommit(pullRequest.path("lastMergeSourceCommit").path(FIELD_COMMIT_ID).asText());
         // File changes are deferred — fetched per-workspace via fetchPrFileChanges().
         return result;
