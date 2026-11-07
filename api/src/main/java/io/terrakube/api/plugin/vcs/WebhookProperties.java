@@ -16,7 +16,8 @@ public class WebhookProperties {
 
     /**
      * Whether to filter pull request webhooks and PR comments by target (base) branch.
-     * When true, PR triggers evaluate against the target branch and workspace branch matching is enforced.
+     * When true, workspace qualification verifies that the PR's target (base) branch matches the workspace's configured branch.
+     * Trigger branch patterns continue to match against the PR source (head) branch.
      * Defaults to false for backward compatibility.
      */
     private boolean prBaseBranchFilter = false;

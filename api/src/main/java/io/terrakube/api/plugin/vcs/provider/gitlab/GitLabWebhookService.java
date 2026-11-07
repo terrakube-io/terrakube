@@ -46,6 +46,8 @@ import reactor.core.publisher.Mono;
 @Slf4j
 public class GitLabWebhookService extends WebhookServiceBase {
 
+    private static final String FIELD_TARGET_BRANCH = "target_branch";
+
     private ObjectMapper objectMapper;
     private String hostname;
     private WebClient.Builder webClientBuilder;
@@ -209,7 +211,7 @@ public class GitLabWebhookService extends WebhookServiceBase {
         if (!oldrev.isEmpty()) {
             return true;
         }
-        return rootNode.path("changes").has("target_branch");
+        return rootNode.path("changes").has(FIELD_TARGET_BRANCH);
     }
 
     private WebhookResult handleNoteEvent(WebhookResult result, String jsonPayload, Workspace workspace) {
@@ -243,7 +245,7 @@ public class GitLabWebhookService extends WebhookServiceBase {
                 return result;
             }
             result.setBranch(mrNode.path("source_branch").asText());
-            result.setBaseBranch(mrNode.path("target_branch").asText(null));
+            result.setBaseBranch(mrNode.path(FIELD_TARGET_BRANCH).asText(null));
             result.setPrNumber(mrNode.path("iid").asInt());
 
             if (mrNode.has("last_commit")) {
@@ -963,7 +965,7 @@ public class GitLabWebhookService extends WebhookServiceBase {
             return;
         }
         result.setBranch(mrNode.path("source_branch").asText());
-        result.setBaseBranch(mrNode.path("target_branch").asText(null));
+        result.setBaseBranch(mrNode.path(FIELD_TARGET_BRANCH).asText(null));
         result.setPrNumber(mrNode.path("iid").asInt());
         if (mrNode.has("last_commit")) {
             result.setCommit(mrNode.path("last_commit").path("id").asText());

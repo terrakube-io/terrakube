@@ -11,6 +11,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -79,6 +80,7 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
     private static final String FIELD_RESOURCE_VERSION = "resourceVersion";
     private static final String FIELD_REPOSITORY = "repository";
     private static final String FIELD_COMMIT_ID = "commitId";
+    private static final String FIELD_TARGET_REF_NAME = "targetRefName";
     private static final String REF_TAGS_PREFIX = "refs/tags/";
     private static final String REF_HEADS_PREFIX = "refs/heads/";
     private static final String NO_RESPONSE = "No response";
@@ -93,6 +95,7 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
     @Value("${io.terrakube.ui.url}")
     private String uiUrl;
 
+    @Autowired
     public AzDevOpsWebhookService(ObjectMapper objectMapper, AzDevOpsTokenService azDevOpsTokenService,
             WebhookProperties webhookProperties) {
         this.objectMapper = objectMapper;
@@ -263,7 +266,7 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
         int prNumber = resource.path("pullRequestId").asInt();
         result.setPrNumber(prNumber);
         result.setBranch(stripRefPrefix(resource.path("sourceRefName").asText()));
-        result.setBaseBranch(stripRefPrefix(resource.path("targetRefName").asText(null)));
+        result.setBaseBranch(stripRefPrefix(resource.path(FIELD_TARGET_REF_NAME).asText(null)));
         result.setCommit(resource.path("lastMergeSourceCommit").path(FIELD_COMMIT_ID).asText());
         result.setCreatedBy(resolveUser(resource.path("createdBy")));
 
@@ -302,7 +305,7 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
         result.setPrNumber(prNumber);
         result.setCreatedBy(resolveUser(resource.path("comment").path("author")));
         result.setBranch(stripRefPrefix(pullRequest.path("sourceRefName").asText()));
-        result.setBaseBranch(stripRefPrefix(pullRequest.path("targetRefName").asText(null)));
+        result.setBaseBranch(stripRefPrefix(pullRequest.path(FIELD_TARGET_REF_NAME).asText(null)));
         result.setCommit(pullRequest.path("lastMergeSourceCommit").path(FIELD_COMMIT_ID).asText());
 
         JsonNode repository = pullRequest.path(FIELD_REPOSITORY);
@@ -840,7 +843,7 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
         if (response != null && response.getStatusCode().is2xxSuccessful()) {
             try {
                 JsonNode rootNode = objectMapper.readTree(response.getBody());
-                String targetRef = rootNode.path("targetRefName").asText(null);
+                String targetRef = rootNode.path(FIELD_TARGET_REF_NAME).asText(null);
                 return stripRefPrefix(targetRef);
             } catch (Exception e) {
                 log.error("Error parsing Azure DevOps pull request target branch", e);
@@ -1013,7 +1016,7 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
         int prNumber = resource.path("pullRequestId").asInt();
         result.setPrNumber(prNumber);
         result.setBranch(stripRefPrefix(resource.path("sourceRefName").asText()));
-        result.setBaseBranch(stripRefPrefix(resource.path("targetRefName").asText(null)));
+        result.setBaseBranch(stripRefPrefix(resource.path(FIELD_TARGET_REF_NAME).asText(null)));
         result.setCommit(resource.path("lastMergeSourceCommit").path(FIELD_COMMIT_ID).asText());
         result.setCreatedBy(resolveUser(resource.path("createdBy")));
         // File changes are deferred — fetched per-workspace via fetchPrFileChanges().
@@ -1040,7 +1043,7 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
         result.setPrNumber(prNumber);
         result.setCreatedBy(resolveUser(resource.path("comment").path("author")));
         result.setBranch(stripRefPrefix(pullRequest.path("sourceRefName").asText()));
-        result.setBaseBranch(stripRefPrefix(pullRequest.path("targetRefName").asText(null)));
+        result.setBaseBranch(stripRefPrefix(pullRequest.path(FIELD_TARGET_REF_NAME).asText(null)));
         result.setCommit(pullRequest.path("lastMergeSourceCommit").path(FIELD_COMMIT_ID).asText());
         // File changes are deferred — fetched per-workspace via fetchPrFileChanges().
         return result;

@@ -5,7 +5,6 @@ import java.util.*;
 
 import io.terrakube.api.plugin.execution.JobBranchPolicyException;
 import io.terrakube.api.plugin.execution.WorkspaceBranchPolicy;
-import io.terrakube.api.plugin.execution.WorkspaceBranches;
 import io.terrakube.api.rs.webhook.WebhookEvent;
 import io.terrakube.api.plugin.security.audit.AuditActorContext;
 import org.springframework.stereotype.Service;

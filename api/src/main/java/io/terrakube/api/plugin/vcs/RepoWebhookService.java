@@ -24,7 +24,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import io.terrakube.api.plugin.execution.JobBranchPolicyException;
 import io.terrakube.api.plugin.execution.WorkspaceBranchPolicy;
-import io.terrakube.api.plugin.execution.WorkspaceBranches;
 import io.terrakube.api.plugin.scheduler.ScheduleJobService;
 import io.terrakube.api.plugin.security.audit.AuditActorContext;
 import io.terrakube.api.plugin.vcs.provider.azdevops.AzDevOpsWebhookService;
@@ -260,6 +259,12 @@ public class RepoWebhookService {
             webhookResult.setFileChanges(prFiles);
         }
 
+        if (!azureDevOps && !gitlab && webhookResult.getPrDetailsUrl() != null && webhookResult.getCommit() == null
+                && repoWebhook.getVcs() != null) {
+            gitHubWebhookService.resolvePrDetails(repoWebhook.getVcs(), repoWebhook.getRepositoryUrl(),
+                    webhookResult.getPrDetailsUrl(), webhookResult);
+        }
+
         if (azureDevOps && webhookProperties.isPrBaseBranchFilter()
                 && webhookResult.isPullRequestOrComment()
                 && (webhookResult.getBaseBranch() == null || webhookResult.getBaseBranch().isBlank())
@@ -273,6 +278,7 @@ public class RepoWebhookService {
         }
 
         if (webhookProperties.isPrBaseBranchFilter() && webhookResult.isPullRequestOrComment()
+                && (webhookResult.getPrDetailsUrl() == null || webhookResult.getCommit() != null)
                 && (webhookResult.getBaseBranch() == null || webhookResult.getBaseBranch().isBlank())) {
             log.warn("PR webhook delivery for repository {} has no target branch (baseBranch); workspaces will fail closed and skip speculative plans", normalizedUrl);
         }

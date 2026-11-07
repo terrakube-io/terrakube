@@ -21,6 +21,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -805,7 +807,9 @@ class RepoWebhookServiceTest {
             commentResult.setPrFilesUrl("https://api.github.com/repos/owner/repo/pulls/9/files");
             when(gitHubWebhookService.parseGitHubPayload(eq(payload), any())).thenReturn(commentResult);
 
-            when(gitHubWebhookService.resolvePrDetails(eq(ws.getVcs()), eq(repoUrl),
+            // any(), not eq(ws.getVcs()): processClaimedDelivery tries this once repo-wide with
+            // the repo webhook's own Vcs before any workspace loop iteration is reached
+            when(gitHubWebhookService.resolvePrDetails(any(), eq(repoUrl),
                     eq("https://api.github.com/repos/owner/repo/pulls/9"), any(WebhookResult.class)))
                     .thenAnswer(inv -> {
                         WebhookResult res = inv.getArgument(3);
@@ -813,10 +817,6 @@ class RepoWebhookServiceTest {
                         res.setBranch("feature-branch");
                         return true;
                     });
-            // any(), not eq(ws.getVcs()): processClaimedDelivery now tries this once repo-wide with
-            // the repo webhook's own Vcs before any workspace loop iteration is reached (see
-            // RepoWebhookService.processClaimedDelivery) - the workspace-scoped fallback in
-            // processWorkspaceWebhook only runs if that didn't populate anything.
             when(gitHubWebhookService.fetchPrFileChanges(any(), eq(repoUrl),
                     eq("https://api.github.com/repos/owner/repo/pulls/9/files")))
                     .thenReturn(List.of("main.tf"));
@@ -829,7 +829,7 @@ class RepoWebhookServiceTest {
 
             subject.processClaimedDelivery(rw, payload, headers);
 
-            verify(gitHubWebhookService).resolvePrDetails(eq(ws.getVcs()), eq(repoUrl),
+            verify(gitHubWebhookService).resolvePrDetails(any(), eq(repoUrl),
                     eq("https://api.github.com/repos/owner/repo/pulls/9"), any(WebhookResult.class));
 
             ArgumentCaptor<Job> jobCaptor = ArgumentCaptor.forClass(Job.class);
@@ -2151,12 +2151,33 @@ class RepoWebhookServiceTest {
                         return List.of("file-for-" + vcs.getId());
                     });
 
-            subject.processClaimedDelivery(rw, payload, Map.of());
+            ExecutorService fanoutExecutor = Executors.newFixedThreadPool(5);
+            try {
+                RepoWebhookService concurrentSubject = new RepoWebhookService(
+                        repoWebhookRepository,
+                        workspaceRepository,
+                        webhookEventRepository,
+                        gitHubWebhookService,
+                        gitLabWebhookService,
+                        azDevOpsWebhookService,
+                        jobRepository,
+                        scheduleJobService,
+                        prCommentService,
+                        repoWebhookDeliveryTransactions,
+                        objectMapper,
+                        fanoutExecutor,
+                        workspaceBranchPolicy,
+                        webhookProperties);
 
-            // All 5 workspaces matched their own isolated file changes without crosstalk
-            ArgumentCaptor<Job> captor = ArgumentCaptor.forClass(Job.class);
-            verify(jobRepository, times(5)).save(captor.capture());
-            assertThat(captor.getAllValues()).hasSize(5);
+                concurrentSubject.processClaimedDelivery(rw, payload, Map.of());
+
+                // All 5 workspaces matched their own isolated file changes without crosstalk
+                ArgumentCaptor<Job> captor = ArgumentCaptor.forClass(Job.class);
+                verify(jobRepository, times(5)).save(captor.capture());
+                assertThat(captor.getAllValues()).hasSize(5);
+            } finally {
+                fanoutExecutor.shutdownNow();
+            }
         }
 
         @Test
