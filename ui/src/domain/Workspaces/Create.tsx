@@ -240,7 +240,7 @@ export const CreateWorkspace = () => {
 
         // Set projects
         if (!projectsRes.isError) {
-          setProjectList(projectsRes.data);
+          setProjectList(projectsRes.data ?? []);
           if (preselectedProjectId) {
             form.setFieldsValue({ project: preselectedProjectId });
           }

@@ -5252,7 +5252,6 @@ __metadata:
     typescript-eslint: "npm:^8.72.1"
     uuid: "npm:^14.0.3"
     vite: "npm:^8.3.5"
-    web-vitals: "npm:^6.2.3"
   languageName: unknown
   linkType: soft
 
@@ -13011,13 +13010,6 @@ __metadata:
   version: 2.0.1
   resolution: "web-namespaces@npm:2.0.1"
   checksum: 10c0/df245f466ad83bd5cd80bfffc1674c7f64b7b84d1de0e4d2c0934fb0782e0a599164e7197a4bce310ee3342fd61817b8047ff04f076a1ce12dd470584142a4bd
-  languageName: node
-  linkType: hard
-
-"web-vitals@npm:^6.2.3":
-  version: 6.2.3
-  resolution: "web-vitals@npm:6.2.3"
-  checksum: 10c0/d7db74ab8503f069db0f697b1b1318670062616a1b46464abde98dc599ffbf71c0080f39bfe739ed122da12f6980fe882d471e86a78fedad61a4bfa1abffa32c
   languageName: node
   linkType: hard
 
