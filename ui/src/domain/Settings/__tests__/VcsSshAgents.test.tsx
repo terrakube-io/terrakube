@@ -11,7 +11,7 @@ import { EditFederatedCredential } from "../EditFederatedCredential";
 import { getConnectUrl } from "../vcsProviders";
 import { VcsType } from "../../types";
 
-jest.mock("uuid", () => ({ v1: () => "uuid-1" }));
+jest.spyOn(crypto, "randomUUID").mockReturnValue("uuid-1" as ReturnType<typeof crypto.randomUUID>);
 
 jest.mock("../../../config/axiosConfig", () => ({
   __esModule: true,

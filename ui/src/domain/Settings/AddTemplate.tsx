@@ -1,7 +1,7 @@
 import type { OnMount } from "@monaco-editor/react";
 import { CodeEditor } from "@/components/forms/CodeEditor";
 import { Button, Card, Form, Input, List, message, Typography } from "antd";
-import { Buffer } from "buffer";
+import { decodeBase64, encodeBase64 } from "@/modules/utils/base64";
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import axiosInstance from "../../config/axiosConfig";
@@ -40,8 +40,7 @@ export const AddTemplate = ({ setMode, loadTemplates }: Props) => {
   }
 
   const handleClick = (item: TemplateAttributes) => {
-    const buff = Buffer.from(item.tcl, "base64");
-    setTCL(buff.toString("ascii"));
+    setTCL(decodeBase64(item.tcl));
     setChosen(true);
   };
 
@@ -104,7 +103,7 @@ export const AddTemplate = ({ setMode, loadTemplates }: Props) => {
         attributes: {
           name: values.name,
           description: values.description,
-          tcl: Buffer.from(editorRef.current ? editorRef.current.getValue() : tcl).toString("base64"),
+          tcl: encodeBase64(editorRef.current ? editorRef.current.getValue() : tcl),
           version: "1.0.0",
         },
       },
