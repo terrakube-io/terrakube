@@ -323,6 +323,26 @@ public class PrCommentService {
     }
 
     /**
+     * Tells the pull request that a "terrakube apply" comment was not run because its author may not apply
+     * (see {@link PrApplyAuthorizationService}). Used by the per-workspace (v1) and shared (v2) webhook paths.
+     */
+    public void postApplyNotAuthorizedNotice(Workspace workspace, Integer prNumber, String reason) {
+        if (prNumber == null || prNumber == 0) return;
+
+        Job transientJob = new Job();
+        transientJob.setWorkspace(workspace);
+        transientJob.setPrNumber(prNumber);
+
+        String markdown = """
+                ## Terrakube Apply
+
+                ⛔ %s
+                """.formatted(reason);
+
+        postComment(transientJob, markdown);
+    }
+
+    /**
      * Tells the pull request that a command was not run because the workspace restricts apply and destroy to its
      * configured branch. Used by the per-workspace (v1) and shared (v2) webhook paths.
      */
@@ -364,6 +384,30 @@ public class PrCommentService {
             }
         } catch (Exception e) {
             log.warn("Failed to acknowledge PR comment command for workspace {}: {}", workspace.getName(), e.getMessage());
+        }
+    }
+
+    /**
+     * Reacts to a "terrakube apply" comment that was refused (see {@link PrApplyAuthorizationService})
+     * with the same cross a failed job gets, so the comment does not keep only the "eyes" of
+     * {@link #acknowledgeReceipt}. Bitbucket Cloud has no comment-reaction API, so it's a no-op there.
+     */
+    public void acknowledgeRefusal(Workspace workspace, String commentId, Number prNumber) {
+        if (commentId == null || commentId.isEmpty()) return;
+
+        try {
+            switch (workspace.getVcs().getVcsType()) {
+                case GITHUB:
+                    gitHubWebhookService.addCommentReaction(workspace, commentId, "-1");
+                    break;
+                case GITLAB:
+                    gitLabWebhookService.addNoteReaction(workspace, prNumber, commentId, "x");
+                    break;
+                default:
+                    break;
+            }
+        } catch (Exception e) {
+            log.warn("Failed to mark the refused PR comment for workspace {}: {}", workspace.getName(), e.getMessage());
         }
     }
 

@@ -27,6 +27,8 @@ public class WebhookResult {
     private String commentBody;
     private String commentCommand;
     private String commentId;
+    /** Provider id of the comment author, for providers whose permission API takes an id (GitLab). */
+    private String commentAuthorId;
     private boolean isPrComment;
     private String prFilesUrl;
     private String rawPayload;

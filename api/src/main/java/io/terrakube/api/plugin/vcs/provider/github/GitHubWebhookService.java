@@ -8,8 +8,10 @@ import java.util.Arrays;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.regex.Pattern;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
@@ -493,6 +495,37 @@ public class GitHubWebhookService extends WebhookServiceBase {
             log.info("Added {} reaction to PR comment {} in workspace {}", reactionContent, commentId, workspace.getName());
         } else {
             log.error("Failed to add reaction to PR comment {} in workspace {}", commentId, workspace.getName());
+        }
+    }
+
+    /** GitHub logins: alphanumerics and single hyphens, plus the "[bot]" suffix of app accounts. */
+    private static final Pattern GITHUB_LOGIN = Pattern.compile("^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})(\\[bot])?$");
+
+    /**
+     * The user's permission on the workspace repository, as GitHub's legacy "permission" field reports it
+     * ("admin", "write", "read" or "none"). Empty when GitHub could not be asked or did not answer, so a
+     * caller that gates on it can refuse.
+     */
+    public Optional<String> getRepositoryPermission(Vcs vcs, String source, String username) {
+        if (username == null || !GITHUB_LOGIN.matcher(username).matches()) {
+            log.warn("Not a GitHub login, permission not checked: {}", username);
+            return Optional.empty();
+        }
+        String[] ownerAndRepo = extractOwnerAndRepo(source);
+        String apiUrl = vcs.getApiUrl() + "/repos/" + String.join("/", ownerAndRepo) + "/collaborators/"
+                + username + "/permission";
+        try {
+            ResponseEntity<String> response = callGitHubApi(vcs, ownerAndRepo, null, apiUrl, HttpMethod.GET);
+            if (response == null || !response.getStatusCode().is2xxSuccessful()) {
+                log.error("Could not read the permission of {} on {}", username, String.join("/", ownerAndRepo));
+                return Optional.empty();
+            }
+            String permission = objectMapper.readTree(response.getBody()).path("permission").asText("");
+            return permission.isEmpty() ? Optional.empty() : Optional.of(permission);
+        } catch (Exception e) {
+            log.error("Could not read the permission of {} on {}: {}", username, String.join("/", ownerAndRepo),
+                    e.getMessage());
+            return Optional.empty();
         }
     }
 

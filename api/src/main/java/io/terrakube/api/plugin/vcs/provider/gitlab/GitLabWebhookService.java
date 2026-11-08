@@ -235,6 +235,7 @@ public class GitLabWebhookService extends WebhookServiceBase {
             result.setCommentId(noteNode.path("id").asText());
             result.setEvent("note");
             result.setCreatedBy(rootNode.path("user").path("username").asText());
+            result.setCommentAuthorId(rootNode.path("user").path("id").asText(""));
 
             JsonNode mrNode = rootNode.path("merge_request");
             result.setBranch(mrNode.path("source_branch").asText());
@@ -641,6 +642,38 @@ public class GitLabWebhookService extends WebhookServiceBase {
         }
     }
 
+    /**
+     * The user's access level on the workspace project, inherited memberships included (GitLab's
+     * members/all endpoint): 30 is Developer, 40 Maintainer, 50 Owner. Empty when GitLab could not be
+     * asked, or the user is not a member, so a caller that gates on it can refuse.
+     */
+    public Optional<Integer> getProjectAccessLevel(Workspace workspace, String userId) {
+        if (userId == null || !userId.matches("\\d+")) {
+            log.warn("Not a GitLab user id, access level not checked: {}", userId);
+            return Optional.empty();
+        }
+        try {
+            String ownerAndRepo = extractOwnerAndRepoGitlab(workspace.getSource());
+            String token = workspace.getVcs().getAccessToken();
+            String projectId = getGitlabProjectId(ownerAndRepo, token, workspace.getVcs().getApiUrl());
+            String apiUrl = workspace.getVcs().getApiUrl() + "/projects/" + projectId + "/members/all/" + userId;
+            ResponseEntity<String> response = callGitlabApi(token, null, apiUrl, HttpMethod.GET);
+            if (response == null || !response.getStatusCode().is2xxSuccessful()) {
+                log.error("Could not read the access level of user {} on workspace {}", userId, workspace.getName());
+                return Optional.empty();
+            }
+            JsonNode accessLevel = objectMapper.readTree(response.getBody()).path("access_level");
+            return accessLevel.isInt() ? Optional.of(accessLevel.asInt()) : Optional.empty();
+        } catch (Exception e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            log.error("Could not read the access level of user {} on workspace {}: {}", userId, workspace.getName(),
+                    e.getMessage());
+            return Optional.empty();
+        }
+    }
+
     private ResponseEntity<String> callGitlabApi(String token, String body, String apiUrl, HttpMethod httpMethod) {
         HttpHeaders headers = new HttpHeaders();
         headers.set("Accept", "application/json");
@@ -949,6 +982,7 @@ public class GitLabWebhookService extends WebhookServiceBase {
         result.setCommentCommand(command);
         result.setCommentId(noteNode.path("id").asText());
         result.setCreatedBy(rootNode.path("user").path("username").asText());
+        result.setCommentAuthorId(rootNode.path("user").path("id").asText(""));
 
         JsonNode mrNode = rootNode.path("merge_request");
         result.setBranch(mrNode.path("source_branch").asText());
