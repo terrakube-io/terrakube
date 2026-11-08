@@ -83,8 +83,10 @@ Rules:
 - Never import these statically from the shell or from a module the shell imports: `monaco-editor` /
   `@monaco-editor/react`, `@scalar/*`, `react-markdown` and its plugins, `reactflow`, `acorn`, `sucrase`.
   Load them inside a lazy route or with `await import()`.
-- Use the code editor only through `@/components/forms/CodeEditor`; import only types from
-  `@monaco-editor/react`.
+- Use the code editor only through `@/components/forms/CodeEditor` (it is the lazy boundary); import only
+  types from `@monaco-editor/react`.
+- Keep importing antd as `import { Button } from "antd"`: a plugin in `vite.config.mts` rewrites these to
+  per-component sub-paths at build time, which is what keeps antd's tables and pickers out of the first page.
 - `src/ActionLoader.tsx` compiles user-defined actions at runtime and gives them the antd namespace.
   Don't narrow what it exposes: existing actions rely on it.
 
