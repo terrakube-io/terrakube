@@ -50,6 +50,7 @@ class WorkspaceGraphQlPaginationTest extends ServerApplicationTests {
             }
             """;
 
+    private static final List<String> DEMO_NAMES = List.of("sample_simple", "simple_tag1", "simple_tag2", "simple_tag3");
     private final List<Workspace> created = new ArrayList<>();
     private final List<Access> createdAccess = new ArrayList<>();
     private String token;
@@ -81,19 +82,19 @@ class WorkspaceGraphQlPaginationTest extends ServerApplicationTests {
     @Test
     void loadsTheFullUiRequest() throws Exception {
         removeWorkspaces();
-        String body = new String(getClass().getResourceAsStream("/workspace-page-request.json").readAllBytes(),
+        String uiRequest = new String(getClass().getResourceAsStream("/workspace-page-request.json").readAllBytes(),
                 java.nio.charset.StandardCharsets.UTF_8);
+        // Other suites (AccessTests) leave extra workspaces in this organization; pin the page to the demo rows.
+        String body = uiRequest.replace("workspace(first: $first, after: $after,  sort: $sort)",
+                "workspace(first: $first, after: $after, sort: $sort, filter: \\\"name=in=(" + String.join(",", DEMO_NAMES) + ")\\\")");
+        assertThat(body).isNotEqualTo(uiRequest);
         for (String group : List.of("TERRAKUBE_DEVELOPERS", "TERRAKUBE_ADMIN")) {
             Response response = given().headers("Authorization", "Bearer " + generatePAT(group), "Content-Type", "application/json")
                     .body(body).post("/graphql/api/v1");
             assertThat(response.jsonPath().getList("errors")).as(response.asPrettyString()).isNull();
-            // Other suites (AccessTests) leave extra workspaces in this organization, so only the demo rows are pinned.
             List<String> names = response.jsonPath().getList("data.organization.edges[0].node.workspace.edges.node.name", String.class);
-            assertThat(names).as(response.asPrettyString()).contains("sample_simple", "simple_tag1", "simple_tag2", "simple_tag3");
-            assertThat(names).isSorted();
-            // The request asks for a page of 20; leftover rows from other suites can push the total past it.
-            int totalRecords = response.jsonPath().getInt("data.organization.edges[0].node.statusAll.pageInfo.totalRecords");
-            assertThat(names).hasSize(Math.min(totalRecords, 20));
+            assertThat(names).as(response.asPrettyString()).containsExactlyElementsOf(DEMO_NAMES);
+            assertThat(response.jsonPath().getInt("data.organization.edges[0].node.workspace.pageInfo.totalRecords")).isEqualTo(DEMO_NAMES.size());
         }
     }
 
