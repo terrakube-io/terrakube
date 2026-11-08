@@ -62,19 +62,20 @@ class StructuredOutputSpoolRecoveryIntegrationTest extends ServerApplicationTest
         workspace = workspaceRepository
                 .findById(UUID.fromString("5ed411ca-7ab8-4d2f-b591-02d0d5788afc")).orElseThrow();
 
+        // Held until @AfterEach: test bodies stub redisTemplate too.
+        pauseScheduler();
         valueOperations = org.mockito.Mockito.mock(org.springframework.data.redis.core.ValueOperations.class);
         lenient().doReturn(true).when(valueOperations).setIfAbsent(any(), any(), any(java.time.Duration.class));
         Properties redisProps = new Properties();
         redisProps.setProperty("uptime_in_seconds", "3600");
-        stubWithSchedulerPaused(() -> {
-            lenient().doReturn(valueOperations).when(redisTemplate).opsForValue();
-            lenient().doReturn(true).when(redisTemplate).delete(anyString());
-            lenient().doReturn(redisProps).when(redisTemplate).execute(any(RedisCallback.class));
-        });
+        lenient().doReturn(valueOperations).when(redisTemplate).opsForValue();
+        lenient().doReturn(true).when(redisTemplate).delete(anyString());
+        lenient().doReturn(redisProps).when(redisTemplate).execute(any(RedisCallback.class));
     }
 
     @AfterEach
-    void cleanupSpoolDirectory() {
+    void cleanupSpoolDirectory() throws Exception {
+        resumeScheduler();
         try {
             if (organization != null) {
                 File orgSpoolDir = new File(FileUtils.getUserDirectoryPath(),

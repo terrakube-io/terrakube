@@ -22,6 +22,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.mockito.Mock;
 import org.quartz.Scheduler;
+import org.quartz.SchedulerException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -33,6 +34,7 @@ import org.springframework.data.redis.listener.RedisMessageListenerContainer;
 import org.springframework.test.context.ActiveProfiles;
 
 import javax.crypto.SecretKey;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Date;
@@ -42,6 +44,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.options;
+import static org.awaitility.Awaitility.await;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -138,24 +141,23 @@ class ServerApplicationTests {
     }
 
 
+    private boolean resumeSchedulerAfterTest;
+
     /**
-     * Runs stubbing of the shared Redis mocks with Quartz paused. Scheduled jobs left by earlier
-     * tests call the same mocks, and Mockito stubbing is not thread-safe: a job hitting a mock
-     * mid-stubbing fails the test with UnfinishedStubbingException.
+     * Puts Quartz in standby and waits for running jobs to finish. Scheduled jobs left by earlier
+     * tests call the shared Redis mocks, and Mockito stubbing is not thread-safe: a job hitting a
+     * mock mid-stubbing steals or breaks the stub. Call from @BeforeEach, undo with {@link #resumeScheduler()}.
      */
-    protected void stubWithSchedulerPaused(Runnable stubbing) throws Exception {
-        boolean running = scheduler.isStarted() && !scheduler.isInStandbyMode();
+    protected void pauseScheduler() throws SchedulerException {
+        resumeSchedulerAfterTest = scheduler.isStarted() && !scheduler.isInStandbyMode();
         scheduler.standby();
-        try {
-            long deadline = System.currentTimeMillis() + 10_000;
-            while (!scheduler.getCurrentlyExecutingJobs().isEmpty() && System.currentTimeMillis() < deadline) {
-                Thread.sleep(10);
-            }
-            stubbing.run();
-        } finally {
-            if (running) {
-                scheduler.start();
-            }
+        await().atMost(Duration.ofSeconds(10)).until(() -> scheduler.getCurrentlyExecutingJobs().isEmpty());
+    }
+
+    protected void resumeScheduler() throws SchedulerException {
+        if (resumeSchedulerAfterTest) {
+            resumeSchedulerAfterTest = false;
+            scheduler.start();
         }
     }
 
