@@ -2,11 +2,14 @@ package io.terrakube.api.plugin.vcs;
 
 import java.util.List;
 
+import io.terrakube.api.plugin.execution.WorkspaceBranches;
 import io.terrakube.api.repository.WebhookEventRepository;
 import io.terrakube.api.rs.webhook.Webhook;
 import io.terrakube.api.rs.webhook.WebhookEvent;
 import io.terrakube.api.rs.webhook.WebhookEventPathType;
 import io.terrakube.api.rs.webhook.WebhookEventType;
+
+import io.terrakube.api.rs.workspace.Workspace;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -17,6 +20,9 @@ public final class WebhookEventMatcher {
     }
 
     public static boolean checkBranch(String webhookBranch, WebhookEvent webhookEvent) {
+        if (webhookBranch == null || webhookEvent == null || webhookEvent.getBranch() == null) {
+            return false;
+        }
         String[] branchList = webhookEvent.getBranch().split(",");
         for (String branch : branchList) {
             branch = branch.trim();
@@ -32,6 +38,9 @@ public final class WebhookEventMatcher {
     }
 
     public static boolean checkFileChanges(List<String> files, WebhookEvent webhookEvent) {
+        if (files == null || files.isEmpty() || webhookEvent == null || webhookEvent.getPath() == null) {
+            return false;
+        }
         WebhookEventPathType pathType = webhookEvent.getPathType() != null
                 ? webhookEvent.getPathType()
                 : WebhookEventPathType.REGEX;
@@ -91,6 +100,33 @@ public final class WebhookEventMatcher {
             }
         }
         return sb.toString();
+    }
+
+    /**
+     * Centralized guard for pull request webhooks and PR comments.
+     * Evaluates whether a workspace should process the event when target branch filtering is active.
+     */
+    public static boolean shouldProcessPullRequest(
+            Workspace workspace,
+            WebhookResult result,
+            boolean prBaseBranchFilter) {
+        if (!prBaseBranchFilter || !result.isPullRequestOrComment()) {
+            return true;
+        }
+
+        if (result.getBaseBranch() == null || result.getBaseBranch().isBlank()) {
+            log.debug("Skipping PR webhook event for workspace {}: PR target branch is missing or could not be determined",
+                    workspace.getName());
+            return false;
+        }
+
+        if (WorkspaceBranches.matchesConfiguredBranch(workspace.getBranch(), result.getBaseBranch())) {
+            return true;
+        }
+
+        log.debug("Skipping PR webhook event for workspace {}: PR target branch '{}' does not match workspace branch '{}'",
+                workspace.getName(), result.getBaseBranch(), workspace.getBranch());
+        return false;
     }
 
     /**
