@@ -251,7 +251,12 @@ const ActionLoader = ({ action, context }: { action: any; context: any }) => {
         if (cancelled) return;
         console.error("Error creating component:", err);
         setError(`Error: ${err instanceof Error ? err.message : String(err)}`);
-        setComponent(() => () => <div>Error loading component</div>);
+        setComponent(
+          () =>
+            function ActionLoadError() {
+              return <div>Error loading component</div>;
+            }
+        );
       }
     };
 
