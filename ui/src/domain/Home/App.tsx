@@ -8,6 +8,7 @@ import {
   useNavigate,
   useOutletContext,
   useLocation,
+  useMatches,
 } from "react-router-dom";
 import { useAuth } from "../../config/authConfig";
 import { getBasePath } from "../../config/basePath";
@@ -169,6 +170,11 @@ const ModuleDetailsRoute = () => {
 const AppLayout = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  // Remount the page when the entity in the URL changes (another organization, workspace, module...),
+  // but not when only the tab does: tab routes share their params, so switching tabs keeps the page and
+  // its loaded data. Several settings tabs load once on mount, so keying on params keeps them correct.
+  const matches = useMatches();
+  const pageKey = JSON.stringify(matches[matches.length - 1]?.params ?? {});
   const [organizationName, setOrganizationName] = useState<string>("");
   const { organizations: orgs, loading: organizationsLoading } = useOrganizationSummaries();
   const [workspaceManageState, setWorkspaceManageState] = useState(false);
@@ -275,7 +281,7 @@ const AppLayout = () => {
                 showHomeLink={false}
               />
             ) : (
-              <ErrorBoundary key={location.pathname}>
+              <ErrorBoundary key={pageKey} resetKey={location.pathname}>
                 <Outlet context={{ organizationName: currentOrgName, setOrganizationName, setWorkspaceManageState }} />
               </ErrorBoundary>
             )}
