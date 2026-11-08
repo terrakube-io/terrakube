@@ -7,8 +7,7 @@
  */
 export type ContextAvailability = "persisted" | "pending" | "unavailable";
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  value != null && typeof value === "object";
+const isRecord = (value: unknown): value is Record<string, unknown> => value != null && typeof value === "object";
 
 export const parseContextAvailability = (data: unknown, httpStatus?: number): ContextAvailability => {
   if (httpStatus != null && httpStatus >= 500) {

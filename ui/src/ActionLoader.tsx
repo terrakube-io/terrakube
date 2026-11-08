@@ -1,13 +1,5 @@
 import React, { Component, ErrorInfo, ReactNode, useEffect, useState } from "react";
-import {
-  SiDocker,
-  SiGithub,
-  SiGooglecloud,
-  SiGrafana,
-  SiKubernetes,
-  SiPrometheus,
-  SiTerraform,
-} from "react-icons/si";
+import { SiDocker, SiGithub, SiGooglecloud, SiGrafana, SiKubernetes, SiPrometheus, SiTerraform } from "react-icons/si";
 import { VscAzure } from "react-icons/vsc";
 import { antdIcons, getIcon } from "./config/iconList";
 import axiosInstance from "./config/axiosConfig";
