@@ -26,7 +26,6 @@ import static io.restassured.RestAssured.given;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.when;
 
 /**
@@ -50,8 +49,8 @@ class JobRunRightsTests extends ServerApplicationTests {
     @BeforeEach
     void setup() {
         MockitoAnnotations.openMocks(this);
-        doReturn(valueOperations).when(redisTemplate).opsForValue();
-        doReturn(true).when(valueOperations).setIfAbsent(any(), any(), any(Duration.class));
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.setIfAbsent(any(), any(), any(Duration.class))).thenReturn(true);
         wireMockServer.resetAll();
         stubFor(post(urlPathEqualTo("/api/v1/terraform-rs"))
                 .willReturn(aResponse().withStatus(HttpStatus.ACCEPTED.value()).withBody("")));

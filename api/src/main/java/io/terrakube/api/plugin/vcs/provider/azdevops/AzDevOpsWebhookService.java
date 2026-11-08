@@ -276,7 +276,7 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
 
         if (repo != null && !repositoryId.isEmpty() && prNumber > 0) {
             result.setFileChanges(getPullRequestChanges(workspace.getVcs(), repo, repositoryId, prNumber));
-            if (webhookProperties != null && webhookProperties.isPrBaseBranchFilter()
+            if (webhookProperties.isPrBaseBranchFilter()
                     && result.getBaseBranch() == null && workspace.getVcs() != null) {
                 result.setBaseBranch(fetchPrTargetBranch(workspace.getVcs(), workspace.getSource(), repositoryId, prNumber));
             }
@@ -314,7 +314,7 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
 
         if (repo != null && !repositoryId.isEmpty() && prNumber > 0) {
             result.setFileChanges(getPullRequestChanges(workspace.getVcs(), repo, repositoryId, prNumber));
-            if (webhookProperties != null && webhookProperties.isPrBaseBranchFilter()
+            if (webhookProperties.isPrBaseBranchFilter()
                     && result.getBaseBranch() == null && workspace.getVcs() != null) {
                 result.setBaseBranch(fetchPrTargetBranch(workspace.getVcs(), workspace.getSource(), repositoryId, prNumber));
             }

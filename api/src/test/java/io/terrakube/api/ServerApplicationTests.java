@@ -18,7 +18,6 @@ import io.terrakube.api.repository.*;
 import net.minidev.json.JSONArray;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.mockito.Mock;
@@ -137,16 +136,6 @@ class ServerApplicationTests {
         // Ensure WireMock static client points to the dynamically started server
         WireMock.configureFor("localhost", wireMockServer.port());
     }
-
-    @BeforeEach
-    public void setupDefaultRedisMocks() {
-        if (redisTemplate != null && valueOperations != null) {
-            org.mockito.Mockito.lenient().doReturn(valueOperations).when(redisTemplate).opsForValue();
-            org.mockito.Mockito.lenient().doReturn(true).when(valueOperations).setIfAbsent(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(java.time.Duration.class));
-            org.mockito.Mockito.lenient().doReturn(true).when(redisTemplate).delete(org.mockito.ArgumentMatchers.anyString());
-        }
-    }
-
 
     @AfterAll
     public void stopServer() {

@@ -115,7 +115,7 @@ public final class WebhookEventMatcher {
         }
 
         if (result.getBaseBranch() == null || result.getBaseBranch().isBlank()) {
-            log.warn("Skipping PR webhook event for workspace {}: PR target branch is missing or could not be determined",
+            log.debug("Skipping PR webhook event for workspace {}: PR target branch is missing or could not be determined",
                     workspace.getName());
             return false;
         }
