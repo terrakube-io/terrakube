@@ -18,8 +18,12 @@ type Props = {
 
 export default function TokenGridItem({ token, onDelete, loading }: Props) {
   const expiryDate =
-    token.createdDate && (token.days > 0 || token.hours > 0 || token.minutes > 0)
-      ? DateTime.fromISO(token.createdDate).plus({ days: token.days, hours: token.hours, minutes: token.minutes })
+    token.createdDate && (token.days > 0 || (token.hours ?? 0) > 0 || (token.minutes ?? 0) > 0)
+      ? DateTime.fromISO(token.createdDate).plus({
+          days: token.days,
+          hours: token.hours ?? 0,
+          minutes: token.minutes ?? 0,
+        })
       : null;
   const expired = expiryDate !== null && expiryDate < DateTime.now();
 

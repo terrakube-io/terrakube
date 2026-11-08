@@ -112,7 +112,7 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace,
         }
         setTerraformVersions(tfVersions.sort(compareVersions).reverse());
         setAgentList(agentsRes.data.data);
-        if (!projectsRes.isError) setProjectList(projectsRes.data);
+        if (!projectsRes.isError) setProjectList(projectsRes.data ?? []);
         setVcsList(vcsRes.data?.data ?? []);
         setWaiting(false);
       })

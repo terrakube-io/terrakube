@@ -38,8 +38,7 @@
     "rehype-sanitize": "^6.0.0",
     "remark-gfm": "4.0.1",
     "sucrase": "^3.35.1",
-    "uuid": "^14.0.3",
-    "web-vitals": "^6.2.3"
+    "uuid": "^14.0.3"
   },
   "scripts": {
     "start": "vite",
