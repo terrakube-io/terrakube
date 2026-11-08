@@ -7,7 +7,7 @@ import { getServiceIcon } from "./Icons.jsx";
 import "./Workspaces.css";
 const { Meta } = Card;
 
-export default memo(({ data, isConnectable }: NodeProps<Resource>) => {
+export default memo(function NodeResource({ data, isConnectable }: NodeProps<Resource>) {
   return (
     <>
       <Handle

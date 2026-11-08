@@ -1,4 +1,4 @@
-import { Avatar, Col, Drawer, Row, Space, Spin, Tabs } from "antd";
+import { Avatar, Col, Drawer, Row, Space, Tabs } from "antd";
 import { lazy, Suspense, useEffect, useState } from "react";
 import axiosInstance from "../../config/axiosConfig";
 import { ActionWithSettings, Resource, Workspace } from "../types.js";

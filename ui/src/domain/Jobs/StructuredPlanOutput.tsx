@@ -1619,7 +1619,7 @@ export const StructuredPlanOutput = ({
     if (resultUnconfirmed) {
       return (
         <div className="structured-plan-noChanges structured-plan-inProgress">
-          <span>No resource changes have been recorded yet. This is not confirmed as "no changes".</span>
+          <span>No resource changes have been recorded yet. This is not confirmed as &quot;no changes&quot;.</span>
         </div>
       );
     }
