@@ -30,11 +30,12 @@ export default tseslint.config(
     },
     settings: {
       react: {
-        version: "19.2.7",
+        version: "19.3",
       },
       "import/resolver": {
         typescript: {
-          project: "./tsconfig.json",
+          project: ["./tsconfig.app.json", "./tsconfig.test.json"],
+          noWarnOnMultipleProjects: true,
         },
       },
     },
