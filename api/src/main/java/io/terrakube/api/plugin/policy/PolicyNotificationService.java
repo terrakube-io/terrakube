@@ -28,7 +28,7 @@ public class PolicyNotificationService {
     public PolicyNotificationService(
             NotificationOutboxRepository notificationOutboxRepository,
             NotificationPayloadRenderer notificationPayloadRenderer,
-            @Value("${io.terrakube.ui.url}") String uiUrl) {
+            @Value("${io.terrakube.ui.url:}") String uiUrl) {
         this.notificationOutboxRepository = notificationOutboxRepository;
         this.notificationPayloadRenderer = notificationPayloadRenderer;
         this.uiUrl = uiUrl;
