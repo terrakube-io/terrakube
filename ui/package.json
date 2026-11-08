@@ -51,10 +51,8 @@
     "lint": "eslint --fix ./src",
     "format:check": "prettier ./src --check",
     "format": "prettier ./src --write",
-    "lint:modules:check": "eslint ./src/modules",
-    "lint:modules": "eslint --fix ./src/modules",
-    "format:modules:check": "prettier ./src/modules --check",
-    "format:modules": "prettier ./src/modules --write",
+    "typecheck": "tsc -p tsconfig.app.json --noEmit && tsc -p tsconfig.test.json --noEmit",
+    "check": "yarn lint:check && yarn format:check && yarn typecheck && yarn test",
     "prestart": "chmod +x ./env.sh && ./env.sh && cp env-config.js ./public/"
   },
   "eslintConfig": {
