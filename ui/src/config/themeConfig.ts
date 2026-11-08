@@ -1,4 +1,4 @@
-import { ThemeConfig, theme } from "antd";
+import { type ThemeConfig, theme } from "antd";
 
 export type ColorSchemeOption = "blue" | "terrakube";
 export type ThemeMode = "light" | "dark";
