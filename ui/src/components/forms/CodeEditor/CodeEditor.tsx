@@ -4,7 +4,7 @@ import { getMonacoTheme, monacoOptions } from "@/config/monacoConfig";
 import { useTheme } from "@/context/ThemeContext";
 import "./CodeEditor.css";
 
-type Props = Omit<EditorProps, "theme">;
+export type Props = Omit<EditorProps, "theme">;
 
 export default function CodeEditor({ options, height = "45vh", ...editorProps }: Props) {
   const { themeMode } = useTheme();
