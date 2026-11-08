@@ -8,9 +8,11 @@ import {
   useNavigate,
   useOutletContext,
   useLocation,
+  useMatches,
 } from "react-router-dom";
 import { useAuth } from "../../config/authConfig";
 import { getBasePath } from "../../config/basePath";
+import { pageKey, workspacePage } from "./pageKey";
 import { getThemeConfig } from "../../config/themeConfig";
 import { ThemeProvider, useTheme } from "../../context/ThemeContext";
 import Login from "../Login/Login";
@@ -169,6 +171,8 @@ const ModuleDetailsRoute = () => {
 const AppLayout = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  // Workspace tabs keep the page mounted; every other route change remounts it (see pageKey.ts).
+  const currentPageKey = pageKey(useMatches());
   const [organizationName, setOrganizationName] = useState<string>("");
   const { organizations: orgs, loading: organizationsLoading } = useOrganizationSummaries();
   const [workspaceManageState, setWorkspaceManageState] = useState(false);
@@ -275,7 +279,7 @@ const AppLayout = () => {
                 showHomeLink={false}
               />
             ) : (
-              <ErrorBoundary key={location.pathname}>
+              <ErrorBoundary key={currentPageKey} resetKey={location.pathname}>
                 <Outlet context={{ organizationName: currentOrgName, setOrganizationName, setWorkspaceManageState }} />
               </ErrorBoundary>
             )}
@@ -338,26 +342,32 @@ const router = createBrowserRouter(
         {
           path: "/workspaces/:id",
           element: <WorkspaceDetailsRoute />,
+          handle: workspacePage,
         },
         {
           path: "/organizations/:orgid/workspaces/:id",
           element: <WorkspaceDetailsRoute />,
+          handle: workspacePage,
         },
         {
           path: "/workspaces/:id/runs",
           element: <WorkspaceDetailsRoute selectedTab="2" />,
+          handle: workspacePage,
         },
         {
           path: "/organizations/:orgid/workspaces/:id/runs",
           element: <WorkspaceDetailsRoute selectedTab="2" />,
+          handle: workspacePage,
         },
         {
           path: "/workspaces/:id/runs/:runid",
           element: <WorkspaceDetailsRoute selectedTab="2" />,
+          handle: workspacePage,
         },
         {
           path: "/organizations/:orgid/workspaces/:id/runs/:runid",
           element: <WorkspaceDetailsRoute selectedTab="2" />,
+          handle: workspacePage,
         },
         {
           path: "/app/:orgName/:wsName/runs/:runid",
@@ -366,114 +376,142 @@ const router = createBrowserRouter(
         {
           path: "/workspaces/:id/states",
           element: <WorkspaceDetailsRoute selectedTab="3" />,
+          handle: workspacePage,
         },
         {
           path: "/organizations/:orgid/workspaces/:id/states",
           element: <WorkspaceDetailsRoute selectedTab="3" />,
+          handle: workspacePage,
         },
         {
           path: "/workspaces/:id/variables",
           element: <WorkspaceDetailsRoute selectedTab="4" />,
+          handle: workspacePage,
         },
         {
           path: "/organizations/:orgid/workspaces/:id/variables",
           element: <WorkspaceDetailsRoute selectedTab="4" />,
+          handle: workspacePage,
         },
         {
           path: "/workspaces/:id/schedules",
           element: <WorkspaceDetailsRoute selectedTab="5" />,
+          handle: workspacePage,
         },
         {
           path: "/organizations/:orgid/workspaces/:id/schedules",
           element: <WorkspaceDetailsRoute selectedTab="5" />,
+          handle: workspacePage,
         },
         {
           path: "/workspaces/:id/run-triggers",
           element: <WorkspaceDetailsRoute selectedTab="7" />,
+          handle: workspacePage,
         },
         {
           path: "/organizations/:orgid/workspaces/:id/run-triggers",
           element: <WorkspaceDetailsRoute selectedTab="7" />,
+          handle: workspacePage,
         },
         {
           path: "/workspaces/:id/settings",
           element: <WorkspaceDetailsRoute selectedTab="6" />,
+          handle: workspacePage,
         },
         {
           path: "/organizations/:orgid/workspaces/:id/settings",
           element: <WorkspaceDetailsRoute selectedTab="6" />,
+          handle: workspacePage,
         },
         {
           path: "/workspaces/:id/settings/general",
           element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="general" />,
+          handle: workspacePage,
         },
         {
           path: "/organizations/:orgid/workspaces/:id/settings/general",
           element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="general" />,
+          handle: workspacePage,
         },
         {
           path: "/workspaces/:id/settings/policies",
           element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="policies" />,
+          handle: workspacePage,
         },
         {
           path: "/organizations/:orgid/workspaces/:id/settings/policies",
           element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="policies" />,
+          handle: workspacePage,
         },
         {
           path: "/workspaces/:id/settings/locking",
           element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="locking" />,
+          handle: workspacePage,
         },
         {
           path: "/organizations/:orgid/workspaces/:id/settings/locking",
           element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="locking" />,
+          handle: workspacePage,
         },
         {
           path: "/workspaces/:id/settings/sshkey",
           element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="sshkey" />,
+          handle: workspacePage,
         },
         {
           path: "/organizations/:orgid/workspaces/:id/settings/sshkey",
           element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="sshkey" />,
+          handle: workspacePage,
         },
         {
           path: "/workspaces/:id/settings/webhook",
           element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="webhook" />,
+          handle: workspacePage,
         },
         {
           path: "/organizations/:orgid/workspaces/:id/settings/webhook",
           element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="webhook" />,
+          handle: workspacePage,
         },
         {
           path: "/workspaces/:id/settings/notifications",
           element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="notifications" />,
+          handle: workspacePage,
         },
         {
           path: "/organizations/:orgid/workspaces/:id/settings/notifications",
           element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="notifications" />,
+          handle: workspacePage,
         },
         {
           path: "/workspaces/:id/settings/state-shared",
           element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="state-shared" />,
+          handle: workspacePage,
         },
         {
           path: "/organizations/:orgid/workspaces/:id/settings/state-shared",
           element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="state-shared" />,
+          handle: workspacePage,
         },
         {
           path: "/workspaces/:id/settings/team-access",
           element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="team-access" />,
+          handle: workspacePage,
         },
         {
           path: "/organizations/:orgid/workspaces/:id/settings/team-access",
           element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="team-access" />,
+          handle: workspacePage,
         },
         {
           path: "/workspaces/:id/settings/advanced",
           element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="advanced" />,
+          handle: workspacePage,
         },
         {
           path: "/organizations/:orgid/workspaces/:id/settings/advanced",
           element: <WorkspaceDetailsRoute selectedTab="6" settingsSection="advanced" />,
+          handle: workspacePage,
         },
         {
           path: "/organizations/:orgid/registry",
