@@ -9,7 +9,7 @@ import {
   FolderOutlined,
   GlobalOutlined,
 } from "@ant-design/icons";
-import { DateTime } from "luxon";
+import dayjs from "dayjs";
 import DeleteConfirmationModal from "@/components/modals/DeleteConfirmationModal/DeleteConfirmationModal";
 import { formatOrdinalDate } from "@/modules/utils/dates";
 import "../PolicySets.css";
@@ -49,12 +49,12 @@ const renderExpiration = (expiresAt: string | number | null) => {
   if (!expiresAt) {
     return <Tag>Permanent</Tag>;
   }
-  const expDate = DateTime.fromJSDate(new Date(expiresAt));
-  if (!expDate.isValid) {
+  const expDate = dayjs(expiresAt);
+  if (!expDate.isValid()) {
     return <Text>{String(expiresAt)}</Text>;
   }
   const date = formatOrdinalDate(expDate);
-  const diffDays = Math.ceil(expDate.diffNow("days").days);
+  const diffDays = Math.ceil(expDate.diff(dayjs(), "day", true));
 
   if (diffDays < 0) {
     return (
