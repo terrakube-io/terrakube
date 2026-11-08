@@ -52,6 +52,7 @@
     "format": "prettier ./src --write",
     "typecheck": "tsc -p tsconfig.app.json --noEmit && tsc -p tsconfig.test.json --noEmit",
     "check": "yarn lint:check && yarn format:check && yarn typecheck && yarn test",
+    "preinstall": "node -e \"const want=require('./package.json').engines.node.split('.')[0]; if (process.versions.node.split('.')[0] !== want) { console.error('Terrakube UI needs Node ' + want + '.x (see .node-version), not ' + process.version); process.exit(1); }\"",
     "prestart": "chmod +x ./env.sh && ./env.sh && cp env-config.js ./public/"
   },
   "eslintConfig": {
@@ -110,5 +111,8 @@
     "typescript-eslint": "^8.72.1",
     "vite": "^8.3.5"
   },
-  "packageManager": "yarn@4.15.0"
+  "packageManager": "yarn@4.15.0",
+  "engines": {
+    "node": "26.x"
+  }
 }
