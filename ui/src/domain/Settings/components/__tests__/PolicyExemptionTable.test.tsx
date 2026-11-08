@@ -1,5 +1,5 @@
 import { render, screen, fireEvent } from "@testing-library/react";
-import { DateTime } from "luxon";
+import dayjs from "dayjs";
 import { ExemptionRecord, PolicyExemptionTable } from "../PolicyExemptionTable";
 import { formatOrdinalDate } from "@/modules/utils/dates";
 
@@ -149,7 +149,7 @@ describe("PolicyExemptionTable", () => {
     );
 
     expect(screen.getByText("password_length_hard_mandatory")).toBeInTheDocument();
-    const expected = formatOrdinalDate(DateTime.fromMillis(1924905600000));
+    const expected = formatOrdinalDate(dayjs(1924905600000));
     expect(screen.getByText(expected)).toBeInTheDocument();
   });
 
