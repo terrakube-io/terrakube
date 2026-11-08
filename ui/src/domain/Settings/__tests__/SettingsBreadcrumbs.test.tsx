@@ -9,7 +9,7 @@ jest.mock("../../../config/axiosConfig", () => ({
   default: { get: jest.fn() },
 }));
 jest.mock("@/components/forms/CodeEditor", () => ({ CodeEditor: () => null }));
-jest.mock("uuid", () => ({ v1: () => "uuid-1", v4: () => "uuid-4", v7: () => "uuid-7" }));
+jest.spyOn(crypto, "randomUUID").mockReturnValue("uuid-1" as ReturnType<typeof crypto.randomUUID>);
 jest.mock("../PolicySets", () => ({ PolicySetsSettings: () => <div>policy sets</div> }));
 jest.mock("../../../modules/permissions/useOrgPermissions", () => ({
   useOrgPermissions: () => ({ permissions: { managePermission: true, managePolicies: true } }),

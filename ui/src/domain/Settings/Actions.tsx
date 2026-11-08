@@ -2,7 +2,7 @@ import { DeleteOutlined, EditOutlined, MinusCircleOutlined, PlusOutlined } from 
 import type { OnMount } from "@monaco-editor/react";
 import { CodeEditor } from "@/components/forms/CodeEditor";
 import { Alert, Button, Flex, Form, Grid, Input, message, Select, Switch, Table, Tag, Typography } from "antd";
-import { Buffer } from "buffer";
+import { decodeBase64, encodeBase64 } from "@/modules/utils/base64";
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { LinkButton } from "@/components/navigation/LinkButton";
@@ -138,7 +138,7 @@ export const ActionSettings = ({ editorMode, editorId, managePermission = true }
             ...action.attributes,
             displayCriteria: JSON.parse(action.attributes.displayCriteria),
           });
-          const actionDecoded = Buffer.from(action.attributes.action, "base64").toString("ascii");
+          const actionDecoded = decodeBase64(action.attributes.action);
           setActionContent(actionDecoded);
           if (editorRef.current) {
             editorRef.current.setValue(actionDecoded);
@@ -164,7 +164,7 @@ export const ActionSettings = ({ editorMode, editorId, managePermission = true }
   };
 
   const onCreate = (values: CreateActionForm, editorValue: string) => {
-    const actionEncoded = Buffer.from(editorValue).toString("base64");
+    const actionEncoded = encodeBase64(editorValue);
     const displayCriteria = JSON.stringify(values.displayCriteria);
     const body = {
       data: {
@@ -191,7 +191,7 @@ export const ActionSettings = ({ editorMode, editorId, managePermission = true }
   };
 
   const onUpdate = (values: EditActionForm, editorValue: string) => {
-    const actionEncoded = Buffer.from(editorValue).toString("base64");
+    const actionEncoded = encodeBase64(editorValue);
     const displayCriteria = JSON.stringify(values.displayCriteria);
     const body = {
       data: {

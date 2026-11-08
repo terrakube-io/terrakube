@@ -1,7 +1,7 @@
 import type { OnMount } from "@monaco-editor/react";
 import { CodeEditor } from "@/components/forms/CodeEditor";
 import { Alert, Form, Input, message } from "antd";
-import { Buffer } from "buffer";
+import { decodeBase64, encodeBase64 } from "@/modules/utils/base64";
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
@@ -52,8 +52,7 @@ export const EditTemplate = ({ setMode, templateId, loadTemplates, managePermiss
       .get(`organization/${orgid}/template/${templateId}`)
       .then((response) => {
         setTemplate(response.data.data);
-        const buff = Buffer.from(response.data.data.attributes.tcl, "base64");
-        setTCL(buff.toString("ascii"));
+        setTCL(decodeBase64(response.data.data.attributes.tcl));
       })
       .catch((err) => {
         setError(getErrorMessage(err));
@@ -71,7 +70,7 @@ export const EditTemplate = ({ setMode, templateId, loadTemplates, managePermiss
         attributes: {
           name: values.name,
           description: values.description,
-          tcl: Buffer.from(editorRef.current?.getValue() ?? tcl).toString("base64"),
+          tcl: encodeBase64(editorRef.current?.getValue() ?? tcl),
           version: "1.0.0",
         },
       },
