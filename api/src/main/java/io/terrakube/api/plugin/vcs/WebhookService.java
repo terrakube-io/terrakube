@@ -50,6 +50,7 @@ public class WebhookService {
     WorkspaceRepository workspaceRepository;
     PrCommentService prCommentService;
     WorkspaceBranchPolicy workspaceBranchPolicy;
+    WebhookProperties webhookProperties;
 
     @Transactional
     public String processWebhook(String webhookId, String jsonPayload, Map<String, String> headers) {
@@ -99,6 +100,11 @@ public class WebhookService {
         if (!webhookResult.isValid()
                 || webhookResult.getEvent().equals(String.valueOf(WebhookEventType.PING).toLowerCase()))
             return result;
+
+        if (!WebhookEventMatcher.shouldProcessPullRequest(workspace, webhookResult,
+                webhookProperties.isPrBaseBranchFilter())) {
+            return result;
+        }
 
         try {
             if (webhookResult.isPrComment()) {
@@ -286,18 +292,7 @@ public class WebhookService {
     }
 
     private WebhookEvent findMatchingEvent(WebhookResult result, Webhook webhook) {
-        WebhookEventType eventType = result.isPrComment()
-                ? WebhookEventType.PULL_REQUEST
-                : WebhookEventType.valueOf(result.getNormalizedEvent().toUpperCase());
-
-        return webhookEventRepository
-                .findByWebhookAndEventOrderByPriorityAsc(webhook, eventType)
-                .stream()
-                .filter(webhookEvent -> checkBranch(result.getBranch(), webhookEvent)
-                        && checkFileChanges(result.getFileChanges(), webhookEvent))
-                .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException(
-                        "No valid template found for webhook event " + result.getEvent()));
+        return WebhookEventMatcher.findMatchingEvent(result, webhook, webhookEventRepository);
     }
 
     @Transactional
