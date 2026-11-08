@@ -51,6 +51,20 @@ export default tseslint.config(
       "import/namespace": "off",
       "import/default": "off",
       "import/no-named-as-default-member": "off",
+      // The build rewrites `import { X } from "antd"` to per-component paths (vite/antdSubpathImports.ts).
+      // Default and namespace imports would bypass it and pull every component into the first load.
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "antd",
+              importNames: ["default"],
+              message: "Import components by name: import { Button } from \"antd\".",
+            },
+          ],
+        },
+      ],
       // `_` marks a deliberately unused parameter or destructured binding.
       "@typescript-eslint/no-unused-vars": [
         "error",

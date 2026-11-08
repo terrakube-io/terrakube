@@ -31,6 +31,6 @@
     "ignoreDeprecations": "6.0",
     "types": ["jest", "node"]
   },
-  "include": ["src", "jest.setup.ts"]
+  "include": ["src", "vite", "jest.setup.ts"]
 
 }

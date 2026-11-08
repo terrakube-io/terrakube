@@ -9,7 +9,7 @@ import {
   message,
   Modal,
   Radio,
-  RadioChangeEvent,
+  type RadioChangeEvent,
   Spin,
   Tag,
   Typography,
