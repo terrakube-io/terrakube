@@ -11,10 +11,10 @@ jest.mock("@/config/axiosConfig", () => ({
 }));
 jest.mock("../projectService", () => ({
   __esModule: true,
-  default: { listProjectAccess: jest.fn(), addProjectAccess: jest.fn(), updateProjectAccess: jest.fn() },
+  default: { listProjectTeams: jest.fn(), addProjectAccess: jest.fn(), updateProjectAccess: jest.fn() },
 }));
 
-const list = projectService.listProjectAccess as jest.Mock;
+const list = projectService.listProjectTeams as jest.Mock;
 const add = projectService.addProjectAccess as jest.Mock;
 const update = projectService.updateProjectAccess as jest.Mock;
 
@@ -51,10 +51,13 @@ describe("ProjectAccessTab", () => {
   it("shows the permissions of a preset role and the saved permissions of a custom one", async () => {
     list.mockResolvedValue({
       isError: false,
-      data: [
-        access({ id: "a1", name: "planners", role: "plan", manageWorkspace: true, approveJob: true }),
-        access({ id: "a2", name: "app-team", role: "custom", planJob: true, approveJob: true, destroyJob: true }),
-      ],
+      data: {
+        teams: [
+          access({ id: "a1", name: "planners", role: "plan", manageWorkspace: true, approveJob: true }),
+          access({ id: "a2", name: "app-team", role: "custom", planJob: true, approveJob: true, destroyJob: true }),
+        ],
+        restricted: false,
+      },
     });
     render(<ProjectAccessTab orgid="org-1" projectId="proj-1" canManage={true} />);
 
@@ -74,7 +77,7 @@ describe("ProjectAccessTab", () => {
 
   it("adds a team with a custom role and the permissions picked for it", async () => {
     const user = userEvent.setup();
-    list.mockResolvedValue({ isError: false, data: [] });
+    list.mockResolvedValue({ isError: false, data: { teams: [], restricted: false } });
     render(<ProjectAccessTab orgid="org-1" projectId="proj-1" canManage={true} />);
 
     const [teamSelect, roleSelect] = await screen.findAllByRole("combobox");
@@ -100,7 +103,7 @@ describe("ProjectAccessTab", () => {
 
   it("adds a team with a preset role without sending individual permissions", async () => {
     const user = userEvent.setup();
-    list.mockResolvedValue({ isError: false, data: [] });
+    list.mockResolvedValue({ isError: false, data: { teams: [], restricted: false } });
     render(<ProjectAccessTab orgid="org-1" projectId="proj-1" canManage={true} />);
 
     const [teamSelect] = await screen.findAllByRole("combobox");
@@ -116,7 +119,10 @@ describe("ProjectAccessTab", () => {
     const user = userEvent.setup();
     list.mockResolvedValue({
       isError: false,
-      data: [access({ id: "a2", name: "app-team", role: "custom", planJob: true, approveJob: true })],
+      data: {
+        teams: [access({ id: "a2", name: "app-team", role: "custom", planJob: true, approveJob: true })],
+        restricted: false,
+      },
     });
     render(<ProjectAccessTab orgid="org-1" projectId="proj-1" canManage={true} />);
 
@@ -144,7 +150,10 @@ describe("ProjectAccessTab", () => {
 
   it("starts a custom role from the permissions of the preset role it replaces", async () => {
     const user = userEvent.setup();
-    list.mockResolvedValue({ isError: false, data: [access({ id: "a1", name: "planners", role: "plan" })] });
+    list.mockResolvedValue({
+      isError: false,
+      data: { teams: [access({ id: "a1", name: "planners", role: "plan" })], restricted: false },
+    });
     render(<ProjectAccessTab orgid="org-1" projectId="proj-1" canManage={true} />);
 
     await screen.findByText("planners", { selector: "strong" });
@@ -161,5 +170,19 @@ describe("ProjectAccessTab", () => {
         destroyJob: false,
       })
     );
+  });
+  it("says the access list is hidden, not that nobody has access, when the caller cannot see it", async () => {
+    list.mockResolvedValue({ isError: false, data: { teams: [], restricted: true } });
+    render(<ProjectAccessTab orgid="org-1" projectId="proj-1" canManage={false} />);
+
+    expect(await screen.findByText(/You can see this project but not who has access/)).toBeInTheDocument();
+    expect(screen.queryByText("No teams have been granted project-level access.")).not.toBeInTheDocument();
+  });
+
+  it("says no team has access when that is true", async () => {
+    list.mockResolvedValue({ isError: false, data: { teams: [], restricted: false } });
+    render(<ProjectAccessTab orgid="org-1" projectId="proj-1" canManage />);
+
+    expect(await screen.findByText("No teams have been granted project-level access.")).toBeInTheDocument();
   });
 });

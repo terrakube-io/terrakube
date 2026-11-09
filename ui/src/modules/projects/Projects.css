@@ -583,3 +583,7 @@
 .project-workspaces-toolbar {
   margin: 12px 0;
 }
+
+.project-effective-variables {
+  margin-top: 32px;
+}

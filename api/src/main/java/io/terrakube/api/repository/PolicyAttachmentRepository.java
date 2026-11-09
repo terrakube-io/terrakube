@@ -17,5 +17,7 @@ public interface PolicyAttachmentRepository extends JpaRepository<PolicyAttachme
 
     List<PolicyAttachment> findByProject(Project project);
 
+    long countByProject(Project project);
+
     List<PolicyAttachment> findByTagIn(List<Tag> tags);
 }

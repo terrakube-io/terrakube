@@ -25,6 +25,12 @@ public class ProjectTests extends ServerApplicationTests {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    @Autowired
+    private io.terrakube.api.repository.PolicySetRepository policySetRepository;
+
+    @Autowired
+    private io.terrakube.api.repository.PolicyAttachmentRepository policyAttachmentRepository;
+
     @BeforeEach
     public void setup() {
         MockitoAnnotations.openMocks(this);
@@ -150,9 +156,36 @@ public class ProjectTests extends ServerApplicationTests {
                     .when()
                     .delete("/api/v1/organization/" + ORG + "/project/" + projectId)
                     .then()
-                    .statusCode(HttpStatus.CONFLICT.value());
+                    .statusCode(HttpStatus.CONFLICT.value())
+                    .body(org.hamcrest.Matchers.containsString("still has 1 workspace"));
         } finally {
             jdbcTemplate.update("delete from workspace where name = ?", workspaceName);
+            deleteProject(projectId);
+        }
+    }
+
+    @Test
+    void projectWithAPolicyAttachmentCannotBeDeletedAndTheMessageSaysWhy() {
+        String projectId = createProject("delete-guard-policy", HttpStatus.CREATED.value());
+        io.terrakube.api.rs.policy.PolicySet policySet = new io.terrakube.api.rs.policy.PolicySet();
+        policySet.setName("guard-" + UUID.randomUUID());
+        policySet.setOrganization(organizationRepository.findById(UUID.fromString(ORG)).orElseThrow());
+        policySet = policySetRepository.save(policySet);
+        io.terrakube.api.rs.policy.PolicyAttachment attachment = new io.terrakube.api.rs.policy.PolicyAttachment();
+        attachment.setPolicySet(policySet);
+        attachment.setProject(projectRepository.findById(UUID.fromString(projectId)).orElseThrow());
+        attachment = policyAttachmentRepository.save(attachment);
+        try {
+            given()
+                    .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+                    .when()
+                    .delete("/api/v1/organization/" + ORG + "/project/" + projectId)
+                    .then()
+                    .statusCode(HttpStatus.CONFLICT.value())
+                    .body(org.hamcrest.Matchers.containsString("1 policy attachment"));
+        } finally {
+            jdbcTemplate.update("delete from policy_attachment where id = ?", attachment.getId().toString());
+            jdbcTemplate.update("delete from policy_set where id = ?", policySet.getId().toString());
             deleteProject(projectId);
         }
     }
