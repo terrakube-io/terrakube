@@ -94,4 +94,46 @@ public class ProjectTests extends ServerApplicationTests {
 
 
 
+
+    @Test
+    void duplicateProjectNameIsRejectedWithConflict() {
+        String id = createProject("duplicate-name-check", HttpStatus.CREATED.value());
+        try {
+            createProject("duplicate-name-check", HttpStatus.CONFLICT.value());
+        } finally {
+            deleteProject(id);
+        }
+    }
+
+    @Test
+    void oversizedAndBlankProjectNamesAreRejectedAsBadRequests() {
+        createProject("x".repeat(257), HttpStatus.BAD_REQUEST.value());
+        createProject("   ", HttpStatus.BAD_REQUEST.value());
+    }
+
+    @Test
+    void projectNameAtTheLimitIsAccepted() {
+        deleteProject(createProject("y".repeat(256), HttpStatus.CREATED.value()));
+    }
+
+    private String createProject(String name, int expectedStatus) {
+        return given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
+                .body("{\"data\":{\"type\":\"project\",\"attributes\":{\"name\":\"" + name + "\"}}}")
+                .when()
+                .post("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/project")
+                .then()
+                .statusCode(expectedStatus)
+                .extract()
+                .path("data.id");
+    }
+
+    private void deleteProject(String id) {
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+                .when()
+                .delete("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/project/" + id)
+                .then()
+                .statusCode(HttpStatus.NO_CONTENT.value());
+    }
 }

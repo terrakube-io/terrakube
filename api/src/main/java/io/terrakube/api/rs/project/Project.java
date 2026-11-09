@@ -5,6 +5,8 @@ import io.terrakube.api.plugin.security.audit.GenericAuditFields;
 import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.project.access.ProjectAccess;
 import jakarta.persistence.*;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import lombok.Getter;
 import lombok.Setter;
 import org.hibernate.annotations.BatchSize;
@@ -15,11 +17,12 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
-@ReadPermission(expression = "team view project OR team project access view project")
+@ReadPermission(expression = "user is a superuser OR project read filter")
 @CreatePermission(expression = "team manage project")
 @UpdatePermission(expression = "team manage project OR team project admin manages project access field")
 @DeletePermission(expression = "team manage project")
-// Interim cap: in-memory read checks prevent explicit pagination, so raise the implicit limit instead.
+// Reads are filtered in SQL (ProjectReadFilter), so explicit pagination and sorting work. The high default keeps
+// callers that read without paging (Terraform provider, terrakube-go, CLI) returning every project as before.
 @Paginate(defaultPageSize = 10000, maxPageSize = 10000)
 @Include
 @Getter
@@ -32,9 +35,12 @@ public class Project extends GenericAuditFields {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
+    @NotBlank(message = "Project name is required")
+    @Size(max = 256, message = "Project name must be 256 characters or fewer")
     @Column(name = "name")
     private String name;
 
+    @Size(max = 256, message = "Project description must be 256 characters or fewer")
     @Column(name = "description")
     private String description;
 
