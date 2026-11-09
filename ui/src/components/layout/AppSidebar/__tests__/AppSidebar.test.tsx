@@ -551,11 +551,19 @@ describe("active settings item", () => {
       renderSidebar(projectPath);
 
       expect(await screen.findByText("Back to projects")).toBeInTheDocument();
-      for (const item of ["Overview", "Policies", "Team access", "Settings"]) {
+      for (const item of ["Overview", "Policies", "Team access", "Variables", "Settings"]) {
         expect(screen.getByRole("link", { name: item })).toBeInTheDocument();
       }
       expect(screen.queryByText("Registry")).not.toBeInTheDocument();
       expect(screen.getByRole("link", { name: "Back to projects" })).toHaveAttribute("href", `${orgPath}/projects`);
+    });
+
+    it("links the project Variables page and marks it as the current one", async () => {
+      renderSidebar(`${projectPath}/variables`);
+
+      const link = await screen.findByRole("link", { name: "Variables" });
+      expect(link).toHaveAttribute("href", `${projectPath}/variables`);
+      expect(link.closest("li")).toHaveClass("ant-menu-item-selected");
     });
 
     it("shows how many workspaces the project has", async () => {

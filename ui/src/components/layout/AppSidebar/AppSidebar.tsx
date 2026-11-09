@@ -446,6 +446,15 @@ export default function AppSidebar({
                 icon: <TeamOutlined />,
               },
               {
+                key: "variables",
+                label: (
+                  <Link to={`${projectBasePath}/variables`} onClick={() => handleOrgMenuClick("variables")}>
+                    Variables
+                  </Link>
+                ),
+                icon: <CodeOutlined />,
+              },
+              {
                 key: "settings",
                 label: (
                   <Link to={`${projectBasePath}/settings`} onClick={() => handleOrgMenuClick("settings")}>

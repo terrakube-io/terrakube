@@ -13,7 +13,7 @@ export function healthSegments(summary: ProjectSummaryModel): HealthSegment[] {
     { key: "running", label: "Running", count: summary.runningCount },
     { key: "queued", label: "Queued", count: summary.queuedCount },
     { key: "waiting", label: "Waiting approval", count: summary.waitingApprovalCount },
-    { key: "never", label: "Never run", count: summary.neverRunCount },
+    { key: "never", label: "Never executed", count: summary.neverRunCount },
   ];
 }
 
