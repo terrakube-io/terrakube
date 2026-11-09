@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import projectService, { buildProjectSummaryFilter } from "../projectService";
 import ProjectsPage from "../ProjectsPage";
 
@@ -21,8 +21,9 @@ jest.mock("../projectService", () => {
   };
 });
 
+let mockManageWorkspace = true;
 jest.mock("@/modules/permissions/useOrgPermissions", () => ({
-  useOrgPermissions: () => ({ permissions: { manageWorkspace: true } }),
+  useOrgPermissions: () => ({ permissions: { manageWorkspace: mockManageWorkspace } }),
 }));
 
 jest.mock("@/components/layout/PageWrapper/PageWrapper", () => ({
@@ -49,6 +50,8 @@ const summary = (overrides: Record<string, unknown>) => ({
   waitingApprovalCount: 0,
   neverRunCount: 0,
   nonCompliantCount: 0,
+  hardViolationCount: 0,
+  softViolationCount: 0,
   lockedCount: 0,
   attentionCount: 1,
   teamCount: 1,
@@ -60,13 +63,23 @@ const page = (items: unknown[], totalRecords = items.length) => ({
   data: { items, totalRecords },
 });
 
-function renderProjectsPage() {
+function Where() {
+  const location = useLocation();
+  return <div data-testid="where">{location.pathname + location.search}</div>;
+}
+
+function renderProjectsPage(path = "/organizations/org-1/projects") {
   return render(
-    <MemoryRouter initialEntries={["/organizations/org-1/projects"]}>
+    <MemoryRouter initialEntries={[path]}>
       <Routes>
         <Route
           path="/organizations/:id/projects"
-          element={<ProjectsPage organizationName="org-1" setOrganizationName={jest.fn()} />}
+          element={
+            <>
+              <ProjectsPage organizationName="org-1" setOrganizationName={jest.fn()} />
+              <Where />
+            </>
+          }
         />
       </Routes>
     </MemoryRouter>
@@ -159,6 +172,27 @@ describe("ProjectsPage", () => {
     expect(await screen.findByText("Billing API")).toBeInTheDocument();
     expect(lastQuery()).toMatchObject({ sort: "-attentionCount,+name", page: 1, chip: "all", groups: ["devs"] });
     await waitFor(() => expect(screen.getByRole("group", { name: "Filter projects" })).toHaveTextContent("All 50"));
+  });
+
+  it("shows a dash with the total on hover instead of the team count when the caller cannot see who has access", async () => {
+    mockManageWorkspace = false;
+    try {
+      localStorage.setItem("terrakube-projects-view", "cards");
+      renderProjectsPage();
+
+      const dashes = await screen.findAllByLabelText("1 team, names hidden");
+      expect(dashes.length).toBeGreaterThan(0);
+      expect(screen.queryByText("1 team")).not.toBeInTheDocument();
+    } finally {
+      mockManageWorkspace = true;
+    }
+  });
+
+  it("shows the team count to callers who manage workspaces", async () => {
+    localStorage.setItem("terrakube-projects-view", "cards");
+    renderProjectsPage();
+
+    expect((await screen.findAllByText("1 team")).length).toBeGreaterThan(0);
   });
 
   it("shows the attention badge on a card", async () => {
@@ -323,5 +357,88 @@ describe("ProjectsPage", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Create" }));
 
     await waitFor(() => expect(projectService.createProject).toHaveBeenCalledWith("org-1", { name: "Platform" }));
+  });
+
+  describe("the view lives in the address", () => {
+    it("opens with the filter, search, sort and page from the link", async () => {
+      renderProjectsPage(
+        "/organizations/org-1/projects?chip=empty&q=pay&sort=-workspaceCount,%2Bname&page=2&size=24&view=table"
+      );
+
+      await screen.findByRole("table");
+      expect(lastQuery()).toMatchObject({
+        chip: "empty",
+        search: "pay",
+        sort: "-workspaceCount,+name",
+        page: 2,
+        pageSize: 24,
+      });
+      expect(screen.getByRole("textbox", { name: "Search projects by name" })).toHaveValue("pay");
+    });
+
+    it("ignores values it does not know instead of breaking", async () => {
+      renderProjectsPage("/organizations/org-1/projects?chip=bogus&sort=drop-table&page=-4&size=7&view=sideways");
+
+      await screen.findByText("Billing API");
+      expect(lastQuery()).toMatchObject({ chip: "all", sort: "-attentionCount,+name", page: 1 });
+    });
+
+    it("writes the filter into the address, and keeps a plain address plain", async () => {
+      renderProjectsPage();
+      await screen.findByText("Billing API");
+      expect(screen.getByTestId("where")).toHaveTextContent(/^\/organizations\/org-1\/projects$/);
+
+      fireEvent.click(screen.getByText(/Empty 1/));
+
+      await waitFor(() => expect(screen.getByTestId("where")).toHaveTextContent("chip=empty"));
+    });
+
+    it("summarises an active filter and clears it", async () => {
+      renderProjectsPage("/organizations/org-1/projects?chip=attention");
+
+      expect(await screen.findByText(/Showing 50 of 50 projects/)).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+
+      await waitFor(() => expect(screen.getByTestId("where")).toHaveTextContent(/projects$/));
+      expect(screen.queryByText(/Showing/)).not.toBeInTheDocument();
+    });
+  });
+
+  describe("click-through", () => {
+    it("links the attention badge of a card to the workspaces behind it", async () => {
+      localStorage.setItem("terrakube-projects-view", "cards");
+      renderProjectsPage();
+
+      const link = await screen.findByRole("link", { name: /1 need attention in Billing API/ });
+      expect(link).toHaveAttribute("href", "/organizations/org-1/projects/a/workspaces?status=failed");
+    });
+
+    it("links the attention count and the policy of a table row, and shows the description", async () => {
+      (projectService.listProjectSummaries as jest.Mock).mockResolvedValue(
+        page(
+          [
+            summary({
+              id: "a",
+              name: "Billing API",
+              description: "Card processing",
+              nonCompliantCount: 2,
+              hardViolationCount: 2,
+            }),
+          ],
+          50
+        )
+      );
+      renderProjectsPage("/organizations/org-1/projects?view=table");
+
+      expect(await screen.findByText("Card processing")).toBeInTheDocument();
+      expect(screen.getByRole("link", { name: /1 need attention in Billing API/ })).toHaveAttribute(
+        "href",
+        "/organizations/org-1/projects/a/workspaces?status=failed"
+      );
+      expect(screen.getByRole("link", { name: /2 hard in Billing API/ })).toHaveAttribute(
+        "href",
+        "/organizations/org-1/projects/a/workspaces?policy=NON_COMPLIANT"
+      );
+    });
   });
 });

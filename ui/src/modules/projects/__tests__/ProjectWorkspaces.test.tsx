@@ -1,6 +1,6 @@
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, useLocation } from "react-router-dom";
 import { message } from "antd";
 import ProjectWorkspaces from "../ProjectWorkspaces";
 import workspaceService from "@/modules/workspaces/workspaceService";
@@ -60,10 +60,16 @@ const failure = (status = "Failed to load workspaces", errorMessage = "The API i
 
 const listWorkspacePage = workspaceService.listWorkspacePage as jest.Mock;
 
-function renderTab(projectId = "proj-1", canManage = false) {
+function Where() {
+  const location = useLocation();
+  return <div data-testid="where">{location.pathname + location.search}</div>;
+}
+
+function renderTab(projectId = "proj-1", canManage = false, path = "/projects/proj-1/workspaces") {
   return render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[path]}>
       <ProjectWorkspaces orgid="org-1" projectId={projectId} canManage={canManage} />
+      <Where />
     </MemoryRouter>
   );
 }
@@ -338,5 +344,56 @@ describe("ProjectWorkspaces", () => {
     await userEvent.click(screen.getByRole("button", { name: "Page 3" }));
 
     await waitFor(() => expect(lastRequest()).toEqual(expect.objectContaining({ first: 10, after: 20 })));
+  });
+
+  describe("the filters live in the address", () => {
+    it("opens already filtered when linked to from a number", async () => {
+      renderTab(
+        "proj-1",
+        false,
+        "/projects/proj-1/workspaces?status=failed&policy=NON_COMPLIANT&q=net&tag=t1~prod&tag=t2&sort=lastRun_desc&page=2&size=20"
+      );
+
+      await screen.findByText("network-production");
+      expect(lastRequest()).toEqual(
+        expect.objectContaining({
+          status: "failed",
+          policyStatus: "NON_COMPLIANT",
+          search: "net",
+          sort: "lastRun_desc",
+          after: 20,
+          first: 20,
+          tagFilters: [
+            { tagId: "t1", value: "prod" },
+            { tagId: "t2", value: undefined },
+          ],
+        })
+      );
+      expect(mockFilterProps.status).toBe("failed");
+      expect(mockFilterProps.search).toBe("net");
+    });
+
+    it("ignores values it does not know", async () => {
+      renderTab("proj-1", false, "/projects/proj-1/workspaces?status=bogus&policy=nope&sort=x&page=zero&size=3");
+
+      await screen.findByText("network-production");
+      expect(lastRequest()).toEqual(
+        expect.objectContaining({ status: "All", policyStatus: "All", sort: "name_asc", first: 10, after: 0 })
+      );
+    });
+
+    it("writes a changed filter into the address and keeps a plain address plain", async () => {
+      renderTab();
+      await screen.findByText("network-production");
+      expect(screen.getByTestId("where")).toHaveTextContent(/^\/projects\/proj-1\/workspaces$/);
+
+      act(() => mockFilterProps.onStatusChange("waitingApproval"));
+
+      await waitFor(() => expect(screen.getByTestId("where")).toHaveTextContent("status=waitingApproval"));
+      act(() => mockFilterProps.onTagFiltersChange([{ tagId: "t1", value: "prod" }]));
+      await waitFor(() => expect(screen.getByTestId("where")).toHaveTextContent("tag=t1%7Eprod"));
+      act(() => mockFilterProps.onStatusChange("All"));
+      await waitFor(() => expect(screen.getByTestId("where")).not.toHaveTextContent("status="));
+    });
   });
 });

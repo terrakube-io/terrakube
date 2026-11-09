@@ -34,9 +34,13 @@ export function attentionTone(count: number): "danger" | "warning" | "neutral" {
   return "neutral";
 }
 
-export type PolicyRollup = { tone: "danger" | "success" | "neutral"; text: string };
+export type PolicyRollup = { tone: "danger" | "warning" | "success" | "neutral"; text: string };
 
+// A hard mandatory violation outranks a soft one. Older evaluations have no split, so those fall back to the
+// plain non-compliant count.
 export function policyRollup(summary: ProjectSummaryModel): PolicyRollup {
+  if (summary.hardViolationCount > 0) return { tone: "danger", text: `${summary.hardViolationCount} hard` };
+  if (summary.softViolationCount > 0) return { tone: "warning", text: `${summary.softViolationCount} soft` };
   if (summary.nonCompliantCount > 0) return { tone: "danger", text: `${summary.nonCompliantCount} non-compliant` };
   if (summary.compliantCount + summary.exemptedCount > 0) return { tone: "success", text: "Compliant" };
   return { tone: "neutral", text: "Not evaluated" };

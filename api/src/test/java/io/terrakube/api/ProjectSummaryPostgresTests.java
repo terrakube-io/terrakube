@@ -78,7 +78,7 @@ class ProjectSummaryPostgresTests {
             String subselect = ProjectSummary.class.getAnnotation(Subselect.class).value();
             try (ResultSet rows = connection.createStatement().executeQuery(
                     "SELECT id, workspace_count, completed_count, failed_count, waiting_approval_count, running_count, "
-                            + "queued_count, never_run_count, non_compliant_count, compliant_count, exempted_count, queued_job_count, queued_since, locked_count, attention_count, "
+                            + "queued_count, never_run_count, non_compliant_count, hard_violation_count, soft_violation_count, compliant_count, exempted_count, queued_job_count, queued_since, locked_count, attention_count, "
                             + "team_count, last_run_at FROM (" + subselect + ") s ORDER BY attention_count DESC, name")) {
                 assertTrue(rows.next());
                 assertEquals("summary-project", rows.getString("id"));

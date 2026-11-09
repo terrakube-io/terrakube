@@ -1,4 +1,5 @@
 import axiosInstance from "@/config/axiosConfig";
+import { apiPost } from "@/modules/api/apiWrapper";
 import workspaceService from "@/modules/workspaces/workspaceService";
 
 export type BulkOutcome = { succeeded: string[]; failed: { id: string; reason: string }[] };
@@ -55,6 +56,75 @@ export function setWorkspacesLocked(orgId: string, ids: string[], locked: boolea
     await axiosInstance.patch(
       `organization/${orgId}/workspace/${id}`,
       { data: { type: "workspace", id, attributes: { locked } } },
+      { headers: JSON_API }
+    );
+  });
+}
+
+// One run per workspace from the chosen template, on the workspace's own branch. The runs are independent: a
+// workspace that cannot start one (no permission, locked) fails alone and the rest still start.
+export function planWorkspaces(orgId: string, ids: string[], templateId: string): Promise<BulkOutcome> {
+  return runBulk(ids, async (id) => {
+    await axiosInstance.post(
+      `organization/${orgId}/job`,
+      {
+        data: {
+          type: "job",
+          attributes: { templateReference: templateId, via: "UI" },
+          relationships: { workspace: { data: { type: "workspace", id } } },
+        },
+      },
+      { headers: JSON_API }
+    );
+  });
+}
+
+// hardViolations and softViolations are what the run's policy check found: a run with either is for a person to look at.
+export type WaitingRun = { jobId: string; workspaceId: string; hardViolations: number; softViolations: number };
+
+// The runs of these workspaces that are waiting for someone to approve them.
+export async function findWaitingRuns(orgId: string, workspaceIds: string[]): Promise<WaitingRun[]> {
+  if (workspaceIds.length === 0) return [];
+  const ids = workspaceIds.map((id) => `'${id}'`).join(",");
+  const body = {
+    query: `query ($orgId: String!, $filter: String) {
+      organization(ids: [$orgId]) { edges { node {
+        job(filter: $filter) {
+          edges { node {
+            id
+            workspace { edges { node { id } } }
+            policyEvaluation { edges { node { hardMandatoryViolations softMandatoryViolations } } }
+          } }
+        }
+      } } }
+    }`,
+    variables: { orgId, filter: `status=='waitingApproval';workspace.id=in=(${ids})` },
+  };
+  const result = await apiPost<unknown, any>("/graphql/api/v1", body, {
+    dataWrapped: true,
+    contentType: "application/json",
+  });
+  if (result.isError) throw new Error(result.error?.message ?? "Runs waiting for approval could not be listed");
+  const edges = result.data?.organization?.edges?.[0]?.node?.job?.edges ?? [];
+  return edges
+    .map((edge: any): WaitingRun => {
+      const evaluations = (edge.node.policyEvaluation?.edges ?? []).map((each: any) => each.node);
+      const sum = (key: string) => evaluations.reduce((total: number, each: any) => total + (each?.[key] ?? 0), 0);
+      return {
+        jobId: String(edge.node.id),
+        workspaceId: edge.node.workspace?.edges?.[0]?.node?.id,
+        hardViolations: sum("hardMandatoryViolations"),
+        softViolations: sum("softMandatoryViolations"),
+      };
+    })
+    .filter((run: WaitingRun) => Boolean(run.workspaceId));
+}
+
+export function approveRuns(orgId: string, jobIds: string[]): Promise<BulkOutcome> {
+  return runBulk(jobIds, async (jobId) => {
+    await axiosInstance.patch(
+      `organization/${orgId}/job/${jobId}`,
+      { data: { type: "job", id: jobId, attributes: { status: "approved" } } },
       { headers: JSON_API }
     );
   });
