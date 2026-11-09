@@ -207,7 +207,7 @@ public class GitHubWebhookService extends WebhookServiceBase {
             }
         } else {
             result.setValid(false);
-            log.error("No valid github event " + result.getEvent());
+            log.info("Ignoring GitHub event '{}': only 'push', 'pull_request', 'release' and 'issue_comment' are handled", result.getEvent());
         }
 
         return result;
