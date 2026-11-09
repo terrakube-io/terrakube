@@ -3,6 +3,7 @@ package io.terrakube.api.rs.project;
 import com.yahoo.elide.annotation.*;
 import io.terrakube.api.plugin.security.audit.GenericAuditFields;
 import io.terrakube.api.rs.Organization;
+import io.terrakube.api.rs.hooks.project.ProjectDeleteGuardHook;
 import io.terrakube.api.rs.project.access.ProjectAccess;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.NotBlank;
@@ -24,6 +25,7 @@ import java.util.UUID;
 // Reads are filtered in SQL (ProjectReadFilter), so explicit pagination and sorting work. The high default keeps
 // callers that read without paging (Terraform provider, terrakube-go, CLI) returning every project as before.
 @Paginate(defaultPageSize = 10000, maxPageSize = 10000)
+@LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.DELETE, phase = LifeCycleHookBinding.TransactionPhase.PRECOMMIT, hook = ProjectDeleteGuardHook.class)
 @Include
 @Getter
 @Setter

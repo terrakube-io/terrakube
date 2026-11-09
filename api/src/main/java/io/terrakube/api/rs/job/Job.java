@@ -30,6 +30,7 @@ import org.hibernate.annotations.SQLRestriction;
 
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
+import jakarta.persistence.PrePersist;
 import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -126,6 +127,19 @@ public class Job extends GenericAuditFields {
     @UpdatePermission(expression = "NONE")
     @Column(name = "approved_at")
     private Date approvedAt;
+
+    // Set once when the job is first persisted, whichever path creates it. Read-only through the API.
+    @CreatePermission(expression = "NONE")
+    @UpdatePermission(expression = "NONE")
+    @Column(name = "queued_at")
+    private Date queuedAt;
+
+    @PrePersist
+    void stampQueuedAt() {
+        if (queuedAt == null) {
+            queuedAt = new Date();
+        }
+    }
 
     @ReadPermission(expression = "team view job OR team project limited view job OR team limited view job OR executor read job OR user is an executor service")
     @Column(name = "output")
