@@ -12,7 +12,8 @@ import {
 import { useAuth } from "../../config/authConfig";
 import { getBasePath } from "../../config/basePath";
 import { getThemeConfig } from "../../config/themeConfig";
-import { ThemeProvider, useTheme } from "../../context/ThemeContext";
+import { ThemeProvider } from "../../context/ThemeContext";
+import { useTheme } from "../../context/useTheme";
 import Login from "../Login/Login";
 import "./App.css";
 import "./Home.css";

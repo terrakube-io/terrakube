@@ -2,7 +2,6 @@ import { createElement, Fragment, ReactElement, ReactNode, useMemo } from "react
 import AnsiImport from "ansi-to-react";
 
 // ansi-to-react ships both a CJS default and an ESM interop wrapper depending on the bundler.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const Ansi: any = (AnsiImport as any).default ?? AnsiImport;
 
 /**

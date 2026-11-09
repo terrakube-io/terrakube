@@ -1,7 +1,7 @@
 import { Editor } from "@monaco-editor/react";
 import type { EditorProps } from "@monaco-editor/react";
 import { getMonacoTheme, monacoOptions } from "@/config/monacoConfig";
-import { useTheme } from "@/context/ThemeContext";
+import { useTheme } from "@/context/useTheme";
 import "./CodeEditor.css";
 
 type Props = Omit<EditorProps, "theme">;

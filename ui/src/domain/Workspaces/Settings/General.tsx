@@ -3,7 +3,7 @@ import { GlobalOutlined } from "@ant-design/icons";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import axiosInstance, { getErrorMessage } from "../../../config/axiosConfig";
-import { Agent, Template, TofuRelease, VcsModel, Workspace } from "../../types";
+import { Agent, ProjectModel, Template, TofuRelease, VcsModel, Workspace } from "../../types";
 import {
   atomicHeader,
   compareVersions,
@@ -15,7 +15,6 @@ import {
   validateTerraformVersion,
 } from "../Workspaces";
 import projectService from "@/modules/projects/projectService";
-import { ProjectModel } from "@/domain/types";
 import { useOrgPermissions } from "@/modules/permissions/useOrgPermissions";
 import SettingsSection from "@/components/settings/SettingsSection/SettingsSection";
 import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";

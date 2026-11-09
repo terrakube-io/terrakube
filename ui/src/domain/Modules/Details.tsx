@@ -5,7 +5,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import LoadingFallback from "@/components/feedback/LoadingFallback";
 import PageWrapper from "@/components/layout/PageWrapper/PageWrapper";
 import DeleteConfirmationModal from "@/components/modals/DeleteConfirmationModal/DeleteConfirmationModal";
-import { copyValue } from "@/components/settings/IdField/IdField";
+import { copyValue } from "@/modules/utils/clipboard";
 import { ORGANIZATION_ARCHIVE } from "../../config/actionTypes";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import { ModuleModel, ModuleVersionAttributes, VcsType } from "../types";

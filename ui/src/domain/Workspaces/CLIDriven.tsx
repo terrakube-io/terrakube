@@ -1,7 +1,7 @@
 import { CopyOutlined } from "@ant-design/icons";
 import { Button, message, Tabs, Typography } from "antd";
 import { HiOutlineExternalLink } from "react-icons/hi";
-import { copyValue } from "@/components/settings/IdField/IdField";
+import { copyValue } from "@/modules/utils/clipboard";
 import "./Workspaces.css";
 
 type Props = {

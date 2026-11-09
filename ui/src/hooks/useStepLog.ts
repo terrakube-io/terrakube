@@ -90,7 +90,7 @@ export function useStepLog({
           if (cancelled || isAbortError(error)) {
             return;
           }
-          console.warn("[stepLog]", stepId, error);
+          console.error("[stepLog]", stepId, error);
 
           if (error instanceof StepLogNotFoundError) {
             // A step that hasn't finished may simply have no archived log yet.

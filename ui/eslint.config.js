@@ -40,7 +40,8 @@ export default tseslint.config(
       },
     },
     rules: {
-      "no-console": "warn",
+      // console.error stays for real failures; other console calls are compiled out of production builds anyway.
+      "no-console": ["warn", { allow: ["error"] }],
       "react/button-has-type": "error",
       "react/react-in-jsx-scope": ["off"],
       "react-refresh/only-export-components": ["warn", { allowConstantExport: true }],
@@ -57,5 +58,10 @@ export default tseslint.config(
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_", caughtErrorsIgnorePattern: "^_", ignoreRestSiblings: true },
       ],
     },
+  },
+  {
+    // Tests and benchmarks may print what they measure.
+    files: ["src/**/__tests__/**", "src/**/*.test.*"],
+    rules: { "no-console": "off" },
   }
 );
