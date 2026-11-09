@@ -390,4 +390,32 @@ class GcpTerraformStateImplTest {
         when(storage.delete(any(BlobId.class))).thenThrow(new RuntimeException("denied"));
         assertDoesNotThrow(() -> gcpTerraformState.deleteArtifacts("org1", "ws1", "job1"));
     }
+
+    @Test
+    void testSaveTerraformBinaryKeysTheBlobByOsAndArchitecture(@TempDir Path tempDir) throws IOException {
+        File binary = tempDir.resolve("tofu").toFile();
+        FileUtils.writeStringToFile(binary, "tofu-binary", Charset.defaultCharset());
+        ArgumentCaptor<BlobInfo> info = ArgumentCaptor.forClass(BlobInfo.class);
+
+        assertTrue(gcpTerraformState.saveTerraformBinary("v1.12.6", true, "linux", "arm64", binary));
+
+        verify(storage).create(info.capture(), any(byte[].class));
+        assertEquals(BlobId.of(bucketName, "tfbinary/tofu/v1.12.6/linux_arm64/tofu"), info.getValue().getBlobId());
+    }
+
+    @Test
+    void testDownloadTerraformBinaryReadsTheBlobOfItsOwnOsAndArchitecture(@TempDir Path tempDir) throws IOException {
+        BlobId blobId = BlobId.of(bucketName, "tfbinary/terraform/1.9.0/linux_amd64/terraform");
+        com.google.cloud.storage.Blob blob = mock(com.google.cloud.storage.Blob.class);
+        when(blob.exists()).thenReturn(true);
+        when(storage.get(blobId)).thenReturn(blob);
+        when(storage.readAllBytes(blobId)).thenReturn("terraform-binary".getBytes(StandardCharsets.UTF_8));
+        File target = tempDir.resolve("terraform/1.9.0/terraform").toFile();
+
+        assertTrue(gcpTerraformState.downloadTerraformBinary("1.9.0", false, "linux", "amd64", target));
+        assertEquals("terraform-binary", FileUtils.readFileToString(target, StandardCharsets.UTF_8));
+
+        // Nothing is cached for another architecture, so it is never handed this binary.
+        assertFalse(gcpTerraformState.downloadTerraformBinary("1.9.0", false, "linux", "arm64", target));
+    }
 }

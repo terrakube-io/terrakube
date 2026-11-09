@@ -55,7 +55,7 @@ public class LocalTerraformStateImpl implements TerraformState {
     private static final String LOCAL_ARTIFACTS_ROOT = "/.terraform-spring-boot/local/";
     private static final String LOCAL_OUTPUT_PARTS_DIRECTORY = "/.terraform-spring-boot/local/output/%s/%s/%s";
     private static final String LOCAL_OUTPUT_DIRECTORY = "/.terraform-spring-boot/local/output/%s/%s/%s.tfoutput";
-    private static final String LOCAL_BINARY_DIRECTORY = "/.terraform-spring-boot/local/binary/%s/%s/%s";
+    private static final String LOCAL_BINARY_DIRECTORY = "/.terraform-spring-boot/local/binary/%s/%s/%s_%s/%s";
     private static final String LOCAL_OPA_BINARY_DIRECTORY = "/.terraform-spring-boot/local/opa/%s/%s_%s/opa";
     private static final String LOCAL_CONTEXT_SPOOL_DIRECTORY = "/.terraform-spring-boot/local/context-spool/%s/%s/%s-%s.json.gz";
 
@@ -319,32 +319,32 @@ public class LocalTerraformStateImpl implements TerraformState {
     }
 
     @Override
-    public boolean saveTerraformBinary(String version, boolean tofu, File binaryFile) {
+    public boolean saveTerraformBinary(String version, boolean tofu, String os, String arch, File binaryFile) {
         String product = tofu ? "tofu" : "terraform";
-        String binaryPath = String.format(LOCAL_BINARY_DIRECTORY, product, version, product);
+        String binaryPath = String.format(LOCAL_BINARY_DIRECTORY, product, version, os, arch, product);
         log.info("Saving {} binary to local storage: {}", product, binaryPath);
         try {
             File targetFile = new File(FileUtils.getUserDirectoryPath().concat(
                     FilenameUtils.separatorsToSystem(binaryPath)));
             FileUtils.copyFile(binaryFile, targetFile);
-            log.info("Successfully cached {} binary version {} in local storage", product, version);
+            log.info("Successfully cached {} binary version {} ({}_{}) in local storage", product, version, os, arch);
             return true;
         } catch (Exception e) {
-            log.warn("Failed to cache {} binary version {} in local storage: {}", product, version, e.getMessage());
+            log.warn("Failed to cache {} binary version {} ({}_{}) in local storage: {}", product, version, os, arch, e.getMessage());
             return false;
         }
     }
 
     @Override
-    public boolean downloadTerraformBinary(String version, boolean tofu, File targetFile) {
+    public boolean downloadTerraformBinary(String version, boolean tofu, String os, String arch, File targetFile) {
         String product = tofu ? "tofu" : "terraform";
-        String binaryPath = String.format(LOCAL_BINARY_DIRECTORY, product, version, product);
+        String binaryPath = String.format(LOCAL_BINARY_DIRECTORY, product, version, os, arch, product);
         log.info("Attempting to restore {} binary from local storage: {}", product, binaryPath);
         try {
             File sourceFile = new File(FileUtils.getUserDirectoryPath().concat(
                     FilenameUtils.separatorsToSystem(binaryPath)));
             if (!sourceFile.exists()) {
-                log.info("{} binary version {} not found in local storage cache", product, version);
+                log.info("{} binary version {} ({}_{}) not found in local storage cache", product, version, os, arch);
                 return false;
             }
 
@@ -359,10 +359,10 @@ public class LocalTerraformStateImpl implements TerraformState {
                 log.warn("Failed to set executable permission on restored {} binary", product);
             }
 
-            log.info("Successfully restored {} binary version {} from local storage", product, version);
+            log.info("Successfully restored {} binary version {} ({}_{}) from local storage", product, version, os, arch);
             return true;
         } catch (Exception e) {
-            log.warn("Failed to restore {} binary version {} from local storage: {}", product, version, e.getMessage());
+            log.warn("Failed to restore {} binary version {} ({}_{}) from local storage: {}", product, version, os, arch, e.getMessage());
             return false;
         }
     }
