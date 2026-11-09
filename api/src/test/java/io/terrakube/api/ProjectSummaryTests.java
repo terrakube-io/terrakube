@@ -136,6 +136,28 @@ class ProjectSummaryTests extends ServerApplicationTests {
     }
 
     @Test
+    void policyRollupSeparatesHardFromSoftMandatoryViolations() {
+        Project policy = project("health-policy");
+        Workspace hard = workspace(policy, "hard", JobStatus.completed, PolicyComplianceStatus.NON_COMPLIANT, false);
+        Workspace soft = workspace(policy, "soft", JobStatus.completed, PolicyComplianceStatus.NON_COMPLIANT, false);
+        Workspace both = workspace(policy, "both", JobStatus.completed, PolicyComplianceStatus.NON_COMPLIANT, false);
+        Workspace clean = workspace(policy, "clean", JobStatus.completed, PolicyComplianceStatus.COMPLIANT, false);
+        // Legacy rows have no counts at all: they stay non-compliant but are neither hard nor soft.
+        workspace(policy, "legacy", JobStatus.completed, PolicyComplianceStatus.NON_COMPLIANT, false);
+        jdbcTemplate.update("update workspace set policy_hard_violations = 2, policy_soft_violations = 0 where id = ?", hard.getId().toString());
+        jdbcTemplate.update("update workspace set policy_hard_violations = 0, policy_soft_violations = 1 where id = ?", soft.getId().toString());
+        jdbcTemplate.update("update workspace set policy_hard_violations = 1, policy_soft_violations = 3 where id = ?", both.getId().toString());
+        jdbcTemplate.update("update workspace set policy_hard_violations = 0, policy_soft_violations = 0 where id = ?", clean.getId().toString());
+
+        Map<String, Object> node = firstNode(summaries("name==health-policy", null, 10,
+                "nonCompliantCount hardViolationCount softViolationCount"));
+
+        org.junit.jupiter.api.Assertions.assertEquals(4, ((Number) node.get("nonCompliantCount")).intValue());
+        org.junit.jupiter.api.Assertions.assertEquals(2, ((Number) node.get("hardViolationCount")).intValue());
+        org.junit.jupiter.api.Assertions.assertEquals(1, ((Number) node.get("softViolationCount")).intValue());
+    }
+
+    @Test
     void projectWithoutWorkspacesReportsZeroes() {
         Map<String, Object> node = firstNode(summaries("name==health-empty", null, 10,
                 "workspaceCount attentionCount lockedCount"));

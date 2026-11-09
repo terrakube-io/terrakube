@@ -28,6 +28,11 @@ public class WorkspaceProjectDefaultsHook implements LifeCycleHook<Workspace> {
         if (workspace.getExecutionMode() == null && mode != null) {
             workspace.setExecutionMode(mode);
         }
+        String template = workspace.getProject().getDefaultTemplate();
+        if ((workspace.getDefaultTemplate() == null || workspace.getDefaultTemplate().isBlank()) && template != null
+                && !template.isBlank()) {
+            workspace.setDefaultTemplate(template.trim());
+        }
         String version = ProjectWorkspaceDefaults.terraformVersion(workspace.getProject());
         if ((workspace.getTerraformVersion() == null || workspace.getTerraformVersion().isBlank()) && version != null) {
             workspace.setTerraformVersion(version);

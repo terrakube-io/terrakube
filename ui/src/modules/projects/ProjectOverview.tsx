@@ -1,4 +1,4 @@
-import { Alert, Button, Card, Select, Skeleton, Typography } from "antd";
+import { Alert, Button, Card, Select, Skeleton, Tooltip, Typography } from "antd";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { ProjectSummaryModel } from "@/domain/types";
@@ -7,6 +7,7 @@ import { ProjectHealthBar } from "./ProjectHealthBar";
 import { PROJECT_TAB_LABELS, ProjectTab, getStoredLandingTab, setLandingTab } from "./projectLandingTab";
 import { shortAgo, shortDuration } from "./projectHealth";
 import { describeWorkspace } from "./projectStatus";
+import { attentionFilter, projectWorkspacesLink, statusForHealth } from "./projectLinks";
 
 type Props = {
   orgid: string;
@@ -18,12 +19,20 @@ type Props = {
   onOpenTab: (tab: ProjectTab) => void;
 };
 
-function Tile({ value, label, tone }: { value: number | string; label: string; tone?: "danger" }) {
-  return (
-    <Card size="small">
+function Tile({ value, label, tone, to }: { value: number | string; label: string; tone?: "danger"; to?: string }) {
+  const card = (
+    <Card size="small" hoverable={Boolean(to)}>
       <div className={`project-tile-number${tone ? ` project-tile-number-${tone}` : ""}`}>{value}</div>
       <Typography.Text type="secondary">{label}</Typography.Text>
     </Card>
+  );
+  // A tile with something behind it links to it; an empty one stays plain.
+  return to ? (
+    <Link to={to} className="project-tile-link" aria-label={`${value} ${label}, show them`}>
+      {card}
+    </Link>
+  ) : (
+    card
   );
 }
 
@@ -33,9 +42,18 @@ function StatusLine({ orgid, workspace }: { orgid: string; workspace: ProjectWor
     <li>
       <span>
         <Link to={`/organizations/${orgid}/workspaces/${workspace.id}`}>{workspace.name}</Link>{" "}
-        <span className={`project-status project-status-${tone}`}>{label}</span>
+        {/* The status leads to the runs, which is where a failure or a pending approval is read. */}
+        <Link
+          to={`/organizations/${orgid}/workspaces/${workspace.id}/runs`}
+          className={`project-status project-status-${tone}`}
+          aria-label={`${label}, open the runs of ${workspace.name}`}
+        >
+          {label}
+        </Link>
       </span>
-      <Typography.Text type="secondary">{shortAgo(workspace.lastJobDate)}</Typography.Text>
+      <Tooltip title={workspace.lastJobDate ? new Date(workspace.lastJobDate).toLocaleString() : "No runs yet"}>
+        <Typography.Text type="secondary">{shortAgo(workspace.lastJobDate)}</Typography.Text>
+      </Tooltip>
     </li>
   );
 }
@@ -109,18 +127,34 @@ export default function ProjectOverview({ orgid, summary, loading, failed = fals
   return (
     <div className="project-overview">
       <div className="project-tiles">
-        <Tile value={summary.workspaceCount} label="workspaces" />
+        <Tile value={summary.workspaceCount} label="workspaces" to={projectWorkspacesLink(orgid, summary.id)} />
         <Tile
           value={summary.attentionCount}
           label="need attention"
           tone={summary.attentionCount > 0 ? "danger" : undefined}
+          to={
+            summary.attentionCount > 0 ? projectWorkspacesLink(orgid, summary.id, attentionFilter(summary)) : undefined
+          }
         />
-        <Tile value={summary.queuedJobCount} label={queuedLabel} />
-        <Tile value={summary.teamCount} label="teams with access" />
+        <Tile
+          value={summary.queuedJobCount}
+          label={queuedLabel}
+          to={summary.queuedJobCount > 0 ? projectWorkspacesLink(orgid, summary.id, { status: "pending" }) : undefined}
+        />
+        <Tile
+          value={summary.teamCount}
+          label="teams with access"
+          to={`/organizations/${orgid}/projects/${summary.id}/teams`}
+        />
       </div>
 
       <Card size="small" title="Health">
-        <ProjectHealthBar summary={summary} legend="counts" size="large" />
+        <ProjectHealthBar
+          summary={summary}
+          legend="counts"
+          size="large"
+          hrefFor={(key) => projectWorkspacesLink(orgid, summary.id, { status: statusForHealth(key) })}
+        />
         <Typography.Paragraph type="secondary" className="project-overview-meta">
           Last run: {summary.lastRunAt ? new Date(summary.lastRunAt).toLocaleString() : "Never"}
           {summary.lockedCount > 0 && ` · ${summary.lockedCount} locked`}

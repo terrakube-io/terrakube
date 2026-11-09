@@ -43,6 +43,7 @@ class ProjectDefaultsTests extends ServerApplicationTests {
         project.setOrganization(organizationRepository.findById(UUID.fromString(ORG)).orElseThrow());
         project.setDefaultExecutionMode("local");
         project.setDefaultTerraformVersion("1.9.8");
+        project.setDefaultTemplate("11111111-1111-4111-8111-111111111111");
         project = projectRepository.save(project);
     }
 
@@ -60,13 +61,15 @@ class ProjectDefaultsTests extends ServerApplicationTests {
 
         assertThat(created.getExecutionMode()).isEqualTo(ExecutionMode.local);
         assertThat(created.getTerraformVersion()).isEqualTo("1.9.8");
+        assertThat(created.getDefaultTemplate()).isEqualTo("11111111-1111-4111-8111-111111111111");
     }
 
     @Test
     void valuesTheRequestSendsAlwaysWin() {
         Workspace created = create(
-                "{\"name\":\"%s\",\"source\":\"empty\",\"branch\":\"remote-content\",\"executionMode\":\"remote\",\"terraformVersion\":\"1.14.0\"}");
+                "{\"name\":\"%s\",\"source\":\"empty\",\"branch\":\"remote-content\",\"executionMode\":\"remote\",\"terraformVersion\":\"1.14.0\",\"defaultTemplate\":\"22222222-2222-4222-8222-222222222222\"}");
 
+        assertThat(created.getDefaultTemplate()).isEqualTo("22222222-2222-4222-8222-222222222222");
         assertThat(created.getExecutionMode()).isEqualTo(ExecutionMode.remote);
         assertThat(created.getTerraformVersion()).isEqualTo("1.14.0");
     }

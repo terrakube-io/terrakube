@@ -60,6 +60,11 @@ public class Project extends GenericAuditFields {
     @Column(name = "default_terraform_version")
     private String defaultTerraformVersion;
 
+    // The workflow template (by id) a new workspace in this project starts with, when the request names none.
+    @Size(max = 36, message = "Default template must be a template id")
+    @Column(name = "default_template")
+    private String defaultTemplate;
+
     @Pattern(regexp = "remote|local", message = "Default execution mode must be remote or local")
     @Column(name = "default_execution_mode")
     private String defaultExecutionMode;

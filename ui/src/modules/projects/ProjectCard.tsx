@@ -3,8 +3,11 @@ import { Link } from "react-router-dom";
 import { ProjectSummaryModel } from "@/domain/types";
 import { ProjectHealthBar } from "./ProjectHealthBar";
 import { attentionBadge, shortAgo } from "./projectHealth";
+import { attentionFilter, projectWorkspacesLink } from "./projectLinks";
 
 type Props = {
+  /** False when the caller cannot see which teams have access, so the slot shows a dash and the total on hover. */
+  canSeeTeams?: boolean;
   orgid: string;
   project: ProjectSummaryModel;
   /** The workspaces that are in no project. Drawn dashed, with a way to move them into one. */
@@ -15,7 +18,7 @@ function plural(count: number, noun: string): string {
   return `${count} ${noun}${count === 1 ? "" : "s"}`;
 }
 
-export default function ProjectCard({ orgid, project, unassigned = false }: Props) {
+export default function ProjectCard({ orgid, project, unassigned = false, canSeeTeams = true }: Props) {
   const badge = attentionBadge(project);
   const neverRan = !unassigned && project.workspaceCount > 0 && !project.lastRunAt;
 
@@ -29,7 +32,18 @@ export default function ProjectCard({ orgid, project, unassigned = false }: Prop
             {project.name}
           </Link>
         )}
-        {badge && <span className={`project-badge project-badge-${badge.tone}`}>{badge.text}</span>}
+        {badge &&
+          (unassigned ? (
+            <span className={`project-badge project-badge-${badge.tone}`}>{badge.text}</span>
+          ) : (
+            <Link
+              to={projectWorkspacesLink(orgid, project.id, attentionFilter(project))}
+              className={`project-badge project-badge-${badge.tone}`}
+              aria-label={`${badge.text} in ${project.name}, show them`}
+            >
+              {badge.text}
+            </Link>
+          ))}
       </header>
       <p className="project-card-description">{project.description || "No description"}</p>
       <ProjectHealthBar summary={project} />
@@ -39,7 +53,15 @@ export default function ProjectCard({ orgid, project, unassigned = false }: Prop
           <Link to={`/organizations/${orgid}/workspaces`}>Move them to a project</Link>
         ) : (
           <>
-            <span>{plural(project.teamCount, "team")}</span>
+            {canSeeTeams ? (
+              <span>{plural(project.teamCount, "team")}</span>
+            ) : (
+              <Tooltip
+                title={`Only users who manage project access can see team names. Total: ${plural(project.teamCount, "team")}.`}
+              >
+                <span aria-label={`${plural(project.teamCount, "team")}, names hidden`}>-</span>
+              </Tooltip>
+            )}
             <Tooltip title={project.lastRunAt ? new Date(project.lastRunAt).toLocaleString() : "No runs yet"}>
               <span>{project.lastRunAt ? `last run ${shortAgo(project.lastRunAt)}` : "-"}</span>
             </Tooltip>
