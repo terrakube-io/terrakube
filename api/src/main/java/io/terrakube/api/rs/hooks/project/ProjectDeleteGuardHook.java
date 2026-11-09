@@ -7,6 +7,7 @@ import com.yahoo.elide.core.lifecycle.LifeCycleHook;
 import com.yahoo.elide.core.security.ChangeSpec;
 import com.yahoo.elide.core.security.RequestScope;
 
+import io.terrakube.api.repository.ReferenceRepository;
 import io.terrakube.api.repository.WorkspaceRepository;
 import io.terrakube.api.rs.project.Project;
 import lombok.AllArgsConstructor;
@@ -20,12 +21,19 @@ import lombok.AllArgsConstructor;
 public class ProjectDeleteGuardHook implements LifeCycleHook<Project> {
 
     WorkspaceRepository workspaceRepository;
+    ReferenceRepository referenceRepository;
 
     @Override
     public void execute(LifeCycleHookBinding.Operation operation,
             LifeCycleHookBinding.TransactionPhase transactionPhase, Project project, RequestScope requestScope,
             Optional<ChangeSpec> changeSpec) {
         String projectId = project.getId().toString();
+        long references = referenceRepository.countByProjectId(projectId);
+        if (references > 0) {
+            throw new ProjectDeleteGuardException("Project " + project.getName() + " still has " + references
+                    + (references == 1 ? " variable collection" : " variable collections")
+                    + " attached. Detach them before deleting the project.");
+        }
         long workspaces = workspaceRepository.countLiveByProject(projectId);
         if (workspaces > 0) {
             throw new ProjectDeleteGuardException("Project " + project.getName() + " still has " + workspaces

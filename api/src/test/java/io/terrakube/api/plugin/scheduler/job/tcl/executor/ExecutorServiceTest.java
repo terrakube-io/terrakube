@@ -45,7 +45,6 @@ import org.mockito.ArgumentCaptor;
 import io.terrakube.api.plugin.execution.JobVariablesService;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.persistent.PersistentExecutorService;
 import io.terrakube.api.repository.GlobalVarRepository;
-import io.terrakube.api.repository.ReferenceRepository;
 import io.terrakube.api.repository.StepRepository;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -68,7 +67,7 @@ class ExecutorServiceTest {
     private TokenService tokenService;
 
     @Mock private GlobalVarRepository globalVarRepository;
-    @Mock private ReferenceRepository referenceRepository;
+    @Mock private CollectionResolutionService collectionResolutionService;
     @Mock private StepRepository stepRepository;
     @Mock private PersistentExecutorService persistentExecutorService;
     @Mock private io.terrakube.api.plugin.token.dynamic.DynamicCredentialsService dynamicCredentialsService;

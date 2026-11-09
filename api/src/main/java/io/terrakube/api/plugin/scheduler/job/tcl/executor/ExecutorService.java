@@ -36,7 +36,6 @@ import io.terrakube.api.plugin.vcs.provider.exception.VcsTokenAcquisitionExcepti
 import io.terrakube.api.repository.AddressRepository;
 import io.terrakube.api.repository.GlobalVarRepository;
 import io.terrakube.api.repository.JobRepository;
-import io.terrakube.api.repository.ReferenceRepository;
 import io.terrakube.api.repository.SshRepository;
 import io.terrakube.api.repository.StepRepository;
 import io.terrakube.api.repository.VariableRepository;
@@ -109,7 +108,7 @@ public class ExecutorService {
     @Autowired
     private VariableRepository variableRepository;
     @Autowired
-    private ReferenceRepository referenceRepository;
+    private CollectionResolutionService collectionResolutionService;
     @Autowired
     private AddressRepository addressRepository;
     @Autowired
@@ -711,32 +710,18 @@ public class ExecutorService {
         // This runs after ScheduleJob has deliberately released its transaction before making
         // external calls. The repository query fetches Collection.item, preventing a detached
         // collection proxy from trying to acquire a session here.
-        List<Reference> referenceList = referenceRepository.findByWorkspaceWithCollectionItems(job.getWorkspace());
+        List<Collection> sortedList = collectionResolutionService.resolve(job.getWorkspace(), job.getOrganization());
 
-        List<Collection> collectionList = new ArrayList();
-        for (Reference reference : referenceList) {
-            collectionList.add(reference.getCollection());
-        }
-
-        List<Collection> sortedList = collectionList.stream()
-                .sorted(Comparator.comparing(Collection::getPriority).reversed())
-                .toList();
-
-        sortedList.stream().forEach(collection -> {
+        sortedList.forEach(collection -> {
             log.info("Adding data from collection {} using priority {}", collection.getName(), collection.getPriority());
 
-            List<Item> itemList = new ArrayList();
-            itemList = collection.getItem();
-            for (Item item : itemList) {
+            for (Item item : collection.getItem()) {
                 if (item.getCategory().equals(category)) {
                     workspaceData.putIfAbsent(item.getKey(), item.getValue());
                 }
             }
-
         });
-
 
         return workspaceData;
     }
-
 }

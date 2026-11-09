@@ -153,4 +153,5 @@
     <include file="/db/changelog/local/changelog-2.35.0-pr-comment-interim.xml"/>
     <include file="/db/changelog/local/changelog-2.35.0-project-indexes.xml"/>
     <include file="/db/changelog/local/changelog-2.35.0-job-queued-at.xml"/>
+    <include file="/db/changelog/local/changelog-2.35.0-collection-scope.xml"/>
 </databaseChangeLog>

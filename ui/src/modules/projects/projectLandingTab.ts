@@ -1,11 +1,12 @@
-export type ProjectTab = "overview" | "workspaces" | "teams" | "general";
+export type ProjectTab = "overview" | "workspaces" | "variables" | "teams" | "general";
 
 const STORAGE_KEY = "terrakube-project-landing-tab";
-const TABS: ProjectTab[] = ["overview", "workspaces", "teams", "general"];
+const TABS: ProjectTab[] = ["overview", "workspaces", "variables", "teams", "general"];
 
 export const PROJECT_TAB_LABELS: Record<ProjectTab, string> = {
   overview: "Overview",
   workspaces: "Workspaces",
+  variables: "Variables",
   teams: "Teams",
   general: "General",
 };
