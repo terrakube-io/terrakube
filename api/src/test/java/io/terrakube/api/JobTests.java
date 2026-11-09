@@ -63,13 +63,20 @@ class JobTests extends ServerApplicationTests {
 }
 
     @BeforeEach
-    public void setup() {
+    public void setup() throws Exception {
         MockitoAnnotations.openMocks(this);
-        doReturn(valueOperations).when(redisTemplate).opsForValue();
-        // ScheduleJob.runExecution now takes this lock around every job run, not just dispatch -
-        // an unstubbed mock defaults to null/false, which would fail-closed and block every job
-        // in this class from ever progressing.
-        when(valueOperations.setIfAbsent(any(), any(), any(Duration.class))).thenReturn(true);
+        // Jobs left by earlier tests call these shared mocks; stub with Quartz paused so none of them
+        // runs mid-stubbing. Resume right after: the tests in this class need jobs to progress.
+        pauseScheduler();
+        try {
+            doReturn(valueOperations).when(redisTemplate).opsForValue();
+            // ScheduleJob.runExecution now takes this lock around every job run, not just dispatch -
+            // an unstubbed mock defaults to null/false, which would fail-closed and block every job
+            // in this class from ever progressing.
+            when(valueOperations.setIfAbsent(any(), any(), any(Duration.class))).thenReturn(true);
+        } finally {
+            resumeScheduler();
+        }
         wireMockServer.resetAll();
 
         workspace = new Workspace();
