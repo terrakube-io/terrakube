@@ -58,7 +58,9 @@ class ProjectPermissionsTests extends ServerApplicationTests {
                 .statusCode(HttpStatus.ACCEPTED.value())
                 .body("manageProject", is(true))
                 .body("manageWorkspace", is(true))
-                .body("planJob", is(true));
+                .body("planJob", is(true))
+                .body("grantedThrough", org.hamcrest.Matchers.contains(ADMIN_TEAM))
+                .body("accessLevel", is("admin"));
     }
 
     @Test
@@ -67,7 +69,9 @@ class ProjectPermissionsTests extends ServerApplicationTests {
                 .statusCode(HttpStatus.ACCEPTED.value())
                 .body("manageProject", is(false))
                 .body("manageWorkspace", is(false))
-                .body("planJob", is(false));
+                .body("planJob", is(false))
+                .body("grantedThrough", org.hamcrest.Matchers.contains(READ_TEAM))
+                .body("accessLevel", is("read"));
     }
 
     @Test

@@ -12,6 +12,11 @@ jest.mock("@/modules/organizations/organizationService", () => ({
   },
 }));
 
+jest.mock("@/modules/projects/projectService", () => ({
+  __esModule: true,
+  default: { getProjectSummary: jest.fn().mockResolvedValue({ isError: false, data: { workspaceCount: 18 } }) },
+}));
+
 jest.mock("@/components/layout/HelpMenu", () => ({
   HelpMenu: () => <div data-testid="help-menu" />,
 }));
@@ -509,5 +514,37 @@ describe("active settings item", () => {
 
     expect(link).toHaveAttribute("aria-current", "page");
     expect(document.querySelectorAll('[aria-current="page"]')).toHaveLength(1);
+  });
+
+  describe("inside a project", () => {
+    const projectId = "9b2c6679-7425-40de-944b-e07fc1f90ae7";
+    const projectPath = `${orgPath}/projects/${projectId}`;
+
+    it("replaces the organization menu with the project menu and a way back", async () => {
+      renderSidebar(projectPath);
+
+      expect(await screen.findByText("Back to projects")).toBeInTheDocument();
+      for (const item of ["Overview", "Policies", "Team access", "Settings"]) {
+        expect(screen.getByRole("link", { name: item })).toBeInTheDocument();
+      }
+      expect(screen.queryByText("Registry")).not.toBeInTheDocument();
+      expect(screen.getByRole("link", { name: "Back to projects" })).toHaveAttribute("href", `${orgPath}/projects`);
+    });
+
+    it("shows how many workspaces the project has", async () => {
+      renderSidebar(projectPath);
+
+      expect(await screen.findByRole("link", { name: "Workspaces (18)" })).toHaveAttribute(
+        "href",
+        `${projectPath}/workspaces`
+      );
+    });
+
+    it("marks the current section", async () => {
+      renderSidebar(`${projectPath}/policies`);
+
+      const link = await screen.findByRole("link", { name: "Policies" });
+      expect(link.closest("li")).toHaveClass("ant-menu-item-selected");
+    });
   });
 });
