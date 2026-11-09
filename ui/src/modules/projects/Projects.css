@@ -281,3 +281,17 @@
 .project-bulk-impact {
   margin-top: 16px;
 }
+
+/* Default tags section of the project settings. */
+.project-default-tags {
+  margin-top: 32px;
+}
+
+.project-default-tags-list {
+  margin-bottom: 12px;
+}
+
+.project-attention-list {
+  margin: 0;
+  padding-left: 20px;
+}

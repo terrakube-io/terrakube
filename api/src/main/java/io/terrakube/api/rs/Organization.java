@@ -8,6 +8,7 @@ import io.terrakube.api.rs.hooks.organization.OrganizationManageHook;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.module.Module;
 import io.terrakube.api.rs.notification.NotificationConfiguration;
+import io.terrakube.api.rs.project.LandingTab;
 import io.terrakube.api.rs.project.Project;
 import io.terrakube.api.rs.project.ProjectSummary;
 import io.terrakube.api.rs.provider.Provider;
@@ -18,6 +19,7 @@ import io.terrakube.api.rs.template.Template;
 import io.terrakube.api.rs.vcs.Vcs;
 import io.terrakube.api.rs.workspace.Workspace;
 import jakarta.persistence.*;
+import jakarta.validation.constraints.Pattern;
 import lombok.Getter;
 import lombok.Setter;
 import org.hibernate.annotations.JdbcTypeCode;
@@ -116,6 +118,12 @@ public class Organization {
 
     @Column(name = "icon")
     private String icon;
+
+    // The tab projects open on unless a project or the person says otherwise. Null means the overview.
+    @Pattern(regexp = LandingTab.PATTERN, message = LandingTab.MESSAGE)
+    @Column(name = "project_landing_tab")
+    private String projectLandingTab;
+
 
     @UpdatePermission(expression = "user belongs organization")
     @OneToMany(mappedBy = "organization")

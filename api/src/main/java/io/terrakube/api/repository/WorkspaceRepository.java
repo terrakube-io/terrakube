@@ -2,11 +2,13 @@ package io.terrakube.api.repository;
 
 import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.job.JobStatus;
+import io.terrakube.api.rs.project.Project;
 import io.terrakube.api.rs.workspace.Workspace;
 import jakarta.persistence.LockModeType;
 import jakarta.persistence.QueryHint;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Slice;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
@@ -26,6 +28,11 @@ public interface WorkspaceRepository extends JpaRepository<Workspace, UUID> {
     @Query(value = "select count(w.id) from workspace w where w.project_id = :projectId and w.deleted = false",
             nativeQuery = true)
     long countLiveByProject(@Param("projectId") String projectId);
+
+    /** A page of the ids of the project's workspaces, without a count query. Soft deleted ones are excluded. */
+    @Query("select w.id from workspace w where w.project = :project order by w.id")
+    Slice<UUID> findIdsByProject(@Param("project") Project project, Pageable pageable);
+
 
     /**
      * Lets go of the soft deleted workspaces of a project. They are invisible, so they cannot be moved or deleted

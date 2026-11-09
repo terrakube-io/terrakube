@@ -1,4 +1,4 @@
-import { Form, Input, message, Space, Typography, ColorPicker } from "antd";
+import { Form, Input, message, Space, Typography, ColorPicker, Select } from "antd";
 import { Loading } from "@/components/feedback/Loading";
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
@@ -19,13 +19,20 @@ import { cacheOrganizationName } from "@/hooks/useOrganizationName";
 const DEFAULT_ICON = "FaBuilding";
 const DEFAULT_COLOR = "#000000";
 
-const ORGANIZATION_FIELDS = sparseFields<Organization>("organization")("name", "description", "executionMode", "icon");
+const ORGANIZATION_FIELDS = sparseFields<Organization>("organization")(
+  "name",
+  "description",
+  "executionMode",
+  "icon",
+  "projectLandingTab"
+);
 type SparseOrganization = SparseOf<typeof ORGANIZATION_FIELDS>;
 
 type GeneralSettingsForm = {
   name: string;
   description: string;
   executionMode: "remote" | "local";
+  projectLandingTab?: string;
   icon?: string;
 };
 
@@ -55,6 +62,8 @@ export const GeneralSettings = ({ managePermission = true }: Props) => {
           name: values.name,
           description: values.description,
           executionMode: values.executionMode,
+          projectLandingTab:
+            values.projectLandingTab && values.projectLandingTab !== "overview" ? values.projectLandingTab : null,
           icon: iconField,
         },
       },
@@ -135,6 +144,7 @@ export const GeneralSettings = ({ managePermission = true }: Props) => {
           name: response.data.data.attributes.name,
           description: response.data.data.attributes.description,
           executionMode: response.data.data.attributes.executionMode,
+          projectLandingTab: response.data.data.attributes.projectLandingTab ?? "overview",
         });
         setLoading(false);
       })
@@ -168,6 +178,7 @@ export const GeneralSettings = ({ managePermission = true }: Props) => {
                 name: organization?.attributes.name,
                 description: organization?.attributes.description,
                 executionMode: organization?.attributes.executionMode,
+                projectLandingTab: organization?.attributes.projectLandingTab ?? "overview",
               }}
               saveLabel="Update organization"
               saveDisabled={!managePermission}
@@ -214,6 +225,25 @@ export const GeneralSettings = ({ managePermission = true }: Props) => {
                       label: "Local",
                       help: "Your planning and applying jobs are performed on your own machines. Terrakube is used just for storing and syncing the state.",
                     },
+                  ]}
+                />
+              </Form.Item>
+
+              <Typography.Title level={4} className="general-settings-subtitle">
+                Project landing tab
+              </Typography.Title>
+              <Typography.Paragraph type="secondary">
+                The tab projects open on. A project can set its own, and people can choose theirs.
+              </Typography.Paragraph>
+              <Form.Item name="projectLandingTab" label="Projects open on">
+                <Select
+                  options={[
+                    { value: "overview", label: "Overview" },
+                    { value: "workspaces", label: "Workspaces" },
+                    { value: "variables", label: "Variables" },
+                    { value: "policies", label: "Policies" },
+                    { value: "teams", label: "Teams" },
+                    { value: "general", label: "General" },
                   ]}
                 />
               </Form.Item>

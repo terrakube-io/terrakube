@@ -72,6 +72,7 @@ import io.terrakube.api.rs.workspace.parameters.Category;
 import io.terrakube.api.rs.workspace.parameters.Variable;
 import io.terrakube.api.rs.workspace.tag.WorkspaceTag;
 import io.terrakube.api.plugin.notification.JobNotificationTrigger;
+import io.terrakube.api.plugin.project.ProjectDefaultTagService;
 import io.terrakube.api.plugin.policy.PolicyApprovalGuard;
 import io.terrakube.api.plugin.security.audit.JobApprovalService;
 import io.terrakube.api.plugin.state.model.policy.PolicyCheckData;
@@ -168,6 +169,7 @@ public class RemoteTfeService {
 
     private static final Pattern EXACT_TERRAFORM_VERSION_PATTERN = Pattern.compile("^\\d+(\\.\\d+){0,2}(-[0-9A-Za-z.-]+)?$");
     private JobNotificationTrigger jobNotificationTrigger;
+    private final ProjectDefaultTagService projectDefaultTagService;
 
     @Autowired
     private JobStatusChangeService jobStatusChangeService;
@@ -259,7 +261,7 @@ public class RemoteTfeService {
                             TeamTokenService teamTokenService,
                             ArchiveRepository archiveRepository,
                             AccessRepository accessRepository,
-                            EncryptionService encryptionService, AddressRepository addressRepository, ProjectRepository projectRepository, VariableRepository variableRepository, GlobalVarRepository globalVarRepository, RbacService rbacService, JobNotificationTrigger jobNotificationTrigger) {
+                            EncryptionService encryptionService, AddressRepository addressRepository, ProjectRepository projectRepository, VariableRepository variableRepository, GlobalVarRepository globalVarRepository, RbacService rbacService, JobNotificationTrigger jobNotificationTrigger, ProjectDefaultTagService projectDefaultTagService) {
         this.jobRepository = jobRepository;
         this.contentRepository = contentRepository;
         this.organizationRepository = organizationRepository;
@@ -284,6 +286,7 @@ public class RemoteTfeService {
         this.globalVarRepository = globalVarRepository;
         this.rbacService = rbacService;
         this.jobNotificationTrigger = jobNotificationTrigger;
+        this.projectDefaultTagService = projectDefaultTagService;
     }
 
     private boolean isExecutorService(JwtAuthenticationToken currentUser) {
@@ -1285,11 +1288,25 @@ public class RemoteTfeService {
                 addKeyOnlyTags(newWorkspace, relationships.getTags());
                 upsertTagBindings(newWorkspace, relationships.getTagBindings());
             }
+            // After the tags of the request, so a value the request chose for a tag wins over the project's.
+            copyProjectDefaultTags(newWorkspace);
         }
         Map<String, Object> otherAttributes = new HashMap<>();
         otherAttributes.put("locked", false);
         return getWorkspace(organizationName, workspaceData.getData().getAttributes().get("name").toString(),
                 otherAttributes, currentUser);
+    }
+
+    private void copyProjectDefaultTags(Workspace workspace) {
+        if (workspace.getProject() == null) {
+            return;
+        }
+        try {
+            projectDefaultTagService.copyDefaults(workspace);
+        } catch (RuntimeException e) {
+            log.error("Failed to copy the default tags of project {} onto workspace {}",
+                    workspace.getProject().getId(), workspace.getName(), e);
+        }
     }
 
     WorkspaceData updateWorkspaceLock(String workspaceId, boolean locked, JwtAuthenticationToken currentUser) {

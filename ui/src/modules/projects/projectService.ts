@@ -214,7 +214,7 @@ async function createProject(organizationId: string, data: { name: string; descr
 async function updateProject(
   organizationId: string,
   projectId: string,
-  data: { name: string; description?: string }
+  data: { name: string; description?: string; landingTab?: string | null }
 ): Promise<void> {
   const body = {
     data: {
@@ -223,6 +223,8 @@ async function updateProject(
       attributes: {
         name: data.name,
         description: data.description ?? "",
+        // null clears the override so the organization default applies again.
+        ...(data.landingTab !== undefined ? { landingTab: data.landingTab } : {}),
       },
     },
   };
@@ -238,12 +240,14 @@ async function getProject(organizationId: string, projectId: string): Promise<Ap
       organization(ids: ["${organizationId}"]) {
         edges {
           node {
+            projectLandingTab
             project(ids: ["${projectId}"]) {
               edges {
                 node {
                   id
                   name
                   description
+                  landingTab
                 }
               }
             }
@@ -267,7 +271,8 @@ async function getProject(organizationId: string, projectId: string): Promise<Ap
     };
   }
 
-  const node = tempData.data?.organization?.edges?.[0]?.node?.project?.edges?.[0]?.node;
+  const organization = tempData.data?.organization?.edges?.[0]?.node;
+  const node = organization?.project?.edges?.[0]?.node;
 
   return {
     isError: false,
@@ -276,6 +281,8 @@ async function getProject(organizationId: string, projectId: string): Promise<Ap
       id: node?.id ?? "",
       name: node?.name ?? "",
       description: node?.description,
+      landingTab: node?.landingTab ?? undefined,
+      organizationLandingTab: organization?.projectLandingTab ?? undefined,
     },
   };
 }
@@ -469,11 +476,162 @@ async function detachCollectionFromProject(
   await axiosInstance.delete(`organization/${organizationId}/collection/${collectionId}/reference/${referenceId}`);
 }
 
+export type ProjectDefaultTag = { id: string; tagId: string; value?: string };
+export type OrganizationTag = { id: string; name: string };
+
+async function listProjectDefaultTags(organizationId: string, projectId: string): Promise<ProjectDefaultTag[]> {
+  const response = await axiosInstance.get(`organization/${organizationId}/project/${projectId}/projectTag`);
+  return (response.data?.data ?? []).map((item: any) => ({
+    id: item.id,
+    tagId: item.attributes?.tagId,
+    value: item.attributes?.value ?? undefined,
+  }));
+}
+
+async function listOrganizationTags(organizationId: string): Promise<OrganizationTag[]> {
+  const response = await axiosInstance.get(`organization/${organizationId}/tag`);
+  return (response.data?.data ?? []).map((item: any) => ({ id: item.id, name: item.attributes?.name }));
+}
+
+async function addProjectDefaultTag(
+  organizationId: string,
+  projectId: string,
+  tagId: string,
+  value?: string
+): Promise<void> {
+  await axiosInstance.post(
+    `organization/${organizationId}/project/${projectId}/projectTag`,
+    { data: { type: "project_tag", attributes: { tagId, value: value || null } } },
+    { headers: { "Content-Type": "application/vnd.api+json" } }
+  );
+}
+
+async function removeProjectDefaultTag(organizationId: string, projectId: string, id: string): Promise<void> {
+  await axiosInstance.delete(`organization/${organizationId}/project/${projectId}/projectTag/${id}`);
+}
+
+export type ProjectPolicySet = {
+  id: string;
+  name: string;
+  description?: string;
+  enforcementLevel: string;
+  global: boolean;
+  attachedToProject: boolean;
+};
+
+// Policy sets that apply to the project: global ones (every workspace) and ones attached to this project.
+// Tag and workspace attachments are not listed here because they do not follow the project.
+async function listProjectPolicySets(
+  organizationId: string,
+  projectId: string
+): Promise<ApiResponse<ProjectPolicySet[]>> {
+  const body = {
+    query: `query ($orgId: String!) {
+      organization(ids: [$orgId]) {
+        edges { node { policySet {
+          edges { node {
+            id name description enforcementLevel global
+            attachments { edges { node { project { edges { node { id } } } } } }
+          } }
+        } } }
+      }
+    }`,
+    variables: { orgId: organizationId },
+  };
+  const result = await apiPost<unknown, any>("/graphql/api/v1", body, {
+    dataWrapped: true,
+    contentType: "application/json",
+  });
+  if (result.isError) {
+    return { isError: true, responseCode: result.responseCode, error: result.error, data: [] };
+  }
+  const edges = result.data?.organization?.edges?.[0]?.node?.policySet?.edges ?? [];
+  const sets: ProjectPolicySet[] = edges.map((edge: any) => ({
+    id: edge.node.id,
+    name: edge.node.name,
+    description: edge.node.description ?? undefined,
+    enforcementLevel: edge.node.enforcementLevel,
+    global: !!edge.node.global,
+    attachedToProject: (edge.node.attachments?.edges ?? []).some((attachment: any) =>
+      (attachment.node?.project?.edges ?? []).some((project: any) => project.node?.id === projectId)
+    ),
+  }));
+  return {
+    isError: false,
+    responseCode: result.responseCode,
+    data: sets.filter((set) => set.global || set.attachedToProject),
+  };
+}
+
+export type AttentionWorkspace = { id: string; name: string; lastJobStatus: string; policyComplianceStatus?: string };
+
+// The first few workspaces of a project that failed, wait for approval or break policy.
+async function listAttentionWorkspaces(
+  organizationId: string,
+  projectId: string,
+  limit = 5
+): Promise<ApiResponse<AttentionWorkspace[]>> {
+  const body = {
+    query: `query ($orgId: String!, $first: Int!, $filter: String) {
+      organization(ids: [$orgId]) {
+        edges { node { workspace(first: $first, after: "0", sort: "-lastJobDate", filter: $filter) {
+          edges { node { id name lastJobStatus policyComplianceStatus } }
+        } } }
+      }
+    }`,
+    variables: {
+      orgId: organizationId,
+      first: limit,
+      filter: `project.id=='${projectId}';(lastJobStatus=in=('failed','waitingApproval'),policyComplianceStatus=='NON_COMPLIANT')`,
+    },
+  };
+  const result = await apiPost<unknown, any>("/graphql/api/v1", body, {
+    dataWrapped: true,
+    contentType: "application/json",
+  });
+  if (result.isError) {
+    return { isError: true, responseCode: result.responseCode, error: result.error, data: [] };
+  }
+  const edges = result.data?.organization?.edges?.[0]?.node?.workspace?.edges ?? [];
+  return {
+    isError: false,
+    responseCode: result.responseCode,
+    data: edges.map((edge: any) => ({
+      id: edge.node.id,
+      name: edge.node.name,
+      lastJobStatus: edge.node.lastJobStatus,
+      policyComplianceStatus: edge.node.policyComplianceStatus ?? undefined,
+    })),
+  };
+}
+
+export type ApplyDefaultTagsResult = { workspaces: number; workspacesChanged: number; tagsAdded: number };
+
+// dryRun only counts what would change, so the UI can show the impact before anything is written.
+async function applyProjectDefaultTags(
+  organizationId: string,
+  projectId: string,
+  dryRun: boolean
+): Promise<ApplyDefaultTagsResult> {
+  const url = `${
+    new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin
+  }/access-token/v1/projects/organization/${organizationId}/project/${projectId}/default-tags/apply`;
+  const response = await axiosInstance.post(url, null, { params: { dryRun } });
+  return response.data;
+}
+
 const methods = {
   listProjects,
   listProjectSummaries,
   countUnassignedWorkspaces,
   getProjectSummary,
+  applyProjectDefaultTags,
+  listAttentionWorkspaces,
+  listProjectPolicySets,
+  listProjectDefaultTags,
+  listOrganizationTags,
+  addProjectDefaultTag,
+  removeProjectDefaultTag,
   listCollectionsForProject,
   attachCollectionToProject,
   detachCollectionFromProject,
