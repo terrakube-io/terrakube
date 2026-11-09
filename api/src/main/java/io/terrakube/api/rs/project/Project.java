@@ -5,8 +5,10 @@ import io.terrakube.api.plugin.security.audit.GenericAuditFields;
 import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.hooks.project.ProjectDeleteGuardHook;
 import io.terrakube.api.rs.project.access.ProjectAccess;
+import io.terrakube.api.rs.project.tag.ProjectTag;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import lombok.Getter;
 import lombok.Setter;
@@ -46,6 +48,11 @@ public class Project extends GenericAuditFields {
     @Column(name = "description")
     private String description;
 
+    // Overrides the organization default for the tab this project opens on. Null means use the default.
+    @Pattern(regexp = "overview|workspaces|variables|policies|teams|general", message = "Landing tab must be one of overview, workspaces, variables, policies, teams, general")
+    @Column(name = "landing_tab")
+    private String landingTab;
+
     @ManyToOne
     private Organization organization;
 
@@ -53,4 +60,10 @@ public class Project extends GenericAuditFields {
     @BatchSize(size = 100)
     @OneToMany(mappedBy = "project", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<ProjectAccess> projectAccess = new ArrayList<>();
+
+    // Tags copied onto workspaces created in or moved into the project.
+    @UpdatePermission(expression = "team manage project OR team project admin manages project access field")
+    @BatchSize(size = 100)
+    @OneToMany(mappedBy = "project", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<ProjectTag> projectTag = new ArrayList<>();
 }

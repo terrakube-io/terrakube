@@ -7,6 +7,7 @@ import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.agent.Agent;
 import io.terrakube.api.rs.collection.Reference;
 import io.terrakube.api.rs.hooks.workspace.WorkspaceManageHook;
+import io.terrakube.api.rs.hooks.workspace.WorkspaceProjectTagHook;
 import io.terrakube.api.rs.hooks.workspace.WorkspaceUnlockHook;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
@@ -40,6 +41,7 @@ import java.util.UUID;
 @UpdatePermission(expression = "team manage workspace OR team project limited manage workspace OR team limited manage workspace")
 @DeletePermission(expression = "team manage workspace")
 @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.CREATE, phase = LifeCycleHookBinding.TransactionPhase.PRECOMMIT, hook = WorkspaceManageHook.class)
+@LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.CREATE, phase = LifeCycleHookBinding.TransactionPhase.POSTCOMMIT, hook = WorkspaceProjectTagHook.class)
 // Elide silently truncates un-paged collections to 500 rows, and clients cannot opt into page[...] because the
 // read permission above is evaluated in memory (Elide rejects it with "Cannot paginate workspace"). Raise the
 // implicit ceiling to Elide's maximum so organizations with more than 500 workspaces list completely.
@@ -160,6 +162,7 @@ public class Workspace extends GenericAuditFields {
     private List<WorkspaceTag> workspaceTag;
 
     @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.PRECOMMIT, hook = WorkspaceManageHook.class)
+    @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.POSTCOMMIT, hook = WorkspaceProjectTagHook.class)
     @UpdatePermission(expression = "team manage workspace OR team project limited reassign workspace")
     @OneToOne
     private Project project;

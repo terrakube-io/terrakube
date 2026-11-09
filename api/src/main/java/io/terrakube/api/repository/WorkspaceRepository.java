@@ -21,6 +21,11 @@ import java.util.UUID;
 
 public interface WorkspaceRepository extends JpaRepository<Workspace, UUID> {
 
+    /** A page of the ids of the project's workspaces (soft deleted ones are excluded by the entity restriction). */
+    @Query("select w.id from workspace w where w.project = :project order by w.id")
+    Page<UUID> findIdsByProject(@Param("project") io.terrakube.api.rs.project.Project project, Pageable pageable);
+
+
     /**
      * Counts workspaces pointing at a project including soft deleted ones, which still hold the
      * {@code fk_workspace_project} reference. Native so the entity soft delete restriction does not apply.
