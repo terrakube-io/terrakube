@@ -10,6 +10,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.jpa.repository.QueryHints;
 import org.springframework.data.repository.query.Param;
@@ -20,6 +21,22 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface WorkspaceRepository extends JpaRepository<Workspace, UUID> {
+
+    /** Counts the workspaces a person can still see in a project. Native so it is explicit about {@code deleted}. */
+    @Query(value = "select count(w.id) from workspace w where w.project_id = :projectId and w.deleted = false",
+            nativeQuery = true)
+    long countLiveByProject(@Param("projectId") String projectId);
+
+    /**
+     * Lets go of the soft deleted workspaces of a project. They are invisible, so they cannot be moved or deleted
+     * by the person deleting the project, yet their {@code project_id} would still fail {@code fk_workspace_project}.
+     */
+    @Transactional
+    @Modifying
+    @Query(value = "update workspace set project_id = null where project_id = :projectId and deleted = true",
+            nativeQuery = true)
+    int detachDeletedFromProject(@Param("projectId") String projectId);
+
 
     /**
      * Returns a page of workspaces for drift-scan use; generates a paginated SELECT
