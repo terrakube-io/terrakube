@@ -394,11 +394,6 @@ export const CreateWorkspace = () => {
     form.setFieldsValue({ source: "empty", branch: "remote-content" });
   };
 
-  const onFinishFailed = (errorInfo: any) => {
-    console.log(errorInfo.values);
-    console.log(errorInfo.errorFields);
-  };
-
   const loadVersions = (iacType: IacType) => {
     const versionsApi = `${new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin}/${iacType.id}/index.json`;
     axiosInstance.get(versionsApi).then((resp) => {
@@ -732,7 +727,6 @@ export const CreateWorkspace = () => {
         name="create-workspace"
         layout="vertical"
         onFinish={onFinish}
-        onFinishFailed={onFinishFailed}
         validateMessages={validateMessages}
         initialValues={{ folder: "/" }}
       >

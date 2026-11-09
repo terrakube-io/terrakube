@@ -72,7 +72,6 @@ export default function WorkspaceFilter({
         onTagsLoaded(loadedTags);
       })
       .catch((err: unknown) => {
-        // eslint-disable-next-line no-console
         console.error(err);
       });
 

@@ -1,13 +1,12 @@
 import { Alert, Button, Flex, Form, Input, Spin, message } from "antd";
 import CreatePatModal from "@/components/modals/CreatePatModal";
-import { CreateTokenForm } from "@/modules/token/types";
+import { CreatedToken, CreateTokenForm } from "@/modules/token/types";
 import TokenGrid from "@/modules/token/TokenGrid";
 import { apiDelete, apiGet, apiPost } from "@/modules/api/apiWrapper";
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import { TeamToken } from "../types";
-import { CreatedToken } from "@/modules/token/types";
 import SettingsSection from "@/components/settings/SettingsSection/SettingsSection";
 import "./Settings.css";
 import "./TeamsTagsVariables.css";

@@ -25,7 +25,7 @@ Read this before changing anything under `ui/`.
 | Command | What it does |
 |---|---|
 | `yarn check` | lint, format check, typecheck and unit tests: run it before every commit |
-| `yarn lint:check` / `yarn lint` | ESLint on `src` (errors block CI, warnings don't) |
+| `yarn lint:check` / `yarn lint` | ESLint on `src`; any warning fails it (`--max-warnings 0`) |
 | `yarn format:check` / `yarn format` | Prettier on `src` |
 | `yarn typecheck` | `tsc` for app code and for tests (two projects) |
 | `yarn test` | Jest, about a minute |

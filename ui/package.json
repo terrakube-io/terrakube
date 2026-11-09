@@ -44,7 +44,7 @@
     "build:analyze": "ANALYZE=1 vite build",
     "serve": "vite preview --port 3000",
     "test": "jest",
-    "lint:check": "eslint ./src",
+    "lint:check": "eslint ./src --max-warnings 0",
     "lint": "eslint --fix ./src",
     "format:check": "prettier ./src --check",
     "format": "prettier ./src --write",
