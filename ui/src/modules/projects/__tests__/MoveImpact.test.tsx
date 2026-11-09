@@ -5,7 +5,7 @@ import MoveImpact from "../MoveImpact";
 jest.mock("../projectService", () => ({
   __esModule: true,
   default: {
-    listProjectAccess: jest.fn(),
+    listProjectTeams: jest.fn(),
     listProjectPolicySets: jest.fn(),
     listCollectionsForProject: jest.fn(),
     listProjectDefaultTags: jest.fn(),
@@ -25,12 +25,14 @@ describe("MoveImpact", () => {
     service.listProjectDefaultTags.mockImplementation(async (_org, project) =>
       project === "target" ? [{ id: "x", tagId: "t1", value: "prod" }] : []
     );
-    service.listProjectAccess.mockImplementation(async (_org, project) =>
-      ok(
-        project === "target"
-          ? [{ name: "payments-devs" }, { name: "shared" }]
-          : [{ name: "platform" }, { name: "shared" }]
-      )
+    service.listProjectTeams.mockImplementation(async (_org, project) =>
+      ok({
+        teams:
+          project === "target"
+            ? [{ name: "payments-devs" }, { name: "shared" }]
+            : [{ name: "platform" }, { name: "shared" }],
+        restricted: false,
+      })
     );
     service.listProjectPolicySets.mockImplementation(async (_org, project) =>
       ok(
@@ -68,7 +70,7 @@ describe("MoveImpact", () => {
     );
 
     expect(
-      await screen.findByText(/1 team gain access \(payments-devs\), 1 team lose access \(platform\)/)
+      await screen.findByText(/1 team gains access \(payments-devs\), 1 team loses access \(platform\)/)
     ).toBeInTheDocument();
     expect(screen.getByText("pwd-guardrails starts applying (Soft mandatory)")).toBeInTheDocument();
     expect(screen.getByText('Collection "payments-common" starts applying')).toBeInTheDocument();
@@ -77,7 +79,7 @@ describe("MoveImpact", () => {
   });
 
   it("does not claim access changes when the team lists cannot be read", async () => {
-    service.listProjectAccess.mockResolvedValue({ isError: true, data: undefined } as never);
+    service.listProjectTeams.mockResolvedValue({ isError: true, data: undefined } as never);
 
     render(
       <MoveImpact
@@ -93,6 +95,22 @@ describe("MoveImpact", () => {
     expect(screen.queryByText(/gain access/)).not.toBeInTheDocument();
   });
 
+  it("does not claim access changes when some teams are hidden from the caller", async () => {
+    service.listProjectTeams.mockResolvedValue(ok({ teams: [{ name: "visible" }], restricted: true }));
+
+    render(
+      <MoveImpact
+        orgid="org"
+        sourceProjectId="source"
+        targetProjectId="target"
+        targetName="payments-prod"
+        workspaceCount={1}
+      />
+    );
+
+    expect(await screen.findByText("You can see these projects but not who has access to them.")).toBeInTheDocument();
+  });
+
   it("treats workspaces without a project as having nothing to lose", async () => {
     render(
       <MoveImpact
@@ -105,11 +123,11 @@ describe("MoveImpact", () => {
     );
 
     expect(await screen.findByText(/2 teams gain access \(payments-devs, shared\)/)).toBeInTheDocument();
-    expect(service.listProjectAccess).not.toHaveBeenCalledWith("org", "source");
+    expect(service.listProjectTeams).not.toHaveBeenCalledWith("org", "source");
   });
 
   it("says when nothing changes", async () => {
-    service.listProjectAccess.mockResolvedValue(ok([]));
+    service.listProjectTeams.mockResolvedValue(ok({ teams: [], restricted: false }));
     service.listProjectPolicySets.mockResolvedValue(ok([]));
     service.listCollectionsForProject.mockResolvedValue(ok([]));
     service.listProjectDefaultTags.mockResolvedValue([]);

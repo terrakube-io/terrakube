@@ -78,6 +78,7 @@ type CreateWorkspaceForm = {
 export const CreateWorkspace = () => {
   const [organizationName, setOrganizationName] = useState<string | null>();
   const [executionMode, setExecutionMode] = useState<string | null>();
+  const [projectDefaultVersion, setProjectDefaultVersion] = useState<string>();
   const [terraformVersions, setTerraformVersions] = useState<string[]>([]);
   const [vcs, setVCS] = useState<VcsModel[]>([]);
   const [sshKeys, setSSHKeys] = useState<SshKey[]>([]);
@@ -254,6 +255,7 @@ export const CreateWorkspace = () => {
         setLoading(false);
       });
   }, [organizationId, orgid]);
+
   const handleClick = () => {
     setCurrent(2);
     setVersionControlFlow(true);
@@ -371,6 +373,24 @@ export const CreateWorkspace = () => {
   };
 
   const [form] = Form.useForm();
+
+  // A project can set the Terraform version its workspaces start with. The execution mode default is applied by the
+  // API when none is sent, so only the version, which this form always sends, needs prefilling.
+  const selectedProject = Form.useWatch("project", form);
+  useEffect(() => {
+    setProjectDefaultVersion(undefined);
+    if (!organizationId || !selectedProject || selectedProject === "none") return;
+    let cancelled = false;
+    projectService.getProject(organizationId, selectedProject).then((response) => {
+      const version = response.isError ? undefined : response.data?.defaultTerraformVersion;
+      if (cancelled || !version || !terraformVersions.includes(version)) return;
+      form.setFieldsValue({ terraformVersion: version });
+      setProjectDefaultVersion(version);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedProject, organizationId, terraformVersions]);
   const handleGitContinueClick = () => {
     setCurrent(4);
     setStep4Hidden(false);
@@ -932,7 +952,11 @@ export const CreateWorkspace = () => {
           <Form.Item
             name="project"
             label="Project"
-            extra="Optional. Assigning a project lets you group and filter workspaces."
+            extra={
+              projectDefaultVersion
+                ? `Terraform version ${projectDefaultVersion} was defaulted from this project.`
+                : "Optional. Assigning a project lets you group and filter workspaces."
+            }
           >
             <Select placeholder="(No project)" className="ws-create-field">
               {!preselectedProjectId && <Option key="none">(No project)</Option>}
