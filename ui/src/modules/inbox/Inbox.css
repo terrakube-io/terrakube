@@ -1,0 +1,46 @@
+.inbox-section,
+.inbox-alert {
+  margin-bottom: 16px;
+}
+
+.inbox-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.inbox-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--tk-border-secondary, #f0f0f0);
+}
+
+.inbox-row:last-child {
+  border-bottom: 0;
+}
+
+.inbox-row-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.inbox-row-where {
+  font-size: 12px;
+}
+
+.inbox-row-actions {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 12px;
+}
+
+.inbox-more {
+  display: block;
+  margin-top: 8px;
+  font-size: 12px;
+}
