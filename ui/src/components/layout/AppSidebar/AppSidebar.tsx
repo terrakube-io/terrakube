@@ -24,6 +24,7 @@ import {
   RobotOutlined,
   SafetyCertificateOutlined,
   ScheduleOutlined,
+  SearchOutlined,
   SecurityScanOutlined,
   SettingOutlined,
   ShareAltOutlined,
@@ -41,10 +42,14 @@ import { getOrgIdFromPathname, isOrgId } from "@/config/orgId";
 import { FlatOrganization } from "@/domain/types";
 import { OrganizationSelector } from "@/components/layout/OrganizationSelector";
 import { HelpMenu } from "@/components/layout/HelpMenu";
+import { openCommandPalette } from "@/modules/navigation/openPalette";
 import { UserMenu } from "@/components/layout/UserMenu";
 import { getStoredSidebarCollapsed, setStoredSidebarCollapsed } from "./sidebarPreference";
 import logo from "@/domain/Home/white_logo.png";
 import "./AppSidebar.css";
+
+// The key the palette opens on, as the person's keyboard names it.
+const SHORTCUT = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform) ? "\u2318K" : "Ctrl K";
 
 const { Sider } = Layout;
 
@@ -184,6 +189,8 @@ export default function AppSidebar({
       setDefaultSelected([params[5] || "overview"]);
     } else if (isProjectDetailContext) {
       setDefaultSelected([params[5] || "overview"]);
+    } else if (location.pathname.startsWith("/inbox")) {
+      setDefaultSelected(["inbox"]);
     } else if (location.pathname.includes("registry")) {
       setDefaultSelected(["registry"]);
     } else if (location.pathname.includes("projects")) {
@@ -547,6 +554,11 @@ export default function AppSidebar({
                     key: "organizations",
                     icon: <BankOutlined />,
                   },
+                  {
+                    label: <Link to="/inbox">Needs attention</Link>,
+                    key: "inbox",
+                    icon: <BellOutlined />,
+                  },
                 ];
 
   const handleToggleCollapsed = () => {
@@ -613,6 +625,21 @@ export default function AppSidebar({
               )}
             </div>
           </div>
+          {!effectiveCollapsed && (
+            // A field to look at, not an icon to find: search is the quickest way to anywhere in the application.
+            <div className="app-sidebar-search-row">
+              <button
+                type="button"
+                className="app-sidebar-search-box"
+                aria-label="Search organizations, projects and workspaces (Ctrl or Cmd plus K)"
+                onClick={openCommandPalette}
+              >
+                <SearchOutlined />
+                <span className="app-sidebar-search-text">Search</span>
+                <kbd className="app-sidebar-search-key">{SHORTCUT}</kbd>
+              </button>
+            </div>
+          )}
           {canCollapse && (
             // A tab on the sidebar's edge: always in the same place, collapsed or not.
             <button
