@@ -24,8 +24,8 @@ import static org.hamcrest.Matchers.hasItems;
 import static org.hamcrest.Matchers.not;
 import static org.mockito.Mockito.when;
 
-// Project's @Paginate raises the implicit collection limit to 10,000 without changing the
-// in-memory read permissions, which prevent clients from using explicit pagination.
+// Project reads are filtered in SQL (ProjectReadFilter), so clients can page, sort and search explicitly.
+// The 10,000 default page size keeps callers that read without paging working.
 class ProjectPaginationTests extends ServerApplicationTests {
 
     private static final String ORGANIZATION_ID = "d9b58bd3-f3fc-4056-a026-1163297e80a8";
@@ -145,6 +145,63 @@ class ProjectPaginationTests extends ServerApplicationTests {
                 "expected fewer than 150 total statements but ran " + statements + " in " + elapsedMillis + "ms");
         org.junit.jupiter.api.Assertions.assertTrue(projectAccessFetches <= 10,
                 "expected batched projectAccess loading but fetched " + projectAccessFetches + " collections");
+    }
+
+    @Test
+    void explicitPaginationReturnsAccurateTotalsAsOrganizationManager() {
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+                .when()
+                .get("/api/v1/organization/" + ORGANIZATION_ID + "/project"
+                        + "?filter[project]=name==pagination-3783*&sort=name&page[size]=50&page[number]=2&page[totals]=true")
+                .then()
+                .assertThat()
+                .log()
+                .ifValidationFails()
+                .statusCode(HttpStatus.OK.value())
+                .body("data.size()", org.hamcrest.Matchers.is(50))
+                .body("data[0].attributes.name", org.hamcrest.Matchers.is("pagination-3783-0050"))
+                .body("meta.page.totalRecords", org.hamcrest.Matchers.is(SEEDED_PROJECTS));
+    }
+
+    @Test
+    void explicitPaginationReturnsAccurateTotalsAsProjectAccessOnlyCaller() {
+        String query = "{ organization(ids: [\"" + ORGANIZATION_ID + "\"]) { edges { node { "
+                + "project(first: 25, after: \"25\", sort: \"-name\", filter: \"name=ini=*pagination-3783*\") { "
+                + "edges { node { name } } pageInfo { totalRecords hasNextPage } } } } } }";
+
+        given()
+                .headers("Authorization", "Bearer " + generatePAT(PROJECT_ONLY_TEAM))
+                .contentType("application/json")
+                .body(Map.of("query", query))
+                .when()
+                .post("/graphql/api/v1")
+                .then()
+                .assertThat()
+                .log()
+                .ifValidationFails()
+                .statusCode(HttpStatus.OK.value())
+                .body("$", not(hasKey("errors")))
+                .body("data.organization.edges[0].node.project.edges.size()", org.hamcrest.Matchers.is(25))
+                .body("data.organization.edges[0].node.project.edges[0].node.name",
+                        org.hamcrest.Matchers.is("pagination-3783-0475"))
+                .body("data.organization.edges[0].node.project.pageInfo.totalRecords",
+                        org.hamcrest.Matchers.is(SEEDED_PROJECTS))
+                .body("data.organization.edges[0].node.project.pageInfo.hasNextPage",
+                        org.hamcrest.Matchers.is(true));
+    }
+
+    @Test
+    void callerWithoutAccessSeesNoProjects() {
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("NOT_A_TEAM"))
+                .when()
+                .get("/api/v1/project?page[totals]=true&page[size]=10")
+                .then()
+                .assertThat()
+                .log()
+                .ifValidationFails()
+                .body("data.size()", org.hamcrest.Matchers.is(0));
     }
 
     private String[] seededProjectIds() {
