@@ -62,8 +62,9 @@ React state and contexts (`src/context/`, `src/modules/*/…Context.tsx`). A few
 ## Dates
 
 Use `dayjs` (antd already ships it) and the helpers in `src/modules/utils/dates.ts`. Absolute dates go
-through `Intl`, so they follow the browser locale. `luxon` stays installed only because `ActionLoader` hands
-`DateTime` to user-defined actions; don't import it anywhere else, and don't add another date library.
+through `Intl`, so they follow the browser locale. `luxon` stays installed only because `ActionLoader` still hands
+`DateTime` to user-defined actions (deprecated: actions get `dayjs` and a console notice); don't import it
+anywhere else, and don't add another date library.
 
 ## Keeping the bundle small
 
