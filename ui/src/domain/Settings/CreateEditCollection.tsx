@@ -186,6 +186,8 @@ export const CreateEditCollection = ({
 
         // Delete references that are not in the new selection or where the workspace is null because it was deleted
         for (const ref of existingRefs) {
+          // Project and organization references are managed elsewhere and have no workspace on purpose.
+          if (ref.attributes?.scope && ref.attributes.scope !== "WORKSPACE") continue;
           const workspaceId = ref.relationships?.workspace?.data?.id;
           if (workspaceId == null) {
             await axiosInstance.delete(`organization/${orgid}/collection/${collectionid}/reference/${ref.id}`);

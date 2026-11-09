@@ -5,6 +5,9 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import io.terrakube.api.rs.collection.Collection;
 import io.terrakube.api.rs.collection.Reference;
+import io.terrakube.api.rs.collection.ReferenceScope;
+import io.terrakube.api.rs.project.Project;
+import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.workspace.Workspace;
 
 import java.util.List;
@@ -29,4 +32,22 @@ public interface ReferenceRepository extends JpaRepository<Reference, UUID> {
             + "LEFT JOIN FETCH c.item "
             + "WHERE r.workspace = :workspace")
     List<Reference> findByWorkspaceWithCollectionItems(@Param("workspace") Workspace workspace);
+
+    // Same fetch shape as findByWorkspaceWithCollectionItems, for project and organization scoped references.
+    @Query("SELECT DISTINCT r FROM reference r "
+            + "JOIN FETCH r.collection c "
+            + "LEFT JOIN FETCH c.item "
+            + "WHERE r.scope = :scope AND r.project = :project")
+    List<Reference> findByProjectWithCollectionItems(@Param("project") Project project,
+            @Param("scope") ReferenceScope scope);
+
+    @Query("SELECT DISTINCT r FROM reference r "
+            + "JOIN FETCH r.collection c "
+            + "LEFT JOIN FETCH c.item "
+            + "WHERE r.scope = :scope AND c.organization = :organization")
+    List<Reference> findByOrganizationWithCollectionItems(@Param("organization") Organization organization,
+            @Param("scope") ReferenceScope scope);
+
+    @Query(value = "select count(r.id) from reference r where r.project_id = :projectId", nativeQuery = true)
+    long countByProjectId(@Param("projectId") String projectId);
 }

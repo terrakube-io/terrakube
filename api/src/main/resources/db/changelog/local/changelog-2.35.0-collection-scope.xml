@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+
+    <!-- Collection references can also attach to a project (scope PROJECT) or the organization (scope ORGANIZATION). Existing rows keep scope WORKSPACE. Expand only. -->
+    <changeSet id="2-35-0-reference-scope" author="terrakube">
+        <addColumn tableName="reference">
+            <column name="scope" type="varchar(16)" defaultValue="WORKSPACE">
+                <constraints nullable="false"/>
+            </column>
+            <column name="project_id" type="varchar(36)">
+                <constraints nullable="true" foreignKeyName="fk_reference_project" references="project(id)"/>
+            </column>
+        </addColumn>
+        <dropNotNullConstraint tableName="reference" columnName="workspace_id" columnDataType="varchar(36)"/>
+        <createIndex tableName="reference" indexName="idx_reference_project">
+            <column name="project_id"/>
+        </createIndex>
+        <createIndex tableName="reference" indexName="idx_reference_scope">
+            <column name="scope"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>
