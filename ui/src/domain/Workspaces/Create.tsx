@@ -382,15 +382,21 @@ export const CreateWorkspace = () => {
     if (!organizationId || !selectedProject || selectedProject === "none") return;
     let cancelled = false;
     projectService.getProject(organizationId, selectedProject).then((response) => {
-      const version = response.isError ? undefined : response.data?.defaultTerraformVersion;
-      if (cancelled || !version || !terraformVersions.includes(version)) return;
-      form.setFieldsValue({ terraformVersion: version });
-      setProjectDefaultVersion(version);
+      if (cancelled || response.isError) return;
+      const version = response.data?.defaultTerraformVersion;
+      if (version && terraformVersions.includes(version)) {
+        form.setFieldsValue({ terraformVersion: version });
+        setProjectDefaultVersion(version);
+      }
+      const template = response.data?.defaultTemplate;
+      if (template && orgTemplates.some((item) => item.id === template)) {
+        form.setFieldsValue({ defaultTemplate: template });
+      }
     });
     return () => {
       cancelled = true;
     };
-  }, [selectedProject, organizationId, terraformVersions]);
+  }, [selectedProject, organizationId, terraformVersions, orgTemplates]);
   const handleGitContinueClick = () => {
     setCurrent(4);
     setStep4Hidden(false);

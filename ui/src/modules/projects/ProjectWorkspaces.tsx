@@ -2,7 +2,7 @@ import { Alert, Button, Flex, Segmented, Table, Typography, message } from "antd
 import type { TableProps } from "antd";
 import { AppstoreOutlined, LockOutlined, UnorderedListOutlined } from "@ant-design/icons";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import WorkspaceStatusTag from "@/components/display/WorkspaceStatusTag";
 import PolicyStatusTag from "@/components/display/PolicyStatusTag";
 import { EmptyState } from "@/components/feedback/EmptyState";
@@ -21,7 +21,10 @@ import { usePolling } from "@/hooks";
 import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
 import projectService from "./projectService";
 import BulkWorkspaceBar from "./BulkWorkspaceBar";
+import DisabledReason from "./DisabledReason";
 import MoveExistingModal from "./MoveExistingModal";
+import { readChoice, readPositiveInt, withViewState } from "./projectLinks";
+import { WORKSPACE_STATUS_PALETTE } from "@/modules/workspaces/utils/workspaceStatusPalette";
 import "./Projects.css";
 
 type Props = {
@@ -37,6 +40,21 @@ const DEFAULT_PAGE_SIZE = 10;
 const DEFAULT_SORT: WorkspaceSortOption = "name_asc";
 const POLL_INTERVAL_MS = 10000;
 const SEARCH_DEBOUNCE_MS = 300;
+const STATUS_VALUES = WORKSPACE_STATUS_PALETTE.map((entry) => entry.value);
+const POLICY_VALUES = Object.values(PolicyComplianceFilter) as string[];
+const SORT_VALUES: WorkspaceSortOption[] = ["name_asc", "name_desc", "lastRun_desc", "lastRun_asc"];
+const PAGE_SIZES = [10, 20, 50, 100];
+
+// Tags travel in the address as "tagId" or "tagId~value", one parameter each.
+function readTagFilters(params: URLSearchParams): WorkspaceTagFilter[] {
+  return params
+    .getAll("tag")
+    .map((raw) => {
+      const [tagId, ...rest] = raw.split("~");
+      return { tagId, value: rest.length ? rest.join("~") : undefined };
+    })
+    .filter((filter) => filter.tagId);
+}
 
 /** Clearing the Last run sort falls back to the default name order. */
 function toSortOption(sorter: Sorter): WorkspaceSortOption {
@@ -62,17 +80,24 @@ export default function ProjectWorkspaces({
   canManage = false,
 }: Props) {
   const navigate = useNavigate();
+  // The filters live in the address, so a filtered list can be shared, bookmarked, and linked to from a number.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const initial = useRef(searchParams).current;
   const [selected, setSelected] = useState<WorkspaceListItem[]>([]);
   const [workspaces, setWorkspaces] = useState<WorkspaceListItem[]>([]);
   const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
-  const [sort, setSort] = useState<WorkspaceSortOption>(DEFAULT_SORT);
-  const [search, setSearch] = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [status, setStatus] = useState<string>(WorkspaceStatusFilter.All);
-  const [policyStatus, setPolicyStatus] = useState<string>(PolicyComplianceFilter.All);
-  const [tagFilters, setTagFilters] = useState<WorkspaceTagFilter[]>([]);
+  const [page, setPage] = useState(readPositiveInt(initial, "page", 1));
+  const [pageSize, setPageSize] = useState(
+    PAGE_SIZES.includes(readPositiveInt(initial, "size", 0)) ? readPositiveInt(initial, "size", 0) : DEFAULT_PAGE_SIZE
+  );
+  const [sort, setSort] = useState<WorkspaceSortOption>(readChoice(initial, "sort", SORT_VALUES, DEFAULT_SORT));
+  const [search, setSearch] = useState(initial.get("q") ?? "");
+  const [debouncedSearch, setDebouncedSearch] = useState(initial.get("q") ?? "");
+  const [status, setStatus] = useState<string>(readChoice(initial, "status", STATUS_VALUES, WorkspaceStatusFilter.All));
+  const [policyStatus, setPolicyStatus] = useState<string>(
+    readChoice(initial, "policy", POLICY_VALUES, PolicyComplianceFilter.All)
+  );
+  const [tagFilters, setTagFilters] = useState<WorkspaceTagFilter[]>(readTagFilters(initial));
   const [statusCounts, setStatusCounts] = useState<Record<string, number>>();
   const [policyCounts, setPolicyCounts] = useState<Record<string, number>>();
   const [tags, setTags] = useState<TagModel[]>([]);
@@ -91,6 +116,33 @@ export default function ProjectWorkspaces({
     }, SEARCH_DEBOUNCE_MS);
     return () => window.clearTimeout(handle);
   }, [search]);
+
+  useEffect(() => {
+    const next = new URLSearchParams(
+      withViewState(
+        searchParams,
+        {
+          q: debouncedSearch.trim(),
+          status,
+          policy: policyStatus,
+          sort,
+          page,
+          size: pageSize,
+        },
+        {
+          status: WorkspaceStatusFilter.All,
+          policy: PolicyComplianceFilter.All,
+          sort: DEFAULT_SORT,
+          page: 1,
+          size: DEFAULT_PAGE_SIZE,
+        }
+      )
+    );
+    // Tags are repeated parameters, so they are rewritten as a set.
+    next.delete("tag");
+    tagFilters.forEach((filter) => next.append("tag", filter.value ? `${filter.tagId}~${filter.value}` : filter.tagId));
+    if (next.toString() !== searchParams.toString()) setSearchParams(next, { replace: true });
+  }, [debouncedSearch, status, policyStatus, sort, page, pageSize, tagFilters]);
 
   useEffect(() => {
     projectService
@@ -300,9 +352,14 @@ export default function ProjectWorkspaces({
             >
               New workspace
             </Button>
-            <Button disabled={!canManage} onClick={() => setMoveExisting(true)}>
-              Move existing
-            </Button>
+            <DisabledReason
+              disabled={!canManage}
+              reason="Moving workspaces into this project needs the Admin role on it, or Manage Workspaces in the organization."
+            >
+              <Button disabled={!canManage} onClick={() => setMoveExisting(true)}>
+                Move existing
+              </Button>
+            </DisabledReason>
           </Flex>
         </EmptyState>
       ) : (

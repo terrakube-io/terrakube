@@ -6,7 +6,12 @@ import ProjectDetailPage from "../ProjectDetailPage";
 
 jest.mock("../projectService", () => ({
   __esModule: true,
-  default: { getProject: jest.fn(), getProjectSummary: jest.fn(), updateProject: jest.fn() },
+  default: {
+    getProject: jest.fn(),
+    getProjectSummary: jest.fn(),
+    updateProject: jest.fn(),
+    listOrganizationTemplates: jest.fn(),
+  },
 }));
 let mockOrgPermissions: any;
 jest.mock("@/modules/permissions/useOrgPermissions", () => ({
@@ -86,6 +91,10 @@ describe("ProjectDetailPage", () => {
     service.getProject.mockResolvedValue(project() as never);
     service.getProjectSummary.mockResolvedValue({ isError: false, data: { id: "p1", workspaceCount: 3 } } as never);
     service.updateProject.mockResolvedValue(undefined);
+    service.listOrganizationTemplates.mockResolvedValue([
+      { id: "t-plan", name: "Plan" },
+      { id: "t-apply", name: "Plan and apply" },
+    ]);
   });
 
   it("opens the overview with the header actions and says how the caller has access", async () => {
@@ -109,6 +118,8 @@ describe("ProjectDetailPage", () => {
     expect(await screen.findByText(/You cannot manage access or delete the project/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Edit" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "New workspace" })).toBeDisabled();
+    expect(screen.getByLabelText(/Editing a project needs the Admin role/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Creating a workspace here needs write access/)).toBeInTheDocument();
   });
 
   it.each([
@@ -172,6 +183,37 @@ describe("ProjectDetailPage", () => {
         "org",
         "p1",
         expect.objectContaining({ defaultTerraformVersion: null, defaultExecutionMode: "local" })
+      );
+    });
+
+    it("saves the default template, and clears it when set back to no default", async () => {
+      service.getProject.mockResolvedValue(project({ defaultTemplate: "t-apply" }) as never);
+      renderAt("/organizations/org/projects/p1/settings");
+
+      await screen.findByLabelText("Terraform version");
+      await waitFor(() => expect(screen.getByText("Plan and apply")).toBeInTheDocument());
+      expect(screen.getAllByText("Defaulted from project").length).toBeGreaterThan(0);
+      fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
+
+      await waitFor(() => expect(service.updateProject).toHaveBeenCalled());
+      expect(service.updateProject).toHaveBeenCalledWith(
+        "org",
+        "p1",
+        expect.objectContaining({ defaultTemplate: "t-apply" })
+      );
+    });
+
+    it("sends no template when none is set", async () => {
+      renderAt("/organizations/org/projects/p1/settings");
+
+      await screen.findByLabelText("Terraform version");
+      fireEvent.click(await screen.findByRole("button", { name: "Save settings" }));
+
+      await waitFor(() => expect(service.updateProject).toHaveBeenCalled());
+      expect(service.updateProject).toHaveBeenCalledWith(
+        "org",
+        "p1",
+        expect.objectContaining({ defaultTemplate: null })
       );
     });
 

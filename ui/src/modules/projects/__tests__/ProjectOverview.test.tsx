@@ -29,6 +29,8 @@ const summary = {
   waitingApprovalCount: 0,
   neverRunCount: 0,
   nonCompliantCount: 0,
+  hardViolationCount: 0,
+  softViolationCount: 0,
   compliantCount: 0,
   exemptedCount: 0,
   queuedJobCount: 0,
@@ -168,5 +170,70 @@ describe("ProjectOverview", () => {
     renderOverview({ summary: null, loading: false, onOpenTab: jest.fn() });
 
     expect(screen.getByText("Project summary is not available")).toBeInTheDocument();
+  });
+
+  describe("click-through", () => {
+    it("links each number to the workspaces behind it", () => {
+      renderOverview({
+        summary: { ...summary, teamCount: 2, queuedJobCount: 1, failedCount: 1, attentionCount: 1 },
+        loading: false,
+        onOpenTab: jest.fn(),
+      });
+
+      expect(screen.getByRole("link", { name: /5 workspaces, show them/ })).toHaveAttribute(
+        "href",
+        "/organizations/org/projects/p1/workspaces"
+      );
+      expect(screen.getByRole("link", { name: /1 need attention, show them/ })).toHaveAttribute(
+        "href",
+        "/organizations/org/projects/p1/workspaces?status=failed"
+      );
+      expect(screen.getByRole("link", { name: /1 queued now, show them/ })).toHaveAttribute(
+        "href",
+        "/organizations/org/projects/p1/workspaces?status=pending"
+      );
+      expect(screen.getByRole("link", { name: /2 teams with access, show them/ })).toHaveAttribute(
+        "href",
+        "/organizations/org/projects/p1/teams"
+      );
+    });
+
+    it("leaves a tile with nothing behind it as plain text", () => {
+      renderOverview({
+        summary: { ...summary, attentionCount: 0, failedCount: 0, queuedJobCount: 0 },
+        loading: false,
+        onOpenTab: jest.fn(),
+      });
+
+      expect(screen.queryByRole("link", { name: /need attention, show them/ })).not.toBeInTheDocument();
+      expect(screen.queryByRole("link", { name: /queued now, show them/ })).not.toBeInTheDocument();
+    });
+
+    it("links each health status to the workspaces with that status", () => {
+      renderOverview({ summary, loading: false, onOpenTab: jest.fn() });
+
+      expect(screen.getByRole("link", { name: "3 completed" })).toHaveAttribute(
+        "href",
+        "/organizations/org/projects/p1/workspaces?status=completed"
+      );
+      expect(screen.getByRole("link", { name: "1 failed" })).toHaveAttribute(
+        "href",
+        "/organizations/org/projects/p1/workspaces?status=failed"
+      );
+    });
+
+    it("sends a status chip to the runs of that workspace", async () => {
+      attentionList.mockResolvedValue({
+        isError: false,
+        data: [{ id: "w1", name: "network", lastJobStatus: "failed" }],
+      });
+
+      renderOverview({ summary, loading: false, onOpenTab: jest.fn() });
+
+      expect(await screen.findByRole("link", { name: /Failed, open the runs of network/ })).toHaveAttribute(
+        "href",
+        "/organizations/org/workspaces/w1/runs"
+      );
+    });
   });
 });

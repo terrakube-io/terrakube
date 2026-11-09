@@ -143,7 +143,7 @@ async function listProjectSummaries(
               edges {
                 node {
                   id name description workspaceCount completedCount failedCount runningCount queuedCount
-                  waitingApprovalCount neverRunCount nonCompliantCount compliantCount exemptedCount lockedCount attentionCount lastRunAt queuedJobCount queuedSince teamCount
+                  waitingApprovalCount neverRunCount nonCompliantCount hardViolationCount softViolationCount compliantCount exemptedCount lockedCount attentionCount lastRunAt queuedJobCount queuedSince teamCount
                 }
               }
               pageInfo { totalRecords }
@@ -289,6 +289,8 @@ async function getUnassignedSummary(organizationId: string): Promise<ApiResponse
     waitingApprovalCount: 0,
     neverRunCount: 0,
     nonCompliantCount: 0,
+    hardViolationCount: 0,
+    softViolationCount: 0,
     compliantCount: 0,
     exemptedCount: 0,
     queuedJobCount: 0,
@@ -351,6 +353,7 @@ async function updateProject(
     landingTab?: string | null;
     defaultTerraformVersion?: string | null;
     defaultExecutionMode?: string | null;
+    defaultTemplate?: string | null;
   }
 ): Promise<void> {
   const body = {
@@ -366,6 +369,7 @@ async function updateProject(
           ? { defaultTerraformVersion: data.defaultTerraformVersion }
           : {}),
         ...(data.defaultExecutionMode !== undefined ? { defaultExecutionMode: data.defaultExecutionMode } : {}),
+        ...(data.defaultTemplate !== undefined ? { defaultTemplate: data.defaultTemplate } : {}),
       },
     },
   };
@@ -392,6 +396,7 @@ async function getProject(organizationId: string, projectId: string): Promise<Ap
                   landingTab
                   defaultTerraformVersion
                   defaultExecutionMode
+                  defaultTemplate
                 }
               }
             }
@@ -429,6 +434,7 @@ async function getProject(organizationId: string, projectId: string): Promise<Ap
       organizationLandingTab: organization?.projectLandingTab ?? undefined,
       defaultTerraformVersion: node?.defaultTerraformVersion ?? undefined,
       defaultExecutionMode: node?.defaultExecutionMode ?? undefined,
+      defaultTemplate: node?.defaultTemplate ?? undefined,
       organizationExecutionMode: organization?.executionMode ?? undefined,
     },
   };
@@ -989,6 +995,13 @@ async function getWorkspaceVariableData(
   };
 }
 
+export type OrganizationTemplate = { id: string; name: string };
+
+async function listOrganizationTemplates(organizationId: string): Promise<OrganizationTemplate[]> {
+  const response = await axiosInstance.get(`organization/${organizationId}/template`);
+  return (response.data?.data ?? []).map((item: any) => ({ id: item.id, name: item.attributes?.name }));
+}
+
 const methods = {
   listProjects,
   listProjectSummaries,
@@ -996,6 +1009,7 @@ const methods = {
   getUnassignedSummary,
   getCurrentGroups,
   getProjectSummary,
+  listOrganizationTemplates,
   listProjectTeams,
   getWorkspaceVariableData,
   getDeletePreflight,
