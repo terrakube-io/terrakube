@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+
+    <!-- The tab a project, or an organization by default, opens on. Nullable, not backfilled. -->
+    <changeSet id="2-35-0-landing-tab" author="terrakube">
+        <addColumn tableName="organization">
+            <column name="project_landing_tab" type="varchar(16)"/>
+        </addColumn>
+        <addColumn tableName="project">
+            <column name="landing_tab" type="varchar(16)"/>
+        </addColumn>
+    </changeSet>
+</databaseChangeLog>

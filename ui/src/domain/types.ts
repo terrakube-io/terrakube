@@ -73,6 +73,7 @@ export type OrganizationAttributes = {
   name: string;
   executionMode?: string;
   icon?: string;
+  projectLandingTab?: string;
   workspaceCount?: number;
   workspaceStatusCounts?: Record<string, number>;
 };
@@ -568,6 +569,9 @@ export type ProjectModel = {
   id: string;
   name: string;
   description?: string;
+  // The tab this project opens on, and the organization default it falls back to.
+  landingTab?: string;
+  organizationLandingTab?: string;
 };
 
 // Computed by the API (project_summary) from the project's non-deleted workspaces.
