@@ -125,6 +125,8 @@ public class GitHubWebhookService extends WebhookServiceBase {
 
                 String prBranch = rootNode.path("pull_request").path("head").path("ref").asText();
                 result.setBranch(prBranch);
+                String prBaseBranch = rootNode.path("pull_request").path("base").path("ref").asText(null);
+                result.setBaseBranch(prBaseBranch);
 
                 // Set createdBy to the user who created the PR
                 String prUser = rootNode.path("pull_request").path("user").path("login").asText();
@@ -181,6 +183,7 @@ public class GitHubWebhookService extends WebhookServiceBase {
                                     JsonNode prNode = objectMapper.readTree(prResponse.getBody());
                                     result.setCommit(prNode.path("head").path("sha").asText());
                                     result.setBranch(prNode.path("head").path("ref").asText());
+                                    result.setBaseBranch(prNode.path("base").path("ref").asText(null));
 
                                     String prFilesUrl = prUrl + "/files";
                                     result.setFileChanges(getPrFileChanges(vcs, ownerAndRepo, prFilesUrl));
@@ -524,6 +527,7 @@ public class GitHubWebhookService extends WebhookServiceBase {
             JsonNode prNode = objectMapper.readTree(prResponse.getBody());
             result.setCommit(prNode.path("head").path("sha").asText());
             result.setBranch(prNode.path("head").path("ref").asText());
+            result.setBaseBranch(prNode.path("base").path("ref").asText(null));
             return true;
         } catch (Exception e) {
             log.error("Error parsing PR details from {}", prDetailsUrl, e);

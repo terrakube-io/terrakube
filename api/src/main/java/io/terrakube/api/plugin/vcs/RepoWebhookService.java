@@ -66,6 +66,7 @@ public class RepoWebhookService {
     ObjectMapper objectMapper;
     Executor workspaceFanoutExecutor;
     WorkspaceBranchPolicy workspaceBranchPolicy;
+    WebhookProperties webhookProperties;
 
     private boolean isGitLab(RepoWebhook repoWebhook) {
         return repoWebhook.getVcs() != null && repoWebhook.getVcs().getVcsType() == VcsType.GITLAB;
@@ -258,6 +259,24 @@ public class RepoWebhookService {
             webhookResult.setFileChanges(prFiles);
         }
 
+        if (azureDevOps && webhookProperties.isPrBaseBranchFilter()
+                && webhookResult.isPullRequestOrComment()
+                && (webhookResult.getBaseBranch() == null || webhookResult.getBaseBranch().isBlank())
+                && webhookResult.getPrNumber() != null
+                && repoWebhook.getVcs() != null) {
+            String targetBranch = azDevOpsWebhookService.fetchPrTargetBranch(
+                    repoWebhook.getVcs(), repoWebhook.getRepositoryUrl(), webhookResult.getPrNumber().intValue());
+            if (targetBranch != null) {
+                webhookResult.setBaseBranch(targetBranch);
+            }
+        }
+
+        if (webhookProperties.isPrBaseBranchFilter() && webhookResult.isPullRequestOrComment()
+                && webhookResult.getPrDetailsUrl() == null
+                && (webhookResult.getBaseBranch() == null || webhookResult.getBaseBranch().isBlank())) {
+            log.warn("PR webhook delivery for repository {} has no target branch (baseBranch); workspaces will fail closed and skip speculative plans", normalizedUrl);
+        }
+
         List<Workspace> workspaces = workspaceRepository
                 .findByNormalizedSourceWithMigratedWebhook(normalizedUrl);
 
@@ -273,7 +292,7 @@ public class RepoWebhookService {
         List<CompletableFuture<Void>> tasks = workspaces.stream()
                 .map(workspace -> CompletableFuture.runAsync(() -> {
                     try {
-                        processWorkspaceWebhook(workspace, webhookResult);
+                        processWorkspaceWebhook(workspace, webhookResult.copy());
                     } catch (Exception e) {
                         log.error("Error processing v2 webhook for workspace {}: {}", workspace.getName(),
                                 e.getMessage(), e);
@@ -302,6 +321,27 @@ public class RepoWebhookService {
             }
         }
 
+        String azRepoId = null;
+        if (isAzureDevOps(workspace) && workspace.getVcs() != null) {
+            if (webhookProperties.isPrBaseBranchFilter() && webhookResult.isPullRequestOrComment()
+                    && (webhookResult.getBaseBranch() == null || webhookResult.getBaseBranch().isBlank())
+                    && webhookResult.getPrNumber() != null) {
+                azRepoId = azDevOpsWebhookService.resolveRepositoryId(workspace.getVcs(), workspace.getSource());
+                if (azRepoId != null) {
+                    String targetBranch = azDevOpsWebhookService.fetchPrTargetBranch(
+                            workspace.getVcs(), workspace.getSource(), azRepoId, webhookResult.getPrNumber().intValue());
+                    if (targetBranch != null) {
+                        webhookResult.setBaseBranch(targetBranch);
+                    }
+                }
+            }
+        }
+
+        if (!WebhookEventMatcher.shouldProcessPullRequest(workspace, webhookResult,
+                webhookProperties.isPrBaseBranchFilter())) {
+            return;
+        }
+
         // Azure DevOps: file changes require per-workspace API calls (push payloads
         // don't include changed files, and PR changes need workspace VCS credentials).
         if (isAzureDevOps(workspace) && workspace.getVcs() != null) {
@@ -311,9 +351,15 @@ public class RepoWebhookService {
                         azDevOpsWebhookService.fetchPushFileChanges(
                                 workspace.getVcs(), workspace.getSource(), webhookResult.getRawPayload()));
             } else if ("pull_request".equals(normalizedEvent) && webhookResult.getPrNumber() != null) {
-                webhookResult.setFileChanges(
-                        azDevOpsWebhookService.fetchPrFileChanges(
-                                workspace.getVcs(), workspace.getSource(), webhookResult.getPrNumber().intValue()));
+                if (azRepoId != null && !azRepoId.isBlank()) {
+                    webhookResult.setFileChanges(
+                            azDevOpsWebhookService.fetchPrFileChanges(
+                                    workspace.getVcs(), workspace.getSource(), azRepoId, webhookResult.getPrNumber().intValue()));
+                } else {
+                    webhookResult.setFileChanges(
+                            azDevOpsWebhookService.fetchPrFileChanges(
+                                    workspace.getVcs(), workspace.getSource(), webhookResult.getPrNumber().intValue()));
+                }
             }
         } else if (webhookResult.getPrFilesUrl() != null
                 && (webhookResult.getFileChanges() == null || webhookResult.getFileChanges().isEmpty())) {
