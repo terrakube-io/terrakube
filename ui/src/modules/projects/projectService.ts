@@ -393,11 +393,90 @@ async function updateProjectAccess(
   });
 }
 
+export type ProjectCollection = {
+  id: string;
+  name: string;
+  description?: string;
+  priority: number;
+  variableCount: number;
+  referenceId?: string;
+};
+
+// Every collection in the organization, marked with the reference that attaches it to this project (if any).
+async function listCollectionsForProject(
+  organizationId: string,
+  projectId: string
+): Promise<ApiResponse<ProjectCollection[]>> {
+  const body = {
+    query: `query ($orgId: String!, $filter: String) {
+      organization(ids: [$orgId]) {
+        edges { node { collection {
+          edges { node {
+            id name description priority
+            item { edges { node { id } } }
+            reference(filter: $filter) { edges { node { id } } }
+          } }
+        } } }
+      }
+    }`,
+    variables: { orgId: organizationId, filter: `scope=='PROJECT';project.id=='${projectId}'` },
+  };
+  const result = await apiPost<unknown, any>("/graphql/api/v1", body, {
+    dataWrapped: true,
+    contentType: "application/json",
+  });
+  if (result.isError) {
+    return { isError: true, responseCode: result.responseCode, error: result.error, data: [] };
+  }
+  const edges = result.data?.organization?.edges?.[0]?.node?.collection?.edges ?? [];
+  return {
+    isError: false,
+    responseCode: result.responseCode,
+    data: edges.map((edge: any) => ({
+      id: edge.node.id,
+      name: edge.node.name,
+      description: edge.node.description ?? undefined,
+      priority: edge.node.priority ?? 0,
+      variableCount: edge.node.item?.edges?.length ?? 0,
+      referenceId: edge.node.reference?.edges?.[0]?.node?.id,
+    })),
+  };
+}
+
+async function attachCollectionToProject(
+  organizationId: string,
+  projectId: string,
+  collectionId: string
+): Promise<void> {
+  await axiosInstance.post(
+    `organization/${organizationId}/collection/${collectionId}/reference`,
+    {
+      data: {
+        type: "reference",
+        attributes: { description: `Reference to project ${projectId}`, scope: "PROJECT" },
+        relationships: { project: { data: { type: "project", id: projectId } } },
+      },
+    },
+    { headers: { "Content-Type": "application/vnd.api+json" } }
+  );
+}
+
+async function detachCollectionFromProject(
+  organizationId: string,
+  collectionId: string,
+  referenceId: string
+): Promise<void> {
+  await axiosInstance.delete(`organization/${organizationId}/collection/${collectionId}/reference/${referenceId}`);
+}
+
 const methods = {
   listProjects,
   listProjectSummaries,
   countUnassignedWorkspaces,
   getProjectSummary,
+  listCollectionsForProject,
+  attachCollectionToProject,
+  detachCollectionFromProject,
   getProject,
   createProject,
   updateProject,

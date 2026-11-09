@@ -8,6 +8,7 @@ import { useProjectPermissions } from "@/modules/permissions/useProjectPermissio
 import ProjectWorkspaces from "./ProjectWorkspaces";
 import ProjectAccessTab from "./ProjectAccessTab";
 import ProjectOverview from "./ProjectOverview";
+import ProjectVariablesTab from "./ProjectVariablesTab";
 import { ProjectTab, getLandingTab } from "./projectLandingTab";
 import useApiRequest from "@/modules/api/useApiRequest";
 import { ProjectModel, ProjectSummaryModel } from "@/domain/types";
@@ -222,6 +223,7 @@ export default function ProjectDetailPage({ organizationName, setOrganizationNam
         { key: "overview", label: "Overview" },
         { key: "general", label: "General" },
         { key: "workspaces", label: "Workspaces" },
+        { key: "variables", label: "Variables" },
         { key: "teams", label: "Teams" },
       ],
     },
@@ -233,6 +235,8 @@ export default function ProjectDetailPage({ organizationName, setOrganizationNam
         return <ProjectOverview summary={summary} loading={summaryLoading} onOpenTab={handleTabChange} />;
       case "workspaces":
         return <ProjectWorkspaces key={`${orgid}:${id}`} orgid={orgid!} projectId={id!} canManage={canManageProject} />;
+      case "variables":
+        return <ProjectVariablesTab orgid={orgid!} projectId={id!} canManage={permissions.manageCollection} />;
       case "teams":
         return <ProjectAccessTab orgid={orgid!} projectId={id!} canManage={canManageProject} />;
       case "general":

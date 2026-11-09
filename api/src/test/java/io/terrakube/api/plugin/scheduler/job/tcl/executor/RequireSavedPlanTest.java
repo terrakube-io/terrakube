@@ -6,7 +6,6 @@ import io.terrakube.api.plugin.scheduler.job.tcl.executor.persistent.PersistentE
 import io.terrakube.api.plugin.scheduler.job.tcl.model.FlowConfig;
 import io.terrakube.api.repository.AddressRepository;
 import io.terrakube.api.repository.GlobalVarRepository;
-import io.terrakube.api.repository.ReferenceRepository;
 import io.terrakube.api.repository.StepRepository;
 import io.terrakube.api.repository.VariableRepository;
 import io.terrakube.api.rs.Organization;
@@ -44,7 +43,7 @@ class RequireSavedPlanTest {
     @Mock
     private GlobalVarRepository globalVarRepository;
     @Mock
-    private ReferenceRepository referenceRepository;
+    private CollectionResolutionService collectionResolutionService;
     @Mock
     private AddressRepository addressRepository;
     @Mock
