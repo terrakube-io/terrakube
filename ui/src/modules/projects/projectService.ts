@@ -76,6 +76,9 @@ export type ProjectSummaryQuery = {
   filter?: string;
   search?: string;
   attentionOnly?: boolean;
+  // One of the filter chips, and the caller's groups for "My projects".
+  chip?: "all" | "attention" | "mine" | "empty" | "stale";
+  groups?: string[];
   sort: string;
   page: number;
   pageSize: number;
@@ -86,7 +89,31 @@ export type ProjectSummaryPage = {
   totalRecords: number;
 };
 
-export function buildProjectSummaryFilter(query: Pick<ProjectSummaryQuery, "search" | "attentionOnly">): string {
+export const STALE_DAYS = 90;
+
+function quoteList(values: string[]): string {
+  return values.map((value) => `'${value.replace(/['"\\]/g, "")}'`).join(",");
+}
+
+// The filter behind each chip. "My projects" with no groups matches nothing rather than everything.
+export function chipFilter(chip: ProjectSummaryQuery["chip"], groups: string[] = []): string | undefined {
+  switch (chip) {
+    case "attention":
+      return "attentionCount=gt=0";
+    case "mine":
+      return groups.length ? `projectAccess.name=in=(${quoteList(groups)})` : "workspaceCount<0";
+    case "empty":
+      return "workspaceCount==0";
+    case "stale":
+      return `lastRunAt=lt=${new Date(Date.now() - STALE_DAYS * 24 * 60 * 60 * 1000).toISOString()}`;
+    default:
+      return undefined;
+  }
+}
+
+export function buildProjectSummaryFilter(
+  query: Pick<ProjectSummaryQuery, "search" | "attentionOnly" | "chip" | "groups">
+): string {
   const parts: string[] = [];
   const search = query.search?.trim();
   if (search) {
@@ -94,6 +121,8 @@ export function buildProjectSummaryFilter(query: Pick<ProjectSummaryQuery, "sear
     if (term) parts.push(`(name=ini=*${term}*,description=ini=*${term}*)`);
   }
   if (query.attentionOnly) parts.push("attentionCount=gt=0");
+  const chip = chipFilter(query.chip, query.groups);
+  if (chip) parts.push(chip);
   return parts.join(";");
 }
 
@@ -102,16 +131,18 @@ async function listProjectSummaries(
   organizationId: string,
   query: ProjectSummaryQuery
 ): Promise<ApiResponse<ProjectSummaryPage>> {
+  // Elide rejects a null filter variable, so the argument is left out when there is nothing to filter.
+  const filter = query.filter ?? buildProjectSummaryFilter(query);
   const body = {
-    query: `query ProjectSummaries($orgId: String!, $first: Int!, $after: String, $sort: String, $filter: String) {
+    query: `query ProjectSummaries($orgId: String!, $first: StringOrInt, $after: StringOrInt, $sort: String${filter ? ", $filter: String" : ""}) {
       organization(ids: [$orgId]) {
         edges {
           node {
-            projectSummary(first: $first, after: $after, sort: $sort, filter: $filter) {
+            projectSummary(first: $first, after: $after, sort: $sort${filter ? ", filter: $filter" : ""}) {
               edges {
                 node {
                   id name description workspaceCount completedCount failedCount runningCount queuedCount
-                  waitingApprovalCount neverRunCount nonCompliantCount lockedCount attentionCount lastRunAt teamCount
+                  waitingApprovalCount neverRunCount nonCompliantCount compliantCount exemptedCount lockedCount attentionCount lastRunAt queuedJobCount queuedSince teamCount
                 }
               }
               pageInfo { totalRecords }
@@ -122,10 +153,10 @@ async function listProjectSummaries(
     }`,
     variables: {
       orgId: organizationId,
-      first: query.pageSize,
+      first: String(query.pageSize),
       after: String((query.page - 1) * query.pageSize),
       sort: query.sort,
-      filter: query.filter ?? (buildProjectSummaryFilter(query) || null),
+      ...(filter ? { filter } : {}),
     },
   };
 
@@ -148,6 +179,7 @@ async function listProjectSummaries(
     ...edge.node,
     description: edge.node.description ?? undefined,
     lastRunAt: edge.node.lastRunAt ?? undefined,
+    queuedSince: edge.node.queuedSince ?? undefined,
   }));
 
   return {
@@ -173,13 +205,25 @@ async function getProjectSummary(
   return { isError: false, responseCode: result.responseCode, data: result.data?.items[0] ?? null };
 }
 
-// Workspaces that are not in any project; shown as the "Unassigned" row on the projects index.
-async function countUnassignedWorkspaces(organizationId: string): Promise<ApiResponse<number>> {
+export type ProjectIndexCounts = { all: number; attention: number; mine: number; empty: number; stale: number };
+
+// The numbers on the filter chips, in one request: each is the total of a differently filtered, one-row page.
+async function getProjectIndexCounts(
+  organizationId: string,
+  groups: string[]
+): Promise<ApiResponse<ProjectIndexCounts>> {
+  const count = (alias: string, filter?: string) =>
+    `${alias}: projectSummary(first: "1", after: "0"${filter ? `, filter: "${filter}"` : ""}) { pageInfo { totalRecords } }`;
+  const mine = groups.length ? count("mine", chipFilter("mine", groups)) : "";
   const body = {
-    query: `query Unassigned($orgId: String!) {
-      organization(ids: [$orgId]) {
-        edges { node { workspace(filter: "project=isnull=true", first: 1, after: "0") { pageInfo { totalRecords } } } }
-      }
+    query: `query ($orgId: String!) {
+      organization(ids: [$orgId]) { edges { node {
+        ${count("all")}
+        ${count("attention", chipFilter("attention"))}
+        ${mine}
+        ${count("empty", chipFilter("empty"))}
+        ${count("stale", chipFilter("stale"))}
+      } } }
     }`,
     variables: { orgId: organizationId },
   };
@@ -187,11 +231,98 @@ async function countUnassignedWorkspaces(organizationId: string): Promise<ApiRes
     dataWrapped: true,
     contentType: "application/json",
   });
-  if (result.isError) {
-    return { isError: true, responseCode: result.responseCode, error: result.error, data: 0 };
-  }
-  const total = result.data?.organization?.edges?.[0]?.node?.workspace?.pageInfo?.totalRecords ?? 0;
-  return { isError: false, responseCode: result.responseCode, data: total };
+  const empty: ProjectIndexCounts = { all: 0, attention: 0, mine: 0, empty: 0, stale: 0 };
+  if (result.isError) return { isError: true, responseCode: result.responseCode, error: result.error, data: empty };
+  const node = result.data?.organization?.edges?.[0]?.node ?? {};
+  const total = (alias: string) => node[alias]?.pageInfo?.totalRecords ?? 0;
+  return {
+    isError: false,
+    responseCode: result.responseCode,
+    data: {
+      all: total("all"),
+      attention: total("attention"),
+      mine: total("mine"),
+      empty: total("empty"),
+      stale: total("stale"),
+    },
+  };
+}
+
+// The workspaces that are in no project, rolled up like a project so the index can show them as one entry.
+async function getUnassignedSummary(organizationId: string): Promise<ApiResponse<ProjectSummaryModel>> {
+  const base = "project=isnull=true";
+  const count = (alias: string, extra?: string) =>
+    `${alias}: workspace(first: "1", after: "0", filter: "${extra ? `${base};${extra}` : base}") { pageInfo { totalRecords } }`;
+  const body = {
+    query: `query ($orgId: String!) {
+      organization(ids: [$orgId]) { edges { node {
+        ${count("total")}
+        ${count("completed", "lastJobStatus=in=('completed','noChanges')")}
+        ${count("failed", "lastJobStatus=='failed'")}
+        ${count("running", "lastJobStatus=='running'")}
+        ${count("queued", "lastJobStatus=in=('pending','approved','queue')")}
+        ${count("waiting", "lastJobStatus=='waitingApproval'")}
+        ${count("never", "lastJobStatus=='NeverExecuted'")}
+        ${count("nonCompliant", "policyComplianceStatus=='NON_COMPLIANT'")}
+        ${count("compliant", "policyComplianceStatus=='COMPLIANT'")}
+        ${count("locked", "locked==true")}
+        ${count("attention", "(lastJobStatus=in=('failed','waitingApproval'),policyComplianceStatus=='NON_COMPLIANT')")}
+        latest: workspace(first: "1", after: "0", sort: "-lastJobDate", filter: "${base}") { edges { node { lastJobDate } } }
+      } } }
+    }`,
+    variables: { orgId: organizationId },
+  };
+  const result = await apiPost<unknown, any>("/graphql/api/v1", body, {
+    dataWrapped: true,
+    contentType: "application/json",
+  });
+  const blank: ProjectSummaryModel = {
+    id: "unassigned",
+    name: "Unassigned",
+    description: "Workspaces with no project",
+    workspaceCount: 0,
+    completedCount: 0,
+    failedCount: 0,
+    runningCount: 0,
+    queuedCount: 0,
+    waitingApprovalCount: 0,
+    neverRunCount: 0,
+    nonCompliantCount: 0,
+    compliantCount: 0,
+    exemptedCount: 0,
+    queuedJobCount: 0,
+    lockedCount: 0,
+    attentionCount: 0,
+    teamCount: 0,
+  };
+  if (result.isError) return { isError: true, responseCode: result.responseCode, error: result.error, data: blank };
+  const node = result.data?.organization?.edges?.[0]?.node ?? {};
+  const total = (alias: string) => node[alias]?.pageInfo?.totalRecords ?? 0;
+  return {
+    isError: false,
+    responseCode: result.responseCode,
+    data: {
+      ...blank,
+      workspaceCount: total("total"),
+      completedCount: total("completed"),
+      failedCount: total("failed"),
+      runningCount: total("running"),
+      queuedCount: total("queued"),
+      waitingApprovalCount: total("waiting"),
+      neverRunCount: total("never"),
+      nonCompliantCount: total("nonCompliant"),
+      compliantCount: total("compliant"),
+      lockedCount: total("locked"),
+      attentionCount: total("attention"),
+      lastRunAt: node.latest?.edges?.[0]?.node?.lastJobDate ?? undefined,
+    },
+  };
+}
+
+async function getCurrentGroups(): Promise<string[]> {
+  const url = `${new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin}/access-token/v1/teams/current-teams`;
+  const response = await axiosInstance.get(url);
+  return response.data?.groups ?? [];
 }
 
 async function createProject(organizationId: string, data: { name: string; description?: string }): Promise<void> {
@@ -562,26 +693,34 @@ async function listProjectPolicySets(
   };
 }
 
-export type AttentionWorkspace = { id: string; name: string; lastJobStatus: string; policyComplianceStatus?: string };
+export type ProjectWorkspaceBrief = {
+  id: string;
+  name: string;
+  lastJobStatus: string;
+  lastJobDate?: string;
+  policyComplianceStatus?: string;
+};
+export type AttentionWorkspace = ProjectWorkspaceBrief;
 
-// The first few workspaces of a project that failed, wait for approval or break policy.
-async function listAttentionWorkspaces(
+// The first few workspaces of a project matching an extra filter, newest run first.
+async function listProjectWorkspaceBriefs(
   organizationId: string,
   projectId: string,
+  extraFilter: string | null,
   limit = 5
-): Promise<ApiResponse<AttentionWorkspace[]>> {
+): Promise<ApiResponse<ProjectWorkspaceBrief[]>> {
   const body = {
-    query: `query ($orgId: String!, $first: Int!, $filter: String) {
+    query: `query ($orgId: String!, $first: StringOrInt, $filter: String) {
       organization(ids: [$orgId]) {
         edges { node { workspace(first: $first, after: "0", sort: "-lastJobDate", filter: $filter) {
-          edges { node { id name lastJobStatus policyComplianceStatus } }
+          edges { node { id name lastJobStatus lastJobDate policyComplianceStatus } }
         } } }
       }
     }`,
     variables: {
       orgId: organizationId,
-      first: limit,
-      filter: `project.id=='${projectId}';(lastJobStatus=in=('failed','waitingApproval'),policyComplianceStatus=='NON_COMPLIANT')`,
+      first: String(limit),
+      filter: `project.id=='${projectId}'${extraFilter ? `;${extraFilter}` : ""}`,
     },
   };
   const result = await apiPost<unknown, any>("/graphql/api/v1", body, {
@@ -599,9 +738,25 @@ async function listAttentionWorkspaces(
       id: edge.node.id,
       name: edge.node.name,
       lastJobStatus: edge.node.lastJobStatus,
+      lastJobDate: edge.node.lastJobDate ?? undefined,
       policyComplianceStatus: edge.node.policyComplianceStatus ?? undefined,
     })),
   };
+}
+
+// Failed, waiting for approval or breaking policy.
+function listAttentionWorkspaces(organizationId: string, projectId: string, limit = 5) {
+  return listProjectWorkspaceBriefs(
+    organizationId,
+    projectId,
+    "(lastJobStatus=in=('failed','waitingApproval'),policyComplianceStatus=='NON_COMPLIANT')",
+    limit
+  );
+}
+
+// Workspaces that have run, most recent first.
+function listRecentWorkspaces(organizationId: string, projectId: string, limit = 5) {
+  return listProjectWorkspaceBriefs(organizationId, projectId, "lastJobStatus!='NeverExecuted'", limit);
 }
 
 export type ApplyDefaultTagsResult = { workspaces: number; workspacesChanged: number; tagsAdded: number };
@@ -622,10 +777,13 @@ async function applyProjectDefaultTags(
 const methods = {
   listProjects,
   listProjectSummaries,
-  countUnassignedWorkspaces,
+  getProjectIndexCounts,
+  getUnassignedSummary,
+  getCurrentGroups,
   getProjectSummary,
   applyProjectDefaultTags,
   listAttentionWorkspaces,
+  listRecentWorkspaces,
   listProjectPolicySets,
   listProjectDefaultTags,
   listOrganizationTags,

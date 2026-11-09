@@ -99,6 +99,30 @@ class ProjectSummaryTests extends ServerApplicationTests {
     }
 
     @Test
+    void summaryReportsPolicyRollupAndHowLongTheOldestJobHasBeenQueued() {
+        Workspace queuedWorkspace = workspace(quiet, "queued-job", JobStatus.pending, PolicyComplianceStatus.EXEMPTED, false);
+        io.terrakube.api.rs.job.Job job = new io.terrakube.api.rs.job.Job();
+        job.setStatus(JobStatus.pending);
+        job.setOrganization(queuedWorkspace.getOrganization());
+        job.setWorkspace(queuedWorkspace);
+        job = jobRepository.saveAndFlush(job);
+        try {
+            Map<String, Object> quietNode = firstNode(summaries("name==health-quiet", null, 10, "compliantCount exemptedCount queuedSince queuedJobCount"));
+            org.junit.jupiter.api.Assertions.assertEquals(2, ((Number) quietNode.get("compliantCount")).intValue());
+            org.junit.jupiter.api.Assertions.assertEquals(1, ((Number) quietNode.get("exemptedCount")).intValue());
+            org.junit.jupiter.api.Assertions.assertNotNull(quietNode.get("queuedSince"));
+            org.junit.jupiter.api.Assertions.assertEquals(1, ((Number) quietNode.get("queuedJobCount")).intValue());
+
+            Map<String, Object> busyNode = firstNode(summaries("name==health-busy", null, 10, "compliantCount queuedSince queuedJobCount"));
+            org.junit.jupiter.api.Assertions.assertEquals(4, ((Number) busyNode.get("compliantCount")).intValue());
+            org.junit.jupiter.api.Assertions.assertNull(busyNode.get("queuedSince"));
+            org.junit.jupiter.api.Assertions.assertEquals(0, ((Number) busyNode.get("queuedJobCount")).intValue());
+        } finally {
+            jdbcTemplate.update("delete from job where id = ?", job.getId());
+        }
+    }
+
+    @Test
     void projectWithoutWorkspacesReportsZeroes() {
         Map<String, Object> node = firstNode(summaries("name==health-empty", null, 10,
                 "workspaceCount attentionCount lockedCount"));
