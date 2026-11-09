@@ -1,6 +1,6 @@
 import { DeleteOutlined } from "@ant-design/icons";
-import { Button, Flex, Form, Input, Layout, Menu, Popconfirm, Select, Space, Spin, Typography, message } from "antd";
-import { useEffect, useRef, useState } from "react";
+import { Alert, Button, Flex, Form, Input, Popconfirm, Select, Space, Spin, Typography, message } from "antd";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import PageWrapper from "@/components/layout/PageWrapper/PageWrapper";
 import projectService from "./projectService";
@@ -12,17 +12,14 @@ import ProjectOverview from "./ProjectOverview";
 import ProjectPoliciesTab from "./ProjectPoliciesTab";
 import ProjectVariablesTab from "./ProjectVariablesTab";
 import { PROJECT_TAB_LABELS, ProjectTab, resolveLandingTab } from "./projectLandingTab";
+import { SECTION_LABELS, projectPath, sectionForTab, sectionFromParam } from "./projectNav";
 import useApiRequest from "@/modules/api/useApiRequest";
 import { ProjectModel, ProjectSummaryModel } from "@/domain/types";
 import { ORGANIZATION_NAME } from "../../config/actionTypes";
 import { useOrgPermissions } from "@/modules/permissions/useOrgPermissions";
-import type { MenuProps } from "antd";
 import { PermissionErrorMessage } from "@/components/feedback/PermissionErrorMessage";
 import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
 import "./Projects.css";
-
-const { Content, Sider } = Layout;
-type MenuItem = Required<MenuProps>["items"][number];
 
 type Props = {
   organizationName: string;
@@ -42,6 +39,7 @@ type GeneralProps = {
   assignedWorkspacesCount: number;
   manageWorkspace: boolean;
   canUpdateProject: boolean;
+  canManageCollection: boolean;
   onSaved: () => void;
 };
 
@@ -52,6 +50,7 @@ function ProjectGeneralSettings({
   assignedWorkspacesCount,
   manageWorkspace,
   canUpdateProject,
+  canManageCollection,
   onSaved,
 }: GeneralProps) {
   const [waiting, setWaiting] = useState(false);
@@ -143,6 +142,8 @@ function ProjectGeneralSettings({
         </Form>
       </Spin>
 
+      <ProjectVariablesTab orgid={orgid} projectId={projectId} canManage={canManageCollection} />
+
       <ProjectDefaultTags orgid={orgid} projectId={projectId} canManage={canUpdateProject} />
 
       <div className="project-delete-section">
@@ -198,12 +199,14 @@ function ProjectGeneralSettings({
 }
 
 export default function ProjectDetailPage({ organizationName, setOrganizationName }: Props) {
-  const { orgid, id } = useParams();
+  const { orgid, id, section: sectionParam } = useParams();
+  const navigate = useNavigate();
+  const section = sectionFromParam(sectionParam);
   const [project, setProject] = useState<ProjectModel | null>(null);
-  const [activeKey, setActiveKey] = useState<ProjectTab>("overview");
   const landedOn = useRef<string | undefined>(undefined);
   const [summary, setSummary] = useState<ProjectSummaryModel | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(true);
+  const [summaryFailed, setSummaryFailed] = useState(false);
   const { permissions } = useOrgPermissions();
   const { permissions: projectPermissions } = useProjectPermissions(orgid, id);
   const canManageProject = permissions.manageWorkspace || projectPermissions.manageProject;
@@ -212,10 +215,13 @@ export default function ProjectDetailPage({ organizationName, setOrganizationNam
     action: () => projectService.getProject(orgid!, id!),
     onReturn: (data) => {
       setProject(data);
-      // Open on the right tab once per project, so reloading after a save does not move the user.
+      // A bare project address opens on the right tab once, so reloading after a save does not move the user.
       if (landedOn.current !== data.id) {
         landedOn.current = data.id;
-        setActiveKey(resolveLandingTab(data.landingTab, data.organizationLandingTab));
+        if (!sectionParam) {
+          const target = sectionForTab(resolveLandingTab(data.landingTab, data.organizationLandingTab));
+          if (target !== "overview") navigate(projectPath(orgid!, data.id, target), { replace: true });
+        }
       }
       const stored = sessionStorage.getItem(ORGANIZATION_NAME);
       if (stored) setOrganizationName(stored);
@@ -226,53 +232,36 @@ export default function ProjectDetailPage({ organizationName, setOrganizationNam
     execute();
   }, [id]);
 
-  const loadSummary = () => {
+  const loadSummary = useCallback(() => {
     if (!orgid || !id) return;
     setSummaryLoading(true);
     projectService
       .getProjectSummary(orgid, id)
-      .then((res) => setSummary(res.isError ? null : (res.data ?? null)))
+      .then((res) => {
+        setSummaryFailed(res.isError);
+        setSummary(res.isError ? null : (res.data ?? null));
+      })
       .finally(() => setSummaryLoading(false));
-  };
+  }, [orgid, id]);
 
-  useEffect(loadSummary, [orgid, id]);
+  useEffect(loadSummary, [loadSummary]);
 
-  const handleTabChange = (key: ProjectTab) => {
-    setActiveKey(key);
-    if (key === "general" || key === "overview") {
-      execute();
-      loadSummary();
-    }
-  };
+  // Counts shown on Overview and in Settings change when something is moved or edited elsewhere.
+  useEffect(() => {
+    if (section === "overview" || section === "settings") loadSummary();
+  }, [section, loadSummary]);
 
-  const menuItems: MenuItem[] = [
-    {
-      type: "group",
-      label: "Project",
-      key: "project-settings",
-      children: [
-        { key: "overview", label: "Overview" },
-        { key: "general", label: "General" },
-        { key: "workspaces", label: "Workspaces" },
-        { key: "variables", label: "Variables" },
-        { key: "policies", label: "Policies" },
-        { key: "teams", label: "Teams" },
-      ],
-    },
-  ];
+  const openTab = (tab: ProjectTab) => navigate(projectPath(orgid!, id!, sectionForTab(tab)));
 
   const renderContent = () => {
-    switch (activeKey) {
-      case "overview":
-        return (
-          <ProjectOverview orgid={orgid!} summary={summary} loading={summaryLoading} onOpenTab={handleTabChange} />
-        );
+    switch (section) {
       case "workspaces":
         return (
           <ProjectWorkspaces
             key={`${orgid}:${id}`}
             orgid={orgid!}
             projectId={id!}
+            projectName={project?.name}
             canManage={canManageProject}
             canRemove={permissions.manageWorkspace}
           />
@@ -283,8 +272,7 @@ export default function ProjectDetailPage({ organizationName, setOrganizationNam
         return <ProjectPoliciesTab orgid={orgid!} projectId={id!} />;
       case "teams":
         return <ProjectAccessTab orgid={orgid!} projectId={id!} canManage={canManageProject} />;
-      case "general":
-      default:
+      case "settings":
         return (
           <ProjectGeneralSettings
             orgid={orgid!}
@@ -293,37 +281,80 @@ export default function ProjectDetailPage({ organizationName, setOrganizationNam
             assignedWorkspacesCount={summary?.workspaceCount ?? 0}
             manageWorkspace={permissions.manageWorkspace}
             canUpdateProject={canManageProject}
+            canManageCollection={permissions.manageCollection}
             onSaved={execute}
+          />
+        );
+      case "overview":
+      default:
+        return (
+          <ProjectOverview
+            orgid={orgid!}
+            summary={summary}
+            loading={summaryLoading}
+            failed={summaryFailed}
+            onRetry={loadSummary}
+            onOpenTab={openTab}
           />
         );
     }
   };
 
+  const level = projectPermissions.accessLevel;
+  const through = projectPermissions.grantedThrough;
+
   return (
     <PageWrapper
       title={project?.name ?? "Project"}
-      subTitle={`Project in the ${organizationName} organization`}
+      subTitle={project?.description || `Project in the ${organizationName} organization`}
       loadingText="Loading project..."
       loading={loading}
       error={error}
       breadcrumbs={[
         { label: organizationName, path: "/" },
         { label: "Projects", path: `/organizations/${orgid}/projects` },
-        { label: project?.name ?? "Project", path: `/organizations/${orgid}/projects/${id}` },
+        { label: project?.name ?? "Project", path: projectPath(orgid!, id!) },
+        ...(section === "overview"
+          ? []
+          : [{ label: SECTION_LABELS[section], path: projectPath(orgid!, id!, section) }]),
       ]}
+      actions={
+        <Space>
+          <Button disabled={!canManageProject} onClick={() => navigate(projectPath(orgid!, id!, "settings"))}>
+            Edit
+          </Button>
+          <Button
+            type="primary"
+            disabled={!permissions.manageWorkspace && !projectPermissions.manageWorkspace}
+            onClick={() => navigate(`/organizations/${orgid}/workspaces/create?projectId=${id}`)}
+          >
+            New workspace
+          </Button>
+        </Space>
+      }
     >
-      <Layout className="project-detail-layout">
-        <Sider width={200} className="project-detail-sider">
-          <Menu
-            mode="inline"
-            selectedKeys={[activeKey]}
-            className="project-detail-menu"
-            items={menuItems}
-            onClick={(e) => handleTabChange(e.key as ProjectTab)}
-          />
-        </Sider>
-        <Content className="project-detail-content">{renderContent()}</Content>
-      </Layout>
+      {level && (
+        <Alert
+          type="info"
+          showIcon={false}
+          className="project-access-banner"
+          message={
+            <>
+              Your access in this project: <strong>{level.charAt(0).toUpperCase() + level.slice(1)}</strong>
+              {through.length > 0 && (
+                <>
+                  , through {through.length === 1 ? "team" : "teams"} <strong>{through.join(", ")}</strong>
+                </>
+              )}
+              .{" "}
+              {canManageProject
+                ? "You can manage access and delete the project."
+                : "You cannot manage access or delete the project."}
+            </>
+          }
+        />
+      )}
+      {renderContent()}
     </PageWrapper>
   );
 }

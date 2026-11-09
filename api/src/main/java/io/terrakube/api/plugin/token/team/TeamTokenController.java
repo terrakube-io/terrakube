@@ -199,6 +199,10 @@ public class TeamTokenController {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Project not found");
         }
         organizationTeams.forEach(team -> {
+            // Only a team that can manage workspaces gives access to a project; a read or plan team does not.
+            if (rbacService.canManageWorkspace(team)) {
+                permissions.addGrant(team.getName(), team.getRole());
+            }
             permissions.setManageState(permissions.manageState || rbacService.canManageState(team));
             permissions.setManageWorkspace(permissions.manageWorkspace || rbacService.canManageWorkspace(team));
             permissions.setManageJob(permissions.manageJob || rbacService.canManageJob(team));
@@ -211,6 +215,7 @@ public class TeamTokenController {
         project.getProjectAccess().stream()
                 .filter(access -> groups.contains(access.getName()))
                 .forEach(access -> {
+                    permissions.addGrant(access.getName(), access.getRole());
                     permissions.setManageState(permissions.manageState || rbacService.canManageState(access));
                     permissions.setManageWorkspace(permissions.manageWorkspace || rbacService.canManageWorkspace(access));
                     permissions.setManageJob(permissions.manageJob || rbacService.canManageJob(access));
@@ -283,5 +288,26 @@ public class TeamTokenController {
         private boolean managePermission;
         private boolean managePolicies;
         private boolean manageProject;
+
+        // Which teams grant the access and the highest role among them. Only filled in by the project endpoint, and
+        // left out of the JSON elsewhere so the other permission responses keep their shape.
+        @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_EMPTY)
+        private List<String> grantedThrough = new ArrayList<>();
+        @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+        private String accessLevel;
+
+        private static final List<String> ROLE_ORDER = List.of("read", "plan", "write", "admin");
+
+        void addGrant(String team, String role) {
+            if (!grantedThrough.contains(team)) {
+                grantedThrough.add(team);
+            }
+            String normalized = role == null ? "custom" : role.toLowerCase(java.util.Locale.ROOT);
+            int candidate = ROLE_ORDER.indexOf(normalized);
+            int current = accessLevel == null ? -2 : ROLE_ORDER.indexOf(accessLevel);
+            if (accessLevel == null || candidate > current) {
+                accessLevel = normalized;
+            }
+        }
     }
 }

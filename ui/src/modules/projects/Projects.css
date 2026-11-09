@@ -140,39 +140,82 @@
   white-space: nowrap;
 }
 
-/* Projects index: health bar, toolbar and card grid. */
+/* Projects index: health bar, chips, cards and table. */
 .project-health-bar {
   display: flex;
-  width: 160px;
+  width: 100%;
+  min-width: 120px;
   height: 8px;
   gap: 2px;
   border-radius: 4px;
   overflow: hidden;
 }
 
-.project-health-segment {
+.project-health-large .project-health-bar {
+  height: 12px;
+}
+
+.project-health-small {
+  min-width: 140px;
+}
+
+.project-health-segment,
+.project-health-swatch {
   min-width: 4px;
+}
+
+.project-health-segment {
   height: 100%;
 }
 
-.project-health-segment.health-failed {
-  background: var(--ant-color-error, #ff4d4f);
+.project-health-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 6px;
+  border-radius: 2px;
 }
 
-.project-health-segment.health-waiting {
-  background: var(--ant-color-warning, #faad14);
-}
-
-.project-health-segment.health-running {
-  background: var(--ant-color-info, #1677ff);
-}
-
-.project-health-segment.health-completed {
+.health-completed {
   background: var(--ant-color-success, #52c41a);
 }
 
-.project-health-segment.health-never {
+.health-failed {
+  background: var(--ant-color-error, #ff4d4f);
+}
+
+.health-running {
+  background: var(--ant-color-info, #1677ff);
+}
+
+/* Hatched, so queued does not rely on colour alone. */
+.health-queued {
+  background: repeating-linear-gradient(
+    45deg,
+    var(--tk-border-secondary, #bfbfbf),
+    var(--tk-border-secondary, #bfbfbf) 3px,
+    var(--tk-bg-container, #fff) 3px,
+    var(--tk-bg-container, #fff) 6px
+  );
+}
+
+.health-waiting {
+  background: var(--ant-color-warning, #faad14);
+}
+
+.health-never {
   background: var(--tk-border-secondary, #d9d9d9);
+}
+
+.project-health-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+  color: var(--tk-text-secondary, #8c8c8c);
 }
 
 .project-health-empty {
@@ -181,11 +224,26 @@
 }
 
 .projects-toolbar {
-  margin-bottom: 16px;
+  margin-bottom: 12px;
 }
 
 .projects-toolbar .projects-search-input {
   margin-bottom: 0;
+}
+
+.project-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.project-chips .project-chip.ant-tag {
+  margin: 0;
+  padding: 2px 12px;
+  border: 1px solid var(--tk-border-secondary, #d9d9d9);
+  border-radius: 14px;
+  font-size: 13px;
 }
 
 .projects-card-grid {
@@ -193,6 +251,92 @@
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 16px;
   margin-bottom: 16px;
+}
+
+.project-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  border: 1px solid var(--tk-border-secondary, #d9d9d9);
+  border-radius: 8px;
+  background: var(--tk-bg-container, #fff);
+}
+
+.project-card-unassigned {
+  border-style: dashed;
+  color: var(--tk-text-secondary, #8c8c8c);
+}
+
+.project-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.project-card-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-card-description {
+  margin: 0;
+  font-size: 13px;
+  color: var(--tk-text-secondary, #8c8c8c);
+}
+
+.project-card-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--tk-text-secondary, #8c8c8c);
+}
+
+.project-badge {
+  flex-shrink: 0;
+  padding: 1px 8px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.project-badge-danger,
+.project-pill-danger {
+  color: var(--ant-color-error, #cf1322);
+  background: var(--ant-color-error-bg, #fff1f0);
+}
+
+.project-badge-warning,
+.project-pill-warning {
+  color: var(--ant-color-warning-text, #ad6800);
+  background: var(--ant-color-warning-bg, #fffbe6);
+}
+
+.project-pill-success {
+  color: var(--ant-color-success-text, #237804);
+  background: var(--ant-color-success-bg, #f6ffed);
+}
+
+.project-pill-neutral {
+  color: var(--tk-text-secondary, #595959);
+  background: var(--tk-bg-layout, #f0f0f0);
+}
+
+.project-pill {
+  display: inline-block;
+  padding: 0 8px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.project-unassigned-row td {
+  font-style: italic;
+  color: var(--tk-text-secondary, #8c8c8c);
 }
 
 /* Project overview tab. */
@@ -239,4 +383,153 @@
 .project-attention-list {
   margin: 0;
   padding-left: 20px;
+}
+
+/* Status chips next to workspace names, and the project page chrome. */
+.project-status {
+  display: inline-block;
+  padding: 0 8px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.project-status-success {
+  color: var(--ant-color-success-text, #237804);
+  background: var(--ant-color-success-bg, #f6ffed);
+}
+
+.project-status-danger {
+  color: var(--ant-color-error, #cf1322);
+  background: var(--ant-color-error-bg, #fff1f0);
+}
+
+.project-status-info {
+  color: var(--ant-color-info, #1677ff);
+  background: var(--ant-color-info-bg, #e6f4ff);
+}
+
+.project-status-warning {
+  color: var(--ant-color-warning-text, #ad6800);
+  background: var(--ant-color-warning-bg, #fffbe6);
+}
+
+.project-status-neutral {
+  color: var(--tk-text-secondary, #595959);
+  background: var(--tk-bg-layout, #f0f0f0);
+}
+
+.project-access-banner {
+  margin-bottom: 16px;
+}
+
+.project-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.project-tile-number {
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.project-tile-number-danger {
+  color: var(--ant-color-error, #cf1322);
+}
+
+.project-overview-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.project-activity-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.project-activity-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--tk-border-secondary, #f0f0f0);
+}
+
+.project-activity-list li:last-child {
+  border-bottom: 0;
+}
+
+/* Move impact preview and delete pre-flight. */
+.project-move-impact {
+  margin-top: 16px;
+  padding: 12px 16px;
+  border: 1px solid var(--tk-border-secondary, #d9d9d9);
+  border-radius: 8px;
+}
+
+.project-move-impact dl {
+  margin: 0;
+}
+
+.project-move-impact-row {
+  display: grid;
+  grid-template-columns: 90px 1fr;
+  gap: 12px;
+  padding: 6px 0;
+}
+
+.project-move-impact dt {
+  font-weight: 600;
+}
+
+.project-move-impact dd {
+  margin: 0;
+}
+
+.project-move-impact-note {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--tk-text-secondary, #8c8c8c);
+}
+
+/* Workspaces tab: name cell, tag provenance and toolbar. */
+.project-workspace-name {
+  line-height: 1.3;
+}
+
+.project-workspace-lock {
+  margin-left: 6px;
+  color: var(--tk-text-secondary, #8c8c8c);
+}
+
+.project-workspace-source {
+  font-size: 12px;
+}
+
+.project-tag-with-source {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.project-tag-source {
+  font-size: 11px;
+  color: var(--tk-text-secondary, #8c8c8c);
+}
+
+.project-workspaces-toolbar {
+  margin: 12px 0;
+}
+
+.projects-card-pagination {
+  margin-top: 16px;
+  justify-content: flex-end;
 }

@@ -1,4 +1,5 @@
 import { mapWithLimit } from "@/modules/utils/mapWithLimit";
+import axiosInstance from "@/config/axiosConfig";
 import workspaceService from "@/modules/workspaces/workspaceService";
 
 export type BulkOutcome = { succeeded: string[]; failed: { id: string; reason: string }[] };
@@ -29,4 +30,36 @@ export function moveWorkspaces(orgId: string, ids: string[], projectId: string):
 
 export function removeWorkspacesFromProject(orgId: string, ids: string[]): Promise<BulkOutcome> {
   return runBulk(ids, (id) => workspaceService.removeWorkspaceFromProject(orgId, id));
+}
+
+const JSON_API = { "Content-Type": "application/vnd.api+json" };
+
+// Workspaces that already carry the tag are skipped, so applying it twice never duplicates a binding.
+export function addTagToWorkspaces(
+  orgId: string,
+  workspaces: { id: string; tags?: { tagId: string }[] }[],
+  tagId: string,
+  value?: string
+): Promise<BulkOutcome> {
+  const needed = workspaces.filter((workspace) => !workspace.tags?.some((binding) => binding.tagId === tagId));
+  return runBulk(
+    needed.map((workspace) => workspace.id),
+    async (id) => {
+      await axiosInstance.post(
+        `organization/${orgId}/workspace/${id}/workspaceTag`,
+        { data: { type: "workspacetag", attributes: { tagId, value: value?.trim() || null } } },
+        { headers: JSON_API }
+      );
+    }
+  );
+}
+
+export function setWorkspacesLocked(orgId: string, ids: string[], locked: boolean): Promise<BulkOutcome> {
+  return runBulk(ids, async (id) => {
+    await axiosInstance.patch(
+      `organization/${orgId}/workspace/${id}`,
+      { data: { type: "workspace", id, attributes: { locked } } },
+      { headers: JSON_API }
+    );
+  });
 }
