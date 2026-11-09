@@ -570,6 +570,25 @@ export type ProjectModel = {
   description?: string;
 };
 
+// Computed by the API (project_summary) from the project's non-deleted workspaces.
+export type ProjectSummaryModel = {
+  id: string;
+  name: string;
+  description?: string;
+  workspaceCount: number;
+  completedCount: number;
+  failedCount: number;
+  runningCount: number;
+  queuedCount: number;
+  waitingApprovalCount: number;
+  neverRunCount: number;
+  nonCompliantCount: number;
+  lockedCount: number;
+  attentionCount: number;
+  lastRunAt?: string;
+  teamCount: number;
+};
+
 // Workspaces
 export type Workspace = {
   id: string;

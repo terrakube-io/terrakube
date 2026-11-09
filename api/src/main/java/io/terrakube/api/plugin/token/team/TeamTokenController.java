@@ -3,6 +3,7 @@ package io.terrakube.api.plugin.token.team;
 import io.terrakube.api.plugin.security.rbac.RbacService;
 import io.terrakube.api.plugin.token.TokenIssuancePolicy;
 import io.terrakube.api.repository.AccessRepository;
+import io.terrakube.api.repository.ProjectRepository;
 import io.terrakube.api.repository.TeamRepository;
 import io.terrakube.api.repository.WorkspaceRepository;
 import io.terrakube.api.rs.token.group.Group;
@@ -30,14 +31,16 @@ import java.util.UUID;
 public class TeamTokenController {
 
     private final WorkspaceRepository workspaceRepository;
+    private final ProjectRepository projectRepository;
     private final RbacService rbacService;
     private final TeamTokenService teamTokenService;
     private final TeamRepository teamRepository;
     private final String instanceOwner;
     private final TokenIssuancePolicy tokenIssuancePolicy;
 
-    public TeamTokenController(WorkspaceRepository workspaceRepository, RbacService rbacService, TeamTokenService teamTokenService, TeamRepository teamRepository, @Value("${io.terrakube.owner}") String instanceOwner, TokenIssuancePolicy tokenIssuancePolicy) {
+    public TeamTokenController(WorkspaceRepository workspaceRepository, ProjectRepository projectRepository, RbacService rbacService, TeamTokenService teamTokenService, TeamRepository teamRepository, @Value("${io.terrakube.owner}") String instanceOwner, TokenIssuancePolicy tokenIssuancePolicy) {
         this.workspaceRepository = workspaceRepository;
+        this.projectRepository = projectRepository;
         this.rbacService = rbacService;
         this.teamTokenService = teamTokenService;
         this.teamRepository = teamRepository;
@@ -160,6 +163,60 @@ public class TeamTokenController {
         return new ResponseEntity<>(permissions, HttpStatus.ACCEPTED);
     }
 
+    /**
+     * The caller's own effective permissions on a project: their organization team permissions combined with the
+     * project access entries of their groups. Workspace-level overrides are not included. Answers 404 when the
+     * project is not in the organization, so the id pair cannot be used to probe other organizations.
+     */
+    @Transactional
+    @GetMapping(path = "/permissions/organization/{organizationId}/project/{projectId}")
+    public ResponseEntity<PermissionSet> getPermissionsProject(Principal principal,
+            @PathVariable("organizationId") String organizationId, @PathVariable("projectId") String projectId) {
+        if (!(principal instanceof JwtAuthenticationToken principalJwt)) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Authentication required");
+        }
+        UUID organizationUuid;
+        UUID projectUuid;
+        try {
+            organizationUuid = UUID.fromString(organizationId);
+            projectUuid = UUID.fromString(projectId);
+        } catch (IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Project not found");
+        }
+        var project = projectRepository.findById(projectUuid)
+                .filter(found -> found.getOrganization() != null && organizationUuid.equals(found.getOrganization().getId()))
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Project not found"));
+
+        PermissionSet permissions = new PermissionSet();
+        List<String> groups = teamTokenService.getCurrentGroups(principalJwt);
+        teamRepository.findAllByOrganizationIdAndNameIn(organizationUuid, groups).forEach(team -> {
+            permissions.setManageState(permissions.manageState || rbacService.canManageState(team));
+            permissions.setManageWorkspace(permissions.manageWorkspace || rbacService.canManageWorkspace(team));
+            permissions.setManageJob(permissions.manageJob || rbacService.canManageJob(team));
+            permissions.setPlanJob(permissions.planJob || rbacService.canPlanJob(team));
+            permissions.setApproveJob(permissions.approveJob || rbacService.canApproveJob(team));
+            permissions.setManagePolicies(permissions.managePolicies || rbacService.canManagePolicies(team));
+            permissions.setManagePermission(permissions.managePermission || rbacService.canManageWorkspace(team));
+            permissions.setManageProject(permissions.manageProject || rbacService.canManageWorkspace(team));
+        });
+        project.getProjectAccess().stream()
+                .filter(access -> groups.contains(access.getName()))
+                .forEach(access -> {
+                    permissions.setManageState(permissions.manageState || rbacService.canManageState(access));
+                    permissions.setManageWorkspace(permissions.manageWorkspace || rbacService.canManageWorkspace(access));
+                    permissions.setManageJob(permissions.manageJob || rbacService.canManageJob(access));
+                    permissions.setPlanJob(permissions.planJob || rbacService.canPlanJob(access));
+                    permissions.setApproveJob(permissions.approveJob || rbacService.canApproveJob(access));
+                    permissions.setManageProject(permissions.manageProject || rbacService.canManageProject(access));
+                });
+        if (groups.contains(instanceOwner)) {
+            permissions.setManagePermission(true);
+            permissions.setManagePolicies(true);
+            permissions.setManageProject(true);
+        }
+        return new ResponseEntity<>(permissions, HttpStatus.ACCEPTED);
+    }
+
     @Transactional
     @DeleteMapping(path = "/{groupTokenId}")
     public ResponseEntity<String> deleteToken(@PathVariable("groupTokenId") String groupTokenId, Principal principal) {
@@ -216,5 +273,6 @@ public class TeamTokenController {
         private boolean approveJob;
         private boolean managePermission;
         private boolean managePolicies;
+        private boolean manageProject;
     }
 }

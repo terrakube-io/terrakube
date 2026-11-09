@@ -33,7 +33,7 @@ class TeamTokenControllerTest {
 
     @BeforeEach
     void setUp() {
-        controller = new TeamTokenController(null, null, teamTokenService, null, "admin", tokenIssuancePolicy);
+        controller = new TeamTokenController(null, null, null, teamTokenService, null, "admin", tokenIssuancePolicy);
     }
 
     private JwtAuthenticationToken createJwtAuth() {
