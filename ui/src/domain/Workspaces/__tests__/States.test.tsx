@@ -1,7 +1,8 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
 import { MemoryRouter } from "react-router-dom";
-import { States, stateRequestUrl } from "../States";
+import { States } from "../States";
+import { stateRequestUrl } from "../stateRequestUrl";
 import { FlatJobHistory, Workspace } from "../../types";
 
 const apiGet = jest.fn();

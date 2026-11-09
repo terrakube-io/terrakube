@@ -146,7 +146,6 @@ export async function setupWorkspaceIncludes(
         break;
       }
       case include.HISTORY: {
-        console.log(element);
         const historyVia = element.attributes?.via;
         const isNonUi = historyVia && historyVia !== JobVia.Ui && historyVia !== "UI";
         history.push({
@@ -366,8 +365,6 @@ export function parseState(state: any) {
         }
       }
     }
-  } else {
-    console.log("State has no outputs");
   }
 
   // parse root module resources
@@ -383,8 +380,6 @@ export function parseState(state: any) {
         depends_on: value.depends_on,
       });
     }
-  } else {
-    console.log("State has no resources");
   }
 
   // parse child module resources
@@ -407,8 +402,6 @@ export function parseState(state: any) {
         resources = parseChildModules(resources, moduleVal.child_modules);
       }
     });
-  } else {
-    console.log("State has no child modules resources");
   }
 
   return { resources: resources, outputs: outputs };
@@ -450,11 +443,8 @@ export function parseOldState(state: any) {
         }
       }
     }
-  } else {
-    console.log("State has no outputs");
   }
 
-  console.log("Parsing resources and modules fallback method");
   if (state?.resources != null && state?.resources.length > 0) {
     state?.resources.forEach((value: any) => {
       const moduleName = value.module != null ? value.module : "root_module";
@@ -475,8 +465,6 @@ export function parseOldState(state: any) {
         });
       }
     });
-  } else {
-    console.log("State has no resources/modules");
   }
 
   return { resources: resources, outputs: outputs };
