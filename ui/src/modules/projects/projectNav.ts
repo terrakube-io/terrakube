@@ -1,8 +1,8 @@
 import { ProjectTab } from "./projectLandingTab";
 
-export type ProjectSection = "overview" | "workspaces" | "policies" | "teams" | "settings";
+export type ProjectSection = "overview" | "workspaces" | "policies" | "teams" | "variables" | "settings";
 
-const SECTIONS: ProjectSection[] = ["overview", "workspaces", "policies", "teams", "settings"];
+const SECTIONS: ProjectSection[] = ["overview", "workspaces", "policies", "teams", "variables", "settings"];
 
 export function sectionFromParam(param?: string): ProjectSection {
   return SECTIONS.includes(param as ProjectSection) ? (param as ProjectSection) : "overview";
@@ -23,5 +23,6 @@ export const SECTION_LABELS: Record<ProjectSection, string> = {
   workspaces: "Workspaces",
   policies: "Policies",
   teams: "Team access",
+  variables: "Variables",
   settings: "Settings",
 };

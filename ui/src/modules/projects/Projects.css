@@ -598,3 +598,34 @@ a.project-status:hover {
   font-size: 11px;
   color: var(--tk-text-secondary, #8c8c8c);
 }
+
+/* The bulk bar: dark like the design, and it holds its place when nothing is ticked. */
+.project-bulk-bar-idle,
+.project-bulk-bar-active {
+  min-height: 48px;
+}
+
+.project-bulk-bar-active {
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: #1f1d2b;
+  color: #fff;
+}
+
+.project-bulk-bar-active .ant-typography {
+  color: #fff;
+}
+
+.project-bulk-bar-active .ant-typography.ant-typography-secondary {
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.project-bulk-bar-active .ant-btn-link {
+  color: #d3cfff;
+}
+
+.project-bulk-bar-active .ant-btn:disabled {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: transparent;
+  color: rgba(255, 255, 255, 0.55);
+}

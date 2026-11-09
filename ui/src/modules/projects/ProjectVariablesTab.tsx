@@ -1,5 +1,7 @@
-import { Alert, Button, Flex, Popconfirm, Select, Table, Typography, message } from "antd";
+import { Alert, Button, Flex, Popconfirm, Select, Table, message } from "antd";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
+import DisabledReason from "./DisabledReason";
 import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
 import projectService, { ProjectCollection } from "./projectService";
 
@@ -81,10 +83,11 @@ export default function ProjectVariablesTab({ orgid, projectId, canManage }: Pro
         description="Variable collections attached here apply to every workspace in this project."
       />
       {error && <Alert type="error" showIcon message={error} className="project-overview-alert" />}
-      {canManage && (
-        <Flex gap={8} className="project-bulk-bar">
+      <Flex gap={8} align="center" wrap className="project-bulk-bar">
+        <DisabledReason disabled={!canManage} reason="Attaching a collection needs the Manage Collections permission.">
           <Select
             showSearch
+            disabled={!canManage}
             optionFilterProp="label"
             placeholder="Attach a variable collection"
             aria-label="Collection to attach"
@@ -92,12 +95,16 @@ export default function ProjectVariablesTab({ orgid, projectId, canManage }: Pro
             value={toAttach}
             onChange={setToAttach}
             options={available.map((collection) => ({ value: collection.id, label: collection.name }))}
+            notFoundContent="Every collection is already attached, or none exists yet."
           />
-          <Button type="primary" disabled={!toAttach} loading={attaching} onClick={attach}>
-            Attach
-          </Button>
-        </Flex>
-      )}
+        </DisabledReason>
+        <Button type="primary" disabled={!canManage || !toAttach} loading={attaching} onClick={attach}>
+          Attach
+        </Button>
+        <Link to={`/organizations/${orgid}/settings/collection${canManage ? "/new" : ""}`}>
+          {canManage ? "Create a collection" : "View collections"}
+        </Link>
+      </Flex>
       <Table<ProjectCollection>
         rowKey="id"
         loading={loading}
@@ -131,11 +138,6 @@ export default function ProjectVariablesTab({ orgid, projectId, canManage }: Pro
           },
         ]}
       />
-      <Typography.Paragraph type="secondary" className="project-overview-meta">
-        Precedence: workspace variables, then the organization global variables, then collections attached to the
-        workspace, then collections attached to this project, then organization wide collections. Within one level the
-        collection with the higher priority wins.
-      </Typography.Paragraph>
     </div>
   );
 }

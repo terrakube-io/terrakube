@@ -13,6 +13,8 @@ import { PermissionErrorMessage } from "@/components/feedback/PermissionErrorMes
 import { HealthLegend, ProjectHealthBar } from "./ProjectHealthBar";
 import ProjectCard from "./ProjectCard";
 import ProjectFilterChips from "./ProjectFilterChips";
+import SavedViews from "./SavedViews";
+import { viewQuery } from "./viewStore";
 import { CountsUnavailable, NoMatch, NoProjects, ProjectsSkeleton } from "./ProjectStates";
 import { ProjectChip, attentionTone, defaultView, policyRollup, shortAgo } from "./projectHealth";
 import { attentionFilter, projectWorkspacesLink, readChoice, readPositiveInt, withViewState } from "./projectLinks";
@@ -204,6 +206,16 @@ export default function ProjectsPage({ organizationName, setOrganizationName }: 
     if (next !== searchParams) setSearchParams(next, { replace: true });
   }, [debouncedSearch, chip, sort, view, currentPage, pageSize]);
 
+  const applySavedView = (query: string) => {
+    const params = new URLSearchParams(query);
+    const q = params.get("q") ?? "";
+    setSearch(q);
+    setDebouncedSearch(q);
+    setChip(readChoice<ProjectChip>(params, "chip", CHIPS, "all"));
+    setSort(readSort(params.get("sort"), PROJECT_SORT_PRESETS[0].value));
+    setCurrentPage(1);
+  };
+
   const openCreate = () => {
     form.resetFields();
     setModalOpen(true);
@@ -374,6 +386,7 @@ export default function ProjectsPage({ organizationName, setOrganizationName }: 
 
   return (
     <PageWrapper
+      width="full"
       title={`Projects${counts ? ` (${counts.all})` : ""}`}
       subTitle={`Projects in the ${organizationName} organization`}
       loadingText="Loading projects..."
@@ -422,6 +435,17 @@ export default function ProjectsPage({ organizationName, setOrganizationName }: 
                 setCurrentPage(1);
               }}
               style={{ minWidth: 200 }}
+            />
+            <SavedViews
+              orgid={id!}
+              currentQuery={viewQuery(
+                withViewState(
+                  new URLSearchParams(),
+                  { q: debouncedSearch.trim(), chip, sort },
+                  { chip: "all", sort: PROJECT_SORT_PRESETS[0].value }
+                )
+              )}
+              onApply={applySavedView}
             />
             <Segmented
               value={effectiveView}

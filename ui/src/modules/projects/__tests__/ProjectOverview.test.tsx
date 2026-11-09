@@ -92,7 +92,7 @@ describe("ProjectOverview", () => {
 
     expect(screen.getByText("workspaces").previousSibling).toHaveTextContent("5");
     expect(screen.getByText("need attention").previousSibling).toHaveTextContent("1");
-    expect(screen.getByText("teams with access").previousSibling).toHaveTextContent("3");
+    expect(screen.getByText("teams with project access").previousSibling).toHaveTextContent("3");
     expect(screen.getByText(/^queued now/).previousSibling).toHaveTextContent("0");
   });
 
@@ -207,7 +207,7 @@ describe("ProjectOverview", () => {
         "href",
         "/organizations/org/projects/p1/workspaces?status=pending"
       );
-      expect(screen.getByRole("link", { name: /2 teams with access, show them/ })).toHaveAttribute(
+      expect(screen.getByRole("link", { name: /2 teams with project access, show them/ })).toHaveAttribute(
         "href",
         "/organizations/org/projects/p1/teams"
       );
@@ -249,5 +249,31 @@ describe("ProjectOverview", () => {
         "/organizations/org/workspaces/w1/runs"
       );
     });
+  });
+});
+
+describe("an empty project", () => {
+  it("offers to create or move in a workspace", () => {
+    recentList.mockResolvedValue({ isError: false, data: [] });
+    const onOpenTab = jest.fn();
+
+    renderOverview({
+      summary: { ...summary, workspaceCount: 0, attentionCount: 0, completedCount: 0 },
+      onOpenTab,
+    });
+
+    expect(screen.getByText("No workspaces in this project yet.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "New workspace" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Move existing" }));
+    expect(onOpenTab).toHaveBeenCalledWith("workspaces");
+  });
+
+  it("shows no call to action when the project has workspaces", () => {
+    recentList.mockResolvedValue({ isError: false, data: [] });
+    attentionList.mockResolvedValue({ isError: false, data: [] });
+
+    renderOverview({ summary, onOpenTab: jest.fn() });
+
+    expect(screen.queryByText("No workspaces in this project yet.")).not.toBeInTheDocument();
   });
 });

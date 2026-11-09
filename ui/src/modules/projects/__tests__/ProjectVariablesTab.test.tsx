@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import projectService from "../projectService";
 import ProjectVariablesTab from "../ProjectVariablesTab";
 
@@ -25,15 +26,36 @@ describe("ProjectVariablesTab", () => {
   });
 
   it("lists only the collections attached to the project", async () => {
-    render(<ProjectVariablesTab orgid="org" projectId="p1" canManage />);
+    render(
+      <MemoryRouter>
+        <ProjectVariablesTab orgid="org" projectId="p1" canManage />
+      </MemoryRouter>
+    );
 
     expect(await screen.findByText("Shared tags")).toBeInTheDocument();
     expect(screen.queryByText("Unattached")).not.toBeInTheDocument();
   });
 
+  it("links to creating a collection when the person can manage them", async () => {
+    render(
+      <MemoryRouter>
+        <ProjectVariablesTab orgid="org" projectId="p1" canManage />
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByRole("link", { name: "Create a collection" })).toHaveAttribute(
+      "href",
+      "/organizations/org/settings/collection/new"
+    );
+  });
+
   it("attaches a collection that is not yet attached", async () => {
     (projectService.attachCollectionToProject as jest.Mock).mockResolvedValue(undefined);
-    render(<ProjectVariablesTab orgid="org" projectId="p1" canManage />);
+    render(
+      <MemoryRouter>
+        <ProjectVariablesTab orgid="org" projectId="p1" canManage />
+      </MemoryRouter>
+    );
     await screen.findByText("Shared tags");
 
     fireEvent.mouseDown(screen.getByRole("combobox", { name: "Collection to attach" }));
@@ -50,7 +72,11 @@ describe("ProjectVariablesTab", () => {
         finish = resolve;
       })
     );
-    render(<ProjectVariablesTab orgid="org" projectId="p1" canManage />);
+    render(
+      <MemoryRouter>
+        <ProjectVariablesTab orgid="org" projectId="p1" canManage />
+      </MemoryRouter>
+    );
     await screen.findByText("Shared tags");
 
     fireEvent.mouseDown(screen.getByRole("combobox", { name: "Collection to attach" }));
@@ -63,17 +89,30 @@ describe("ProjectVariablesTab", () => {
     await waitFor(() => expect(projectService.attachCollectionToProject).toHaveBeenCalledTimes(1));
   });
 
-  it("hides the attach and detach controls without permission", async () => {
-    render(<ProjectVariablesTab orgid="org" projectId="p1" canManage={false} />);
+  it("shows the attach control disabled, and no detach, without permission", async () => {
+    render(
+      <MemoryRouter>
+        <ProjectVariablesTab orgid="org" projectId="p1" canManage={false} />
+      </MemoryRouter>
+    );
     await screen.findByText("Shared tags");
 
-    expect(screen.queryByRole("combobox", { name: "Collection to attach" })).not.toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Collection to attach" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Attach" })).toBeDisabled();
+    expect(screen.getByRole("link", { name: "View collections" })).toHaveAttribute(
+      "href",
+      "/organizations/org/settings/collection"
+    );
     expect(screen.queryByText("Detach")).not.toBeInTheDocument();
   });
 
   it("shows an error when the collections cannot be loaded", async () => {
     list.mockResolvedValue({ isError: true, error: { message: "boom" }, data: [] });
-    render(<ProjectVariablesTab orgid="org" projectId="p1" canManage />);
+    render(
+      <MemoryRouter>
+        <ProjectVariablesTab orgid="org" projectId="p1" canManage />
+      </MemoryRouter>
+    );
 
     expect(await screen.findByText("boom")).toBeInTheDocument();
   });
