@@ -9,6 +9,7 @@ import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.module.Module;
 import io.terrakube.api.rs.notification.NotificationConfiguration;
 import io.terrakube.api.rs.project.Project;
+import io.terrakube.api.rs.project.ProjectSummary;
 import io.terrakube.api.rs.provider.Provider;
 import io.terrakube.api.rs.ssh.Ssh;
 import io.terrakube.api.rs.tag.Tag;
@@ -65,6 +66,12 @@ public class Organization {
     @UpdatePermission(expression = "user belongs organization")
     @OneToMany(mappedBy = "organization")
     private List<Project> project;
+
+    /** Read-only catalogue rows: each project with a roll-up of its workspaces. */
+    @CreatePermission(expression = "Prefab.Role.None")
+    @UpdatePermission(expression = "Prefab.Role.None")
+    @OneToMany(mappedBy = "organization")
+    private List<ProjectSummary> projectSummary;
 
     @UpdatePermission(expression = "user belongs organization")
     @OneToMany(mappedBy = "organization")
