@@ -3,6 +3,7 @@ package io.terrakube.executor.service.status;
 import io.terrakube.executor.service.logs.StepOutputBuffer;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
@@ -212,6 +213,21 @@ public class UpdateJobStatusImplTest {
 
         verify(terrakubeClient, times(1)).updateStep(any(), anyString(), anyString(), anyString());
         verify(terrakubeClient, times(1)).updateJob(any(JobRequest.class), anyString(), anyString());
+    }
+
+    @Test
+    public void aNullErrorOutputStillCompletesTheJob() {
+        stubJobWithStatus("running");
+        doReturn("output-url").when(terraformState).saveBufferedOutput(anyString(), anyString(), anyString(), any(StepOutputBuffer.class), anyString());
+
+        try (StepOutputBuffer buffer = StepOutputBuffer.ofMessage("policy output\n")) {
+            subject().setCompletedStatus(true, false, 0, terraformJob(), buffer, null, null, "0000000");
+        }
+
+        verify(terraformState).saveBufferedOutput(anyString(), anyString(), anyString(), any(StepOutputBuffer.class), eq(""));
+        ArgumentCaptor<JobRequest> job = ArgumentCaptor.forClass(JobRequest.class);
+        verify(terrakubeClient).updateJob(job.capture(), anyString(), anyString());
+        Assertions.assertEquals("pending", job.getValue().getData().getAttributes().getStatus());
     }
 
     @Test
