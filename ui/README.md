@@ -43,6 +43,7 @@ Run the script env.sh to generate static configuration file env-config.js inside
 Build/Start the application:
 
 ```bash
+npm install -g corepack@0.36.0   # Node 25+ no longer bundles Corepack
 corepack enable
 yarn install
 yarn start
