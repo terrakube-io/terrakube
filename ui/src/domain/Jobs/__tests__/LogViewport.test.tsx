@@ -62,12 +62,7 @@ it("reports follow released when the user scrolls up and re-engaged at the botto
   const onFollowChange = jest.fn();
 
   const { container } = render(
-    <LogViewport
-      lines={lines(200)}
-      followTail
-      onFollowChange={onFollowChange}
-      lineHeight={LINE_HEIGHT}
-    />
+    <LogViewport lines={lines(200)} followTail onFollowChange={onFollowChange} lineHeight={LINE_HEIGHT} />
   );
 
   const scroller = container.firstChild as HTMLDivElement;

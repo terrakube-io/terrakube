@@ -14,7 +14,7 @@ describe("structuredPlan helpers", () => {
     expect(getPlanChangeActionColor(["delete", "create"])).toBe("orange");
   });
 
-  it("recognizes a clean import (actions: [no-op] + fallback \"import\") instead of collapsing it to no-op", () => {
+  it('recognizes a clean import (actions: [no-op] + fallback "import") instead of collapsing it to no-op', () => {
     expect(getPlanChangeActionLabel(["no-op"], "import")).toBe("import");
   });
 
@@ -202,9 +202,22 @@ describe("structuredPlan helpers", () => {
 
   it("accepts every documented ChangeStatus value and falls back to pending for unknown ones", () => {
     const knownStatuses = [
-      "pending", "planned", "refreshing", "reading", "applying", "provisioning", "applied",
-      "importing", "moving", "errored", "interrupted", "not-started",
-      "ephemeral-opening", "ephemeral-renewed", "ephemeral-closing", "ephemeral-errored",
+      "pending",
+      "planned",
+      "refreshing",
+      "reading",
+      "applying",
+      "provisioning",
+      "applied",
+      "importing",
+      "moving",
+      "errored",
+      "interrupted",
+      "not-started",
+      "ephemeral-opening",
+      "ephemeral-renewed",
+      "ephemeral-closing",
+      "ephemeral-errored",
     ];
 
     knownStatuses.forEach((status) => {

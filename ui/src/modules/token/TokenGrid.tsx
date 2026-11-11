@@ -4,6 +4,7 @@ import { UserToken } from "@/modules/user/types";
 import TokenGridItem from "./TokenGridItem";
 import "./TokenList.css";
 import useApiRequest from "@/modules/api/useApiRequest";
+import { ApiResponse } from "@/modules/api/types";
 import DeleteConfirmationModal from "@/components/modals/DeleteConfirmationModal/DeleteConfirmationModal";
 
 type Props = {
@@ -17,7 +18,10 @@ type Props = {
 export default function TokenGrid({ tokens, action, onDeleted, hideTitle }: Props) {
   const [pendingDelete, setPendingDelete] = useState<UserToken | null>(null);
   const { loading, execute, error } = useApiRequest({
-    action: action,
+    action: async (id?: string) => {
+      if (!id) throw new Error("No token selected");
+      return action(id);
+    },
     onReturn: () => {
       onDeleted();
     },
