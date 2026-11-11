@@ -48,15 +48,32 @@ public class WorkspaceSecurityImpl implements WorkspaceSecurity {
             RestClientProperties restClientProperties,
             @Value("${io.terrakube.registry.domain}") String registryDomain,
             @Value("${io.terrakube.api.url}") String apiUrl,
+            @Value("${io.terrakube.public-url:}") String publicUrl,
             InternalSecretLoader secretLoader) {
         this.clientProperties = restClientProperties;
-        this.registryDomain = registryDomain;
+        this.registryDomain = resolveRegistryDomain(registryDomain, publicUrl);
         this.apiUrl = apiUrl;
         this.internalSecret = secretLoader.getInternalSecret();
     }
 
+    public WorkspaceSecurityImpl(RestClientProperties restClientProperties, String registryDomain, String apiUrl,
+                                 InternalSecretLoader secretLoader) {
+        this(restClientProperties, registryDomain, apiUrl, "", secretLoader);
+    }
+
     public WorkspaceSecurityImpl(RestClientProperties restClientProperties, String registryDomain, String apiUrl, String internalSecret) {
-        this(restClientProperties, registryDomain, apiUrl, new InternalSecretLoader(internalSecret, null));
+        this(restClientProperties, registryDomain, apiUrl, "", new InternalSecretLoader(internalSecret, null));
+    }
+
+    /** TerrakubeRegistryDomain, or the single-domain public URL's host when it is unset. */
+    static String resolveRegistryDomain(String registryDomain, String publicUrl) {
+        if (registryDomain != null && !registryDomain.isBlank()) {
+            return registryDomain.trim();
+        }
+        if (publicUrl != null && !publicUrl.isBlank()) {
+            return java.net.URI.create(publicUrl.trim()).getRawAuthority();
+        }
+        throw new IllegalStateException("Set TerrakubeRegistryDomain or TerrakubePublicUrl");
     }
 
     @Override
@@ -124,7 +141,13 @@ public class WorkspaceSecurityImpl implements WorkspaceSecurity {
         String credentialFileContent = String.format(CREDENTIALS_CONTENT, registryDomain, token);
         String credentialFileContent2 = "";
         try {
-            credentialFileContent2 = String.format(CREDENTIALS_CONTENT, new URL(apiUrl).getHost(), token);
+            URL api = new URL(apiUrl);
+            String apiHost = api.getHost();
+            // On a single-domain host the registry and the API share one hostname: one block is enough.
+            // registryDomain may carry a port (from the public URL's authority), so compare both forms.
+            if (!apiHost.equalsIgnoreCase(registryDomain) && !api.getAuthority().equalsIgnoreCase(registryDomain)) {
+                credentialFileContent2 = String.format(CREDENTIALS_CONTENT, apiHost, token);
+            }
         } catch (MalformedURLException e) {
             log.error(e.getMessage());
         }

@@ -81,7 +81,7 @@ class RemoteTfePolicyChecksTest {
 
         remoteTfeService = new RemoteTfeService(
                 jobRepository, contentRepository, organizationRepository, workspaceRepository,
-                historyRepository, templateRepository, scheduleJobService, "localhost", storageTypeService,
+                historyRepository, templateRepository, scheduleJobService, "https://localhost", storageTypeService,
                 stepRepository, redisTemplate, 1, tagRepository, workspaceTagRepository, teamTokenService,
                 archiveRepository, accessRepository, encryptionService, addressRepository, projectRepository,
                 variableRepository, globalVarRepository, rbacService, jobNotificationTrigger

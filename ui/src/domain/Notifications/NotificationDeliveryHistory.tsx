@@ -1,3 +1,4 @@
+import { apiUrl } from "@/config/apiUrls";
 import {
   CheckCircleOutlined,
   ClockCircleOutlined,
@@ -43,7 +44,7 @@ export const NotificationDeliveryHistory = ({ workspaceId }: Props) => {
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
   const [loading, setLoading] = useState(true);
   const [retryingId, setRetryingId] = useState<string | null>(null);
-  const origin = new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin;
+  const origin = apiUrl("");
 
   const loadDeliveries = () => {
     setLoading(true);

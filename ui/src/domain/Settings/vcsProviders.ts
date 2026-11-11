@@ -1,3 +1,4 @@
+import { apiUrl } from "@/config/apiUrls";
 import { VcsConnectionType, VcsType, VcsTypeExtended } from "../types";
 
 // Provider facts shared by the VCS list, add and edit pages.
@@ -156,7 +157,7 @@ export const validateUrlFormat = (_: unknown, value: string) => {
 
 export const getApiOrigin = () => new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin;
 
-export const getCallbackUrl = (callbackId: string) => `${getApiOrigin()}/callback/v1/vcs/${callbackId}`;
+export const getCallbackUrl = (callbackId: string) => apiUrl(`/callback/v1/vcs/${callbackId}`);
 
 // Where the OAuth flow starts for a provider; endpoint overrides the public host.
 export const getConnectUrl = (vcsType: VcsType, clientId: string, callbackUrl: string, endpoint?: string | null) => {
