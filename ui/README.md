@@ -1,5 +1,7 @@
 # Terrakube UI
 
+Working on the code? Read [AGENTS.md](AGENTS.md) first: toolchain, commands, layout and the rules the checks enforce.
+
 ## Compile
 
 Define the following environment variables in your local machine:
