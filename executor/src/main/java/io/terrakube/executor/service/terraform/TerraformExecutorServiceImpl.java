@@ -851,6 +851,9 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                 .redirectErrorStream(true)
                 .terraformReleasesUrl(terraformClient.getTerraformReleasesUrl())
                 .tofuReleasesUrl(terraformClient.getTofuReleasesUrl())
+                .downloadResponseTimeout(terraformClient.getDownloadResponseTimeout())
+                .releasesDownloadTimeout(terraformClient.getReleasesDownloadTimeout())
+                .binaryDownloadTimeout(terraformClient.getBinaryDownloadTimeout())
                 .build();
     }
 
@@ -863,6 +866,9 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                 .redirectErrorStream(true)
                 .terraformReleasesUrl(terraformClient.getTerraformReleasesUrl())
                 .tofuReleasesUrl(terraformClient.getTofuReleasesUrl())
+                .downloadResponseTimeout(terraformClient.getDownloadResponseTimeout())
+                .releasesDownloadTimeout(terraformClient.getReleasesDownloadTimeout())
+                .binaryDownloadTimeout(terraformClient.getBinaryDownloadTimeout())
                 .build();
     }
 
@@ -875,6 +881,9 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                 .redirectErrorStream(true)
                 .terraformReleasesUrl(terraformClient.getTerraformReleasesUrl())
                 .tofuReleasesUrl(terraformClient.getTofuReleasesUrl())
+                .downloadResponseTimeout(terraformClient.getDownloadResponseTimeout())
+                .releasesDownloadTimeout(terraformClient.getReleasesDownloadTimeout())
+                .binaryDownloadTimeout(terraformClient.getBinaryDownloadTimeout())
                 .build();
     }
 
