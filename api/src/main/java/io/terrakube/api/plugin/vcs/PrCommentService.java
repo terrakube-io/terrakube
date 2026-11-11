@@ -606,8 +606,7 @@ public class PrCommentService {
                 JsonNode results = policyEvalNode.get("results");
                 if (results.isArray()) {
                     for (JsonNode item : results) {
-                        String policySetName = item.has("policySetName") ? item.get("policySetName").asText()
-                                : (item.has("policySetId") ? item.get("policySetId").asText() : "default");
+                        String policySetName = text(item, "policySetName", text(item, "policySetId", "default"));
                         // The executor sends the enum name (SOFT_MANDATORY); accept the hyphenated form as well.
                         String enforcementLevel = item.hasNonNull("enforcementLevel")
                                 ? item.get("enforcementLevel").asText().replace('_', '-')
@@ -617,9 +616,9 @@ public class PrCommentService {
                         if (item.has("exemptedViolations") && item.get("exemptedViolations").isArray()) {
                             for (JsonNode ev : item.get("exemptedViolations")) {
                                 exemptedCount++;
-                                String address = ev.has("address") ? ev.get("address").asText() : "-";
+                                String address = text(ev, "address", "-");
                                 StringBuilder details = new StringBuilder();
-                                if (ev.has("ruleId")) {
+                                if (ev.hasNonNull("ruleId")) {
                                     details.append("Rule: `").append(ev.get("ruleId").asText()).append("`");
                                 }
                                 if (ev.hasNonNull("ticketReference")) {
@@ -643,8 +642,8 @@ public class PrCommentService {
                         // Violations
                         if (item.has("violations") && item.get("violations").isArray()) {
                             for (JsonNode v : item.get("violations")) {
-                                String address = v.has("address") ? v.get("address").asText() : "-";
-                                String status = v.has("status") ? v.get("status").asText() : "";
+                                String address = text(v, "address", "-");
+                                String status = text(v, "status", "");
                                 String sev;
                                 if ("WARNING".equalsIgnoreCase(status) || "advisory".equalsIgnoreCase(enforcementLevel)) {
                                     sev = "ℹ️ Advisory";
@@ -655,7 +654,7 @@ public class PrCommentService {
                                 }
 
                                 StringBuilder details = new StringBuilder();
-                                if (v.has("ruleId")) {
+                                if (v.hasNonNull("ruleId")) {
                                     details.append("Rule: `").append(v.get("ruleId").asText()).append("`");
                                 }
                                 if (v.hasNonNull("message")) {
@@ -845,5 +844,10 @@ public class PrCommentService {
         }
 
         return sb.toString();
+    }
+
+    /** Returns the field as text, or the fallback when it is missing or JSON null. */
+    private static String text(JsonNode node, String field, String fallback) {
+        return node.hasNonNull(field) ? node.get(field).asText() : fallback;
     }
 }
