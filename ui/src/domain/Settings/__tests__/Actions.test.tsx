@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { Buffer } from "buffer";
+import { Buffer } from "node:buffer";
 import axiosInstance from "@/config/axiosConfig";
 import { ActionSettings } from "../Actions";
 

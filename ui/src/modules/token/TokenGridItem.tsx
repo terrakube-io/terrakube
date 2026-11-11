@@ -6,7 +6,7 @@ import {
   UserOutlined,
 } from "@ant-design/icons";
 import { Button, Flex, Typography, Tag } from "antd";
-import { DateTime } from "luxon";
+import dayjs from "dayjs";
 import { UserToken } from "@/modules/user/types";
 import { formatOrdinalDate, relativeTime } from "@/modules/utils/dates";
 
@@ -18,10 +18,13 @@ type Props = {
 
 export default function TokenGridItem({ token, onDelete, loading }: Props) {
   const expiryDate =
-    token.createdDate && (token.days > 0 || token.hours > 0 || token.minutes > 0)
-      ? DateTime.fromISO(token.createdDate).plus({ days: token.days, hours: token.hours, minutes: token.minutes })
+    token.createdDate && (token.days > 0 || (token.hours ?? 0) > 0 || (token.minutes ?? 0) > 0)
+      ? dayjs(token.createdDate)
+          .add(token.days, "day")
+          .add(token.hours ?? 0, "hour")
+          .add(token.minutes ?? 0, "minute")
       : null;
-  const expired = expiryDate !== null && expiryDate < DateTime.now();
+  const expired = expiryDate !== null && expiryDate.isBefore(dayjs());
 
   // Drives the icon tile and status line colors in TokenList.css.
   const status = expired ? "expired" : expiryDate ? "expiring" : "never";

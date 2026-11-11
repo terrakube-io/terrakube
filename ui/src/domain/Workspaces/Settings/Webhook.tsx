@@ -2,7 +2,6 @@ import { ArrowDownOutlined, ArrowUpOutlined, CopyOutlined, DeleteOutlined, PlusO
 import { Alert, Button, Checkbox, Form, Popconfirm, Segmented, Select, Spin, Switch, message } from "antd";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { v7 as uuid } from "uuid";
 import axiosInstance, { getErrorMessage } from "../../../config/axiosConfig";
 import { configuredBranch, isPlanOnlyTemplate } from "../../Jobs/planOnlyTemplate";
 import { Template, VcsType, WebhookEvent, WebhookEventPathType, Workspace } from "../../types";
@@ -45,7 +44,7 @@ const ANY_BRANCH = ".*";
 const ANY_PATH = "**";
 
 const newTrigger = (overrides: Partial<Trigger> = {}): Trigger => ({
-  id: uuid(),
+  id: crypto.randomUUID(),
   anyBranch: false,
   branches: [],
   pathMode: "any",
@@ -158,7 +157,7 @@ export const WorkspaceWebhook = ({
     setExpanded((ids) => [...ids, trigger.id]);
   };
 
-  const duplicateTrigger = (trigger: Trigger) => addTrigger({ ...trigger, id: uuid(), created: false });
+  const duplicateTrigger = (trigger: Trigger) => addTrigger({ ...trigger, id: crypto.randomUUID(), created: false });
 
   const removeTrigger = (trigger: Trigger) => {
     form.setFieldValue(
@@ -202,7 +201,7 @@ export const WorkspaceWebhook = ({
       return;
     }
     const events: Trigger[] = form.getFieldValue("events") ?? [];
-    const newWebhookId = webhookId ?? uuid();
+    const newWebhookId = webhookId ?? crypto.randomUUID();
     const body = {
       "atomic:operations": [
         ...deletedIds.map((id) => ({ op: "remove", href: `/${baseUrl}/${newWebhookId}/events/${id}` })),

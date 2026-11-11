@@ -11,7 +11,9 @@ jest.mock("../../../../config/axiosConfig", () => ({
 }));
 jest.mock("../../Workspaces", () => ({ atomicHeader: {} }));
 let uuidCount = 0;
-jest.mock("uuid", () => ({ v7: () => `uuid-${++uuidCount}` }));
+jest
+  .spyOn(crypto, "randomUUID")
+  .mockImplementation(() => `uuid-${++uuidCount}` as ReturnType<typeof crypto.randomUUID>);
 
 const workspace = (relationships: Record<string, unknown> = {}) =>
   ({
