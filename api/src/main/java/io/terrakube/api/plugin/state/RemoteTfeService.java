@@ -126,7 +126,15 @@ public class RemoteTfeService {
     private HistoryRepository historyRepository;
     private TemplateRepository templateRepository;
     private ScheduleJobService scheduleJobService;
-    private String hostname;
+    private String apiBaseUrl;
+
+    // Relative links are resolved by the CLI against the host it called: /api on a single-domain host.
+    @Value("#{@publicUrls.apiPathPrefix()}")
+    private String apiPathPrefix = "";
+
+    // Uploads are spooled to disk (#3852), so cap their size to keep a client from filling it.
+    @Value("${io.terrakube.configuration.max-size-bytes:1073741824}")
+    private long maxConfigurationBytes = 1073741824L;
     private StorageTypeService storageTypeService;
     private StepRepository stepRepository;
     @SuppressWarnings("rawtypes")
@@ -231,7 +239,7 @@ public class RemoteTfeService {
                             HistoryRepository historyRepository,
                             TemplateRepository templateRepository,
                             ScheduleJobService scheduleJobService,
-                            @Value("${io.terrakube.hostname}") String hostname,
+                            @Value("#{@publicUrls.apiBaseUrl()}") String apiBaseUrl,
                             StorageTypeService storageTypeService,
                             StepRepository stepRepository,
                             @SuppressWarnings("rawtypes") RedisTemplate redisTemplate,
@@ -249,7 +257,7 @@ public class RemoteTfeService {
         this.historyRepository = historyRepository;
         this.templateRepository = templateRepository;
         this.scheduleJobService = scheduleJobService;
-        this.hostname = hostname;
+        this.apiBaseUrl = apiBaseUrl;
         this.storageTypeService = storageTypeService;
         this.stepRepository = stepRepository;
         this.redisTemplate = redisTemplate;
@@ -722,7 +730,7 @@ public class RemoteTfeService {
                 workspaceModel.getRelationships().setRemoteStateConsumer(new RemoteStateConsumer());
                 workspaceModel.getRelationships().getRemoteStateConsumer().setLinks(new LinksStateConsumer());
                 workspaceModel.getRelationships().getRemoteStateConsumer().getLinks().setRelated(
-                        String.format("/remote/tfe/v2/workspaces/%s/relationships/remote-state-consumers", workspace.getId()));
+                        apiPathPrefix + String.format("/remote/tfe/v2/workspaces/%s/relationships/remote-state-consumers", workspace.getId()));
                 log.info("Workspace remote state consumer relationship URL: {}", workspaceModel.getRelationships().getRemoteStateConsumer().getLinks().getRelated());
             }
 
@@ -1316,8 +1324,8 @@ public class RemoteTfeService {
         history = historyRepository.save(history);
 
         history.setOutput(String
-                .format("https://%s/tfstate/v1/organization/%s/workspace/%s/state/%s.json",
-                        hostname,
+                .format("%s/tfstate/v1/organization/%s/workspace/%s/state/%s.json",
+                        apiBaseUrl,
                         workspace.getOrganization().getId().toString(),
                         workspace.getId().toString(),
                         history.getId().toString()));
@@ -1531,13 +1539,13 @@ public class RemoteTfeService {
             responseAttributes.put("vcs-commit-url", null);
 
             responseAttributes.put("hosted-state-download-url", String
-                    .format("https://%s/tfstate/v1/organization/%s/workspace/%s/state/terraform.tfstate",
-                            hostname,
+                    .format("%s/tfstate/v1/organization/%s/workspace/%s/state/terraform.tfstate",
+                            apiBaseUrl,
                             history.getWorkspace().getOrganization().getId().toString(),
                             history.getWorkspace().getId()));
             responseAttributes.put("hosted-json-state-download-url", String
-                    .format("https://%s/tfstate/v1/organization/%s/workspace/%s/state/%s.json",
-                            hostname,
+                    .format("%s/tfstate/v1/organization/%s/workspace/%s/state/%s.json",
+                            apiBaseUrl,
                             history.getWorkspace().getOrganization().getId().toString(),
                             history.getWorkspace().getId(),
                             history.getId().toString()));
@@ -1554,27 +1562,27 @@ public class RemoteTfeService {
 
             if (archiveRawState.isPresent())
                 responseAttributes.put("hosted-state-upload-url", String
-                        .format("https://%s/tfstate/v1/archive/%s/terraform.tfstate",
-                                hostname,
+                        .format("%s/tfstate/v1/archive/%s/terraform.tfstate",
+                                apiBaseUrl,
                                 archiveRawState.get().getId()));
 
             if (archiveJsonState.isPresent())
                 responseAttributes.put("hosted-json-state-upload-url", String
-                        .format("https://%s/tfstate/v1/archive/%s/terraform.json.tfstate",
-                                hostname,
+                        .format("%s/tfstate/v1/archive/%s/terraform.json.tfstate",
+                                apiBaseUrl,
                                 archiveJsonState.get().getId()));
 
             response.getData().setAttributes(responseAttributes);
 
             log.info("Download State URL: {}", String
-                    .format("https://%s/tfstate/v1/organization/%s/workspace/%s/state/terraform.tfstate",
-                            hostname,
+                    .format("%s/tfstate/v1/organization/%s/workspace/%s/state/terraform.tfstate",
+                            apiBaseUrl,
                             history.getWorkspace().getOrganization().getId().toString(),
                             history.getWorkspace().getId()));
 
             log.info("Download State JSON URL: {}", String
-                    .format("https://%s/tfstate/v1/organization/%s/workspace/%s/state/%s.json",
-                            hostname,
+                    .format("%s/tfstate/v1/organization/%s/workspace/%s/state/%s.json",
+                            apiBaseUrl,
                             history.getWorkspace().getOrganization().getId().toString(),
                             history.getWorkspace().getId(),
                             history.getId().toString()));
@@ -1614,8 +1622,8 @@ public class RemoteTfeService {
             responseAttributes.put("vcs-commit-url", null);
             responseAttributes.put("vcs-commit-sha", null);
             responseAttributes.put("hosted-state-download-url", String
-                    .format("https://%s/tfstate/v1/organization/%s/workspace/%s/state/terraform.tfstate",
-                            hostname,
+                    .format("%s/tfstate/v1/organization/%s/workspace/%s/state/terraform.tfstate",
+                            apiBaseUrl,
                             workspace.getOrganization().getId().toString(),
                             workspace.getId().toString()));
 
@@ -1666,8 +1674,8 @@ public class RemoteTfeService {
             this.uploadTicketService = new ConfigurationUploadTicketService(null, 3600);
         }
         String ticket = uploadTicketService.generateTicket(content.getId().toString());
-        String uploadUrl = String.format("https://%s/remote/tfe/v2/configuration-versions/%s?ticket=%s",
-                hostname, content.getId().toString(), ticket);
+        String uploadUrl = String.format("%s/remote/tfe/v2/configuration-versions/%s?ticket=%s",
+                apiBaseUrl, content.getId().toString(), ticket);
         configurationData.getData().getAttributes().put("upload-url", uploadUrl);
         log.debug("upload-url generated for content {}", content.getId());
         return configurationData;
@@ -1716,7 +1724,7 @@ public class RemoteTfeService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Configuration version has already been uploaded or is not pending");
         }
 
-        storageTypeService.createContentFile(contentId, inputStream);
+        storageTypeService.createContentFile(contentId, new SizeLimitedInputStream(inputStream, maxConfigurationBytes));
         log.info("Content file created in storage for contentId {}", contentId);
 
         content.setStatus("uploaded");
@@ -1794,8 +1802,8 @@ public class RemoteTfeService {
                             + "manage the workspace. Variables: " + String.join(", ", runVariables.keySet()));
         }
 
-        String sourceTarGz = String.format("https://%s/remote/tfe/v2/configuration-versions/%s/terraformContent.tar.gz",
-                hostname, configurationId);
+        String sourceTarGz = String.format("%s/remote/tfe/v2/configuration-versions/%s/terraformContent.tar.gz",
+                apiBaseUrl, configurationId);
         // We intentionally do NOT persist this configuration version onto workspace.source
         // here. Doing so on every run (including speculative plan-only runs and runs that are
         // later discarded before approval) made workspace.source track the last configuration
@@ -2211,7 +2219,7 @@ public class RemoteTfeService {
                         jobApprovalService.recordApproval(job, currentUser);
                     }
                     step.setStatus(JobStatus.completed);
-                    step.setOutput(String.format("https://%s/tfoutput/v1/organization/%s/job/%s/step/%s", this.hostname,
+                    step.setOutput(String.format("%s/tfoutput/v1/organization/%s/job/%s/step/%s", this.apiBaseUrl,
                             job.getOrganization().getId().toString(), job.getId(), step.getId()));
                     stepRepository.save(step);
                     job.setStatus(JobStatus.pending);
@@ -2299,9 +2307,9 @@ public class RemoteTfeService {
 
         planRunModel.getAttributes().put("status", planStatus);
         String encryptedPlanId = encryptionService.encrypt(String.valueOf(planId));
-        log.info("log-read-url: {}", String.format("https://%s/remote/tfe/v2/plans/logs/%s", hostname, encryptedPlanId));
+        log.info("log-read-url: {}", String.format("%s/remote/tfe/v2/plans/logs/%s", apiBaseUrl, encryptedPlanId));
         planRunModel.getAttributes().put("log-read-url",
-                String.format("https://%s/remote/tfe/v2/plans/logs/%s", hostname, encryptedPlanId));
+                String.format("%s/remote/tfe/v2/plans/logs/%s", apiBaseUrl, encryptedPlanId));
         plansData.setData(planRunModel);
         return plansData;
     }
@@ -2338,9 +2346,9 @@ public class RemoteTfeService {
         }
         applyModel.getAttributes().put("status", applyStatus);
         String encryptedPlanId = encryptionService.encrypt(String.valueOf(planId));
-        log.info("log-read-url: {}", String.format("https://%s/remote/tfe/v2/applies/logs/%s", hostname, encryptedPlanId));
+        log.info("log-read-url: {}", String.format("%s/remote/tfe/v2/applies/logs/%s", apiBaseUrl, encryptedPlanId));
         applyModel.getAttributes().put("log-read-url",
-                String.format("https://%s/remote/tfe/v2/applies/logs/%s", hostname, encryptedPlanId));
+                String.format("%s/remote/tfe/v2/applies/logs/%s", apiBaseUrl, encryptedPlanId));
 
         applyRunData.setData(applyModel);
         return applyRunData;
@@ -2809,5 +2817,42 @@ public class RemoteTfeService {
         PolicyCheckData data = new PolicyCheckData();
         data.setData(buildPolicyCheckModel(evaluation, currentUser));
         return data;
+    }
+
+    /** Fails the upload with 413 once more than {@code limit} bytes have been read. */
+    static final class SizeLimitedInputStream extends java.io.FilterInputStream {
+        private final long limit;
+        private long count;
+
+        SizeLimitedInputStream(InputStream in, long limit) {
+            super(in);
+            this.limit = limit;
+        }
+
+        @Override
+        public int read() throws java.io.IOException {
+            int b = super.read();
+            if (b != -1) {
+                count(1);
+            }
+            return b;
+        }
+
+        @Override
+        public int read(byte[] b, int off, int len) throws java.io.IOException {
+            int n = super.read(b, off, len);
+            if (n > 0) {
+                count(n);
+            }
+            return n;
+        }
+
+        private void count(int n) {
+            count += n;
+            if (count > limit) {
+                throw new ResponseStatusException(HttpStatus.PAYLOAD_TOO_LARGE,
+                        "Configuration upload exceeds " + limit + " bytes");
+            }
+        }
     }
 }

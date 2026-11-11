@@ -7,6 +7,17 @@ import java.util.List;
 @Component
 public class ConsentPageRenderer {
 
+    private final String consentAction;
+
+    public ConsentPageRenderer() {
+        this.consentAction = "/oauth/consent";
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public ConsentPageRenderer(TerraformLoginProperties loginProperties) {
+        this.consentAction = loginProperties.oauthPath() + "/consent";
+    }
+
     private static final List<Integer> CHOICES = List.of(1, 7, 14, 30, 60, 90, 180, 365);
 
     // Terrakube hex-cube mark + wordmark (wordmark uses currentColor). Kept in sync with
@@ -38,7 +49,7 @@ public class ConsentPageRenderer {
                for <strong>%s</strong>. It will be able to read and write state, runs, and the
                private registry as you.</p>
             %s
-            <form method="post" action="/oauth/consent">
+            <form method="post" action="%s">
               <label for="name">Token name <span class="hint">(optional)</span></label>
               <input id="name" name="name" type="text" maxlength="64" autocomplete="off"
                      placeholder="e.g. work-laptop">
@@ -50,7 +61,7 @@ public class ConsentPageRenderer {
               </div>
             </form>
             <p class="foot">You can revoke this token any time from your Terrakube account settings.</p>
-            """.formatted(escape(email), error, options);
+            """.formatted(escape(email), error, escape(consentAction), options);
         return page("Authorize Terrakube CLI login", body);
     }
 

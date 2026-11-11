@@ -80,9 +80,9 @@ public class WorkspaceService {
     ReferenceRepository referenceRepository;
 
     private StorageTypeService storageTypeService;
-    private String hostname;
+    private String apiBaseUrl;
 
-    public WorkspaceService(@Value("${io.terrakube.hostname}") String hostname,
+    public WorkspaceService(@Value("#{@publicUrls.apiBaseUrl()}") String apiBaseUrl,
             WorkspaceRepository workspaceRepository,
             HistoryRepository historyRepository,
             StorageTypeService storageTypeService,
@@ -100,7 +100,7 @@ public class WorkspaceService {
         this.vcsRepository = vcsRepository;
         this.organizationRepository = organizationRepository;
         this.variableRepository = variableRepositor;
-        this.hostname = hostname;
+        this.apiBaseUrl = apiBaseUrl;
         this.workspaceTagRepository = workspaceTagRepository;
         this.tagRepository = tagRepository;
         this.collectionRepository = collectionRepository;
@@ -440,8 +440,8 @@ public class WorkspaceService {
         historyRepository.save(history);
 
         history.setOutput(String
-                .format("https://%s/tfstate/v1/organization/%s/workspace/%s/state/%s.json",
-                        hostname,
+                .format("%s/tfstate/v1/organization/%s/workspace/%s/state/%s.json",
+                        apiBaseUrl,
                         workspace.getOrganization().getId().toString(),
                         workspace.getId().toString(),
                         history.getId().toString()));

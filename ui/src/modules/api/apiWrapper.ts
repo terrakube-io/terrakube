@@ -1,9 +1,10 @@
 import axios from "axios";
 import { mgr } from "../../config/authConfig";
+import { apiUrl } from "../../config/apiUrls";
 import getUserFromStorage from "../../config/authUser";
 import { ApiResponse, RequestOptions } from "./types";
 
-const BASE_API_URL = new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin;
+const BASE_API_URL = apiUrl("");
 type RuntimeEnv = Window["_env_"] & { REACT_APP_TERRAKUBE_SEND_COOKIES?: string };
 
 const runtimeEnv = window._env_ as RuntimeEnv;

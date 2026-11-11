@@ -3,6 +3,7 @@ package io.terrakube.api.plugin.token.login;
 import jakarta.annotation.PostConstruct;
 import lombok.Getter;
 import lombok.Setter;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
@@ -24,12 +25,19 @@ public class TerraformLoginProperties {
     private String apiUrl;
     private int cleanupIntervalMs = 300000;
 
+    /** Single-domain public URL (TerrakubePublicUrl); the broker then defaults to {@code <public>/api}. */
+    @Value("${io.terrakube.public-url:}")
+    private String publicUrl;
+
     @PostConstruct
     public void normalize() {
         if (maxDays > 365) maxDays = 365;
         if (maxDays < 1) maxDays = 1;
         if (defaultDays < 1) defaultDays = 1;
         if (defaultDays > maxDays) defaultDays = maxDays;
+        if ((apiUrl == null || apiUrl.isBlank()) && publicUrl != null && !publicUrl.isBlank()) {
+            apiUrl = publicUrl + "/api";
+        }
         if (enabled && (apiUrl == null || apiUrl.isBlank())) {
             throw new IllegalStateException(
                 "io.terrakube.token.login.enabled=true requires io.terrakube.token.login.api-url");
@@ -56,6 +64,18 @@ public class TerraformLoginProperties {
             throw new IllegalStateException(
                 "io.terrakube.token.login.api-url must use https (got: " + apiUrl + ")");
         }
+    }
+
+    /**
+     * Path the CLI uses for the broker endpoints: {@code /oauth}, or {@code /api/oauth} when the API
+     * URL carries the single-domain prefix. Scopes the login cookie and the consent form.
+     */
+    public String oauthPath() {
+        if (apiUrl == null || apiUrl.isBlank()) {
+            return "/oauth";
+        }
+        String path = URI.create(apiUrl).getRawPath();
+        return (path == null ? "" : path) + "/oauth";
     }
 
     public String getCallbackUrl() {

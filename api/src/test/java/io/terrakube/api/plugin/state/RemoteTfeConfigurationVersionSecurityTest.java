@@ -46,7 +46,7 @@ class RemoteTfeConfigurationVersionSecurityTest {
         ticketService = new ConfigurationUploadTicketService("test-secret-key-12345678901234567890", 3600);
         remoteTfeService = new RemoteTfeService(
                 null, contentRepository, null, workspaceRepository,
-                null, null, null, "terrakube.example.com",
+                null, null, null, "https://terrakube.example.com",
                 storageTypeService, null, null, 1,
                 null, null, null, null,
                 null, null, null, null,
@@ -164,5 +164,44 @@ class RemoteTfeConfigurationVersionSecurityTest {
 
         assertEquals(HttpStatus.FORBIDDEN, ex.getStatusCode());
         verify(storageTypeService, never()).createContentFile(any(), any());
+    }
+
+    @Test
+    void uploadOverTheSizeLimitIsRejectedWith413() throws Exception {
+        UUID contentId = UUID.randomUUID();
+        Content content = new Content();
+        content.setId(contentId);
+        content.setStatus("pending");
+        when(contentRepository.findById(contentId)).thenReturn(Optional.of(content));
+        org.springframework.test.util.ReflectionTestUtils.setField(remoteTfeService, "maxConfigurationBytes", 10L);
+        org.mockito.Mockito.doAnswer(invocation -> invocation.getArgument(1, InputStream.class).readAllBytes())
+                .when(storageTypeService).createContentFile(any(), any());
+
+        String ticket = ticketService.generateTicket(contentId.toString());
+        InputStream stream = new java.io.ByteArrayInputStream(new byte[11]);
+        org.springframework.web.server.ResponseStatusException error = org.junit.jupiter.api.Assertions.assertThrows(
+                org.springframework.web.server.ResponseStatusException.class,
+                () -> remoteTfeService.uploadFile(contentId.toString(), ticket, stream));
+
+        org.junit.jupiter.api.Assertions.assertEquals(413, error.getStatusCode().value());
+        verify(contentRepository, never()).save(any());
+    }
+
+    @Test
+    void uploadAtTheSizeLimitIsAccepted() throws Exception {
+        UUID contentId = UUID.randomUUID();
+        Content content = new Content();
+        content.setId(contentId);
+        content.setStatus("pending");
+        when(contentRepository.findById(contentId)).thenReturn(Optional.of(content));
+        when(contentRepository.getReferenceById(contentId)).thenReturn(content);
+        org.springframework.test.util.ReflectionTestUtils.setField(remoteTfeService, "maxConfigurationBytes", 10L);
+        org.mockito.Mockito.doAnswer(invocation -> invocation.getArgument(1, InputStream.class).readAllBytes())
+                .when(storageTypeService).createContentFile(any(), any());
+
+        String ticket = ticketService.generateTicket(contentId.toString());
+        remoteTfeService.uploadFile(contentId.toString(), ticket, new java.io.ByteArrayInputStream(new byte[10]));
+
+        verify(contentRepository).save(content);
     }
 }

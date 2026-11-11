@@ -168,14 +168,40 @@ class LocalStorageTypeServiceImplTest {
     }
 
     @Test
-    void testCreateContentFile() throws IOException {
+    void createContentFileStreamsTheExactBytesToTheContentPath() throws IOException {
         try (MockedStatic<FileUtils> mockedFileUtils = mockStatic(FileUtils.class)) {
             mockedFileUtils.when(FileUtils::getUserDirectoryPath).thenReturn(tempDir.toString());
-            InputStream is = new ByteArrayInputStream("data".getBytes());
+            byte[] data = "data".getBytes(StandardCharsets.UTF_8);
 
-            localStorageTypeService.createContentFile("id1", is);
+            localStorageTypeService.createContentFile("id1", new ByteArrayInputStream(data));
 
-            mockedFileUtils.verify(() -> FileUtils.writeByteArrayToFile(any(File.class), any(byte[].class)));
+            Path contentDir = tempDir.resolve(".terraform-spring-boot/local/content/id1");
+            assertArrayEquals(data, java.nio.file.Files.readAllBytes(contentDir.resolve("terraformContent.tar.gz")));
+            try (java.util.stream.Stream<Path> files = java.nio.file.Files.list(contentDir)) {
+                assertEquals(1, files.count(), "no temp file left behind");
+            }
+        }
+    }
+
+    @Test
+    void createContentFileLeavesNothingBehindWhenTheRequestBodyCannotBeRead() throws IOException {
+        try (MockedStatic<FileUtils> mockedFileUtils = mockStatic(FileUtils.class)) {
+            mockedFileUtils.when(FileUtils::getUserDirectoryPath).thenReturn(tempDir.toString());
+            InputStream failing = new InputStream() {
+                @Override
+                public int read() throws IOException {
+                    throw new IOException("connection reset");
+                }
+            };
+
+            io.terrakube.api.plugin.storage.StorageUnavailableException e = assertThrows(
+                    io.terrakube.api.plugin.storage.StorageUnavailableException.class,
+                    () -> localStorageTypeService.createContentFile("id1", failing));
+
+            assertEquals("Unable to read uploaded content for id1", e.getMessage());
+            try (java.util.stream.Stream<Path> files = java.nio.file.Files.list(tempDir.resolve(".terraform-spring-boot/local/content/id1"))) {
+                assertEquals(0, files.count());
+            }
         }
     }
 

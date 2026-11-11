@@ -1,6 +1,6 @@
-export function getPublicApiOrigin(): string {
-  return new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin;
-}
+import { apiPrefix, getPublicApiOrigin } from "@/config/apiUrls";
+
+export { getPublicApiOrigin };
 
 export function getJobOutputRequestUrl(output: string): string {
   const publicApiOrigin = getPublicApiOrigin();
@@ -13,7 +13,7 @@ export function getJobOutputRequestUrl(output: string): string {
     }
 
     if (outputUrl.pathname.startsWith("/tfoutput/")) {
-      return `${publicApiOrigin}${outputUrl.pathname}${outputUrl.search}${outputUrl.hash}`;
+      return `${publicApiOrigin}${apiPrefix()}${outputUrl.pathname}${outputUrl.search}${outputUrl.hash}`;
     }
 
     return output;
