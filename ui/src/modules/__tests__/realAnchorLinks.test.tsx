@@ -1,10 +1,10 @@
 import { render, screen } from "@testing-library/react";
 import { List } from "antd";
 import { Link, MemoryRouter } from "react-router-dom";
-import OrganizationTable from "./modules/organizations/components/OrganizationTable/OrganizationTable";
-import OrganizationGridItem from "./modules/organizations/components/OrganizationGrid/OrganizationGridItem";
-import WorkspaceTable from "./modules/workspaces/components/WorkspaceTable/WorkspaceTable";
-import WorkspaceCard from "./modules/workspaces/components/WorkspaceCard";
+import OrganizationTable from "@/modules/organizations/components/OrganizationTable/OrganizationTable";
+import OrganizationGridItem from "@/modules/organizations/components/OrganizationGrid/OrganizationGridItem";
+import WorkspaceTable from "@/modules/workspaces/components/WorkspaceTable/WorkspaceTable";
+import WorkspaceCard from "@/modules/workspaces/components/WorkspaceCard";
 
 jest.mock("@/modules/permissions/useOrgPermissions", () => ({
   useOrgPermissions: () => ({ permissions: { managePermission: false }, loading: false }),

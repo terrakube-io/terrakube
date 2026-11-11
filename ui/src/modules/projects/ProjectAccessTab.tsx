@@ -70,7 +70,7 @@ export default function ProjectAccessTab({ orgid, projectId, canManage }: Props)
     try {
       const result = await projectService.listProjectAccess(orgid, projectId);
       if (!result.isError) {
-        setAccessList(result.data);
+        setAccessList(result.data ?? []);
       } else {
         message.error("Failed to load team access list");
       }

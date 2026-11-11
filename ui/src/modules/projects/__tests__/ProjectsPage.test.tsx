@@ -57,7 +57,7 @@ describe("ProjectsPage search", () => {
   it("searches all projects case-insensitively and restores the full list when cleared", async () => {
     renderProjectsPage();
 
-    fireEvent.click(await screen.findByTitle("Next Page"));
+    fireEvent.click(await screen.findByRole("button", { name: "Next Page" }));
     expect(await screen.findByText("Billing API")).toBeInTheDocument();
 
     const search = await screen.findByRole("textbox", { name: "Search projects by name" });
@@ -69,7 +69,7 @@ describe("ProjectsPage search", () => {
     fireEvent.change(search, { target: { value: "" } });
 
     expect(screen.getByText("Project 1")).toBeInTheDocument();
-    expect(screen.getByTitle("Next Page")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Next Page" })).toBeInTheDocument();
   });
 
   it("shows a no-results state when the search has no matches", async () => {
@@ -112,13 +112,13 @@ describe("ProjectsPage search", () => {
     fireEvent.change(screen.getByRole("textbox", { name: "Search projects by name" }), {
       target: { value: "billing" },
     });
-    fireEvent.click(screen.getByTitle("Next Page"));
+    fireEvent.click(screen.getByRole("button", { name: "Next Page" }));
 
     expect(screen.getByText("Billing 11")).toBeInTheDocument();
     expect(screen.getByText("Billing 12")).toBeInTheDocument();
     expect(screen.getByText("Billing API")).toBeInTheDocument();
     expect(within(screen.getByRole("table")).getAllByRole("row")).toHaveLength(4);
-    expect(screen.getByTitle("Next Page")).toHaveAttribute("aria-disabled", "true");
+    expect(screen.getByRole("button", { name: "Next Page" })).toHaveAttribute("aria-disabled", "true");
   });
 
   it("preserves the selected page size after a search with no matches", async () => {

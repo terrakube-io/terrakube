@@ -6,9 +6,7 @@ describe("StructuredPlanOutput", () => {
   it("renders a success-toned empty state when there are no changes", () => {
     render(<StructuredPlanOutput changes={[]} />);
 
-    expect(
-      screen.getByText("Your infrastructure matches the configuration — no changes needed.")
-    ).toBeInTheDocument();
+    expect(screen.getByText("Your infrastructure matches the configuration — no changes needed.")).toBeInTheDocument();
   });
 
   it("shows an in-progress state instead of a false success state while the step is still running", () => {
@@ -341,7 +339,9 @@ describe("StructuredPlanOutput", () => {
     expect(updateInterruptedBadge).toBeInTheDocument();
     expect(updateInterruptedBadge).toHaveClass("structured-plan-applyStatus--interrupted");
 
-    const destroyInterruptedBadge = screen.getByText("destroy interrupted", { selector: ".structured-plan-applyStatus" });
+    const destroyInterruptedBadge = screen.getByText("destroy interrupted", {
+      selector: ".structured-plan-applyStatus",
+    });
     expect(destroyInterruptedBadge).toBeInTheDocument();
     expect(destroyInterruptedBadge).toHaveClass("structured-plan-applyStatus--interrupted");
 
@@ -812,7 +812,13 @@ describe("StructuredPlanOutput", () => {
       <StructuredPlanOutput
         applyMode
         changes={[
-          { address: "random_pet.this", action: "create", actions: ["create"], after: { id: "abc" }, status: "applied" },
+          {
+            address: "random_pet.this",
+            action: "create",
+            actions: ["create"],
+            after: { id: "abc" },
+            status: "applied",
+          },
         ]}
         outputs={[{ name: "random_value", value: "sad-otter", sensitive: false }]}
       />
@@ -836,7 +842,13 @@ describe("StructuredPlanOutput", () => {
       <StructuredPlanOutput
         applyMode
         changes={[
-          { address: "random_pet.this", action: "create", actions: ["create"], after: { id: "abc" }, status: "applied" },
+          {
+            address: "random_pet.this",
+            action: "create",
+            actions: ["create"],
+            after: { id: "abc" },
+            status: "applied",
+          },
         ]}
         outputs={[
           {
@@ -866,7 +878,13 @@ describe("StructuredPlanOutput", () => {
       <StructuredPlanOutput
         applyMode
         changes={[
-          { address: "random_pet.this", action: "create", actions: ["create"], after: { id: "abc" }, status: "applied" },
+          {
+            address: "random_pet.this",
+            action: "create",
+            actions: ["create"],
+            after: { id: "abc" },
+            status: "applied",
+          },
         ]}
         outputs={[{ name: "backup_role_policy", value: policy, sensitive: false }]}
       />
@@ -890,7 +908,13 @@ describe("StructuredPlanOutput", () => {
       <StructuredPlanOutput
         applyMode
         changes={[
-          { address: "random_pet.this", action: "create", actions: ["create"], after: { id: "abc" }, status: "applied" },
+          {
+            address: "random_pet.this",
+            action: "create",
+            actions: ["create"],
+            after: { id: "abc" },
+            status: "applied",
+          },
         ]}
         outputs={[{ name: "long_output", value: longValue, sensitive: false }]}
       />
@@ -1239,7 +1263,13 @@ describe("StructuredPlanOutput", () => {
       <StructuredPlanOutput
         applyMode
         changes={[
-          { address: "random_pet.this", action: "create", actions: ["create"], after: { id: "abc" }, status: "applied" },
+          {
+            address: "random_pet.this",
+            action: "create",
+            actions: ["create"],
+            after: { id: "abc" },
+            status: "applied",
+          },
         ]}
       />
     );
@@ -1307,9 +1337,7 @@ describe("StructuredPlanOutput", () => {
   it("does not render the output changes panel or notice when nothing changed at all", () => {
     render(<StructuredPlanOutput changes={[]} />);
 
-    expect(
-      screen.getByText("Your infrastructure matches the configuration — no changes needed.")
-    ).toBeInTheDocument();
+    expect(screen.getByText("Your infrastructure matches the configuration — no changes needed.")).toBeInTheDocument();
     expect(screen.queryByText("Output changes")).not.toBeInTheDocument();
     expect(screen.queryByText(/will change/i)).not.toBeInTheDocument();
   });
@@ -1336,7 +1364,9 @@ describe("StructuredPlanOutput", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /null_resource\.fails/i }));
 
-    expect(screen.getByText("deprecated argument", { selector: ".structured-plan-diagnostic--warning span" })).toBeInTheDocument();
+    expect(
+      screen.getByText("deprecated argument", { selector: ".structured-plan-diagnostic--warning span" })
+    ).toBeInTheDocument();
     expect(
       screen.getByText("local-exec provisioner error", { selector: ".structured-plan-diagnostic--error span" })
     ).toBeInTheDocument();
@@ -1406,7 +1436,14 @@ describe("StructuredPlanOutput", () => {
       <StructuredPlanOutput
         applyMode
         changes={[
-          { address: "aws_instance.a", action: "update", actions: ["update"], before: {}, after: {}, status: "refreshing" },
+          {
+            address: "aws_instance.a",
+            action: "update",
+            actions: ["update"],
+            before: {},
+            after: {},
+            status: "refreshing",
+          },
           { address: "null_resource.b", action: "create", actions: ["create"], status: "provisioning" },
           { address: "random_password.c", action: "create", actions: ["create"], status: "ephemeral-opening" },
         ]}

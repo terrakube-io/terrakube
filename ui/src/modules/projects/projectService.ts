@@ -153,7 +153,7 @@ async function deleteProject(organizationId: string, projectId: string): Promise
 }
 
 async function listProjectAccess(
-  organizationId: string,
+  _organizationId: string,
   projectId: string
 ): Promise<ApiResponse<ProjectAccessModel[]>> {
   const body = {
