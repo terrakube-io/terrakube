@@ -1,4 +1,4 @@
-import { Button, Form, FormProps } from "antd";
+import { Button, Form, type FormProps } from "antd";
 import clsx from "classnames";
 import "./SettingsForm.css";
 

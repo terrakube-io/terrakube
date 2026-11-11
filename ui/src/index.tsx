@@ -8,7 +8,6 @@ import { mgr } from "./config/authConfig";
 import { getUiRedirectUri } from "./config/basePath";
 import App from "./domain/Home/App";
 import "./index.css";
-import reportWebVitals from "./reportWebVitals";
 
 // Get the root element from the DOM
 const container = document.getElementById("root");
@@ -32,5 +31,3 @@ root.render(
     </AuthProvider>
   </React.StrictMode>
 );
-
-reportWebVitals();

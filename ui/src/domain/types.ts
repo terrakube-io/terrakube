@@ -103,6 +103,10 @@ export type TemplateAttributes = {
 export type Job = {
   id: string;
   attributes: JobAttributes;
+  relationships?: {
+    organization?: { data?: { id: string } };
+    workspace?: { data?: { id: string } };
+  };
 };
 
 export enum JobStatus {

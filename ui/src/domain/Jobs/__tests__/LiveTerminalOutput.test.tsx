@@ -57,9 +57,7 @@ describe("LiveTerminalOutput", () => {
   it("shows a waiting placeholder until the running stream sends something", () => {
     (useLogStream as jest.Mock).mockReturnValue({ text: "" });
 
-    render(
-      <LiveTerminalOutput jobId="1" organizationId="org-1" item={makeStep({ status: JobStatus.Running })} />
-    );
+    render(<LiveTerminalOutput jobId="1" organizationId="org-1" item={makeStep({ status: JobStatus.Running })} />);
 
     expect(screen.getByTestId("terminal")).toHaveTextContent("Waiting for output");
   });
@@ -67,9 +65,7 @@ describe("LiveTerminalOutput", () => {
   it("does not connect the stream for a non-running step", () => {
     (useLogStream as jest.Mock).mockReturnValue({ text: "" });
 
-    render(
-      <LiveTerminalOutput jobId="1" organizationId="org-1" item={makeStep({ status: JobStatus.Completed })} />
-    );
+    render(<LiveTerminalOutput jobId="1" organizationId="org-1" item={makeStep({ status: JobStatus.Completed })} />);
 
     expect(useLogStream).toHaveBeenCalledWith(expect.objectContaining({ enabled: false }));
   });
