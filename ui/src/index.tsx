@@ -3,10 +3,12 @@ import "./styles/variables.css";
 import "./styles/global.css";
 import React from "react";
 import { createRoot } from "react-dom/client";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider } from "react-oidc-context";
 import { mgr } from "./config/authConfig";
 import { getUiRedirectUri } from "./config/basePath";
 import App from "./domain/Home/App";
+import { queryClient } from "./modules/api/queryClient";
 import "./index.css";
 import reportWebVitals from "./reportWebVitals";
 
@@ -28,7 +30,9 @@ const onSigninCallback = (): void => {
 root.render(
   <React.StrictMode>
     <AuthProvider userManager={mgr} onSigninCallback={onSigninCallback}>
-      <App />
+      <QueryClientProvider client={queryClient}>
+        <App />
+      </QueryClientProvider>
     </AuthProvider>
   </React.StrictMode>
 );
