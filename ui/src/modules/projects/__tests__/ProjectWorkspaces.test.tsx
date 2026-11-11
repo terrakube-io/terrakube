@@ -129,7 +129,7 @@ describe("ProjectWorkspaces", () => {
     listWorkspacePage.mockResolvedValue(page([workspace()], 25));
     renderTab();
     await screen.findByText("network-production");
-    await userEvent.click(screen.getByTitle("2"));
+    await userEvent.click(screen.getByRole("button", { name: "Page 2" }));
     await waitFor(() => expect(lastRequest()).toEqual(expect.objectContaining({ after: 10, sort: "name_asc" })));
 
     await userEvent.click(screen.getByText("Last run"));
@@ -157,7 +157,7 @@ describe("ProjectWorkspaces", () => {
     renderTab();
     await screen.findByText("network-production");
 
-    await userEvent.click(screen.getByTitle("3"));
+    await userEvent.click(screen.getByRole("button", { name: "Page 3" }));
     await waitFor(() => expect(lastRequest()).toEqual(expect.objectContaining({ first: 10, after: 20 })));
   });
 
@@ -167,7 +167,7 @@ describe("ProjectWorkspaces", () => {
     await screen.findByText("network-production");
 
     listWorkspacePage.mockResolvedValueOnce(page([], 10));
-    await userEvent.click(screen.getByTitle("3"));
+    await userEvent.click(screen.getByRole("button", { name: "Page 3" }));
     await waitFor(() => expect(lastRequest()).toEqual(expect.objectContaining({ after: 0 })));
   });
 
@@ -196,7 +196,7 @@ describe("ProjectWorkspaces", () => {
     await screen.findByText("network-production");
 
     listWorkspacePage.mockResolvedValueOnce(failure("Failed", "Timed out"));
-    await userEvent.click(screen.getByTitle("2"));
+    await userEvent.click(screen.getByRole("button", { name: "Page 2" }));
 
     await waitFor(() => expect(message.error).toHaveBeenCalledWith("Timed out"));
     expect(screen.getByText("network-production")).toBeInTheDocument();
