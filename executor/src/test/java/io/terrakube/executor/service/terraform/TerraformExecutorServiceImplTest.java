@@ -40,6 +40,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Files;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -455,6 +456,25 @@ class TerraformExecutorServiceImplTest {
         assertTrue(outputOf(result).contains("GitHub may be rate limiting"), outputOf(result));
         assertTrue(outputOf(result).contains("CustomTofuReleasesUrl"), outputOf(result));
         verify(terraformClient, never()).init(any(TerraformProcessData.class), any(Consumer.class), any());
+    }
+
+    @Test
+    void jsonClientsKeepTheConfiguredReleasesUrlsAndDownloadTimeouts() {
+        TerraformExecutorServiceImpl subject = subject();
+        when(terraformClient.getTerraformReleasesUrl()).thenReturn("https://mirror.example/terraform/index.json");
+        when(terraformClient.getTofuReleasesUrl()).thenReturn("https://mirror.example/tofu/index.json");
+        when(terraformClient.getDownloadResponseTimeout()).thenReturn(Duration.ofSeconds(30));
+        when(terraformClient.getReleasesDownloadTimeout()).thenReturn(Duration.ofMinutes(1));
+        when(terraformClient.getBinaryDownloadTimeout()).thenReturn(Duration.ofMinutes(5));
+
+        for (TerraformClient client : List.of(subject.buildJsonEnabledPlanClient(),
+                subject.buildJsonEnabledApplyClient(), subject.buildJsonEnabledDestroyClient())) {
+            assertEquals("https://mirror.example/terraform/index.json", client.getTerraformReleasesUrl());
+            assertEquals("https://mirror.example/tofu/index.json", client.getTofuReleasesUrl());
+            assertEquals(Duration.ofSeconds(30), client.getDownloadResponseTimeout());
+            assertEquals(Duration.ofMinutes(1), client.getReleasesDownloadTimeout());
+            assertEquals(Duration.ofMinutes(5), client.getBinaryDownloadTimeout());
+        }
     }
 
     @Test
