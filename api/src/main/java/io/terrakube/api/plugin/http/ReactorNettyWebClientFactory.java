@@ -17,7 +17,7 @@ import java.util.concurrent.TimeUnit;
 public final class ReactorNettyWebClientFactory {
 
     public static final Duration DEFAULT_RESPONSE_TIMEOUT = Duration.ofSeconds(30);
-    private static final int CONNECT_TIMEOUT_MILLIS = 10_000;
+    public static final Duration DEFAULT_CONNECT_TIMEOUT = Duration.ofSeconds(10);
     // GitHub release/redirect responses may carry large Content-Security-Policy headers
     // exceeding Reactor Netty's default 8 KiB header size limit (#3773).
     public static final int MAX_RESPONSE_HEADER_SIZE = 32 * 1024;
@@ -30,22 +30,26 @@ public final class ReactorNettyWebClientFactory {
     }
 
     public static ReactorClientHttpConnector connector(Duration responseTimeout) {
-        return new ReactorClientHttpConnector(httpClient(responseTimeout));
+        return new ReactorClientHttpConnector(httpClient(DEFAULT_CONNECT_TIMEOUT, responseTimeout));
+    }
+
+    public static ReactorClientHttpConnector connector(Duration connectTimeout, Duration responseTimeout) {
+        return new ReactorClientHttpConnector(httpClient(connectTimeout, responseTimeout));
     }
 
     public static ReactorClientHttpConnector redirectingConnector(Duration responseTimeout) {
-        return new ReactorClientHttpConnector(httpClient(responseTimeout).followRedirect(true));
+        return new ReactorClientHttpConnector(httpClient(DEFAULT_CONNECT_TIMEOUT, responseTimeout).followRedirect(true));
     }
 
     public static ReactorClientHttpConnector compressedConnector(Duration responseTimeout) {
-        return new ReactorClientHttpConnector(httpClient(responseTimeout).compress(true));
+        return new ReactorClientHttpConnector(httpClient(DEFAULT_CONNECT_TIMEOUT, responseTimeout).compress(true));
     }
 
-    private static HttpClient httpClient(Duration responseTimeout) {
+    private static HttpClient httpClient(Duration connectTimeout, Duration responseTimeout) {
         return HttpClient.create()
                 .httpResponseDecoder(spec -> spec.maxHeaderSize(MAX_RESPONSE_HEADER_SIZE))
                 .proxyWithSystemProperties()
-                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, CONNECT_TIMEOUT_MILLIS)
+                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, (int) connectTimeout.toMillis())
                 .responseTimeout(responseTimeout)
                 .doOnConnected(connection -> connection
                         .addHandlerLast(new ReadTimeoutHandler(responseTimeout.toMillis(), TimeUnit.MILLISECONDS))

@@ -1,18 +1,23 @@
 package io.terrakube.api.plugin.token.dynamic;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.jsonwebtoken.Jwts;
 import lombok.extern.slf4j.Slf4j;
+import reactor.core.Exceptions;
 import org.apache.commons.io.FileUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.client.RestTemplate;
+import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
+import io.terrakube.api.plugin.http.ReactorNettyWebClientFactory;
 import io.terrakube.api.rs.job.Job;
 
 import java.io.BufferedReader;
@@ -22,9 +27,12 @@ import java.nio.charset.StandardCharsets;
 import java.security.KeyFactory;
 import java.security.PrivateKey;
 import java.security.spec.PKCS8EncodedKeySpec;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 @Slf4j
 @Service
@@ -48,15 +56,28 @@ public class DynamicCredentialsService {
     @Value("${io.terrakube.dynamic.credentials.ttl}")
     int dynamicCredentialTtl;
 
+    @Value("${io.terrakube.dynamic.credentials.vault.connect-timeout-seconds:3}")
+    int vaultConnectTimeoutSeconds;
+
+    @Value("${io.terrakube.dynamic.credentials.vault.read-timeout-seconds:10}")
+    int vaultReadTimeoutSeconds;
+
+    @Value("${io.terrakube.dynamic.credentials.vault.deadline-seconds:20}")
+    int vaultDeadlineSeconds;
+
+    private static final int VAULT_MAX_ATTEMPTS = 2;
+
     @Autowired
     ObjectMapper objectMapper;
+
+    @Autowired
+    WebClient.Builder webClientBuilder;
 
 
     @Transactional
     public HashMap<String, String> generateDynamicCredentialsAzure(Job job, HashMap<String, String> workspaceEnvVariables) {
         String jwtToken = generateJwt(job, workspaceEnvVariables.get("WORKLOAD_IDENTITY_AUDIENCE_AZURE"));
 
-        log.debug("ARM_OIDC_TOKEN: {}", jwtToken);
         workspaceEnvVariables.put("ARM_OIDC_TOKEN", jwtToken);
 
         return workspaceEnvVariables;
@@ -65,45 +86,132 @@ public class DynamicCredentialsService {
     @Transactional
     public HashMap<String, String> generateDynamicCredentialsVault(Job job, HashMap<String, String> workspaceEnvVariables) {
         String jwtToken = generateJwt(job, workspaceEnvVariables.get("WORKLOAD_IDENTITY_VAULT_AUDIENCE"));
+        if (jwtToken.isEmpty()) {
+            throw new DynamicCredentialsException("Vault dynamic credentials: could not generate the workload identity JWT, check the dynamic credentials key configuration");
+        }
 
         String vaultAddress = workspaceEnvVariables.get("VAULT_ADDR");
         String vaultRole = workspaceEnvVariables.get("WORKLOAD_IDENTITY_VAULT_ROLE");
-        String vaultToken = "";
-        // Work with vault jwt path
-        String vaultJwtPath;
-        if (workspaceEnvVariables.containsKey("WORKLOAD_IDENTITY_VAULT_AUTH_PATH")) {
-            vaultJwtPath = workspaceEnvVariables.get("WORKLOAD_IDENTITY_VAULT_AUTH_PATH");
-        } else {
-            vaultJwtPath = "jwt";
+        if (vaultAddress == null || vaultAddress.isBlank()) {
+            throw new DynamicCredentialsException("Vault dynamic credentials: VAULT_ADDR is not set");
+        }
+        if (vaultRole == null || vaultRole.isBlank()) {
+            throw new DynamicCredentialsException("Vault dynamic credentials: WORKLOAD_IDENTITY_VAULT_ROLE is not set");
+        }
+        String vaultJwtPath = workspaceEnvVariables.getOrDefault("WORKLOAD_IDENTITY_VAULT_AUTH_PATH", "jwt");
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        // Find if vault have namespace then add special header to request
+        if (workspaceEnvVariables.containsKey("VAULT_NAMESPACE")) {
+            headers.add("X-Vault-Namespace", workspaceEnvVariables.get("VAULT_NAMESPACE"));
         }
 
+        String jsonPayload;
         try {
-            RestTemplate restTemplate = new RestTemplate();
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
-            // Find if vault have namespace then add special header to request
-            if (workspaceEnvVariables.containsKey("VAULT_NAMESPACE")) {
-                headers.add("X-Vault-Namespace", workspaceEnvVariables.get("VAULT_NAMESPACE"));
-            }
-            
-            String jsonPayload = String.format("{\"role\":\"%s\",\"jwt\":\"%s\"}", vaultRole, jwtToken);
-
-            HttpEntity<String> request = new HttpEntity<>(jsonPayload, headers);
-            String url = String.format("%s/v1/auth/%s/login",vaultAddress, vaultJwtPath);
-            String vaultResponse = restTemplate.postForObject(url, request, String.class);
-
-            log.debug("Vault Response: {}", vaultResponse);
-            JsonNode rootNode = objectMapper.readTree(vaultResponse);
-            vaultToken = rootNode.get("auth").get("client_token").asText();
-        } catch (Exception e) {
-            log.error("Error processing vault token", e);
+            jsonPayload = objectMapper.writeValueAsString(Map.of("role", vaultRole, "jwt", jwtToken));
+        } catch (JsonProcessingException e) {
+            throw new DynamicCredentialsException("Vault dynamic credentials: could not build the login request", e);
         }
+        String url = String.format("%s/v1/auth/%s/login", vaultAddress, vaultJwtPath);
 
-        log.debug("TERRAKUBE_VAULT_TOKEN: {}", jwtToken);
-        log.debug("VAULT_TOKEN: {}", vaultToken);
+        String vaultToken = loginToVault(url, headers, jsonPayload);
         workspaceEnvVariables.put("VAULT_TOKEN", vaultToken);
 
         return workspaceEnvVariables;
+    }
+
+    // Everything here is bounded by vaultDeadlineSeconds in total. A connect or read timeout is
+    // per socket operation, so on their own they do not stop a slow responder from holding the
+    // caller (the scheduler holds the job execution lock while this runs). The deadline is a
+    // Reactor timeout, so when it expires the subscription is cancelled and the channel closed,
+    // there is no abandoned thread left blocked on the socket. Transient failures (I/O errors,
+    // 5xx) are retried inside the deadline; a 4xx is Vault saying no and is not. Nothing from
+    // the request or response (JWT, client token, body) is logged or put in the exception message.
+    private String loginToVault(String url, HttpHeaders headers, String jsonPayload) {
+        WebClient webClient = webClientBuilder
+                .clone()
+                .clientConnector(ReactorNettyWebClientFactory.connector(
+                        Duration.ofSeconds(vaultConnectTimeoutSeconds), Duration.ofSeconds(vaultReadTimeoutSeconds)))
+                .build();
+        long deadlineNanos = System.nanoTime() + TimeUnit.SECONDS.toNanos(vaultDeadlineSeconds);
+        DynamicCredentialsException lastFailure = null;
+        for (int attempt = 1; attempt <= VAULT_MAX_ATTEMPTS; attempt++) {
+            long remainingMillis = TimeUnit.NANOSECONDS.toMillis(deadlineNanos - System.nanoTime());
+            if (remainingMillis <= 0) {
+                break;
+            }
+            try {
+                ResponseEntity<String> response = webClient.post()
+                        .uri(url)
+                        .headers(h -> h.addAll(headers))
+                        .bodyValue(jsonPayload)
+                        .retrieve()
+                        .toEntity(String.class)
+                        .timeout(Duration.ofMillis(remainingMillis))
+                        .block();
+                return extractVaultToken(response);
+            } catch (DynamicCredentialsException failure) {
+                throw failure;
+            } catch (RuntimeException e) {
+                Throwable cause = Exceptions.unwrap(e);
+                if (cause instanceof InterruptedException) {
+                    Thread.currentThread().interrupt();
+                    throw new DynamicCredentialsException("Vault dynamic credentials: interrupted while waiting for Vault", cause);
+                }
+                if (cause instanceof TimeoutException) {
+                    lastFailure = new DynamicCredentialsException(String.format(
+                            "Vault dynamic credentials: no response from Vault within %d seconds", vaultDeadlineSeconds));
+                    break;
+                }
+                if (cause instanceof WebClientResponseException http && !http.getStatusCode().is5xxServerError()) {
+                    throw new DynamicCredentialsException(String.format(
+                            "Vault dynamic credentials: Vault rejected the login with HTTP %d, check the role, audience and auth path",
+                            http.getStatusCode().value()));
+                }
+                lastFailure = new DynamicCredentialsException(String.format(
+                        "Vault dynamic credentials: Vault login failed (%s)", describe(cause)));
+                log.warn("Vault login attempt {} of {} failed: {}", attempt, VAULT_MAX_ATTEMPTS, describe(cause));
+            }
+        }
+        throw lastFailure != null ? lastFailure : new DynamicCredentialsException(String.format(
+                "Vault dynamic credentials: no response from Vault within %d seconds", vaultDeadlineSeconds));
+    }
+
+    private String extractVaultToken(ResponseEntity<String> response) {
+        if (response == null) {
+            throw new DynamicCredentialsException("Vault dynamic credentials: Vault returned an empty response");
+        }
+        // Redirects are not followed, so a 3xx is Vault (or something in front of it) not
+        // answering the login and must not be read as an empty or malformed body.
+        HttpStatusCode status = response.getStatusCode();
+        if (!status.is2xxSuccessful()) {
+            throw new DynamicCredentialsException(String.format(
+                    "Vault dynamic credentials: Vault answered the login with HTTP %d, check VAULT_ADDR and the auth path",
+                    status.value()));
+        }
+        String vaultResponse = response.getBody();
+        if (vaultResponse == null || vaultResponse.isBlank()) {
+            throw new DynamicCredentialsException("Vault dynamic credentials: Vault returned an empty response");
+        }
+        try {
+            JsonNode token = objectMapper.readTree(vaultResponse).path("auth").path("client_token");
+            if (token.isTextual() && !token.asText().isBlank()) {
+                return token.asText();
+            }
+        } catch (JsonProcessingException e) {
+            throw new DynamicCredentialsException("Vault dynamic credentials: Vault returned a response that is not valid JSON");
+        }
+        throw new DynamicCredentialsException("Vault dynamic credentials: Vault response does not contain auth.client_token");
+    }
+
+    // Class name and HTTP status only, never getMessage(): a WebClientResponseException message
+    // carries the response body.
+    private static String describe(Throwable cause) {
+        if (cause instanceof WebClientResponseException http) {
+            return "HTTP " + http.getStatusCode().value();
+        }
+        return cause.getClass().getSimpleName();
     }
 
     private String generateJwt(Job job, String tokenAudience) {
@@ -160,8 +268,6 @@ public class DynamicCredentialsService {
 
         String awsWebIdentityToken = generateJwt(job, workspaceEnvVariables.get("WORKLOAD_IDENTITY_AUDIENCE_AWS"), extraClaims);
 
-        log.debug("TERRAKUBE_AWS_CREDENTIALS_FILE: {}", awsWebIdentityToken);
-
         workspaceEnvVariables.put("TERRAKUBE_AWS_CREDENTIALS_FILE", awsWebIdentityToken);
         workspaceEnvVariables.put("AWS_ROLE_ARN", workspaceEnvVariables.get("WORKLOAD_IDENTITY_ROLE_AWS"));
         // AWS_WEB_IDENTITY_TOKEN_FILE is set by the executor once it knows the absolute
@@ -201,9 +307,6 @@ public class DynamicCredentialsService {
         String serviceAccountEmail = workspaceEnvVariables.get("WORKLOAD_IDENTITY_SERVICE_ACCOUNT_EMAIL");
 
         googleCredentialConfigFile = String.format(googleCredentialConfigFile, audience, serviceAccountEmail);
-
-        log.debug("TERRAKUBE_GCP_CREDENTIALS_FILE: {}", googleCredentialsFile);
-        log.debug("TERRAKUBE_GCP_CREDENTIALS_CONFIG_FILE: {}", googleCredentialConfigFile);
 
         workspaceEnvVariables.put("TERRAKUBE_GCP_CREDENTIALS_FILE", googleCredentialsFile);
         workspaceEnvVariables.put("TERRAKUBE_GCP_CREDENTIALS_CONFIG_FILE", googleCredentialConfigFile);
