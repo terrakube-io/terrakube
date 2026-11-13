@@ -33,8 +33,8 @@ import io.terrakube.api.rs.job.JobStatus;
 public class GitLabWebhookServiceTest {
 
     private GitLabWebhookService newService() {
-        return new GitLabWebhookService(new ObjectMapper(), "localhost", "http://localhost",
-                WebClient.builder(), 30, 25);
+        return new GitLabWebhookService(new ObjectMapper(), "localhost", "",
+                "http://localhost", WebClient.builder(), 30, 25);
     }
 
     @Test
