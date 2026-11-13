@@ -1,6 +1,7 @@
 package io.terrakube.api.plugin.scheduler.inactive;
 
 import io.terrakube.api.plugin.vcs.provider.azdevops.AzDevOpsWebhookService;
+import io.terrakube.api.plugin.scheduler.ExecutionLease;
 import io.terrakube.api.plugin.scheduler.JobStatusChangeService;
 import io.terrakube.api.plugin.vcs.provider.gitlab.GitLabWebhookService;
 import io.terrakube.api.rs.vcs.Vcs;
@@ -37,7 +38,6 @@ import static io.terrakube.api.plugin.scheduler.ScheduleJobService.PREFIX_JOB_CO
 @AllArgsConstructor
 public class InactiveJobs implements org.quartz.Job {
 
-    private static final String EXECUTION_LOCK_PREFIX = "job-execution-lock:";
     private static final Duration EXECUTION_LOCK_TTL = Duration.ofSeconds(90);
 
     private final GitLabWebhookService gitLabWebhookService;
@@ -69,7 +69,8 @@ public class InactiveJobs implements org.quartz.Job {
 
             // The same per-job lock ScheduleJob and the reconciliation sweep take: a run that is being
             // dispatched or reconciled right now is not torn down under them.
-            if (!acquireExecutionLock(job.getId())) {
+            Optional<ExecutionLease> lease = ExecutionLease.acquire(redisTemplate, job.getId(), EXECUTION_LOCK_TTL, Duration.ZERO);
+            if (lease.isEmpty()) {
                 log.info("Job {} is being processed by another worker, it is checked again on the next pass", job.getId());
                 continue;
             }
@@ -79,7 +80,7 @@ public class InactiveJobs implements org.quartz.Job {
             } catch (Exception e) {
                 log.error("Failed to close inactive job {}", job.getId(), e);
             } finally {
-                releaseExecutionLock(job.getId());
+                lease.get().release();
             }
         }
     }
@@ -131,26 +132,6 @@ public class InactiveJobs implements org.quartz.Job {
         }
 
         jobExecutionContext.getScheduler().deleteJob(new JobKey(PREFIX_JOB_CONTEXT + job.getId()));
-    }
-
-    // Fails closed like ScheduleJob.acquireExecutionLock: an unreachable Redis means "skip this job this pass".
-    private boolean acquireExecutionLock(int jobId) {
-        try {
-            Boolean acquired = redisTemplate.opsForValue()
-                    .setIfAbsent(EXECUTION_LOCK_PREFIX + jobId, "1", EXECUTION_LOCK_TTL);
-            return Boolean.TRUE.equals(acquired);
-        } catch (DataAccessException e) {
-            log.warn("Could not reach Redis for the execution lock on job {}: {}", jobId, e.getMessage());
-            return false;
-        }
-    }
-
-    private void releaseExecutionLock(int jobId) {
-        try {
-            redisTemplate.delete(EXECUTION_LOCK_PREFIX + jobId);
-        } catch (DataAccessException e) {
-            log.warn("Could not release the execution lock on job {} (its TTL clears it): {}", jobId, e.getMessage());
-        }
     }
 
     private void failPendingSteps(Job job, JobStatus finalStatus) {

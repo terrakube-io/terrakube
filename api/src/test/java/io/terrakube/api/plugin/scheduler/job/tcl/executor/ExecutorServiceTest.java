@@ -67,6 +67,8 @@ class ExecutorServiceTest {
     @Mock private ReferenceRepository referenceRepository;
     @Mock private StepRepository stepRepository;
     @Mock private PersistentExecutorService persistentExecutorService;
+    @Mock private io.terrakube.api.plugin.token.dynamic.DynamicCredentialsService dynamicCredentialsService;
+    @Mock private io.terrakube.api.plugin.scheduler.ExecutionLease lease;
     @Spy private JobVariablesService jobVariablesService = new JobVariablesService(encryption());
 
     private static io.terrakube.api.plugin.security.encryption.EncryptionService encryption() {
@@ -688,5 +690,95 @@ class ExecutorServiceTest {
         assertThatThrownBy(() -> executorService.execute(job, "plan-step", flow(FlowType.terraformPlan)))
                 .isInstanceOf(ExecutionException.class)
                 .hasMessageNotContaining("private-invalid-ciphertext");
+    }
+
+    private void dispatchableJob() {
+        Organization organization = new Organization();
+        organization.setId(UUID.randomUUID());
+        organization.setName("test");
+        job.setOrganization(organization);
+        workspace.setId(UUID.randomUUID());
+        workspace.setOrganization(organization);
+        workspace.setBranch("main");
+        workspace.setSource("https://github.com/example/repo.git");
+        workspace.setTerraformVersion("1.14.0");
+        workspace.setIacType("terraform");
+    }
+
+    @org.junit.jupiter.api.AfterEach
+    void clearLease() {
+        io.terrakube.api.plugin.scheduler.ExecutionLeaseContext.clear();
+    }
+
+    @Test
+    void aFailedVaultLoginStopsTheDispatchBeforeAnythingIsSubmitted() throws Exception {
+        dispatchableJob();
+        Variable enable = new Variable();
+        enable.setKey("ENABLE_DYNAMIC_CREDENTIALS_VAULT");
+        enable.setValue("true");
+        enable.setCategory(Category.ENV);
+        when(variableRepository.findByWorkspace(workspace)).thenReturn(Optional.of(List.of(enable)));
+        when(dynamicCredentialsService.generateDynamicCredentialsVault(org.mockito.ArgumentMatchers.eq(job), org.mockito.ArgumentMatchers.any()))
+                .thenThrow(new io.terrakube.api.plugin.token.dynamic.DynamicCredentialsException(
+                        "Vault dynamic credentials: Vault rejected the login with HTTP 403"));
+
+        assertThatThrownBy(() -> executorService.execute(job, "plan-step", flow(FlowType.terraformPlan)))
+                .isInstanceOf(ExecutionException.class)
+                .hasMessageContaining("Vault rejected the login with HTTP 403");
+
+        verify(persistentExecutorService, never()).send(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void nothingIsSubmittedWhenTheWorkerLostItsExecutionLockOrTheStepIsAlreadyClaimed() throws Exception {
+        dispatchableJob();
+        io.terrakube.api.plugin.scheduler.ExecutionLeaseContext.bind(lease);
+        when(lease.claimDispatch("plan-step")).thenReturn(false);
+
+        assertThatThrownBy(() -> executorService.execute(job, "plan-step", flow(FlowType.terraformPlan)))
+                .isInstanceOf(DispatchNotClaimedException.class);
+
+        verify(persistentExecutorService, never()).send(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+        verify(lease, never()).releaseDispatchClaim(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void aClaimedStepIsSubmittedOnceAndKeepsItsClaim() throws Exception {
+        dispatchableJob();
+        io.terrakube.api.plugin.scheduler.ExecutionLeaseContext.bind(lease);
+        when(lease.claimDispatch("plan-step")).thenReturn(true);
+
+        executorService.execute(job, "plan-step", flow(FlowType.terraformPlan));
+
+        verify(persistentExecutorService, org.mockito.Mockito.times(1)).send(org.mockito.ArgumentMatchers.eq(job), org.mockito.ArgumentMatchers.any());
+        verify(lease, never()).releaseDispatchClaim(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void theClaimIsReleasedOnlyWhenTheExecutorWasNotReached() throws Exception {
+        dispatchableJob();
+        io.terrakube.api.plugin.scheduler.ExecutionLeaseContext.bind(lease);
+        when(lease.claimDispatch("plan-step")).thenReturn(true);
+        org.mockito.Mockito.doThrow(new ExecutorUnavailableException("no ready executor"))
+                .when(persistentExecutorService).send(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+
+        assertThatThrownBy(() -> executorService.execute(job, "plan-step", flow(FlowType.terraformPlan)))
+                .isInstanceOf(ExecutorUnavailableException.class);
+
+        verify(lease).releaseDispatchClaim("plan-step");
+    }
+
+    @Test
+    void theClaimIsKeptWhenTheOutcomeOfTheSubmissionIsUnknown() throws Exception {
+        dispatchableJob();
+        io.terrakube.api.plugin.scheduler.ExecutionLeaseContext.bind(lease);
+        when(lease.claimDispatch("plan-step")).thenReturn(true);
+        org.mockito.Mockito.doThrow(new ExecutionException("executor answered 500"))
+                .when(persistentExecutorService).send(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+
+        assertThatThrownBy(() -> executorService.execute(job, "plan-step", flow(FlowType.terraformPlan)))
+                .isInstanceOf(ExecutionException.class);
+
+        verify(lease, never()).releaseDispatchClaim(org.mockito.ArgumentMatchers.any());
     }
 }
