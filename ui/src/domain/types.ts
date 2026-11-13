@@ -169,6 +169,8 @@ export const formatJobVia = (via?: JobVia | string): string => {
 };
 
 export type JobAttributes = {
+  planDurationMs?: number | null;
+  applyDurationMs?: number | null;
   status: JobStatus;
   via: JobVia;
   output: string;
@@ -190,6 +192,8 @@ export type JobAttributes = {
 export type StepDeliveryState = "ACKED" | "SPOOLED" | "RECOVERED" | "EXPIRED" | "NOT_DURABLE";
 
 export type JobStep = {
+  executionDurationMs?: number | null;
+  executionPhase?: "plan" | "apply" | null;
   id: string;
   name: string;
   stepNumber: number;
@@ -203,6 +207,8 @@ export type JobStep = {
   deliveryState?: StepDeliveryState;
 };
 export type FlatJob = {
+  planDurationMs?: number | null;
+  applyDurationMs?: number | null;
   id: string;
   title: string;
   status: JobStatus;

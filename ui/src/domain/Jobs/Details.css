@@ -10,6 +10,25 @@
   min-height: 120px;
 }
 
+.run-panel-extra {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px 32px;
+  min-width: 290px;
+}
+
+.run-panel-execution {
+  display: flex;
+  flex-direction: column;
+  min-width: 90px;
+  font-variant-numeric: tabular-nums;
+}
+
+.run-panel-execution .ant-typography {
+  font-size: 12px;
+}
+
 .run-step-notice {
   margin-bottom: 12px;
 }
@@ -265,6 +284,10 @@
 }
 
 @media (max-width: 575.98px) {
+  .run-panel-extra {
+    min-width: 0;
+  }
+
   .ant-collapse.run-panel > .ant-collapse-item > .ant-collapse-header {
     flex-wrap: wrap;
     padding: 12px;

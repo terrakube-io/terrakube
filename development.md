@@ -6,6 +6,18 @@ Use the [Dev Container guide](.devcontainer/README.md) for macOS, Linux,
 Windows, and WSL. It is the supported contributor workflow and provides the
 debugger, local services, and browser URLs.
 
+### Run execution durations
+
+Run details show **Execution** in each step header. Neither command execution
+durations nor total elapsed durations are displayed in the run list.
+The executor uses a monotonic clock around the Terraform/OpenTofu command
+invocation and completion, including failed commands and state-lock waits.
+Queueing, agent availability, setup, init, hooks, and approval waits are excluded.
+Destroy commands count as apply execution. Unstarted/skipped phases and older runs without
+recorded timings show an em dash, not a duration inferred from audit timestamps.
+This requires the API schema migration and an updated executor; an older API
+continues accepting completion updates without the new timing attributes.
+
 ## GitHub Codespaces
 
 Codespaces uses the same Dev Container configuration when a local container

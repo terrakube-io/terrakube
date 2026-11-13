@@ -61,6 +61,7 @@ import {
   normalizeUITemplates,
 } from "./structuredPlan";
 import { relativeTime } from "@/modules/utils/dates";
+import { formatExecutionDuration } from "./executionDuration";
 import { PolicyChecksOutput } from "./PolicyChecksOutput";
 import { PolicyEvaluationContext } from "../types";
 import "./runTokens.css";
@@ -371,17 +372,24 @@ export const DetailsJob = ({ jobId, workspaceName, canApprove = false }: Props) 
       return null;
     }
 
-    if (!getStepStructuredData(item).hasStructuredView) {
-      return null;
-    }
-
     // guard so a click inside this toggle never reaches the Collapse header's own click-to-toggle handler.
     return (
-      <div onClick={(event) => event.stopPropagation()}>
-        <Radio.Group onChange={onChange} value={uiType} size="small">
-          <Radio.Button value="structured">Structured</Radio.Button>
-          <Radio.Button value="console">Console</Radio.Button>
-        </Radio.Group>
+      <div
+        className="run-panel-extra"
+        role="presentation"
+        onClick={(event) => event.stopPropagation()}
+        onKeyDown={(event) => event.stopPropagation()}
+      >
+        <div className="run-panel-execution" aria-label="Command execution duration">
+          <Typography.Text type="secondary">Execution</Typography.Text>
+          <span>{formatExecutionDuration(item.executionDurationMs)}</span>
+        </div>
+        {getStepStructuredData(item).hasStructuredView && (
+          <Radio.Group onChange={onChange} value={uiType} size="small">
+            <Radio.Button value="structured">Structured</Radio.Button>
+            <Radio.Button value="console">Console</Radio.Button>
+          </Radio.Group>
+        )}
       </div>
     );
   };
@@ -507,6 +515,8 @@ export const DetailsJob = ({ jobId, workspaceName, canApprove = false }: Props) 
           status: stepItem.attributes.status,
           output: stepItem.attributes.output,
           name: stepItem.attributes.name,
+          executionDurationMs: stepItem.attributes.executionDurationMs,
+          executionPhase: stepItem.attributes.executionPhase,
           outputLog:
             incompleteVariableGuard != null && isIncompleteVariableGuardStep(stepItem.attributes.name)
               ? incompleteVariableGuard.rawMessage
@@ -587,6 +597,8 @@ export const DetailsJob = ({ jobId, workspaceName, canApprove = false }: Props) 
                 ...step,
                 status: entry.attributes.status,
                 deliveryState: parseDeliveryState(entry.attributes.deliveryState),
+                executionDurationMs: entry.attributes.executionDurationMs,
+                executionPhase: entry.attributes.executionPhase,
               }
             : step;
         })
@@ -1094,7 +1106,7 @@ export const DetailsJob = ({ jobId, workspaceName, canApprove = false }: Props) 
                 key: "2",
                 label: renderStepLabel(item),
                 collapsible: isCollapsible ? undefined : "disabled",
-                extra: isCollapsible ? renderStepExtra(item) : undefined,
+                extra: renderStepExtra(item),
                 children: isCollapsible ? renderStepContent(item) : undefined,
               },
             ]}
