@@ -11,6 +11,7 @@ import io.terrakube.api.plugin.workspace.WorkspaceJobStatusService;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.DispatchRetryableException;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutionException;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutorService;
+import io.terrakube.api.plugin.scheduler.job.tcl.executor.DispatchNotClaimedException;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutorUnavailableException;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.Flow;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.FlowType;
@@ -56,6 +57,10 @@ import org.springframework.stereotype.Component;
 import java.text.ParseException;
 import java.time.Duration;
 import java.util.*;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BooleanSupplier;
@@ -67,7 +72,7 @@ import static io.terrakube.api.plugin.scheduler.ScheduleJobService.PREFIX_JOB_CO
 // ScheduleJobService.createJobContextNow mints a brand-new, uniquely-suffixed JobDetail on every
 // call (used by JobManageHook on every job update, plus ScheduleJobService.wakeQueueHead,
 // which ExecutorAvailabilityListener also uses), so a job's long-lived 30s recurring trigger can easily
-// overlap one or more of these one-shot triggers. The EXECUTION_LOCK_PREFIX Redis lock in
+// overlap one or more of these one-shot triggers. The Redis execution lock (ExecutionLease) in
 // runExecution is what actually guarantees only one worker processes a given job id at a time.
 @DisallowConcurrentExecution
 @AllArgsConstructor
@@ -91,11 +96,21 @@ public class ScheduleJob implements org.quartz.Job {
     // doRunExecution runs with no single transaction wrapping it (see execute()) - every write it
     // makes is its own already-committed Spring Data JPA call by the time it returns, so by the
     // time this lock releases, everything doRunExecution wrote is already durably visible to
-    // whichever worker acquires the lock next. TTL comfortably covers the slowest thing
-    // execute() does (PersistentExecutorService's connect+response timeout, 10s + 60s), so an
-    // orphaned lock (e.g. a pod crash mid-run) self-heals well before the next 30s retry needs it.
-    private static final String EXECUTION_LOCK_PREFIX = "job-execution-lock:";
+    // whichever worker acquires the lock next. The lock is owned by a token, extended every
+    // EXECUTION_LOCK_RENEW_INTERVAL while the work runs and released only by that token (see
+    // ExecutionLease), so a slow run cannot lose it to another worker and an expired holder cannot
+    // delete its successor's. The TTL only has to outlive a few missed renewals: an orphaned lock
+    // (e.g. a pod crash mid-run) still self-heals well before the next 30s retry needs it.
     private static final Duration EXECUTION_LOCK_TTL = Duration.ofSeconds(90);
+    private static final Duration EXECUTION_LOCK_RENEW_INTERVAL = Duration.ofSeconds(30);
+    // How long a step stays claimed after it was handed to an executor. Longer than the lock on
+    // purpose: it is what stops a second worker submitting the same step once the lock is gone.
+    private static final Duration DISPATCH_CLAIM_TTL = Duration.ofMinutes(5);
+    private static final ScheduledExecutorService LOCK_RENEWAL = Executors.newSingleThreadScheduledExecutor(runnable -> {
+        Thread thread = new Thread(runnable, "execution-lock-renewal");
+        thread.setDaemon(true);
+        return thread;
+    });
 
     JobRepository jobRepository;
 
@@ -168,7 +183,7 @@ public class ScheduleJob implements org.quartz.Job {
 
             boolean shouldDeschedule;
             try {
-                // No transaction wraps this call - see the EXECUTION_LOCK_PREFIX comment above and
+                // No transaction wraps this call - see the execution lock comment above and
                 // this class's top-of-file comment for why that's safe for the execution lock's
                 // invariant. Every jobRepository/stepRepository/workspaceRepository.save() call
                 // doRunExecution (or something it calls) makes now runs, and commits, on its own.
@@ -202,14 +217,24 @@ public class ScheduleJob implements org.quartz.Job {
     }
 
     private boolean withExecutionLock(int jobId, BooleanSupplier work) {
-        if (!acquireExecutionLock(jobId)) {
+        Optional<ExecutionLease> acquired = ExecutionLease.acquire(redisTemplate, jobId, EXECUTION_LOCK_TTL, DISPATCH_CLAIM_TTL);
+        if (acquired.isEmpty()) {
             log.info("Job {} is already being processed by another worker, skipping this run", jobId);
             return false;
         }
+        ExecutionLease lease = acquired.get();
+        // The work below can legitimately outlast the TTL (credential preparation, a slow executor
+        // answer). Keep extending the lock while this worker owns it, so it can only expire if the
+        // worker is gone or Redis is down, and then the lease is marked lost and nothing dispatches.
+        ScheduledFuture<?> renewal = LOCK_RENEWAL.scheduleAtFixedRate(lease::renew,
+                EXECUTION_LOCK_RENEW_INTERVAL.toMillis(), EXECUTION_LOCK_RENEW_INTERVAL.toMillis(), TimeUnit.MILLISECONDS);
+        ExecutionLeaseContext.bind(lease);
         try {
             return work.getAsBoolean();
         } finally {
-            releaseExecutionLock(jobId);
+            ExecutionLeaseContext.clear();
+            renewal.cancel(false);
+            lease.release();
         }
     }
 
@@ -562,29 +587,6 @@ public class ScheduleJob implements org.quartz.Job {
         deleteOldJobs(job);
     }
 
-    // Fails closed: if Redis itself is unreachable, treat it the same as losing the lock race
-    // rather than running unprotected. A duplicate/overlapping run is worse than a job waiting
-    // out a Redis blip for its next 30s retry.
-    private boolean acquireExecutionLock(int jobId) {
-        try {
-            Boolean acquired = redisTemplate.opsForValue()
-                    .setIfAbsent(EXECUTION_LOCK_PREFIX + jobId, "1", EXECUTION_LOCK_TTL);
-            return Boolean.TRUE.equals(acquired);
-        } catch (DataAccessException e) {
-            log.warn("Could not reach Redis to acquire execution lock for Job {}, will retry: {}", jobId, e.getMessage());
-            return false;
-        }
-    }
-
-    private void releaseExecutionLock(int jobId) {
-        try {
-            redisTemplate.delete(EXECUTION_LOCK_PREFIX + jobId);
-        } catch (DataAccessException e) {
-            // The lock's TTL (EXECUTION_LOCK_TTL) self-heals this; nothing else to do here.
-            log.warn("Could not reach Redis to release execution lock for Job {}: {}", jobId, e.getMessage());
-        }
-    }
-
     // Shared by executePendingJob and executeApprovedJobs (which previously duplicated this
     // dispatch block verbatim). Returns whether the job's Quartz trigger should be descheduled:
     // true on a dispatch that reached a terminal outcome (queued successfully, or failed for
@@ -603,6 +605,9 @@ public class ScheduleJob implements org.quartz.Job {
             executorService.execute(job, stepId, flow);
             onDispatchSucceeded(job);
             scheduleJobService.wakeQueueHead();
+        } catch (DispatchNotClaimedException e) {
+            log.warn("Job {} Step {} was not dispatched, will retry: {}", job.getId(), stepId, e.getMessage());
+            return false;
         } catch (ExecutorUnavailableException e) {
             log.warn("No executor available for Job {} Step {}, will retry: {}", job.getId(), stepId, e.getMessage());
             return false;
