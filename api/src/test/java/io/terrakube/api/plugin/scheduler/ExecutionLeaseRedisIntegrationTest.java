@@ -105,6 +105,16 @@ class ExecutionLeaseRedisIntegrationTest {
     }
 
     @Test
+    void renewingAfterTheOwnReleaseIsNotALostLock() {
+        ExecutionLease lease = acquire(190).orElseThrow();
+        lease.release();
+
+        assertThat(lease.renew()).isFalse();
+        assertThat(lease.isLost()).isFalse();
+        assertThat(redisTemplate.hasKey("job-execution-lock:190")).isFalse();
+    }
+
+    @Test
     void renewingAfterTheLockWasTakenOverFailsAndMarksTheLeaseLost() throws Exception {
         ExecutionLease slow = acquire(103).orElseThrow();
         waitForExpiry();

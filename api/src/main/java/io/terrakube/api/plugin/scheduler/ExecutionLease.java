@@ -59,6 +59,7 @@ public class ExecutionLease {
     private final Duration lockTtl;
     private final Duration claimTtl;
     private final AtomicBoolean lost = new AtomicBoolean(false);
+    private final AtomicBoolean released = new AtomicBoolean(false);
 
     private ExecutionLease(RedisTemplate<String, Object> redisTemplate, int jobId, Duration lockTtl, Duration claimTtl) {
         this.redisTemplate = redisTemplate;
@@ -81,13 +82,17 @@ public class ExecutionLease {
         }
     }
 
-    /** Extends the lock if this worker still owns it. Marks the lease lost when it does not. */
+    /**
+     * Extends the lock if this worker still owns it. Marks the lease lost when it does not, unless
+     * the worker released it itself: a renewal already running when the work finished can reach
+     * Redis after {@link #release()} deleted the key, and that is a normal end, not a lost lock.
+     */
     public boolean renew() {
-        if (lost.get()) {
+        if (lost.get() || released.get()) {
             return false;
         }
         boolean owned = runScript(renewScript(lockTtl), List.of(LOCK_PREFIX + jobId), token);
-        if (!owned) {
+        if (!owned && !released.get()) {
             lost.set(true);
             log.error("Job {} lost its execution lock before this worker finished; it will not dispatch", jobId);
         }
@@ -120,6 +125,7 @@ public class ExecutionLease {
     }
 
     public void release() {
+        released.set(true);
         runScript(RELEASE_SCRIPT, List.of(LOCK_PREFIX + jobId), token);
     }
 
