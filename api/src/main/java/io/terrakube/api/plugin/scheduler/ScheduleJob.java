@@ -433,6 +433,7 @@ public class ScheduleJob implements org.quartz.Job {
                         job.setApprovalTeam(flow.get().getTeam());
                         jobRepository.save(job);
                         jobNotificationTrigger.notifyStatusChanged(job);
+                        prCommentService.postPlanAwaitingApproval(job);
                         log.info("Waiting Approval for Job {} Step Id {}", job.getId(), stepId);
                     } else {
                         log.info("Auto Approving is enabled for Job {} Step Id {}", job.getId(), stepId);
