@@ -42,6 +42,7 @@ type UpdateTeamForm = {
   role?: string;
   planJob?: boolean;
   approveJob?: boolean;
+  destroyJob?: boolean;
 };
 
 export const EditTeam = ({ mode, setMode, teamId, loadTeams, onDeleteTeam, managePermission = true }: Props) => {
@@ -87,6 +88,8 @@ export const EditTeam = ({ mode, setMode, teamId, loadTeams, onDeleteTeam, manag
           role: attrs.role || "custom",
           planJob: attrs.planJob ?? attrs.manageJob,
           approveJob: attrs.approveJob ?? attrs.manageJob,
+          // Undefined for a Terrakube that does not have the permission, so it is not sent back.
+          destroyJob: attrs.destroyJob,
         });
         setError(null);
         if (name) {
@@ -123,6 +126,9 @@ export const EditTeam = ({ mode, setMode, teamId, loadTeams, onDeleteTeam, manag
           role: values.role || "custom",
           planJob: values.planJob,
           approveJob: values.approveJob,
+          // The default is on, so only an unticked box is sent. It keeps creating a team working against a Terrakube
+          // that does not have the permission yet.
+          ...(values.destroyJob === false ? { destroyJob: false } : {}),
         },
       },
     };
@@ -165,6 +171,7 @@ export const EditTeam = ({ mode, setMode, teamId, loadTeams, onDeleteTeam, manag
           role: values.role || "custom",
           planJob: values.planJob,
           approveJob: values.approveJob,
+          ...(values.destroyJob === undefined ? {} : { destroyJob: values.destroyJob }),
         },
       },
     };

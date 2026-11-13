@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { v7 as uuid } from "uuid";
 import axiosInstance, { getErrorMessage } from "../../../config/axiosConfig";
+import { configuredBranch, isPlanOnlyTemplate } from "../../Jobs/planOnlyTemplate";
 import { Template, VcsType, WebhookEvent, WebhookEventPathType, Workspace } from "../../types";
 import { atomicHeader } from "../Workspaces";
 import DeleteConfirmationModal from "@/components/modals/DeleteConfirmationModal/DeleteConfirmationModal";
@@ -277,6 +278,28 @@ export const WorkspaceWebhook = ({
     }
   };
 
+  // A workspace that restricts apply to its configured branch does not start a run that can change infrastructure
+  // from a pull request, or from a push to another branch. A release is not affected.
+  const restrictApply = Boolean(workspace.attributes?.restrictApplyToConfiguredBranch);
+  const workspaceBranch = configuredBranch(workspace.attributes?.branch);
+
+  const restrictionNotice = (trigger: Trigger): string | null => {
+    if (!restrictApply || !trigger.template || trigger.event === "release") {
+      return null;
+    }
+    const template = orgTemplates.find((t) => t.id === trigger.template);
+    if (!template || isPlanOnlyTemplate(template.attributes?.tcl)) {
+      return null;
+    }
+    if (trigger.event === "pull_request") {
+      return `This workspace only applies from ${workspaceBranch}, so a pull request can only run a plan-only template. This trigger will not start a run. Choose a plan-only template.`;
+    }
+    const otherBranches = trigger.anyBranch || trigger.branches.some((b) => configuredBranch(b) !== workspaceBranch);
+    return otherBranches
+      ? `This workspace only applies from ${workspaceBranch}. A push to any other branch this trigger matches will not start a run with this template.`
+      : null;
+  };
+
   const templateName = (id?: string) => orgTemplates.find((t) => t.id === id)?.attributes?.name;
 
   const branchText = (trigger: Trigger) => (trigger.anyBranch ? "any branch" : trigger.branches.join(", "));
@@ -544,8 +567,13 @@ export const WorkspaceWebhook = ({
                                         dependencies={[["events", name, "anyBranch"]]}
                                         extra={
                                           <>
-                                            Regexes matching the whole {isRelease ? "tag" : "branch name"}:{" "}
-                                            <code>main</code> only matches main, <code>release/.*</code> matches every
+                                            Regexes matching the whole{" "}
+                                            {isRelease
+                                              ? "tag"
+                                              : trigger.event === "pull_request"
+                                                ? "PR source branch name"
+                                                : "branch name"}
+                                            : <code>main</code> only matches main, <code>release/.*</code> matches every
                                             release branch. Enter or comma adds another.
                                           </>
                                         }
@@ -689,6 +717,9 @@ export const WorkspaceWebhook = ({
                                           }))}
                                         />
                                       </Form.Item>
+                                      {restrictionNotice(trigger) && (
+                                        <Alert type="warning" showIcon title={restrictionNotice(trigger)} />
+                                      )}
                                     </div>
                                     <div className="webhook-column">
                                       {trigger.event === "pull_request" && (
@@ -721,10 +752,14 @@ export const WorkspaceWebhook = ({
                                               <>
                                                 Comment <code>terrakube apply</code> on the pull request to apply this
                                                 workspace. Needs the plan on pull requests.
+                                                {restrictApply &&
+                                                  ` Not available while this workspace only applies from ${workspaceBranch}: merge the pull request to apply it.`}
                                               </>
                                             }
                                           >
-                                            <Checkbox disabled={!manageWorkspace || !trigger.prWorkflowEnabled}>
+                                            <Checkbox
+                                              disabled={!manageWorkspace || !trigger.prWorkflowEnabled || restrictApply}
+                                            >
                                               Allow apply from a pull request comment
                                             </Checkbox>
                                           </Form.Item>

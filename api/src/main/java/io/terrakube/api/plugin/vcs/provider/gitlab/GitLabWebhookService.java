@@ -46,6 +46,8 @@ import reactor.core.publisher.Mono;
 @Slf4j
 public class GitLabWebhookService extends WebhookServiceBase {
 
+    private static final String FIELD_TARGET_BRANCH = "target_branch";
+
     private ObjectMapper objectMapper;
     private String hostname;
     private WebClient.Builder webClientBuilder;
@@ -161,6 +163,7 @@ public class GitLabWebhookService extends WebhookServiceBase {
                 case "update":
                     log.info("New merge request {}: {}", action, mrModel.getObjectAttributes().getTitle());
                     result.setBranch(mrModel.getObjectAttributes().getSourceBranch());
+                    result.setBaseBranch(mrModel.getObjectAttributes().getTargetBranch());
                     result.setCreatedBy("system");
                     result.setPrNumber(mrModel.getObjectAttributes().getIid());
 
@@ -208,7 +211,7 @@ public class GitLabWebhookService extends WebhookServiceBase {
         if (!oldrev.isEmpty()) {
             return true;
         }
-        return rootNode.path("changes").has("target_branch");
+        return rootNode.path("changes").has(FIELD_TARGET_BRANCH);
     }
 
     private WebhookResult handleNoteEvent(WebhookResult result, String jsonPayload, Workspace workspace) {
@@ -237,7 +240,12 @@ public class GitLabWebhookService extends WebhookServiceBase {
             result.setCreatedBy(rootNode.path("user").path("username").asText());
 
             JsonNode mrNode = rootNode.path("merge_request");
+            if (mrNode.isMissingNode() || !mrNode.has("iid")) {
+                result.setValid(false);
+                return result;
+            }
             result.setBranch(mrNode.path("source_branch").asText());
+            result.setBaseBranch(mrNode.path(FIELD_TARGET_BRANCH).asText(null));
             result.setPrNumber(mrNode.path("iid").asInt());
 
             if (mrNode.has("last_commit")) {
@@ -910,6 +918,7 @@ public class GitLabWebhookService extends WebhookServiceBase {
 
             if ("open".equals(action) || "update".equals(action) || "reopen".equals(action)) {
                 result.setBranch(mrModel.getObjectAttributes().getSourceBranch());
+                result.setBaseBranch(mrModel.getObjectAttributes().getTargetBranch());
                 result.setCreatedBy("system");
                 result.setPrNumber(mrModel.getObjectAttributes().getIid());
                 if (mrModel.getObjectAttributes().getLastCommit() != null) {
@@ -951,7 +960,12 @@ public class GitLabWebhookService extends WebhookServiceBase {
         result.setCreatedBy(rootNode.path("user").path("username").asText());
 
         JsonNode mrNode = rootNode.path("merge_request");
+        if (mrNode.isMissingNode() || !mrNode.has("iid")) {
+            result.setValid(false);
+            return;
+        }
         result.setBranch(mrNode.path("source_branch").asText());
+        result.setBaseBranch(mrNode.path(FIELD_TARGET_BRANCH).asText(null));
         result.setPrNumber(mrNode.path("iid").asInt());
         if (mrNode.has("last_commit")) {
             result.setCommit(mrNode.path("last_commit").path("id").asText());

@@ -8,6 +8,8 @@ import io.terrakube.api.rs.federated.Federated;
 import io.terrakube.api.rs.federated.claim.FederatedClaim;
 import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.job.step.Step;
+import io.terrakube.api.rs.token.group.Group;
+import io.terrakube.api.rs.token.pat.Pat;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.security.core.AuthenticationException;
 import org.junit.jupiter.api.Test;
@@ -19,15 +21,20 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.AuthenticationServiceException;
 import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtDecoders;
+import org.springframework.security.oauth2.server.resource.authentication.BearerTokenAuthenticationToken;
 
+import java.time.Instant;
 import java.util.Base64;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -217,6 +224,7 @@ class DexAuthenticationManagerResolverTest {
                 .build();
 
         String token = createSignedToken("Terrakube", secret);
+        when(patRepository.findById(any(UUID.class))).thenReturn(java.util.Optional.of(new Pat()));
         AuthenticationManager manager = resolver.resolve(mockTokenRequest(token));
 
         assertThat(manager).isNotNull();
@@ -240,6 +248,7 @@ class DexAuthenticationManagerResolverTest {
                 .build();
 
         String token = createSignedToken("Terrakube", secret);
+        when(patRepository.findById(any(UUID.class))).thenReturn(java.util.Optional.of(new Pat()));
         AuthenticationManager manager = resolver.resolve(mockTokenRequest(token));
 
         assertThat(manager).isNotNull();
@@ -263,6 +272,7 @@ class DexAuthenticationManagerResolverTest {
                 .build();
 
         String token = createSignedToken("Terrakube", secret);
+        when(patRepository.findById(any(UUID.class))).thenReturn(java.util.Optional.of(new Pat()));
         AuthenticationManager manager = resolver.resolve(mockTokenRequest(token));
 
         assertThat(manager).isNotNull();
@@ -402,5 +412,152 @@ class DexAuthenticationManagerResolverTest {
         assertThat(manager).isNotNull();
         assertThatThrownBy(() -> manager.authenticate(new org.springframework.security.oauth2.server.resource.authentication.BearerTokenAuthenticationToken(token)))
                 .isInstanceOf(AuthenticationException.class);
+    }
+
+    private DexAuthenticationManagerResolver patResolver(String secret) {
+        return DexAuthenticationManagerResolver.builder()
+                .dexIssuerUri("https://dummy-dex-issuer")
+                .patJwtSecret(secret)
+                .internalJwtSecret(Base64.getUrlEncoder().encodeToString("internal-secret-internal-secret-x".getBytes()))
+                .patRepository(patRepository)
+                .teamTokenRepository(teamTokenRepository)
+                .federatedRepository(federatedRepository)
+                .build();
+    }
+
+    private String randomSecret() {
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(
+                org.apache.commons.lang3.RandomStringUtils.secure().nextAlphanumeric(32).getBytes());
+    }
+
+    @Test
+    void resolve_patToken_withoutJti_isRejected() {
+        String secret = randomSecret();
+        byte[] secretBytes = io.jsonwebtoken.io.Decoders.BASE64URL.decode(secret);
+        String token = io.jsonwebtoken.Jwts.builder()
+                .issuer("Terrakube")
+                .subject("Test Subject")
+                .claim("email", "test@terrakube.io")
+                .signWith(io.jsonwebtoken.security.Keys.hmacShaKeyFor(secretBytes))
+                .compact();
+
+        assertThatThrownBy(() -> patResolver(secret).resolve(mockTokenRequest(token)))
+                .isInstanceOf(BadCredentialsException.class);
+    }
+
+    @Test
+    void resolve_patToken_withNonUuidJti_isRejected() {
+        assertThatThrownBy(() -> patResolver(randomSecret()).resolve(
+                tokenRequest("{\"iss\":\"Terrakube\",\"jti\":\"not-a-uuid\"}")))
+                .isInstanceOf(BadCredentialsException.class);
+    }
+
+    @Test
+    void resolve_patToken_withUnknownJti_isRejected() {
+        when(patRepository.findById(any(UUID.class))).thenReturn(Optional.empty());
+        when(teamTokenRepository.findById(any(UUID.class))).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> patResolver(randomSecret()).resolve(
+                tokenRequest("{\"iss\":\"Terrakube\",\"jti\":\"" + UUID.randomUUID() + "\"}")))
+                .isInstanceOf(BadCredentialsException.class);
+    }
+
+    @Test
+    void resolve_patToken_revoked_isRejected() {
+        Pat pat = new Pat();
+        pat.setDeleted(true);
+        when(patRepository.findById(any(UUID.class))).thenReturn(Optional.of(pat));
+
+        assertThatThrownBy(() -> patResolver(randomSecret()).resolve(
+                tokenRequest("{\"iss\":\"Terrakube\",\"jti\":\"" + UUID.randomUUID() + "\"}")))
+                .isInstanceOf(BadCredentialsException.class);
+    }
+
+    @Test
+    void resolve_teamToken_active_authenticates() {
+        String secret = randomSecret();
+        when(patRepository.findById(any(UUID.class))).thenReturn(Optional.empty());
+        when(teamTokenRepository.findById(any(UUID.class))).thenReturn(Optional.of(new Group()));
+
+        String token = createSignedToken("Terrakube", secret);
+        var authResult = patResolver(secret).resolve(mockTokenRequest(token))
+                .authenticate(new BearerTokenAuthenticationToken(token));
+
+        assertThat(authResult.isAuthenticated()).isTrue();
+    }
+
+    @Test
+    void resolve_teamToken_revoked_isRejected() {
+        Group group = new Group();
+        group.setDeleted(true);
+        when(patRepository.findById(any(UUID.class))).thenReturn(Optional.empty());
+        when(teamTokenRepository.findById(any(UUID.class))).thenReturn(Optional.of(group));
+
+        assertThatThrownBy(() -> patResolver(randomSecret()).resolve(
+                tokenRequest("{\"iss\":\"Terrakube\",\"jti\":\"" + UUID.randomUUID() + "\"}")))
+                .isInstanceOf(BadCredentialsException.class);
+    }
+
+    private Jwt dexJwt(List<String> audiences) {
+        return Jwt.withTokenValue("dex-token")
+                .header("alg", "RS256")
+                .issuer("https://dummy-dex-issuer")
+                .audience(audiences)
+                .issuedAt(Instant.now())
+                .expiresAt(Instant.now().plusSeconds(60))
+                .subject("alice")
+                .claim("email", "alice@example.com")
+                .build();
+    }
+
+    private AuthenticationManager dexManagerWithAudiences(List<String> accepted, JwtDecoder decoder,
+                                                          MockedStatic<JwtDecoders> jwtDecoders) {
+        when(federatedRepository.findAllByIssuerUrlAndAudience(anyString(), anyString())).thenReturn(List.of());
+        jwtDecoders.when(() -> JwtDecoders.fromIssuerLocation("https://dummy-dex-issuer")).thenReturn(decoder);
+        return DexAuthenticationManagerResolver.builder()
+                .dexIssuerUri("https://dummy-dex-issuer")
+                .dexAudiences(accepted)
+                .patRepository(patRepository)
+                .teamTokenRepository(teamTokenRepository)
+                .federatedRepository(federatedRepository)
+                .build()
+                .resolve(dexTokenRequest());
+    }
+
+    @Test
+    void resolve_dexToken_withAcceptedAudience_authenticates() {
+        JwtDecoder decoder = mock(JwtDecoder.class);
+        when(decoder.decode("dex-token")).thenReturn(dexJwt(List.of("other", "terrakube-app")));
+
+        try (MockedStatic<JwtDecoders> jwtDecoders = Mockito.mockStatic(JwtDecoders.class)) {
+            AuthenticationManager manager = dexManagerWithAudiences(List.of("terrakube-app"), decoder, jwtDecoders);
+
+            assertThat(manager.authenticate(new BearerTokenAuthenticationToken("dex-token")).isAuthenticated()).isTrue();
+        }
+    }
+
+    @Test
+    void resolve_dexToken_forAnotherClient_isRejectedWhenAudienceValidationIsOn() {
+        JwtDecoder decoder = mock(JwtDecoder.class);
+        when(decoder.decode("dex-token")).thenReturn(dexJwt(List.of("other-client")));
+
+        try (MockedStatic<JwtDecoders> jwtDecoders = Mockito.mockStatic(JwtDecoders.class)) {
+            AuthenticationManager manager = dexManagerWithAudiences(List.of("terrakube-app"), decoder, jwtDecoders);
+
+            assertThatThrownBy(() -> manager.authenticate(new BearerTokenAuthenticationToken("dex-token")))
+                    .isInstanceOf(AuthenticationException.class);
+        }
+    }
+
+    @Test
+    void resolve_dexToken_forAnotherClient_isAcceptedWhenAudienceValidationIsOff() {
+        JwtDecoder decoder = mock(JwtDecoder.class);
+        when(decoder.decode("dex-token")).thenReturn(dexJwt(List.of("other-client")));
+
+        try (MockedStatic<JwtDecoders> jwtDecoders = Mockito.mockStatic(JwtDecoders.class)) {
+            AuthenticationManager manager = dexManagerWithAudiences(List.of(), decoder, jwtDecoders);
+
+            assertThat(manager.authenticate(new BearerTokenAuthenticationToken("dex-token")).isAuthenticated()).isTrue();
+        }
     }
 }

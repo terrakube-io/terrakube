@@ -536,6 +536,50 @@ public class SetupWorkspaceTest {
     }
 
     @Test
+    public void runsAReleaseTagThatIsOnTheRequiredBranch() throws Exception {
+        File sourceRepository = Files.createTempDirectory("terrakube-source").toFile();
+        try (Git sourceGit = Git.init().setDirectory(sourceRepository).call()) {
+            RevCommit released = commitFile(sourceGit, "main.tf", "released");
+            String main = sourceGit.getRepository().getBranch();
+            sourceGit.tag().setName("v1.0.0").call();
+            commitFile(sourceGit, "main.tf", "advanced");
+            TerraformJob job = localGitJob(sourceRepository, "v1.0.0");
+            job.setRequireCommitOnBranch(main);
+
+            File workspaceDir = standardSetupWorkspaceImpl(job).prepareWorkspace(job);
+
+            try (Git workspaceGit = Git.open(workspaceDir)) {
+                Assertions.assertEquals(released.getName(), workspaceGit.getRepository().resolve("HEAD").getName());
+            }
+        } finally {
+            FileUtils.deleteDirectory(sourceRepository);
+        }
+    }
+
+    @Test
+    public void refusesAReleaseTagThatIsNotOnTheRequiredBranch() throws Exception {
+        File sourceRepository = Files.createTempDirectory("terrakube-source").toFile();
+        try (Git sourceGit = Git.init().setDirectory(sourceRepository).call()) {
+            commitFile(sourceGit, "main.tf", "reviewed");
+            String main = sourceGit.getRepository().getBranch();
+            sourceGit.checkout().setCreateBranch(true).setName("feature").call();
+            commitFile(sourceGit, "main.tf", "unreviewed");
+            sourceGit.tag().setName("v2.0.0-rc1").call();
+            sourceGit.checkout().setName(main).call();
+            TerraformJob job = localGitJob(sourceRepository, "v2.0.0-rc1");
+            job.setRequireCommitOnBranch(main);
+
+            WorkspaceException e = Assertions.assertThrows(WorkspaceException.class,
+                    () -> standardSetupWorkspaceImpl(job).prepareWorkspace(job));
+
+            Assertions.assertTrue(e.getCause().getMessage().contains("is not on branch " + main),
+                    e.getCause().getMessage());
+        } finally {
+            FileUtils.deleteDirectory(sourceRepository);
+        }
+    }
+
+    @Test
     public void refusesWhenTheRequiredBranchWasNotFetched() throws Exception {
         TerraformJob job = successfulGitJob();
         job.setRequireCommitOnBranch("another-branch");

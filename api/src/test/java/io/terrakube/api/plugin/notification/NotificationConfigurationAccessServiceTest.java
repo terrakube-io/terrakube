@@ -1,11 +1,14 @@
 package io.terrakube.api.plugin.notification;
 
+import io.terrakube.api.plugin.security.federated.FederatedLookupService;
+import io.terrakube.api.plugin.security.groups.dex.DexGroupServiceImpl;
 import io.terrakube.api.plugin.security.rbac.RbacService;
 import io.terrakube.api.repository.NotificationConfigurationRepository;
 import io.terrakube.api.repository.OrganizationRepository;
 import io.terrakube.api.repository.TeamRepository;
 import io.terrakube.api.repository.WorkspaceRepository;
 import io.terrakube.api.rs.Organization;
+import io.terrakube.api.rs.federated.Federated;
 import io.terrakube.api.rs.notification.NotificationConfiguration;
 import io.terrakube.api.rs.project.Project;
 import io.terrakube.api.rs.project.access.ProjectAccess;
@@ -34,6 +37,7 @@ class NotificationConfigurationAccessServiceTest {
     OrganizationRepository organizationRepository;
     WorkspaceRepository workspaceRepository;
     RbacService rbacService;
+    FederatedLookupService federatedLookupService;
     NotificationConfigurationAccessService subject;
 
     final UUID orgId = UUID.randomUUID();
@@ -47,9 +51,11 @@ class NotificationConfigurationAccessServiceTest {
         organizationRepository = mock(OrganizationRepository.class);
         workspaceRepository = mock(WorkspaceRepository.class);
         rbacService = mock(RbacService.class);
+        federatedLookupService = mock(FederatedLookupService.class);
 
         subject = new NotificationConfigurationAccessService(teamRepository, notificationConfigurationRepository,
-                organizationRepository, workspaceRepository, rbacService);
+                organizationRepository, workspaceRepository, rbacService,
+                new DexGroupServiceImpl(null, null, null, federatedLookupService));
     }
 
     private JwtAuthenticationToken authWithClaims(Map<String, Object> claims) {
@@ -141,6 +147,28 @@ class NotificationConfigurationAccessServiceTest {
         JwtAuthenticationToken token = authWithClaims(Map.of("iss", "Terrakube", "groups", List.of("scoped-team")));
 
         assertThat(subject.hasManagePermission(token, configId.toString())).isTrue();
+    }
+
+    @Test
+    void hasManagePermission_federatedTokenIgnoresGroupsClaim() {
+        Workspace workspace = workspace();
+        Access limitedAccess = new Access();
+        limitedAccess.setName("scoped-team");
+        workspace.setAccess(List.of(limitedAccess));
+        when(notificationConfigurationRepository.findById(configId))
+                .thenReturn(Optional.of(workspaceScopedConfig(workspace)));
+        when(teamRepository.findAllByOrganizationIdAndNameIn(eq(orgId), any())).thenReturn(List.of());
+        when(rbacService.canManageWorkspace(limitedAccess)).thenReturn(true);
+        // The external identity provider decides the groups claim; the token acts as its credential only
+        Federated federated = new Federated();
+        federated.setName("ci-team");
+        when(federatedLookupService.findAllAuthorized(any())).thenReturn(List.of(federated));
+
+        JwtAuthenticationToken token = authWithClaims(Map.of(
+                "iss", "https://token.actions.githubusercontent.com",
+                "groups", List.of("scoped-team")));
+
+        assertThat(subject.hasManagePermission(token, configId.toString())).isFalse();
     }
 
     @Test

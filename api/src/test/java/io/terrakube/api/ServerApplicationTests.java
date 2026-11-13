@@ -137,7 +137,6 @@ class ServerApplicationTests {
         WireMock.configureFor("localhost", wireMockServer.port());
     }
 
-
     @AfterAll
     public void stopServer() {
         wireMockServer.stop();

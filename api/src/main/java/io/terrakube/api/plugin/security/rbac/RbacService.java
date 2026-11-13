@@ -48,6 +48,12 @@ public interface RbacService {
      */
     boolean canManageJob(Team team);
 
+    /**
+     * Whether the team may start a run that destroys with no approval in front of it, or auto-approve one. Never for
+     * plan and read, always for admin and write.
+     */
+    boolean canDestroyJob(Team team);
+
     // --- Workspace-level (Access) checks ---
 
     boolean canManageWorkspace(Access access);
@@ -60,6 +66,8 @@ public interface RbacService {
 
     boolean canManageJob(Access access);
 
+    boolean canDestroyJob(Access access);
+
     // --- Project-level (ProjectAccess) checks ---
 
     boolean canManageWorkspace(ProjectAccess access);
@@ -71,6 +79,8 @@ public interface RbacService {
     boolean canApproveJob(ProjectAccess access);
 
     boolean canManageJob(ProjectAccess access);
+
+    boolean canDestroyJob(ProjectAccess access);
 
     boolean canManageProject(ProjectAccess access);
 }

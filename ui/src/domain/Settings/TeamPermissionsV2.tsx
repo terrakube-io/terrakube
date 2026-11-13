@@ -16,6 +16,7 @@ type PermissionCategory = {
     name: string;
     label: string;
     help: string;
+    initialValue?: boolean;
   }[];
 };
 
@@ -33,6 +34,7 @@ const rolePermissionMatrix: Record<TeamRole, Record<string, boolean>> = {
     managePolicies: true,
     planJob: true,
     approveJob: true,
+    destroyJob: true,
   },
   write: {
     manageWorkspace: true,
@@ -46,6 +48,7 @@ const rolePermissionMatrix: Record<TeamRole, Record<string, boolean>> = {
     managePolicies: false,
     planJob: true,
     approveJob: true,
+    destroyJob: true,
   },
   plan: {
     manageWorkspace: false,
@@ -59,6 +62,7 @@ const rolePermissionMatrix: Record<TeamRole, Record<string, boolean>> = {
     managePolicies: false,
     planJob: true,
     approveJob: false,
+    destroyJob: false,
   },
   read: {
     manageWorkspace: false,
@@ -72,6 +76,7 @@ const rolePermissionMatrix: Record<TeamRole, Record<string, boolean>> = {
     managePolicies: false,
     planJob: false,
     approveJob: false,
+    destroyJob: false,
   },
   custom: {},
 };
@@ -87,12 +92,13 @@ export const teamRoles: Record<TeamRole, { label: string; color: string; descrip
   write: {
     label: "Write",
     color: "magenta",
-    description: "Can plan and apply runs, manage workspaces, and read and write state and variables.",
+    description: "Can plan, apply and destroy, manage workspaces, and read and write state and variables.",
   },
   plan: {
     label: "Plan",
     color: "blue",
-    description: "Can queue plans but not apply them; a Write or Admin member has to approve.",
+    description:
+      "Can queue plans, including a destroy that waits for an approval, but not apply; a Write or Admin member has to approve.",
   },
   read: {
     label: "Read",
@@ -115,6 +121,12 @@ const permissionCategories: PermissionCategory[] = [
         name: "approveJob",
         label: "Apply runs",
         help: "Approve and apply plans, which changes real infrastructure.",
+      },
+      {
+        name: "destroyJob",
+        label: "Destroy runs",
+        help: "Start a destroy that nobody has to approve first, auto-approve one, or approve a run that destroys. A destroy that waits for an approval can be queued without it.",
+        initialValue: true,
       },
     ],
   },
@@ -201,7 +213,13 @@ export const TeamPermissionsV2: React.FC<TeamPermissionsV2Props> = ({ managePerm
               // Preset roles show their permissions without registering the fields, so the
               // submitted payload stays role-only, as before.
               role === "custom" ? (
-                <Form.Item key={permission.name} name={permission.name} valuePropName="checked" extra={permission.help}>
+                <Form.Item
+                  key={permission.name}
+                  name={permission.name}
+                  valuePropName="checked"
+                  extra={permission.help}
+                  initialValue={permission.initialValue}
+                >
                   <Checkbox disabled={!managePermissions}>{permission.label}</Checkbox>
                 </Form.Item>
               ) : (

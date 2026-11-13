@@ -32,6 +32,7 @@ type AddTeamForm = {
   manageState?: boolean;
   planJob?: boolean;
   approveJob?: boolean;
+  destroyJob?: boolean;
 };
 
 type TeamOption = { id: string; name: string };
@@ -74,6 +75,7 @@ const PERMISSION_FIELDS: { key: keyof WorkspaceAccessPermissions; label: string;
   { key: "manageState", label: "Manage state", shortLabel: "State" },
   { key: "planJob", label: "Plan runs", shortLabel: "Plan" },
   { key: "approveJob", label: "Approve runs", shortLabel: "Approve" },
+  { key: "destroyJob", label: "Destroy runs", shortLabel: "Destroy" },
 ];
 
 function roleColor(role: string): string {
@@ -92,17 +94,18 @@ function effectivePermissions(record: WorkspaceAccessModel): WorkspaceAccessPerm
   switch (record.role) {
     case "admin":
     case "write":
-      return { manageWorkspace: true, manageState: true, planJob: true, approveJob: true };
+      return { manageWorkspace: true, manageState: true, planJob: true, approveJob: true, destroyJob: true };
     case "plan":
-      return { manageWorkspace: false, manageState: false, planJob: true, approveJob: false };
+      return { manageWorkspace: false, manageState: false, planJob: true, approveJob: false, destroyJob: false };
     case "read":
-      return { manageWorkspace: false, manageState: false, planJob: false, approveJob: false };
+      return { manageWorkspace: false, manageState: false, planJob: false, approveJob: false, destroyJob: false };
     default:
       return {
         manageWorkspace: record.manageWorkspace,
         manageState: record.manageState,
         planJob: record.planJob,
         approveJob: record.approveJob,
+        destroyJob: record.destroyJob,
       };
   }
 }
@@ -124,6 +127,7 @@ export const WorkspaceTeamAccess = ({ workspace, manageWorkspace }: Props) => {
     manageState: false,
     planJob: false,
     approveJob: false,
+    destroyJob: false,
   });
   const [savingRole, setSavingRole] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<WorkspaceAccessModel | null>(null);
@@ -177,6 +181,7 @@ export const WorkspaceTeamAccess = ({ workspace, manageWorkspace }: Props) => {
               manageState: !!values.manageState,
               planJob: !!values.planJob,
               approveJob: !!values.approveJob,
+              destroyJob: !!values.destroyJob,
             }
           : undefined;
       await workspaceAccessService.addWorkspaceAccess(orgid, workspaceId, values.teamName, values.role, permissions);

@@ -61,6 +61,116 @@ public class TclServiceTest {
         return template;
     }
 
+    private TclService.Destroys destroys(String yaml) {
+        UUID templateId = UUID.randomUUID();
+        doReturn(java.util.Optional.of(templateWithTcl(encodeYaml(yaml)))).when(templateRepository).findById(templateId);
+        return subject().templateDestroys(templateId.toString());
+    }
+
+    @Test
+    public void templateDestroys_aDestroyStepWithNothingBeforeItDestroysWithoutApproval() {
+        Assertions.assertEquals(TclService.Destroys.WITHOUT_APPROVAL,
+                destroys("flow:\n  - type: terraformDestroy\n    step: 100\n"));
+        Assertions.assertEquals(TclService.Destroys.WITHOUT_APPROVAL,
+                destroys("flow:\n  - type: terraformPlan\n    step: 100\n  - type: terraformDestroy\n    step: 200\n"));
+    }
+
+    @Test
+    public void templateDestroys_anApprovalBeforeTheDestroyGatesIt() {
+        Assertions.assertEquals(TclService.Destroys.AFTER_APPROVAL, destroys(
+                "flow:\n  - type: terraformPlan\n    step: 100\n  - type: approval\n    step: 150\n"
+                        + "  - type: terraformDestroy\n    step: 200\n"));
+        // The steps are ordered by their step number, not by where they are written.
+        Assertions.assertEquals(TclService.Destroys.AFTER_APPROVAL, destroys(
+                "flow:\n  - type: terraformDestroy\n    step: 200\n  - type: approval\n    step: 150\n"));
+    }
+
+    @Test
+    public void templateDestroys_anApplyAfterAPlanOfADestroyIsADestroy() {
+        // The built-in destroy template of the Terraform CLI.
+        Assertions.assertEquals(TclService.Destroys.AFTER_APPROVAL, destroys(
+                "flow:\n  - type: terraformPlanDestroy\n    step: 100\n  - type: approval\n    step: 150\n"
+                        + "  - type: terraformApply\n    step: 200\n"));
+        Assertions.assertEquals(TclService.Destroys.WITHOUT_APPROVAL, destroys(
+                "flow:\n  - type: terraformPlanDestroy\n    step: 100\n  - type: terraformApply\n    step: 200\n"));
+    }
+
+    @Test
+    public void templateDestroys_aPlanOrAnApplyAloneDoesNotDestroy() {
+        Assertions.assertEquals(TclService.Destroys.NO, destroys("flow:\n  - type: terraformPlanDestroy\n    step: 100\n"));
+        Assertions.assertEquals(TclService.Destroys.NO, destroys(
+                "flow:\n  - type: terraformPlan\n    step: 100\n  - type: approval\n    step: 150\n  - type: terraformApply\n    step: 200\n"));
+    }
+
+    private boolean appliesWithoutApproval(String yaml) {
+        UUID templateId = UUID.randomUUID();
+        doReturn(java.util.Optional.of(templateWithTcl(encodeYaml(yaml)))).when(templateRepository).findById(templateId);
+        return subject().appliesWithoutApproval(templateId.toString());
+    }
+
+    @Test
+    public void appliesWithoutApproval_isTrueOnlyForAnApplyWithNoApprovalInFrontOfIt() {
+        Assertions.assertTrue(appliesWithoutApproval(
+                "flow:\n  - type: terraformPlan\n    step: 100\n  - type: terraformApply\n    step: 200\n"));
+        Assertions.assertFalse(appliesWithoutApproval(
+                "flow:\n  - type: terraformPlan\n    step: 100\n  - type: approval\n    step: 150\n  - type: terraformApply\n    step: 200\n"));
+        // The steps are ordered by their step number, not by where they are written.
+        Assertions.assertFalse(appliesWithoutApproval(
+                "flow:\n  - type: terraformApply\n    step: 200\n  - type: approval\n    step: 150\n"));
+        Assertions.assertFalse(appliesWithoutApproval("flow:\n  - type: terraformPlan\n    step: 100\n"));
+    }
+
+    @Test
+    public void appliesWithoutApproval_anApplyOfADestroyPlanIsADestroyNotAnApply() {
+        Assertions.assertFalse(appliesWithoutApproval(
+                "flow:\n  - type: terraformPlanDestroy\n    step: 100\n  - type: terraformApply\n    step: 200\n"));
+        Assertions.assertFalse(appliesWithoutApproval("flow:\n  - type: terraformDestroy\n    step: 100\n"));
+    }
+
+    @Test
+    public void appliesWithoutApproval_failsClosedWhenTheTemplateCannotBeRead() {
+        Assertions.assertTrue(subject().appliesWithoutApproval("not-a-uuid"));
+        UUID missing = UUID.randomUUID();
+        doReturn(java.util.Optional.empty()).when(templateRepository).findById(missing);
+        Assertions.assertTrue(subject().appliesWithoutApproval(missing.toString()));
+        // A job a user creates without a template reference has no flow to run (Job.tcl is not exposed over the API).
+        Assertions.assertFalse(subject().appliesWithoutApproval(null));
+        Assertions.assertFalse(subject().appliesWithoutApproval(""));
+        Assertions.assertFalse(subject().appliesWithoutApproval("  "));
+    }
+
+    @Test
+    public void templateDestroys_failsClosedWhenTheTemplateCannotBeRead() {
+        Assertions.assertEquals(TclService.Destroys.WITHOUT_APPROVAL, subject().templateDestroys("not-a-uuid"));
+        UUID missing = UUID.randomUUID();
+        doReturn(java.util.Optional.empty()).when(templateRepository).findById(missing);
+        Assertions.assertEquals(TclService.Destroys.WITHOUT_APPROVAL, subject().templateDestroys(missing.toString()));
+        // A job a user creates without a template reference has no flow to run (Job.tcl is not exposed over the API).
+        Assertions.assertEquals(TclService.Destroys.NO, subject().templateDestroys(null));
+        Assertions.assertEquals(TclService.Destroys.NO, subject().templateDestroys(""));
+        Assertions.assertEquals(TclService.Destroys.NO, subject().templateDestroys("  "));
+    }
+
+    @Test
+    public void templateDestroys_anApprovalAnywhereBeforeTheDestroyGatesIt() {
+        // The approval pauses the whole job, and approving a job that destroys needs the destroy right (see
+        // JobApprovalHook), so an earlier approval is enough even when it came after an apply.
+        Assertions.assertEquals(TclService.Destroys.AFTER_APPROVAL, destroys(
+                "flow:\n  - type: terraformPlan\n    step: 100\n  - type: approval\n    step: 150\n"
+                        + "  - type: terraformApply\n    step: 200\n  - type: terraformDestroy\n    step: 300\n"));
+    }
+
+    @Test
+    public void templateDestroys_anApplyAfterAPlanOfADestroyStaysADestroyEvenAfterAnotherPlan() {
+        // The more cautious reading: it asks for the destroy right, it never asks for less.
+        Assertions.assertEquals(TclService.Destroys.WITHOUT_APPROVAL, destroys(
+                "flow:\n  - type: terraformPlanDestroy\n    step: 100\n  - type: terraformPlan\n    step: 150\n"
+                        + "  - type: terraformApply\n    step: 200\n"));
+        Assertions.assertFalse(appliesWithoutApproval(
+                "flow:\n  - type: terraformPlanDestroy\n    step: 100\n  - type: terraformPlan\n    step: 150\n"
+                        + "  - type: terraformApply\n    step: 200\n"));
+    }
+
     @Test
     public void isTemplatePlanOnly_withOnlyTerraformPlan_returnsTrue() {
         String yaml = """

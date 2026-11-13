@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                      http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <!--
+        Whether a team may start a run that destroys. Only read for the "custom" role: admin and write always can,
+        plan and read never can. It defaults to true, so every existing custom team keeps what it could do.
+    -->
+    <changeSet id="add-destroy-job-to-team" author="terrakube">
+        <addColumn tableName="team">
+            <column name="destroy_job" type="boolean" defaultValueBoolean="true">
+                <constraints nullable="false"/>
+            </column>
+        </addColumn>
+    </changeSet>
+
+    <changeSet id="add-destroy-job-to-access" author="terrakube">
+        <addColumn tableName="access">
+            <column name="destroy_job" type="boolean" defaultValueBoolean="true">
+                <constraints nullable="false"/>
+            </column>
+        </addColumn>
+    </changeSet>
+
+    <changeSet id="add-destroy-job-to-project-access" author="terrakube">
+        <addColumn tableName="project_access">
+            <column name="destroy_job" type="boolean" defaultValueBoolean="true">
+                <constraints nullable="false"/>
+            </column>
+        </addColumn>
+    </changeSet>
+</databaseChangeLog>

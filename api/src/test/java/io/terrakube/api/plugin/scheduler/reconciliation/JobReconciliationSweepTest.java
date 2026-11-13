@@ -30,6 +30,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -83,6 +84,7 @@ class JobReconciliationSweepTest {
         lenient().doReturn(List.of()).when(workspaceRepository).findWithStaleActiveJobStatus(any(), any());
         lenient().doReturn(true).when(valueOperations).setIfAbsent(any(), any(), any(java.time.Duration.class));
         lenient().doReturn(true).when(redisTemplate).delete(anyString());
+        lenient().doReturn(1L).when(redisTemplate).execute(any(org.springframework.data.redis.core.script.RedisScript.class), anyList(), any(Object[].class));
         // Default to "Redis has been comfortably up for a while" so existing tests aren't
         // affected by the warm-up check; the tests specifically about it override this.
         lenient().doReturn(uptimeProperties(3600)).when(redisTemplate).execute(any(RedisCallback.class));
@@ -159,15 +161,17 @@ class JobReconciliationSweepTest {
         Step step = step(JobStatus.pending);
         doReturn(List.of(orphaned)).when(jobRepository)
                 .findAllByStatusInOrderByIdAsc(JobReconciliationSweep.ACTIVE_STATUSES);
-        doReturn(orphaned).when(jobRepository).save(orphaned);
+        doReturn(1).when(jobRepository).updateStatusByIdAndStatusIn(eq(JobStatus.cancelled), eq(18), any());
         doReturn(List.of(step)).when(stepRepository).findByJobId(18);
         doReturn(step).when(stepRepository).save(step);
 
         subject().execute(null);
 
         verify(scheduleJobService, times(0)).createJobContext(any());
-        assertThat(orphaned.getStatus()).isEqualTo(JobStatus.cancelled);
-        verify(jobRepository, times(1)).save(orphaned);
+        // A bulk update, never a save of the entity: it has no workspace, so saving it would write a NULL workspace_id.
+        verify(jobRepository, times(1)).updateStatusByIdAndStatusIn(JobStatus.cancelled, 18,
+                JobReconciliationSweep.ACTIVE_STATUSES);
+        verify(jobRepository, times(0)).save(any());
         assertThat(step.getStatus()).isEqualTo(JobStatus.cancelled);
         verify(stepRepository, times(1)).save(step);
     }

@@ -62,6 +62,7 @@ class ReactorNettyWebClientFactoryTest {
     void connectorInstantiationsSucceed() {
         assertNotNull(ReactorNettyWebClientFactory.connector());
         assertNotNull(ReactorNettyWebClientFactory.connector(Duration.ofSeconds(10)));
+        assertNotNull(ReactorNettyWebClientFactory.connector(Duration.ofSeconds(3), Duration.ofSeconds(10)));
         assertNotNull(ReactorNettyWebClientFactory.redirectingConnector(Duration.ofSeconds(10)));
         assertNotNull(ReactorNettyWebClientFactory.compressedConnector(Duration.ofSeconds(10)));
     }

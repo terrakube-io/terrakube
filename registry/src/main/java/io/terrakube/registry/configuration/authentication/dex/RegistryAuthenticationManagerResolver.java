@@ -21,9 +21,12 @@ import org.springframework.security.authentication.AuthenticationManagerResolver
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.ProviderManager;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
+import org.springframework.security.oauth2.jwt.BadJwtException;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtDecoders;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationProvider;
 
 import javax.crypto.SecretKey;
@@ -40,6 +43,7 @@ public class RegistryAuthenticationManagerResolver implements AuthenticationMana
     private static final String jwtInternal = "TerrakubeInternal";
     private String internalSecret;
     private String issuerUri;
+    private List<String> dexAudiences;
     private String patSecret;
     private TerrakubeClient terrakubeClient;
 
@@ -89,6 +93,7 @@ public class RegistryAuthenticationManagerResolver implements AuthenticationMana
         List<String> audiences = extractClaimStrings(payloadMap, "aud");
 
         boolean federatedCredentialFound = false;
+        List<FederatedConfig> matched = new ArrayList<>();
         if (!tokenIssuer.isEmpty() && !audiences.isEmpty()
                 && !tokenIssuer.equals(jwtPat)
                 && !tokenIssuer.equals(jwtInternal)
@@ -100,13 +105,18 @@ public class RegistryAuthenticationManagerResolver implements AuthenticationMana
                 federatedCredentialFound |= !federatedConfigs.isEmpty();
                 for (FederatedConfig config : federatedConfigs) {
                     if (validateClaims(payloadMap, config.getClaims())) {
-                        log.debug("Federated authentication matched for issuer: {}", config.getIssuerUrl());
-                        return getProviderManagerCache().get(config.getIssuerUrl(), url ->
-                                new ProviderManager(new JwtAuthenticationProvider(jwtDecoderFactory.apply(url)))
-                        );
+                        matched.add(config);
                     }
                 }
             }
+        }
+
+        if (!matched.isEmpty()) {
+            String issuerUrl = matched.get(0).getIssuerUrl();
+            List<String> groups = matched.stream().map(FederatedConfig::getName).filter(Objects::nonNull).distinct().toList();
+            log.debug("Federated authentication matched for issuer {} as {}", issuerUrl, groups);
+            return getProviderManagerCache().get("federated " + issuerUrl + " " + groups,
+                    key -> federatedProviderManager(issuerUrl, groups));
         }
 
         if (federatedCredentialFound) {
@@ -125,10 +135,44 @@ public class RegistryAuthenticationManagerResolver implements AuthenticationMana
                 break;
             default:
                 providerManager = getProviderManagerCache().get(this.issuerUri,
-                        k -> new ProviderManager(new JwtAuthenticationProvider(jwtDecoderFactory.apply(this.issuerUri))));
+                        k -> new ProviderManager(new JwtAuthenticationProvider(getDexDecoder())));
                 break;
         }
         return providerManager;
+    }
+
+    // A federated token acts as its Federated credentials only: their names replace the groups claim
+    // of the external identity provider, which is not a Terrakube team membership. Email claims from
+    // the external identity provider are removed so downstream checks cannot match instanceOwner by email.
+    private ProviderManager federatedProviderManager(String issuerUrl, List<String> groups) {
+        JwtAuthenticationProvider provider = new JwtAuthenticationProvider(jwtDecoderFactory.apply(issuerUrl));
+        JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
+        provider.setJwtAuthenticationConverter(jwt -> converter.convert(Jwt.withTokenValue(jwt.getTokenValue())
+                .headers(headers -> headers.putAll(jwt.getHeaders()))
+                .claims(claims -> {
+                    claims.putAll(jwt.getClaims());
+                    claims.remove("email");
+                    claims.remove("email_verified");
+                    claims.put("groups", groups);
+                })
+                .build()));
+        return new ProviderManager(provider);
+    }
+
+    // An empty dexAudiences list keeps the previous behaviour (issuer and expiry checks only).
+    private JwtDecoder getDexDecoder() {
+        JwtDecoder issuerDecoder = jwtDecoderFactory.apply(this.issuerUri);
+        if (dexAudiences == null || dexAudiences.isEmpty()) {
+            return issuerDecoder;
+        }
+        return token -> {
+            Jwt jwt = issuerDecoder.decode(token);
+            List<String> tokenAudiences = jwt.getAudience();
+            if (tokenAudiences == null || tokenAudiences.stream().noneMatch(dexAudiences::contains)) {
+                throw new BadJwtException("Token audience is not accepted");
+            }
+            return jwt;
+        };
     }
 
     private List<FederatedConfig> fetchFederatedConfigs(String issuer, String audience) {
@@ -160,6 +204,7 @@ public class RegistryAuthenticationManagerResolver implements AuthenticationMana
     private FederatedConfig toFederatedConfig(Federated federated, Map<String, FederatedClaim> includedClaims) {
         FederatedConfig config = new FederatedConfig();
         if (federated.getAttributes() != null) {
+            config.setName(federated.getAttributes().getName());
             config.setIssuerUrl(federated.getAttributes().getIssuerUrl());
             config.setAudience(federated.getAttributes().getAudience());
         }
@@ -281,6 +326,7 @@ public class RegistryAuthenticationManagerResolver implements AuthenticationMana
     @AllArgsConstructor
     @NoArgsConstructor
     public static class FederatedConfig {
+        private String name;
         private String issuerUrl;
         private String audience;
         private Map<String, String> claims;

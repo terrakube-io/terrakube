@@ -74,6 +74,11 @@ public class Team {
     @Column(name = "approve_job")
     private boolean approveJob;
 
+    // Only read for the custom role. True by default so that a client that does not know the field keeps today's
+    // behaviour.
+    @Column(name = "destroy_job")
+    private boolean destroyJob = true;
+
     @Column(name = "role")
     private String role;
 

@@ -40,6 +40,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Files;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -51,6 +52,7 @@ import java.util.function.Consumer;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -91,6 +93,7 @@ class TerraformExecutorServiceImplTest {
 
     private TerraformExecutorServiceImpl subject() {
         when(terraformState.getBackendStateFile(anyString(), anyString(), any(File.class), anyString())).thenReturn("backend.tfvars");
+        when(terraformState.getBackendStateFile(anyString(), anyString(), any(), any(), any(File.class), anyString())).thenCallRealMethod();
         when(structuredOutputPersistenceQueue.awaitDrain(any())).thenReturn(true);
         when(planStructuredOutputService.publishFinalPlanSynchronous(any(), any(), any(), any())).thenReturn("ACKED");
         when(planStructuredOutputService.publishFinalPlanSynchronous(any(), any(), anyLong(), any(), any())).thenReturn("ACKED");
@@ -166,6 +169,91 @@ class TerraformExecutorServiceImplTest {
     }
 
     @Test
+    void planInjectsBackendEnvironmentVariablesIntoProcessDataAndJob() throws Exception {
+        TerraformExecutorServiceImpl subject = subject();
+        TerraformJob terraformJob = createJob();
+        Map<String, String> backendEnv = Map.of(
+                "TF_HTTP_USERNAME", "terraform",
+                "TF_HTTP_PASSWORD", "secret-scoped-token"
+        );
+        when(terraformState.getBackendEnvironmentVariables(
+                terraformJob.getOrganizationId(),
+                terraformJob.getWorkspaceId(),
+                terraformJob.getJobId(),
+                terraformJob.getStepId())).thenReturn(backendEnv);
+
+        when(terraformClient.init(
+                any(TerraformProcessData.class),
+                any(Consumer.class),
+                any())).thenReturn(CompletableFuture.completedFuture(false));
+
+        subject.plan(terraformJob, tempDir.toFile(), false);
+
+        assertEquals("terraform", terraformJob.getEnvironmentVariables().get("TF_HTTP_USERNAME"));
+        assertEquals("secret-scoped-token", terraformJob.getEnvironmentVariables().get("TF_HTTP_PASSWORD"));
+        verify(terraformClient).init(
+                argThat(data -> "terraform".equals(data.getTerraformEnvironmentVariables().get("TF_HTTP_USERNAME"))
+                        && "secret-scoped-token".equals(data.getTerraformEnvironmentVariables().get("TF_HTTP_PASSWORD"))),
+                any(), any());
+    }
+
+    @Test
+    void planLeavesOutBackendConfigArgumentsWhenTheBackendRejectsThem() throws Exception {
+        TerraformExecutorServiceImpl subject = subject();
+        TerraformJob terraformJob = createJob();
+        when(terraformState.rejectsBackendConfigArguments()).thenReturn(true);
+        String original = "-upgrade -backend-config=cfg.hcl -backend-config=role_arn=arn:secret";
+        terraformJob.getEnvironmentVariables().put("TF_CLI_ARGS_init", original);
+        terraformJob.getEnvironmentVariables().put("TF_CLI_ARGS_plan", "-backend-config=kept-on-plan");
+
+        when(terraformClient.init(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(false));
+
+        subject.plan(terraformJob, tempDir.toFile(), false);
+
+        verify(terraformClient).init(
+                argThat(data -> "-upgrade".equals(data.getTerraformEnvironmentVariables().get("TF_CLI_ARGS_init"))
+                        && "-backend-config=kept-on-plan".equals(data.getTerraformEnvironmentVariables().get("TF_CLI_ARGS_plan"))),
+                any(), any());
+        // the job keeps what the user set
+        assertEquals(original, terraformJob.getEnvironmentVariables().get("TF_CLI_ARGS_init"));
+    }
+
+    @Test
+    void planDropsTheInitArgumentsVariableWhenOnlyBackendConfigWasInIt() throws Exception {
+        TerraformExecutorServiceImpl subject = subject();
+        TerraformJob terraformJob = createJob();
+        when(terraformState.rejectsBackendConfigArguments()).thenReturn(true);
+        terraformJob.getEnvironmentVariables().put("TF_CLI_ARGS_init", "-backend-config=cfg.hcl");
+
+        when(terraformClient.init(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(false));
+
+        subject.plan(terraformJob, tempDir.toFile(), false);
+
+        verify(terraformClient).init(
+                argThat(data -> !data.getTerraformEnvironmentVariables().containsKey("TF_CLI_ARGS_init")),
+                any(), any());
+    }
+
+    @Test
+    void planKeepsBackendConfigArgumentsWhenTheBackendAcceptsThem() throws Exception {
+        TerraformExecutorServiceImpl subject = subject();
+        TerraformJob terraformJob = createJob();
+        String original = "-upgrade -backend-config=cfg.hcl";
+        terraformJob.getEnvironmentVariables().put("TF_CLI_ARGS_init", original);
+
+        when(terraformClient.init(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(false));
+
+        subject.plan(terraformJob, tempDir.toFile(), false);
+
+        verify(terraformClient).init(
+                argThat(data -> original.equals(data.getTerraformEnvironmentVariables().get("TF_CLI_ARGS_init"))),
+                any(), any());
+    }
+
+    @Test
     void planResolvesVersionConstraintBeforeBuildingTerraformProcesses() throws Exception {
         TerraformExecutorServiceImpl subject = subject();
         TerraformJob terraformJob = createJob();
@@ -205,6 +293,48 @@ class TerraformExecutorServiceImplTest {
 
         assertEquals("1.10.6", terraformJob.getTerraformVersion());
         verify(downloader, never()).resolveTerraformVersion(anyString());
+    }
+
+    @Test
+    void anExactTofuVersionStaysAsItIsWhenTheReleaseListPrefixesIt() throws Exception {
+        TerraformExecutorServiceImpl subject = subject();
+        JobVersionPinner pinner = Mockito.mock(JobVersionPinner.class);
+        subject.setJobVersionPinner(pinner);
+        TerraformJob terraformJob = createJob();
+        terraformJob.setTofu(true);
+        terraformJob.setTerraformVersion("1.12.5");
+
+        TerraformDownloader downloader = Mockito.mock(TerraformDownloader.class);
+        when(terraformClient.createTerraformDownloader()).thenReturn(downloader);
+        // The OpenTofu release list names versions with a "v" prefix
+        when(downloader.resolveTofuVersion("1.12.5")).thenReturn("v1.12.5");
+
+        subject.resolveTerraformVersion(terraformJob);
+
+        // BashEngine would otherwise put tofu/vv1.12.5 on the PATH of scripts
+        assertEquals("1.12.5", terraformJob.getTerraformVersion());
+        verify(pinner, never()).pin(anyString(), anyString(), anyString());
+    }
+
+    @Test
+    void pinsATofuConstraintAsAPlainVersionNumber() throws Exception {
+        TerraformExecutorServiceImpl subject = subject();
+        JobVersionPinner pinner = Mockito.mock(JobVersionPinner.class);
+        subject.setJobVersionPinner(pinner);
+        TerraformJob terraformJob = createJob();
+        terraformJob.setTofu(true);
+        terraformJob.setTerraformVersion("~> 1.12");
+
+        TerraformDownloader downloader = Mockito.mock(TerraformDownloader.class);
+        when(terraformClient.createTerraformDownloader()).thenReturn(downloader);
+        // The OpenTofu release list names versions with a "v" prefix
+        when(downloader.resolveTofuVersion("~> 1.12")).thenReturn("v1.12.5");
+
+        subject.resolveTerraformVersion(terraformJob);
+
+        // The API answers 400 to anything but a plain version number
+        assertEquals("1.12.5", terraformJob.getTerraformVersion());
+        verify(pinner).pin("org", "42", "1.12.5");
     }
 
     @Test
@@ -326,6 +456,25 @@ class TerraformExecutorServiceImplTest {
         assertTrue(outputOf(result).contains("GitHub may be rate limiting"), outputOf(result));
         assertTrue(outputOf(result).contains("CustomTofuReleasesUrl"), outputOf(result));
         verify(terraformClient, never()).init(any(TerraformProcessData.class), any(Consumer.class), any());
+    }
+
+    @Test
+    void jsonClientsKeepTheConfiguredReleasesUrlsAndDownloadTimeouts() {
+        TerraformExecutorServiceImpl subject = subject();
+        when(terraformClient.getTerraformReleasesUrl()).thenReturn("https://mirror.example/terraform/index.json");
+        when(terraformClient.getTofuReleasesUrl()).thenReturn("https://mirror.example/tofu/index.json");
+        when(terraformClient.getDownloadResponseTimeout()).thenReturn(Duration.ofSeconds(30));
+        when(terraformClient.getReleasesDownloadTimeout()).thenReturn(Duration.ofMinutes(1));
+        when(terraformClient.getBinaryDownloadTimeout()).thenReturn(Duration.ofMinutes(5));
+
+        for (TerraformClient client : List.of(subject.buildJsonEnabledPlanClient(),
+                subject.buildJsonEnabledApplyClient(), subject.buildJsonEnabledDestroyClient())) {
+            assertEquals("https://mirror.example/terraform/index.json", client.getTerraformReleasesUrl());
+            assertEquals("https://mirror.example/tofu/index.json", client.getTofuReleasesUrl());
+            assertEquals(Duration.ofSeconds(30), client.getDownloadResponseTimeout());
+            assertEquals(Duration.ofMinutes(1), client.getReleasesDownloadTimeout());
+            assertEquals(Duration.ofMinutes(5), client.getBinaryDownloadTimeout());
+        }
     }
 
     @Test
@@ -507,6 +656,52 @@ class TerraformExecutorServiceImplTest {
         assertTrue(result.isSuccessfulExecution());
         assertTrue(outputOf(result).contains("Outputs:"));
         assertTrue(outputOf(result).contains("foo = \"bar\""));
+    }
+
+    @Test
+    void handleTerraformStateChangePreservesBackendCredentialsForShowAndStatePull() throws Exception {
+        TerraformExecutorServiceImpl subject = subjectSpy();
+        TerraformJob terraformJob = createJob();
+        Map<String, String> backendEnv = Map.of(
+                "TF_HTTP_USERNAME", "terraform",
+                "TF_HTTP_PASSWORD", "secret-scoped-token"
+        );
+        when(terraformState.getBackendEnvironmentVariables(
+                terraformJob.getOrganizationId(),
+                terraformJob.getWorkspaceId(),
+                terraformJob.getJobId(),
+                terraformJob.getStepId())).thenReturn(backendEnv);
+
+        HashMap<String, String> jobEnv = new HashMap<>(backendEnv);
+        jobEnv.put("CUSTOM_WORKSPACE_VAR", "sensitive-value");
+        terraformJob.setEnvironmentVariables(jobEnv);
+
+        when(applyStructuredOutputService.seedFromPlan("org", "42")).thenReturn(List.of());
+        when(terraformClient.init(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(true));
+        when(terraformClient.apply(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(true));
+
+        ArgumentCaptor<TerraformProcessData> showCaptor = ArgumentCaptor.forClass(TerraformProcessData.class);
+        ArgumentCaptor<TerraformProcessData> statePullCaptor = ArgumentCaptor.forClass(TerraformProcessData.class);
+        when(terraformClient.show(showCaptor.capture(), any(Consumer.class), any(Consumer.class)))
+                .thenReturn(CompletableFuture.completedFuture(true));
+        when(terraformClient.statePull(statePullCaptor.capture(), any(Consumer.class), any(Consumer.class)))
+                .thenReturn(CompletableFuture.completedFuture(true));
+
+        subject.apply(terraformJob, tempDir.toFile());
+
+        TerraformProcessData showData = showCaptor.getValue();
+        assertNotNull(showData);
+        assertEquals("terraform", showData.getTerraformEnvironmentVariables().get("TF_HTTP_USERNAME"));
+        assertEquals("secret-scoped-token", showData.getTerraformEnvironmentVariables().get("TF_HTTP_PASSWORD"));
+        assertNull(showData.getTerraformEnvironmentVariables().get("CUSTOM_WORKSPACE_VAR"));
+
+        TerraformProcessData statePullData = statePullCaptor.getValue();
+        assertNotNull(statePullData);
+        assertEquals("terraform", statePullData.getTerraformEnvironmentVariables().get("TF_HTTP_USERNAME"));
+        assertEquals("secret-scoped-token", statePullData.getTerraformEnvironmentVariables().get("TF_HTTP_PASSWORD"));
+        assertNull(statePullData.getTerraformEnvironmentVariables().get("CUSTOM_WORKSPACE_VAR"));
     }
 
     // #3671 follow-up: the live Terraform state is already durably written by Terraform/OpenTofu's

@@ -1,19 +1,25 @@
 package io.terrakube.api.plugin.vcs;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import io.terrakube.api.plugin.execution.WorkspaceBranchPolicy;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
 
+import java.util.ArrayList;
 import java.util.List;
 
 @Getter
 @Setter
 @ToString
 @Slf4j
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class WebhookResult {
     private String workspaceId;
     private String branch;
+    private String baseBranch;
     private boolean isValid;
     private String event;
     private String createdBy;
@@ -29,6 +35,48 @@ public class WebhookResult {
     private String prFilesUrl;
     private String rawPayload;
     private String prDetailsUrl;
+
+    public WebhookResult copy() {
+        WebhookResult copy = new WebhookResult();
+        copy.workspaceId = this.workspaceId;
+        copy.branch = this.branch;
+        copy.baseBranch = this.baseBranch;
+        copy.isValid = this.isValid;
+        copy.event = this.event;
+        copy.createdBy = this.createdBy;
+        copy.via = this.via;
+        copy.fileChanges = this.fileChanges != null ? new ArrayList<>(this.fileChanges) : null;
+        copy.commit = this.commit;
+        copy.prNumber = this.prNumber;
+        copy.isRelease = this.isRelease;
+        copy.commentBody = this.commentBody;
+        copy.commentCommand = this.commentCommand;
+        copy.commentId = this.commentId;
+        copy.isPrComment = this.isPrComment;
+        copy.prFilesUrl = this.prFilesUrl;
+        copy.rawPayload = this.rawPayload;
+        copy.prDetailsUrl = this.prDetailsUrl;
+        return copy;
+    }
+
+    /** Whether this result is for a pull request or a comment command on one. */
+    @JsonIgnore
+    public boolean isPullRequestOrComment() {
+        if (isRelease) {
+            return false;
+        }
+        return isPrComment || prNumber != null
+                || "pull_request".equals(event) || "merge_request".equals(event);
+    }
+
+    /** What started the run, for the workspace branch policy. Derived from the other fields, so not serialized. */
+    @JsonIgnore
+    public WorkspaceBranchPolicy.Source getBranchPolicySource() {
+        if (isRelease) {
+            return WorkspaceBranchPolicy.Source.RELEASE;
+        }
+        return isPullRequestOrComment() ? WorkspaceBranchPolicy.Source.PULL_REQUEST : WorkspaceBranchPolicy.Source.PUSH;
+    }
 
     public String getNormalizedEvent() {
         String normalizedEvent = "unknown";

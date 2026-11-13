@@ -145,4 +145,6 @@
     <include file="/db/changelog/local/changelog-2.34.0-job-variables.xml"/>
     <include file="/db/changelog/local/changelog-2.34.0-webhook-sync-error.xml"/>
     <include file="/db/changelog/local/changelog-2.34.0-workspace-restrict-apply-branch.xml"/>
+    <include file="/db/changelog/local/changelog-2.34.0-destroy-job-permission.xml"/>
+    <include file="/db/changelog/local/changelog-2.34.0-workspace-require-approve-to-apply.xml"/>
 </databaseChangeLog>

@@ -8,6 +8,7 @@ import io.terrakube.api.plugin.security.audit.GenericAuditFields;
 import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.hooks.job.JobManageHook;
 import io.terrakube.api.rs.hooks.job.JobBranchPolicyHook;
+import io.terrakube.api.rs.hooks.job.JobRunRightsHook;
 import io.terrakube.api.rs.hooks.job.JobVariablesHook;
 import io.terrakube.api.rs.hooks.job.JobApprovalHook;
 import io.terrakube.api.rs.hooks.job.JobArtifactsCleanupHook;
@@ -44,6 +45,7 @@ import lombok.Setter;
 
 @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.CREATE, phase = LifeCycleHookBinding.TransactionPhase.PREFLUSH, hook = JobVariablesHook.class)
 @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.CREATE, phase = LifeCycleHookBinding.TransactionPhase.PREFLUSH, hook = JobBranchPolicyHook.class)
+@LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.CREATE, phase = LifeCycleHookBinding.TransactionPhase.PREFLUSH, hook = JobRunRightsHook.class)
 @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.CREATE, phase = LifeCycleHookBinding.TransactionPhase.POSTCOMMIT, hook = JobManageHook.class)
 @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.POSTCOMMIT, hook = JobManageHook.class)
 @ReadPermission(expression = "team view job OR team project limited view job OR team limited view job OR executor read job OR user is an executor service")

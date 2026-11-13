@@ -1511,6 +1511,19 @@ class RemoteTfeServiceTest {
     }
 
     private RemoteTfeService remoteTfeServiceWithoutPolicyGuard() {
+        RemoteTfeService service = newRemoteTfeService();
+        // Templates that do not destroy, so the rights for a destroy are not in play unless a test is about them.
+        io.terrakube.api.plugin.scheduler.job.tcl.TclService tclService =
+                Mockito.mock(io.terrakube.api.plugin.scheduler.job.tcl.TclService.class);
+        Mockito.lenient().when(tclService.templateDestroys(Mockito.any()))
+                .thenReturn(io.terrakube.api.plugin.scheduler.job.tcl.TclService.Destroys.NO);
+        ReflectionTestUtils.setField(service, "tclService", tclService);
+        ReflectionTestUtils.setField(service, "jobRunRights",
+                Mockito.mock(io.terrakube.api.plugin.execution.JobRunRights.class));
+        return service;
+    }
+
+    private RemoteTfeService newRemoteTfeService() {
         return new RemoteTfeService(jobRepository, contentRepository, organizationRepository, workspaceRepository,
                 historyRepository, templateRepository, scheduleJobService, "localhost", storageTypeService,
                 stepRepository, redisTemplate, 1, tagRepository, workspaceTagRepository, teamTokenService,
@@ -1833,5 +1846,20 @@ class RemoteTfeServiceTest {
         when(rbacService.canManageState(viewerTeam)).thenReturn(false);
 
         assertThrows(AccessDeniedException.class, () -> service.getWorkspaceState(historyId.toString(), userToken));
+    }
+
+    @Test
+    void confirmingARunWhoseWorkspaceWasDeletedIsRefusedWithAMessage() {
+        RemoteTfeService service = remoteTfeService();
+        Job job = new Job();
+        job.setId(4410);
+        job.setWorkspace(null);
+        when(jobRepository.getReferenceById(4410)).thenReturn(job);
+
+        org.springframework.security.access.AccessDeniedException refused = assertThrows(
+                org.springframework.security.access.AccessDeniedException.class,
+                () -> service.runApply(4410, null));
+
+        assertEquals("The workspace of this run no longer exists", refused.getMessage());
     }
 }

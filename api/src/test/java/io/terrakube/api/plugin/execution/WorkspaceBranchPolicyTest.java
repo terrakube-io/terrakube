@@ -130,4 +130,45 @@ class WorkspaceBranchPolicyTest {
     void branchNamesAreCaseSensitive() {
         assertTrue(policy.violation(workspace, "Main", null, APPLY).isPresent());
     }
+
+    // Runs that a webhook event started
+
+    @Test
+    void aPushToTheConfiguredBranchMayChangeInfrastructure() {
+        assertTrue(policy.vcsViolation(workspace, WorkspaceBranchPolicy.Source.PUSH, "main", APPLY).isEmpty());
+        assertTrue(policy.vcsViolation(workspace, WorkspaceBranchPolicy.Source.PUSH, "refs/heads/main", APPLY).isEmpty());
+    }
+
+    @Test
+    void aPushToAnotherBranchMayOnlyPlan() {
+        String message = policy.vcsViolation(workspace, WorkspaceBranchPolicy.Source.PUSH, "feature/x", APPLY)
+                .orElseThrow();
+
+        assertTrue(message.contains("other than main"), message);
+        assertTrue(message.contains("feature/x"), message);
+        assertTrue(policy.vcsViolation(workspace, WorkspaceBranchPolicy.Source.PUSH, "feature/x", PLAN_ONLY).isEmpty());
+        assertTrue(policy.vcsViolation(workspace, WorkspaceBranchPolicy.Source.PUSH, null, APPLY).isPresent());
+    }
+
+    @Test
+    void aPullRequestMayOnlyPlanEvenWhenItsBranchIsCalledTheConfiguredBranch() {
+        // A fork can open a pull request from a branch with the same name as the configured one.
+        assertTrue(policy.vcsViolation(workspace, WorkspaceBranchPolicy.Source.PULL_REQUEST, "main", APPLY).isPresent());
+        assertTrue(policy.vcsViolation(workspace, WorkspaceBranchPolicy.Source.PULL_REQUEST, "feature/x", APPLY)
+                .orElseThrow().contains("pull request"));
+        assertTrue(policy.vcsViolation(workspace, WorkspaceBranchPolicy.Source.PULL_REQUEST, "main", PLAN_ONLY).isEmpty());
+    }
+
+    @Test
+    void aReleaseRunsTheTemplateOfItsEvent() {
+        assertTrue(policy.vcsViolation(workspace, WorkspaceBranchPolicy.Source.RELEASE, "v1.0.0", APPLY).isEmpty());
+    }
+
+    @Test
+    void webhookRunsAreNotRestrictedWhenTheSettingIsOff() {
+        workspace.setRestrictApplyToConfiguredBranch(false);
+
+        assertTrue(policy.vcsViolation(workspace, WorkspaceBranchPolicy.Source.PULL_REQUEST, "feature/x", APPLY).isEmpty());
+        assertTrue(policy.vcsViolation(workspace, WorkspaceBranchPolicy.Source.PUSH, "feature/x", APPLY).isEmpty());
+    }
 }

@@ -10,8 +10,10 @@ import io.terrakube.api.rs.token.group.Group;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 
 import javax.crypto.SecretKey;
 import java.time.Instant;
@@ -24,6 +26,9 @@ public class TeamTokenService {
 
     @Value("${io.terrakube.token.pat}")
     private String base64Key;
+
+    @Value("${io.terrakube.owner:}")
+    private String instanceOwner;
 
     @Autowired
     private TeamTokenRepository teamTokenRepository;
@@ -107,10 +112,24 @@ public class TeamTokenService {
         return jws;
     }
 
-    public boolean deleteToken(String tokenId){
-        Optional<Group> searchGroupToken = teamTokenRepository.findById(UUID.fromString(tokenId));
+    public boolean deleteToken(String tokenId, JwtAuthenticationToken principalJwt){
+        Optional<Group> searchGroupToken;
+        try {
+            searchGroupToken = teamTokenRepository.findById(UUID.fromString(tokenId));
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
         if(searchGroupToken.isPresent()){
             Group groupToken = searchGroupToken.get();
+            List<String> currentGroups = getCurrentGroups(principalJwt);
+            boolean isMember = currentGroups.contains(groupToken.getGroup());
+            Object email = principalJwt.getTokenAttributes().get("email");
+            boolean isSuperUser = instanceOwner != null && !instanceOwner.isBlank()
+                    && (currentGroups.contains(instanceOwner) || (instanceOwner.equals(email) && !isFederated(principalJwt)));
+            if (!isMember && !isSuperUser) {
+                log.warn("User {} is not authorized to delete team token {} of group {}", principalJwt.getTokenAttributes().get("email"), tokenId, groupToken.getGroup());
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "User is not authorized to delete this token");
+            }
             groupToken.setDeleted(true);
             teamTokenRepository.save(groupToken);
             return true;
@@ -144,6 +163,10 @@ public class TeamTokenService {
             return List.of();
         }
         return values.stream().filter(Objects::nonNull).map(Object::toString).toList();
+    }
+
+    private boolean isFederated(JwtAuthenticationToken jwt) {
+        return !federatedLookupService.findAllAuthorized(jwt.getTokenAttributes()).isEmpty();
     }
 
 }

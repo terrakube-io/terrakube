@@ -7,10 +7,29 @@ import io.terrakube.executor.service.logs.StepOutputPartWriter;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.Collections;
+import java.util.Map;
 
 public interface TerraformState {
 
     String getBackendStateFile(String organizationId, String workspaceId, File workingDirectory, String terraformVersion);
+
+    default String getBackendStateFile(String organizationId, String workspaceId, String jobId, String stepId, File workingDirectory, String terraformVersion) {
+        return getBackendStateFile(organizationId, workspaceId, workingDirectory, terraformVersion);
+    }
+
+    default Map<String, String> getBackendEnvironmentVariables(String organizationId, String workspaceId, String jobId, String stepId) {
+        return Collections.emptyMap();
+    }
+
+    /**
+     * Whether this backend replaces the backend the workspace declares with one of another type, so that the
+     * {@code -backend-config} arguments written for the declared type (S3, azurerm, gcs) are rejected by
+     * {@code terraform init}. The executor then leaves them out.
+     */
+    default boolean rejectsBackendConfigArguments() {
+        return false;
+    }
 
     String saveTerraformPlan(String organizationId, String workspaceId, String jobId, String stepId, File workingDirectory);
 

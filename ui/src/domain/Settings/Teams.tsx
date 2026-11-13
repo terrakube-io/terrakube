@@ -26,6 +26,7 @@ const customPermissionLabels: [keyof Team["attributes"], string][] = [
   ["managePolicies", "policies"],
   ["planJob", "plan runs"],
   ["approveJob", "apply runs"],
+  ["destroyJob", "destroy runs"],
 ];
 
 // Preset roles explain themselves; a custom role lists what it grants.

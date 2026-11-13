@@ -851,6 +851,9 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                 .redirectErrorStream(true)
                 .terraformReleasesUrl(terraformClient.getTerraformReleasesUrl())
                 .tofuReleasesUrl(terraformClient.getTofuReleasesUrl())
+                .downloadResponseTimeout(terraformClient.getDownloadResponseTimeout())
+                .releasesDownloadTimeout(terraformClient.getReleasesDownloadTimeout())
+                .binaryDownloadTimeout(terraformClient.getBinaryDownloadTimeout())
                 .build();
     }
 
@@ -863,6 +866,9 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                 .redirectErrorStream(true)
                 .terraformReleasesUrl(terraformClient.getTerraformReleasesUrl())
                 .tofuReleasesUrl(terraformClient.getTofuReleasesUrl())
+                .downloadResponseTimeout(terraformClient.getDownloadResponseTimeout())
+                .releasesDownloadTimeout(terraformClient.getReleasesDownloadTimeout())
+                .binaryDownloadTimeout(terraformClient.getBinaryDownloadTimeout())
                 .build();
     }
 
@@ -875,6 +881,9 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                 .redirectErrorStream(true)
                 .terraformReleasesUrl(terraformClient.getTerraformReleasesUrl())
                 .tofuReleasesUrl(terraformClient.getTofuReleasesUrl())
+                .downloadResponseTimeout(terraformClient.getDownloadResponseTimeout())
+                .releasesDownloadTimeout(terraformClient.getReleasesDownloadTimeout())
+                .binaryDownloadTimeout(terraformClient.getBinaryDownloadTimeout())
                 .build();
     }
 
@@ -1110,7 +1119,15 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         TextStringBuilder statePullError = new TextStringBuilder();
         TerraformProcessData terraformProcessData = getTerraformProcessData(terraformJob, terraformWorkingDirectory, executorTempDirectory);
         terraformProcessData.setTerraformVariables(new HashMap());
-        terraformProcessData.setTerraformEnvironmentVariables(new HashMap());
+        HashMap<String, String> backendCredentials = new HashMap<>();
+        if (terraformJob.getEnvironmentVariables() != null) {
+            terraformJob.getEnvironmentVariables().forEach((key, value) -> {
+                if (key.startsWith("TF_HTTP_")) {
+                    backendCredentials.put(key, value);
+                }
+            });
+        }
+        terraformProcessData.setTerraformEnvironmentVariables(backendCredentials);
         Boolean showJsonState = terraformClient.show(terraformProcessData,
                 getStringConsumer(jsonState), getStringConsumer(showError)).get();
         Boolean showRawState = terraformClient.statePull(terraformProcessData,
@@ -1378,7 +1395,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
 
         try {
             String resolvedVersion = terraformJob.isTofu()
-                    ? downloader.resolveTofuVersion(requestedVersion)
+                    ? withoutVersionPrefix(downloader.resolveTofuVersion(requestedVersion))
                     : downloader.resolveTerraformVersion(requestedVersion);
 
             if (resolvedVersion != null && !resolvedVersion.isBlank() && !resolvedVersion.equals(requestedVersion)) {
@@ -1395,6 +1412,15 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             log.warn("Unable to resolve {} version \"{}\" for job {}, using it as-is: {}", getIaCType(terraformJob),
                     requestedVersion, terraformJob.getJobId(), e.getMessage());
         }
+    }
+
+    /**
+     * The OpenTofu release list names versions "v1.12.5". The rest of the job expects a plain number:
+     * the API refuses to pin anything else, and BashEngine adds its own "v" to the tofu directory on
+     * the PATH of scripts.
+     */
+    private static String withoutVersionPrefix(String version) {
+        return version != null && version.startsWith("v") ? version.substring(1) : version;
     }
 
     /**
@@ -1528,9 +1554,24 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         terraformState.getBackendStateFile(
                 terraformJob.getOrganizationId(),
                 terraformJob.getWorkspaceId(),
+                terraformJob.getJobId(),
+                terraformJob.getStepId(),
                 terraformWorkingDir,
                 terraformJob.getTerraformVersion()
         );
+
+        Map<String, String> backendEnv = terraformState.getBackendEnvironmentVariables(
+                terraformJob.getOrganizationId(),
+                terraformJob.getWorkspaceId(),
+                terraformJob.getJobId(),
+                terraformJob.getStepId()
+        );
+        if (backendEnv != null && !backendEnv.isEmpty()) {
+            if (terraformJob.getEnvironmentVariables() == null) {
+                terraformJob.setEnvironmentVariables(new HashMap<>());
+            }
+            terraformJob.getEnvironmentVariables().putAll(backendEnv);
+        }
 
         File sshKeyFile = null;
 
@@ -1569,6 +1610,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                 terraformWorkingDir,
                 terraformJob
         );
+        environmentVariables = withoutRejectedBackendConfig(environmentVariables, terraformJob);
         if (hasRunVariablesFile(terraformJob)) {
             File runVariablesFile = writeRunVariablesFile(terraformJob, workspaceRootDirectory);
             // Copied so the job's own map never accumulates arguments across the calls of one step.
@@ -1589,6 +1631,31 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                 .tofu(terraformJob.isTofu())
                 .sshFile(sshKeyFile)
                 .build();
+    }
+
+    /**
+     * The HTTP backend replaces the workspace's own backend, and Terraform rejects any {@code -backend-config} key it
+     * does not know. State no longer goes through the arguments written for S3, azurerm or gcs, so they are left out.
+     */
+    private HashMap<String, String> withoutRejectedBackendConfig(HashMap<String, String> environmentVariables, TerraformJob terraformJob) {
+        String name = "TF_CLI_ARGS_init";
+        if (!terraformState.rejectsBackendConfigArguments() || environmentVariables == null) {
+            return environmentVariables;
+        }
+        BackendConfigArguments.Stripped stripped = BackendConfigArguments.strip(environmentVariables.get(name));
+        if (stripped.removed().isEmpty()) {
+            return environmentVariables;
+        }
+        log.warn("Job {} ignores the -backend-config arguments of {} ({}): state is kept by the Terrakube HTTP backend, which does not accept them",
+                terraformJob.getJobId(), name, String.join(", ", stripped.removed()));
+        // Copied so the job's own map keeps what the user set.
+        HashMap<String, String> copy = new HashMap<>(environmentVariables);
+        if (stripped.arguments() == null) {
+            copy.remove(name);
+        } else {
+            copy.put(name, stripped.arguments());
+        }
+        return copy;
     }
 
     private static boolean hasRunVariablesFile(TerraformJob terraformJob) {

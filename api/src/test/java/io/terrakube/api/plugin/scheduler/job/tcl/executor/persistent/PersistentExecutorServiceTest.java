@@ -82,8 +82,12 @@ public class PersistentExecutorServiceTest {
     }
 
     private PersistentExecutorService subject() {
+        return subject("http://default-executor/");
+    }
+
+    private PersistentExecutorService subject(String executorUrl) {
         PersistentExecutorService persistentExecutorService = spy(new PersistentExecutorService(
-                "http://default-executor/",
+                executorUrl,
                 globalVarRepository,
                 webClientBuilder,
                 RandomStringUtils.randomAlphanumeric(32)));
@@ -230,5 +234,40 @@ public class PersistentExecutorServiceTest {
 
         verify(requestBodyUriSpec).uri("http://ze-agent/api/v1/terraform-rs");
         verify(requestHeadersSpec, times(1)).retrieve();
+    }
+
+    // The ClusterIP of the chart's executor Service is a private address, and the operator is who set it.
+    @Test
+    public void sendsToTheExecutorUrlOfTheOperatorOnAPrivateNetwork() throws ExecutionException {
+        doReturn(HttpStatus.ACCEPTED).when(responseEntity).getStatusCode();
+        PersistentExecutorService subject = subject("http://10.96.0.12:8090/api/v1/terraform-rs");
+        subject.setAgentUrlValidator(new AgentUrlValidator(true));
+
+        subject.send(jobOnDefaultExecutor(), context());
+
+        verify(requestBodyUriSpec).uri("http://10.96.0.12:8090/api/v1/terraform-rs");
+    }
+
+    @Test
+    public void blocksAnAgentOnAPrivateNetwork() {
+        PersistentExecutorService subject = subject();
+        subject.setAgentUrlValidator(new AgentUrlValidator(true));
+        Job job = jobOnAgent();
+        job.getWorkspace().getAgent().setUrl("http://10.96.0.12:8090");
+
+        assertThrows(ExecutionException.class, () -> subject.send(job, context()));
+        verify(requestBodyUriSpec, never()).uri(anyString());
+    }
+
+    @Test
+    public void blocksTheDefaultExecutorAnOrganizationSetsOnAPrivateNetwork() {
+        Globalvar executorUrl = new Globalvar();
+        executorUrl.setValue("http://10.96.0.12:8090");
+        doReturn(Optional.of(executorUrl)).when(globalVarRepository).findByOrganizationAndKey(any(), any());
+        PersistentExecutorService subject = subject();
+        subject.setAgentUrlValidator(new AgentUrlValidator(true));
+
+        assertThrows(ExecutionException.class, () -> subject.send(jobOnDefaultExecutor(), context()));
+        verify(requestBodyUriSpec, never()).uri(anyString());
     }
 }

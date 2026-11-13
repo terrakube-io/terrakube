@@ -1,5 +1,6 @@
 package io.terrakube.api.plugin.scheduler.reconciliation;
 
+import io.terrakube.api.plugin.scheduler.ExecutionLease;
 import io.terrakube.api.plugin.scheduler.JobStatusChangeService;
 import io.terrakube.api.plugin.scheduler.ScheduleJobService;
 import io.terrakube.api.repository.JobRepository;
@@ -68,9 +69,8 @@ public class JobReconciliationSweep implements org.quartz.Job {
     // Workspaces corrected per sweep, so a large backlog is worked off over a few sweeps.
     private static final int STALE_WORKSPACE_BATCH = 100;
 
-    // Same key ScheduleJob's withExecutionLock uses, so a sweep-driven reconcile and a live
-    // ScheduleJob firing for the same job id never run concurrently across replicas.
-    private static final String EXECUTION_LOCK_PREFIX = "job-execution-lock:";
+    // Same lock ScheduleJob's withExecutionLock takes (see ExecutionLease), so a sweep-driven
+    // reconcile and a live ScheduleJob firing for the same job id never run concurrently across replicas.
     private static final Duration EXECUTION_LOCK_TTL = Duration.ofSeconds(90);
 
     JobRepository jobRepository;
@@ -200,7 +200,8 @@ public class JobReconciliationSweep implements org.quartz.Job {
         if (steps.isEmpty() || hasActiveWork) {
             return null;
         }
-        if (!acquirePerJobLock(job.getId())) {
+        Optional<ExecutionLease> lease = ExecutionLease.acquire(redisTemplate, job.getId(), EXECUTION_LOCK_TTL, Duration.ZERO);
+        if (lease.isEmpty()) {
             return null; // a live ScheduleJob firing (or another replica's sweep) owns this job now
         }
         try {
@@ -210,28 +211,7 @@ public class JobReconciliationSweep implements org.quartz.Job {
                     job.getId(), e.getMessage());
             return null;
         } finally {
-            releasePerJobLock(job.getId());
-        }
-    }
-
-    // Fails closed like ScheduleJob.acquireExecutionLock: an unreachable Redis means "skip this
-    // job this sweep" rather than reconciling without the cross-replica guard.
-    private boolean acquirePerJobLock(int jobId) {
-        try {
-            Boolean acquired = redisTemplate.opsForValue()
-                    .setIfAbsent(EXECUTION_LOCK_PREFIX + jobId, "1", EXECUTION_LOCK_TTL);
-            return Boolean.TRUE.equals(acquired);
-        } catch (DataAccessException e) {
-            log.warn("Could not reach Redis for the reconciliation lock on job {}: {}", jobId, e.getMessage());
-            return false;
-        }
-    }
-
-    private void releasePerJobLock(int jobId) {
-        try {
-            redisTemplate.delete(EXECUTION_LOCK_PREFIX + jobId);
-        } catch (DataAccessException e) {
-            log.warn("Could not release the reconciliation lock on job {} (TTL will clear it): {}", jobId, e.getMessage());
+            lease.get().release();
         }
     }
 
@@ -265,8 +245,10 @@ public class JobReconciliationSweep implements org.quartz.Job {
         if (job.getWorkspace() == null) {
             log.warn("Job {} has no active workspace, cancelling orphaned job", job.getId());
             try {
-                job.setStatus(JobStatus.cancelled);
-                jobRepository.save(job);
+                // A bulk update, not a save of the entity: the workspace is soft deleted, so the job reads back with
+                // no workspace and saving it would write a NULL workspace_id. That fails, leaves the entity dirty
+                // in this transaction, and the next query then fails to flush it and stops the whole sweep.
+                jobRepository.updateStatusByIdAndStatusIn(JobStatus.cancelled, job.getId(), ACTIVE_STATUSES);
                 for (Step step : stepRepository.findByJobId(job.getId())) {
                     if (step.getStatus() == JobStatus.pending || step.getStatus() == JobStatus.running || step.getStatus() == JobStatus.queue) {
                         step.setStatus(JobStatus.cancelled);
