@@ -34,7 +34,8 @@ public class TeamApproveJob extends OperationCheck<Job> {
         return maybeChange
                 .filter(change -> "status".equals(change.getFieldName()))
                 .filter(change -> JobStatus.waitingApproval.equals(change.getOriginal()))
-                .filter(change -> APPROVAL_STATUSES.contains(change.getModified()))
+                .filter(change -> change.getModified() instanceof JobStatus modified
+                        && APPROVAL_STATUSES.contains(modified))
                 .isPresent();
     }
 
@@ -45,8 +46,7 @@ public class TeamApproveJob extends OperationCheck<Job> {
     static boolean isCancellationTransition(Optional<ChangeSpec> maybeChange) {
         return maybeChange
                 .filter(change -> "status".equals(change.getFieldName()))
-                .filter(change -> change.getOriginal() instanceof JobStatus)
-                .filter(change -> !((JobStatus) change.getOriginal()).isTerminal())
+                .filter(change -> change.getOriginal() instanceof JobStatus original && original.holdsTheQueue())
                 .filter(change -> JobStatus.cancelled.equals(change.getModified()))
                 .isPresent();
     }

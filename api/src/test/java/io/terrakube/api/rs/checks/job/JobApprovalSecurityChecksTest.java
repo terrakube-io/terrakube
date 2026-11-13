@@ -69,11 +69,38 @@ class JobApprovalSecurityChecksTest {
         assertFalse(TeamApproveJob.isApprovalTransition(Optional.empty()));
     }
 
+    @Test
+    void approvalTransitionRejectsNullTargetStatus() {
+        Optional<ChangeSpec> change = Optional.of(new ChangeSpec(null, "status", JobStatus.waitingApproval, null));
+
+        assertFalse(TeamApproveJob.isApprovalTransition(change));
+        assertFalse(TeamApproveJob.isRbacUserTransition(change));
+    }
+
     @ParameterizedTest
     @MethodSource("cancellationTransitions")
-    void cancellationTransitionOnlyAllowsNonTerminalJobs(JobStatus original, boolean expected) {
+    void cancellationTransitionOnlyAllowsActiveQueueHoldingJobs(JobStatus original, boolean expected) {
         assertEquals(expected, TeamApproveJob.isCancellationTransition(
                 change(original, JobStatus.cancelled)));
+    }
+
+    @Test
+    void teamApproveJobRequiresApprovalTransitionAndAllowsOpenStep() {
+        Organization organization = organization();
+        Workspace workspace = new Workspace();
+        workspace.setOrganization(organization);
+        Job openStepJob = jobIn(workspace);
+
+        TeamApproveJob check = new TeamApproveJob();
+        check.authenticatedUser = authenticatedUser;
+        check.groupService = groupService;
+
+        assertTrue(check.ok(openStepJob, requestScope, change(JobStatus.waitingApproval, JobStatus.approved)));
+        assertTrue(check.ok(openStepJob, requestScope, change(JobStatus.waitingApproval, JobStatus.rejected)));
+        assertFalse(check.ok(openStepJob, requestScope, change(JobStatus.waitingApproval, JobStatus.cancelled)));
+        assertFalse(check.ok(openStepJob, requestScope,
+                Optional.of(new ChangeSpec(null, "status", JobStatus.waitingApproval, null))));
+        verifyNoInteractions(authenticatedUser, groupService);
     }
 
     @Test
@@ -168,13 +195,25 @@ class JobApprovalSecurityChecksTest {
 
     @Test
     void invalidTransitionsAreRejectedBeforeMembershipChecks() {
+        Organization organization = organization();
+        Team team = new Team();
+        team.setName("organization-approvers");
+        organization.setTeam(List.of(team));
+        Workspace workspace = new Workspace();
+        workspace.setOrganization(organization);
+        Job job = jobIn(workspace);
+
         TeamApproveJobRbac organizationCheck = new TeamApproveJobRbac();
         organizationCheck.authenticatedUser = authenticatedUser;
         organizationCheck.groupService = groupService;
         organizationCheck.rbacService = rbacService;
 
         assertFalse(organizationCheck.ok(
-                new Job(), requestScope, change(JobStatus.failed, JobStatus.approved)));
+                job, requestScope, change(JobStatus.failed, JobStatus.approved)));
+        assertFalse(organizationCheck.ok(
+                job, requestScope, Optional.of(new ChangeSpec(null, "status", JobStatus.waitingApproval, null))));
+        assertFalse(organizationCheck.ok(
+                job, requestScope, change(JobStatus.notExecuted, JobStatus.cancelled)));
         verifyNoInteractions(authenticatedUser, groupService, rbacService);
     }
 
@@ -217,6 +256,9 @@ class JobApprovalSecurityChecksTest {
                 Arguments.of(JobStatus.completed, false),
                 Arguments.of(JobStatus.noChanges, false),
                 Arguments.of(JobStatus.rejected, false),
-                Arguments.of(JobStatus.cancelled, false));
+                Arguments.of(JobStatus.cancelled, false),
+                Arguments.of(JobStatus.notExecuted, false),
+                Arguments.of(JobStatus.NeverExecuted, false),
+                Arguments.of(JobStatus.unknown, false));
     }
 }

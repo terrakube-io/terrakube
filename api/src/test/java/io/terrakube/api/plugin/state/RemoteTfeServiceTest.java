@@ -9,6 +9,7 @@ import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.template.Template;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -1861,5 +1862,79 @@ class RemoteTfeServiceTest {
                 () -> service.runApply(4410, null));
 
         assertEquals("The workspace of this run no longer exists", refused.getMessage());
+    }
+
+    @Test
+    void discardingARunWhoseWorkspaceWasDeletedIsRefusedWithAMessage() {
+        RemoteTfeService service = remoteTfeService();
+        Job job = new Job();
+        job.setId(4411);
+        job.setWorkspace(null);
+        when(jobRepository.getReferenceById(4411)).thenReturn(job);
+
+        AccessDeniedException refused = assertThrows(
+                AccessDeniedException.class,
+                () -> service.runDiscard(4411, currentUser()));
+
+        assertEquals("The workspace of this run no longer exists", refused.getMessage());
+        verify(jobRepository, never()).save(any(Job.class));
+    }
+
+    @Test
+    void planOnlyUsersCannotDiscardRuns() {
+        RemoteTfeService service = remoteTfeService();
+        Organization org = organization("sample-org");
+        Team planners = team("planners");
+        org.setTeam(List.of(planners));
+        Workspace workspace = workspace("sample", org);
+
+        Job job = new Job();
+        job.setId(4412);
+        job.setOrganization(org);
+        job.setWorkspace(workspace);
+        job.setStatus(JobStatus.waitingApproval);
+        when(jobRepository.getReferenceById(4412)).thenReturn(job);
+
+        JwtAuthenticationToken user = currentUser();
+        when(teamTokenService.getCurrentGroups(user)).thenReturn(List.of("planners"));
+        when(rbacService.canApproveJob(planners)).thenReturn(false);
+
+        assertThrows(AccessDeniedException.class, () -> service.runDiscard(4412, user));
+        assertEquals(JobStatus.waitingApproval, job.getStatus());
+        verify(jobRepository, never()).save(any(Job.class));
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = JobStatus.class, names = {"completed", "noChanges", "rejected", "cancelled", "failed", "notExecuted", "NeverExecuted", "unknown"})
+    void nonActiveRunsCannotBeDiscarded(JobStatus terminalStatus) {
+        RemoteTfeService service = remoteTfeService();
+        Job job = jobWaitingAtTheApprovalStep(terminalStatus);
+        job.setId(4413);
+        when(jobRepository.getReferenceById(4413)).thenReturn(job);
+        JwtAuthenticationToken user = approverOf(job);
+
+        ResponseStatusException thrown = assertThrows(ResponseStatusException.class, () -> service.runDiscard(4413, user));
+
+        assertEquals(HttpStatus.CONFLICT, thrown.getStatusCode());
+        assertEquals(terminalStatus, job.getStatus());
+        verify(jobRepository, never()).save(any(Job.class));
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = JobStatus.class, names = {"pending", "queue", "running", "waitingApproval", "approved"})
+    void activeRunsCanBeDiscardedByAnApprover(JobStatus activeStatus) {
+        RemoteTfeService service = Mockito.spy(remoteTfeService());
+        Job job = jobWaitingAtTheApprovalStep(activeStatus);
+        job.setId(4414);
+        when(jobRepository.getReferenceById(4414)).thenReturn(job);
+        when(jobRepository.save(job)).thenReturn(job);
+        Mockito.doReturn(null).when(service).getRun(4414, null);
+        JwtAuthenticationToken user = approverOf(job);
+
+        service.runDiscard(4414, user);
+
+        assertEquals(JobStatus.cancelled, job.getStatus());
+        verify(jobRepository).save(job);
+        verify(jobNotificationTrigger).notifyStatusChanged(job);
     }
 }

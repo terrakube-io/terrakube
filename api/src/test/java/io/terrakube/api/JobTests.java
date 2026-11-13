@@ -522,6 +522,48 @@ class JobTests extends ServerApplicationTests {
                 .statusCode(HttpStatus.CONFLICT.value());
     }
 
+    @ParameterizedTest
+    @EnumSource(value = JobStatus.class, names = {"waitingApproval", "completed", "failed", "cancelled"})
+    public void aJobCannotBeCreatedWithAnyNonPendingStatus(JobStatus initialStatus) {
+        devsManageJobs(true);
+        long before = jobRepository.count();
+        String body = jobDefinition("2db36f7c-f549-4341-a789-315d47eb061d")
+                .replace("\"templateReference\":", "\"status\":\"" + initialStatus.name() + "\",\"templateReference\":");
+
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
+                .body(body)
+                .post("/api/v1/organization/" + organization.getId() + "/job")
+                .then()
+                .statusCode(HttpStatus.CONFLICT.value());
+
+        assertEquals(before, jobRepository.count());
+    }
+
+    @Test
+    public void nullStatusUpdateOnWaitingApprovalDoesNotCrashWithServerError() {
+        Template template = createTemplate("flow:\n- name: Approve\n  type: approval\n");
+
+        devsManageJobs(true);
+        String jobId = createJob(jobDefinition(template.getId().toString()));
+        devsManageJobs(false);
+
+        awaitJobStatus(jobId, JobStatus.waitingApproval, Duration.ofSeconds(10));
+
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"),
+                        "Content-Type", "application/vnd.api+json")
+                .body("{\"data\":{\"type\":\"job\",\"id\":\"" + jobId + "\",\"attributes\":{\"status\":null}}}")
+                .when()
+                .patch("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/job/" + jobId)
+                .then()
+                .assertThat()
+                .statusCode(HttpStatus.FORBIDDEN.value());
+
+        Job unchanged = jobRepository.findById(Integer.parseInt(jobId)).orElseThrow();
+        assertEquals(JobStatus.waitingApproval, unchanged.getStatus());
+    }
+
     @Test
     public void onlyAppointedTeamCanApprove() {
         Template template = createTemplate("flow:\n- name: Approve\n  type: approval\n  team: OTHER_TEAM\n");
