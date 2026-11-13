@@ -5,17 +5,19 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.jsonwebtoken.Jwts;
 import lombok.extern.slf4j.Slf4j;
+import reactor.core.Exceptions;
 import org.apache.commons.io.FileUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.client.HttpStatusCodeException;
-import org.springframework.web.client.RestTemplate;
-import io.terrakube.api.plugin.proxy.RestTemplateFactory;
+import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
+import io.terrakube.api.plugin.http.ReactorNettyWebClientFactory;
 import io.terrakube.api.rs.job.Job;
 
 import java.io.BufferedReader;
@@ -29,10 +31,6 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
@@ -69,15 +67,11 @@ public class DynamicCredentialsService {
 
     private static final int VAULT_MAX_ATTEMPTS = 2;
 
-    // Daemon threads so a call abandoned at the deadline can never keep the JVM alive.
-    private static final ExecutorService VAULT_CALLS = Executors.newCachedThreadPool(runnable -> {
-        Thread thread = new Thread(runnable, "vault-login");
-        thread.setDaemon(true);
-        return thread;
-    });
-
     @Autowired
     ObjectMapper objectMapper;
+
+    @Autowired
+    WebClient.Builder webClientBuilder;
 
 
     @Transactional
@@ -121,7 +115,7 @@ public class DynamicCredentialsService {
         }
         String url = String.format("%s/v1/auth/%s/login", vaultAddress, vaultJwtPath);
 
-        String vaultToken = loginToVault(url, new HttpEntity<>(jsonPayload, headers));
+        String vaultToken = loginToVault(url, headers, jsonPayload);
         workspaceEnvVariables.put("VAULT_TOKEN", vaultToken);
 
         return workspaceEnvVariables;
@@ -129,11 +123,17 @@ public class DynamicCredentialsService {
 
     // Everything here is bounded by vaultDeadlineSeconds in total. A connect or read timeout is
     // per socket operation, so on their own they do not stop a slow responder from holding the
-    // caller (the scheduler holds the job execution lock while this runs). Transient failures
-    // (I/O errors, 5xx) are retried inside the deadline; a 4xx is Vault saying no and is not.
-    // Nothing from the request or response (JWT, client token, body) is logged or put in the
-    // exception message.
-    private String loginToVault(String url, HttpEntity<String> request) {
+    // caller (the scheduler holds the job execution lock while this runs). The deadline is a
+    // Reactor timeout, so when it expires the subscription is cancelled and the channel closed,
+    // there is no abandoned thread left blocked on the socket. Transient failures (I/O errors,
+    // 5xx) are retried inside the deadline; a 4xx is Vault saying no and is not. Nothing from
+    // the request or response (JWT, client token, body) is logged or put in the exception message.
+    private String loginToVault(String url, HttpHeaders headers, String jsonPayload) {
+        WebClient webClient = webClientBuilder
+                .clone()
+                .clientConnector(ReactorNettyWebClientFactory.connector(
+                        Duration.ofSeconds(vaultConnectTimeoutSeconds), Duration.ofSeconds(vaultReadTimeoutSeconds)))
+                .build();
         long deadlineNanos = System.nanoTime() + TimeUnit.SECONDS.toNanos(vaultDeadlineSeconds);
         DynamicCredentialsException lastFailure = null;
         for (int attempt = 1; attempt <= VAULT_MAX_ATTEMPTS; attempt++) {
@@ -141,28 +141,30 @@ public class DynamicCredentialsService {
             if (remainingMillis <= 0) {
                 break;
             }
-            Future<String> call = VAULT_CALLS.submit(() -> {
-                RestTemplate restTemplate = RestTemplateFactory.build(
-                        Duration.ofSeconds(vaultConnectTimeoutSeconds), Duration.ofSeconds(vaultReadTimeoutSeconds));
-                return restTemplate.postForObject(url, request, String.class);
-            });
             try {
-                return extractVaultToken(call.get(remainingMillis, TimeUnit.MILLISECONDS));
-            } catch (TimeoutException e) {
-                call.cancel(true);
-                lastFailure = new DynamicCredentialsException(String.format(
-                        "Vault dynamic credentials: no response from Vault within %d seconds", vaultDeadlineSeconds));
-                break;
-            } catch (InterruptedException e) {
-                call.cancel(true);
-                Thread.currentThread().interrupt();
-                throw new DynamicCredentialsException("Vault dynamic credentials: interrupted while waiting for Vault", e);
-            } catch (ExecutionException e) {
-                Throwable cause = e.getCause();
-                if (cause instanceof DynamicCredentialsException failure) {
-                    throw failure;
+                ResponseEntity<String> response = webClient.post()
+                        .uri(url)
+                        .headers(h -> h.addAll(headers))
+                        .bodyValue(jsonPayload)
+                        .retrieve()
+                        .toEntity(String.class)
+                        .timeout(Duration.ofMillis(remainingMillis))
+                        .block();
+                return extractVaultToken(response);
+            } catch (DynamicCredentialsException failure) {
+                throw failure;
+            } catch (RuntimeException e) {
+                Throwable cause = Exceptions.unwrap(e);
+                if (cause instanceof InterruptedException) {
+                    Thread.currentThread().interrupt();
+                    throw new DynamicCredentialsException("Vault dynamic credentials: interrupted while waiting for Vault", cause);
                 }
-                if (cause instanceof HttpStatusCodeException http && !http.getStatusCode().is5xxServerError()) {
+                if (cause instanceof TimeoutException) {
+                    lastFailure = new DynamicCredentialsException(String.format(
+                            "Vault dynamic credentials: no response from Vault within %d seconds", vaultDeadlineSeconds));
+                    break;
+                }
+                if (cause instanceof WebClientResponseException http && !http.getStatusCode().is5xxServerError()) {
                     throw new DynamicCredentialsException(String.format(
                             "Vault dynamic credentials: Vault rejected the login with HTTP %d, check the role, audience and auth path",
                             http.getStatusCode().value()));
@@ -176,7 +178,19 @@ public class DynamicCredentialsService {
                 "Vault dynamic credentials: no response from Vault within %d seconds", vaultDeadlineSeconds));
     }
 
-    private String extractVaultToken(String vaultResponse) {
+    private String extractVaultToken(ResponseEntity<String> response) {
+        if (response == null) {
+            throw new DynamicCredentialsException("Vault dynamic credentials: Vault returned an empty response");
+        }
+        // Redirects are not followed, so a 3xx is Vault (or something in front of it) not
+        // answering the login and must not be read as an empty or malformed body.
+        HttpStatusCode status = response.getStatusCode();
+        if (!status.is2xxSuccessful()) {
+            throw new DynamicCredentialsException(String.format(
+                    "Vault dynamic credentials: Vault answered the login with HTTP %d, check VAULT_ADDR and the auth path",
+                    status.value()));
+        }
+        String vaultResponse = response.getBody();
         if (vaultResponse == null || vaultResponse.isBlank()) {
             throw new DynamicCredentialsException("Vault dynamic credentials: Vault returned an empty response");
         }
@@ -191,10 +205,10 @@ public class DynamicCredentialsService {
         throw new DynamicCredentialsException("Vault dynamic credentials: Vault response does not contain auth.client_token");
     }
 
-    // Class name and HTTP status only, never getMessage(): an HttpStatusCodeException message
+    // Class name and HTTP status only, never getMessage(): a WebClientResponseException message
     // carries the response body.
     private static String describe(Throwable cause) {
-        if (cause instanceof HttpStatusCodeException http) {
+        if (cause instanceof WebClientResponseException http) {
             return "HTTP " + http.getStatusCode().value();
         }
         return cause.getClass().getSimpleName();

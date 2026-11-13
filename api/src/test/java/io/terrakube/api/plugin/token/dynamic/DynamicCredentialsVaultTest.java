@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.slf4j.LoggerFactory;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.web.reactive.function.client.WebClient;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -68,6 +69,7 @@ class DynamicCredentialsVaultTest {
 
         service = new DynamicCredentialsService();
         ReflectionTestUtils.setField(service, "objectMapper", new ObjectMapper());
+        ReflectionTestUtils.setField(service, "webClientBuilder", WebClient.builder());
         ReflectionTestUtils.setField(service, "hostname", "terrakube.example.com");
         ReflectionTestUtils.setField(service, "overrideHostname", "");
         ReflectionTestUtils.setField(service, "privateKeyPath", privateKeyFile.toString());
@@ -162,6 +164,20 @@ class DynamicCredentialsVaultTest {
                 .hasMessageContaining("within 2 seconds");
 
         assertThat(secondsSince(start)).isLessThan(5);
+    }
+
+    @Test
+    void aRedirectIsNotFollowedAndFailsTheJobWithItsStatus() {
+        vault.stubFor(post(urlEqualTo(LOGIN)).willReturn(aResponse().withStatus(307)
+                .withHeader("Location", "http://127.0.0.1:1/elsewhere")));
+        HashMap<String, String> env = env();
+
+        assertThatThrownBy(() -> service.generateDynamicCredentialsVault(job(), env))
+                .isInstanceOf(DynamicCredentialsException.class)
+                .hasMessageContaining("HTTP 307");
+
+        assertThat(env).doesNotContainKey("VAULT_TOKEN");
+        vault.verify(1, postRequestedFor(urlEqualTo(LOGIN)));
     }
 
     @Test
