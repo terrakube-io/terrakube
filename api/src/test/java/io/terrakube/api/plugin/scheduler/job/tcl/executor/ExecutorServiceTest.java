@@ -67,6 +67,7 @@ class ExecutorServiceTest {
     @Mock private ReferenceRepository referenceRepository;
     @Mock private StepRepository stepRepository;
     @Mock private PersistentExecutorService persistentExecutorService;
+    @Mock private io.terrakube.api.plugin.token.dynamic.DynamicCredentialsService dynamicCredentialsService;
     @Spy private JobVariablesService jobVariablesService = new JobVariablesService(encryption());
 
     private static io.terrakube.api.plugin.security.encryption.EncryptionService encryption() {
@@ -688,5 +689,33 @@ class ExecutorServiceTest {
         assertThatThrownBy(() -> executorService.execute(job, "plan-step", flow(FlowType.terraformPlan)))
                 .isInstanceOf(ExecutionException.class)
                 .hasMessageNotContaining("private-invalid-ciphertext");
+    }
+
+    @Test
+    void aFailedVaultLoginStopsTheDispatchBeforeAnythingIsSubmitted() throws Exception {
+        Organization organization = new Organization();
+        organization.setId(UUID.randomUUID());
+        organization.setName("test");
+        job.setOrganization(organization);
+        workspace.setId(UUID.randomUUID());
+        workspace.setOrganization(organization);
+        workspace.setBranch("main");
+        workspace.setSource("https://github.com/example/repo.git");
+        workspace.setTerraformVersion("1.14.0");
+        workspace.setIacType("terraform");
+        Variable enable = new Variable();
+        enable.setKey("ENABLE_DYNAMIC_CREDENTIALS_VAULT");
+        enable.setValue("true");
+        enable.setCategory(Category.ENV);
+        when(variableRepository.findByWorkspace(workspace)).thenReturn(Optional.of(List.of(enable)));
+        when(dynamicCredentialsService.generateDynamicCredentialsVault(org.mockito.ArgumentMatchers.eq(job), org.mockito.ArgumentMatchers.any()))
+                .thenThrow(new io.terrakube.api.plugin.token.dynamic.DynamicCredentialsException(
+                        "Vault dynamic credentials: Vault rejected the login with HTTP 403"));
+
+        assertThatThrownBy(() -> executorService.execute(job, "plan-step", flow(FlowType.terraformPlan)))
+                .isInstanceOf(ExecutionException.class)
+                .hasMessageContaining("Vault rejected the login with HTTP 403");
+
+        verify(persistentExecutorService, never()).send(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
     }
 }
