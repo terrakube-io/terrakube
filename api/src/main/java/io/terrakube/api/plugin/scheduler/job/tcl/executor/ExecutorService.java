@@ -24,6 +24,7 @@ import io.terrakube.api.plugin.scheduler.job.tcl.executor.ephemeral.EphemeralExe
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.persistent.PersistentExecutorService;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.Flow;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.FlowType;
+import io.terrakube.api.plugin.token.dynamic.DynamicCredentialsException;
 import io.terrakube.api.plugin.token.dynamic.DynamicCredentialsService;
 import io.terrakube.api.plugin.vcs.TokenService;
 import io.terrakube.api.plugin.vcs.provider.exception.VcsTokenAcquisitionException;
@@ -480,8 +481,14 @@ public class ExecutorService {
         }
 
         if (workspaceEnvVariables.containsKey("ENABLE_DYNAMIC_CREDENTIALS_VAULT")) {
-            workspaceEnvVariables = dynamicCredentialsService.generateDynamicCredentialsVault(job,
-                    workspaceEnvVariables);
+            try {
+                workspaceEnvVariables = dynamicCredentialsService.generateDynamicCredentialsVault(job,
+                        workspaceEnvVariables);
+            } catch (DynamicCredentialsException e) {
+                // Stop before anything is submitted: an executor started with no VAULT_TOKEN only
+                // fails later with an unrelated error.
+                throw new ExecutionException(e.getMessage(), e);
+            }
         }
 
         if (workspaceEnvVariables.containsKey("ENABLE_DYNAMIC_CREDENTIALS_AWS")) {

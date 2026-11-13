@@ -500,8 +500,7 @@ public class DynamicCredentialsTests extends ServerApplicationTests {
     }
 
     @Test
-    void testGenerateDynamicCredentialsVaultHandlesErrorGracefully() {
-        // Simulate Vault returning an error
+    void testGenerateDynamicCredentialsVaultFailsTheJobWhenVaultDeniesTheLogin() {
         wireMockServer.stubFor(post(urlEqualTo("/v1/auth/jwt/login"))
                 .willReturn(aResponse()
                         .withStatus(403)
@@ -514,12 +513,10 @@ public class DynamicCredentialsTests extends ServerApplicationTests {
         envVariables.put("VAULT_ADDR", wireMockServer.baseUrl());
         envVariables.put("WORKLOAD_IDENTITY_VAULT_ROLE", "terrakube-role");
 
-        HashMap<String, String> result = dynamicCredentialsService.generateDynamicCredentialsVault(job, envVariables);
-
-        // Should still contain VAULT_TOKEN key but with empty value on error
-        assertTrue(result.containsKey("VAULT_TOKEN"));
-        assertEquals("", result.get("VAULT_TOKEN"));
+        // The job must fail before an executor is started, not carry on with an empty VAULT_TOKEN.
+        assertThrows(io.terrakube.api.plugin.token.dynamic.DynamicCredentialsException.class,
+                () -> dynamicCredentialsService.generateDynamicCredentialsVault(job, envVariables));
+        assertFalse(envVariables.containsKey("VAULT_TOKEN"));
     }
-
 
 }
