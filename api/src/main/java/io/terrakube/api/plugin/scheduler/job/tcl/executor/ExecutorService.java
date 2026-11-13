@@ -24,6 +24,8 @@ import io.terrakube.api.plugin.scheduler.job.tcl.executor.ephemeral.EphemeralExe
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.persistent.PersistentExecutorService;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.Flow;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.FlowType;
+import io.terrakube.api.plugin.scheduler.ExecutionLease;
+import io.terrakube.api.plugin.scheduler.ExecutionLeaseContext;
 import io.terrakube.api.plugin.token.dynamic.DynamicCredentialsException;
 import io.terrakube.api.plugin.token.dynamic.DynamicCredentialsService;
 import io.terrakube.api.plugin.vcs.TokenService;
@@ -253,10 +255,33 @@ public class ExecutorService {
             executorContext.setPolicyExemptionList(policyResolutionService.resolveExemptionsForJob(job));
         }
         executorContext = validateJobAddress(executorContext, job);
-        if (isEphemeralExecutorEnabled(executorContext.getEnvironmentVariables())) {
-            ephemeralExecutorService.send(job, executorContext);
-        } else {
-            persistentExecutorService.send(job, executorContext);
+        sendClaimed(job, stepId, executorContext);
+    }
+
+    // Credential preparation above can take a while. Before anything leaves for an executor, the
+    // scheduler's execution lock must still be this worker's and the step must not have been
+    // claimed by an earlier attempt; otherwise another worker may already have submitted it.
+    private void sendClaimed(Job job, String stepId, ExecutorContext executorContext) throws ExecutionException {
+        ExecutionLease lease = ExecutionLeaseContext.current();
+        if (lease != null && !lease.claimDispatch(stepId)) {
+            throw new DispatchNotClaimedException(String.format(
+                    "Job %s step %s was not submitted: this worker no longer holds the job's execution lock, or the step was already claimed",
+                    job.getId(), stepId));
+        }
+        try {
+            if (isEphemeralExecutorEnabled(executorContext.getEnvironmentVariables())) {
+                ephemeralExecutorService.send(job, executorContext);
+            } else {
+                persistentExecutorService.send(job, executorContext);
+            }
+        } catch (ExecutorUnavailableException e) {
+            // The executor could not be reached, so this is the one outcome that may be retried.
+            // Any other failure leaves the claim in place: the submission may have gone through,
+            // and the job is failed rather than sent again.
+            if (lease != null) {
+                lease.releaseDispatchClaim(stepId);
+            }
+            throw e;
         }
     }
 

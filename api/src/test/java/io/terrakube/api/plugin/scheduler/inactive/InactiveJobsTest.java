@@ -23,6 +23,7 @@ import org.quartz.JobExecutionContext;
 import org.quartz.JobKey;
 import org.quartz.Scheduler;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.data.redis.RedisConnectionFailureException;
 
@@ -262,7 +263,7 @@ class InactiveJobsTest {
 
         subject().execute(context);
 
-        verify(redisTemplate).delete("job-execution-lock:15");
+        verify(redisTemplate).execute(any(RedisScript.class), eq(List.of("job-execution-lock:15")), any(Object[].class));
     }
 
     @Test

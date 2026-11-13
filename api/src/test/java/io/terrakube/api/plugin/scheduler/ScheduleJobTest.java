@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doReturn;
@@ -85,6 +86,7 @@ import io.terrakube.api.rs.workspace.schedule.Schedule;
 import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.data.redis.core.script.RedisScript;
 
 @ExtendWith(MockitoExtension.class)
 public class ScheduleJobTest {
@@ -152,6 +154,8 @@ public class ScheduleJobTest {
         lenient().doReturn(valueOperations).when(redisTemplate).opsForValue();
         lenient().doReturn(true).when(valueOperations).setIfAbsent(any(), any(), any(Duration.class));
         lenient().doReturn(true).when(redisTemplate).delete(anyString());
+        // Lock release, renewal and dispatch claims run as Lua scripts; 1 = this worker owns the lock.
+        lenient().doReturn(1L).when(redisTemplate).execute(any(RedisScript.class), anyList(), any(Object[].class));
 
         // Default to "next in line, no one to wake" so non-FIFO tests behave as before; the
         // ordering tests below override these.
@@ -178,6 +182,11 @@ public class ScheduleJobTest {
         dispatchRetryProperties.setAdmissionDeferralEnabled(false);
         dispatchRetryCalculator = new DispatchRetryCalculator(dispatchRetryProperties);
         dispatchRetryMetrics = mock(DispatchRetryMetrics.class);
+    }
+
+    private void verifyLockReleasedOnce(Job job) {
+        verify(redisTemplate, times(1)).execute(any(RedisScript.class),
+                eq(List.of("job-execution-lock:" + job.getId())), any(Object[].class));
     }
 
     private ScheduleJob subject() {
@@ -362,7 +371,7 @@ public class ScheduleJobTest {
         verify(executorService, times(1)).execute(any(), any(), any());
         verify(jobRepository, times(1)).save(job);
         verify(valueOperations, times(1)).setIfAbsent(any(), any(), any(Duration.class));
-        verify(redisTemplate, times(1)).delete(anyString());
+        verifyLockReleasedOnce(job);
         Assertions.assertEquals(JobStatus.queue, job.getStatus());
         verify(jobNotificationTrigger, times(1)).notifyStatusChanged(job);
     }
@@ -393,7 +402,7 @@ public class ScheduleJobTest {
         verify(executorService, times(1)).execute(any(), any(), any());
         verify(jobRepository, times(1)).save(job);
         verify(valueOperations, times(1)).setIfAbsent(any(), any(), any(Duration.class));
-        verify(redisTemplate, times(1)).delete(anyString());
+        verifyLockReleasedOnce(job);
         Assertions.assertEquals(JobStatus.queue, job.getStatus());
         verify(jobNotificationTrigger, times(1)).notifyStatusChanged(job);
     }
@@ -592,6 +601,34 @@ public class ScheduleJobTest {
         verify(jobRepository, times(0)).save(any());
         verify(stepRepository, times(0)).save(any());
         verify(gitLabWebhookService, times(0)).sendCommitStatus(any(), any(), any());
+        Assertions.assertEquals(JobStatus.pending, job.getStatus());
+    }
+
+    @Test
+    public void pendingJobIsRetriedNotFailedWhenTheWorkerCouldNotClaimTheDispatch() throws Exception {
+        Job job = job(JobStatus.pending);
+        job.setPlanChanges(true);
+
+        Flow flow = new Flow();
+        flow.setType(FlowType.terraformPlan.name());
+        UUID stepId = job.getStep().get(0).getId();
+
+        doReturn(false).when(tclService).isTemplatePlanOnly(any());
+        doReturn(Optional.of(Collections.emptyList()))
+                .when(jobRepository)
+                .findByWorkspaceAndStatusNotInAndIdLessThan(any(Workspace.class), anyList(), anyInt());
+        doReturn(job).when(tclService).initJobConfiguration(any(Job.class));
+        doReturn(flow).when(tclService).getNextFlow(any());
+        doReturn(stepId.toString()).when(tclService).getCurrentStepId(any());
+        doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
+        // The lock expired while credentials were prepared, or another worker already claimed the step.
+        doThrow(new io.terrakube.api.plugin.scheduler.job.tcl.executor.DispatchNotClaimedException("lock lost"))
+                .when(executorService).execute(any(), any(), any());
+
+        Assert.assertFalse(subject().runExecution(job));
+
+        verify(jobRepository, times(0)).save(any());
+        verify(stepRepository, times(0)).save(any());
         Assertions.assertEquals(JobStatus.pending, job.getStatus());
     }
 
@@ -1566,7 +1603,7 @@ public class ScheduleJobTest {
         inOrder.verify(valueOperations).setIfAbsent(any(), any(), any(Duration.class)); // lock acquired
         inOrder.verify(jobRepository).findById(job.getId());                            // job loaded
         inOrder.verify(workspaceRepository).save(job.getWorkspace());                   // a write happens
-        inOrder.verify(redisTemplate).delete("job-execution-lock:" + job.getId());      // lock released last
+        inOrder.verify(redisTemplate).execute(any(RedisScript.class), eq(List.of("job-execution-lock:" + job.getId())), any(Object[].class)); // lock released last
     }
 
     @Test
