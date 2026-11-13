@@ -1,7 +1,7 @@
 import { DeleteOutlined } from "@ant-design/icons";
 import { Button, Flex, Form, Input, Layout, Menu, Popconfirm, Space, Spin, Typography, message } from "antd";
 import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import PageWrapper from "@/components/layout/PageWrapper/PageWrapper";
 import projectService, { ProjectAccessModel } from "./projectService";
 import { apiGet } from "@/modules/api/apiWrapper";
@@ -171,7 +171,9 @@ function ProjectGeneralSettings({
 export default function ProjectDetailPage({ organizationName, setOrganizationName }: Props) {
   const { orgid, id } = useParams();
   const [project, setProject] = useState<ProjectModel | null>(null);
-  const [activeKey, setActiveKey] = useState("general");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab = searchParams.get("tab");
+  const activeKey = tab === "workspaces" || tab === "teams" ? tab : "general";
   const [assignedWorkspacesCount, setAssignedWorkspacesCount] = useState(0);
   const { permissions } = useOrgPermissions();
   const [userGroups, setUserGroups] = useState<string[]>([]);
@@ -227,7 +229,11 @@ export default function ProjectDetailPage({ organizationName, setOrganizationNam
 
   // Reload workspace count when switching tabs
   const handleTabChange = (key: string) => {
-    setActiveKey(key);
+    setSearchParams((params) => {
+      if (key === "general") params.delete("tab");
+      else params.set("tab", key);
+      return params;
+    });
     if (key === "general" && orgid && id) {
       execute();
       workspaceService.listWorkspaces(orgid).then((result) => {

@@ -30,8 +30,10 @@ const projects = [
   ...Array.from({ length: 10 }, (_, index) => ({
     id: `project-${index + 1}`,
     name: `Project ${index + 1}`,
+    workspaceCount: index === 0 ? 12 : 0,
+    teamCount: index === 0 ? 4 : 0,
   })),
-  { id: "billing-api", name: "Billing API" },
+  { id: "billing-api", name: "Billing API", workspaceCount: 8, teamCount: 2 },
 ];
 
 function renderProjectsPage() {
@@ -52,6 +54,50 @@ describe("ProjectsPage search", () => {
     jest.clearAllMocks();
     sessionStorage.clear();
     (projectService.listProjects as jest.Mock).mockResolvedValue({ isError: false, data: projects });
+  });
+
+  it("shows workspace and team counts, including zero, in each project row", async () => {
+    renderProjectsPage();
+
+    const project = (await screen.findByText("Project 1")).closest("tr")!;
+    expect(screen.getByRole("columnheader", { name: "Workspaces" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Teams" })).toBeInTheDocument();
+    expect(within(project).getByText("12")).toBeInTheDocument();
+    expect(within(project).getByText("4")).toBeInTheDocument();
+    expect(within(screen.getByText("Project 2").closest("tr")!).getAllByText("0")).toHaveLength(2);
+  });
+
+  it("links both counts, including zero, to the matching project's tabs", async () => {
+    renderProjectsPage();
+    await screen.findByText("Project 1");
+
+    for (const [name, count, tab] of [
+      ["12 workspaces in Project 1", "12", "workspaces"],
+      ["4 teams with permissions in Project 1", "4", "teams"],
+      ["0 workspaces in Project 2", "0", "workspaces"],
+      ["0 teams with permissions in Project 2", "0", "teams"],
+    ]) {
+      const projectId = name.endsWith("1") ? "project-1" : "project-2";
+      const link = screen.getByRole("link", { name });
+      expect(link).toHaveTextContent(count);
+      expect(link).toHaveAttribute("href", `/organizations/org-1/projects/${projectId}?tab=${tab}`);
+    }
+  });
+
+  it("reloads changed counts when the Projects list is reopened", async () => {
+    const { unmount } = renderProjectsPage();
+    await screen.findByText("Project 1");
+    unmount();
+    (projectService.listProjects as jest.Mock).mockResolvedValue({
+      isError: false,
+      data: [{ ...projects[0], workspaceCount: 13, teamCount: 5 }],
+    });
+
+    renderProjectsPage();
+
+    const project = (await screen.findByText("Project 1")).closest("tr")!;
+    expect(within(project).getByText("13")).toBeInTheDocument();
+    expect(within(project).getByText("5")).toBeInTheDocument();
   });
 
   it("searches all projects case-insensitively and restores the full list when cleared", async () => {
@@ -102,6 +148,8 @@ describe("ProjectsPage search", () => {
         ...Array.from({ length: 12 }, (_, index) => ({
           id: `billing-${index}`,
           name: `Billing ${index + 1}`,
+          workspaceCount: 0,
+          teamCount: 0,
         })),
         ...projects,
       ],
@@ -149,7 +197,7 @@ describe("ProjectsPage search", () => {
     (projectService.createProject as jest.Mock).mockResolvedValue(undefined);
     (projectService.listProjects as jest.Mock).mockResolvedValue({
       isError: false,
-      data: [{ id: "platform", name: "Platform" }, ...projects],
+      data: [{ id: "platform", name: "Platform", workspaceCount: 0, teamCount: 0 }, ...projects],
     });
     fireEvent.click(within(dialog).getByRole("button", { name: "Create" }));
 
