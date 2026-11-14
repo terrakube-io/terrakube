@@ -2,6 +2,7 @@ package io.terrakube.api;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.terrakube.api.plugin.scheduler.job.tcl.model.FlowType;
 import io.terrakube.api.plugin.token.dynamic.DynamicCredentialsService;
 import io.terrakube.api.plugin.token.dynamic.JwksController;
 import io.terrakube.api.plugin.token.dynamic.OpenIdConfigurationController;
@@ -85,6 +86,9 @@ public class DynamicCredentialsTests extends ServerApplicationTests {
         ReflectionTestUtils.setField(dynamicCredentialsService, "privateKeyPath", privateKeyFile.toString());
         ReflectionTestUtils.setField(dynamicCredentialsService, "kid", "03446895-220d-47e1-9564-4eeaa3691b42");
         ReflectionTestUtils.setField(dynamicCredentialsService, "dynamicCredentialTtl", 60);
+        ReflectionTestUtils.setField(dynamicCredentialsService, "runPhaseEnabled", true);
+        ReflectionTestUtils.setField(openIdConfigurationController, "runPhaseEnabled", true);
+        ReflectionTestUtils.setField(openIdConfigurationController, "openIdConfiguration", null);
     }
 
     @Test
@@ -349,8 +353,22 @@ public class DynamicCredentialsTests extends ServerApplicationTests {
                         "terrakube_job_id",
                         "terrakube_workspace_name",
                         "terrakube_organization_name",
-                        "terrakube_project_name"
+                        "terrakube_project_name",
+                        "terrakube_run_phase"
                 ));
+    }
+
+    @Test
+    void testOpenIdConfigurationOmitsRunPhaseClaimWhenDisabled() {
+        ReflectionTestUtils.setField(openIdConfigurationController, "runPhaseEnabled", false);
+        ReflectionTestUtils.setField(openIdConfigurationController, "openIdConfiguration", null);
+
+        given()
+                .when()
+                .get("/.well-known/openid-configuration")
+                .then()
+                .statusCode(HttpStatus.OK.value())
+                .body("claims_supported", not(hasItem("terrakube_run_phase")));
     }
 
     @Test
@@ -517,6 +535,213 @@ public class DynamicCredentialsTests extends ServerApplicationTests {
         assertThrows(io.terrakube.api.plugin.token.dynamic.DynamicCredentialsException.class,
                 () -> dynamicCredentialsService.generateDynamicCredentialsVault(job, envVariables));
         assertFalse(envVariables.containsKey("VAULT_TOKEN"));
+    }
+
+    @Test
+    void testRunPhaseIsNullWhenDisabled() {
+        ReflectionTestUtils.setField(dynamicCredentialsService, "runPhaseEnabled", false);
+        for (FlowType flowType : FlowType.values()) {
+            assertNull(dynamicCredentialsService.runPhase(flowType.name()));
+        }
+        assertNull(dynamicCredentialsService.runPhase(null));
+    }
+
+    @Test
+    void testRunPhaseOfEachStepWhenEnabled() {
+        assertNull(dynamicCredentialsService.runPhase(null));
+        for (FlowType flowType : FlowType.values()) {
+            String expected = (flowType == FlowType.terraformApply || flowType == FlowType.terraformDestroy)
+                    ? "apply"
+                    : "plan";
+            assertEquals(expected, dynamicCredentialsService.runPhase(flowType.name()),
+                    "Unexpected runPhase for " + flowType);
+        }
+    }
+
+    @Test
+    void testTokenCarriesRunPhaseClaimWithoutModifyingSubjectByDefault() throws IOException {
+        Job job = createMockJob();
+
+        HashMap<String, String> envVariables = new HashMap<>();
+        envVariables.put("WORKLOAD_IDENTITY_AUDIENCE_AWS", "sts.amazonaws.com");
+        envVariables.put("WORKLOAD_IDENTITY_ROLE_AWS", "arn:aws:iam::123456789012:role/apply-role");
+
+        HashMap<String, String> result = dynamicCredentialsService.generateDynamicCredentialsAws(job, envVariables, "plan");
+        JsonNode claims = decodeJwtClaims(result.get("TERRAKUBE_AWS_CREDENTIALS_FILE"));
+
+        assertEquals("plan", claims.get("terrakube_run_phase").asText());
+        assertFalse(claims.get("sub").asText().contains(":run_phase:"),
+                "Subject must remain backward-compatible unless workspace opts in");
+    }
+
+    @Test
+    void testTokenCarriesSubjectSuffixWhenWorkspaceOptedIn() throws IOException {
+        Job job = createMockJob();
+
+        HashMap<String, String> planEnv = new HashMap<>();
+        planEnv.put("WORKLOAD_IDENTITY_AUDIENCE_AWS", "sts.amazonaws.com");
+        planEnv.put("WORKLOAD_IDENTITY_ROLE_AWS", "arn:aws:iam::123456789012:role/apply-role");
+        planEnv.put("ENABLE_DYNAMIC_CREDENTIALS_RUN_PHASE", "true");
+
+        HashMap<String, String> applyEnv = new HashMap<>(planEnv);
+        applyEnv.put("ENABLE_DYNAMIC_CREDENTIALS_RUN_PHASE", "true");
+        JsonNode applyClaims = decodeJwtClaims(
+                dynamicCredentialsService.generateDynamicCredentialsAws(job, applyEnv, "apply")
+                        .get("TERRAKUBE_AWS_CREDENTIALS_FILE"));
+
+        JsonNode planClaims = decodeJwtClaims(
+                dynamicCredentialsService.generateDynamicCredentialsAws(job, planEnv, "plan")
+                        .get("TERRAKUBE_AWS_CREDENTIALS_FILE"));
+        assertEquals("plan", planClaims.get("terrakube_run_phase").asText());
+        assertTrue(planClaims.get("sub").asText().endsWith(":run_phase:plan"));
+
+        assertEquals("apply", applyClaims.get("terrakube_run_phase").asText());
+        assertTrue(applyClaims.get("sub").asText().endsWith(":run_phase:apply"));
+    }
+
+    @Test
+    void testTokenRejectsInvalidRunPhase() {
+        Job job = createMockJob();
+
+        HashMap<String, String> envVariables = new HashMap<>();
+        envVariables.put("WORKLOAD_IDENTITY_AUDIENCE_AWS", "sts.amazonaws.com");
+        envVariables.put("WORKLOAD_IDENTITY_ROLE_AWS", "arn:aws:iam::123456789012:role/apply-role");
+
+        assertThrows(IllegalArgumentException.class,
+                () -> dynamicCredentialsService.generateDynamicCredentialsAws(job, envVariables, "bogus"));
+    }
+
+    @Test
+    void testKillSwitchSuppressesExplicitRunPhase() throws IOException {
+        ReflectionTestUtils.setField(dynamicCredentialsService, "runPhaseEnabled", false);
+        Job job = createMockJob();
+
+        HashMap<String, String> envVariables = new HashMap<>();
+        envVariables.put("WORKLOAD_IDENTITY_AUDIENCE_AWS", "sts.amazonaws.com");
+        envVariables.put("WORKLOAD_IDENTITY_ROLE_AWS", "arn:aws:iam::123456789012:role/apply-role");
+        envVariables.put("WORKLOAD_IDENTITY_ROLE_AWS_PLAN", "arn:aws:iam::123456789012:role/plan-role");
+        envVariables.put("ENABLE_DYNAMIC_CREDENTIALS_RUN_PHASE", "true");
+        envVariables.put("ENABLE_AWS_SESSION_TAGS", "true");
+
+        HashMap<String, String> result = dynamicCredentialsService.generateDynamicCredentialsAws(job, envVariables, "plan");
+        assertEquals("arn:aws:iam::123456789012:role/apply-role", result.get("AWS_ROLE_ARN"));
+
+        JsonNode claims = decodeJwtClaims(result.get("TERRAKUBE_AWS_CREDENTIALS_FILE"));
+        assertFalse(claims.has("terrakube_run_phase"));
+        assertFalse(claims.get("sub").asText().contains(":run_phase:"));
+        assertFalse(claims.get("https://aws.amazon.com/tags").get("principal_tags").has("terrakube:run_phase"));
+    }
+
+    @Test
+    void testAwsPlanAndApplyRoleSelectionAndSessionTag() throws IOException {
+        Job job = createMockJob();
+
+        HashMap<String, String> planEnv = new HashMap<>();
+        planEnv.put("WORKLOAD_IDENTITY_AUDIENCE_AWS", "sts.amazonaws.com");
+        planEnv.put("WORKLOAD_IDENTITY_ROLE_AWS", "arn:aws:iam::123456789012:role/apply-role");
+        planEnv.put("WORKLOAD_IDENTITY_ROLE_AWS_PLAN", "arn:aws:iam::123456789012:role/plan-role");
+        planEnv.put("ENABLE_AWS_SESSION_TAGS", "true");
+
+        HashMap<String, String> optedInPlanEnv = new HashMap<>(planEnv);
+        optedInPlanEnv.put("ENABLE_DYNAMIC_CREDENTIALS_RUN_PHASE", "true");
+        HashMap<String, String> applyEnv = new HashMap<>(optedInPlanEnv);
+
+        HashMap<String, String> planResultDefault = dynamicCredentialsService.generateDynamicCredentialsAws(job, planEnv, "plan");
+        assertEquals("arn:aws:iam::123456789012:role/plan-role", planResultDefault.get("AWS_ROLE_ARN"));
+        JsonNode defaultTags = decodeJwtClaims(planResultDefault.get("TERRAKUBE_AWS_CREDENTIALS_FILE"))
+                .get("https://aws.amazon.com/tags").get("principal_tags");
+        assertFalse(defaultTags.has("terrakube:run_phase"),
+                "terrakube:run_phase session tag must require ENABLE_DYNAMIC_CREDENTIALS_RUN_PHASE");
+
+        HashMap<String, String> optedInPlanResult = dynamicCredentialsService.generateDynamicCredentialsAws(job, optedInPlanEnv, "plan");
+        JsonNode optedInTags = decodeJwtClaims(optedInPlanResult.get("TERRAKUBE_AWS_CREDENTIALS_FILE"))
+                .get("https://aws.amazon.com/tags").get("principal_tags");
+        assertEquals("plan", optedInTags.get("terrakube:run_phase").get(0).asText());
+
+        HashMap<String, String> applyResult = dynamicCredentialsService.generateDynamicCredentialsAws(job, applyEnv, "apply");
+        assertEquals("arn:aws:iam::123456789012:role/apply-role", applyResult.get("AWS_ROLE_ARN"));
+        JsonNode applyTags = decodeJwtClaims(applyResult.get("TERRAKUBE_AWS_CREDENTIALS_FILE"))
+                .get("https://aws.amazon.com/tags").get("principal_tags");
+        assertEquals("apply", applyTags.get("terrakube:run_phase").get(0).asText());
+
+        HashMap<String, String> missingBaseEnv = new HashMap<>();
+        missingBaseEnv.put("WORKLOAD_IDENTITY_AUDIENCE_AWS", "sts.amazonaws.com");
+        HashMap<String, String> missingBaseResult = dynamicCredentialsService.generateDynamicCredentialsAws(job, missingBaseEnv, "apply");
+        assertFalse(missingBaseResult.containsKey("AWS_ROLE_ARN"));
+    }
+
+    @Test
+    void testGcpPlanAndApplyServiceAccountSelection() {
+        Job job = createMockJob();
+
+        HashMap<String, String> planEnv = new HashMap<>();
+        planEnv.put("WORKLOAD_IDENTITY_AUDIENCE_GCP", "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider");
+        planEnv.put("WORKLOAD_IDENTITY_SERVICE_ACCOUNT_EMAIL", "apply-sa@project.iam.gserviceaccount.com");
+        planEnv.put("WORKLOAD_IDENTITY_SERVICE_ACCOUNT_EMAIL_PLAN", "plan-sa@project.iam.gserviceaccount.com");
+        HashMap<String, String> applyEnv = new HashMap<>(planEnv);
+
+        HashMap<String, String> planResult = dynamicCredentialsService.generateDynamicCredentialsGcp(job, planEnv, "plan");
+        assertTrue(planResult.get("TERRAKUBE_GCP_CREDENTIALS_CONFIG_FILE").contains("plan-sa@project.iam.gserviceaccount.com"));
+
+        HashMap<String, String> applyResult = dynamicCredentialsService.generateDynamicCredentialsGcp(job, applyEnv, "apply");
+        assertTrue(applyResult.get("TERRAKUBE_GCP_CREDENTIALS_CONFIG_FILE").contains("apply-sa@project.iam.gserviceaccount.com"));
+
+        HashMap<String, String> fallbackEnv = new HashMap<>();
+        fallbackEnv.put("WORKLOAD_IDENTITY_AUDIENCE_GCP", "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider");
+        fallbackEnv.put("WORKLOAD_IDENTITY_SERVICE_ACCOUNT_EMAIL", "apply-sa@project.iam.gserviceaccount.com");
+        HashMap<String, String> fallbackResult = dynamicCredentialsService.generateDynamicCredentialsGcp(job, fallbackEnv, "plan");
+        assertTrue(fallbackResult.get("TERRAKUBE_GCP_CREDENTIALS_CONFIG_FILE").contains("apply-sa@project.iam.gserviceaccount.com"));
+    }
+
+    @Test
+    void testAzurePlanAndApplyClientIdSelection() throws IOException {
+        Job job = createMockJob();
+
+        HashMap<String, String> planEnv = new HashMap<>();
+        planEnv.put("WORKLOAD_IDENTITY_AUDIENCE_AZURE", "api://AzureADTokenExchange");
+        planEnv.put("ARM_CLIENT_ID", "apply-client-id");
+        planEnv.put("ARM_CLIENT_ID_PLAN", "plan-client-id");
+        planEnv.put("ENABLE_DYNAMIC_CREDENTIALS_RUN_PHASE", "true");
+        HashMap<String, String> applyEnv = new HashMap<>(planEnv);
+
+        HashMap<String, String> planResult = dynamicCredentialsService.generateDynamicCredentialsAzure(job, planEnv, "plan");
+        assertEquals("plan-client-id", planResult.get("ARM_CLIENT_ID"));
+        assertTrue(decodeJwtClaims(planResult.get("ARM_OIDC_TOKEN")).get("sub").asText().endsWith(":run_phase:plan"));
+
+        HashMap<String, String> applyResult = dynamicCredentialsService.generateDynamicCredentialsAzure(job, applyEnv, "apply");
+        assertEquals("apply-client-id", applyResult.get("ARM_CLIENT_ID"));
+        assertTrue(decodeJwtClaims(applyResult.get("ARM_OIDC_TOKEN")).get("sub").asText().endsWith(":run_phase:apply"));
+    }
+
+    @Test
+    void testVaultPlanAndApplyRoleSelection() {
+        wireMockServer.stubFor(post(urlEqualTo("/v1/auth/jwt/login"))
+                .withRequestBody(matchingJsonPath("$.role", equalTo("plan-role")))
+                .willReturn(aResponse()
+                        .withStatus(200)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"auth\": {\"client_token\": \"plan-token\", \"lease_duration\": 3600}}")));
+        wireMockServer.stubFor(post(urlEqualTo("/v1/auth/jwt/login"))
+                .withRequestBody(matchingJsonPath("$.role", equalTo("apply-role")))
+                .willReturn(aResponse()
+                        .withStatus(200)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"auth\": {\"client_token\": \"apply-token\", \"lease_duration\": 3600}}")));
+
+        Job job = createMockJob();
+
+        HashMap<String, String> planEnv = new HashMap<>();
+        planEnv.put("WORKLOAD_IDENTITY_VAULT_AUDIENCE", "vault.example.com");
+        planEnv.put("VAULT_ADDR", wireMockServer.baseUrl());
+        planEnv.put("WORKLOAD_IDENTITY_VAULT_ROLE", "apply-role");
+        planEnv.put("WORKLOAD_IDENTITY_VAULT_ROLE_PLAN", "plan-role");
+        HashMap<String, String> applyEnv = new HashMap<>(planEnv);
+
+        HashMap<String, String> planResult = dynamicCredentialsService.generateDynamicCredentialsVault(job, planEnv, "plan");
+        assertEquals("plan-token", planResult.get("VAULT_TOKEN"));
+
+        HashMap<String, String> applyResult = dynamicCredentialsService.generateDynamicCredentialsVault(job, applyEnv, "apply");
+        assertEquals("apply-token", applyResult.get("VAULT_TOKEN"));
     }
 
 }

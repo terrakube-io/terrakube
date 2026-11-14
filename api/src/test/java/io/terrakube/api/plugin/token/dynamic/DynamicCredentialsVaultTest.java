@@ -297,6 +297,58 @@ class DynamicCredentialsVaultTest {
         });
     }
 
+    @Test
+    void usesPlanRoleOnPlanAndBaseRoleWhenPlanRoleIsBlank() {
+        vault.stubFor(post(urlEqualTo(LOGIN))
+                .withRequestBody(matchingJsonPath("$.role", equalTo("terrakube-plan-role")))
+                .willReturn(aResponse().withStatus(200).withHeader("Content-Type", "application/json")
+                        .withBody(loginResponse("plan-vault-token"))));
+        vault.stubFor(post(urlEqualTo(LOGIN))
+                .withRequestBody(matchingJsonPath("$.role", equalTo("terrakube-role")))
+                .willReturn(aResponse().withStatus(200).withHeader("Content-Type", "application/json")
+                        .withBody(loginResponse(CLIENT_TOKEN))));
+
+        HashMap<String, String> withPlanRole = env();
+        withPlanRole.put("WORKLOAD_IDENTITY_VAULT_ROLE_PLAN", "terrakube-plan-role");
+        service.generateDynamicCredentialsVault(job(), withPlanRole, "plan");
+        assertThat(withPlanRole).containsEntry("VAULT_TOKEN", "plan-vault-token");
+
+        HashMap<String, String> withBlankPlanRole = env();
+        withBlankPlanRole.put("WORKLOAD_IDENTITY_VAULT_ROLE_PLAN", "   ");
+        service.generateDynamicCredentialsVault(job(), withBlankPlanRole, "plan");
+        assertThat(withBlankPlanRole).containsEntry("VAULT_TOKEN", CLIENT_TOKEN);
+    }
+
+    @Test
+    void applyFailsBeforeHttpWhenBaseRoleUnsetEvenIfPlanRoleConfigured() {
+        HashMap<String, String> env = env();
+        env.remove("WORKLOAD_IDENTITY_VAULT_ROLE");
+        env.put("WORKLOAD_IDENTITY_VAULT_ROLE_PLAN", "terrakube-plan-role");
+
+        assertThatThrownBy(() -> service.generateDynamicCredentialsVault(job(), env, "apply"))
+                .isInstanceOf(DynamicCredentialsException.class);
+        assertThat(vault.getAllServeEvents()).isEmpty();
+    }
+
+    @Test
+    void planWithOptInNeverLogsCredentials() {
+        vault.stubFor(post(urlEqualTo(LOGIN))
+                .willReturn(aResponse().withStatus(200).withHeader("Content-Type", "application/json")
+                        .withBody(loginResponse(CLIENT_TOKEN))));
+
+        HashMap<String, String> env = env();
+        env.put("WORKLOAD_IDENTITY_VAULT_ROLE_PLAN", "terrakube-plan-role");
+        env.put("ENABLE_DYNAMIC_CREDENTIALS_RUN_PHASE", "true");
+
+        service.generateDynamicCredentialsVault(job(), env, "plan");
+
+        assertThat(env).containsEntry("VAULT_TOKEN", CLIENT_TOKEN);
+        assertThat(logs.list).allSatisfy(event -> {
+            assertThat(event.getFormattedMessage()).doesNotContain(CLIENT_TOKEN);
+            assertThat(event.getFormattedMessage()).doesNotContain("eyJ");
+        });
+    }
+
     private HashMap<String, String> env() {
         HashMap<String, String> env = new HashMap<>();
         env.put("WORKLOAD_IDENTITY_VAULT_AUDIENCE", "vault.example.com");

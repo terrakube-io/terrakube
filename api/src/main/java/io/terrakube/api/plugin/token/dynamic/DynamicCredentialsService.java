@@ -18,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 import io.terrakube.api.plugin.http.ReactorNettyWebClientFactory;
+import io.terrakube.api.plugin.scheduler.job.tcl.model.FlowType;
 import io.terrakube.api.rs.job.Job;
 
 import java.io.BufferedReader;
@@ -73,25 +74,94 @@ public class DynamicCredentialsService {
     @Autowired
     WebClient.Builder webClientBuilder;
 
+    // Global kill switch (default true). When true, tokens carry a terrakube_run_phase claim
+    // ("plan" or "apply") and steps that do not change infrastructure use the "*_PLAN" variant of
+    // identity settings when set (WORKLOAD_IDENTITY_SERVICE_ACCOUNT_EMAIL_PLAN,
+    // WORKLOAD_IDENTITY_ROLE_AWS_PLAN, WORKLOAD_IDENTITY_VAULT_ROLE_PLAN, ARM_CLIENT_ID_PLAN).
+    // Adding the ":run_phase:<phase>" suffix to the JWT subject (and terrakube:run_phase to AWS
+    // session tags) is opted in per workspace via ENABLE_DYNAMIC_CREDENTIALS_RUN_PHASE so existing
+    // exact-subject trust policies do not break instance-wide.
+    @Value("${io.terrakube.dynamic.credentials.run-phase.enabled:true}")
+    boolean runPhaseEnabled = true;
+
+    static final String RUN_PHASE_PLAN = "plan";
+    static final String RUN_PHASE_APPLY = "apply";
+    private static final Set<String> APPLY_FLOWS = Set.of(FlowType.terraformApply.name(),
+            FlowType.terraformDestroy.name());
+
+    /**
+     * Returns the run phase of a step of the given flow type: "apply" for steps that change
+     * infrastructure, "plan" for every other step. Returns null when run-phase credentials are
+     * disabled or {@code flowType} is null.
+     */
+    public String runPhase(String flowType) {
+        if (!runPhaseEnabled || flowType == null) {
+            return null;
+        }
+        return APPLY_FLOWS.contains(flowType) ? RUN_PHASE_APPLY : RUN_PHASE_PLAN;
+    }
+
+    // The "_PLAN" variant of a setting for a plan-phase step when it is set, the setting itself otherwise.
+    private static String forRunPhase(Map<String, String> workspaceEnvVariables, String key, String runPhase) {
+        if (RUN_PHASE_PLAN.equals(runPhase)) {
+            String planValue = workspaceEnvVariables.get(key + "_PLAN");
+            if (planValue != null && !planValue.isBlank()) {
+                return planValue;
+            }
+        }
+        return workspaceEnvVariables.get(key);
+    }
+
+    private static boolean isRunPhaseSubjectEnabled(Map<String, String> workspaceEnvVariables) {
+        if (workspaceEnvVariables == null) {
+            return false;
+        }
+        String value = workspaceEnvVariables.get("ENABLE_DYNAMIC_CREDENTIALS_RUN_PHASE");
+        if (value == null) {
+            return false;
+        }
+        String normalized = value.trim();
+        return !normalized.isEmpty()
+                && !"false".equalsIgnoreCase(normalized)
+                && !"0".equals(normalized);
+    }
 
     @Transactional
     public HashMap<String, String> generateDynamicCredentialsAzure(Job job, HashMap<String, String> workspaceEnvVariables) {
-        String jwtToken = generateJwt(job, workspaceEnvVariables.get("WORKLOAD_IDENTITY_AUDIENCE_AZURE"));
+        return generateDynamicCredentialsAzure(job, workspaceEnvVariables, null);
+    }
+
+    @Transactional
+    public HashMap<String, String> generateDynamicCredentialsAzure(Job job, HashMap<String, String> workspaceEnvVariables,
+            String runPhase) {
+        String jwtToken = generateJwt(job, workspaceEnvVariables.get("WORKLOAD_IDENTITY_AUDIENCE_AZURE"), null,
+                runPhase, isRunPhaseSubjectEnabled(workspaceEnvVariables));
 
         workspaceEnvVariables.put("ARM_OIDC_TOKEN", jwtToken);
+        String clientId = forRunPhase(workspaceEnvVariables, "ARM_CLIENT_ID", runPhase);
+        if (clientId != null) {
+            workspaceEnvVariables.put("ARM_CLIENT_ID", clientId);
+        }
 
         return workspaceEnvVariables;
     }
 
     @Transactional
     public HashMap<String, String> generateDynamicCredentialsVault(Job job, HashMap<String, String> workspaceEnvVariables) {
-        String jwtToken = generateJwt(job, workspaceEnvVariables.get("WORKLOAD_IDENTITY_VAULT_AUDIENCE"));
+        return generateDynamicCredentialsVault(job, workspaceEnvVariables, null);
+    }
+
+    @Transactional
+    public HashMap<String, String> generateDynamicCredentialsVault(Job job, HashMap<String, String> workspaceEnvVariables,
+            String runPhase) {
+        String jwtToken = generateJwt(job, workspaceEnvVariables.get("WORKLOAD_IDENTITY_VAULT_AUDIENCE"), null,
+                runPhase, isRunPhaseSubjectEnabled(workspaceEnvVariables));
         if (jwtToken.isEmpty()) {
             throw new DynamicCredentialsException("Vault dynamic credentials: could not generate the workload identity JWT, check the dynamic credentials key configuration");
         }
 
         String vaultAddress = workspaceEnvVariables.get("VAULT_ADDR");
-        String vaultRole = workspaceEnvVariables.get("WORKLOAD_IDENTITY_VAULT_ROLE");
+        String vaultRole = forRunPhase(workspaceEnvVariables, "WORKLOAD_IDENTITY_VAULT_ROLE", runPhase);
         if (vaultAddress == null || vaultAddress.isBlank()) {
             throw new DynamicCredentialsException("Vault dynamic credentials: VAULT_ADDR is not set");
         }
@@ -215,19 +285,32 @@ public class DynamicCredentialsService {
     }
 
     private String generateJwt(Job job, String tokenAudience) {
-        return generateJwt(job, tokenAudience, null);
+        return generateJwt(job, tokenAudience, null, null, false);
     }
 
     private String generateJwt(Job job, String tokenAudience, Map<String, Object> extraClaims) {
+        return generateJwt(job, tokenAudience, extraClaims, null, false);
+    }
+
+    private String generateJwt(Job job, String tokenAudience, Map<String, Object> extraClaims, String runPhase,
+            boolean includeRunPhaseInSubject) {
+        if (runPhase != null && !RUN_PHASE_PLAN.equals(runPhase) && !RUN_PHASE_APPLY.equals(runPhase)) {
+            throw new IllegalArgumentException("Invalid run phase: " + runPhase);
+        }
+        String effectiveRunPhase = runPhaseEnabled ? runPhase : null;
         String jwtToken = "";
         if (privateKeyPath != null && !privateKeyPath.isEmpty()) {
             try {
                 String organizationName = job.getOrganization().getName();
                 String workspaceName = job.getWorkspace().getName();
                 var project = job.getWorkspace().getProject();
+                String subject = String.format("organization:%s:workspace:%s", organizationName, workspaceName);
+                if (effectiveRunPhase != null && includeRunPhaseInSubject) {
+                    subject = subject + ":run_phase:" + effectiveRunPhase;
+                }
                 Instant now = Instant.now();
                 var builder = Jwts.builder()
-                        .subject(String.format("organization:%s:workspace:%s", organizationName, workspaceName))
+                        .subject(subject)
                         //.audience().add(tokenAudience).and()
                         .setAudience(tokenAudience)
                         .id(UUID.randomUUID().toString())
@@ -245,6 +328,9 @@ public class DynamicCredentialsService {
                 if (project != null) {
                     builder.claim("terrakube_project_name", project.getName());
                 }
+                if (effectiveRunPhase != null) {
+                    builder.claim("terrakube_run_phase", effectiveRunPhase);
+                }
                 if (extraClaims != null) extraClaims.forEach(builder::claim);
                 jwtToken = builder
                         .signWith(getPrivateKey(), Jwts.SIG.RS512)
@@ -261,15 +347,28 @@ public class DynamicCredentialsService {
 
     @Transactional
     public HashMap<String, String> generateDynamicCredentialsAws(Job job, HashMap<String, String> workspaceEnvVariables) {
+        return generateDynamicCredentialsAws(job, workspaceEnvVariables, null);
+    }
+
+    @Transactional
+    public HashMap<String, String> generateDynamicCredentialsAws(Job job, HashMap<String, String> workspaceEnvVariables,
+            String runPhase) {
+        String effectiveRunPhase = runPhaseEnabled ? runPhase : null;
+        boolean includeRunPhaseInSubject = isRunPhaseSubjectEnabled(workspaceEnvVariables);
         Map<String, Object> extraClaims = null;
         if (Boolean.parseBoolean(workspaceEnvVariables.get("ENABLE_AWS_SESSION_TAGS"))) {
-            extraClaims = Map.of("https://aws.amazon.com/tags", buildAwsSessionTags(job));
+            extraClaims = Map.of("https://aws.amazon.com/tags",
+                    buildAwsSessionTags(job, includeRunPhaseInSubject ? effectiveRunPhase : null));
         }
 
-        String awsWebIdentityToken = generateJwt(job, workspaceEnvVariables.get("WORKLOAD_IDENTITY_AUDIENCE_AWS"), extraClaims);
+        String awsWebIdentityToken = generateJwt(job, workspaceEnvVariables.get("WORKLOAD_IDENTITY_AUDIENCE_AWS"),
+                extraClaims, effectiveRunPhase, includeRunPhaseInSubject);
 
         workspaceEnvVariables.put("TERRAKUBE_AWS_CREDENTIALS_FILE", awsWebIdentityToken);
-        workspaceEnvVariables.put("AWS_ROLE_ARN", workspaceEnvVariables.get("WORKLOAD_IDENTITY_ROLE_AWS"));
+        String awsRoleArn = forRunPhase(workspaceEnvVariables, "WORKLOAD_IDENTITY_ROLE_AWS", effectiveRunPhase);
+        if (awsRoleArn != null) {
+            workspaceEnvVariables.put("AWS_ROLE_ARN", awsRoleArn);
+        }
         // AWS_WEB_IDENTITY_TOKEN_FILE is set by the executor once it knows the absolute
         // path of the file it wrote (the workspace clone dir is only known there).
 
@@ -278,7 +377,15 @@ public class DynamicCredentialsService {
 
     @Transactional
     public HashMap<String, String> generateDynamicCredentialsGcp(Job job, HashMap<String, String> workspaceEnvVariables) {
-        String jwtToken = generateJwt(job, workspaceEnvVariables.get("WORKLOAD_IDENTITY_AUDIENCE_GCP"));
+        return generateDynamicCredentialsGcp(job, workspaceEnvVariables, null);
+    }
+
+    @Transactional
+    public HashMap<String, String> generateDynamicCredentialsGcp(Job job, HashMap<String, String> workspaceEnvVariables,
+            String runPhase) {
+        String effectiveRunPhase = runPhaseEnabled ? runPhase : null;
+        String jwtToken = generateJwt(job, workspaceEnvVariables.get("WORKLOAD_IDENTITY_AUDIENCE_GCP"), null,
+                effectiveRunPhase, isRunPhaseSubjectEnabled(workspaceEnvVariables));
 
         String googleCredentialsFile = "{\n" +
                 "    \"access_token\": \"%s\"\n" +
@@ -304,7 +411,8 @@ public class DynamicCredentialsService {
         // The ${WORKSPACE_DIRECTORY} placeholder is substituted by the executor when
         // it writes the config to disk (only the executor knows the workspace clone path).
         String audience = workspaceEnvVariables.get("WORKLOAD_IDENTITY_AUDIENCE_GCP");
-        String serviceAccountEmail = workspaceEnvVariables.get("WORKLOAD_IDENTITY_SERVICE_ACCOUNT_EMAIL");
+        String serviceAccountEmail = forRunPhase(workspaceEnvVariables, "WORKLOAD_IDENTITY_SERVICE_ACCOUNT_EMAIL",
+                effectiveRunPhase);
 
         googleCredentialConfigFile = String.format(googleCredentialConfigFile, audience, serviceAccountEmail);
 
@@ -316,13 +424,16 @@ public class DynamicCredentialsService {
         return workspaceEnvVariables;
     }
 
-    private Map<String, Object> buildAwsSessionTags(Job job) {
+    private Map<String, Object> buildAwsSessionTags(Job job, String runPhase) {
         Map<String, List<String>> principalTags = new LinkedHashMap<>();
         principalTags.put("terrakube:org",       List.of(sanitizeTag(job.getOrganization().getName())));
         principalTags.put("terrakube:workspace", List.of(sanitizeTag(job.getWorkspace().getName())));
         var project = job.getWorkspace().getProject();
         if (project != null) {
             principalTags.put("terrakube:project", List.of(sanitizeTag(project.getName())));
+        }
+        if (runPhase != null) {
+            principalTags.put("terrakube:run_phase", List.of(runPhase));
         }
         return Map.of(
                 "principal_tags",      principalTags,

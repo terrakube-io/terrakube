@@ -9,6 +9,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -60,6 +61,11 @@ public class ExecutorService {
 
     private static final String EPHEMERAL_EXECUTOR_FLAG = "TERRAKUBE_ENABLE_EPHEMERAL_EXECUTOR";
     static final String PLAN_ARTIFACTS_VARIABLE = "TERRAKUBE_PLAN_ARTIFACTS";
+    private static final Set<String> DYNAMIC_CREDENTIALS_FLAGS = Set.of(
+            "ENABLE_DYNAMIC_CREDENTIALS_AZURE",
+            "ENABLE_DYNAMIC_CREDENTIALS_VAULT",
+            "ENABLE_DYNAMIC_CREDENTIALS_AWS",
+            "ENABLE_DYNAMIC_CREDENTIALS_GCP");
 
     @Value("${io.terrakube.hostname}")
     String hostname;
@@ -500,15 +506,25 @@ public class ExecutorService {
             workspaceEnvVariables = loadDefault(job, Category.ENV, workspaceEnvVariables);
         }
 
+        boolean dynamicCredentials = DYNAMIC_CREDENTIALS_FLAGS.stream()
+                .anyMatch(workspaceEnvVariables::containsKey);
+        // Null when run-phase credentials are disabled globally or no dynamic credential provider is enabled.
+        String runPhase = dynamicCredentials ? dynamicCredentialsService.runPhase(flow.getType()) : null;
+        if (runPhase != null) {
+            // Lets the configuration pick phase-specific secrets, e.g. a Vault path per phase.
+            workspaceEnvVariables.put("TERRAKUBE_RUN_PHASE", runPhase);
+            workspaceEnvVariables.put("TF_VAR_terrakube_run_phase", runPhase);
+        }
+
         if (workspaceEnvVariables.containsKey("ENABLE_DYNAMIC_CREDENTIALS_AZURE")) {
             workspaceEnvVariables = dynamicCredentialsService.generateDynamicCredentialsAzure(job,
-                    workspaceEnvVariables);
+                    workspaceEnvVariables, runPhase);
         }
 
         if (workspaceEnvVariables.containsKey("ENABLE_DYNAMIC_CREDENTIALS_VAULT")) {
             try {
                 workspaceEnvVariables = dynamicCredentialsService.generateDynamicCredentialsVault(job,
-                        workspaceEnvVariables);
+                        workspaceEnvVariables, runPhase);
             } catch (DynamicCredentialsException e) {
                 // Stop before anything is submitted: an executor started with no VAULT_TOKEN only
                 // fails later with an unrelated error.
@@ -517,11 +533,13 @@ public class ExecutorService {
         }
 
         if (workspaceEnvVariables.containsKey("ENABLE_DYNAMIC_CREDENTIALS_AWS")) {
-            workspaceEnvVariables = dynamicCredentialsService.generateDynamicCredentialsAws(job, workspaceEnvVariables);
+            workspaceEnvVariables = dynamicCredentialsService.generateDynamicCredentialsAws(job, workspaceEnvVariables,
+                    runPhase);
         }
 
         if (workspaceEnvVariables.containsKey("ENABLE_DYNAMIC_CREDENTIALS_GCP")) {
-            workspaceEnvVariables = dynamicCredentialsService.generateDynamicCredentialsGcp(job, workspaceEnvVariables);
+            workspaceEnvVariables = dynamicCredentialsService.generateDynamicCredentialsGcp(job, workspaceEnvVariables,
+                    runPhase);
         }
 
         if (workspaceEnvVariables.containsKey("PRIVATE_EXTENSION_VCS_ID_AUTH")) {

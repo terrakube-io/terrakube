@@ -37,7 +37,8 @@ resource "aws_iam_role" "terrakube_role" {
         "aws:TagKeys": [
           "terrakube:org",
           "terrakube:workspace",
-          "terrakube:project"
+          "terrakube:project",
+          "terrakube:run_phase"
         ]
         }
      }
