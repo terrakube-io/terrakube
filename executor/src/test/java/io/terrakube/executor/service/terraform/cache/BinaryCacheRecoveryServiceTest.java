@@ -90,7 +90,7 @@ class BinaryCacheRecoveryServiceTest {
         assertTrue(resolution.alreadyAvailable());
         assertEquals("existing-local", resolution.source());
         assertEquals(binary, resolution.binaryFile());
-        verify(terraformState, never()).downloadTerraformBinary(anyString(), anyBoolean(), any());
+        verify(terraformState, never()).downloadTerraformBinary(anyString(), anyBoolean(), anyString(), anyString(), any());
         assertEquals(0, meterRegistry.find("terrakube.executor.binary.cache.invalid").counters().size());
     }
 
@@ -100,7 +100,7 @@ class BinaryCacheRecoveryServiceTest {
     void zeroByteTofuArchiveIsRemovedAndFreshDownloadIsPermitted() throws Exception {
         File archive = archiveFile("v1.13.0", true);
         writeZeroByteFile(archive);
-        when(terraformState.downloadTerraformBinary(anyString(), anyBoolean(), any())).thenReturn(false);
+        when(terraformState.downloadTerraformBinary(anyString(), anyBoolean(), anyString(), anyString(), any())).thenReturn(false);
 
         BinaryCacheRecoveryService.Resolution resolution = subject.resolve("v1.13.0", true);
 
@@ -117,7 +117,7 @@ class BinaryCacheRecoveryServiceTest {
     void corruptNonZipArchiveIsRemoved() throws Exception {
         File archive = archiveFile("1.9.0", false);
         writeBytes(archive, "this is not a zip file, just garbage bytes".getBytes());
-        when(terraformState.downloadTerraformBinary(anyString(), anyBoolean(), any())).thenReturn(false);
+        when(terraformState.downloadTerraformBinary(anyString(), anyBoolean(), anyString(), anyString(), any())).thenReturn(false);
 
         BinaryCacheRecoveryService.Resolution resolution = subject.resolve("1.9.0", false);
 
@@ -133,7 +133,7 @@ class BinaryCacheRecoveryServiceTest {
     void zipWithoutExpectedExecutableEntryIsRemoved() throws Exception {
         File archive = archiveFile("1.9.0", false);
         writeValidZip(archive, "LICENSE.txt", "not the binary".getBytes());
-        when(terraformState.downloadTerraformBinary(anyString(), anyBoolean(), any())).thenReturn(false);
+        when(terraformState.downloadTerraformBinary(anyString(), anyBoolean(), anyString(), anyString(), any())).thenReturn(false);
 
         BinaryCacheRecoveryService.Resolution resolution = subject.resolve("1.9.0", false);
 
@@ -149,7 +149,7 @@ class BinaryCacheRecoveryServiceTest {
     void validZipWithMissingBinaryIsLeftForTheExistingExtractionPath() throws Exception {
         File archive = archiveFile("1.9.0", false);
         writeValidZip(archive, "terraform", "#!/bin/sh\necho terraform".getBytes());
-        when(terraformState.downloadTerraformBinary(anyString(), anyBoolean(), any())).thenReturn(false);
+        when(terraformState.downloadTerraformBinary(anyString(), anyBoolean(), anyString(), anyString(), any())).thenReturn(false);
 
         BinaryCacheRecoveryService.Resolution resolution = subject.resolve("1.9.0", false);
 
@@ -165,8 +165,8 @@ class BinaryCacheRecoveryServiceTest {
     void validS3RestoredBinaryPreventsArchiveCleanupAndRemoteDownload() throws Exception {
         File archive = archiveFile("1.9.0", false);
         writeZeroByteFile(archive); // deliberately invalid, must be left alone once S3 succeeds
-        when(terraformState.downloadTerraformBinary(anyString(), anyBoolean(), any())).thenAnswer(invocation -> {
-            File target = invocation.getArgument(2);
+        when(terraformState.downloadTerraformBinary(anyString(), anyBoolean(), anyString(), anyString(), any())).thenAnswer(invocation -> {
+            File target = invocation.getArgument(4);
             writeBytes(target, "#!/bin/sh\necho terraform".getBytes());
             return true;
         });
@@ -179,6 +179,18 @@ class BinaryCacheRecoveryServiceTest {
         assertEquals(0, meterRegistry.find("terrakube.executor.binary.cache.invalid").counters().size());
     }
 
+    // --- the cached binary is looked up for this executor's own OS and architecture -----------------
+
+    @Test
+    void cloudStorageIsAskedForTheBinaryOfThisExecutorsOsAndArchitecture() throws Exception {
+        when(terraformState.downloadTerraformBinary(anyString(), anyBoolean(), anyString(), anyString(), any())).thenReturn(false);
+
+        subject.resolve("v1.12.6", true);
+
+        verify(terraformState).downloadTerraformBinary("v1.12.6", true, BinaryArchiveLocator.os(), BinaryArchiveLocator.arch(),
+                binaryFile("v1.12.6", true));
+    }
+
     // --- security: a version string that embeds a path traversal is refused, not deleted --------
 
     @Test
@@ -186,7 +198,7 @@ class BinaryCacheRecoveryServiceTest {
         // resolvedVersion is always a real release version in practice; this proves the guard
         // holds even if that ever stopped being true.
         String maliciousVersion = "../escaped-outside-product-dir";
-        when(terraformState.downloadTerraformBinary(anyString(), anyBoolean(), any())).thenReturn(false);
+        when(terraformState.downloadTerraformBinary(anyString(), anyBoolean(), anyString(), anyString(), any())).thenReturn(false);
 
         // ".." only resolves once "terraform/" itself physically exists to walk back out of.
         Files.createDirectories(locator.locate("1.9.0", false).productDirectory().toPath());
@@ -207,7 +219,7 @@ class BinaryCacheRecoveryServiceTest {
     void cleanupFailureRaisesAnActionableCacheRecoveryError() throws Exception {
         File archive = archiveFile("1.9.0", false);
         writeZeroByteFile(archive);
-        when(terraformState.downloadTerraformBinary(anyString(), anyBoolean(), any())).thenReturn(false);
+        when(terraformState.downloadTerraformBinary(anyString(), anyBoolean(), anyString(), anyString(), any())).thenReturn(false);
         // Deleting a file needs write+execute on its parent directory; revoke that so the cleanup itself fails.
         File parent = archive.getParentFile();
         assertTrue(parent.setWritable(false));
@@ -225,7 +237,7 @@ class BinaryCacheRecoveryServiceTest {
 
     @Test
     void terraformAndTofuAreBothCoveredEndToEnd() throws Exception {
-        when(terraformState.downloadTerraformBinary(anyString(), anyBoolean(), any())).thenReturn(false);
+        when(terraformState.downloadTerraformBinary(anyString(), anyBoolean(), anyString(), anyString(), any())).thenReturn(false);
 
         File terraformArchive = archiveFile("1.9.0", false);
         writeZeroByteFile(terraformArchive);
@@ -248,7 +260,7 @@ class BinaryCacheRecoveryServiceTest {
         CountDownLatch ready = new CountDownLatch(threads);
         CountDownLatch go = new CountDownLatch(1);
 
-        when(terraformState.downloadTerraformBinary(anyString(), anyBoolean(), any())).thenAnswer(invocation -> {
+        when(terraformState.downloadTerraformBinary(anyString(), anyBoolean(), anyString(), anyString(), any())).thenAnswer(invocation -> {
             int now = concurrent.incrementAndGet();
             maxConcurrent.updateAndGet(prev -> Math.max(prev, now));
             Thread.sleep(50);
@@ -318,7 +330,7 @@ class BinaryCacheRecoveryServiceTest {
         assertTrue(resolution.alreadyAvailable());
         assertEquals("existing-local", resolution.source());
         assertTrue(binary.canExecute());
-        verify(terraformState, never()).downloadTerraformBinary(anyString(), anyBoolean(), any());
+        verify(terraformState, never()).downloadTerraformBinary(anyString(), anyBoolean(), anyString(), anyString(), any());
         assertEquals(0, meterRegistry.find("terrakube.executor.binary.cache.invalid").counters().size());
     }
 }

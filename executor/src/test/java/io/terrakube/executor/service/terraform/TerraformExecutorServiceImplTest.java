@@ -18,6 +18,7 @@ import io.terrakube.executor.service.logs.StepOutputBuffer;
 import io.terrakube.executor.service.logs.ProcessLogs;
 import io.terrakube.executor.service.mode.TerraformJob;
 import io.terrakube.executor.service.scripts.ScriptEngineService;
+import io.terrakube.executor.service.terraform.cache.BinaryArchiveLocator;
 import io.terrakube.executor.service.terraform.cache.BinaryCacheRecoveryException;
 import io.terrakube.executor.service.terraform.cache.BinaryCacheRecoveryService;
 import io.terrakube.executor.service.terraform.structured.StructuredOutputPersistenceQueue;
@@ -547,7 +548,35 @@ class TerraformExecutorServiceImplTest {
 
         // A binary the recovery service already validated (existing-local or a restored S3 copy)
         // was never freshly downloaded by the library, so there is nothing new to upload.
-        verify(terraformState, never()).saveTerraformBinary(anyString(), anyBoolean(), any(File.class));
+        verify(terraformState, never()).saveTerraformBinary(anyString(), anyBoolean(), anyString(), anyString(), any(File.class));
+    }
+
+    @Test
+    void uploadsAFreshlyDownloadedBinaryToCloudStorageUnderThisExecutorsOsAndArchitecture() throws Exception {
+        TerraformExecutorServiceImpl subject = spy(subject());
+        TerraformJob terraformJob = createJob();
+        File binaryFile = new File(tempDir.toFile(), "terraform");
+
+        TerraformDownloader downloader = Mockito.mock(TerraformDownloader.class);
+        when(terraformClient.createTerraformDownloader()).thenReturn(downloader);
+        when(downloader.resolveTerraformVersion("1.9.0")).thenReturn("1.9.0");
+        when(downloader.getTerraformBinaryPath("1.9.0", false)).thenReturn(binaryFile.getAbsolutePath());
+        when(binaryCacheRecoveryService.resolve("1.9.0", false)).thenReturn(
+                new BinaryCacheRecoveryService.Resolution(binaryFile, false, "local-download"));
+        when(binaryCacheRecoveryService.isValidExecutable(binaryFile)).thenReturn(true);
+        when(terraformClient.init(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(true));
+        // Without this, the real JSON plan client fetches the live release lists over the network.
+        TerraformClient jsonPlanClient = Mockito.mock(TerraformClient.class);
+        when(jsonPlanClient.planDetailExitCode(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(0));
+        doReturn(jsonPlanClient).when(subject).buildJsonEnabledPlanClient();
+
+        subject.plan(terraformJob, tempDir.toFile(), false);
+
+        // Executors of another architecture can share the same storage, so the binary must only
+        // ever be restored by executors that can run it.
+        verify(terraformState).saveTerraformBinary("1.9.0", false, BinaryArchiveLocator.os(), BinaryArchiveLocator.arch(), binaryFile);
     }
 
     @Test

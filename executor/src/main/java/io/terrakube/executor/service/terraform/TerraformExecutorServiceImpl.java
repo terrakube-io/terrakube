@@ -18,6 +18,7 @@ import io.terrakube.executor.service.logs.StepOutputArchiveService;
 import io.terrakube.executor.service.logs.StepOutputBuffer;
 import io.terrakube.executor.service.mode.TerraformJob;
 import io.terrakube.executor.service.scripts.ScriptEngineService;
+import io.terrakube.executor.service.terraform.cache.BinaryArchiveLocator;
 import io.terrakube.executor.service.terraform.cache.BinaryCacheRecoveryException;
 import io.terrakube.executor.service.terraform.cache.BinaryCacheRecoveryService;
 import io.terrakube.executor.service.terraform.structured.StructuredOutputPersistenceQueue;
@@ -1503,8 +1504,10 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             // Only ever cache a binary that actually passes the same check a restore would have
             // to pass - an incomplete extraction must not be uploaded and handed to every other pod.
             if (binaryCacheRecoveryService.isValidExecutable(binaryFile)) {
-                log.info("Caching binary to cloud storage: {} version {}", tofu ? "tofu" : "terraform", resolvedVersion);
-                terraformState.saveTerraformBinary(resolvedVersion, tofu, binaryFile);
+                String os = BinaryArchiveLocator.os();
+                String arch = BinaryArchiveLocator.arch();
+                log.info("Caching binary to cloud storage: {} version {} ({}_{})", tofu ? "tofu" : "terraform", resolvedVersion, os, arch);
+                terraformState.saveTerraformBinary(resolvedVersion, tofu, os, arch, binaryFile);
             } else {
                 log.warn("Binary file not valid at {} after init, cannot cache to storage", binaryPath);
             }

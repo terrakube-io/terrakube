@@ -171,13 +171,13 @@ public class HttpTerraformStateImpl implements TerraformState {
     }
 
     @Override
-    public boolean saveTerraformBinary(String version, boolean tofu, File binaryFile) {
-        return delegate != null && delegate.saveTerraformBinary(version, tofu, binaryFile);
+    public boolean saveTerraformBinary(String version, boolean tofu, String os, String arch, File binaryFile) {
+        return delegate != null && delegate.saveTerraformBinary(version, tofu, os, arch, binaryFile);
     }
 
     @Override
-    public boolean downloadTerraformBinary(String version, boolean tofu, File targetFile) {
-        return delegate != null && delegate.downloadTerraformBinary(version, tofu, targetFile);
+    public boolean downloadTerraformBinary(String version, boolean tofu, String os, String arch, File targetFile) {
+        return delegate != null && delegate.downloadTerraformBinary(version, tofu, os, arch, targetFile);
     }
 
     @Override

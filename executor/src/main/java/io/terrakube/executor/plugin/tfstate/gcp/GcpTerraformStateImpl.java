@@ -304,32 +304,32 @@ public class GcpTerraformStateImpl implements TerraformState {
     }
 
     @Override
-    public boolean saveTerraformBinary(String version, boolean tofu, File binaryFile) {
+    public boolean saveTerraformBinary(String version, boolean tofu, String os, String arch, File binaryFile) {
         String product = tofu ? "tofu" : "terraform";
-        String blobKey = String.format("tfbinary/%s/%s/%s", product, version, product);
+        String blobKey = String.format("tfbinary/%s/%s/%s_%s/%s", product, version, os, arch, product);
         log.info("Saving {} binary to GCS: {}", product, blobKey);
         try {
             BlobId blobId = BlobId.of(bucketName, blobKey);
             BlobInfo blobInfo = BlobInfo.newBuilder(blobId).build();
             storage.create(blobInfo, FileUtils.readFileToByteArray(binaryFile));
-            log.info("Successfully cached {} binary version {} in GCS", product, version);
+            log.info("Successfully cached {} binary version {} ({}_{}) in GCS", product, version, os, arch);
             return true;
         } catch (Exception e) {
-            log.warn("Failed to cache {} binary version {} in GCS: {}", product, version, e.getMessage());
+            log.warn("Failed to cache {} binary version {} ({}_{}) in GCS: {}", product, version, os, arch, e.getMessage());
             return false;
         }
     }
 
     @Override
-    public boolean downloadTerraformBinary(String version, boolean tofu, File targetFile) {
+    public boolean downloadTerraformBinary(String version, boolean tofu, String os, String arch, File targetFile) {
         String product = tofu ? "tofu" : "terraform";
-        String blobKey = String.format("tfbinary/%s/%s/%s", product, version, product);
+        String blobKey = String.format("tfbinary/%s/%s/%s_%s/%s", product, version, os, arch, product);
         log.info("Attempting to restore {} binary from GCS: {}", product, blobKey);
         try {
             BlobId blobId = BlobId.of(bucketName, blobKey);
             com.google.cloud.storage.Blob blob = storage.get(blobId);
             if (blob == null || !blob.exists()) {
-                log.info("{} binary version {} not found in GCS cache", product, version);
+                log.info("{} binary version {} ({}_{}) not found in GCS cache", product, version, os, arch);
                 return false;
             }
 
@@ -345,10 +345,10 @@ public class GcpTerraformStateImpl implements TerraformState {
                 log.warn("Failed to set executable permission on restored {} binary", product);
             }
 
-            log.info("Successfully restored {} binary version {} from GCS", product, version);
+            log.info("Successfully restored {} binary version {} ({}_{}) from GCS", product, version, os, arch);
             return true;
         } catch (Exception e) {
-            log.warn("Failed to restore {} binary version {} from GCS: {}", product, version, e.getMessage());
+            log.warn("Failed to restore {} binary version {} ({}_{}) from GCS: {}", product, version, os, arch, e.getMessage());
             return false;
         }
     }
