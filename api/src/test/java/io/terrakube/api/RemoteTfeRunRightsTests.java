@@ -2,6 +2,8 @@ package io.terrakube.api;
 
 import io.terrakube.api.plugin.scheduler.ScheduleJobService;
 import io.terrakube.api.repository.ContentRepository;
+import io.terrakube.api.rs.job.Job;
+import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.team.Team;
 import io.terrakube.api.rs.workspace.Workspace;
 import io.terrakube.api.rs.workspace.content.Content;
@@ -219,5 +221,30 @@ class RemoteTfeRunRightsTests extends ServerApplicationTests {
 
         assertEquals(403, refused.statusCode(), refused.asString());
         assertTrue(refused.asString().contains("cannot approve a run that destroys"), refused.asString());
+    }
+
+    @Test
+    void planOnlyTeamCannotDiscardARunAndTerminalRunsCannotBeDiscarded() {
+        Workspace workspace = workspace("tfe-discard-permissions");
+        String planner = team("TFE_DISCARD_PLAN", "plan", workspace);
+        String writer = team("TFE_DISCARD_WRITE", "write", workspace);
+        String runId = run(planner, workspace, false).jsonPath().getString("data.id");
+        int numericRunId = Integer.parseInt(runId.replace("run-", ""));
+
+        var forbidden = given().auth().oauth2(planner)
+                .contentType("application/vnd.api+json").body("{}")
+                .post("/remote/tfe/v2/runs/" + runId + "/actions/discard");
+        assertEquals(403, forbidden.statusCode(), forbidden.asString());
+
+        var discarded = given().auth().oauth2(writer)
+                .contentType("application/vnd.api+json").body("{}")
+                .post("/remote/tfe/v2/runs/" + runId + "/actions/discard");
+        assertEquals(200, discarded.statusCode(), discarded.asString());
+        assertEquals(JobStatus.cancelled, jobRepository.findById(numericRunId).orElseThrow().getStatus());
+
+        var alreadyTerminal = given().auth().oauth2(writer)
+                .contentType("application/vnd.api+json").body("{}")
+                .post("/remote/tfe/v2/runs/" + runId + "/actions/discard");
+        assertEquals(409, alreadyTerminal.statusCode(), alreadyTerminal.asString());
     }
 }

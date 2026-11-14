@@ -42,6 +42,8 @@ public class TeamProjectLimitedApproveJob extends OperationCheck<Job> {
             return false;
         }
         log.debug("team project limited approve job {}", job.getId());
+        if (!TeamApproveJob.isRbacUserTransition(optional)) return false;
+
         Project project = job.getWorkspace().getProject();
         if (project == null) return false;
         List<ProjectAccess> accessList = project.getProjectAccess();

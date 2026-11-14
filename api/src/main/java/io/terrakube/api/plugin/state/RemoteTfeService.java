@@ -2230,16 +2230,30 @@ public class RemoteTfeService {
     }
 
     RunsData runDiscard(int runId, JwtAuthenticationToken currentUser) {
-        try {
-            log.warn("Updating job status for discard: {}", runId);
-            Job job = jobRepository.getReferenceById(Integer.valueOf(runId));
+        log.warn("Updating job status for discard: {}", runId);
+        Job job = jobRepository.getReferenceById(Integer.valueOf(runId));
 
-            // Authorize: user must have manage job permission to discard
-            if (!validateUserManageJob(job.getWorkspace(), currentUser)) {
-                log.warn("User does not have permission to discard job {} in workspace {}", runId, job.getWorkspace().getName());
-                throw new org.springframework.security.access.AccessDeniedException(
-                        "User does not have permission to discard runs in this workspace");
-            }
+        // The workspace of a deleted workspace reads as null: a clean refusal instead of a server error.
+        if (job.getWorkspace() == null) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "The workspace of this run no longer exists");
+        }
+
+        // Authorize: user must have approve/apply permission to discard/cancel a run
+        if (currentUser == null || !validateUserApproveJob(job.getWorkspace(), currentUser)) {
+            log.warn("User does not have permission to discard job {} in workspace {}", runId, job.getWorkspace().getName());
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "User does not have permission to discard runs in this workspace");
+        }
+
+        // Only active jobs that still hold the queue can be discarded
+        if (job.getStatus() == null || !job.getStatus().holdsTheQueue()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, String.format(
+                    "Job %d is %s and cannot be discarded.",
+                    job.getId(), job.getStatus()));
+        }
+
+        try {
             job.setStatus(JobStatus.cancelled);
             job = jobRepository.save(job);
             jobNotificationTrigger.notifyStatusChanged(job);
