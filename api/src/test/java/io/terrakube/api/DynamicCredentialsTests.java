@@ -2,6 +2,7 @@ package io.terrakube.api;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.terrakube.api.plugin.scheduler.job.tcl.model.Flow;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.FlowType;
 import io.terrakube.api.plugin.token.dynamic.DynamicCredentialsService;
 import io.terrakube.api.plugin.token.dynamic.JwksController;
@@ -19,6 +20,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.*;
@@ -107,7 +109,7 @@ public class DynamicCredentialsTests extends ServerApplicationTests {
         HashMap<String, String> envVariables = new HashMap<>();
         envVariables.put("WORKLOAD_IDENTITY_AUDIENCE_AZURE", "api://AzureADTokenExchange");
 
-        HashMap<String, String> result = dynamicCredentialsService.generateDynamicCredentialsAzure(job, envVariables);
+        HashMap<String, String> result = dynamicCredentialsService.generateDynamicCredentialsAzure(job, envVariables, null);
 
         assertTrue(result.containsKey("ARM_OIDC_TOKEN"));
         assertFalse(result.get("ARM_OIDC_TOKEN").isEmpty(), "JWT token should be generated");
@@ -122,7 +124,7 @@ public class DynamicCredentialsTests extends ServerApplicationTests {
         envVariables.put("WORKLOAD_IDENTITY_AUDIENCE_AWS", "sts.amazonaws.com");
         envVariables.put("WORKLOAD_IDENTITY_ROLE_AWS", "arn:aws:iam::123456789012:role/test-role");
 
-        HashMap<String, String> result = dynamicCredentialsService.generateDynamicCredentialsAws(job, envVariables);
+        HashMap<String, String> result = dynamicCredentialsService.generateDynamicCredentialsAws(job, envVariables, null);
 
         assertTrue(result.containsKey("TERRAKUBE_AWS_CREDENTIALS_FILE"));
         assertTrue(result.containsKey("AWS_ROLE_ARN"));
@@ -138,7 +140,7 @@ public class DynamicCredentialsTests extends ServerApplicationTests {
         envVariables.put("WORKLOAD_IDENTITY_AUDIENCE_GCP", "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider");
         envVariables.put("WORKLOAD_IDENTITY_SERVICE_ACCOUNT_EMAIL", "sa@project.iam.gserviceaccount.com");
 
-        HashMap<String, String> result = dynamicCredentialsService.generateDynamicCredentialsGcp(job, envVariables);
+        HashMap<String, String> result = dynamicCredentialsService.generateDynamicCredentialsGcp(job, envVariables, null);
 
         assertTrue(result.containsKey("TERRAKUBE_GCP_CREDENTIALS_FILE"));
         assertTrue(result.containsKey("TERRAKUBE_GCP_CREDENTIALS_CONFIG_FILE"));
@@ -173,7 +175,7 @@ public class DynamicCredentialsTests extends ServerApplicationTests {
         envVariables.put("WORKLOAD_IDENTITY_ROLE_AWS", "arn:aws:iam::123456789012:role/test-role");
         envVariables.put("ENABLE_AWS_SESSION_TAGS", "true");
 
-        HashMap<String, String> result = dynamicCredentialsService.generateDynamicCredentialsAws(job, envVariables);
+        HashMap<String, String> result = dynamicCredentialsService.generateDynamicCredentialsAws(job, envVariables, null);
 
         JsonNode claims = decodeJwtClaims(result.get("TERRAKUBE_AWS_CREDENTIALS_FILE"));
         JsonNode tags = claims.get("https://aws.amazon.com/tags");
@@ -199,7 +201,7 @@ public class DynamicCredentialsTests extends ServerApplicationTests {
         envVariables.put("WORKLOAD_IDENTITY_AUDIENCE_AWS", "sts.amazonaws.com");
         envVariables.put("WORKLOAD_IDENTITY_ROLE_AWS", "arn:aws:iam::123456789012:role/test-role");
 
-        HashMap<String, String> result = dynamicCredentialsService.generateDynamicCredentialsAws(job, envVariables);
+        HashMap<String, String> result = dynamicCredentialsService.generateDynamicCredentialsAws(job, envVariables, null);
 
         assertFalse(decodeJwtClaims(result.get("TERRAKUBE_AWS_CREDENTIALS_FILE")).has("https://aws.amazon.com/tags"),
                 "AWS token must not carry the session-tags claim when ENABLE_AWS_SESSION_TAGS is not set");
@@ -215,7 +217,7 @@ public class DynamicCredentialsTests extends ServerApplicationTests {
         envVariables.put("WORKLOAD_IDENTITY_ROLE_AWS", "arn:aws:iam::123456789012:role/test-role");
         envVariables.put("ENABLE_AWS_SESSION_TAGS", "true");
 
-        HashMap<String, String> result = dynamicCredentialsService.generateDynamicCredentialsAws(job, envVariables);
+        HashMap<String, String> result = dynamicCredentialsService.generateDynamicCredentialsAws(job, envVariables, null);
 
         JsonNode principalTags = decodeJwtClaims(result.get("TERRAKUBE_AWS_CREDENTIALS_FILE"))
                 .get("https://aws.amazon.com/tags").get("principal_tags");
@@ -235,7 +237,7 @@ public class DynamicCredentialsTests extends ServerApplicationTests {
         envVariables.put("WORKLOAD_IDENTITY_ROLE_AWS", "arn:aws:iam::123456789012:role/test-role");
         envVariables.put("ENABLE_AWS_SESSION_TAGS", "true");
 
-        HashMap<String, String> result = dynamicCredentialsService.generateDynamicCredentialsAws(job, envVariables);
+        HashMap<String, String> result = dynamicCredentialsService.generateDynamicCredentialsAws(job, envVariables, null);
 
         JsonNode principalTags = decodeJwtClaims(result.get("TERRAKUBE_AWS_CREDENTIALS_FILE"))
                 .get("https://aws.amazon.com/tags").get("principal_tags");
@@ -250,20 +252,20 @@ public class DynamicCredentialsTests extends ServerApplicationTests {
 
         HashMap<String, String> azureEnv = new HashMap<>();
         azureEnv.put("WORKLOAD_IDENTITY_AUDIENCE_AZURE", "api://AzureADTokenExchange");
-        String azureToken = dynamicCredentialsService.generateDynamicCredentialsAzure(job, azureEnv).get("ARM_OIDC_TOKEN");
+        String azureToken = dynamicCredentialsService.generateDynamicCredentialsAzure(job, azureEnv, null).get("ARM_OIDC_TOKEN");
         assertFalse(decodeJwtClaims(azureToken).has("https://aws.amazon.com/tags"),
                 "Azure token must not carry the AWS session-tags claim");
 
         HashMap<String, String> gcpEnv = new HashMap<>();
         gcpEnv.put("WORKLOAD_IDENTITY_AUDIENCE_GCP", "//iam.googleapis.com/pool/provider");
         gcpEnv.put("WORKLOAD_IDENTITY_SERVICE_ACCOUNT_EMAIL", "sa@project.iam.gserviceaccount.com");
-        String gcpFile = dynamicCredentialsService.generateDynamicCredentialsGcp(job, gcpEnv).get("TERRAKUBE_GCP_CREDENTIALS_FILE");
+        String gcpFile = dynamicCredentialsService.generateDynamicCredentialsGcp(job, gcpEnv, null).get("TERRAKUBE_GCP_CREDENTIALS_FILE");
         String gcpToken = new ObjectMapper().readTree(gcpFile).get("access_token").asText();
         assertFalse(decodeJwtClaims(gcpToken).has("https://aws.amazon.com/tags"),
                 "GCP token must not carry the AWS session-tags claim");
 
         String vaultToken = ReflectionTestUtils.invokeMethod(dynamicCredentialsService, "generateJwt",
-                job, "vault.example.com");
+                job, "vault.example.com", null, null, false);
         assertFalse(decodeJwtClaims(vaultToken).has("https://aws.amazon.com/tags"),
                 "Vault token must not carry the AWS session-tags claim");
     }
@@ -278,7 +280,7 @@ public class DynamicCredentialsTests extends ServerApplicationTests {
         HashMap<String, String> envVariables = new HashMap<>();
         envVariables.put("WORKLOAD_IDENTITY_AUDIENCE_AZURE", "api://AzureADTokenExchange");
 
-        String token = dynamicCredentialsService.generateDynamicCredentialsAzure(job, envVariables).get("ARM_OIDC_TOKEN");
+        String token = dynamicCredentialsService.generateDynamicCredentialsAzure(job, envVariables, null).get("ARM_OIDC_TOKEN");
 
         JsonNode claims = decodeJwtClaims(token);
         assertTrue(claims.has("terrakube_project_name"), "token must carry terrakube_project_name when a project is set");
@@ -292,7 +294,7 @@ public class DynamicCredentialsTests extends ServerApplicationTests {
         HashMap<String, String> envVariables = new HashMap<>();
         envVariables.put("WORKLOAD_IDENTITY_AUDIENCE_AZURE", "api://AzureADTokenExchange");
 
-        String token = dynamicCredentialsService.generateDynamicCredentialsAzure(job, envVariables).get("ARM_OIDC_TOKEN");
+        String token = dynamicCredentialsService.generateDynamicCredentialsAzure(job, envVariables, null).get("ARM_OIDC_TOKEN");
 
         assertFalse(decodeJwtClaims(token).has("terrakube_project_name"),
                 "terrakube_project_name must be absent when the workspace has no project");
@@ -433,7 +435,7 @@ public class DynamicCredentialsTests extends ServerApplicationTests {
         envVariables.put("VAULT_ADDR", wireMockServer.baseUrl());
         envVariables.put("WORKLOAD_IDENTITY_VAULT_ROLE", "terrakube-role");
 
-        HashMap<String, String> result = dynamicCredentialsService.generateDynamicCredentialsVault(job, envVariables);
+        HashMap<String, String> result = dynamicCredentialsService.generateDynamicCredentialsVault(job, envVariables, null);
 
         assertTrue(result.containsKey("VAULT_TOKEN"));
         assertEquals(mockVaultToken, result.get("VAULT_TOKEN"));
@@ -471,7 +473,7 @@ public class DynamicCredentialsTests extends ServerApplicationTests {
         envVariables.put("WORKLOAD_IDENTITY_VAULT_ROLE", "terrakube-role");
         envVariables.put("WORKLOAD_IDENTITY_VAULT_AUTH_PATH", "custom-jwt");
 
-        HashMap<String, String> result = dynamicCredentialsService.generateDynamicCredentialsVault(job, envVariables);
+        HashMap<String, String> result = dynamicCredentialsService.generateDynamicCredentialsVault(job, envVariables, null);
 
         assertEquals(mockVaultToken, result.get("VAULT_TOKEN"));
 
@@ -508,7 +510,7 @@ public class DynamicCredentialsTests extends ServerApplicationTests {
         envVariables.put("WORKLOAD_IDENTITY_VAULT_ROLE", "terrakube-role");
         envVariables.put("VAULT_NAMESPACE", "my-namespace");
 
-        HashMap<String, String> result = dynamicCredentialsService.generateDynamicCredentialsVault(job, envVariables);
+        HashMap<String, String> result = dynamicCredentialsService.generateDynamicCredentialsVault(job, envVariables, null);
 
         assertEquals(mockVaultToken, result.get("VAULT_TOKEN"));
 
@@ -533,7 +535,7 @@ public class DynamicCredentialsTests extends ServerApplicationTests {
 
         // The job must fail before an executor is started, not carry on with an empty VAULT_TOKEN.
         assertThrows(io.terrakube.api.plugin.token.dynamic.DynamicCredentialsException.class,
-                () -> dynamicCredentialsService.generateDynamicCredentialsVault(job, envVariables));
+                () -> dynamicCredentialsService.generateDynamicCredentialsVault(job, envVariables, null));
         assertFalse(envVariables.containsKey("VAULT_TOKEN"));
     }
 
@@ -742,6 +744,105 @@ public class DynamicCredentialsTests extends ServerApplicationTests {
 
         HashMap<String, String> applyResult = dynamicCredentialsService.generateDynamicCredentialsVault(job, applyEnv, "apply");
         assertEquals("apply-token", applyResult.get("VAULT_TOKEN"));
+    }
+
+    @Test
+    void testRunPhaseOptInOnlyEnablesForTrue() throws IOException {
+        Job job = createMockJob();
+
+        for (String disabledValue : new String[] {"no", "off", "disabled", "0", "1", "false", "", "   "}) {
+            HashMap<String, String> env = new HashMap<>();
+            env.put("WORKLOAD_IDENTITY_AUDIENCE_AWS", "sts.amazonaws.com");
+            env.put("WORKLOAD_IDENTITY_ROLE_AWS", "arn:aws:iam::123456789012:role/apply-role");
+            env.put("ENABLE_DYNAMIC_CREDENTIALS_RUN_PHASE", disabledValue);
+            env.put("ENABLE_AWS_SESSION_TAGS", "true");
+
+            JsonNode claims = decodeJwtClaims(
+                    dynamicCredentialsService.generateDynamicCredentialsAws(job, env, "plan")
+                            .get("TERRAKUBE_AWS_CREDENTIALS_FILE"));
+            assertFalse(claims.get("sub").asText().contains(":run_phase:"),
+                    "Expected subject unchanged when ENABLE_DYNAMIC_CREDENTIALS_RUN_PHASE='" + disabledValue + "'");
+            assertFalse(claims.get("https://aws.amazon.com/tags").get("principal_tags").has("terrakube:run_phase"),
+                    "Expected session tag omitted when ENABLE_DYNAMIC_CREDENTIALS_RUN_PHASE='" + disabledValue + "'");
+        }
+
+        for (String enabledValue : new String[] {"true", " TRUE "}) {
+            HashMap<String, String> env = new HashMap<>();
+            env.put("WORKLOAD_IDENTITY_AUDIENCE_AWS", "sts.amazonaws.com");
+            env.put("WORKLOAD_IDENTITY_ROLE_AWS", "arn:aws:iam::123456789012:role/apply-role");
+            env.put("ENABLE_DYNAMIC_CREDENTIALS_RUN_PHASE", enabledValue);
+            env.put("ENABLE_AWS_SESSION_TAGS", "true");
+
+            JsonNode claims = decodeJwtClaims(
+                    dynamicCredentialsService.generateDynamicCredentialsAws(job, env, "apply")
+                            .get("TERRAKUBE_AWS_CREDENTIALS_FILE"));
+            assertTrue(claims.get("sub").asText().endsWith(":run_phase:apply"),
+                    "Expected subject suffix when ENABLE_DYNAMIC_CREDENTIALS_RUN_PHASE='" + enabledValue + "'");
+            assertEquals("apply",
+                    claims.get("https://aws.amazon.com/tags").get("principal_tags").get("terrakube:run_phase").get(0).asText());
+        }
+    }
+
+    @Test
+    void testCustomScriptsRunPhaseFollowsPrecedingApplyOrDestroy() {
+        String applyTemplateYaml = """
+                flow:
+                  - type: customScripts
+                    step: 50
+                  - type: terraformPlan
+                    step: 100
+                  - type: customScripts
+                    step: 150
+                  - type: approval
+                    step: 200
+                    team: ops
+                  - type: terraformApply
+                    step: 300
+                  - type: customScripts
+                    step: 400
+                """;
+        Job applyJob = createMockJob();
+        applyJob.setTcl(Base64.getEncoder().encodeToString(applyTemplateYaml.getBytes(StandardCharsets.UTF_8)));
+
+        assertEquals("plan", dynamicCredentialsService.runPhase(applyJob, flow(FlowType.customScripts, 50)));
+        assertEquals("plan", dynamicCredentialsService.runPhase(applyJob, flow(FlowType.customScripts, 150)));
+        assertEquals("apply", dynamicCredentialsService.runPhase(applyJob, flow(FlowType.customScripts, 400)));
+
+        String destroyTemplateYaml = """
+                flow:
+                  - type: terraformPlanDestroy
+                    step: 100
+                  - type: customScripts
+                    step: 150
+                  - type: terraformDestroy
+                    step: 200
+                  - type: customScripts
+                    step: 300
+                """;
+        Job destroyJob = createMockJob();
+        destroyJob.setTcl(Base64.getEncoder().encodeToString(destroyTemplateYaml.getBytes(StandardCharsets.UTF_8)));
+
+        assertEquals("plan", dynamicCredentialsService.runPhase(destroyJob, flow(FlowType.customScripts, 150)));
+        assertEquals("apply", dynamicCredentialsService.runPhase(destroyJob, flow(FlowType.customScripts, 300)));
+
+        String standaloneYaml = """
+                flow:
+                  - type: customScripts
+                    step: 100
+                """;
+        Job standaloneJob = createMockJob();
+        standaloneJob.setTcl(Base64.getEncoder().encodeToString(standaloneYaml.getBytes(StandardCharsets.UTF_8)));
+        assertEquals("plan", dynamicCredentialsService.runPhase(standaloneJob, flow(FlowType.customScripts, 100)));
+
+        ReflectionTestUtils.setField(dynamicCredentialsService, "runPhaseEnabled", false);
+        assertNull(dynamicCredentialsService.runPhase(applyJob, flow(FlowType.customScripts, 400)));
+    }
+
+    private static Flow flow(FlowType type, int step) {
+        Flow flow = new Flow();
+        flow.setType(type.name());
+        flow.setStep(step);
+        return flow;
     }
 
 }

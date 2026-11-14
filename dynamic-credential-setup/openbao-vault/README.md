@@ -145,7 +145,7 @@ The claim is only present when the workspace has a project, so a role that binds
 
 ## Separating Plan and Apply Identities (`run_phase`)
 
-When `DynamicCredentialRunPhaseEnabled` (`io.terrakube.dynamic.credentials.run-phase.enabled`, default `true`) is enabled, every dynamic credential token carries a `terrakube_run_phase` claim (`"plan"` or `"apply"`), and Terrakube injects `TERRAKUBE_RUN_PHASE` and `TF_VAR_terrakube_run_phase` into the step environment. Only `terraformApply` and `terraformDestroy` receive `"apply"`; `terraformPlan`, `terraformPlanDestroy`, `customScripts`, and `policyEvaluation` receive `"plan"`.
+When `DynamicCredentialRunPhaseEnabled` (`io.terrakube.dynamic.credentials.run-phase.enabled`, default `true`) is enabled, every dynamic credential token carries a `terrakube_run_phase` claim (`"plan"` or `"apply"`), and Terrakube injects `TERRAKUBE_RUN_PHASE` and `TF_VAR_terrakube_run_phase` into the step environment. `terraformApply`, `terraformDestroy`, and `customScripts` steps that follow an apply or destroy step in the same flow receive `"apply"`; `terraformPlan`, `terraformPlanDestroy`, `policyEvaluation`, and pre-apply or standalone `customScripts` steps receive `"plan"`.
 
 Set `WORKLOAD_IDENTITY_VAULT_ROLE_PLAN` on the workspace to log in with a read-only Vault JWT role during plan steps (falling back to `WORKLOAD_IDENTITY_VAULT_ROLE` when unset), and enforce `terrakube_run_phase` in each Vault role's `bound_claims`:
 
@@ -163,4 +163,4 @@ Set `WORKLOAD_IDENTITY_VAULT_ROLE_PLAN` on the workspace to log in with a read-o
 }
 ```
 
-For the apply role, bind `"terrakube_run_phase": "apply"`. If you also want `:run_phase:<phase>` appended to the JWT `sub` claim, set `ENABLE_DYNAMIC_CREDENTIALS_RUN_PHASE=true` on the workspace. You can also select phase-specific secrets in HCL using `var.terrakube_run_phase` (via `TF_VAR_terrakube_run_phase`).
+For the apply role, bind `"terrakube_run_phase": "apply"`. If you also want `:run_phase:<phase>` appended to the JWT `sub` claim, set `ENABLE_DYNAMIC_CREDENTIALS_RUN_PHASE` strictly to `"true"` (case-insensitive; other values such as `no` or `off` leave it disabled) on the workspace. You can also select phase-specific secrets in HCL using `var.terrakube_run_phase` (via `TF_VAR_terrakube_run_phase`).

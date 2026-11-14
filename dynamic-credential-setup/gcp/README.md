@@ -70,7 +70,7 @@ and reference `attribute.terrakube_project_name` in an `attribute_condition` or 
 
 ## Separating Plan and Apply Identities (`run_phase`)
 
-When `DynamicCredentialRunPhaseEnabled` (`io.terrakube.dynamic.credentials.run-phase.enabled`, default `true`) is enabled, every dynamic credential token carries a `terrakube_run_phase` claim (`"plan"` or `"apply"`), and Terrakube injects `TERRAKUBE_RUN_PHASE` and `TF_VAR_terrakube_run_phase` into the step environment. Only `terraformApply` and `terraformDestroy` receive `"apply"`; `terraformPlan`, `terraformPlanDestroy`, `customScripts`, and `policyEvaluation` receive `"plan"`.
+When `DynamicCredentialRunPhaseEnabled` (`io.terrakube.dynamic.credentials.run-phase.enabled`, default `true`) is enabled, every dynamic credential token carries a `terrakube_run_phase` claim (`"plan"` or `"apply"`), and Terrakube injects `TERRAKUBE_RUN_PHASE` and `TF_VAR_terrakube_run_phase` into the step environment. `terraformApply`, `terraformDestroy`, and `customScripts` steps that follow an apply or destroy step in the same flow receive `"apply"`; `terraformPlan`, `terraformPlanDestroy`, `policyEvaluation`, and pre-apply or standalone `customScripts` steps receive `"plan"`.
 
 Set `WORKLOAD_IDENTITY_SERVICE_ACCOUNT_EMAIL_PLAN` on the workspace to impersonate a read-only service account on plan steps (falling back to `WORKLOAD_IDENTITY_SERVICE_ACCOUNT_EMAIL` when unset), and map `assertion.terrakube_run_phase` in your Workload Identity Pool provider so GCP enforces which identity can be impersonated per phase:
 
@@ -84,4 +84,4 @@ attribute_mapping = {
 
 You can then bind the apply service account with a `roles/iam.workloadIdentityUser` member scoped to `attribute.terrakube_run_phase/apply` (or check `assertion.terrakube_run_phase == "apply"` in an `attribute_condition`).
 
-> Note: GCP limits `google.subject` to 127 bytes. Mapping `assertion.terrakube_run_phase` keeps `sub` unchanged (`organization:<org>:workspace:<ws>`). If you also set `ENABLE_DYNAMIC_CREDENTIALS_RUN_PHASE=true` on the workspace, Terrakube appends `:run_phase:<phase>` (+16 bytes) to `sub`.
+> Note: GCP limits `google.subject` to 127 bytes. Mapping `assertion.terrakube_run_phase` keeps `sub` unchanged (`organization:<org>:workspace:<ws>`). If you also set `ENABLE_DYNAMIC_CREDENTIALS_RUN_PHASE` strictly to `"true"` (case-insensitive; other values such as `no` or `off` leave it disabled) on the workspace, Terrakube appends `:run_phase:<phase>` (+16 bytes) to `sub`.

@@ -96,7 +96,7 @@ class DynamicCredentialsVaultTest {
     void successfulLoginPutsTheClientTokenInTheEnvironment() {
         vault.stubFor(post(urlEqualTo(LOGIN)).willReturn(okJson(loginResponse(CLIENT_TOKEN))));
 
-        HashMap<String, String> result = service.generateDynamicCredentialsVault(job(), env());
+        HashMap<String, String> result = service.generateDynamicCredentialsVault(job(), env(), null);
 
         assertThat(result).containsEntry("VAULT_TOKEN", CLIENT_TOKEN);
         vault.verify(1, postRequestedFor(urlEqualTo(LOGIN)));
@@ -108,7 +108,7 @@ class DynamicCredentialsVaultTest {
                 .withBody("{\"errors\": [\"permission denied\"]}")));
         HashMap<String, String> env = env();
 
-        assertThatThrownBy(() -> service.generateDynamicCredentialsVault(job(), env))
+        assertThatThrownBy(() -> service.generateDynamicCredentialsVault(job(), env, null))
                 .isInstanceOf(DynamicCredentialsException.class)
                 .hasMessageContaining("HTTP 403")
                 .hasMessageNotContaining("permission denied");
@@ -121,7 +121,7 @@ class DynamicCredentialsVaultTest {
     void aServerErrorIsRetriedOnceThenFails() {
         vault.stubFor(post(urlEqualTo(LOGIN)).willReturn(aResponse().withStatus(503).withBody("sealed")));
 
-        assertThatThrownBy(() -> service.generateDynamicCredentialsVault(job(), env()))
+        assertThatThrownBy(() -> service.generateDynamicCredentialsVault(job(), env(), null))
                 .isInstanceOf(DynamicCredentialsException.class)
                 .hasMessageNotContaining("sealed");
 
@@ -135,7 +135,7 @@ class DynamicCredentialsVaultTest {
         vault.stubFor(post(urlEqualTo(LOGIN)).inScenario("flaky").whenScenarioStateIs("up")
                 .willReturn(okJson(loginResponse(CLIENT_TOKEN))));
 
-        assertThat(service.generateDynamicCredentialsVault(job(), env())).containsEntry("VAULT_TOKEN", CLIENT_TOKEN);
+        assertThat(service.generateDynamicCredentialsVault(job(), env(), null)).containsEntry("VAULT_TOKEN", CLIENT_TOKEN);
         vault.verify(2, postRequestedFor(urlEqualTo(LOGIN)));
     }
 
@@ -146,7 +146,7 @@ class DynamicCredentialsVaultTest {
         vault.stubFor(post(urlEqualTo(LOGIN)).willReturn(okJson(loginResponse(CLIENT_TOKEN)).withFixedDelay(30_000)));
 
         long start = System.nanoTime();
-        assertThatThrownBy(() -> service.generateDynamicCredentialsVault(job(), env()))
+        assertThatThrownBy(() -> service.generateDynamicCredentialsVault(job(), env(), null))
                 .isInstanceOf(DynamicCredentialsException.class);
 
         assertThat(secondsSince(start)).isLessThan(8);
@@ -159,7 +159,7 @@ class DynamicCredentialsVaultTest {
         vault.stubFor(post(urlEqualTo(LOGIN)).willReturn(okJson(loginResponse(CLIENT_TOKEN)).withFixedDelay(30_000)));
 
         long start = System.nanoTime();
-        assertThatThrownBy(() -> service.generateDynamicCredentialsVault(job(), env()))
+        assertThatThrownBy(() -> service.generateDynamicCredentialsVault(job(), env(), null))
                 .isInstanceOf(DynamicCredentialsException.class)
                 .hasMessageContaining("within 2 seconds");
 
@@ -172,7 +172,7 @@ class DynamicCredentialsVaultTest {
                 .withHeader("Location", "http://127.0.0.1:1/elsewhere")));
         HashMap<String, String> env = env();
 
-        assertThatThrownBy(() -> service.generateDynamicCredentialsVault(job(), env))
+        assertThatThrownBy(() -> service.generateDynamicCredentialsVault(job(), env, null))
                 .isInstanceOf(DynamicCredentialsException.class)
                 .hasMessageContaining("HTTP 307");
 
@@ -189,7 +189,7 @@ class DynamicCredentialsVaultTest {
         env.put("VAULT_ADDR", "http://10.255.255.1:8200");
 
         long start = System.nanoTime();
-        assertThatThrownBy(() -> service.generateDynamicCredentialsVault(job(), env))
+        assertThatThrownBy(() -> service.generateDynamicCredentialsVault(job(), env, null))
                 .isInstanceOf(DynamicCredentialsException.class);
 
         assertThat(secondsSince(start)).isLessThan(8);
@@ -199,7 +199,7 @@ class DynamicCredentialsVaultTest {
     void aConnectionResetFailsTheJob() {
         vault.stubFor(post(urlEqualTo(LOGIN)).willReturn(aResponse().withFault(Fault.CONNECTION_RESET_BY_PEER)));
 
-        assertThatThrownBy(() -> service.generateDynamicCredentialsVault(job(), env()))
+        assertThatThrownBy(() -> service.generateDynamicCredentialsVault(job(), env(), null))
                 .isInstanceOf(DynamicCredentialsException.class);
     }
 
@@ -212,7 +212,7 @@ class DynamicCredentialsVaultTest {
             vault.stubFor(post(urlEqualTo(LOGIN)).willReturn(okJson(body)));
             HashMap<String, String> env = env();
 
-            assertThatThrownBy(() -> service.generateDynamicCredentialsVault(job(), env))
+            assertThatThrownBy(() -> service.generateDynamicCredentialsVault(job(), env, null))
                     .as("response body: '%s'", body)
                     .isInstanceOf(DynamicCredentialsException.class);
             assertThat(env).as("response body: '%s'", body).doesNotContainKey("VAULT_TOKEN");
@@ -226,9 +226,9 @@ class DynamicCredentialsVaultTest {
         HashMap<String, String> noRole = env();
         noRole.remove("WORKLOAD_IDENTITY_VAULT_ROLE");
 
-        assertThatThrownBy(() -> service.generateDynamicCredentialsVault(job(), noAddress))
+        assertThatThrownBy(() -> service.generateDynamicCredentialsVault(job(), noAddress, null))
                 .isInstanceOf(DynamicCredentialsException.class).hasMessageContaining("VAULT_ADDR");
-        assertThatThrownBy(() -> service.generateDynamicCredentialsVault(job(), noRole))
+        assertThatThrownBy(() -> service.generateDynamicCredentialsVault(job(), noRole, null))
                 .isInstanceOf(DynamicCredentialsException.class).hasMessageContaining("WORKLOAD_IDENTITY_VAULT_ROLE");
 
         vault.verify(0, postRequestedFor(urlEqualTo(LOGIN)));
@@ -238,7 +238,7 @@ class DynamicCredentialsVaultTest {
     void aMissingSigningKeyFailsInsteadOfSendingAnEmptyJwt() {
         ReflectionTestUtils.setField(service, "privateKeyPath", "");
 
-        assertThatThrownBy(() -> service.generateDynamicCredentialsVault(job(), env()))
+        assertThatThrownBy(() -> service.generateDynamicCredentialsVault(job(), env(), null))
                 .isInstanceOf(DynamicCredentialsException.class);
 
         vault.verify(0, postRequestedFor(urlEqualTo(LOGIN)));
@@ -250,7 +250,7 @@ class DynamicCredentialsVaultTest {
         HashMap<String, String> env = env();
         env.put("WORKLOAD_IDENTITY_VAULT_ROLE", "role\",\"admin\":\"true");
 
-        service.generateDynamicCredentialsVault(job(), env);
+        service.generateDynamicCredentialsVault(job(), env, null);
 
         vault.verify(postRequestedFor(urlEqualTo(LOGIN))
                 .withRequestBody(matchingJsonPath("$.role", equalTo("role\",\"admin\":\"true")))
@@ -267,10 +267,10 @@ class DynamicCredentialsVaultTest {
         env.put("WORKLOAD_IDENTITY_AUDIENCE_GCP", "//iam.googleapis.com/pool/provider");
         env.put("WORKLOAD_IDENTITY_SERVICE_ACCOUNT_EMAIL", "sa@project.iam.gserviceaccount.com");
 
-        service.generateDynamicCredentialsVault(job(), env);
-        service.generateDynamicCredentialsAzure(job(), env);
-        service.generateDynamicCredentialsAws(job(), env);
-        service.generateDynamicCredentialsGcp(job(), env);
+        service.generateDynamicCredentialsVault(job(), env, null);
+        service.generateDynamicCredentialsAzure(job(), env, null);
+        service.generateDynamicCredentialsAws(job(), env, null);
+        service.generateDynamicCredentialsGcp(job(), env, null);
 
         String everything = logs.list.stream().map(ILoggingEvent::getFormattedMessage)
                 .reduce("", (a, b) -> a + "\n" + b);
@@ -287,7 +287,7 @@ class DynamicCredentialsVaultTest {
         vault.stubFor(post(urlEqualTo(LOGIN)).willReturn(aResponse().withStatus(500)
                 .withBody("{\"auth\":{\"client_token\":\"" + CLIENT_TOKEN + "\"}} stack trace")));
 
-        assertThatThrownBy(() -> service.generateDynamicCredentialsVault(job(), env()))
+        assertThatThrownBy(() -> service.generateDynamicCredentialsVault(job(), env(), null))
                 .isInstanceOf(DynamicCredentialsException.class)
                 .hasMessageNotContaining(CLIENT_TOKEN);
 
@@ -321,11 +321,12 @@ class DynamicCredentialsVaultTest {
 
     @Test
     void applyFailsBeforeHttpWhenBaseRoleUnsetEvenIfPlanRoleConfigured() {
+        Job testJob = job();
         HashMap<String, String> env = env();
         env.remove("WORKLOAD_IDENTITY_VAULT_ROLE");
         env.put("WORKLOAD_IDENTITY_VAULT_ROLE_PLAN", "terrakube-plan-role");
 
-        assertThatThrownBy(() -> service.generateDynamicCredentialsVault(job(), env, "apply"))
+        assertThatThrownBy(() -> service.generateDynamicCredentialsVault(testJob, env, "apply"))
                 .isInstanceOf(DynamicCredentialsException.class);
         assertThat(vault.getAllServeEvents()).isEmpty();
     }

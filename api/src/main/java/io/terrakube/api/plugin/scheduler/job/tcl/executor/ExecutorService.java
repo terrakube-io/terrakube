@@ -509,7 +509,7 @@ public class ExecutorService {
         boolean dynamicCredentials = DYNAMIC_CREDENTIALS_FLAGS.stream()
                 .anyMatch(workspaceEnvVariables::containsKey);
         // Null when run-phase credentials are disabled globally or no dynamic credential provider is enabled.
-        String runPhase = dynamicCredentials ? dynamicCredentialsService.runPhase(flow.getType()) : null;
+        String runPhase = dynamicCredentials ? dynamicCredentialsService.runPhase(job, flow) : null;
         if (runPhase != null) {
             // Lets the configuration pick phase-specific secrets, e.g. a Vault path per phase.
             workspaceEnvVariables.put("TERRAKUBE_RUN_PHASE", runPhase);

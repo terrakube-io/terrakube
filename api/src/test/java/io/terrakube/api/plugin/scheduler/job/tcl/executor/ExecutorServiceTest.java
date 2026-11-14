@@ -741,7 +741,7 @@ class ExecutorServiceTest {
         enable.setValue("true");
         enable.setCategory(Category.ENV);
         when(variableRepository.findByWorkspace(workspace)).thenReturn(Optional.of(List.of(enable)));
-        when(dynamicCredentialsService.runPhase("terraformPlan")).thenReturn("plan");
+        when(dynamicCredentialsService.runPhase(eq(job), any())).thenReturn("plan");
         when(dynamicCredentialsService.generateDynamicCredentialsVault(eq(job), any(), eq("plan")))
                 .thenThrow(new io.terrakube.api.plugin.token.dynamic.DynamicCredentialsException(
                         "Vault dynamic credentials: Vault rejected the login with HTTP 403"));
@@ -769,7 +769,7 @@ class ExecutorServiceTest {
         staleTfVar.setValue("apply");
         staleTfVar.setCategory(Category.ENV);
         when(variableRepository.findByWorkspace(workspace)).thenReturn(Optional.of(List.of(enableAws, staleEnv, staleTfVar)));
-        when(dynamicCredentialsService.runPhase("terraformPlan")).thenReturn("plan");
+        when(dynamicCredentialsService.runPhase(eq(job), any())).thenReturn("plan");
         when(dynamicCredentialsService.generateDynamicCredentialsAws(eq(job), any(), eq("plan")))
                 .thenAnswer(inv -> new HashMap<>(inv.<HashMap<String, String>>getArgument(1)));
 
@@ -791,7 +791,7 @@ class ExecutorServiceTest {
         enableAws.setValue("true");
         enableAws.setCategory(Category.ENV);
         when(variableRepository.findByWorkspace(workspace)).thenReturn(Optional.of(List.of(enableAws)));
-        when(dynamicCredentialsService.runPhase("terraformApply")).thenReturn("apply");
+        when(dynamicCredentialsService.runPhase(eq(job), any())).thenReturn("apply");
         when(dynamicCredentialsService.generateDynamicCredentialsAws(eq(job), any(), eq("apply")))
                 .thenAnswer(inv -> new HashMap<>(inv.<HashMap<String, String>>getArgument(1)));
 
@@ -813,12 +813,12 @@ class ExecutorServiceTest {
         customFlag.setValue("true");
         customFlag.setCategory(Category.ENV);
         when(variableRepository.findByWorkspace(workspace)).thenReturn(Optional.of(List.of(customFlag)));
-        when(dynamicCredentialsService.runPhase("terraformPlan")).thenReturn("plan");
 
         executorService.execute(job, "plan-step", flow(FlowType.terraformPlan));
 
         ArgumentCaptor<ExecutorContext> firstCaptor = ArgumentCaptor.forClass(ExecutorContext.class);
         verify(persistentExecutorService).send(eq(job), firstCaptor.capture());
+        verify(dynamicCredentialsService, never()).runPhase(any(), any());
         assertThat(firstCaptor.getValue().getEnvironmentVariables())
                 .doesNotContainKeys("TERRAKUBE_RUN_PHASE", "TF_VAR_terrakube_run_phase");
 
@@ -827,7 +827,7 @@ class ExecutorServiceTest {
         enableAws.setValue("true");
         enableAws.setCategory(Category.ENV);
         when(variableRepository.findByWorkspace(workspace)).thenReturn(Optional.of(List.of(enableAws)));
-        when(dynamicCredentialsService.runPhase("terraformPlan")).thenReturn(null);
+        when(dynamicCredentialsService.runPhase(eq(job), any())).thenReturn(null);
         when(dynamicCredentialsService.generateDynamicCredentialsAws(eq(job), any(), isNull()))
                 .thenAnswer(inv -> new HashMap<>(inv.<HashMap<String, String>>getArgument(1)));
 
@@ -837,6 +837,30 @@ class ExecutorServiceTest {
         verify(persistentExecutorService, times(2)).send(eq(job), secondCaptor.capture());
         assertThat(secondCaptor.getAllValues().get(1).getEnvironmentVariables())
                 .doesNotContainKeys("TERRAKUBE_RUN_PHASE", "TF_VAR_terrakube_run_phase");
+    }
+
+    @Test
+    void postApplyCustomScriptsPassesJobAndFlowAndReceivesApplyRunPhase() throws Exception {
+        dispatchableJob();
+        Variable enableAws = new Variable();
+        enableAws.setKey("ENABLE_DYNAMIC_CREDENTIALS_AWS");
+        enableAws.setValue("true");
+        enableAws.setCategory(Category.ENV);
+        when(variableRepository.findByWorkspace(workspace)).thenReturn(Optional.of(List.of(enableAws)));
+        Flow customScriptsFlow = flow(FlowType.customScripts);
+        when(dynamicCredentialsService.runPhase(job, customScriptsFlow)).thenReturn("apply");
+        when(dynamicCredentialsService.generateDynamicCredentialsAws(eq(job), any(), eq("apply")))
+                .thenAnswer(inv -> new HashMap<>(inv.<HashMap<String, String>>getArgument(1)));
+
+        executorService.execute(job, "post-apply-script", customScriptsFlow);
+
+        ArgumentCaptor<ExecutorContext> captor = ArgumentCaptor.forClass(ExecutorContext.class);
+        verify(persistentExecutorService).send(eq(job), captor.capture());
+        verify(dynamicCredentialsService).runPhase(job, customScriptsFlow);
+        verify(dynamicCredentialsService).generateDynamicCredentialsAws(eq(job), any(), eq("apply"));
+        assertThat(captor.getValue().getEnvironmentVariables())
+                .containsEntry("TERRAKUBE_RUN_PHASE", "apply")
+                .containsEntry("TF_VAR_terrakube_run_phase", "apply");
     }
 
     @Test
