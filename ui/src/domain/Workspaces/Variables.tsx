@@ -1,6 +1,6 @@
 import { DeleteOutlined, EditOutlined, PlusOutlined } from "@ant-design/icons";
 import { Alert, Button, Collapse, Form, message, Popconfirm, Space, Table, Tag, Tooltip, Typography } from "antd";
-import { useState } from "react";
+import { useState, type KeyboardEvent } from "react";
 import { ORGANIZATION_ARCHIVE, WORKSPACE_ARCHIVE } from "../../config/actionTypes";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import { CreateVariableForm, FlatVariable, VariableCategory } from "../types";
@@ -49,9 +49,17 @@ const VARIABLES_COLUMS = (
         >
           <div
             className={`workspace-variable-value workspace-variable-value--${manageWorkspace ? "editable" : "readonly"}`}
-            onClick={() => {
-              if (manageWorkspace) onEdit(record);
-            }}
+            {...(manageWorkspace && {
+              role: "button",
+              tabIndex: 0,
+              onClick: () => onEdit(record),
+              onKeyDown: (event: KeyboardEvent) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  onEdit(record);
+                }
+              },
+            })}
           >
             {record.value}
           </div>

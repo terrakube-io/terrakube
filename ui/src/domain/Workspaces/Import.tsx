@@ -628,7 +628,7 @@ export const ImportWorkspace = () => {
     handleChange(4);
     setWorkspacesLoading(true);
 
-    let importerBaseUrl = "";
+    let importerBaseUrl: string;
     try {
       importerBaseUrl = getImporterBaseUrl();
     } catch (error) {
