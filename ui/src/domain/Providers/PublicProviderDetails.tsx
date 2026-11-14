@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import PageWrapper from "@/components/layout/PageWrapper/PageWrapper";
 import { LinkButton } from "@/components/navigation/LinkButton";
-import { copyValue } from "@/components/settings/IdField/IdField";
+import { copyValue } from "@/modules/utils/clipboard";
 import { relativeTime } from "@/modules/utils/dates";
 import { formatCount } from "@/modules/utils/formatCount";
 import { useOrgPermissions } from "@/modules/permissions/useOrgPermissions";

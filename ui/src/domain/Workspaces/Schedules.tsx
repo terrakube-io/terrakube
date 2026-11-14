@@ -262,9 +262,8 @@ export const Schedules = ({ schedules, manageWorkspace, reload }: Props) => {
               if (mode === "create") onCreate(values);
               else onUpdate(values);
             })
-            .catch((info) => {
-              console.log("Validate Failed:", info);
-            });
+            // The form already shows the validation errors next to the fields.
+            .catch(() => {});
         }}
       >
         <Space className="schedule-modal-body" orientation="vertical">

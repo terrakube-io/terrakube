@@ -45,7 +45,7 @@ const LoginContent = ({ themeMode }: { themeMode: ThemeMode }) => {
       <div className="login-card">
         <img src={themeMode === "dark" ? logoDark : logo} alt="Terrakube" className="login-logo" />
         <Title level={3}>Sign in to Terrakube</Title>
-        <Text type="secondary">Click below to continue with your identity provider.</Text>
+        <Text type="secondary">Click below to continue with your IdP.</Text>
         <Button type="primary" block size="large" loading={isSigningIn} onClick={handleSignIn}>
           Sign in
         </Button>

@@ -1,6 +1,6 @@
 export type AuditFieldBase = {
   createdDate?: string;
   createdBy?: string;
-  updatDate?: string;
-  updateBy?: string;
+  updatedDate?: string;
+  updatedBy?: string;
 };

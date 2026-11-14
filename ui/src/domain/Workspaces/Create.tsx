@@ -240,7 +240,7 @@ export const CreateWorkspace = () => {
 
         // Set projects
         if (!projectsRes.isError) {
-          setProjectList(projectsRes.data);
+          setProjectList(projectsRes.data ?? []);
           if (preselectedProjectId) {
             form.setFieldsValue({ project: preselectedProjectId });
           }
@@ -393,11 +393,6 @@ export const CreateWorkspace = () => {
     setRequiredVcsPush(false);
     setExecutionMode("local");
     form.setFieldsValue({ source: "empty", branch: "remote-content" });
-  };
-
-  const onFinishFailed = (errorInfo: any) => {
-    console.log(errorInfo.values);
-    console.log(errorInfo.errorFields);
   };
 
   const loadVersions = (iacType: IacType) => {
@@ -670,6 +665,7 @@ export const CreateWorkspace = () => {
                   vcs.map(function (item) {
                     return (
                       <Button
+                        key={item.id}
                         icon={<VcsLogo type={item.attributes.vcsType} size={20} />}
                         onClick={() => {
                           handleGitClick(item.id);
@@ -732,7 +728,6 @@ export const CreateWorkspace = () => {
         name="create-workspace"
         layout="vertical"
         onFinish={onFinish}
-        onFinishFailed={onFinishFailed}
         validateMessages={validateMessages}
         initialValues={{ folder: "/" }}
       >

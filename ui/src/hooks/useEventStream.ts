@@ -184,7 +184,6 @@ export function useEventStream<T>({
         clearTimeout(flushTimeout);
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [url, enabled]);
 
   return value;

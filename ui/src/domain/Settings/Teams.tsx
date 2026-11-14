@@ -7,7 +7,7 @@ import { LinkButton } from "@/components/navigation/LinkButton";
 import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
 import { Team, TeamRole } from "../types";
 import { EditTeam } from "./EditTeam";
-import { teamRoles } from "./TeamPermissionsV2";
+import { teamRoles } from "./teamRoles";
 import "./Settings.css";
 import "./TeamsTagsVariables.css";
 import { AccessDeniedAlert } from "@/components/feedback/AccessDeniedAlert";

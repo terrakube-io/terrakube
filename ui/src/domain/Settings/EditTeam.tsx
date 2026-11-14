@@ -1,6 +1,6 @@
 import { Alert, Button, Flex, Form, Input, Spin, message } from "antd";
 import CreatePatModal from "@/components/modals/CreatePatModal";
-import { CreateTokenForm } from "@/modules/token/types";
+import { CreatedToken, CreateTokenForm } from "@/modules/token/types";
 import TokenGrid from "@/modules/token/TokenGrid";
 import { apiDelete, apiGet, apiPost } from "@/modules/api/apiWrapper";
 import { useEffect, useState } from "react";
@@ -221,23 +221,26 @@ export const EditTeam = ({ mode, setMode, teamId, loadTeams, onDeleteTeam, manag
     return response;
   };
 
-  const onCreateToken = async (values: CreateTokenForm) => {
-    return await apiPost("/access-token/v1/teams", { ...values, group: teamName });
+  const onCreateToken = async (values?: CreateTokenForm) => {
+    return await apiPost<Partial<CreateTokenForm> & { group?: string }, CreatedToken>("/access-token/v1/teams", {
+      ...values,
+      group: teamName,
+    });
   };
 
   const loadTokens = async (teamName?: string) => {
     if (!teamName) return;
-    const response = await apiGet("/access-token/v1/teams");
+    const response = await apiGet<TeamToken[]>("/access-token/v1/teams");
     if (response.isError) {
       console.error("Failed to load team tokens:", response.error);
     } else {
-      setTokens(response.data.filter((token: any) => token.group === teamName));
+      setTokens((response.data ?? []).filter((token) => token.group === teamName));
     }
     setLoadingTokens(false);
   };
 
   const loadUserTeams = async (teamName: string) => {
-    const response = await apiGet("/access-token/v1/teams/current-teams");
+    const response = await apiGet<{ groups?: string[] }>("/access-token/v1/teams/current-teams");
     if (!response.isError && response.data?.groups?.includes(teamName)) {
       setCreateTokenDisabled(false);
     }

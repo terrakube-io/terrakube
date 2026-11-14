@@ -11,7 +11,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import PageWrapper from "@/components/layout/PageWrapper/PageWrapper";
 import DeleteConfirmationModal from "@/components/modals/DeleteConfirmationModal/DeleteConfirmationModal";
-import { copyValue } from "@/components/settings/IdField/IdField";
+import { copyValue } from "@/modules/utils/clipboard";
 import { getErrorMessage } from "@/config/axiosConfig";
 import { ORGANIZATION_ARCHIVE } from "../../config/actionTypes";
 import VersionStatusModal, {

@@ -1,14 +1,6 @@
-import React, { createContext, ReactNode, useContext, useState } from "react";
+import { ReactNode, useState } from "react";
 import { ColorSchemeOption, ThemeMode, defaultColorScheme, defaultThemeMode } from "../config/themeConfig";
-
-interface ThemeContextType {
-  colorScheme: ColorSchemeOption;
-  themeMode: ThemeMode;
-  setColorScheme: (scheme: ColorSchemeOption) => void;
-  setThemeMode: (mode: ThemeMode) => void;
-}
-
-const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
+import { ThemeContext } from "./useTheme";
 
 const getStoredColorScheme = (): ColorSchemeOption => {
   if (typeof window === "undefined") {
@@ -47,13 +39,4 @@ export const ThemeProvider = ({ children }: { children: ReactNode }) => {
       {children}
     </ThemeContext.Provider>
   );
-};
-
-export const useTheme = () => {
-  const context = useContext(ThemeContext);
-  if (!context) {
-    throw new Error("useTheme must be used within a ThemeProvider");
-  }
-
-  return context;
 };

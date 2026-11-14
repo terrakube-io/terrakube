@@ -313,7 +313,7 @@ export const importProvider = async (
         source: source.substring(0, 64) || "unknown",
         sourceUrl: sourceUrl.substring(0, 512) || "https://unknown",
       }).catch((error) => {
-        console.warn(`Failed to create implementation for ${downloadInfo.os}/${downloadInfo.arch}:`, error);
+        console.error(`Failed to create implementation for ${downloadInfo.os}/${downloadInfo.arch}:`, error);
       });
     });
 

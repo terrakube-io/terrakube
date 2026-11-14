@@ -56,8 +56,7 @@ mvn -B verify -Dspring-boot.build-image.skip=true
 # UI changes
 cd ui
 yarn install --immutable
-yarn lint:modules:check
-yarn format:modules:check
+yarn check   # lint, format, typecheck and unit tests
 yarn build
 ```
 
