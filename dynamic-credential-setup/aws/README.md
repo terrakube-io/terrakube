@@ -68,6 +68,7 @@ The following tags are sent as transitive principal tags:
 - `terrakube:org` - organization name
 - `terrakube:workspace` - workspace name
 - `terrakube:project` - project name (only when the workspace belongs to a project)
+- `terrakube:run_phase` - `"plan"` or `"apply"` (only when `ENABLE_DYNAMIC_CREDENTIALS_RUN_PHASE` is set to `"true"` on the workspace and the global `DynamicCredentialRunPhaseEnabled` kill switch is `true`)
 
 Two things are required in the role trust policy:
 
@@ -90,7 +91,8 @@ The `main.tf` in this folder trusts only the subject of its own workspace:
     "aws:TagKeys": [
       "terrakube:org",
       "terrakube:workspace",
-      "terrakube:project"
+      "terrakube:project",
+      "terrakube:run_phase"
     ]
   }
 }
@@ -114,3 +116,17 @@ Once the tags are set, you can reference them in permission policies. For exampl
 To share one role across every workspace of an organization, you can relax the subject to `"StringLike": { "...:sub": "organization:my-org:workspace:*" }`. Then any workspace in the organization, including one created later, can assume the role, and only the `terrakube:workspace` tag in the permission policy separates them. Use it only when every policy attached to the role is scoped by that tag.
 
 You can also restrict the accepted tag values (not only the keys) with `aws:RequestTag/<key>` in the trust policy if you want to pin a role to a specific organization or workspace.
+
+## Separating Plan and Apply Identities (`run_phase`)
+
+You can give plan steps a read-only IAM role while reserving write permissions for apply and destroy steps:
+
+1. Ensure the instance-level kill switch `DynamicCredentialRunPhaseEnabled` (`io.terrakube.dynamic.credentials.run-phase.enabled`) is `true` (its default).
+2. On the workspace, set:
+   - `ENABLE_DYNAMIC_CREDENTIALS_RUN_PHASE=true` — when set strictly to `"true"` (case-insensitive; other values such as `no` or `off` leave it disabled), appends `:run_phase:<phase>` (`:run_phase:plan` or `:run_phase:apply`) to the JWT `sub` claim and adds `terrakube:run_phase` to AWS session tags (when `ENABLE_AWS_SESSION_TAGS=true`).
+   - `WORKLOAD_IDENTITY_ROLE_AWS_PLAN` — the read-only IAM role ARN used for `plan` steps (falls back to `WORKLOAD_IDENTITY_ROLE_AWS` when unset).
+3. Enforce the phase in your AWS IAM trust policies (without this, a plan step token could still assume the apply role if the apply role accepts both phases):
+   - **Plan role trust condition**: `"StringEquals": { "<host>:sub": "organization:<org>:workspace:<ws>:run_phase:plan" }` (or `"aws:RequestTag/terrakube:run_phase": "plan"` with `ENABLE_AWS_SESSION_TAGS=true`).
+   - **Apply role trust condition**: `"StringEquals": { "<host>:sub": "organization:<org>:workspace:<ws>:run_phase:apply" }` (or `"aws:RequestTag/terrakube:run_phase": "apply"` with `ENABLE_AWS_SESSION_TAGS=true`).
+
+Terrakube also injects `TERRAKUBE_RUN_PHASE` and `TF_VAR_terrakube_run_phase` (`"plan"` or `"apply"`) into every step of a workspace with dynamic credentials enabled. `terraformApply`, `terraformDestroy`, and `customScripts` steps that follow an apply or destroy step in the same flow receive `"apply"`; `terraformPlan`, `terraformPlanDestroy`, `policyEvaluation`, and pre-apply or standalone `customScripts` steps receive `"plan"`. Note that `TeamPlanJob` still allows users with plan-only rights to queue templates that include an apply step without approval; the separation protects plan steps of admin-controlled templates, and enforcement relies on the IAM trust policy.
