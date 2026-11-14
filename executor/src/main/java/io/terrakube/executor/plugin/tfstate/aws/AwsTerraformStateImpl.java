@@ -447,9 +447,9 @@ public class AwsTerraformStateImpl implements TerraformState {
     }
 
     @Override
-    public boolean saveTerraformBinary(String version, boolean tofu, File binaryFile) {
+    public boolean saveTerraformBinary(String version, boolean tofu, String os, String arch, File binaryFile) {
         String product = tofu ? "tofu" : "terraform";
-        String blobKey = "tfbinary/" + product + "/" + version + "/" + product;
+        String blobKey = "tfbinary/" + product + "/" + version + "/" + os + "_" + arch + "/" + product;
         log.info("Saving {} binary to S3: {}", product, blobKey);
         try {
             PutObjectRequest putObjectRequest = PutObjectRequest.builder()
@@ -458,18 +458,18 @@ public class AwsTerraformStateImpl implements TerraformState {
                     .build();
 
             s3client.putObject(putObjectRequest, RequestBody.fromFile(binaryFile));
-            log.info("Successfully cached {} binary version {} in S3", product, version);
+            log.info("Successfully cached {} binary version {} ({}_{}) in S3", product, version, os, arch);
             return true;
         } catch (Exception e) {
-            log.warn("Failed to cache {} binary version {} in S3: {}", product, version, e.getMessage());
+            log.warn("Failed to cache {} binary version {} ({}_{}) in S3: {}", product, version, os, arch, e.getMessage());
             return false;
         }
     }
 
     @Override
-    public boolean downloadTerraformBinary(String version, boolean tofu, File targetFile) {
+    public boolean downloadTerraformBinary(String version, boolean tofu, String os, String arch, File targetFile) {
         String product = tofu ? "tofu" : "terraform";
-        String blobKey = "tfbinary/" + product + "/" + version + "/" + product;
+        String blobKey = "tfbinary/" + product + "/" + version + "/" + os + "_" + arch + "/" + product;
         log.info("Attempting to restore {} binary from S3: {}", product, blobKey);
         try {
             // Check if the object exists first
@@ -498,13 +498,13 @@ public class AwsTerraformStateImpl implements TerraformState {
                 log.warn("Failed to set executable permission on restored {} binary", product);
             }
 
-            log.info("Successfully restored {} binary version {} from S3", product, version);
+            log.info("Successfully restored {} binary version {} ({}_{}) from S3", product, version, os, arch);
             return true;
         } catch (NoSuchKeyException e) {
-            log.info("{} binary version {} not found in S3 cache", product, version);
+            log.info("{} binary version {} ({}_{}) not found in S3 cache", product, version, os, arch);
             return false;
         } catch (Exception e) {
-            log.warn("Failed to restore {} binary version {} from S3: {}", product, version, e.getMessage());
+            log.warn("Failed to restore {} binary version {} ({}_{}) from S3: {}", product, version, os, arch, e.getMessage());
             return false;
         }
     }

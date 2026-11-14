@@ -116,7 +116,7 @@ public class BinaryCacheRecoveryService {
 
     private boolean restoreFromCloudStorage(String resolvedVersion, boolean tofu, File binaryFile, String product) {
         try {
-            return terraformState.downloadTerraformBinary(resolvedVersion, tofu, binaryFile);
+            return terraformState.downloadTerraformBinary(resolvedVersion, tofu, BinaryArchiveLocator.os(), BinaryArchiveLocator.arch(), binaryFile);
         } catch (Exception e) {
             log.warn("S3 binary cache restore failed for {} {}: {}", product, resolvedVersion, e.getMessage());
             return false;
