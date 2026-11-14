@@ -837,6 +837,52 @@ class TfcApiTests extends ServerApplicationTests {
         }
     }
 
+    @Test
+    void getCurrentOutputsAccessDeniedForInvalidGroup() {
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("INVALID_GROUP"))
+                .when()
+                .get("/remote/tfe/v2/workspaces/5ed411ca-7ab8-4d2f-b591-02d0d5788afc/current-state-version-outputs")
+                .then()
+                .assertThat()
+                .statusCode(HttpStatus.FORBIDDEN.value());
+    }
+
+    @Test
+    void getWorkspaceRunsAccessDeniedForInvalidGroup() {
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("INVALID_GROUP"))
+                .when()
+                .get("/remote/tfe/v2/workspaces/5ed411ca-7ab8-4d2f-b591-02d0d5788afc/runs")
+                .then()
+                .assertThat()
+                .statusCode(HttpStatus.FORBIDDEN.value());
+    }
+
+    @Test
+    void getRunsQueueAccessDeniedForInvalidGroup() {
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("INVALID_GROUP"))
+                .when()
+                .get("/remote/tfe/v2/organizations/simple/runs/queue")
+                .then()
+                .assertThat()
+                .statusCode(HttpStatus.FORBIDDEN.value());
+    }
+
+    @Test
+    void logsWriteAccessDeniedForUserPAT() {
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+                .header("Content-Type", "application/json")
+                .body("{\"data\":[{\"jobId\":1,\"stepId\":\"1\",\"output\":\"injected log line\"}]}")
+                .when()
+                .post("/logs")
+                .then()
+                .assertThat()
+                .statusCode(HttpStatus.FORBIDDEN.value());
+    }
+
     /** keyValues: key, value, key, value ... */
     private String createWorkspaceWithTagBindings(String token, String name, String... keyValues) {
         List<String> bindings = new ArrayList<>();

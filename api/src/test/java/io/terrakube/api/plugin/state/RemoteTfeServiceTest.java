@@ -14,10 +14,13 @@ import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import java.util.ArrayList;
+import java.util.Date;
+import java.util.concurrent.TimeUnit;
 import io.terrakube.api.plugin.notification.JobNotificationTrigger;
 import io.terrakube.api.plugin.scheduler.ScheduleJobService;
 import io.terrakube.api.plugin.security.encryption.EncryptionService;
 import io.terrakube.api.plugin.security.rbac.RbacService;
+import io.terrakube.api.plugin.state.model.outputs.StateOutputs;
 import io.terrakube.api.plugin.state.model.state.StateData;
 import io.terrakube.api.plugin.state.model.workspace.WorkspaceData;
 import io.terrakube.api.plugin.state.model.workspace.WorkspaceList;
@@ -49,9 +52,12 @@ import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.step.Step;
 import io.terrakube.api.rs.project.Project;
+import io.terrakube.api.rs.project.access.ProjectAccess;
+import io.terrakube.api.rs.checks.membership.MembershipService;
 import io.terrakube.api.rs.tag.Tag;
 import io.terrakube.api.rs.team.Team;
 import io.terrakube.api.rs.workspace.Workspace;
+import io.terrakube.api.rs.workspace.access.Access;
 import io.terrakube.api.rs.workspace.history.History;
 import io.terrakube.api.rs.workspace.tag.WorkspaceTag;
 import org.junit.jupiter.api.Test;
@@ -126,6 +132,11 @@ class RemoteTfeServiceTest {
         Job job = new Job();
         job.setId(9841);
         job.setStatus(status);
+        Organization org = organization("sample-org");
+        Team approvers = team("approvers");
+        org.setTeam(List.of(approvers));
+        job.setOrganization(org);
+        job.setWorkspace(workspace("sample", org));
         Step plan = new Step();
         plan.setStepNumber(100);
         plan.setStatus(JobStatus.completed);
@@ -133,12 +144,14 @@ class RemoteTfeServiceTest {
         approval.setStepNumber(150);
         approval.setStatus(JobStatus.pending);
         job.setStep(List.of(plan, approval));
+        when(jobRepository.findById(9841)).thenReturn(Optional.of(job));
         when(jobRepository.getReferenceById(9841)).thenReturn(job);
-        assertEquals(expected, service.getPlan(9841).getData().getAttributes().get("status"));
+        JwtAuthenticationToken user = approverOf(job);
+        assertEquals(expected, service.getPlan(9841, user).getData().getAttributes().get("status"));
         approval.setStatus(JobStatus.completed);
-        assertEquals("finished", service.getPlan(9841).getData().getAttributes().get("status"));
+        assertEquals("finished", service.getPlan(9841, user).getData().getAttributes().get("status"));
         job.setStep(List.of(plan));
-        assertEquals("finished", service.getPlan(9841).getData().getAttributes().get("status"));
+        assertEquals("finished", service.getPlan(9841, user).getData().getAttributes().get("status"));
     }
 
     @ParameterizedTest
@@ -151,8 +164,9 @@ class RemoteTfeServiceTest {
         plan.setStepNumber(100);
         plan.setStatus(JobStatus.completed);
         job.setStep(List.of(plan, job.getStep().getFirst()));
+        JwtAuthenticationToken user = approverOf(job);
 
-        assertEquals("finished", service.getPlan(job.getId()).getData().getAttributes().get("status"));
+        assertEquals("finished", service.getPlan(job.getId(), user).getData().getAttributes().get("status"));
     }
 
     @Test
@@ -669,14 +683,20 @@ class RemoteTfeServiceTest {
         Job job = new Job();
         job.setId(901);
         Organization org = organization("sample-org");
+        Team team = team("sample-team");
+        org.setTeam(List.of(team));
         Workspace workspace = workspace("sample", org);
         job.setOrganization(org);
         job.setWorkspace(workspace);
         job.setStatus(JobStatus.running);
 
+        when(jobRepository.findById(901)).thenReturn(Optional.of(job));
         when(jobRepository.getReferenceById(901)).thenReturn(job);
+        when(teamTokenService.getCurrentGroups(any())).thenReturn(List.of("sample-team"));
+        when(rbacService.canManageWorkspace(team)).thenReturn(true);
+        JwtAuthenticationToken user = currentUser();
 
-        RunsData runData = service.getRun(901, "workspace,applies", null);
+        RunsData runData = service.getRun(901, "workspace,applies", user);
 
         assertNotNull(runData);
         assertNull(runData.getIncluded(), "Included should be null or not contain ApplyRunModel when 'applies' is passed");
@@ -689,6 +709,8 @@ class RemoteTfeServiceTest {
         Job job = new Job();
         job.setId(900);
         Organization org = organization("sample-org");
+        Team team = team("sample-team");
+        org.setTeam(List.of(team));
         Workspace workspace = workspace("sample", org);
         job.setOrganization(org);
         job.setWorkspace(workspace);
@@ -706,10 +728,14 @@ class RemoteTfeServiceTest {
 
         job.setStep(List.of(planStep, applyStep));
 
+        when(jobRepository.findById(900)).thenReturn(Optional.of(job));
         when(jobRepository.getReferenceById(900)).thenReturn(job);
-        when(encryptionService.encrypt("900")).thenReturn("encrypted-900");
+        when(encryptionService.encrypt(Mockito.startsWith("900"))).thenReturn("encrypted-900");
+        when(teamTokenService.getCurrentGroups(any())).thenReturn(List.of("sample-team"));
+        when(rbacService.canManageWorkspace(team)).thenReturn(true);
+        JwtAuthenticationToken user = currentUser();
 
-        RunsData runData = service.getRun(900, "plan,apply", null);
+        RunsData runData = service.getRun(900, "plan,apply", user);
 
         assertNotNull(runData);
         assertNotNull(runData.getIncluded());
@@ -733,6 +759,7 @@ class RemoteTfeServiceTest {
         org.setTeam(List.of(approvers));
         when(teamTokenService.getCurrentGroups(user)).thenReturn(List.of("approvers"));
         when(rbacService.canApproveJob(approvers)).thenReturn(true);
+        when(rbacService.canManageWorkspace(approvers)).thenReturn(true);
         Job job = new Job();
         job.setId(3554);
         job.setOrganization(org);
@@ -744,12 +771,13 @@ class RemoteTfeServiceTest {
         step.setStepNumber(planOnly ? 100 : 150);
         step.setStatus(JobStatus.pending);
         job.setStep(new ArrayList<>(List.of(step)));
+        when(jobRepository.findById(3554)).thenReturn(Optional.of(job));
         when(jobRepository.getReferenceById(3554)).thenReturn(job);
         when(jobRepository.save(job)).thenReturn(job);
         when(stepRepository.save(any(Step.class))).thenAnswer(call -> call.getArgument(0));
         when(templateRepository.getByOrganizationNameAndName("sample-org", "Terraform-Plan/Apply-Cli"))
                 .thenReturn(new Template());
-        Mockito.doReturn(null).when(service).getRun(3554, null);
+        Mockito.doReturn(null).when(service).getRun(3554, null, user);
         TransactionSynchronizationManager.initSynchronization();
         try {
             service.runApply(3554, user);
@@ -786,6 +814,7 @@ class RemoteTfeServiceTest {
         org.setTeam(List.of(approvers));
         when(teamTokenService.getCurrentGroups(user)).thenReturn(List.of("approvers"));
         when(rbacService.canApproveJob(approvers)).thenReturn(true);
+        when(rbacService.canManageWorkspace(approvers)).thenReturn(true);
         Job job = new Job();
         job.setId(3554);
         job.setOrganization(org);
@@ -796,6 +825,7 @@ class RemoteTfeServiceTest {
         step.setStepNumber(planOnly ? 100 : 150);
         step.setStatus(JobStatus.pending);
         job.setStep(new ArrayList<>(List.of(step)));
+        when(jobRepository.findById(3554)).thenReturn(Optional.of(job));
         when(jobRepository.getReferenceById(3554)).thenReturn(job);
         when(guard.blockingReason(job)).thenReturn(Optional.of("Job 3554 cannot be approved: policy"));
 
@@ -853,6 +883,7 @@ class RemoteTfeServiceTest {
         step.setStepNumber(150);
         step.setStatus(JobStatus.pending);
         job.setStep(new ArrayList<>(List.of(step)));
+        when(jobRepository.findById(3554)).thenReturn(Optional.of(job));
         when(jobRepository.getReferenceById(3554)).thenReturn(job);
         return job;
     }
@@ -863,6 +894,7 @@ class RemoteTfeServiceTest {
         Team approvers = job.getOrganization().getTeam().get(0);
         when(teamTokenService.getCurrentGroups(user)).thenReturn(List.of("approvers"));
         when(rbacService.canApproveJob(approvers)).thenReturn(true);
+        when(rbacService.canManageWorkspace(approvers)).thenReturn(true);
         return user;
     }
 
@@ -1294,26 +1326,39 @@ class RemoteTfeServiceTest {
     void getCurrentWorkspaceStatePropagatesAGenuineStorageFailureInsteadOfReportingNoState() {
         RemoteTfeService service = remoteTfeService();
         Organization organization = organization("sample-org");
+        Team adminTeam = team("admins");
+        organization.setTeam(List.of(adminTeam));
         Workspace workspace = workspace("app", organization);
+        when(workspaceRepository.findById(workspace.getId())).thenReturn(Optional.of(workspace));
         when(workspaceRepository.getReferenceById(workspace.getId())).thenReturn(workspace);
         when(storageTypeService.getCurrentTerraformState(organization.getId().toString(), workspace.getId().toString()))
                 .thenThrow(new io.terrakube.api.plugin.storage.StorageUnavailableException("S3 read failed", new RuntimeException("cause")));
 
+        JwtAuthenticationToken user = currentUser();
+        when(teamTokenService.getCurrentGroups(user)).thenReturn(List.of("admins"));
+        when(rbacService.canManageState(adminTeam)).thenReturn(true);
+
         assertThrows(io.terrakube.api.plugin.storage.StorageUnavailableException.class,
-                () -> service.getCurrentWorkspaceState(workspace.getId().toString()));
+                () -> service.getCurrentWorkspaceState(workspace.getId().toString(), user));
     }
 
     @Test
     void getCurrentOutputsPropagatesAGenuineStorageFailureInsteadOfReportingNoOutputs() {
         RemoteTfeService service = remoteTfeService();
         Organization organization = organization("sample-org");
+        Team adminTeam = team("admins");
+        organization.setTeam(List.of(adminTeam));
         Workspace workspace = workspace("app", organization);
         when(workspaceRepository.findById(workspace.getId())).thenReturn(java.util.Optional.of(workspace));
         when(storageTypeService.getCurrentTerraformState(organization.getId().toString(), workspace.getId().toString()))
                 .thenThrow(new io.terrakube.api.plugin.storage.StorageUnavailableException("S3 read failed", new RuntimeException("cause")));
 
+        JwtAuthenticationToken user = currentUser();
+        when(teamTokenService.getCurrentGroups(user)).thenReturn(List.of("admins"));
+        when(rbacService.canManageState(adminTeam)).thenReturn(true);
+
         assertThrows(io.terrakube.api.plugin.storage.StorageUnavailableException.class,
-                () -> service.getCurrentOutputs(workspace.getId().toString()));
+                () -> service.getCurrentOutputs(workspace.getId().toString(), user));
     }
 
     /**
@@ -1473,14 +1518,22 @@ class RemoteTfeServiceTest {
     @Test
     void getCurrentWorkspaceStateReadsTerraformVersionFromPlainState() throws Exception {
         RemoteTfeService service = remoteTfeService();
-        Workspace workspace = workspace("plain", organization("sample-org"));
+        Organization org = organization("sample-org");
+        Team adminTeam = team("admins");
+        org.setTeam(List.of(adminTeam));
+        Workspace workspace = workspace("plain", org);
+        when(workspaceRepository.findById(workspace.getId())).thenReturn(Optional.of(workspace));
         when(workspaceRepository.getReferenceById(workspace.getId())).thenReturn(workspace);
         when(storageTypeService.getCurrentTerraformState(workspace.getOrganization().getId().toString(),
                 workspace.getId().toString()))
                 .thenReturn("{\"version\":4,\"terraform_version\":\"1.12.5\",\"serial\":7,\"lineage\":\"abc\"}"
                         .getBytes(StandardCharsets.UTF_8));
 
-        StateData result = service.getCurrentWorkspaceState(workspace.getId().toString());
+        JwtAuthenticationToken user = currentUser();
+        when(teamTokenService.getCurrentGroups(user)).thenReturn(List.of("admins"));
+        when(rbacService.canManageState(adminTeam)).thenReturn(true);
+
+        StateData result = service.getCurrentWorkspaceState(workspace.getId().toString(), user);
 
         assertEquals(7, result.getData().getAttributes().get("serial"));
         assertEquals("1.12.5", result.getData().getAttributes().get("terraform-version"));
@@ -1489,7 +1542,11 @@ class RemoteTfeServiceTest {
     @Test
     void getCurrentWorkspaceStateHandlesOpenTofuEncryptedState() throws Exception {
         RemoteTfeService service = remoteTfeService();
-        Workspace workspace = workspace("encrypted", organization("sample-org"));
+        Organization org = organization("sample-org");
+        Team adminTeam = team("admins");
+        org.setTeam(List.of(adminTeam));
+        Workspace workspace = workspace("encrypted", org);
+        when(workspaceRepository.findById(workspace.getId())).thenReturn(Optional.of(workspace));
         when(workspaceRepository.getReferenceById(workspace.getId())).thenReturn(workspace);
         when(storageTypeService.getCurrentTerraformState(workspace.getOrganization().getId().toString(),
                 workspace.getId().toString()))
@@ -1497,7 +1554,11 @@ class RemoteTfeServiceTest {
                         + "\"encrypted_data\":\"Y2lwaGVydGV4dA==\",\"encryption_version\":\"v0\"}")
                         .getBytes(StandardCharsets.UTF_8));
 
-        StateData result = service.getCurrentWorkspaceState(workspace.getId().toString());
+        JwtAuthenticationToken user = currentUser();
+        when(teamTokenService.getCurrentGroups(user)).thenReturn(List.of("admins"));
+        when(rbacService.canManageState(adminTeam)).thenReturn(true);
+
+        StateData result = service.getCurrentWorkspaceState(workspace.getId().toString(), user);
 
         assertEquals(22, result.getData().getAttributes().get("serial"));
         assertEquals("1.6.0", result.getData().getAttributes().get("terraform-version"));
@@ -1865,6 +1926,700 @@ class RemoteTfeServiceTest {
     }
 
     @Test
+    void getCurrentOutputs_userToken_withoutManageStatePermission_throwsAccessDeniedException() {
+        RemoteTfeService service = remoteTfeService();
+        UUID targetWsId = UUID.randomUUID();
+        Organization org = organization("sample-org");
+        Team viewerTeam = team("viewer-team");
+        org.setTeam(List.of(viewerTeam));
+        Workspace targetWs = workspace("target-ws", org);
+        targetWs.setId(targetWsId);
+
+        when(workspaceRepository.findById(targetWsId)).thenReturn(Optional.of(targetWs));
+
+        JwtAuthenticationToken userToken = currentUser();
+        when(teamTokenService.getCurrentGroups(userToken)).thenReturn(List.of("viewer-team"));
+        when(rbacService.canManageState(viewerTeam)).thenReturn(false);
+
+        assertThrows(AccessDeniedException.class, () -> service.getCurrentOutputs(targetWsId.toString(), userToken));
+    }
+
+    @Test
+    void getCurrentOutputs_userToken_withManageStatePermission_returnsOutputs() {
+        RemoteTfeService service = remoteTfeService();
+        UUID targetWsId = UUID.randomUUID();
+        Organization org = organization("sample-org");
+        Team adminTeam = team("admin-team");
+        org.setTeam(List.of(adminTeam));
+        Workspace targetWs = workspace("target-ws", org);
+        targetWs.setId(targetWsId);
+
+        when(workspaceRepository.findById(targetWsId)).thenReturn(Optional.of(targetWs));
+        when(storageTypeService.getCurrentTerraformState(org.getId().toString(), targetWsId.toString()))
+                .thenReturn("{\"outputs\":{\"foo\":{\"value\":\"bar\",\"type\":\"string\"}}}".getBytes(StandardCharsets.UTF_8));
+
+        JwtAuthenticationToken userToken = currentUser();
+        when(teamTokenService.getCurrentGroups(userToken)).thenReturn(List.of("admin-team"));
+        when(rbacService.canManageState(adminTeam)).thenReturn(true);
+
+        StateOutputs outputs = service.getCurrentOutputs(targetWsId.toString(), userToken);
+        assertNotNull(outputs);
+        assertEquals(1, outputs.getData().size());
+    }
+
+    @Test
+    void getCurrentWorkspaceState_userToken_withoutManageStatePermission_throwsAccessDeniedException() {
+        RemoteTfeService service = remoteTfeService();
+        UUID targetWsId = UUID.randomUUID();
+        Organization org = organization("sample-org");
+        Team viewerTeam = team("viewer-team");
+        org.setTeam(List.of(viewerTeam));
+        Workspace targetWs = workspace("target-ws", org);
+        targetWs.setId(targetWsId);
+
+        when(workspaceRepository.findById(targetWsId)).thenReturn(Optional.of(targetWs));
+
+        JwtAuthenticationToken userToken = currentUser();
+        when(teamTokenService.getCurrentGroups(userToken)).thenReturn(List.of("viewer-team"));
+        when(rbacService.canManageState(viewerTeam)).thenReturn(false);
+
+        assertThrows(AccessDeniedException.class, () -> service.getCurrentWorkspaceState(targetWsId.toString(), userToken));
+    }
+
+    @Test
+    void getWorkspaceRuns_userToken_unauthorized_throwsAccessDeniedException() {
+        RemoteTfeService service = remoteTfeService();
+        UUID targetWsId = UUID.randomUUID();
+        Organization org = organization("sample-org");
+        Team team = team("other-team");
+        org.setTeam(List.of(team));
+        Workspace targetWs = workspace("target-ws", org);
+        targetWs.setId(targetWsId);
+
+        when(workspaceRepository.findById(targetWsId)).thenReturn(Optional.of(targetWs));
+
+        JwtAuthenticationToken userToken = currentUser();
+        when(teamTokenService.getCurrentGroups(userToken)).thenReturn(List.of("unrelated-group"));
+
+        assertThrows(AccessDeniedException.class, () -> service.getWorkspaceRuns(targetWsId.toString(), userToken));
+    }
+
+    @Test
+    void getRunsQueue_userToken_notMemberOfOrg_throwsAccessDeniedException() {
+        RemoteTfeService service = remoteTfeService();
+        Organization org = organization("sample-org");
+        Team team = team("sample-team");
+        org.setTeam(List.of(team));
+
+        when(organizationRepository.getOrganizationByName("sample-org")).thenReturn(org);
+
+        JwtAuthenticationToken userToken = currentUser();
+        when(teamTokenService.getCurrentGroups(userToken)).thenReturn(List.of("unrelated-group"));
+
+        assertThrows(AccessDeniedException.class, () -> service.getRunsQueue("sample-org", userToken));
+    }
+
+    @Test
+    void getPlan_userToken_unauthorized_throwsAccessDeniedException() {
+        RemoteTfeService service = remoteTfeService();
+        int planId = 555;
+        Organization org = organization("sample-org");
+        Team team = team("sample-team");
+        org.setTeam(List.of(team));
+        Workspace targetWs = workspace("target-ws", org);
+        targetWs.setId(UUID.randomUUID());
+
+        Job job = new Job();
+        job.setId(planId);
+        job.setWorkspace(targetWs);
+        job.setOrganization(org);
+
+        when(jobRepository.findById(planId)).thenReturn(Optional.of(job));
+
+        JwtAuthenticationToken userToken = currentUser();
+        when(teamTokenService.getCurrentGroups(userToken)).thenReturn(List.of("unrelated-group"));
+
+        assertThrows(AccessDeniedException.class, () -> service.getPlan(planId, userToken));
+    }
+
+    @Test
+    void getApply_userToken_unauthorized_throwsAccessDeniedException() {
+        RemoteTfeService service = remoteTfeService();
+        int applyId = 666;
+        Organization org = organization("sample-org");
+        Team team = team("sample-team");
+        org.setTeam(List.of(team));
+        Workspace targetWs = workspace("target-ws", org);
+        targetWs.setId(UUID.randomUUID());
+
+        Job job = new Job();
+        job.setId(applyId);
+        job.setWorkspace(targetWs);
+        job.setOrganization(org);
+
+        when(jobRepository.findById(applyId)).thenReturn(Optional.of(job));
+
+        JwtAuthenticationToken userToken = currentUser();
+        when(teamTokenService.getCurrentGroups(userToken)).thenReturn(List.of("unrelated-group"));
+
+        assertThrows(AccessDeniedException.class, () -> service.getApply(applyId, userToken));
+    }
+
+    @Test
+    void getWorkspaceStateConsumers_userToken_unauthorized_throwsAccessDeniedException() {
+        RemoteTfeService service = remoteTfeService();
+        UUID targetWsId = UUID.randomUUID();
+        Organization org = organization("sample-org");
+        Team team = team("sample-team");
+        org.setTeam(List.of(team));
+        Workspace targetWs = workspace("target-ws", org);
+        targetWs.setId(targetWsId);
+
+        when(workspaceRepository.findById(targetWsId)).thenReturn(Optional.of(targetWs));
+
+        JwtAuthenticationToken userToken = currentUser();
+        when(teamTokenService.getCurrentGroups(userToken)).thenReturn(List.of("unrelated-group"));
+
+        assertThrows(AccessDeniedException.class, () -> service.getWorkspaceStateConsumers(targetWsId.toString(), userToken));
+    }
+
+    @Test
+    void getCurrentOutputs_userWithProjectAccessManageState_returnsOutputs() {
+        RemoteTfeService service = remoteTfeService();
+        MembershipService membershipService = Mockito.mock(MembershipService.class);
+        ReflectionTestUtils.setField(service, "membershipService", membershipService);
+
+        UUID targetWsId = UUID.randomUUID();
+        Organization org = organization("sample-org");
+        Workspace targetWs = workspace("target-ws", org);
+        targetWs.setId(targetWsId);
+
+        Project project = new Project();
+        project.setId(UUID.randomUUID());
+        ProjectAccess projectAccess = new ProjectAccess();
+        project.setProjectAccess(List.of(projectAccess));
+        targetWs.setProject(project);
+
+        when(workspaceRepository.findById(targetWsId)).thenReturn(Optional.of(targetWs));
+        when(storageTypeService.getCurrentTerraformState(org.getId().toString(), targetWsId.toString()))
+                .thenReturn("{\"outputs\":{\"db_password\":{\"value\":\"secret123\",\"sensitive\":true,\"type\":\"string\"}}}".getBytes(StandardCharsets.UTF_8));
+
+        JwtAuthenticationToken userToken = currentUser();
+        when(teamTokenService.getCurrentGroups(userToken)).thenReturn(List.of("project-team"));
+        when(membershipService.checkProjectMembership(Mockito.any(), Mockito.any(), Mockito.any())).thenReturn(true);
+
+        StateOutputs outputs = service.getCurrentOutputs(targetWsId.toString(), userToken);
+        assertNotNull(outputs);
+        assertEquals(1, outputs.getData().size());
+        assertEquals("db_password", outputs.getData().get(0).getAttributes().get("name"));
+        assertEquals("secret123", outputs.getData().get(0).getAttributes().get("value"));
+    }
+
+    @Test
+    void getCurrentOutputs_userWithProjectAccessWithoutManageState_throwsAccessDeniedException() {
+        RemoteTfeService service = remoteTfeService();
+        MembershipService membershipService = Mockito.mock(MembershipService.class);
+        ReflectionTestUtils.setField(service, "membershipService", membershipService);
+
+        UUID targetWsId = UUID.randomUUID();
+        Organization org = organization("sample-org");
+        Workspace targetWs = workspace("target-ws", org);
+        targetWs.setId(targetWsId);
+
+        Project project = new Project();
+        project.setId(UUID.randomUUID());
+        ProjectAccess projectAccess = new ProjectAccess();
+        project.setProjectAccess(List.of(projectAccess));
+        targetWs.setProject(project);
+
+        when(workspaceRepository.findById(targetWsId)).thenReturn(Optional.of(targetWs));
+
+        JwtAuthenticationToken userToken = currentUser();
+        when(teamTokenService.getCurrentGroups(userToken)).thenReturn(List.of("read-only-project-team"));
+        when(membershipService.checkProjectMembership(Mockito.any(), Mockito.any(), Mockito.any())).thenReturn(false);
+
+        assertThrows(AccessDeniedException.class, () -> service.getCurrentOutputs(targetWsId.toString(), userToken));
+    }
+
+    @Test
+    void findJob_whenJobDoesNotExist_returnsNull() {
+        RemoteTfeService service = remoteTfeService();
+        when(jobRepository.findById(99999)).thenReturn(Optional.empty());
+
+        JwtAuthenticationToken userToken = currentUser();
+        assertNull(service.getPlan(99999, userToken));
+    }
+
+    @Test
+    void findWorkspace_whenWorkspaceDoesNotExist_returnsEmptyList() {
+        RemoteTfeService service = remoteTfeService();
+        UUID missingId = UUID.randomUUID();
+        when(workspaceRepository.findById(missingId)).thenReturn(Optional.empty());
+
+        JwtAuthenticationToken userToken = currentUser();
+        io.terrakube.api.plugin.state.model.runs.RunsDataList runs = service.getWorkspaceRuns(missingId.toString(), userToken);
+        assertNotNull(runs);
+        assertTrue(runs.getData().isEmpty());
+    }
+
+    @Test
+    void getPlanLogs_validCapabilityTokenWithExpiry_returnsLogs() {
+        RemoteTfeService service = remoteTfeService();
+        Job job = new Job();
+        job.setId(123);
+        job.setStatus(JobStatus.running);
+        Step planStep = new Step();
+        planStep.setId(UUID.randomUUID());
+        planStep.setStepNumber(100);
+        job.setStep(List.of(planStep));
+
+        long issuedAt = System.currentTimeMillis() - 60_000;
+        when(encryptionService.decrypt("valid-token")).thenReturn("123|" + issuedAt);
+        when(jobRepository.findById(123)).thenReturn(Optional.of(job));
+
+        StreamOperations<String, String, String> streamOperations = Mockito.mock(StreamOperations.class);
+        when(redisTemplate.opsForStream()).thenReturn(streamOperations);
+        when(streamOperations.read(any(StreamOffset.class)))
+                .thenReturn(List.of(MapRecord.create("123", Map.of("output", "Plan: 1 to add."))));
+
+        String logs = new String(service.getPlanLogs("valid-token", 0, 1000), StandardCharsets.UTF_8);
+        assertTrue(logs.contains("Plan: 1 to add."));
+    }
+
+    @Test
+    void getPlanLogs_runningJobWithIssueTimeOlderThanWindow_returnsLogs() {
+        RemoteTfeService service = remoteTfeService();
+        Job job = new Job();
+        job.setId(124);
+        job.setStatus(JobStatus.running);
+        Step planStep = new Step();
+        planStep.setId(UUID.randomUUID());
+        planStep.setStepNumber(100);
+        job.setStep(List.of(planStep));
+
+        long threeHoursAgo = System.currentTimeMillis() - TimeUnit.HOURS.toMillis(3);
+        when(encryptionService.decrypt("long-running-token")).thenReturn("124|" + threeHoursAgo);
+        when(jobRepository.findById(124)).thenReturn(Optional.of(job));
+
+        StreamOperations<String, String, String> streamOperations = Mockito.mock(StreamOperations.class);
+        when(redisTemplate.opsForStream()).thenReturn(streamOperations);
+        when(streamOperations.read(any(StreamOffset.class)))
+                .thenReturn(List.of(MapRecord.create("124", Map.of("output", "Still running after 3h"))));
+
+        String logs = new String(service.getPlanLogs("long-running-token", 0, 1000), StandardCharsets.UTF_8);
+        assertTrue(logs.contains("Still running after 3h"));
+    }
+
+    @Test
+    void getPlanLogs_completedJobWithinPostCompletionWindow_returnsLogs() {
+        RemoteTfeService service = remoteTfeService();
+        Job job = new Job();
+        job.setId(125);
+        job.setStatus(JobStatus.completed);
+        job.setUpdatedDate(new Date(System.currentTimeMillis() - TimeUnit.MINUTES.toMillis(10)));
+        Step planStep = new Step();
+        planStep.setId(UUID.randomUUID());
+        planStep.setStepNumber(100);
+        job.setStep(List.of(planStep));
+
+        long threeHoursAgo = System.currentTimeMillis() - TimeUnit.HOURS.toMillis(3);
+        when(encryptionService.decrypt("recent-finish-token")).thenReturn("125|" + threeHoursAgo);
+        when(jobRepository.findById(125)).thenReturn(Optional.of(job));
+
+        StreamOperations<String, String, String> streamOperations = Mockito.mock(StreamOperations.class);
+        when(redisTemplate.opsForStream()).thenReturn(streamOperations);
+        when(streamOperations.read(any(StreamOffset.class)))
+                .thenReturn(List.of(MapRecord.create("125", Map.of("output", "Apply complete!"))));
+
+        String logs = new String(service.getPlanLogs("recent-finish-token", 0, 1000), StandardCharsets.UTF_8);
+        assertTrue(logs.contains("Apply complete!"));
+    }
+
+    @Test
+    void getPlanLogs_completedJobWithFreshlyIssuedToken_returnsLogs() {
+        RemoteTfeService service = remoteTfeService();
+        Job job = new Job();
+        job.setId(129);
+        job.setStatus(JobStatus.completed);
+        job.setUpdatedDate(new Date(System.currentTimeMillis() - TimeUnit.HOURS.toMillis(5)));
+        Step planStep = new Step();
+        planStep.setId(UUID.randomUUID());
+        planStep.setStepNumber(100);
+        job.setStep(List.of(planStep));
+
+        long oneMinuteAgo = System.currentTimeMillis() - TimeUnit.MINUTES.toMillis(1);
+        when(encryptionService.decrypt("fresh-token-old-job")).thenReturn("129|" + oneMinuteAgo);
+        when(jobRepository.findById(129)).thenReturn(Optional.of(job));
+
+        StreamOperations<String, String, String> streamOperations = Mockito.mock(StreamOperations.class);
+        when(redisTemplate.opsForStream()).thenReturn(streamOperations);
+        when(streamOperations.read(any(StreamOffset.class)))
+                .thenReturn(List.of(MapRecord.create("129", Map.of("output", "Historical run logs"))));
+
+        String logs = new String(service.getPlanLogs("fresh-token-old-job", 0, 1000), StandardCharsets.UTF_8);
+        assertTrue(logs.contains("Historical run logs"));
+    }
+
+    @Test
+    void getPlanLogs_completedJobWithAgedReissuedToken_throwsGone410() {
+        RemoteTfeService service = remoteTfeService();
+        Job job = new Job();
+        job.setId(130);
+        job.setStatus(JobStatus.completed);
+        job.setUpdatedDate(new Date(System.currentTimeMillis() - TimeUnit.HOURS.toMillis(5)));
+
+        long seventyMinutesAgo = System.currentTimeMillis() - TimeUnit.MINUTES.toMillis(70);
+        when(encryptionService.decrypt("aged-reissued-token")).thenReturn("130|" + seventyMinutesAgo);
+        when(jobRepository.findById(130)).thenReturn(Optional.of(job));
+
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class,
+                () -> service.getPlanLogs("aged-reissued-token", 0, 1000));
+        assertEquals(HttpStatus.GONE, exception.getStatusCode());
+    }
+
+    @Test
+    void getPlanLogs_nonActiveOrUnknownStatuses_enforceExpiryWindow() {
+        RemoteTfeService service = remoteTfeService();
+        long thirtyHoursAgo = System.currentTimeMillis() - TimeUnit.HOURS.toMillis(30);
+        when(encryptionService.decrypt("stale-status-token")).thenReturn("131|" + thirtyHoursAgo);
+
+        for (JobStatus status : new JobStatus[] {null, JobStatus.unknown, JobStatus.notExecuted, JobStatus.NeverExecuted}) {
+            Job job = new Job();
+            job.setId(131);
+            job.setStatus(status);
+            job.setUpdatedDate(new Date(thirtyHoursAgo));
+            when(jobRepository.findById(131)).thenReturn(Optional.of(job));
+
+            ResponseStatusException exception = assertThrows(ResponseStatusException.class,
+                    () -> service.getPlanLogs("stale-status-token", 0, 1000));
+            assertEquals(HttpStatus.GONE, exception.getStatusCode());
+        }
+    }
+
+    @Test
+    void getPlanLogs_expiredCapabilityToken_throwsGone410() {
+        RemoteTfeService service = remoteTfeService();
+        Job job = new Job();
+        job.setId(123);
+        job.setStatus(JobStatus.completed);
+        job.setUpdatedDate(new Date(System.currentTimeMillis() - TimeUnit.MINUTES.toMillis(70)));
+
+        long threeHoursAgo = System.currentTimeMillis() - TimeUnit.HOURS.toMillis(3);
+        when(encryptionService.decrypt("expired-token")).thenReturn("123|" + threeHoursAgo);
+        when(jobRepository.findById(123)).thenReturn(Optional.of(job));
+
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class,
+                () -> service.getPlanLogs("expired-token", 0, 1000));
+        assertEquals(HttpStatus.GONE, exception.getStatusCode());
+        assertEquals("Log read URL has expired", exception.getReason());
+    }
+
+    @Test
+    void getPlanLogs_completedJobWithoutUpdatedDateFallsBackToIssuedAt() {
+        RemoteTfeService service = remoteTfeService();
+        Job job = new Job();
+        job.setId(126);
+        job.setStatus(JobStatus.completed);
+        job.setUpdatedDate(null);
+
+        long twoHoursAgo = System.currentTimeMillis() - TimeUnit.HOURS.toMillis(2);
+        when(encryptionService.decrypt("expired-fallback-token")).thenReturn("126|" + twoHoursAgo);
+        when(jobRepository.findById(126)).thenReturn(Optional.of(job));
+
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class,
+                () -> service.getPlanLogs("expired-fallback-token", 0, 1000));
+        assertEquals(HttpStatus.GONE, exception.getStatusCode());
+        assertEquals("Log read URL has expired", exception.getReason());
+    }
+
+    @Test
+    void getPlanLogs_customExpiryMinutesWindow_enforcedAfterCompletion() {
+        RemoteTfeService service = remoteTfeService();
+        service.setLogReadUrlExpiryMinutes(30);
+
+        Job job = new Job();
+        job.setId(127);
+        job.setStatus(JobStatus.failed);
+        job.setUpdatedDate(new Date(System.currentTimeMillis() - TimeUnit.MINUTES.toMillis(45)));
+
+        long twoHoursAgo = System.currentTimeMillis() - TimeUnit.HOURS.toMillis(2);
+        when(encryptionService.decrypt("custom-window-token")).thenReturn("127|" + twoHoursAgo);
+        when(jobRepository.findById(127)).thenReturn(Optional.of(job));
+
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class,
+                () -> service.getPlanLogs("custom-window-token", 0, 1000));
+        assertEquals(HttpStatus.GONE, exception.getStatusCode());
+    }
+
+    @Test
+    void getPlanLogs_malformedExpiry_throwsForbidden403() {
+        RemoteTfeService service = remoteTfeService();
+        when(encryptionService.decrypt("bad-token")).thenReturn("123|not-a-timestamp");
+
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class,
+                () -> service.getPlanLogs("bad-token", 0, 1000));
+        assertEquals(HttpStatus.FORBIDDEN, exception.getStatusCode());
+        assertEquals("Invalid log token", exception.getReason());
+    }
+
+    @Test
+    void getPlanLogs_malformedJobId_throwsForbidden403() {
+        RemoteTfeService service = remoteTfeService();
+        when(encryptionService.decrypt("bad-job-token")).thenReturn("not-an-int|12345");
+
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class,
+                () -> service.getPlanLogs("bad-job-token", 0, 1000));
+        assertEquals(HttpStatus.FORBIDDEN, exception.getStatusCode());
+        assertEquals("Invalid log token", exception.getReason());
+    }
+
+    @Test
+    void getPlanLogs_decryptionFailure_throwsForbidden403() {
+        RemoteTfeService service = remoteTfeService();
+        when(encryptionService.decrypt("tampered-token")).thenThrow(new RuntimeException("Decryption failed"));
+
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class,
+                () -> service.getPlanLogs("tampered-token", 0, 1000));
+        assertEquals(HttpStatus.FORBIDDEN, exception.getStatusCode());
+        assertEquals("Invalid log token", exception.getReason());
+    }
+
+    @Test
+    void getPlanLogs_default60MinuteWindow_acceptsWithin50MinutesAndRejectsAfter70Minutes() {
+        RemoteTfeService service = remoteTfeService();
+        Job job = new Job();
+        job.setId(128);
+        job.setStatus(JobStatus.completed);
+        Step planStep = new Step();
+        planStep.setId(UUID.randomUUID());
+        planStep.setStepNumber(100);
+        job.setStep(List.of(planStep));
+
+        long issuedAt = System.currentTimeMillis() - TimeUnit.HOURS.toMillis(2);
+        when(encryptionService.decrypt("default-window-token")).thenReturn("128|" + issuedAt);
+        when(jobRepository.findById(128)).thenReturn(Optional.of(job));
+
+        job.setUpdatedDate(new Date(System.currentTimeMillis() - TimeUnit.MINUTES.toMillis(50)));
+        StreamOperations<String, String, String> streamOperations = Mockito.mock(StreamOperations.class);
+        when(redisTemplate.opsForStream()).thenReturn(streamOperations);
+        when(streamOperations.read(any(StreamOffset.class)))
+                .thenReturn(List.of(MapRecord.create("128", Map.of("output", "Within 60m window"))));
+        String logs = new String(service.getPlanLogs("default-window-token", 0, 1000), StandardCharsets.UTF_8);
+        assertTrue(logs.contains("Within 60m window"));
+
+        job.setUpdatedDate(new Date(System.currentTimeMillis() - TimeUnit.MINUTES.toMillis(70)));
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class,
+                () -> service.getPlanLogs("default-window-token", 0, 1000));
+        assertEquals(HttpStatus.GONE, exception.getStatusCode());
+    }
+
+    @Test
+    void buildLogCapabilityToken_incorporatesConfiguredExpiry() {
+        RemoteTfeService service = remoteTfeService();
+        service.setLogReadUrlExpiryMinutes(120);
+
+        Job job = new Job();
+        job.setId(555);
+        Organization org = organization("sample-org");
+        Team adminTeam = team("admins");
+        org.setTeam(List.of(adminTeam));
+        Workspace ws = workspace("sample-ws", org);
+        job.setOrganization(org);
+        job.setWorkspace(ws);
+        job.setStatus(JobStatus.completed);
+
+        when(jobRepository.findById(555)).thenReturn(Optional.of(job));
+        when(encryptionService.encrypt(Mockito.argThat(s -> {
+            if (s == null || !s.startsWith("555|")) return false;
+            long issuedAt = Long.parseLong(s.split("\\|")[1]);
+            long ageMillis = Math.abs(System.currentTimeMillis() - issuedAt);
+            return ageMillis < 10_000;
+        }))).thenReturn("encrypted-token-with-issued-at");
+
+        JwtAuthenticationToken token = currentUser();
+        when(teamTokenService.getCurrentGroups(token)).thenReturn(List.of("admins"));
+        when(rbacService.canManageWorkspace(Mockito.any(Team.class))).thenReturn(true);
+        when(organizationRepository.getOrganizationByName("sample-org")).thenReturn(org);
+
+        var plan = service.getPlan(555, token);
+        assertNotNull(plan);
+        assertTrue(plan.getData().getAttributes().get("log-read-url").toString().contains("encrypted-token-with-issued-at"));
+
+        service.setLogReadUrlExpiryMinutes(0);
+        when(encryptionService.encrypt("555")).thenReturn("encrypted-token-no-expiry");
+        var legacyPlan = service.getPlan(555, token);
+        assertTrue(legacyPlan.getData().getAttributes().get("log-read-url").toString().contains("encrypted-token-no-expiry"));
+    }
+
+    @Test
+    void orgMember_canReadQueue_returnsRunsQueue() {
+        RemoteTfeService service = remoteTfeService();
+        Organization org = organization("sample-org");
+        Team team = team("sample-team");
+        org.setTeam(List.of(team));
+        when(organizationRepository.getOrganizationByName("sample-org")).thenReturn(org);
+
+        JwtAuthenticationToken user = currentUser();
+        when(teamTokenService.getCurrentGroups(user)).thenReturn(List.of("sample-team"));
+        when(rbacService.canManageWorkspace(team)).thenReturn(true);
+
+        when(jobRepository.findAllByOrganizationNameAndStatusInOrderByIdAsc(Mockito.eq("sample-org"), anyList()))
+                .thenReturn(Collections.emptyList());
+
+        var queue = service.getRunsQueue("sample-org", user);
+        assertNotNull(queue);
+    }
+
+    @Test
+    void orgMember_canReadWorkspaceRuns_returnsWorkspaceRuns() {
+        RemoteTfeService service = remoteTfeService();
+        Organization org = organization("sample-org");
+        Team team = team("sample-team");
+        org.setTeam(List.of(team));
+        Workspace ws = workspace("sample-ws", org);
+        when(workspaceRepository.findById(ws.getId())).thenReturn(Optional.of(ws));
+
+        JwtAuthenticationToken user = currentUser();
+        when(teamTokenService.getCurrentGroups(user)).thenReturn(List.of("sample-team"));
+        when(rbacService.canManageWorkspace(team)).thenReturn(true);
+
+        when(jobRepository.findAllByWorkspaceAndStatusInOrderByIdDesc(Mockito.eq(ws), anyList()))
+                .thenReturn(Collections.emptyList());
+
+        var runs = service.getWorkspaceRuns(ws.getId().toString(), user);
+        assertNotNull(runs);
+    }
+
+    @Test
+    void orgMember_canReadPlanAndApply_returnsData() {
+        RemoteTfeService service = remoteTfeService();
+        Organization org = organization("sample-org");
+        Team team = team("sample-team");
+        org.setTeam(List.of(team));
+        Workspace ws = workspace("sample-ws", org);
+        Job job = new Job();
+        job.setId(881);
+        job.setOrganization(org);
+        job.setWorkspace(ws);
+        job.setStatus(JobStatus.completed);
+
+        when(jobRepository.findById(881)).thenReturn(Optional.of(job));
+        when(encryptionService.encrypt(Mockito.startsWith("881"))).thenReturn("enc-token");
+
+        JwtAuthenticationToken user = currentUser();
+        when(teamTokenService.getCurrentGroups(user)).thenReturn(List.of("sample-team"));
+        when(rbacService.canManageWorkspace(team)).thenReturn(true);
+
+        var plan = service.getPlan(881, user);
+        assertNotNull(plan);
+
+        var apply = service.getApply(881, user);
+        assertNotNull(apply);
+    }
+
+    @Test
+    void workspaceAccessUser_canReadWorkspaceRunsPlanApplyOutputs() {
+        RemoteTfeService service = remoteTfeService();
+        Organization org = organization("sample-org");
+        Workspace ws = workspace("sample-ws", org);
+        Access access = new Access();
+        access.setName("workspace-viewers");
+        access.setManageState(true);
+        ws.setAccess(List.of(access));
+
+        when(workspaceRepository.findById(ws.getId())).thenReturn(Optional.of(ws));
+        when(storageTypeService.getCurrentTerraformState(org.getId().toString(), ws.getId().toString()))
+                .thenReturn("{\"outputs\":{}}".getBytes(StandardCharsets.UTF_8));
+
+        Job job = new Job();
+        job.setId(882);
+        job.setOrganization(org);
+        job.setWorkspace(ws);
+        job.setStatus(JobStatus.completed);
+        when(jobRepository.findById(882)).thenReturn(Optional.of(job));
+        when(encryptionService.encrypt(Mockito.startsWith("882"))).thenReturn("enc-token");
+
+        JwtAuthenticationToken user = currentUser();
+        when(teamTokenService.getCurrentGroups(user)).thenReturn(List.of("workspace-viewers"));
+        when(rbacService.canManageState(access)).thenReturn(true);
+
+        var runs = service.getWorkspaceRuns(ws.getId().toString(), user);
+        assertNotNull(runs);
+
+        var plan = service.getPlan(882, user);
+        assertNotNull(plan);
+
+        var apply = service.getApply(882, user);
+        assertNotNull(apply);
+
+        var outputs = service.getCurrentOutputs(ws.getId().toString(), user);
+        assertNotNull(outputs);
+    }
+
+    @Test
+    void nullUser_allMethodsFailClosed_throwAccessDeniedException() {
+        RemoteTfeService service = remoteTfeService();
+        UUID wsId = UUID.randomUUID();
+        Organization org = organization("sample-org");
+        Workspace ws = workspace("sample-ws", org);
+        ws.setId(wsId);
+        when(workspaceRepository.findById(wsId)).thenReturn(Optional.of(ws));
+        when(organizationRepository.getOrganizationByName("sample-org")).thenReturn(org);
+
+        Job job = new Job();
+        job.setId(777);
+        job.setOrganization(org);
+        job.setWorkspace(ws);
+        when(jobRepository.findById(777)).thenReturn(Optional.of(job));
+
+        assertThrows(AccessDeniedException.class, () -> service.getRunsQueue("sample-org", null));
+        assertThrows(AccessDeniedException.class, () -> service.getWorkspaceRuns(wsId.toString(), null));
+        assertThrows(AccessDeniedException.class, () -> service.getPlan(777, null));
+        assertThrows(AccessDeniedException.class, () -> service.getApply(777, null));
+        assertThrows(AccessDeniedException.class, () -> service.getCurrentOutputs(wsId.toString(), null));
+        assertThrows(AccessDeniedException.class, () -> service.getCurrentWorkspaceState(wsId.toString(), null));
+        assertThrows(AccessDeniedException.class, () -> service.getRun(777, null, null));
+        assertThrows(AccessDeniedException.class, () -> service.authorizeStateRead(ws, null));
+        assertThrows(AccessDeniedException.class, () -> service.getWorkspaceState(UUID.randomUUID().toString(), null));
+        assertThrows(AccessDeniedException.class, () -> service.getWorkspaceStateConsumers(wsId.toString(), null));
+    }
+
+    @Test
+    void authorizeStateRead_nullUser_throwsAccessDeniedException() {
+        RemoteTfeService service = remoteTfeService();
+        Organization org = organization("sample-org");
+        Workspace ws = workspace("sample-ws", org);
+
+        assertThrows(AccessDeniedException.class, () -> service.authorizeStateRead(ws, null));
+    }
+
+    @Test
+    void getWorkspaceState_nullUser_throwsAccessDeniedException() {
+        RemoteTfeService service = remoteTfeService();
+        UUID historyId = UUID.randomUUID();
+        Organization org = organization("sample-org");
+        Workspace ws = workspace("sample-ws", org);
+        History history = new History();
+        history.setId(historyId);
+        history.setWorkspace(ws);
+        when(historyRepository.findById(historyId)).thenReturn(Optional.of(history));
+
+        assertThrows(AccessDeniedException.class, () -> service.getWorkspaceState(historyId.toString(), null));
+    }
+
+    @Test
+    void getWorkspaceStateConsumers_nullUser_throwsAccessDeniedException() {
+        RemoteTfeService service = remoteTfeService();
+        UUID wsId = UUID.randomUUID();
+        Organization org = organization("sample-org");
+        Workspace ws = workspace("sample-ws", org);
+        ws.setId(wsId);
+        when(workspaceRepository.findById(wsId)).thenReturn(Optional.of(ws));
+
+        assertThrows(AccessDeniedException.class, () -> service.getWorkspaceStateConsumers(wsId.toString(), null));
+    }
+
+    @Test
     void discardingARunWhoseWorkspaceWasDeletedIsRefusedWithAMessage() {
         RemoteTfeService service = remoteTfeService();
         Job job = new Job();
@@ -1928,8 +2683,8 @@ class RemoteTfeServiceTest {
         job.setId(4414);
         when(jobRepository.getReferenceById(4414)).thenReturn(job);
         when(jobRepository.save(job)).thenReturn(job);
-        Mockito.doReturn(null).when(service).getRun(4414, null);
         JwtAuthenticationToken user = approverOf(job);
+        Mockito.doReturn(null).when(service).getRun(4414, null, user);
 
         service.runDiscard(4414, user);
 

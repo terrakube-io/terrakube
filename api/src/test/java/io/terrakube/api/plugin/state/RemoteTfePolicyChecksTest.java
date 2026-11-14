@@ -21,6 +21,7 @@ import io.terrakube.api.rs.policy.PolicyOverride;
 import io.terrakube.api.rs.policy.PolicySet;
 import io.terrakube.api.rs.team.Team;
 import io.terrakube.api.rs.workspace.Workspace;
+import io.terrakube.api.rs.workspace.access.Access;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -115,6 +116,13 @@ class RemoteTfePolicyChecksTest {
 
         Workspace workspace = new Workspace();
         workspace.setId(UUID.randomUUID());
+        Organization org = new Organization();
+        org.setId(UUID.randomUUID());
+        org.setTeam(Collections.emptyList());
+        workspace.setOrganization(org);
+        Access access = new Access();
+        access.setName("users");
+        workspace.setAccess(List.of(access));
         job.setWorkspace(workspace);
 
         PolicyEvaluation evaluation = new PolicyEvaluation();
@@ -124,10 +132,14 @@ class RemoteTfePolicyChecksTest {
         evaluation.setStatus(PolicyEvaluationStatus.PASSED);
         evaluation.setPassedRules(4);
 
+        when(jobRepository.findById(runId)).thenReturn(Optional.of(job));
         when(jobRepository.getReferenceById(runId)).thenReturn(job);
         when(policyEvaluationRepository.findByJob(job)).thenReturn(List.of(evaluation));
 
-        RunsData runData = remoteTfeService.getRun(runId, null, null);
+        JwtAuthenticationToken user = createJwtToken("alice@corp.com", List.of("users"));
+        when(teamTokenService.getCurrentGroups(user)).thenReturn(List.of("users"));
+
+        RunsData runData = remoteTfeService.getRun(runId, null, user);
         assertNotNull(runData);
         assertNotNull(runData.getData().getRelationships().getPolicyChecks());
         assertEquals(1, runData.getData().getRelationships().getPolicyChecks().getData().size());
@@ -144,6 +156,13 @@ class RemoteTfePolicyChecksTest {
 
         Workspace workspace = new Workspace();
         workspace.setId(UUID.randomUUID());
+        Organization org = new Organization();
+        org.setId(UUID.randomUUID());
+        org.setTeam(Collections.emptyList());
+        workspace.setOrganization(org);
+        Access access = new Access();
+        access.setName("users");
+        workspace.setAccess(List.of(access));
         job.setWorkspace(workspace);
 
         PolicyEvaluation evaluation = new PolicyEvaluation();
@@ -153,10 +172,14 @@ class RemoteTfePolicyChecksTest {
         evaluation.setStatus(PolicyEvaluationStatus.PASSED);
         evaluation.setPassedRules(3);
 
+        when(jobRepository.findById(runId)).thenReturn(Optional.of(job));
         when(jobRepository.getReferenceById(runId)).thenReturn(job);
         when(policyEvaluationRepository.findByJob(job)).thenReturn(List.of(evaluation));
 
-        RunsData runData = remoteTfeService.getRun(runId, "policy-checks", null);
+        JwtAuthenticationToken user = createJwtToken("alice@corp.com", List.of("users"));
+        when(teamTokenService.getCurrentGroups(user)).thenReturn(List.of("users"));
+
+        RunsData runData = remoteTfeService.getRun(runId, "policy-checks", user);
         assertNotNull(runData);
         assertNotNull(runData.getIncluded());
         assertEquals(1, runData.getIncluded().size());
@@ -168,6 +191,17 @@ class RemoteTfePolicyChecksTest {
         Job job = new Job();
         job.setId(runId);
 
+        Workspace workspace = new Workspace();
+        workspace.setId(UUID.randomUUID());
+        Organization org = new Organization();
+        org.setId(UUID.randomUUID());
+        org.setTeam(Collections.emptyList());
+        workspace.setOrganization(org);
+        Access access = new Access();
+        access.setName("users");
+        workspace.setAccess(List.of(access));
+        job.setWorkspace(workspace);
+
         PolicyEvaluation evaluation = new PolicyEvaluation();
         evaluation.setId(UUID.randomUUID());
         evaluation.setJob(job);
@@ -176,7 +210,10 @@ class RemoteTfePolicyChecksTest {
         when(jobRepository.findById(runId)).thenReturn(Optional.of(job));
         when(policyEvaluationRepository.findByJob(job)).thenReturn(List.of(evaluation));
 
-        PolicyCheckList list = remoteTfeService.getRunPolicyChecks(runId, null);
+        JwtAuthenticationToken user = createJwtToken("alice@corp.com", List.of("users"));
+        when(teamTokenService.getCurrentGroups(user)).thenReturn(List.of("users"));
+
+        PolicyCheckList list = remoteTfeService.getRunPolicyChecks(runId, user);
         assertNotNull(list);
         assertEquals(1, list.getData().size());
         assertEquals("passed", list.getData().get(0).getAttributes().get("status"));
@@ -185,15 +222,32 @@ class RemoteTfePolicyChecksTest {
     @Test
     void getPolicyCheckStatusHardFailed() {
         UUID evalId = UUID.randomUUID();
+        Job job = new Job();
+        job.setId(300);
+        Workspace workspace = new Workspace();
+        workspace.setId(UUID.randomUUID());
+        Organization org = new Organization();
+        org.setId(UUID.randomUUID());
+        org.setTeam(Collections.emptyList());
+        workspace.setOrganization(org);
+        Access access = new Access();
+        access.setName("users");
+        workspace.setAccess(List.of(access));
+        job.setWorkspace(workspace);
+
         PolicyEvaluation evaluation = new PolicyEvaluation();
         evaluation.setId(evalId);
+        evaluation.setJob(job);
         evaluation.setStatus(PolicyEvaluationStatus.FAILED);
         evaluation.setHardMandatoryViolations(2);
         evaluation.setSoftMandatoryViolations(0);
 
         when(policyEvaluationRepository.findById(evalId)).thenReturn(Optional.of(evaluation));
 
-        PolicyCheckData data = remoteTfeService.getPolicyCheck(evalId, null);
+        JwtAuthenticationToken user = createJwtToken("alice@corp.com", List.of("users"));
+        when(teamTokenService.getCurrentGroups(user)).thenReturn(List.of("users"));
+
+        PolicyCheckData data = remoteTfeService.getPolicyCheck(evalId, user);
         assertNotNull(data);
         assertEquals("hard_failed", data.getData().getAttributes().get("status"));
         Map<String, Object> actions = (Map<String, Object>) data.getData().getAttributes().get("actions");
@@ -210,7 +264,16 @@ class RemoteTfePolicyChecksTest {
 
         Organization org = new Organization();
         org.setId(UUID.randomUUID());
+        org.setTeam(Collections.emptyList());
         job.setOrganization(org);
+
+        Workspace workspace = new Workspace();
+        workspace.setId(UUID.randomUUID());
+        workspace.setOrganization(org);
+        Access access = new Access();
+        access.setName("developers");
+        workspace.setAccess(List.of(access));
+        job.setWorkspace(workspace);
 
         PolicyEvaluation evaluation = new PolicyEvaluation();
         evaluation.setId(evalId);
@@ -246,7 +309,16 @@ class RemoteTfePolicyChecksTest {
 
         Organization org = new Organization();
         org.setId(UUID.randomUUID());
+        org.setTeam(Collections.emptyList());
         job.setOrganization(org);
+
+        Workspace workspace = new Workspace();
+        workspace.setId(UUID.randomUUID());
+        workspace.setOrganization(org);
+        Access access = new Access();
+        access.setName("developers");
+        workspace.setAccess(List.of(access));
+        job.setWorkspace(workspace);
 
         PolicyEvaluation evaluation = new PolicyEvaluation();
         evaluation.setId(evalId);
@@ -277,8 +349,22 @@ class RemoteTfePolicyChecksTest {
     @Test
     void getPolicyCheckStatusOverridden() {
         UUID evalId = UUID.randomUUID();
+        Job job = new Job();
+        job.setId(400);
+        Workspace workspace = new Workspace();
+        workspace.setId(UUID.randomUUID());
+        Organization org = new Organization();
+        org.setId(UUID.randomUUID());
+        org.setTeam(Collections.emptyList());
+        workspace.setOrganization(org);
+        Access access = new Access();
+        access.setName("users");
+        workspace.setAccess(List.of(access));
+        job.setWorkspace(workspace);
+
         PolicyEvaluation evaluation = new PolicyEvaluation();
         evaluation.setId(evalId);
+        evaluation.setJob(job);
         evaluation.setStatus(PolicyEvaluationStatus.PASSED);
         evaluation.setHardMandatoryViolations(0);
         evaluation.setSoftMandatoryViolations(1);
@@ -292,7 +378,10 @@ class RemoteTfePolicyChecksTest {
 
         when(policyEvaluationRepository.findById(evalId)).thenReturn(Optional.of(evaluation));
 
-        PolicyCheckData data = remoteTfeService.getPolicyCheck(evalId, null);
+        JwtAuthenticationToken user = createJwtToken("alice@corp.com", List.of("users"));
+        when(teamTokenService.getCurrentGroups(user)).thenReturn(List.of("users"));
+
+        PolicyCheckData data = remoteTfeService.getPolicyCheck(evalId, user);
         assertNotNull(data);
         assertEquals("overridden", data.getData().getAttributes().get("status"));
     }
@@ -300,8 +389,22 @@ class RemoteTfePolicyChecksTest {
     @Test
     void getPolicyCheckOutputFormatsAnsiReport() {
         UUID evalId = UUID.randomUUID();
+        Job job = new Job();
+        job.setId(401);
+        Workspace workspace = new Workspace();
+        workspace.setId(UUID.randomUUID());
+        Organization org = new Organization();
+        org.setId(UUID.randomUUID());
+        org.setTeam(Collections.emptyList());
+        workspace.setOrganization(org);
+        Access access = new Access();
+        access.setName("users");
+        workspace.setAccess(List.of(access));
+        job.setWorkspace(workspace);
+
         PolicyEvaluation evaluation = new PolicyEvaluation();
         evaluation.setId(evalId);
+        evaluation.setJob(job);
         evaluation.setPassedRules(5);
         evaluation.setWarningRules(1);
         evaluation.setSoftMandatoryViolations(1);
@@ -309,7 +412,10 @@ class RemoteTfePolicyChecksTest {
 
         when(policyEvaluationRepository.findById(evalId)).thenReturn(Optional.of(evaluation));
 
-        String output = remoteTfeService.getPolicyCheckOutput(evalId, null);
+        JwtAuthenticationToken user = createJwtToken("alice@corp.com", List.of("users"));
+        when(teamTokenService.getCurrentGroups(user)).thenReturn(List.of("users"));
+
+        String output = remoteTfeService.getPolicyCheckOutput(evalId, user);
         assertNotNull(output);
         assertTrue(output.contains("TERRAKUBE POLICY GUARDRAILS (OPA)"));
         assertTrue(output.contains("[PASSED]   5 policy rule(s) passed"));
@@ -326,7 +432,16 @@ class RemoteTfePolicyChecksTest {
 
         Organization org = new Organization();
         org.setId(UUID.randomUUID());
+        org.setTeam(Collections.emptyList());
         job.setOrganization(org);
+
+        Workspace workspace = new Workspace();
+        workspace.setId(UUID.randomUUID());
+        workspace.setOrganization(org);
+        Access access = new Access();
+        access.setName("developers");
+        workspace.setAccess(List.of(access));
+        job.setWorkspace(workspace);
 
         PolicyEvaluation evaluation = new PolicyEvaluation();
         evaluation.setId(evalId);
@@ -363,7 +478,16 @@ class RemoteTfePolicyChecksTest {
 
         Organization org = new Organization();
         org.setId(UUID.randomUUID());
+        org.setTeam(Collections.emptyList());
         job.setOrganization(org);
+
+        Workspace workspace = new Workspace();
+        workspace.setId(UUID.randomUUID());
+        workspace.setOrganization(org);
+        Access access = new Access();
+        access.setName("developers");
+        workspace.setAccess(List.of(access));
+        job.setWorkspace(workspace);
 
         PolicyEvaluation evaluation = new PolicyEvaluation();
         evaluation.setId(evalId);
@@ -403,17 +527,34 @@ class RemoteTfePolicyChecksTest {
     @Test
     void controllerEndpointsSupportPolchkPrefix() {
         UUID evalId = UUID.randomUUID();
+        Job job = new Job();
+        job.setId(500);
+        Workspace workspace = new Workspace();
+        workspace.setId(UUID.randomUUID());
+        Organization org = new Organization();
+        org.setId(UUID.randomUUID());
+        org.setTeam(Collections.emptyList());
+        workspace.setOrganization(org);
+        Access access = new Access();
+        access.setName("users");
+        workspace.setAccess(List.of(access));
+        job.setWorkspace(workspace);
+
         PolicyEvaluation evaluation = new PolicyEvaluation();
         evaluation.setId(evalId);
+        evaluation.setJob(job);
         evaluation.setStatus(PolicyEvaluationStatus.PASSED);
 
         when(policyEvaluationRepository.findById(evalId)).thenReturn(Optional.of(evaluation));
 
-        ResponseEntity<PolicyCheckData> response = remoteTfeController.getPolicyCheck("polchk-" + evalId, null);
+        JwtAuthenticationToken user = createJwtToken("alice@corp.com", List.of("users"));
+        when(teamTokenService.getCurrentGroups(user)).thenReturn(List.of("users"));
+
+        ResponseEntity<PolicyCheckData> response = remoteTfeController.getPolicyCheck("polchk-" + evalId, user);
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertNotNull(response.getBody());
 
-        ResponseEntity<String> outputResponse = remoteTfeController.getPolicyCheckOutput("polchk-" + evalId, null);
+        ResponseEntity<String> outputResponse = remoteTfeController.getPolicyCheckOutput("polchk-" + evalId, user);
         assertEquals(HttpStatus.OK, outputResponse.getStatusCode());
     }
 
@@ -428,5 +569,129 @@ class RemoteTfePolicyChecksTest {
 
         assertEquals(HttpStatus.NOT_FOUND, response.getStatusCode());
         assertNotNull(response.getBody());
+    }
+
+    @Test
+    void getRun_unauthorizedUser_throwsAccessDeniedException() {
+        int runId = 991;
+        Job job = new Job();
+        job.setId(runId);
+        Workspace workspace = new Workspace();
+        workspace.setId(UUID.randomUUID());
+        Access access = new Access();
+        access.setName("authorized-group");
+        workspace.setAccess(List.of(access));
+        job.setWorkspace(workspace);
+
+        when(jobRepository.findById(runId)).thenReturn(Optional.of(job));
+        JwtAuthenticationToken unauthorizedUser = createJwtToken("eve@corp.com", List.of("unauthorized-group"));
+        when(teamTokenService.getCurrentGroups(unauthorizedUser)).thenReturn(List.of("unauthorized-group"));
+
+        assertThrows(AccessDeniedException.class, () -> remoteTfeService.getRun(runId, null, unauthorizedUser));
+    }
+
+    @Test
+    void getRun_nullUser_throwsAccessDeniedException() {
+        int runId = 992;
+        Job job = new Job();
+        job.setId(runId);
+        when(jobRepository.findById(runId)).thenReturn(Optional.of(job));
+
+        assertThrows(AccessDeniedException.class, () -> remoteTfeService.getRun(runId, null, null));
+    }
+
+    @Test
+    void getRunPolicyChecks_unauthorizedUser_throwsAccessDeniedException() {
+        int runId = 993;
+        Job job = new Job();
+        job.setId(runId);
+        Workspace workspace = new Workspace();
+        workspace.setId(UUID.randomUUID());
+        Access access = new Access();
+        access.setName("authorized-group");
+        workspace.setAccess(List.of(access));
+        job.setWorkspace(workspace);
+
+        when(jobRepository.findById(runId)).thenReturn(Optional.of(job));
+        JwtAuthenticationToken unauthorizedUser = createJwtToken("eve@corp.com", List.of("unauthorized-group"));
+        when(teamTokenService.getCurrentGroups(unauthorizedUser)).thenReturn(List.of("unauthorized-group"));
+
+        assertThrows(AccessDeniedException.class, () -> remoteTfeService.getRunPolicyChecks(runId, unauthorizedUser));
+    }
+
+    @Test
+    void getRunPolicyChecks_nullUser_throwsAccessDeniedException() {
+        int runId = 994;
+        Job job = new Job();
+        job.setId(runId);
+        when(jobRepository.findById(runId)).thenReturn(Optional.of(job));
+
+        assertThrows(AccessDeniedException.class, () -> remoteTfeService.getRunPolicyChecks(runId, null));
+    }
+
+    @Test
+    void getPolicyCheck_unauthorizedUser_throwsAccessDeniedException() {
+        UUID evalId = UUID.randomUUID();
+        Job job = new Job();
+        job.setId(995);
+        Workspace workspace = new Workspace();
+        workspace.setId(UUID.randomUUID());
+        Access access = new Access();
+        access.setName("authorized-group");
+        workspace.setAccess(List.of(access));
+        job.setWorkspace(workspace);
+
+        PolicyEvaluation evaluation = new PolicyEvaluation();
+        evaluation.setId(evalId);
+        evaluation.setJob(job);
+
+        when(policyEvaluationRepository.findById(evalId)).thenReturn(Optional.of(evaluation));
+        JwtAuthenticationToken unauthorizedUser = createJwtToken("eve@corp.com", List.of("unauthorized-group"));
+        when(teamTokenService.getCurrentGroups(unauthorizedUser)).thenReturn(List.of("unauthorized-group"));
+
+        assertThrows(AccessDeniedException.class, () -> remoteTfeService.getPolicyCheck(evalId, unauthorizedUser));
+    }
+
+    @Test
+    void getPolicyCheck_nullUser_throwsAccessDeniedException() {
+        UUID evalId = UUID.randomUUID();
+        PolicyEvaluation evaluation = new PolicyEvaluation();
+        evaluation.setId(evalId);
+        when(policyEvaluationRepository.findById(evalId)).thenReturn(Optional.of(evaluation));
+
+        assertThrows(AccessDeniedException.class, () -> remoteTfeService.getPolicyCheck(evalId, null));
+    }
+
+    @Test
+    void getPolicyCheckOutput_unauthorizedUser_throwsAccessDeniedException() {
+        UUID evalId = UUID.randomUUID();
+        Job job = new Job();
+        job.setId(996);
+        Workspace workspace = new Workspace();
+        workspace.setId(UUID.randomUUID());
+        Access access = new Access();
+        access.setName("authorized-group");
+        workspace.setAccess(List.of(access));
+        job.setWorkspace(workspace);
+
+        PolicyEvaluation evaluation = new PolicyEvaluation();
+        evaluation.setId(evalId);
+        evaluation.setJob(job);
+
+        when(policyEvaluationRepository.findById(evalId)).thenReturn(Optional.of(evaluation));
+        JwtAuthenticationToken unauthorizedUser = createJwtToken("eve@corp.com", List.of("unauthorized-group"));
+        when(teamTokenService.getCurrentGroups(unauthorizedUser)).thenReturn(List.of("unauthorized-group"));
+
+        assertThrows(AccessDeniedException.class, () -> remoteTfeService.getPolicyCheckOutput(evalId, unauthorizedUser));
+    }
+
+    @Test
+    void getPolicyCheckOutput_nullUser_throwsAccessDeniedException() {
+        UUID evalId = UUID.randomUUID();
+        PolicyEvaluation evaluation = new PolicyEvaluation();
+        evaluation.setId(evalId);
+        when(policyEvaluationRepository.findById(evalId)).thenReturn(Optional.of(evaluation));
+
+        assertThrows(AccessDeniedException.class, () -> remoteTfeService.getPolicyCheckOutput(evalId, null));
     }
 }
