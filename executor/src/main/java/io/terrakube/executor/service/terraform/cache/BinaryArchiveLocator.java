@@ -47,7 +47,7 @@ public class BinaryArchiveLocator {
     }
 
     /** {@code linux}/{@code darwin}/{@code windows}, matching {@code TerraformDownloader.getOs()}. */
-    static String os() {
+    public static String os() {
         String osName = System.getProperty("os.name", "").toLowerCase();
         if (osName.contains("mac") || osName.contains("darwin")) {
             return "darwin";
@@ -62,7 +62,7 @@ public class BinaryArchiveLocator {
      * {@code amd64}/{@code arm64}/etc, matching {@code TerraformDownloader}'s private {@code getArch()}:
      * the raw JVM {@code os.arch} property, with only {@code aarch64} normalised to {@code arm64}.
      */
-    static String arch() {
+    public static String arch() {
         String osArch = System.getProperty("os.arch");
         if (osArch == null) {
             throw new IllegalStateException("System architecture not detected");

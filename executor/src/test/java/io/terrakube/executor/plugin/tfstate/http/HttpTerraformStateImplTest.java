@@ -157,8 +157,8 @@ class HttpTerraformStateImplTest {
         when(delegate.downloadArtifacts(ORG_ID, WS_ID, JOB_ID, workingDir)).thenReturn("sha256");
         when(delegate.saveBufferedOutput(ORG_ID, JOB_ID, STEP_ID, buffer, "err")).thenReturn("output-url");
         when(delegate.saveOutputPart(ORG_ID, JOB_ID, STEP_ID, 1, partSource)).thenReturn(true);
-        when(delegate.saveTerraformBinary("1.6.0", false, workingDir)).thenReturn(true);
-        when(delegate.downloadTerraformBinary("1.6.0", false, workingDir)).thenReturn(true);
+        when(delegate.saveTerraformBinary("1.6.0", false, "linux", "arm64", workingDir)).thenReturn(true);
+        when(delegate.downloadTerraformBinary("1.6.0", false, "linux", "arm64", workingDir)).thenReturn(true);
         when(delegate.saveOpaBinary("0.60.0", "linux", "amd64", workingDir)).thenReturn(true);
         when(delegate.downloadOpaBinary("0.60.0", "linux", "amd64", workingDir)).thenReturn(true);
         when(delegate.spoolContextPatch(ORG_ID, JOB_ID, STEP_ID, "post", patchBytes)).thenReturn("spool-key");
@@ -178,8 +178,8 @@ class HttpTerraformStateImplTest {
         httpTerraformState.deleteOutputParts(ORG_ID, JOB_ID, STEP_ID);
         verify(delegate).deleteOutputParts(ORG_ID, JOB_ID, STEP_ID);
 
-        assertTrue(httpTerraformState.saveTerraformBinary("1.6.0", false, workingDir));
-        assertTrue(httpTerraformState.downloadTerraformBinary("1.6.0", false, workingDir));
+        assertTrue(httpTerraformState.saveTerraformBinary("1.6.0", false, "linux", "arm64", workingDir));
+        assertTrue(httpTerraformState.downloadTerraformBinary("1.6.0", false, "linux", "arm64", workingDir));
         assertTrue(httpTerraformState.saveOpaBinary("0.60.0", "linux", "amd64", workingDir));
         assertTrue(httpTerraformState.downloadOpaBinary("0.60.0", "linux", "amd64", workingDir));
         assertEquals("spool-key", httpTerraformState.spoolContextPatch(ORG_ID, JOB_ID, STEP_ID, "post", patchBytes));

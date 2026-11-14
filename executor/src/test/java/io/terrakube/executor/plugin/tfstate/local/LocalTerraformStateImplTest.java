@@ -279,6 +279,29 @@ class LocalTerraformStateImplTest {
     }
 
     @Test
+    void testTerraformBinaryIsOnlyRestoredOnTheOsAndArchitectureItWasCachedFrom(@TempDir Path tempDir) throws IOException {
+        // A version no real job uses, so only this test's own cache directory is created and removed.
+        String version = "0.0.0-binary-cache-test";
+        File cacheDirectory = new File(FileUtils.getUserDirectoryPath(),
+                ".terraform-spring-boot/local/binary/terraform/" + version);
+        try {
+            File sourceFile = tempDir.resolve("terraform").toFile();
+            FileUtils.writeStringToFile(sourceFile, "amd64-terraform-binary", Charset.defaultCharset());
+
+            assertTrue(localTerraformState.saveTerraformBinary(version, false, "linux", "amd64", sourceFile));
+
+            File targetFile = tempDir.resolve("restored/terraform").toFile();
+            assertFalse(localTerraformState.downloadTerraformBinary(version, false, "linux", "arm64", targetFile));
+            assertFalse(targetFile.exists());
+
+            assertTrue(localTerraformState.downloadTerraformBinary(version, false, "linux", "amd64", targetFile));
+            assertEquals("amd64-terraform-binary", FileUtils.readFileToString(targetFile, Charset.defaultCharset()));
+        } finally {
+            FileUtils.deleteQuietly(cacheDirectory);
+        }
+    }
+
+    @Test
     void testSaveBufferedOutputWritesTheWholeOutput() throws IOException {
         when(terraformOutputPathService.getOutputPath("org1", "job1", "step1")).thenReturn("http://api/output");
 

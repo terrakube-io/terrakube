@@ -62,7 +62,7 @@ class BinaryCacheRecoveryRealDownloaderCheck {
 
             // Run recovery, then retry the same library call the executor would make.
             TerraformState noopState = mock(TerraformState.class);
-            when(noopState.downloadTerraformBinary(anyString(), anyBoolean(), any())).thenReturn(false);
+            when(noopState.downloadTerraformBinary(anyString(), anyBoolean(), anyString(), anyString(), any())).thenReturn(false);
             BinaryCacheRecoveryService recovery = new BinaryCacheRecoveryService(noopState, new SimpleMeterRegistry(), locator);
 
             BinaryCacheRecoveryService.Resolution resolution = recovery.resolve(VERSION, false);
