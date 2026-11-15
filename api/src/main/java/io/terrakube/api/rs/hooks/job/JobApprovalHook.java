@@ -50,6 +50,17 @@ public class JobApprovalHook implements LifeCycleHook<Job> {
         if (operation != Operation.UPDATE) {
             return;
         }
+        // A cancelled job stays cancelled. An executor that was handed the job just before the cancel still
+        // reports it running and then finished; accepting that would bring the cancelled run back.
+        Optional<ChangeSpec> fromCancelled = changes
+                .filter(change -> "status".equals(change.getFieldName()))
+                .filter(change -> JobStatus.cancelled.equals(change.getOriginal()))
+                .filter(change -> !JobStatus.cancelled.equals(change.getModified()));
+        if (fromCancelled.isPresent()) {
+            throw new PolicyBlocksApprovalException(String.format(
+                    "Job %d is cancelled and cannot be moved to status '%s'.",
+                    job.getId(), fromCancelled.get().getModified()));
+        }
         Optional<ChangeSpec> approval = changes
                 .filter(change -> "status".equals(change.getFieldName()))
                 .filter(change -> JobStatus.approved.equals(change.getModified()));

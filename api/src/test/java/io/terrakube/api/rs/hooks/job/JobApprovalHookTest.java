@@ -180,6 +180,17 @@ class JobApprovalHookTest {
         verifyNoInteractions(policyApprovalGuard, jobApprovalService);
     }
 
+    @ParameterizedTest
+    @EnumSource(value = JobStatus.class, names = {"cancelled"}, mode = EnumSource.Mode.EXCLUDE)
+    void refusesToMoveACancelledJobToAnyOtherStatus(JobStatus to) {
+        PolicyBlocksApprovalException thrown = assertThrows(PolicyBlocksApprovalException.class,
+                () -> hook.execute(Operation.UPDATE, TransactionPhase.PRECOMMIT, job, scope,
+                        statusChange(JobStatus.cancelled, to)));
+
+        assertEquals(409, thrown.getStatus());
+        verifyNoInteractions(jobApprovalService);
+    }
+
     @Test
     void otherTransitionsAreNotChecked() {
         hook.execute(Operation.UPDATE, TransactionPhase.PRECOMMIT, job, scope,

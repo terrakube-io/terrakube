@@ -331,6 +331,35 @@ class JobTests extends ServerApplicationTests {
 
 
     @Test
+    public void executorCannotMoveACancelledJobOn() {
+        devsManageJobs(true);
+        String jobId = createJob(jobDefinition("2db36f7c-f549-4341-a789-315d47eb061d"));
+
+        // The run was cancelled after it had already been handed to an executor.
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
+                .body(statusChangePayload(jobId, JobStatus.cancelled))
+                .when()
+                .patch("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/job/" + jobId)
+                .then()
+                .statusCode(HttpStatus.NO_CONTENT.value());
+
+        // The token the executor's API client sends with its status updates.
+        String runnerToken = generateExecutorToken();
+
+        for (JobStatus reported : new JobStatus[] {JobStatus.running, JobStatus.completed}) {
+            given()
+                    .headers("Authorization", "Bearer " + runnerToken, "Content-Type", "application/vnd.api+json")
+                    .body(statusChangePayload(jobId, reported))
+                    .when()
+                    .patch("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/job/" + jobId)
+                    .then()
+                    .statusCode(HttpStatus.CONFLICT.value());
+            assertEquals(JobStatus.cancelled, jobRepository.findById(Integer.parseInt(jobId)).orElseThrow().getStatus());
+        }
+    }
+
+    @Test
     public void appointedTeamCanApproveJobWithoutManageJobPermission() throws InterruptedException {
         Template template = createTemplate("flow:\n- name: Approve\n  type: approval\n  team: TERRAKUBE_DEVELOPERS\n");
 
