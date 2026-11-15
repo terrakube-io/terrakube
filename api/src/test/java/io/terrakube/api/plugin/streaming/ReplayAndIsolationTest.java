@@ -162,7 +162,9 @@ class ReplayAndIsolationTest {
     @Test
     @Timeout(30)
     void aStalledViewerIsDisconnectedWithoutDelayingOtherViewers() throws Exception {
-        properties.setSseSubscriberMaxQueuedBytes(20_000);
+        // The stalled viewer is sent ~270 KB, far past this budget. The healthy one needs headroom:
+        // on a slow CI runner a 20 KB budget also disconnected it mid-stream.
+        properties.setSseSubscriberMaxQueuedBytes(64_000);
         JobLogBroadcaster shared = broadcaster();
 
         CountDownLatch release = new CountDownLatch(1);
