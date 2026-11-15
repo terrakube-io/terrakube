@@ -8,7 +8,7 @@ import { AuthProvider } from "react-oidc-context";
 import { mgr } from "./config/authConfig";
 import { getUiRedirectUri } from "./config/basePath";
 import App from "./domain/Home/App";
-import { queryClient } from "./modules/api/queryClient";
+import { clearQueriesOnSignOut, queryClient } from "./modules/api/queryClient";
 import "./index.css";
 
 // Get the root element from the DOM
@@ -24,6 +24,8 @@ const onSigninCallback = (): void => {
   const base = getUiRedirectUri();
   window.history.replaceState({}, document.title, base);
 };
+
+clearQueriesOnSignOut(queryClient, mgr);
 
 // Shares the UserManager with axiosConfig/apiWrapper so removeUser() there updates this provider immediately.
 root.render(

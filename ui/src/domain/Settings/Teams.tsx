@@ -38,6 +38,8 @@ function permissionSummary(team: Team): string {
   return granted.length === 0 ? "No permissions granted." : `Can manage ${granted.join(", ")}.`;
 }
 
+const LOAD_ERROR_MESSAGE_KEY = "teams-load-error";
+
 type Props = {
   editorMode?: "new" | "edit";
   editorId?: string;
@@ -46,9 +48,13 @@ type Props = {
 
 export const TeamSettings = ({ editorMode, editorId, managePermission = true }: Props) => {
   const { orgid } = useParams();
-  const { data: teams = [], isPending: loading, error: loadError } = useTeams(orgid);
+  // `isLoading`, not `isPending`: a disabled query (no organization) stays pending and would spin forever.
+  const { data: teams = [], isLoading: loading, error: loadError } = useTeams(orgid);
   const invalidateTeams = useInvalidateTeams(orgid);
-  const deleteTeam = useDeleteTeam(orgid);
+  const deleteTeam = useDeleteTeam(orgid, {
+    onSuccess: () => message.success("Team deleted successfully"),
+    onError: (err) => message.error(`Could not delete the team: ${getErrorMessage(err)}`),
+  });
   const [pendingDelete, setPendingDelete] = useState<Team | null>(null);
   const navigate = useNavigate();
   const screens = Grid.useBreakpoint();
@@ -57,21 +63,17 @@ export const TeamSettings = ({ editorMode, editorId, managePermission = true }: 
   const closeEditor = () => navigate(`/organizations/${orgid}/settings/teams`);
   const newTeamPath = `/organizations/${orgid}/settings/teams/new`;
   const editPath = (id: string) => `/organizations/${orgid}/settings/teams/edit/${id}`;
-  // A permission error replaces the page; any other load error is reported once and the page stays.
+  // A permission error replaces the page; any other load error is reported and the page stays.
   const error = loadError && isPermissionError(loadError) ? getErrorMessage(loadError) : undefined;
 
   useEffect(() => {
     if (loadError && !isPermissionError(loadError)) {
-      message.error(`Could not load teams: ${getErrorMessage(loadError)}`);
+      // A fixed key, so the refetch on every window focus replaces the message instead of stacking another.
+      message.error({ key: LOAD_ERROR_MESSAGE_KEY, content: `Could not load teams: ${getErrorMessage(loadError)}` });
     }
   }, [loadError]);
 
-  const onDelete = (id: string) => {
-    deleteTeam.mutate(id, {
-      onSuccess: () => message.success("Team deleted successfully"),
-      onError: (err) => message.error(`Could not delete the team: ${getErrorMessage(err)}`),
-    });
-  };
+  const onDelete = (id: string) => deleteTeam.mutate(id);
 
   const columns = [
     {
