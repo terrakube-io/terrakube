@@ -3,6 +3,7 @@ package io.terrakube.executor.plugin.tfstate.gcp;
 import io.terrakube.executor.plugin.tfstate.OutputPartNames;
 import io.terrakube.executor.service.logs.StepOutputPartWriter;
 import io.terrakube.executor.service.logs.StepOutputBuffer;
+import com.google.cloud.storage.Blob;
 import com.google.cloud.storage.BlobId;
 import com.google.cloud.storage.BlobInfo;
 import com.google.cloud.storage.Storage;
@@ -39,7 +40,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 @Slf4j
@@ -152,13 +152,14 @@ public class GcpTerraformStateImpl implements TerraformState {
                     storageRetryMetrics.withRetry("gcp", "plan-read", () -> {
                         String buketNamePath = String.format("/%s/", bucketName);
                         String blobPath = new URL(stateUrl).getPath().replace(buketNamePath, "");
-                        log.info("Generating pre-signed URL. {}", blobPath);
-                        BlobInfo blobInfo = BlobInfo.newBuilder(BlobId.of(bucketName, blobPath)).build();
+                        BlobId blobId = BlobId.of(bucketName, blobPath);
+                        log.info("Downloading Terraform plan blob from gs://{}/{}", bucketName, blobPath);
                         File targetFile = new File(FilenameUtils.concat(workingDirectory.getAbsolutePath(), TERRAFORM_PLAN_FILE));
-
-                        URL signedUrl = storage.signUrl(blobInfo, 5, TimeUnit.MINUTES);
-                        log.info("Pre-Signed URL: " + signedUrl.toString());
-                        FileUtils.copyURLToFile(signedUrl, targetFile, 30000, 30000);
+                        Blob blob = storage.get(blobId);
+                        if (blob == null) {
+                            throw new IllegalStateException("Terraform plan not found at gs://" + bucketName + "/" + blobPath);
+                        }
+                        blob.downloadTo(targetFile.toPath());
                         return null;
                     });
                     planGcExist.set(true);
