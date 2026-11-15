@@ -15,6 +15,11 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import java.util.ArrayList;
 import io.terrakube.api.plugin.notification.JobNotificationTrigger;
 import io.terrakube.api.plugin.scheduler.ScheduleJobService;
+import io.terrakube.api.plugin.scheduler.JobStatusChangeService;
+import io.terrakube.api.plugin.subscription.JobStatusEvent;
+import io.terrakube.api.plugin.subscription.JobStatusPublisher;
+import io.terrakube.api.plugin.workspace.WorkspaceJobStatusService;
+import io.terrakube.api.plugin.state.model.state.StateModel;
 import io.terrakube.api.plugin.security.encryption.EncryptionService;
 import io.terrakube.api.plugin.security.rbac.RbacService;
 import io.terrakube.api.plugin.state.model.state.StateData;
@@ -1501,6 +1506,105 @@ class RemoteTfeServiceTest {
         assertEquals(22, result.getData().getAttributes().get("serial"));
         assertEquals("1.6.0", result.getData().getAttributes().get("terraform-version"));
         assertEquals("finalized", result.getData().getAttributes().get("status"));
+    }
+
+    @ParameterizedTest
+    @CsvSource({"NeverExecuted", "failed", "completed"})
+    void localStateUploadUpdatesWorkspaceStatusAndDate(JobStatus previousStatus) {
+        Workspace workspace = workspace("local-ws", organization("sample-org"));
+        workspace.setExecutionMode(ExecutionMode.local);
+        workspace.setLastJobStatus(previousStatus);
+        workspace.setLastJobDate(new java.util.Date(0));
+        RemoteTfeService service = localStateUploadService(workspace);
+        JobStatusPublisher publisher = Mockito.mock(JobStatusPublisher.class);
+        ReflectionTestUtils.setField(service, "jobStatusChangeService", new JobStatusChangeService(
+                new WorkspaceJobStatusService(jobRepository, workspaceRepository), publisher, jobNotificationTrigger));
+        long beforeUpload = System.currentTimeMillis();
+
+        service.createWorkspaceState(workspace.getId().toString(), uploadedState(), currentUser());
+
+        assertEquals(JobStatus.completed, workspace.getLastJobStatus());
+        assertTrue(workspace.getLastJobDate().getTime() >= beforeUpload);
+        verify(workspaceRepository).save(workspace);
+        verify(publisher).publish(new JobStatusEvent(7, workspace.getId().toString(), "completed"),
+                workspace.getOrganization().getId().toString());
+        ArgumentCaptor<Job> job = ArgumentCaptor.forClass(Job.class);
+        verify(jobNotificationTrigger).notifyStatusChanged(job.capture());
+        assertEquals(JobStatus.completed, job.getValue().getStatus());
+        assertEquals(7, job.getValue().getId());
+    }
+
+    @Test
+    void localStateUploadPreservesAnOlderRunWaitingForApproval() {
+        Workspace workspace = workspace("local-ws", organization("sample-org"));
+        workspace.setExecutionMode(ExecutionMode.local);
+        RemoteTfeService service = localStateUploadService(workspace);
+        Job waiting = new Job();
+        waiting.setId(3);
+        waiting.setStatus(JobStatus.waitingApproval);
+        waiting.setUpdatedDate(new java.util.Date(1000));
+        when(jobRepository.findFirstByWorkspaceAndIdNotAndStatusInOrderByIdAsc(
+                workspace, 7, JobStatus.holdingTheQueue())).thenReturn(Optional.of(waiting));
+        ReflectionTestUtils.setField(service, "jobStatusChangeService", new JobStatusChangeService(
+                new WorkspaceJobStatusService(jobRepository, workspaceRepository),
+                Mockito.mock(JobStatusPublisher.class), jobNotificationTrigger));
+
+        service.createWorkspaceState(workspace.getId().toString(), uploadedState(), currentUser());
+
+        assertEquals(JobStatus.waitingApproval, workspace.getLastJobStatus());
+        assertEquals(waiting.getUpdatedDate(), workspace.getLastJobDate());
+        verify(workspaceRepository).save(workspace);
+    }
+
+    @Test
+    void failedLocalStateUploadDoesNotPublishSuccessOrUpdateWorkspace() {
+        Workspace workspace = workspace("local-ws", organization("sample-org"));
+        workspace.setExecutionMode(ExecutionMode.local);
+        workspace.setLastJobStatus(JobStatus.NeverExecuted);
+        RemoteTfeService service = localStateUploadService(workspace);
+        JobStatusChangeService statusChanges = Mockito.mock(JobStatusChangeService.class);
+        ReflectionTestUtils.setField(service, "jobStatusChangeService", statusChanges);
+        Mockito.doThrow(new IllegalStateException("Storage unavailable")).when(storageTypeService)
+                .uploadTerraformStateJson(anyString(), anyString(), anyString(), anyString());
+
+        assertThrows(IllegalStateException.class, () -> service.createWorkspaceState(
+                workspace.getId().toString(), uploadedState(), currentUser()));
+
+        assertEquals(JobStatus.NeverExecuted, workspace.getLastJobStatus());
+        verify(workspaceRepository, never()).save(any());
+        verify(statusChanges, never()).afterStatusChanged(any());
+        verify(jobNotificationTrigger, never()).notifyStatusChanged(any());
+    }
+
+    private RemoteTfeService localStateUploadService(Workspace workspace) {
+        RemoteTfeService service = Mockito.spy(remoteTfeService());
+        Team admin = team("admin-team");
+        workspace.getOrganization().setTeam(List.of(admin));
+        when(teamTokenService.getCurrentGroups(any())).thenReturn(List.of("admin-team"));
+        when(rbacService.canManageState(admin)).thenReturn(true);
+        when(workspaceRepository.getReferenceById(workspace.getId())).thenReturn(workspace);
+        when(jobRepository.save(any(Job.class))).thenAnswer(invocation -> {
+            Job job = invocation.getArgument(0);
+            job.setId(7);
+            return job;
+        });
+        when(historyRepository.save(any(History.class))).thenAnswer(invocation -> {
+            History history = invocation.getArgument(0);
+            history.setId(UUID.randomUUID());
+            return history;
+        });
+        when(variableRepository.findByWorkspace(workspace)).thenReturn(Optional.empty());
+        Mockito.doReturn(new StateData()).when(service).getWorkspaceState(anyString(), any());
+        return service;
+    }
+
+    private StateData uploadedState() {
+        String encoded = java.util.Base64.getEncoder().encodeToString("{}".getBytes(StandardCharsets.UTF_8));
+        StateModel model = new StateModel();
+        model.setAttributes(new HashMap<>(Map.of("state", encoded, "json-state", encoded, "serial", 1)));
+        StateData state = new StateData();
+        state.setData(model);
+        return state;
     }
 
     private RemoteTfeService remoteTfeService() {

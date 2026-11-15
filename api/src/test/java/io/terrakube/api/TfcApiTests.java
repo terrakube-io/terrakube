@@ -451,6 +451,8 @@ class TfcApiTests extends ServerApplicationTests {
         Optional<Job> firstJob = jobRepository.findFirstByWorkspaceAndStatusInOrderByIdDesc(workspace, Arrays.asList(JobStatus.completed));
         assertThat(firstJob).isPresent();
         assertThat(firstJob.get().getStatus()).isEqualTo(JobStatus.completed);
+        assertThat(workspace.getLastJobStatus()).isEqualTo(JobStatus.completed);
+        assertThat(workspace.getLastJobDate()).isNotNull();
 
         //create second workspace state, internally it will create a job
         given()
