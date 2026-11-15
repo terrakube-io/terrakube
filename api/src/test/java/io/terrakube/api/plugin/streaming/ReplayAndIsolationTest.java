@@ -430,7 +430,8 @@ class ReplayAndIsolationTest {
                 } else if (line.startsWith("id:")) {
                     id = line.substring(3);
                 } else if (line.startsWith("data:")) {
-                    payload = line.substring(5);
+                    // As an SSE client does: one leading space after "data:" is stripped.
+                    payload = line.startsWith("data: ") ? line.substring(6) : line.substring(5);
                 }
             }
             if (payload == null) {
