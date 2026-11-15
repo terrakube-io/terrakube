@@ -51,13 +51,18 @@ class JobCreationPermissionTests extends ServerApplicationTests {
     private final List<Project> projects = new ArrayList<>();
 
     @BeforeEach
-    void setup() {
+    void setup() throws Exception {
         MockitoAnnotations.openMocks(this);
-        // doReturn, not when(mock.call()): the live Quartz scheduler can call redisTemplate between when(...) and
-        // thenReturn(...), and Mockito then stubs that call instead (WrongTypeOfReturnValue). valueOperations is
-        // stubbed before opsForValue() hands it to those threads, for the same reason.
-        doReturn(true).when(valueOperations).setIfAbsent(any(), any(), any(Duration.class));
-        doReturn(valueOperations).when(redisTemplate).opsForValue();
+        // Jobs left by earlier tests call these shared mocks; stub with Quartz paused so none of them
+        // runs mid-stubbing. doReturn, not when(mock.call()), and valueOperations is stubbed before
+        // opsForValue() hands it out, in case a job still slips in (WrongTypeOfReturnValue).
+        pauseScheduler();
+        try {
+            doReturn(true).when(valueOperations).setIfAbsent(any(), any(), any(Duration.class));
+            doReturn(valueOperations).when(redisTemplate).opsForValue();
+        } finally {
+            resumeScheduler();
+        }
         wireMockServer.resetAll();
         stubFor(post(urlPathEqualTo("/api/v1/terraform-rs"))
                 .willReturn(aResponse().withStatus(HttpStatus.ACCEPTED.value()).withBody("")));
