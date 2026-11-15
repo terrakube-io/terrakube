@@ -3,16 +3,14 @@ package io.terrakube.registry.plugin.storage.configuration;
 
 import com.azure.storage.blob.BlobServiceClient;
 import com.azure.storage.blob.BlobServiceClientBuilder;
-import com.google.auth.Credentials;
 import com.google.auth.oauth2.GoogleCredentials;
-import com.google.cloud.storage.Storage;
-import com.google.cloud.storage.StorageOptions;
 import io.terrakube.registry.configuration.OpenRegistryProperties;
 import io.terrakube.registry.plugin.storage.StorageService;
 import io.terrakube.registry.plugin.storage.aws.AwsStorageServiceImpl;
 import io.terrakube.registry.plugin.storage.aws.AwsStorageServiceProperties;
 import io.terrakube.registry.plugin.storage.azure.AzureStorageServiceImpl;
 import io.terrakube.registry.plugin.storage.azure.AzureStorageServiceProperties;
+import io.terrakube.registry.plugin.storage.gcp.GcpStorageClients;
 import io.terrakube.registry.plugin.storage.gcp.GcpStorageServiceImpl;
 import io.terrakube.registry.plugin.storage.gcp.GcpStorageServiceProperties;
 import io.terrakube.registry.plugin.storage.local.LocalStorageServiceImpl;
@@ -38,11 +36,8 @@ import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.S3Configuration;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 
-import java.io.ByteArrayInputStream;
-import java.io.IOException;
 import java.net.URI;
 import java.time.Duration;
-import java.util.Base64;
 
 @Configuration
 @EnableConfigurationProperties({
@@ -143,36 +138,21 @@ public class StorageAutoConfiguration {
                         .build();
                 break;
             case GcpStorageImpl:
-                Credentials gcpCredentials = null;
-                try {
-                    log.info("Credentials Length: {}", gcpStorageServiceProperties.getCredentials().length());
-                    log.info("GCP Project: {}", gcpStorageServiceProperties.getProjectId());
-                    log.info("GCP Bucket: {}", gcpStorageServiceProperties.getBucketName());
-
-                    gcpCredentials = GoogleCredentials
-                            .fromStream(
-                                    new ByteArrayInputStream(
-                                            Base64.getDecoder().decode(gcpStorageServiceProperties.getCredentials()))
-                            );
-                    Storage gcpStorage = StorageOptions.newBuilder()
-                            .setCredentials(gcpCredentials)
-                            .setProjectId(gcpStorageServiceProperties.getProjectId())
-                            .build()
-                            .getService();
-
-                    log.info("GCP Storage null: {}", gcpStorage == null);
-                    storageService = GcpStorageServiceImpl.builder()
-                            .bucketName(gcpStorageServiceProperties.getBucketName())
-                            .storage(gcpStorage)
-                            .gitService(new GitServiceImpl())
-                            .registryHostname(openRegistryProperties.getHostname())
-                            .presignedUrlExpirySeconds(gcpStorageServiceProperties.getPresignedUrlExpirySeconds())
-                            .presignedRedirectEnabled(gcpStorageServiceProperties.isPresignedRedirectEnabled())
-                            .build();
-                } catch (IOException e) {
-                    log.error(e.getMessage());
+                log.info("GCP Project: {}", gcpStorageServiceProperties.getProjectId());
+                log.info("GCP Bucket: {}", gcpStorageServiceProperties.getBucketName());
+                GoogleCredentials gcpCredentials = GcpStorageClients.credentials(gcpStorageServiceProperties.getCredentials());
+                if (gcpStorageServiceProperties.isPresignedRedirectEnabled()) {
+                    GcpStorageClients.requireUrlSigning(gcpCredentials);
                 }
 
+                storageService = GcpStorageServiceImpl.builder()
+                        .bucketName(gcpStorageServiceProperties.getBucketName())
+                        .storage(GcpStorageClients.storage(gcpCredentials, gcpStorageServiceProperties.getProjectId()))
+                        .gitService(new GitServiceImpl())
+                        .registryHostname(openRegistryProperties.getHostname())
+                        .presignedUrlExpirySeconds(gcpStorageServiceProperties.getPresignedUrlExpirySeconds())
+                        .presignedRedirectEnabled(gcpStorageServiceProperties.isPresignedRedirectEnabled())
+                        .build();
                 break;
             case Local:
                 storageService = LocalStorageServiceImpl.builder()

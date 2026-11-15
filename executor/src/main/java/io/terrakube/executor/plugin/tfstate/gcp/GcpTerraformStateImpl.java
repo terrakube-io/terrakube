@@ -39,7 +39,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 @Slf4j
@@ -57,7 +56,10 @@ public class GcpTerraformStateImpl implements TerraformState {
     @NonNull
     private Storage storage;
 
-    @NonNull
+    /**
+     * Base64 encoded service account key. Blank when the executor runs with Application Default
+     * Credentials, in which case Terraform's gcs backend uses them as well.
+     */
     private String credentials;
 
     @NonNull
@@ -84,7 +86,9 @@ public class GcpTerraformStateImpl implements TerraformState {
             gcpBackendHcl.appendln("  backend \"gcs\" {");
             gcpBackendHcl.appendln("    bucket      = \"" + bucketName + "\"");
             gcpBackendHcl.appendln("    prefix      = \"tfstate/" + organizationId + "/" + workspaceId + "/terraform.tfstate" + "\"");
-            gcpBackendHcl.appendln("    credentials = \"" + GCP_CREDENTIALS_FILE + "\"");
+            if (hasCredentialsKey()) {
+                gcpBackendHcl.appendln("    credentials = \"" + GCP_CREDENTIALS_FILE + "\"");
+            }
             gcpBackendHcl.appendln("  }");
             gcpBackendHcl.appendln("}");
 
@@ -99,7 +103,10 @@ public class GcpTerraformStateImpl implements TerraformState {
                             workingDirectory.getAbsolutePath().concat("/").concat(BACKEND_FILE_NAME)
                     )
             );
-            FileUtils.writeStringToFile(gcpBackendCredentials, new String(Base64.decodeBase64(credentials), StandardCharsets.UTF_8), Charset.defaultCharset());
+            // Without a key, Terraform's gcs backend falls back to Application Default Credentials.
+            if (hasCredentialsKey()) {
+                FileUtils.writeStringToFile(gcpBackendCredentials, new String(Base64.decodeBase64(credentials), StandardCharsets.UTF_8), Charset.defaultCharset());
+            }
             FileUtils.writeStringToFile(gcpBackendFile, gcpBackendHcl.toString(), Charset.defaultCharset());
 
         } catch (IOException e) {
@@ -107,6 +114,10 @@ public class GcpTerraformStateImpl implements TerraformState {
             gcpBackend = null;
         }
         return gcpBackend;
+    }
+
+    private boolean hasCredentialsKey() {
+        return credentials != null && !credentials.isBlank();
     }
 
     @Override
@@ -152,13 +163,12 @@ public class GcpTerraformStateImpl implements TerraformState {
                     storageRetryMetrics.withRetry("gcp", "plan-read", () -> {
                         String buketNamePath = String.format("/%s/", bucketName);
                         String blobPath = new URL(stateUrl).getPath().replace(buketNamePath, "");
-                        log.info("Generating pre-signed URL. {}", blobPath);
-                        BlobInfo blobInfo = BlobInfo.newBuilder(BlobId.of(bucketName, blobPath)).build();
+                        log.info("Downloading plan from bucket {} object {}", bucketName, blobPath);
                         File targetFile = new File(FilenameUtils.concat(workingDirectory.getAbsolutePath(), TERRAFORM_PLAN_FILE));
 
-                        URL signedUrl = storage.signUrl(blobInfo, 5, TimeUnit.MINUTES);
-                        log.info("Pre-Signed URL: " + signedUrl.toString());
-                        FileUtils.copyURLToFile(signedUrl, targetFile, 30000, 30000);
+                        // Read through the client rather than a signed URL: signing needs a key (or
+                        // the IAM signBlob permission), which Application Default Credentials may not have.
+                        storage.downloadTo(BlobId.of(bucketName, blobPath), targetFile.toPath());
                         return null;
                     });
                     planGcExist.set(true);

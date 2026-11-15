@@ -19,11 +19,10 @@ import org.mockito.ArgumentCaptor;
 
 import java.io.File;
 import java.io.IOException;
-import java.net.URL;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -83,6 +82,34 @@ class GcpTerraformStateImplTest {
     }
 
     @Test
+    void testGetBackendStateFileWithApplicationDefaultCredentials(@TempDir Path tempDir) throws IOException {
+        for (String noKey : new String[]{null, "", "   "}) {
+            File workingDirectory = Files.createTempDirectory(tempDir, "ws").toFile();
+            GcpTerraformStateImpl adcState = GcpTerraformStateImpl.builder()
+                    .bucketName(bucketName)
+                    .credentials(noKey)
+                    .storage(storage)
+                    .terrakubeClient(terrakubeClient)
+                    .terraformOutputPathService(terraformOutputPathService)
+                    .terraformStatePathService(terraformStatePathService)
+                    .storageRetryMetrics(new io.terrakube.executor.plugin.tfstate.StorageRetryMetrics(
+                            new io.micrometer.core.instrument.simple.SimpleMeterRegistry()))
+                    .build();
+
+            String result = adcState.getBackendStateFile("org1", "ws1", workingDirectory, "1.5.0");
+
+            assertEquals("gcp_backend_override.tf", result);
+            // Without a key the gcs backend uses Application Default Credentials, so no key file is written
+            // and the backend block does not point at one.
+            assertFalse(new File(workingDirectory, "GCP_CREDENTIALS_FILE.json").exists());
+            String content = FileUtils.readFileToString(new File(workingDirectory, "gcp_backend_override.tf"), Charset.defaultCharset());
+            assertTrue(content.contains("bucket      = \"test-bucket\""));
+            assertTrue(content.contains("prefix      = \"tfstate/org1/ws1/terraform.tfstate\""));
+            assertFalse(content.contains("credentials"));
+        }
+    }
+
+    @Test
     void testSaveTerraformPlan(@TempDir Path tempDir) throws IOException {
         String organizationId = "org1";
         String workspaceId = "ws1";
@@ -131,29 +158,22 @@ class GcpTerraformStateImplTest {
         String planUrl = "https://storage.cloud.google.com/test-bucket/tfstate/org1/ws1/job1/step1/terraformLibrary.tfPlan";
         when(terrakubeClient.getJobById(organizationId, jobId).getData().getAttributes().getTerraformPlan())
                 .thenReturn(planUrl);
-        
-        // Mocking signUrl to return a local file URL for verification
-        File sourceFile = new File(workingDirectory, "source.tfPlan");
-        FileUtils.writeStringToFile(sourceFile, "source-content", Charset.defaultCharset());
-        URL localUrl = sourceFile.toURI().toURL();
-        
-        when(storage.signUrl(any(BlobInfo.class), anyLong(), any(TimeUnit.class))).thenReturn(localUrl);
+        doAnswer(invocation -> {
+            FileUtils.writeStringToFile(invocation.<Path>getArgument(1).toFile(), "source-content", Charset.defaultCharset());
+            return null;
+        }).when(storage).downloadTo(any(BlobId.class), any(Path.class));
 
         boolean result = gcpTerraformState.downloadTerraformPlan(organizationId, workspaceId, jobId, stepId, workingDirectory);
 
         assertTrue(result);
         File downloadedPlan = new File(workingDirectory, "terraformLibrary.tfPlan");
-        assertTrue(downloadedPlan.exists());
         assertEquals("source-content", FileUtils.readFileToString(downloadedPlan, Charset.defaultCharset()));
-        
-        ArgumentCaptor<BlobInfo> blobInfoCaptor = ArgumentCaptor.forClass(BlobInfo.class);
-        verify(storage).signUrl(blobInfoCaptor.capture(), eq(5L), eq(TimeUnit.MINUTES));
-        assertEquals("test-bucket", blobInfoCaptor.getValue().getBucket());
-        // The path in URL starts after bucket name in this implementation
-        // stateUrl = https://storage.cloud.google.com/test-bucket/tfstate/org1/ws1/job1/step1/terraformLibrary.tfPlan
-        // new URL(stateUrl).getPath() = /test-bucket/tfstate/org1/ws1/job1/step1/terraformLibrary.tfPlan
-        // replace("/test-bucket/", "") = tfstate/org1/ws1/job1/step1/terraformLibrary.tfPlan
-        assertEquals("tfstate/org1/ws1/job1/step1/terraformLibrary.tfPlan", blobInfoCaptor.getValue().getBlobId().getName());
+
+        // The plan is read through the client, so no signing key is needed (Application Default Credentials).
+        ArgumentCaptor<BlobId> blobIdCaptor = ArgumentCaptor.forClass(BlobId.class);
+        verify(storage).downloadTo(blobIdCaptor.capture(), eq(downloadedPlan.toPath()));
+        assertEquals("test-bucket", blobIdCaptor.getValue().getBucket());
+        assertEquals("tfstate/org1/ws1/job1/step1/terraformLibrary.tfPlan", blobIdCaptor.getValue().getName());
     }
 
     // #3671 follow-up: a genuine download failure must retry then throw instead of silently
@@ -169,16 +189,13 @@ class GcpTerraformStateImplTest {
         String planUrl = "https://storage.cloud.google.com/test-bucket/tfstate/org1/ws1/job1/step1/terraformLibrary.tfPlan";
         when(terrakubeClient.getJobById(organizationId, jobId).getData().getAttributes().getTerraformPlan())
                 .thenReturn(planUrl);
-
-        // A file:// URL to a path that doesn't exist makes copyURLToFile fail reliably without
-        // any real network dependency, same trick the happy-path test above uses in reverse.
-        URL nonexistentUrl = new File(workingDirectory, "does-not-exist.tfPlan").toURI().toURL();
-        when(storage.signUrl(any(BlobInfo.class), anyLong(), any(TimeUnit.class))).thenReturn(nonexistentUrl);
+        doThrow(new com.google.cloud.storage.StorageException(503, "Service unavailable"))
+                .when(storage).downloadTo(any(BlobId.class), any(Path.class));
 
         assertThrows(io.terrakube.executor.plugin.tfstate.TerraformStateUnavailableException.class,
                 () -> gcpTerraformState.downloadTerraformPlan(organizationId, workspaceId, jobId, stepId, workingDirectory));
 
-        verify(storage, times(3)).signUrl(any(BlobInfo.class), anyLong(), any(TimeUnit.class));
+        verify(storage, times(3)).downloadTo(any(BlobId.class), any(Path.class));
     }
 
     @Test
