@@ -1,5 +1,14 @@
 # Terrakube UI
 
+## Projects list
+
+The Projects list shows each project's workspace total and distinct teams with project-level permissions.
+Counts include only assignments visible to the signed-in user and reload when the list is opened.
+Multiple permission assignments for the same team count once; empty or inaccessible collections count as zero.
+Workspace totals are calculated by the API, independent of the workspace list's page size.
+The Workspaces and Teams counts link directly to that project's Workspaces and Team Access tabs,
+including when the count is zero. Teams counts represent project-level permission assignments.
+
 ## Compile
 
 Define the following environment variables in your local machine:
