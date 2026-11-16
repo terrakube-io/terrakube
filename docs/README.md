@@ -21,6 +21,12 @@ The full user and administrator documentation is at [docs.terrakube.io](https://
 | [Plan artifacts](templates/plan-artifacts.md) | The apply step cannot find a file that the plan step built. |
 | [Require a saved plan](templates/require-saved-plan.md) | You want an apply step to run only from the plan that was saved for the job. |
 
+## Contributing
+
+| Page | Read it when |
+| --- | --- |
+| [Repository code map](contributing/code-map.md) | You want to know where services and features live, how a run flows from API to executor, or which classes have the highest coupling. |
+
 ## Contributing to these pages
 
 * Use sentence case for titles and headings, and give every code block a language (`text` if there is none).
