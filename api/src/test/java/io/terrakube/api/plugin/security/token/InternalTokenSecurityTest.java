@@ -9,6 +9,7 @@ import io.terrakube.api.rs.checks.user.IsRegistryService;
 import io.terrakube.api.rs.checks.vcs.ReadAccessToken;
 import io.terrakube.api.rs.checks.vcs.ReadGitHubAppInstallationToken;
 import io.terrakube.api.rs.job.Job;
+import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.job.step.Step;
 import io.terrakube.api.rs.ssh.Ssh;
 import io.terrakube.api.rs.vcs.GitHubAppToken;
@@ -249,5 +250,34 @@ class InternalTokenSecurityTest {
                 "stepId", UUID.randomUUID().toString()
         ));
         assertFalse(check.ok(runnerWithFullScope));
+    }
+
+    @Test
+    void testRegistryServiceRestrictedFields_ExcludeStepOutputJobOutputAndTerraformPlan() throws NoSuchFieldException {
+        ReadPermission stepOutputPerm = Step.class.getDeclaredField("output").getAnnotation(ReadPermission.class);
+        assertNotNull(stepOutputPerm);
+        assertFalse(stepOutputPerm.expression().contains(IsRegistryService.RULE));
+
+        ReadPermission jobOutputPerm = Job.class.getDeclaredField("output").getAnnotation(ReadPermission.class);
+        assertNotNull(jobOutputPerm);
+        assertFalse(jobOutputPerm.expression().contains(IsRegistryService.RULE));
+
+        ReadPermission jobPlanPerm = Job.class.getDeclaredField("terraformPlan").getAnnotation(ReadPermission.class);
+        assertNotNull(jobPlanPerm);
+        assertFalse(jobPlanPerm.expression().contains(IsRegistryService.RULE));
+    }
+
+    @Test
+    void testActiveStepStatuses_MatchNonTerminalJobStatusHoldingQueue() {
+        java.util.Set<String> expectedActive = java.util.Set.of(
+                "running", "queue", "pending", "waitingApproval", "approved"
+        );
+        java.util.Set<String> apiActive = JobStatus.holdingTheQueue().stream()
+                .map(Enum::name)
+                .collect(java.util.stream.Collectors.toSet());
+        assertEquals(expectedActive, apiActive);
+        for (JobStatus status : JobStatus.holdingTheQueue()) {
+            assertFalse(status.isTerminal(), status + " must be non-terminal");
+        }
     }
 }

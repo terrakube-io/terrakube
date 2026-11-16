@@ -15,6 +15,7 @@ import io.terrakube.registry.configuration.CacheConfig;
 import io.terrakube.registry.plugin.storage.StorageService;
 import io.terrakube.registry.service.git.ModuleVersionDownload;
 import io.terrakube.registry.service.search.CommonSearchService;
+import io.terrakube.registry.service.search.RegistryPathValidator;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.annotation.CacheEvict;
@@ -28,7 +29,6 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.regex.Pattern;
 
 @AllArgsConstructor
 @Slf4j
@@ -69,9 +69,6 @@ public class ModuleServiceImpl implements ModuleService {
         }
         """;
 
-    // Keeps the version inside the RSQL filter a single value; real versions never need other characters.
-    private static final Pattern VERSION_PATTERN = Pattern.compile("[0-9A-Za-z][0-9A-Za-z.+_-]{0,127}");
-
     public static final String SEARCH_REMOVED_MODULE_VERSION = """
         {
           organization(filter: "name==%s") {
@@ -109,13 +106,24 @@ public class ModuleServiceImpl implements ModuleService {
     @Cacheable(cacheNames = {CacheConfig.MODULE_VERSION_REMOVED_CACHE})
     @Override
     public boolean isVersionRemoved(String organizationName, String moduleName, String providerName, String version) {
-        if (!VERSION_PATTERN.matcher(version).matches()) {
+        if (!RegistryPathValidator.isValidIdentifier(organizationName)
+                || !RegistryPathValidator.isValidIdentifier(moduleName)
+                || !RegistryPathValidator.isValidIdentifier(providerName)
+                || !RegistryPathValidator.isValidVersion(version)) {
             return true;
         }
         GraphQLRequest query = new GraphQLRequest();
         query.setQuery(String.format(SEARCH_REMOVED_MODULE_VERSION, organizationName, moduleName, providerName, version));
-        return terrakubeClient.searchOrganizationModules(query).getData().getOrganization().getEdges().stream()
-                .flatMap(organizationEdge -> organizationEdge.getNode().getModule().getEdges().stream())
+        var orgEdges = terrakubeClient.searchOrganizationModules(query).getData().getOrganization().getEdges().stream()
+                .filter(edge -> edge != null && edge.getNode() != null && organizationName.equals(edge.getNode().getName()))
+                .toList();
+        if (orgEdges.size() != 1) {
+            return false;
+        }
+        return orgEdges.get(0).getNode().getModule().getEdges().stream()
+                .filter(modEdge -> modEdge != null && modEdge.getNode() != null
+                        && moduleName.equals(modEdge.getNode().getName())
+                        && providerName.equals(modEdge.getNode().getProvider()))
                 .anyMatch(moduleEdge -> !moduleEdge.getNode().getVersion().getEdges().isEmpty());
     }
 
@@ -128,23 +136,39 @@ public class ModuleServiceImpl implements ModuleService {
     @Cacheable(cacheNames = {CacheConfig.MODULE_VERSIONS_CACHE}, sync = true)
     @Override
     public List<String> getAvailableVersions(String organizationName, String moduleName, String providerName) {
+        if (!RegistryPathValidator.isValidIdentifier(organizationName)
+                || !RegistryPathValidator.isValidIdentifier(moduleName)
+                || !RegistryPathValidator.isValidIdentifier(providerName)) {
+            log.warn("Rejected invalid module lookup parameters: {}/{}/{}", organizationName, moduleName, providerName);
+            return Collections.emptyList();
+        }
         log.info("Search Module versions {}/{} in Organization {}", moduleName, providerName, organizationName);
 
         GraphQLRequest query = new GraphQLRequest();
         query.setQuery(String.format(SEARCH_ORGANIZATION_MODULE_VERSION, organizationName, moduleName, providerName));
 
-        AtomicInteger count= new AtomicInteger();
+        AtomicInteger count = new AtomicInteger();
         List<String> definitionVersions = new ArrayList<>();
 
         GraphQLResponse<SearchOrganizationModuleResponse> moduleVersionResponse = terrakubeClient.searchOrganizationModules(query);
-        moduleVersionResponse.getData().getOrganization().getEdges().forEach(organizationEdge -> {
-            organizationEdge.getNode().getModule().getEdges().forEach(moduleEdge -> {
-                moduleEdge.getNode().getVersion().getEdges().forEach(versionEdge -> {
-                    definitionVersions.add(versionEdge.getNode().getVersion());
-                    count.getAndIncrement();
+        var orgEdges = moduleVersionResponse.getData().getOrganization().getEdges().stream()
+                .filter(edge -> edge != null && edge.getNode() != null && organizationName.equals(edge.getNode().getName()))
+                .toList();
+        if (orgEdges.size() != 1) {
+            log.warn("Expected 1 organization matching '{}' for module versions, found {}", organizationName, orgEdges.size());
+            return Collections.emptyList();
+        }
+
+        orgEdges.get(0).getNode().getModule().getEdges().stream()
+                .filter(moduleEdge -> moduleEdge != null && moduleEdge.getNode() != null
+                        && moduleName.equals(moduleEdge.getNode().getName())
+                        && providerName.equals(moduleEdge.getNode().getProvider()))
+                .forEach(moduleEdge -> {
+                    moduleEdge.getNode().getVersion().getEdges().forEach(versionEdge -> {
+                        definitionVersions.add(versionEdge.getNode().getVersion());
+                        count.getAndIncrement();
+                    });
                 });
-            });
-        });
         log.info("Found {} versions for module {}/{}", count.get(), moduleName, providerName);
 
         return definitionVersions;
@@ -156,9 +180,18 @@ public class ModuleServiceImpl implements ModuleService {
     @Cacheable(cacheNames = {CacheConfig.MODULE_VERSION_PATH_CACHE}, sync = true)
     @Override
     public String getModuleVersionPath(String organizationName, String moduleName, String providerName, String version) {
+        if (!RegistryPathValidator.isValidIdentifier(organizationName)
+                || !RegistryPathValidator.isValidIdentifier(moduleName)
+                || !RegistryPathValidator.isValidIdentifier(providerName)
+                || !RegistryPathValidator.isValidVersion(version)) {
+            throw new IllegalArgumentException("Invalid module path parameters");
+        }
         String moduleVersionPath = "";
 
         String organizationId = commonSearchService.getOrganizationId(organizationName);
+        if (organizationId == null || organizationId.isBlank()) {
+            throw new IllegalStateException("Organization not found: " + organizationName);
+        }
         Module module = terrakubeClient.getModuleByNameAndProvider(organizationId, moduleName, providerName).getData()
                 .get(0);
         String moduleSource = module.getAttributes().getSource();

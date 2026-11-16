@@ -30,6 +30,9 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationProvider;
 
 import javax.crypto.SecretKey;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 
@@ -143,18 +146,32 @@ public class RegistryAuthenticationManagerResolver implements AuthenticationMana
     }
 
     private String buildFederatedProviderCacheKey(String issuerUrl, List<FederatedConfig> matchedConfigs) {
-        StringBuilder key = new StringBuilder("federated ").append(issuerUrl);
-        for (FederatedConfig config : matchedConfigs) {
-            key.append("|").append(config.getName())
-                    .append("@").append(config.getAudience())
-                    .append(":");
-            if (config.getClaims() != null && !config.getClaims().isEmpty()) {
-                config.getClaims().entrySet().stream()
-                        .sorted(Map.Entry.comparingByKey())
-                        .forEach(entry -> key.append(entry.getKey()).append("=").append(entry.getValue()).append(","));
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            updateDigestField(digest, issuerUrl);
+            for (FederatedConfig config : matchedConfigs) {
+                updateDigestField(digest, config.getName());
+                updateDigestField(digest, config.getAudience());
+                if (config.getClaims() != null && !config.getClaims().isEmpty()) {
+                    config.getClaims().entrySet().stream()
+                            .sorted(Map.Entry.comparingByKey())
+                            .forEach(entry -> {
+                                updateDigestField(digest, entry.getKey());
+                                updateDigestField(digest, entry.getValue());
+                            });
+                }
             }
+            return "federated:" + HexFormat.of().formatHex(digest.digest());
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 not available", e);
         }
-        return key.toString();
+    }
+
+    private void updateDigestField(MessageDigest digest, String value) {
+        byte[] bytes = (value == null ? "" : value).getBytes(StandardCharsets.UTF_8);
+        digest.update((Integer.toString(bytes.length) + ":").getBytes(StandardCharsets.UTF_8));
+        digest.update(bytes);
+        digest.update((byte) '|');
     }
 
     // Re-verify audience and FederatedClaim predicates against the signature-verified Jwt claims so
@@ -250,13 +267,23 @@ public class RegistryAuthenticationManagerResolver implements AuthenticationMana
         if (federated.getRelationships() != null
                 && federated.getRelationships().getClaims() != null
                 && federated.getRelationships().getClaims().getData() != null) {
-            federated.getRelationships().getClaims().getData().stream()
-                    .map(claimResource -> includedClaims.get(claimResource.getId()))
-                    .filter(Objects::nonNull)
-                    .filter(claim -> claim.getAttributes() != null)
-                    .filter(claim -> claim.getAttributes().getClaimKey() != null)
-                    .forEach(claim -> claimsMap.put(
-                            claim.getAttributes().getClaimKey(), claim.getAttributes().getClaimValue()));
+            for (io.terrakube.client.model.generic.Resource claimResource : federated.getRelationships().getClaims().getData()) {
+                if (claimResource == null || claimResource.getId() == null) {
+                    config.setClaims(Collections.emptyMap());
+                    return config;
+                }
+                FederatedClaim claim = includedClaims.get(claimResource.getId());
+                if (claim == null
+                        || claim.getAttributes() == null
+                        || claim.getAttributes().getClaimKey() == null
+                        || claim.getAttributes().getClaimKey().isBlank()
+                        || claim.getAttributes().getClaimValue() == null) {
+                    // Fail closed on any malformed/null claim row rather than dropping it or throwing NPE later.
+                    config.setClaims(Collections.emptyMap());
+                    return config;
+                }
+                claimsMap.put(claim.getAttributes().getClaimKey(), claim.getAttributes().getClaimValue());
+            }
         }
         config.setClaims(claimsMap);
         return config;
@@ -267,9 +294,10 @@ public class RegistryAuthenticationManagerResolver implements AuthenticationMana
             return false;
         }
         for (Map.Entry<String, String> entry : requiredClaims.entrySet()) {
+            String expected = entry.getValue();
             Object tokenVal = payloadMap.get(entry.getKey());
-            if (tokenVal == null || !claimMatches(tokenVal, entry.getValue())) {
-                log.debug("Federated claim mismatch for key {}: expected {}, got {}", entry.getKey(), entry.getValue(), tokenVal);
+            if (expected == null || tokenVal == null || !claimMatches(tokenVal, expected)) {
+                log.debug("Federated claim mismatch for key {}: expected {}, got {}", entry.getKey(), expected, tokenVal);
                 return false;
             }
         }
@@ -277,6 +305,9 @@ public class RegistryAuthenticationManagerResolver implements AuthenticationMana
     }
 
     private boolean claimMatches(Object tokenValue, String expected) {
+        if (expected == null || tokenValue == null) {
+            return false;
+        }
         if (tokenValue instanceof Collection<?> values) {
             return values.stream().filter(Objects::nonNull).anyMatch(value -> expected.equals(value.toString()));
         }

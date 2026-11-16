@@ -50,6 +50,7 @@ public class Step {
     @Enumerated(EnumType.STRING)
     private LogStatus logStatus;
 
+    @ReadPermission(expression = "team view job step OR team project limited view job step OR team limited view job step OR executor read job step OR user is an executor service")
     @Column(name = "output")
     private String output;
 

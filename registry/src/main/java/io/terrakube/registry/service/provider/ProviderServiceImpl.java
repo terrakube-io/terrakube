@@ -4,6 +4,7 @@ import io.terrakube.client.TerrakubeClient;
 import io.terrakube.client.model.graphql.GraphQLRequest;
 import io.terrakube.registry.configuration.CacheConfig;
 import io.terrakube.registry.controller.model.provider.*;
+import io.terrakube.registry.service.search.RegistryPathValidator;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.cache.annotation.Cacheable;
@@ -132,6 +133,11 @@ public class ProviderServiceImpl implements ProviderService {
 
     @Override
     public List<VersionDTO> getAvailableVersions(String organization, String provider) {
+        if (!RegistryPathValidator.isValidIdentifier(organization)
+                || !RegistryPathValidator.isValidIdentifier(provider)) {
+            log.warn("Rejected invalid provider lookup parameters: {}/{}", organization, provider);
+            return List.of();
+        }
         log.info("Organization Provider: {} {}", organization, provider);
         List<VersionDTO> versionDTOList = new ArrayList<>();
 
@@ -164,6 +170,10 @@ public class ProviderServiceImpl implements ProviderService {
     @Cacheable(cacheNames = CacheConfig.PROVIDER_WARNINGS_CACHE)
     @Override
     public List<String> getWarnings(String organization, String provider) {
+        if (!RegistryPathValidator.isValidIdentifier(organization)
+                || !RegistryPathValidator.isValidIdentifier(provider)) {
+            return List.of();
+        }
         GraphQLRequest query = new GraphQLRequest();
         query.setQuery(String.format(SEARCH_DEPRECATED_PROVIDER_VERSIONS, organization, provider));
         List<String> deprecated = terrakubeClient.searchOrganizationProviders(query).getData().getOrganization().getEdges().stream()
@@ -185,6 +195,15 @@ public class ProviderServiceImpl implements ProviderService {
     @Override
     public FileDTO getFileInformation(String organization, String provider, String version, String os, String arch) {
         FileDTO fileDTO = new FileDTO();
+        if (!RegistryPathValidator.isValidIdentifier(organization)
+                || !RegistryPathValidator.isValidIdentifier(provider)
+                || !RegistryPathValidator.isValidVersion(version)
+                || !RegistryPathValidator.isValidIdentifier(os)
+                || !RegistryPathValidator.isValidIdentifier(arch)) {
+            log.warn("Rejected invalid provider file lookup parameters: {}/{}/{} ({}/{})",
+                    organization, provider, version, os, arch);
+            return fileDTO;
+        }
         GraphQLRequest query = new GraphQLRequest();
         query.setQuery(String.format(SEARCH_PROVIDER_IMPLEMENTATIONS, organization, provider, version, os, arch));
         terrakubeClient.searchOrganizationProviders(query).getData().getOrganization().getEdges().forEach(organizationEdge -> {

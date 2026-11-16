@@ -127,6 +127,7 @@ public class Job extends GenericAuditFields {
     @Column(name = "approved_at")
     private Date approvedAt;
 
+    @ReadPermission(expression = "team view job OR team project limited view job OR team limited view job OR executor read job OR user is an executor service")
     @Column(name = "output")
     private String output;
 
@@ -142,6 +143,7 @@ public class Job extends GenericAuditFields {
     @Column(name = "deleted")
     private boolean deleted = false;
 
+    @ReadPermission(expression = "team view job OR team project limited view job OR team limited view job OR executor read job OR user is an executor service")
     @Column(name = "terraform_plan")
     private String terraformPlan;
 

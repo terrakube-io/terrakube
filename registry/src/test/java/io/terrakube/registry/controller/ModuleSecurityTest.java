@@ -8,6 +8,9 @@ import io.terrakube.client.model.federated.Relationships;
 import io.terrakube.client.model.federated.claim.FederatedClaim;
 import io.terrakube.client.model.federated.claim.FederatedClaimAttributes;
 import io.terrakube.client.model.generic.Resource;
+import io.terrakube.client.model.organization.job.Job;
+import io.terrakube.client.model.organization.job.JobAttributes;
+import io.terrakube.client.model.organization.job.WorkspaceData;
 import io.terrakube.client.model.organization.job.step.Step;
 import io.terrakube.client.model.organization.job.step.StepAttributes;
 import io.terrakube.client.model.organization.team.Team;
@@ -265,6 +268,7 @@ class ModuleSecurityTest {
 
         String myOrgId = "11111111-1111-1111-1111-111111111111";
         String otherOrgId = "22222222-2222-2222-2222-222222222222";
+        String wsId = "33333333-3333-3333-3333-333333333333";
         String stepId = "44444444-4444-4444-4444-444444444444";
         when(searchService.getOrganizationId("my-org")).thenReturn(myOrgId);
         when(searchService.getOrganizationId("other-org")).thenReturn(otherOrgId);
@@ -274,25 +278,12 @@ class ModuleSecurityTest {
         when(storageService.downloadModule("my-org", "vpc", "aws", "1.0.0")).thenReturn("zip".getBytes());
         when(readMeService.getContent(any())).thenReturn("# Readme");
 
-        Step activeStep = new Step();
-        activeStep.setId(stepId);
-        StepAttributes activeAttrs = new StepAttributes();
-        activeAttrs.setStatus("running");
-        activeStep.setAttributes(activeAttrs);
-        Response<Step> activeStepResp = new Response<>();
-        activeStepResp.setData(activeStep);
+        ResponseWithInclude<Job, Step> activeJobResp = jobStepResponse(wsId, "running", stepId, "running");
+        ResponseWithInclude<Job, Step> completedJobResp = jobStepResponse(wsId, "running", stepId, "completed");
 
-        Step completedStep = new Step();
-        completedStep.setId(stepId);
-        StepAttributes completedAttrs = new StepAttributes();
-        completedAttrs.setStatus("completed");
-        completedStep.setAttributes(completedAttrs);
-        Response<Step> completedStepResp = new Response<>();
-        completedStepResp.setData(completedStep);
-
-        when(terrakubeClient.getStepById(myOrgId, "101", stepId))
-                .thenReturn(activeStepResp)
-                .thenReturn(completedStepResp);
+        when(terrakubeClient.getJobById(myOrgId, "101"))
+                .thenReturn(activeJobResp)
+                .thenReturn(completedJobResp);
 
         Authentication runnerAuth = new JwtAuthenticationToken(new Jwt(
                 "runner-jwt",
@@ -303,7 +294,7 @@ class ModuleSecurityTest {
                         "iss", "TerrakubeInternal",
                         "sub", "TerrakubeInternal (EXECUTOR)",
                         "organizationId", myOrgId,
-                        "workspaceId", "33333333-3333-3333-3333-333333333333",
+                        "workspaceId", wsId,
                         "jobId", "101",
                         "stepId", stepId
                 )
@@ -381,6 +372,67 @@ class ModuleSecurityTest {
                 .andExpect(status().isForbidden());
         realAuthReadMeMvc.perform(get("/terraform/readme/v1/other-org/vpc/aws/1.0.0/download").principal(fedAuth))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void testRealAuthorization_OrgNameInjectionPayloads_ReturnForbiddenOnAllEndpoints() throws Exception {
+        CommonSearchService searchService = org.mockito.Mockito.mock(CommonSearchService.class);
+        TerrakubeClient terrakubeClient = org.mockito.Mockito.mock(TerrakubeClient.class);
+        ModuleAuthorizationService realAuthService = new ModuleAuthorizationService(
+                searchService,
+                terrakubeClient,
+                "https://dex.example.com",
+                "owner@example.com",
+                "DEX"
+        );
+        MockMvc realAuthModuleMvc = MockMvcBuilders.standaloneSetup(
+                new ModuleWebServiceImpl(moduleService, storageService, ticketService, realAuthService)
+        ).build();
+        MockMvc realAuthReadMeMvc = MockMvcBuilders.standaloneSetup(
+                new ReadMeWebServiceImpl(moduleService, readMeService, storageService, realAuthService)
+        ).build();
+
+        Authentication userAuth = createJwtToken("any-team");
+        for (String injectedOrg : List.of("simple,name==aws", "simple*", "simple\"", "simple%2Cname==aws")) {
+            realAuthModuleMvc.perform(get("/terraform/modules/v1/" + injectedOrg + "/vpc/aws/versions").principal(userAuth))
+                    .andExpect(status().isForbidden());
+            realAuthModuleMvc.perform(get("/terraform/modules/v1/" + injectedOrg + "/vpc/aws/1.0.0/download").principal(userAuth))
+                    .andExpect(status().isForbidden());
+            realAuthModuleMvc.perform(get("/terraform/modules/v1/" + injectedOrg + "/vpc/aws/1.0.0/details").principal(userAuth))
+                    .andExpect(status().isForbidden());
+            realAuthModuleMvc.perform(get("/terraform/modules/v1/download/" + injectedOrg + "/vpc/aws/1.0.0/module.zip").principal(userAuth))
+                    .andExpect(status().isForbidden());
+            realAuthReadMeMvc.perform(get("/terraform/readme/v1/" + injectedOrg + "/vpc/aws/1.0.0/download").principal(userAuth))
+                    .andExpect(status().isForbidden());
+        }
+    }
+
+    private ResponseWithInclude<Job, Step> jobStepResponse(String wsId, String jobStatus, String stepId, String stepStatus) {
+        Job job = new Job();
+        job.setId("101");
+        JobAttributes jobAttrs = new JobAttributes();
+        jobAttrs.setStatus(jobStatus);
+        job.setAttributes(jobAttrs);
+
+        Resource wsRes = new Resource();
+        wsRes.setId(wsId);
+        WorkspaceData wsData = new WorkspaceData();
+        wsData.setData(wsRes);
+        io.terrakube.client.model.organization.job.Relationships rels =
+                new io.terrakube.client.model.organization.job.Relationships();
+        rels.setWorkspace(wsData);
+        job.setRelationships(rels);
+
+        Step step = new Step();
+        step.setId(stepId);
+        StepAttributes stepAttrs = new StepAttributes();
+        stepAttrs.setStatus(stepStatus);
+        step.setAttributes(stepAttrs);
+
+        ResponseWithInclude<Job, Step> response = new ResponseWithInclude<>();
+        response.setData(job);
+        response.setIncluded(List.of(step));
+        return response;
     }
 
 
