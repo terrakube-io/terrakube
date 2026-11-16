@@ -54,7 +54,7 @@ public class RegistryAuthenticationManagerResolver implements AuthenticationMana
     private long federatedCacheMaximumSize = 1000;
 
     @Builder.Default
-    private long providerManagerCacheExpireAfterWrite = 60;
+    private long providerManagerCacheExpireAfterWrite = 10;
 
     @Builder.Default
     private long providerManagerCacheMaximumSize = 100;
@@ -113,10 +113,11 @@ public class RegistryAuthenticationManagerResolver implements AuthenticationMana
 
         if (!matched.isEmpty()) {
             String issuerUrl = matched.get(0).getIssuerUrl();
-            List<String> groups = matched.stream().map(FederatedConfig::getName).filter(Objects::nonNull).distinct().toList();
-            log.debug("Federated authentication matched for issuer {} as {}", issuerUrl, groups);
-            return getProviderManagerCache().get("federated " + issuerUrl + " " + groups,
-                    key -> federatedProviderManager(issuerUrl, groups));
+            List<FederatedConfig> matchedSnapshot = List.copyOf(matched);
+            String cacheKey = buildFederatedProviderCacheKey(issuerUrl, matchedSnapshot);
+            log.debug("Federated authentication matched for issuer {} ({} credentials)", issuerUrl, matchedSnapshot.size());
+            return getProviderManagerCache().get(cacheKey,
+                    key -> federatedProviderManager(issuerUrl, matchedSnapshot));
         }
 
         if (federatedCredentialFound) {
@@ -141,21 +142,58 @@ public class RegistryAuthenticationManagerResolver implements AuthenticationMana
         return providerManager;
     }
 
-    // A federated token acts as its Federated credentials only: their names replace the groups claim
-    // of the external identity provider, which is not a Terrakube team membership. Email claims from
-    // the external identity provider are removed so downstream checks cannot match instanceOwner by email.
-    private ProviderManager federatedProviderManager(String issuerUrl, List<String> groups) {
+    private String buildFederatedProviderCacheKey(String issuerUrl, List<FederatedConfig> matchedConfigs) {
+        StringBuilder key = new StringBuilder("federated ").append(issuerUrl);
+        for (FederatedConfig config : matchedConfigs) {
+            key.append("|").append(config.getName())
+                    .append("@").append(config.getAudience())
+                    .append(":");
+            if (config.getClaims() != null && !config.getClaims().isEmpty()) {
+                config.getClaims().entrySet().stream()
+                        .sorted(Map.Entry.comparingByKey())
+                        .forEach(entry -> key.append(entry.getKey()).append("=").append(entry.getValue()).append(","));
+            }
+        }
+        return key.toString();
+    }
+
+    // Re-verify audience and FederatedClaim predicates against the signature-verified Jwt claims so
+    // an unverified payload mismatch or stale cache entry cannot grant unintended credential groups.
+    // External email claims are removed and groups are replaced with verified Federated credential names.
+    private ProviderManager federatedProviderManager(String issuerUrl, List<FederatedConfig> matchedConfigs) {
         JwtAuthenticationProvider provider = new JwtAuthenticationProvider(jwtDecoderFactory.apply(issuerUrl));
         JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
-        provider.setJwtAuthenticationConverter(jwt -> converter.convert(Jwt.withTokenValue(jwt.getTokenValue())
-                .headers(headers -> headers.putAll(jwt.getHeaders()))
-                .claims(claims -> {
-                    claims.putAll(jwt.getClaims());
-                    claims.remove("email");
-                    claims.remove("email_verified");
-                    claims.put("groups", groups);
-                })
-                .build()));
+        provider.setJwtAuthenticationConverter(jwt -> {
+            Map<String, Object> verifiedClaims = jwt.getClaims();
+            String verifiedIssuer = extractClaimString(verifiedClaims, "iss");
+            List<String> verifiedAudiences = extractClaimStrings(verifiedClaims, "aud");
+            if (!issuerUrl.equals(verifiedIssuer)) {
+                throw new BadCredentialsException("Federated token issuer failed post-decode verification");
+            }
+            List<String> verifiedGroups = matchedConfigs.stream()
+                    .filter(config -> config.getAudience() != null
+                            && !config.getAudience().isBlank()
+                            && verifiedAudiences.contains(config.getAudience()))
+                    .filter(config -> validateClaims(verifiedClaims, config.getClaims()))
+                    .map(FederatedConfig::getName)
+                    .filter(Objects::nonNull)
+                    .map(String::trim)
+                    .filter(name -> !name.isEmpty())
+                    .distinct()
+                    .toList();
+            if (verifiedGroups.isEmpty()) {
+                throw new BadCredentialsException("Federated token claims failed post-decode verification");
+            }
+            return converter.convert(Jwt.withTokenValue(jwt.getTokenValue())
+                    .headers(headers -> headers.putAll(jwt.getHeaders()))
+                    .claims(claims -> {
+                        claims.putAll(verifiedClaims);
+                        claims.remove("email");
+                        claims.remove("email_verified");
+                        claims.put("groups", verifiedGroups);
+                    })
+                    .build());
+        });
         return new ProviderManager(provider);
     }
 

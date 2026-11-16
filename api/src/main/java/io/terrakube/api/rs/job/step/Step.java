@@ -20,7 +20,7 @@ import jakarta.persistence.*;
 import java.sql.Types;
 import java.util.UUID;
 
-@ReadPermission(expression = "team view job step OR team project limited view job step OR team limited view job step OR executor read job step OR user is an executor service")
+@ReadPermission(expression = "team view job step OR team project limited view job step OR team limited view job step OR executor read job step OR user is an executor service OR user is a registry service")
 @CreatePermission(expression = "user is a super service")
 @UpdatePermission(expression = "user is a super service OR executor manage job step OR user is an executor service")
 @DeletePermission(expression = "user is a super service")

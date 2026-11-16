@@ -505,6 +505,50 @@ class RegistryAuthenticationManagerResolverTest {
     }
 
     @Test
+    void resolve_federatedToken_rejectsSignedJwtWhenDecodedClaimsOrAudienceMismatch() throws Exception {
+        String issuer = "https://token.actions.githubusercontent.com";
+        String audience = "terrakube";
+        when(request.getHeader("authorization")).thenReturn(createMockJwtToken(Map.of(
+                "iss", issuer, "aud", audience, "repository", "acme/infra")));
+
+        Federated federated = federated("fed-1", issuer, audience);
+        federated.getAttributes().setName("ci-trigger");
+        when(terrakubeClient.getFederatedByIssuerUrlAndAudienceWithClaims(issuer, audience))
+                .thenReturn(federatedResponse(List.of(federated),
+                        Map.of(federated, List.of(claim("claim-1", "repository", "acme/infra")))));
+
+        when(jwtDecoder.decode("mismatched-claim-token")).thenReturn(org.springframework.security.oauth2.jwt.Jwt.withTokenValue("mismatched-claim-token")
+                .header("alg", "RS256")
+                .claim("iss", issuer)
+                .claim("aud", List.of(audience))
+                .claim("repository", "evil/repo")
+                .build());
+
+        AuthenticationManager manager = resolver.resolve(request);
+        assertThrows(BadCredentialsException.class, () ->
+                manager.authenticate(new org.springframework.security.oauth2.server.resource.authentication.BearerTokenAuthenticationToken("mismatched-claim-token")));
+
+        when(jwtDecoder.decode("mismatched-aud-token")).thenReturn(org.springframework.security.oauth2.jwt.Jwt.withTokenValue("mismatched-aud-token")
+                .header("alg", "RS256")
+                .claim("iss", issuer)
+                .claim("aud", List.of("other-audience"))
+                .claim("repository", "acme/infra")
+                .build());
+
+        assertThrows(BadCredentialsException.class, () ->
+                manager.authenticate(new org.springframework.security.oauth2.server.resource.authentication.BearerTokenAuthenticationToken("mismatched-aud-token")));
+    }
+
+    @Test
+    void defaultCacheProperties_alignProviderManagerTtlWithFederatedTtl() {
+        RegistryAuthenticationManagerResolver defaultResolver = RegistryAuthenticationManagerResolver.builder()
+                .issuerUri(issuerUri)
+                .build();
+        assertEquals(10, defaultResolver.getFederatedCacheExpireAfterWrite());
+        assertEquals(10, defaultResolver.getProviderManagerCacheExpireAfterWrite());
+    }
+
+    @Test
     void acceptedAudiences_combinesClientIdAndExtraAudiences() {
         assertEquals(List.of("terrakube-app", "cli", "ui"), DexWebSecurityAdapter.acceptedAudiences("terrakube-app", " cli, ui ,,terrakube-app"));
         assertEquals(List.of("terrakube-app"), DexWebSecurityAdapter.acceptedAudiences("terrakube-app", ""));

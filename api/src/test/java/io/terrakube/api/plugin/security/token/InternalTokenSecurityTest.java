@@ -1,5 +1,6 @@
 package io.terrakube.api.plugin.security.token;
 
+import com.yahoo.elide.annotation.ReadPermission;
 import com.yahoo.elide.core.security.RequestScope;
 import com.yahoo.elide.core.security.User;
 import io.terrakube.api.rs.checks.ssh.ReadPrivateKey;
@@ -7,9 +8,13 @@ import io.terrakube.api.rs.checks.user.IsExecutorService;
 import io.terrakube.api.rs.checks.user.IsRegistryService;
 import io.terrakube.api.rs.checks.vcs.ReadAccessToken;
 import io.terrakube.api.rs.checks.vcs.ReadGitHubAppInstallationToken;
+import io.terrakube.api.rs.job.Job;
+import io.terrakube.api.rs.job.step.Step;
 import io.terrakube.api.rs.ssh.Ssh;
 import io.terrakube.api.rs.vcs.GitHubAppToken;
 import io.terrakube.api.rs.vcs.Vcs;
+import io.terrakube.api.rs.workspace.Workspace;
+import io.terrakube.api.rs.workspace.access.Access;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -221,5 +226,28 @@ class InternalTokenSecurityTest {
         ));
         when(requestScope.getUser()).thenReturn(executorUser);
         assertFalse(check.ok(token, requestScope, Optional.empty()));
+    }
+
+    @Test
+    void testRegistryServiceReadPermissions_OnStepJobWorkspaceAndAccess() {
+        for (Class<?> entityClass : new Class<?>[]{Step.class, Job.class, Workspace.class, Access.class}) {
+            ReadPermission readPermission = entityClass.getAnnotation(ReadPermission.class);
+            assertNotNull(readPermission, entityClass.getSimpleName() + " must declare @ReadPermission");
+            assertTrue(
+                    readPermission.expression().contains(IsRegistryService.RULE),
+                    entityClass.getSimpleName() + " @ReadPermission must allow '" + IsRegistryService.RULE + "'"
+            );
+        }
+
+        IsRegistryService check = new IsRegistryService();
+        User runnerWithFullScope = createUserWithClaims(Map.of(
+                "iss", "TerrakubeInternal",
+                "sub", "TerrakubeInternal (EXECUTOR)",
+                "organizationId", UUID.randomUUID().toString(),
+                "workspaceId", UUID.randomUUID().toString(),
+                "jobId", "42",
+                "stepId", UUID.randomUUID().toString()
+        ));
+        assertFalse(check.ok(runnerWithFullScope));
     }
 }
