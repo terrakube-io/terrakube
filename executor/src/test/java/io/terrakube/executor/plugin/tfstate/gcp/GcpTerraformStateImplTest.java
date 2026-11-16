@@ -1,5 +1,6 @@
 package io.terrakube.executor.plugin.tfstate.gcp;
 
+import com.google.cloud.storage.Blob;
 import com.google.cloud.storage.BlobId;
 import com.google.cloud.storage.BlobInfo;
 import com.google.cloud.storage.Storage;
@@ -158,10 +159,14 @@ class GcpTerraformStateImplTest {
         String planUrl = "https://storage.cloud.google.com/test-bucket/tfstate/org1/ws1/job1/step1/terraformLibrary.tfPlan";
         when(terrakubeClient.getJobById(organizationId, jobId).getData().getAttributes().getTerraformPlan())
                 .thenReturn(planUrl);
+
+        BlobId expectedBlobId = BlobId.of("test-bucket", "tfstate/org1/ws1/job1/step1/terraformLibrary.tfPlan");
+        Blob blob = mock(Blob.class);
+        when(storage.get(expectedBlobId)).thenReturn(blob);
         doAnswer(invocation -> {
-            FileUtils.writeStringToFile(invocation.<Path>getArgument(1).toFile(), "source-content", Charset.defaultCharset());
+            FileUtils.writeStringToFile(invocation.<Path>getArgument(0).toFile(), "source-content", Charset.defaultCharset());
             return null;
-        }).when(storage).downloadTo(any(BlobId.class), any(Path.class));
+        }).when(blob).downloadTo(any(Path.class));
 
         boolean result = gcpTerraformState.downloadTerraformPlan(organizationId, workspaceId, jobId, stepId, workingDirectory);
 
@@ -169,17 +174,14 @@ class GcpTerraformStateImplTest {
         File downloadedPlan = new File(workingDirectory, "terraformLibrary.tfPlan");
         assertEquals("source-content", FileUtils.readFileToString(downloadedPlan, Charset.defaultCharset()));
 
-        // The plan is read through the client, so no signing key is needed (Application Default Credentials).
-        ArgumentCaptor<BlobId> blobIdCaptor = ArgumentCaptor.forClass(BlobId.class);
-        verify(storage).downloadTo(blobIdCaptor.capture(), eq(downloadedPlan.toPath()));
-        assertEquals("test-bucket", blobIdCaptor.getValue().getBucket());
-        assertEquals("tfstate/org1/ws1/job1/step1/terraformLibrary.tfPlan", blobIdCaptor.getValue().getName());
+        verify(storage).get(expectedBlobId);
+        verify(blob).downloadTo(downloadedPlan.toPath());
     }
 
     // #3671 follow-up: a genuine download failure must retry then throw instead of silently
     // leaving planGcExist false with no clear signal why.
     @Test
-    void testDownloadTerraformPlan_ThrowsAfterRetryingAGenuineFailure(@TempDir Path tempDir) throws IOException {
+    void testDownloadTerraformPlan_ThrowsAfterRetryingAGenuineFailure(@TempDir Path tempDir) {
         String organizationId = "org1";
         String workspaceId = "ws1";
         String jobId = "job1";
@@ -189,13 +191,40 @@ class GcpTerraformStateImplTest {
         String planUrl = "https://storage.cloud.google.com/test-bucket/tfstate/org1/ws1/job1/step1/terraformLibrary.tfPlan";
         when(terrakubeClient.getJobById(organizationId, jobId).getData().getAttributes().getTerraformPlan())
                 .thenReturn(planUrl);
+
+        Blob blob = mock(Blob.class);
+        when(storage.get(any(BlobId.class))).thenReturn(blob);
         doThrow(new com.google.cloud.storage.StorageException(503, "Service unavailable"))
-                .when(storage).downloadTo(any(BlobId.class), any(Path.class));
+                .when(blob).downloadTo(any(Path.class));
 
         assertThrows(io.terrakube.executor.plugin.tfstate.TerraformStateUnavailableException.class,
                 () -> gcpTerraformState.downloadTerraformPlan(organizationId, workspaceId, jobId, stepId, workingDirectory));
 
-        verify(storage, times(3)).downloadTo(any(BlobId.class), any(Path.class));
+        verify(storage, times(3)).get(any(BlobId.class));
+        verify(blob, times(3)).downloadTo(any(Path.class));
+    }
+
+    @Test
+    void testDownloadTerraformPlan_ThrowsAfterRetryingWhenBlobMissing(@TempDir Path tempDir) {
+        String organizationId = "org1";
+        String workspaceId = "ws1";
+        String jobId = "job1";
+        String stepId = "step1";
+        File workingDirectory = tempDir.toFile();
+
+        String planUrl = "https://storage.cloud.google.com/test-bucket/tfstate/org1/ws1/job1/step1/terraformLibrary.tfPlan";
+        when(terrakubeClient.getJobById(organizationId, jobId).getData().getAttributes().getTerraformPlan())
+                .thenReturn(planUrl);
+
+        when(storage.get(any(BlobId.class))).thenReturn(null);
+
+        io.terrakube.executor.plugin.tfstate.TerraformStateUnavailableException thrown = assertThrows(
+                io.terrakube.executor.plugin.tfstate.TerraformStateUnavailableException.class,
+                () -> gcpTerraformState.downloadTerraformPlan(organizationId, workspaceId, jobId, stepId, workingDirectory));
+
+        assertInstanceOf(IllegalStateException.class, thrown.getCause());
+        assertTrue(thrown.getCause().getMessage().contains("Terraform plan not found"));
+        verify(storage, times(3)).get(any(BlobId.class));
     }
 
     @Test

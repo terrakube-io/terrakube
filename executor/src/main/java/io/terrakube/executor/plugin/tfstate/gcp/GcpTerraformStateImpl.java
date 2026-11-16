@@ -3,6 +3,7 @@ package io.terrakube.executor.plugin.tfstate.gcp;
 import io.terrakube.executor.plugin.tfstate.OutputPartNames;
 import io.terrakube.executor.service.logs.StepOutputPartWriter;
 import io.terrakube.executor.service.logs.StepOutputBuffer;
+import com.google.cloud.storage.Blob;
 import com.google.cloud.storage.BlobId;
 import com.google.cloud.storage.BlobInfo;
 import com.google.cloud.storage.Storage;
@@ -163,12 +164,14 @@ public class GcpTerraformStateImpl implements TerraformState {
                     storageRetryMetrics.withRetry("gcp", "plan-read", () -> {
                         String buketNamePath = String.format("/%s/", bucketName);
                         String blobPath = new URL(stateUrl).getPath().replace(buketNamePath, "");
-                        log.info("Downloading plan from bucket {} object {}", bucketName, blobPath);
+                        BlobId blobId = BlobId.of(bucketName, blobPath);
+                        log.info("Downloading Terraform plan blob from gs://{}/{}", bucketName, blobPath);
                         File targetFile = new File(FilenameUtils.concat(workingDirectory.getAbsolutePath(), TERRAFORM_PLAN_FILE));
-
-                        // Read through the client rather than a signed URL: signing needs a key (or
-                        // the IAM signBlob permission), which Application Default Credentials may not have.
-                        storage.downloadTo(BlobId.of(bucketName, blobPath), targetFile.toPath());
+                        Blob blob = storage.get(blobId);
+                        if (blob == null) {
+                            throw new IllegalStateException("Terraform plan not found at gs://" + bucketName + "/" + blobPath);
+                        }
+                        blob.downloadTo(targetFile.toPath());
                         return null;
                     });
                     planGcExist.set(true);
