@@ -1,5 +1,6 @@
 package io.terrakube.api.plugin.token.pat;
 
+import io.terrakube.api.plugin.token.TokenIssuancePolicy;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
@@ -10,6 +11,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 import io.terrakube.api.rs.token.pat.Pat;
 
 import java.security.Principal;
@@ -23,11 +25,18 @@ public class PatController {
     @Autowired
     PatService patService;
 
+    @Autowired
+    TokenIssuancePolicy tokenIssuancePolicy;
+
     @PostMapping
     public ResponseEntity<PatResponse> createToken(@RequestBody PatTokenRequest patTokenRequest, Principal principal) {
+        if (!(principal instanceof JwtAuthenticationToken principalJwt)) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Authentication required");
+        }
         PatResponse patResponse = new PatResponse();
-        JwtAuthenticationToken principalJwt = ((JwtAuthenticationToken) principal);
         log.info("{}", principalJwt);
+        tokenIssuancePolicy.requireAllowedIssuer(principalJwt, patTokenRequest.getDays(), 0, 0);
+        tokenIssuancePolicy.requireLifetimeWithinLimit(patTokenRequest.getDays(), 0, 0);
         patResponse.setToken(patService.createToken(
                 patTokenRequest.getDays(),
                 patTokenRequest.getDescription(),

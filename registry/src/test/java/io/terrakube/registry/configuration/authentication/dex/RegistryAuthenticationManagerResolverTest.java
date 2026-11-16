@@ -211,6 +211,65 @@ class RegistryAuthenticationManagerResolverTest {
     }
 
     @Test
+    void resolve_federatedToken_actsAsItsCredentialNotAsItsGroupsClaim() throws Exception {
+        String issuer = "https://token.actions.githubusercontent.com";
+        String audience = "terrakube";
+        when(request.getHeader("authorization")).thenReturn(createMockJwtToken(Map.of(
+                "iss", issuer, "aud", audience, "repository", "acme/infra", "groups", List.of("TERRAKUBE_ADMIN"))));
+
+        Federated federated = federated("fed-1", issuer, audience);
+        federated.getAttributes().setName("ci-trigger");
+        when(terrakubeClient.getFederatedByIssuerUrlAndAudienceWithClaims(issuer, audience))
+                .thenReturn(federatedResponse(List.of(federated),
+                        Map.of(federated, List.of(claim("claim-1", "repository", "acme/infra")))));
+        when(jwtDecoder.decode("federated-token")).thenReturn(org.springframework.security.oauth2.jwt.Jwt.withTokenValue("federated-token")
+                .header("alg", "RS256")
+                .claim("iss", issuer)
+                .claim("aud", List.of(audience))
+                .claim("repository", "acme/infra")
+                .claim("groups", List.of("TERRAKUBE_ADMIN"))
+                .build());
+
+        org.springframework.security.core.Authentication authentication = resolver.resolve(request).authenticate(
+                new org.springframework.security.oauth2.server.resource.authentication.BearerTokenAuthenticationToken("federated-token"));
+
+        assertEquals(List.of("ci-trigger"),
+                ((org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken) authentication)
+                        .getTokenAttributes().get("groups"));
+    }
+
+    @Test
+    void resolve_federatedToken_dropsEmailAndEmailVerifiedClaims() throws Exception {
+        String issuer = "https://token.actions.githubusercontent.com";
+        String audience = "terrakube";
+        when(request.getHeader("authorization")).thenReturn(createMockJwtToken(Map.of(
+                "iss", issuer, "aud", audience, "repository", "acme/infra",
+                "email", "owner@example.com", "email_verified", true)));
+
+        Federated federated = federated("fed-1", issuer, audience);
+        federated.getAttributes().setName("ci-trigger");
+        when(terrakubeClient.getFederatedByIssuerUrlAndAudienceWithClaims(issuer, audience))
+                .thenReturn(federatedResponse(List.of(federated),
+                        Map.of(federated, List.of(claim("claim-1", "repository", "acme/infra")))));
+        when(jwtDecoder.decode("federated-token")).thenReturn(org.springframework.security.oauth2.jwt.Jwt.withTokenValue("federated-token")
+                .header("alg", "RS256")
+                .claim("iss", issuer)
+                .claim("aud", List.of(audience))
+                .claim("repository", "acme/infra")
+                .claim("email", "owner@example.com")
+                .claim("email_verified", true)
+                .build());
+
+        org.springframework.security.core.Authentication authentication = resolver.resolve(request).authenticate(
+                new org.springframework.security.oauth2.server.resource.authentication.BearerTokenAuthenticationToken("federated-token"));
+
+        var jwtAuth = (org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken) authentication;
+        assertNull(jwtAuth.getTokenAttributes().get("email"));
+        assertNull(jwtAuth.getTokenAttributes().get("email_verified"));
+        assertEquals(List.of("ci-trigger"), jwtAuth.getTokenAttributes().get("groups"));
+    }
+
+    @Test
     void resolve_federatedToken_withoutClaimConditions_isDenied() throws Exception {
         String issuer = "https://token.actions.githubusercontent.com";
         String audience = "terrakube";
@@ -401,6 +460,55 @@ class RegistryAuthenticationManagerResolverTest {
         var authResult = manager.authenticate(new org.springframework.security.oauth2.server.resource.authentication.BearerTokenAuthenticationToken(token));
         assertNotNull(authResult);
         assertTrue(authResult.isAuthenticated());
+    }
+
+    private AuthenticationManager dexManagerWithAudiences(List<String> accepted, List<String> tokenAudiences) throws Exception {
+        org.springframework.security.oauth2.jwt.Jwt jwt = org.springframework.security.oauth2.jwt.Jwt.withTokenValue("dex-token")
+                .header("alg", "RS256")
+                .issuer(issuerUri)
+                .subject("alice")
+                .audience(tokenAudiences)
+                .issuedAt(java.time.Instant.now())
+                .expiresAt(java.time.Instant.now().plusSeconds(60))
+                .build();
+        when(jwtDecoder.decode("dex-token")).thenReturn(jwt);
+        when(request.getHeader("authorization")).thenReturn(createMockJwtToken(Map.of("iss", issuerUri, "aud", "terrakube")));
+        return RegistryAuthenticationManagerResolver.builder()
+                .issuerUri(issuerUri)
+                .dexAudiences(accepted)
+                .terrakubeClient(terrakubeClient)
+                .jwtDecoderFactory(url -> jwtDecoder)
+                .build()
+                .resolve(request);
+    }
+
+    @Test
+    void resolve_dexToken_withAcceptedAudience_authenticates() throws Exception {
+        AuthenticationManager manager = dexManagerWithAudiences(List.of("terrakube-app"), List.of("other", "terrakube-app"));
+
+        assertTrue(manager.authenticate(new org.springframework.security.oauth2.server.resource.authentication.BearerTokenAuthenticationToken("dex-token")).isAuthenticated());
+    }
+
+    @Test
+    void resolve_dexToken_forAnotherClient_isRejectedWhenAudienceValidationIsOn() throws Exception {
+        AuthenticationManager manager = dexManagerWithAudiences(List.of("terrakube-app"), List.of("other-client"));
+
+        assertThrows(org.springframework.security.core.AuthenticationException.class, () ->
+                manager.authenticate(new org.springframework.security.oauth2.server.resource.authentication.BearerTokenAuthenticationToken("dex-token")));
+    }
+
+    @Test
+    void resolve_dexToken_forAnotherClient_isAcceptedWhenAudienceValidationIsOff() throws Exception {
+        AuthenticationManager manager = dexManagerWithAudiences(List.of(), List.of("other-client"));
+
+        assertTrue(manager.authenticate(new org.springframework.security.oauth2.server.resource.authentication.BearerTokenAuthenticationToken("dex-token")).isAuthenticated());
+    }
+
+    @Test
+    void acceptedAudiences_combinesClientIdAndExtraAudiences() {
+        assertEquals(List.of("terrakube-app", "cli", "ui"), DexWebSecurityAdapter.acceptedAudiences("terrakube-app", " cli, ui ,,terrakube-app"));
+        assertEquals(List.of("terrakube-app"), DexWebSecurityAdapter.acceptedAudiences("terrakube-app", ""));
+        assertEquals(List.of("terrakube-app"), DexWebSecurityAdapter.acceptedAudiences("terrakube-app", null));
     }
 
     private String createMockJwtToken(Map<String, Object> payloadMap) throws Exception {

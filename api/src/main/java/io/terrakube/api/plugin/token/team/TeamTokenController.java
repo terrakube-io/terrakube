@@ -1,6 +1,7 @@
 package io.terrakube.api.plugin.token.team;
 
 import io.terrakube.api.plugin.security.rbac.RbacService;
+import io.terrakube.api.plugin.token.TokenIssuancePolicy;
 import io.terrakube.api.repository.AccessRepository;
 import io.terrakube.api.repository.TeamRepository;
 import io.terrakube.api.repository.WorkspaceRepository;
@@ -16,6 +17,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.security.Principal;
 import java.util.ArrayList;
@@ -32,25 +34,36 @@ public class TeamTokenController {
     private final TeamTokenService teamTokenService;
     private final TeamRepository teamRepository;
     private final String instanceOwner;
+    private final TokenIssuancePolicy tokenIssuancePolicy;
 
-    public TeamTokenController(WorkspaceRepository workspaceRepository, RbacService rbacService, TeamTokenService teamTokenService, TeamRepository teamRepository, @Value("${io.terrakube.owner}") String instanceOwner) {
+    public TeamTokenController(WorkspaceRepository workspaceRepository, RbacService rbacService, TeamTokenService teamTokenService, TeamRepository teamRepository, @Value("${io.terrakube.owner}") String instanceOwner, TokenIssuancePolicy tokenIssuancePolicy) {
         this.workspaceRepository = workspaceRepository;
         this.rbacService = rbacService;
         this.teamTokenService = teamTokenService;
         this.teamRepository = teamRepository;
         this.instanceOwner = instanceOwner;
+        this.tokenIssuancePolicy = tokenIssuancePolicy;
     }
 
     @PostMapping
     public ResponseEntity<TeamToken> createToken(@RequestBody GroupTokenRequest groupTokenRequest,
             Principal principal) {
-        TeamToken teamToken = new TeamToken();
-        teamToken.setToken(teamTokenService.createTeamToken(
+        if (!(principal instanceof JwtAuthenticationToken principalJwt)) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Authentication required");
+        }
+        tokenIssuancePolicy.requireAllowedIssuer(principalJwt, groupTokenRequest.getDays(), groupTokenRequest.getHours(), groupTokenRequest.getMinutes());
+        tokenIssuancePolicy.requireLifetimeWithinLimit(groupTokenRequest.getDays(), groupTokenRequest.getHours(), groupTokenRequest.getMinutes());
+        String token = teamTokenService.createTeamToken(
                 groupTokenRequest.getGroup(),
                 groupTokenRequest.getDays(),
                 groupTokenRequest.getHours(),
                 groupTokenRequest.getMinutes(),
-                groupTokenRequest.getDescription(), ((JwtAuthenticationToken) principal)));
+                groupTokenRequest.getDescription(), principalJwt);
+        if (token == null || token.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "User is not authorized to create a token for group " + groupTokenRequest.getGroup());
+        }
+        TeamToken teamToken = new TeamToken();
+        teamToken.setToken(token);
         return new ResponseEntity<>(teamToken, HttpStatus.CREATED);
     }
 
@@ -149,8 +162,11 @@ public class TeamTokenController {
 
     @Transactional
     @DeleteMapping(path = "/{groupTokenId}")
-    public ResponseEntity<String> deleteToken(@PathVariable("groupTokenId") String groupTokenId) {
-        if (teamTokenService.deleteToken(groupTokenId))
+    public ResponseEntity<String> deleteToken(@PathVariable("groupTokenId") String groupTokenId, Principal principal) {
+        if (!(principal instanceof JwtAuthenticationToken principalJwt)) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Authentication required");
+        }
+        if (teamTokenService.deleteToken(groupTokenId, principalJwt))
             return ResponseEntity.accepted().build();
         else
             return ResponseEntity.badRequest().build();
@@ -176,7 +192,7 @@ public class TeamTokenController {
 
     @Getter
     @Setter
-    private static class GroupTokenRequest {
+    public static class GroupTokenRequest {
         private String group;
         private String description;
         private int days = 0;

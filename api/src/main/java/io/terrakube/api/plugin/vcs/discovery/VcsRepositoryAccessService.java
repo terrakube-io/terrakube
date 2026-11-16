@@ -8,6 +8,9 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.yahoo.elide.core.security.User;
+
+import io.terrakube.api.plugin.security.groups.GroupService;
 import io.terrakube.api.plugin.security.rbac.RbacService;
 import io.terrakube.api.plugin.security.token.InternalTokenClassifier;
 import io.terrakube.api.plugin.security.token.InternalTokenType;
@@ -25,11 +28,14 @@ public class VcsRepositoryAccessService {
 
     private final RbacService rbacService;
 
+    private final GroupService groupService;
+
     public VcsRepositoryAccessService(TeamRepository teamRepository, VcsRepository vcsRepository,
-            RbacService rbacService) {
+            RbacService rbacService, GroupService groupService) {
         this.teamRepository = teamRepository;
         this.vcsRepository = vcsRepository;
         this.rbacService = rbacService;
+        this.groupService = groupService;
     }
 
     @Transactional
@@ -50,14 +56,14 @@ public class VcsRepositoryAccessService {
             return false;
         }
 
-        Object groupNames = jwt.getTokenAttributes().get("groups");
-        if (groupNames == null) {
+        // Effective groups: a federated token acts as its Federated credentials, not as its groups claim
+        List<String> groupNames = List.copyOf(groupService.getEffectiveGroups(new User(jwt)));
+        if (groupNames.isEmpty()) {
             return false;
         }
 
-        @SuppressWarnings("unchecked")
         List<Team> teams = teamRepository.findAllByOrganizationIdAndNameIn(vcs.getOrganization().getId(),
-                (List<String>) groupNames);
+                groupNames);
         for (Team team : teams) {
             if (rbacService.canManageVcs(team) || rbacService.canManageWorkspace(team)) {
                 return true;

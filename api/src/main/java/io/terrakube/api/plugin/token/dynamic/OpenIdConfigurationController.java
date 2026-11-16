@@ -25,6 +25,9 @@ public class OpenIdConfigurationController {
     @Value("${io.terrakube.dynamic.credentials.hostname}")
     String overrideHostname;
 
+    @Value("${io.terrakube.dynamic.credentials.run-phase.enabled:true}")
+    boolean runPhaseEnabled = true;
+
     OpenIdConfiguration openIdConfiguration;
 
     @GetMapping(produces = "application/json")
@@ -61,6 +64,9 @@ public class OpenIdConfigurationController {
         openIdData.getClaimsSupported().add("terrakube_workspace_name");
         openIdData.getClaimsSupported().add("terrakube_organization_name");
         openIdData.getClaimsSupported().add("terrakube_project_name");
+        if (runPhaseEnabled) {
+            openIdData.getClaimsSupported().add("terrakube_run_phase");
+        }
         openIdData.getClaimsSupported().add("https://aws.amazon.com/tags");
 
         openIdData.setIdTokenSigningAlgValuesSupported(new ArrayList<>());

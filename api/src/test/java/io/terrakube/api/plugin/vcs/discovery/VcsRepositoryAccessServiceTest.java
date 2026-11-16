@@ -1,9 +1,12 @@
 package io.terrakube.api.plugin.vcs.discovery;
 
+import io.terrakube.api.plugin.security.federated.FederatedLookupService;
+import io.terrakube.api.plugin.security.groups.dex.DexGroupServiceImpl;
 import io.terrakube.api.plugin.security.rbac.RbacService;
 import io.terrakube.api.repository.TeamRepository;
 import io.terrakube.api.repository.VcsRepository;
 import io.terrakube.api.rs.Organization;
+import io.terrakube.api.rs.federated.Federated;
 import io.terrakube.api.rs.team.Team;
 import io.terrakube.api.rs.vcs.Vcs;
 import org.junit.jupiter.api.BeforeEach;
@@ -26,6 +29,7 @@ class VcsRepositoryAccessServiceTest {
     TeamRepository teamRepository;
     VcsRepository vcsRepository;
     RbacService rbacService;
+    FederatedLookupService federatedLookupService;
     VcsRepositoryAccessService subject;
 
     final UUID orgId = UUID.randomUUID();
@@ -36,8 +40,10 @@ class VcsRepositoryAccessServiceTest {
         teamRepository = mock(TeamRepository.class);
         vcsRepository = mock(VcsRepository.class);
         rbacService = mock(RbacService.class);
+        federatedLookupService = mock(FederatedLookupService.class);
 
-        subject = new VcsRepositoryAccessService(teamRepository, vcsRepository, rbacService);
+        subject = new VcsRepositoryAccessService(teamRepository, vcsRepository, rbacService,
+                new DexGroupServiceImpl(null, null, null, federatedLookupService));
     }
 
     private JwtAuthenticationToken authWithClaims(Map<String, Object> claims) {
@@ -98,6 +104,25 @@ class VcsRepositoryAccessServiceTest {
     void returnsFalseWhenNoGroupsClaim() {
         when(vcsRepository.findById(vcsId)).thenReturn(Optional.of(vcsWithOrg()));
         JwtAuthenticationToken token = authWithClaims(Map.of("iss", "Terrakube"));
+
+        assertThat(subject.hasViewPermission(token, vcsId.toString())).isFalse();
+    }
+
+    @Test
+    void federatedTokenIgnoresGroupsClaim() {
+        when(vcsRepository.findById(vcsId)).thenReturn(Optional.of(vcsWithOrg()));
+        Team adminTeam = new Team();
+        adminTeam.setRole("admin");
+        when(teamRepository.findAllByOrganizationIdAndNameIn(eq(orgId), eq(List.of("team-a")))).thenReturn(List.of(adminTeam));
+        when(rbacService.canManageVcs(adminTeam)).thenReturn(true);
+        // The external identity provider decides the groups claim; the token acts as its credential only
+        Federated federated = new Federated();
+        federated.setName("ci-team");
+        when(federatedLookupService.findAllAuthorized(any())).thenReturn(List.of(federated));
+
+        JwtAuthenticationToken token = authWithClaims(Map.of(
+                "iss", "https://token.actions.githubusercontent.com",
+                "groups", List.of("team-a")));
 
         assertThat(subject.hasViewPermission(token, vcsId.toString())).isFalse();
     }

@@ -368,6 +368,7 @@ public class OpaExecutorServiceImpl implements OpaExecutorService {
             handedOver = true;
             result.setSuccessfulExecution(!hasHardViolations);
             result.setExitCode(hasHardViolations ? 1 : 0);
+            result.setOutputErrorLog("");
             result.setPlan(false);
 
             return result;

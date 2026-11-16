@@ -50,3 +50,33 @@ provider "azurerm" {
   location = "East US 2"
 }
 ```
+
+## Separating Plan and Apply Identities (`run_phase`)
+
+Azure federated identity credentials require an exact `subject` match. You can assign a read-only Entra ID application / managed identity to plan steps while reserving write access for apply and destroy steps:
+
+1. Ensure the instance-level kill switch `DynamicCredentialRunPhaseEnabled` (`io.terrakube.dynamic.credentials.run-phase.enabled`) is `true` (its default).
+2. On the workspace, set:
+   - `ENABLE_DYNAMIC_CREDENTIALS_RUN_PHASE=true` — when set strictly to `"true"` (case-insensitive; other values such as `no` or `off` leave it disabled), appends `:run_phase:<phase>` (`:run_phase:plan` or `:run_phase:apply`) to the JWT `sub` claim.
+   - `ARM_CLIENT_ID_PLAN` — the read-only client ID used for `plan` steps (falls back to `ARM_CLIENT_ID` when unset).
+3. Create separate federated identity credentials for each phase on the corresponding Entra applications:
+
+```terraform
+resource "azuread_application_federated_identity_credential" "plan" {
+  application_id = azuread_application_registration.plan_app.id
+  display_name   = "terrakube-plan"
+  audiences      = [var.terrakube_federated_credentials_audience]
+  issuer         = "https://${var.terrakube_api_hostname}"
+  subject        = "organization:${var.terrakube_organization_name}:workspace:${var.terrakube_workspace_name}:run_phase:plan"
+}
+
+resource "azuread_application_federated_identity_credential" "apply" {
+  application_id = azuread_application_registration.apply_app.id
+  display_name   = "terrakube-apply"
+  audiences      = [var.terrakube_federated_credentials_audience]
+  issuer         = "https://${var.terrakube_api_hostname}"
+  subject        = "organization:${var.terrakube_organization_name}:workspace:${var.terrakube_workspace_name}:run_phase:apply"
+}
+```
+
+Terrakube also injects `TERRAKUBE_RUN_PHASE` and `TF_VAR_terrakube_run_phase` (`"plan"` or `"apply"`) into every step of a workspace with dynamic credentials enabled. `terraformApply`, `terraformDestroy`, and `customScripts` steps that follow an apply or destroy step in the same flow receive `"apply"`; `terraformPlan`, `terraformPlanDestroy`, `policyEvaluation`, and pre-apply or standalone `customScripts` steps receive `"plan"`.

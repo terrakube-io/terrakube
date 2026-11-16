@@ -1,5 +1,7 @@
 package io.terrakube.api.plugin.migrate;
 
+import com.yahoo.elide.core.security.User;
+import io.terrakube.api.plugin.security.groups.GroupService;
 import io.terrakube.api.plugin.security.rbac.RbacService;
 import io.terrakube.api.repository.OrganizationRepository;
 import io.terrakube.api.repository.TeamRepository;
@@ -25,6 +27,7 @@ public class MigrateAccessService {
     private final OrganizationRepository organizationRepository;
     private final TeamRepository teamRepository;
     private final RbacService rbacService;
+    private final GroupService groupService;
     private final String instanceOwner;
 
     public MigrateAccessService(
@@ -32,11 +35,13 @@ public class MigrateAccessService {
             OrganizationRepository organizationRepository,
             TeamRepository teamRepository,
             RbacService rbacService,
+            GroupService groupService,
             @Value("${io.terrakube.owner:}") String instanceOwner) {
         this.workspaceRepository = workspaceRepository;
         this.organizationRepository = organizationRepository;
         this.teamRepository = teamRepository;
         this.rbacService = rbacService;
+        this.groupService = groupService;
         this.instanceOwner = instanceOwner;
     }
 
@@ -46,7 +51,8 @@ public class MigrateAccessService {
             return false;
         }
 
-        List<String> groups = extractGroups(jwt);
+        // Effective groups: a federated token acts as its Federated credentials, not as its groups claim
+        List<String> groups = List.copyOf(groupService.getEffectiveGroups(new User(jwt)));
 
         // 1. Platform Superuser / Instance Admin can migrate any workspace
         if (instanceOwner != null && !instanceOwner.isBlank() && groups.contains(instanceOwner)) {
@@ -124,25 +130,5 @@ public class MigrateAccessService {
             }
         }
         return false;
-    }
-
-    private List<String> extractGroups(JwtAuthenticationToken jwt) {
-        Map<String, Object> tokenAttributes = jwt.getTokenAttributes();
-        List<String> groups = new ArrayList<>();
-        Object tokenGroups = tokenAttributes.get("groups");
-
-        if (tokenGroups instanceof Object[] values) {
-            tokenGroups = Arrays.asList(values);
-        }
-        if (tokenGroups instanceof String group && !group.isBlank()) {
-            groups.add(group);
-        } else if (tokenGroups instanceof Collection<?> values) {
-            values.stream()
-                    .filter(Objects::nonNull)
-                    .map(Object::toString)
-                    .filter(g -> !g.isBlank())
-                    .forEach(groups::add);
-        }
-        return groups;
     }
 }

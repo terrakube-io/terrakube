@@ -22,6 +22,8 @@ import io.terrakube.registry.configuration.OpenRegistryProperties;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
+import java.util.stream.Stream;
 
 @Slf4j
 @Configuration
@@ -44,7 +46,7 @@ public class DexWebSecurityAdapter {
 
     @Bean
     @Order(1)
-    public SecurityFilterChain filterChain(HttpSecurity http, @Value("${io.terrakube.token.issuer-uri}") String issuerUri, @Value("${io.terrakube.token.pat}") String patJwtSecret, @Value("${io.terrakube.token.internal}") String internalJwtSecret, TerrakubeClient terrakubeClient, OpenRegistryProperties openRegistryProperties) throws Exception {
+    public SecurityFilterChain filterChain(HttpSecurity http, @Value("${io.terrakube.token.issuer-uri}") String issuerUri, @Value("${io.terrakube.token.audience-validation:false}") boolean audienceValidation, @Value("${io.terrakube.token.extra-audiences:}") String extraAudiences, @Value("${io.terrakube.token.pat}") String patJwtSecret, @Value("${io.terrakube.token.internal}") String internalJwtSecret, TerrakubeClient terrakubeClient, OpenRegistryProperties openRegistryProperties) throws Exception {
         http.cors(Customizer.withDefaults())
                 .authorizeHttpRequests(authz -> authz
                         .requestMatchers("/.well-known/**").permitAll()
@@ -57,6 +59,7 @@ public class DexWebSecurityAdapter {
                     AuthenticationManagerResolver<HttpServletRequest> authenticationManagerResolver = RegistryAuthenticationManagerResolver
                             .builder()
                             .issuerUri(issuerUri)
+                            .dexAudiences(audienceValidation ? acceptedAudiences(openRegistryProperties.getClientId(), extraAudiences) : List.of())
                             .patSecret(patJwtSecret)
                             .internalSecret(internalJwtSecret)
                             .terrakubeClient(terrakubeClient)
@@ -69,6 +72,16 @@ public class DexWebSecurityAdapter {
                 });
 
         return http.build();
+    }
+
+    static List<String> acceptedAudiences(String clientId, String extraAudiences) {
+        Stream<String> extraStream = extraAudiences == null ? Stream.empty() : Arrays.stream(extraAudiences.split(","));
+        return Stream.concat(Stream.of(clientId), extraStream)
+                .filter(Objects::nonNull)
+                .map(String::trim)
+                .filter(audience -> !audience.isEmpty())
+                .distinct()
+                .toList();
     }
 
     @Bean

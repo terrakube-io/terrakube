@@ -10,10 +10,19 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
+import org.springframework.test.util.ReflectionTestUtils;
+import org.slf4j.LoggerFactory;
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
+
+import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
@@ -25,6 +34,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Captor;
 import org.mockito.junit.jupiter.MockitoExtension;
+
+import io.terrakube.api.plugin.security.encryption.EncryptionService;
 
 import io.fabric8.kubernetes.api.model.Container;
 import io.fabric8.kubernetes.api.model.EnvVar;
@@ -53,6 +64,7 @@ import io.terrakube.api.rs.job.JobStatus;
 public class EphemeralExecutorServiceTest {
     KubernetesClient client;
     EphemeralConfiguration config = new EphemeralConfiguration();
+    EncryptionService encryptionService = new EncryptionService();
 
     BatchAPIGroupDSL batch = mock(BatchAPIGroupDSL.class);
     V1BatchAPIGroupDSL v1 = mock(V1BatchAPIGroupDSL.class);
@@ -65,13 +77,14 @@ public class EphemeralExecutorServiceTest {
 
     @BeforeEach
     void setup() {
+        ReflectionTestUtils.setField(encryptionService, "internalToken", "test-internal-secret-token-123456");
         client = mock(KubernetesClient.class, new FailUnkownMethod<KubernetesClient>());
-        doReturn(batch).when(client).batch();
-        doReturn(v1).when(batch).v1();
-        doReturn(jobs).when(v1).jobs();
-        doReturn(namespaced).when(jobs).inNamespace(anyString());
-        doReturn(resource).when(namespaced).resource(any());
-        doReturn(null).when(resource).serverSideApply();
+        lenient().doReturn(batch).when(client).batch();
+        lenient().doReturn(v1).when(batch).v1();
+        lenient().doReturn(jobs).when(v1).jobs();
+        lenient().doReturn(namespaced).when(jobs).inNamespace(anyString());
+        lenient().doReturn(resource).when(namespaced).resource(any());
+        lenient().doReturn(null).when(resource).serverSideApply();
 
         Map<String, String> selector = new HashMap<>();
         selector.put("some", "node");
@@ -82,7 +95,7 @@ public class EphemeralExecutorServiceTest {
     }
 
     private EphemeralExecutorService subject() {
-        return new EphemeralExecutorService(client, config);
+        return new EphemeralExecutorService(client, config, encryptionService);
     }
 
     private Job job() {
@@ -255,8 +268,19 @@ public class EphemeralExecutorServiceTest {
         verify(namespaced, times(1)).resource(job.capture());
         Container container = job.getValue().getSpec().getTemplate().getSpec().getContainers().getFirst();
         Map<String, String> envVars = envVarsToMap(container.getEnv());
-        String jobData = new String(Base64.getDecoder().decode(envVars.get("EphemeralJobData")));
-        assertTrue(jobData.contains("ze-branch"));
+        String encryptedJobData = new String(Base64.getDecoder().decode(envVars.get("EphemeralJobData")), StandardCharsets.UTF_8);
+        assertFalse(encryptedJobData.contains("ze-branch"), "Raw Base64-decoded EphemeralJobData must not contain plaintext");
+        String decryptedJobData = encryptionService.decrypt(encryptedJobData);
+        assertTrue(decryptedJobData.contains("ze-branch"), "Decrypted EphemeralJobData must contain original context");
+    }
+
+    @Test
+    public void failsClosedWhenEncryptionFails() {
+        EncryptionService failingEncryptionService = mock(EncryptionService.class);
+        doThrow(new RuntimeException("Encryption error")).when(failingEncryptionService).encrypt(anyString());
+        EphemeralExecutorService service = new EphemeralExecutorService(client, config, failingEncryptionService);
+
+        assertThrows(ExecutionException.class, () -> service.send(job(), context()));
     }
 
     @Test
@@ -621,5 +645,25 @@ public class EphemeralExecutorServiceTest {
 
         assertTrue(container.getEnvFrom().isEmpty());
         assertTrue(podSpec.getInitContainers() == null || podSpec.getInitContainers().isEmpty());
+    }
+
+    @Test
+    public void logsWarningWhenEmptyDirSecretIsDisabled() throws ExecutionException {
+        config.setEmptyDirSecret(false);
+
+        Logger logger = (Logger) LoggerFactory.getLogger(EphemeralExecutorService.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+
+        try {
+            subject().send(job(), context());
+        } finally {
+            logger.detachAppender(appender);
+        }
+
+        assertTrue(appender.list.stream().anyMatch(e ->
+                e.getLevel() == Level.WARN && e.getFormattedMessage().contains("emptyDirSecret is disabled")),
+                "Must log a warning when emptyDirSecret is false");
     }
 }

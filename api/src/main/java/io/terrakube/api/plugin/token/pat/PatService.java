@@ -1,5 +1,6 @@
 package io.terrakube.api.plugin.token.pat;
 
+import com.yahoo.elide.core.security.User;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
@@ -8,6 +9,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.stereotype.Service;
+import io.terrakube.api.plugin.security.groups.GroupService;
+import io.terrakube.api.plugin.security.user.AuthenticatedUser;
 import io.terrakube.api.repository.PatRepository;
 import io.terrakube.api.rs.token.pat.Pat;
 import org.springframework.http.HttpStatus;
@@ -34,6 +37,12 @@ public class PatService {
 
     @Autowired
     private PatRepository patRepository;
+
+    @Autowired
+    private GroupService groupService;
+
+    @Autowired
+    private AuthenticatedUser authenticatedUser;
 
     public String createToken(int days, String description, Object name, Object email, Object groups) {
         return createToken(days, description, name, email, groups, "API");
@@ -131,7 +140,8 @@ public class PatService {
 
         Pat pat = searchPat.get();
         String callerEmail = extractEmail(authentication);
-        boolean isOwner = callerEmail != null && callerEmail.equalsIgnoreCase(pat.getCreatedBy());
+        boolean isOwner = callerEmail != null && callerEmail.equalsIgnoreCase(pat.getCreatedBy())
+                && !isFederated(authentication);
         boolean isSuperUser = isInstanceOwner(authentication);
 
         if (!isOwner && !isSuperUser) {
@@ -164,19 +174,25 @@ public class PatService {
         }
         if (authentication instanceof JwtAuthenticationToken jwt) {
             Object email = jwt.getTokenAttributes().get("email");
-            if (instanceOwner.equals(email)) {
+            if (instanceOwner.equals(email) && !isFederated(jwt)) {
                 return true;
             }
-            Object groups = jwt.getTokenAttributes().get("groups");
-            if (groups instanceof Collection<?> groupList) {
-                return groupList.contains(instanceOwner);
-            }
+            // Effective groups: a federated token acts as its Federated credentials, not as its groups claim
+            return groupService.getEffectiveGroups(new User(jwt)).contains(instanceOwner);
         }
         return false;
     }
 
+    // The email of a federated token is decided by the other provider, so it never identifies a Terrakube user.
+    private boolean isFederated(Authentication authentication) {
+        return authentication instanceof JwtAuthenticationToken jwt && authenticatedUser.isFederatedAccount(new User(jwt));
+    }
+
     public List<Pat> searchToken(Principal principal) {
         JwtAuthenticationToken principalJwt = ((JwtAuthenticationToken) principal);
+        if (isFederated(principalJwt)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "A federated identity has no personal access tokens");
+        }
         List<Pat> patList = patRepository.findByCreatedBy((String) principalJwt.getTokenAttributes().get("email"));
         List<Pat> activeList = new ArrayList();
         patList.forEach(pat -> {

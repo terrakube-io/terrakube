@@ -344,9 +344,9 @@ public class AzureTerraformStateImpl implements TerraformState {
     }
 
     @Override
-    public boolean saveTerraformBinary(String version, boolean tofu, File binaryFile) {
+    public boolean saveTerraformBinary(String version, boolean tofu, String os, String arch, File binaryFile) {
         String product = tofu ? "tofu" : "terraform";
-        String blobName = product + "/" + version + "/" + product;
+        String blobName = product + "/" + version + "/" + os + "_" + arch + "/" + product;
         log.info("Saving {} binary to Azure Blob: {}", product, blobName);
         try {
             BlobContainerClient blobContainerClient = blobServiceClient.getBlobContainerClient(CONTAINER_BINARY_NAME);
@@ -355,18 +355,18 @@ public class AzureTerraformStateImpl implements TerraformState {
             }
             BlobClient blobClient = blobContainerClient.getBlobClient(blobName);
             blobClient.uploadFromFile(binaryFile.getAbsolutePath(), true);
-            log.info("Successfully cached {} binary version {} in Azure Blob", product, version);
+            log.info("Successfully cached {} binary version {} ({}_{}) in Azure Blob", product, version, os, arch);
             return true;
         } catch (Exception e) {
-            log.warn("Failed to cache {} binary version {} in Azure Blob: {}", product, version, e.getMessage());
+            log.warn("Failed to cache {} binary version {} ({}_{}) in Azure Blob: {}", product, version, os, arch, e.getMessage());
             return false;
         }
     }
 
     @Override
-    public boolean downloadTerraformBinary(String version, boolean tofu, File targetFile) {
+    public boolean downloadTerraformBinary(String version, boolean tofu, String os, String arch, File targetFile) {
         String product = tofu ? "tofu" : "terraform";
-        String blobName = product + "/" + version + "/" + product;
+        String blobName = product + "/" + version + "/" + os + "_" + arch + "/" + product;
         log.info("Attempting to restore {} binary from Azure Blob: {}", product, blobName);
         try {
             BlobContainerClient blobContainerClient = blobServiceClient.getBlobContainerClient(CONTAINER_BINARY_NAME);
@@ -376,7 +376,7 @@ public class AzureTerraformStateImpl implements TerraformState {
             }
             BlobClient blobClient = blobContainerClient.getBlobClient(blobName);
             if (!blobClient.exists()) {
-                log.info("{} binary version {} not found in Azure Blob cache", product, version);
+                log.info("{} binary version {} ({}_{}) not found in Azure Blob cache", product, version, os, arch);
                 return false;
             }
 
@@ -391,10 +391,10 @@ public class AzureTerraformStateImpl implements TerraformState {
                 log.warn("Failed to set executable permission on restored {} binary", product);
             }
 
-            log.info("Successfully restored {} binary version {} from Azure Blob", product, version);
+            log.info("Successfully restored {} binary version {} ({}_{}) from Azure Blob", product, version, os, arch);
             return true;
         } catch (Exception e) {
-            log.warn("Failed to restore {} binary version {} from Azure Blob: {}", product, version, e.getMessage());
+            log.warn("Failed to restore {} binary version {} ({}_{}) from Azure Blob: {}", product, version, os, arch, e.getMessage());
             return false;
         }
     }

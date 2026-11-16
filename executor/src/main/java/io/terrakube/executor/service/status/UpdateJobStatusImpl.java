@@ -74,6 +74,11 @@ public class UpdateJobStatusImpl implements UpdateJobStatus {
 
     @Override
     public void setCompletedStatus(boolean successful, boolean isPlan, int exitCode, TerraformJob terraformJob, StepOutputBuffer jobOutput, String jobErrorOutput, String jobPlan, String commitId, boolean hasSoftMandatoryViolations, String approvalTeam, String deliveryState, Long deliveryRevision) {
+        // Callers pass e.getMessage() or a result's error log, either of which can be null. A null here used to
+        // throw after the step output was saved, so the job was reported as an "Unexpected error executing job".
+        if (jobErrorOutput == null) {
+            jobErrorOutput = "";
+        }
         if (jobOutput == null) {
             // A step that produced no buffer still has to be completed, otherwise the job stays running.
             try (StepOutputBuffer empty = new StepOutputBuffer()) {

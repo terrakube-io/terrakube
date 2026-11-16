@@ -443,4 +443,28 @@ class AwsStorageTypeServiceImplTest {
         assertEquals("tfoutput/org1/7/step1.parts/000001.part", deleted.getAllValues().get(0).delete().objects().get(0).key());
         assertEquals("tfoutput/org1/7/step1.tfoutput", deleted.getAllValues().get(1).delete().objects().get(0).key());
     }
+
+    @Test
+    void testCurrentTerraformStateLifecycle() {
+        byte[] stateData = "{\"version\":4}".getBytes(StandardCharsets.UTF_8);
+
+        awsStorageTypeService.saveCurrentTerraformState("org1", "ws1", stateData);
+        verify(s3Client).putObject(argThat((PutObjectRequest request) ->
+                request.bucket().equals(bucketName)
+                        && request.key().equals("tfstate/org1/ws1/terraform.tfstate")
+                        && "application/json".equals(request.contentType())
+        ), any(RequestBody.class));
+
+        ResponseBytes<GetObjectResponse> responseBytes = mock(ResponseBytes.class);
+        when(responseBytes.asByteArray()).thenReturn(stateData);
+        when(s3Client.getObject(any(GetObjectRequest.class), any(ResponseTransformer.class))).thenReturn(responseBytes);
+
+        assertArrayEquals(stateData, awsStorageTypeService.getCurrentTerraformState("org1", "ws1"));
+
+        awsStorageTypeService.deleteCurrentTerraformState("org1", "ws1");
+        verify(s3Client).deleteObject(argThat((DeleteObjectRequest request) ->
+                request.bucket().equals(bucketName)
+                        && request.key().equals("tfstate/org1/ws1/terraform.tfstate")
+        ));
+    }
 }

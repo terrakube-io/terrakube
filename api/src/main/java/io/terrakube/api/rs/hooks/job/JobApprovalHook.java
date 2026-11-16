@@ -34,10 +34,16 @@ public class JobApprovalHook implements LifeCycleHook<Job> {
             return;
         }
         if (operation == Operation.CREATE) {
-            // A job that is created as approved would skip the approval, and with it the policy checks.
-            if (JobStatus.approved.equals(job.getStatus())) {
-                throw new PolicyBlocksApprovalException(
-                        "A job cannot be created as approved: it is approved while it waits for approval.");
+            // A job that is created as approved would skip the approval, and with it the policy checks,
+            // and any other non-pending initial status could forge terminal or intermediate lifecycle states.
+            if (!JobStatus.pending.equals(job.getStatus())) {
+                if (JobStatus.approved.equals(job.getStatus())) {
+                    throw new PolicyBlocksApprovalException(
+                            "A job cannot be created as approved: it is approved while it waits for approval.");
+                }
+                throw new PolicyBlocksApprovalException(String.format(
+                        "A job cannot be created with status '%s': new jobs must start as pending.",
+                        job.getStatus()));
             }
             return;
         }

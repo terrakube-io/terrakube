@@ -51,6 +51,22 @@ class DexGroupServiceTests {
     }
 
     @Test
+    void federatedTokenIgnoresTheGroupsClaimOfTheExternalIdentityProvider() {
+        DexGroupServiceImpl groupService = groupServiceWith(federated(GROUP, Map.of("repository", "acme/infra")));
+
+        User user = userWith(Map.of(
+                "iss", ISSUER,
+                "aud", AUDIENCE,
+                "repository", "acme/infra",
+                "groups", List.of("TERRAKUBE_ADMIN", "TERRAKUBE_DEVELOPERS")));
+
+        assertEquals(Set.of(GROUP), groupService.getEffectiveGroups(user));
+        assertTrue(groupService.isMember(user, GROUP));
+        assertFalse(groupService.isMember(user, "TERRAKUBE_ADMIN"));
+        assertFalse(groupService.isServiceMember(user, "TERRAKUBE_DEVELOPERS"));
+    }
+
+    @Test
     void federatedTokenWithDecodedAudienceCollectionIsMember() {
         DexGroupServiceImpl groupService = groupServiceWith(federated(GROUP, Map.of("repository", "acme/infra")));
 

@@ -885,10 +885,12 @@ class NewSecurityChecksTest {
         when(rbacService.canManageJob(teamA)).thenReturn(true);
         when(rbacService.canApproveJob(teamA)).thenReturn(true);
         when(membershipService.checkMembership(user, List.of(teamA))).thenReturn(true);
+        Optional<ChangeSpec> approvalTransition = Optional.of(
+                new ChangeSpec(null, "status", JobStatus.waitingApproval, JobStatus.approved));
 
         assertTrue(planJob.ok(validJob, requestScope, Optional.empty()));
         assertTrue(manageJob.ok(validJob, requestScope, Optional.empty()));
-        assertTrue(approveJob.ok(validJob, requestScope, Optional.empty()));
+        assertTrue(approveJob.ok(validJob, requestScope, approvalTransition));
         assertTrue(viewJob.ok(validJob, requestScope, Optional.empty()));
 
         when(groupService.isMember(user, "access-team")).thenReturn(true);
@@ -899,13 +901,13 @@ class NewSecurityChecksTest {
 
         assertTrue(limitedPlanJob.ok(validJob, requestScope, Optional.empty()));
         assertTrue(limitedManageJob.ok(validJob, requestScope, Optional.empty()));
-        assertTrue(limitedApproveJob.ok(validJob, requestScope, Optional.empty()));
+        assertTrue(limitedApproveJob.ok(validJob, requestScope, approvalTransition));
         assertTrue(limitedViewJob.ok(validJob, requestScope, Optional.empty()));
 
         when(membershipService.checkProjectMembership(eq(user), eq(List.of(projectAccess)), any())).thenReturn(true);
         assertTrue(projectLimitedPlanJob.ok(validJob, requestScope, Optional.empty()));
         assertTrue(projectLimitedManageJob.ok(validJob, requestScope, Optional.empty()));
-        assertTrue(projectLimitedApproveJob.ok(validJob, requestScope, Optional.empty()));
+        assertTrue(projectLimitedApproveJob.ok(validJob, requestScope, approvalTransition));
         assertTrue(projectLimitedViewJob.ok(validJob, requestScope, Optional.empty()));
     }
 

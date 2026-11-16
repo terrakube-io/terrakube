@@ -480,6 +480,7 @@ class OpaExecutorServiceTest {
 
         assertTrue(result.isSuccessfulExecution());
         assertEquals(0, result.getExitCode());
+        assertEquals("", result.getOutputErrorLog());
         try (StepOutputBuffer output = result.getOutputBuffer()) {
             assertEquals("policy one: passed\npolicy two: passed\n", output.toString());
         }

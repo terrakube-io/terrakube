@@ -631,4 +631,33 @@ class AwsTerraformStateImplTest {
         when(s3Client.deleteObject(any(DeleteObjectRequest.class))).thenThrow(S3Exception.builder().message("denied").build());
         assertDoesNotThrow(() -> awsTerraformState.deleteArtifacts("org1", "ws1", "job1"));
     }
+
+    @Test
+    void testSaveTerraformBinaryKeysTheObjectByOsAndArchitecture(@TempDir Path tempDir) throws IOException {
+        File binary = tempDir.resolve("tofu").toFile();
+        FileUtils.writeStringToFile(binary, "tofu-binary", Charset.defaultCharset());
+        org.mockito.ArgumentCaptor<PutObjectRequest> request = org.mockito.ArgumentCaptor.forClass(PutObjectRequest.class);
+
+        assertTrue(awsTerraformState.saveTerraformBinary("v1.12.6", true, "linux", "arm64", binary));
+
+        verify(s3Client).putObject(request.capture(), any(RequestBody.class));
+        assertEquals("tfbinary/tofu/v1.12.6/linux_arm64/tofu", request.getValue().key());
+    }
+
+    @Test
+    void testDownloadTerraformBinaryReadsTheObjectOfItsOwnOsAndArchitecture(@TempDir Path tempDir) throws IOException {
+        String key = "tfbinary/terraform/1.9.0/linux_amd64/terraform";
+        ResponseBytes<GetObjectResponse> responseBytes = mock(ResponseBytes.class);
+        when(responseBytes.asByteArray()).thenReturn("terraform-binary".getBytes());
+        when(s3Client.getObject(any(GetObjectRequest.class), any(ResponseTransformer.class))).thenReturn(responseBytes);
+        org.mockito.ArgumentCaptor<GetObjectRequest> request = org.mockito.ArgumentCaptor.forClass(GetObjectRequest.class);
+        File target = tempDir.resolve("terraform/1.9.0/terraform").toFile();
+
+        assertTrue(awsTerraformState.downloadTerraformBinary("1.9.0", false, "linux", "amd64", target));
+
+        verify(s3Client).headObject(argThat((HeadObjectRequest head) -> key.equals(head.key())));
+        verify(s3Client).getObject(request.capture(), any(ResponseTransformer.class));
+        assertEquals(key, request.getValue().key());
+        assertEquals("terraform-binary", FileUtils.readFileToString(target, Charset.defaultCharset()));
+    }
 }

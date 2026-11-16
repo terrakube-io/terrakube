@@ -166,6 +166,25 @@ public class AzureStorageTypeServiceImpl implements StorageTypeService {
     }
 
     @Override
+    public void saveCurrentTerraformState(String organizationId, String workspaceId, byte[] stateData) {
+        String stateFileName = String.format("%s/%s/terraform.tfstate", organizationId, workspaceId);
+        log.info("Saving Current State File Az Storage: {}", stateFileName);
+        uploadBlob(CONTAINER_NAME_STATE, stateFileName, stateData);
+    }
+
+    @Override
+    public void deleteCurrentTerraformState(String organizationId, String workspaceId) {
+        String stateFileName = String.format("%s/%s/terraform.tfstate", organizationId, workspaceId);
+        log.info("Deleting Current State File Az Storage: {}", stateFileName);
+        storageRetryMetrics.withRetry("azure", "delete", () -> {
+            BlobContainerClient containerClient = blobServiceClient.getBlobContainerClient(CONTAINER_NAME_STATE);
+            BlobClient blobClient = containerClient.getBlobClient(stateFileName);
+            blobClient.deleteIfExists();
+            return null;
+        });
+    }
+
+    @Override
     public void uploadState(String organizationId, String workspaceId, String terraformState, String historyId) {
         String stateFileName = String.format("%s/%s/terraform.tfstate", organizationId, workspaceId);
         String rawStateFileName = String.format("%s/%s/state/%s.raw.json", organizationId, workspaceId, historyId);

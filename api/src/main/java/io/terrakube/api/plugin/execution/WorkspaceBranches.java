@@ -37,4 +37,33 @@ public final class WorkspaceBranches {
         }
         return trimmed;
     }
+
+    /**
+     * Checks whether a pull request target branch matches any configured branch of a workspace.
+     * Workspaces without a configured branch (or configured as remote-content) are not filtered.
+     * When a workspace has configured branches, matching is case-sensitive against the comma-separated
+     * list of entries (with {@code refs/heads/} or {@code refs/tags/} stripped), and a null or blank
+     * target branch will fail closed (return false).
+     */
+    public static boolean matchesConfiguredBranch(String workspaceBranch, String targetBranch) {
+        if (workspaceBranch == null || workspaceBranch.isBlank()
+                || REMOTE_CONTENT.equals(workspaceBranch.trim())) {
+            return true;
+        }
+        if (targetBranch == null || targetBranch.isBlank()) {
+            return false;
+        }
+        String normalizedTarget = shortName(targetBranch);
+        boolean hasConfiguredEntry = false;
+        for (String entry : workspaceBranch.split(",")) {
+            String normalizedEntry = shortName(entry);
+            if (!normalizedEntry.isEmpty()) {
+                hasConfiguredEntry = true;
+                if (normalizedEntry.equals(normalizedTarget)) {
+                    return true;
+                }
+            }
+        }
+        return !hasConfiguredEntry;
+    }
 }

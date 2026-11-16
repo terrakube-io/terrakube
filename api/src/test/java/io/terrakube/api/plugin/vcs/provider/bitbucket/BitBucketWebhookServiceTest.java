@@ -10,6 +10,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.http.HttpHeaders;
@@ -20,9 +21,12 @@ import org.springframework.web.client.RestTemplate;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.tomakehurst.wiremock.WireMockServer;
 
+import io.terrakube.api.plugin.vcs.WebhookResult;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.vcs.Vcs;
 import io.terrakube.api.rs.workspace.Workspace;
+
+import java.util.Map;
 
 class BitBucketWebhookServiceTest {
 
@@ -76,6 +80,62 @@ class BitBucketWebhookServiceTest {
         assertTrue(subject.updatePrComment(job, "12345", markdown));
 
         assertUtf8JsonBody(markdown);
+    }
+
+    @Test
+    void pullRequestParsesSourceAndDestinationBranches() {
+        String payload = """
+                {
+                  "pullrequest": {
+                    "id": 15,
+                    "source": {
+                      "branch": {"name": "feature/branch"},
+                      "commit": {"hash": "abc1234"}
+                    },
+                    "destination": {
+                      "branch": {"name": "main"}
+                    }
+                  }
+                }
+                """;
+        WebhookResult result = subject.handleEvent(payload,
+                new WebhookResult(), Map.of("x-event-key", "pullrequest:created"));
+
+        assertEquals("pull_request", result.getEvent());
+        assertEquals(15, result.getPrNumber());
+        assertEquals("feature/branch", result.getBranch());
+        assertEquals("main", result.getBaseBranch());
+        assertEquals("abc1234", result.getCommit());
+    }
+
+    @Test
+    void pullRequestCommentParsesSourceAndDestinationBranches() {
+        String payload = """
+                {
+                  "comment": {
+                    "id": 99,
+                    "content": {"raw": "terrakube plan"},
+                    "user": {"display_name": "Bitbucket User"}
+                  },
+                  "pullrequest": {
+                    "id": 15,
+                    "source": {
+                      "branch": {"name": "feature/branch"},
+                      "commit": {"hash": "abc1234"}
+                    },
+                    "destination": {
+                      "branch": {"name": "develop"}
+                    }
+                  }
+                }
+                """;
+        WebhookResult result = subject.handleEvent(payload,
+                new WebhookResult(), Map.of("x-event-key", "pullrequest:comment_created"));
+
+        assertTrue(result.isPrComment());
+        assertEquals("plan", result.getCommentCommand());
+        assertEquals("feature/branch", result.getBranch());
+        assertEquals("develop", result.getBaseBranch());
     }
 
     private void assertUtf8JsonBody(String markdown) throws Exception {

@@ -6,6 +6,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.MockitoAnnotations;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -467,7 +469,7 @@ class JobTests extends ServerApplicationTests {
         job.setStatus(JobStatus.running);
         jobRepository.save(job);
 
-        // The approve permission of the team is enough for Elide, so only the hook stops this.
+        // Approval permissions apply only to waitingApproval -> approved/rejected transitions.
         given()
                 .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
                 .body(statusChangePayload(jobId, JobStatus.approved))
@@ -475,12 +477,35 @@ class JobTests extends ServerApplicationTests {
                 .patch("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/job/" + jobId)
                 .then()
                 .assertThat()
-                .statusCode(HttpStatus.CONFLICT.value());
+                .statusCode(HttpStatus.FORBIDDEN.value());
 
         Job refused = jobRepository.findById(Integer.parseInt(jobId)).orElseThrow();
         assertEquals(JobStatus.running, refused.getStatus());
         assertNull(refused.getApprovedBy());
         assertNull(refused.getApprovedAt());
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = JobStatus.class, names = {"completed", "cancelled"})
+    void failedJobStatusCannotBeRewrittenByAnApprover(JobStatus requestedStatus) {
+        devsManageJobs(true);
+        String jobId = createJob(jobDefinition("2db36f7c-f549-4341-a789-315d47eb061d"));
+        Job job = jobRepository.findById(Integer.parseInt(jobId)).orElseThrow();
+        job.setStatus(JobStatus.failed);
+        jobRepository.save(job);
+
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"),
+                        "Content-Type", "application/vnd.api+json")
+                .body(statusChangePayload(jobId, requestedStatus))
+                .when()
+                .patch("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/job/" + jobId)
+                .then()
+                .assertThat()
+                .statusCode(HttpStatus.FORBIDDEN.value());
+
+        Job refused = jobRepository.findById(Integer.parseInt(jobId)).orElseThrow();
+        assertEquals(JobStatus.failed, refused.getStatus());
     }
 
     @Test
@@ -495,6 +520,48 @@ class JobTests extends ServerApplicationTests {
                 .post("/api/v1/organization/" + organization.getId() + "/job")
                 .then()
                 .statusCode(HttpStatus.CONFLICT.value());
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = JobStatus.class, names = {"waitingApproval", "completed", "failed", "cancelled"})
+    public void aJobCannotBeCreatedWithAnyNonPendingStatus(JobStatus initialStatus) {
+        devsManageJobs(true);
+        long before = jobRepository.count();
+        String body = jobDefinition("2db36f7c-f549-4341-a789-315d47eb061d")
+                .replace("\"templateReference\":", "\"status\":\"" + initialStatus.name() + "\",\"templateReference\":");
+
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
+                .body(body)
+                .post("/api/v1/organization/" + organization.getId() + "/job")
+                .then()
+                .statusCode(HttpStatus.CONFLICT.value());
+
+        assertEquals(before, jobRepository.count());
+    }
+
+    @Test
+    public void nullStatusUpdateOnWaitingApprovalDoesNotCrashWithServerError() {
+        Template template = createTemplate("flow:\n- name: Approve\n  type: approval\n");
+
+        devsManageJobs(true);
+        String jobId = createJob(jobDefinition(template.getId().toString()));
+        devsManageJobs(false);
+
+        awaitJobStatus(jobId, JobStatus.waitingApproval, Duration.ofSeconds(10));
+
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"),
+                        "Content-Type", "application/vnd.api+json")
+                .body("{\"data\":{\"type\":\"job\",\"id\":\"" + jobId + "\",\"attributes\":{\"status\":null}}}")
+                .when()
+                .patch("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/job/" + jobId)
+                .then()
+                .assertThat()
+                .statusCode(HttpStatus.FORBIDDEN.value());
+
+        Job unchanged = jobRepository.findById(Integer.parseInt(jobId)).orElseThrow();
+        assertEquals(JobStatus.waitingApproval, unchanged.getStatus());
     }
 
     @Test

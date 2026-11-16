@@ -2,7 +2,11 @@ package io.terrakube.api.plugin.scheduler.job.tcl.executor;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -67,6 +71,8 @@ class ExecutorServiceTest {
     @Mock private ReferenceRepository referenceRepository;
     @Mock private StepRepository stepRepository;
     @Mock private PersistentExecutorService persistentExecutorService;
+    @Mock private io.terrakube.api.plugin.token.dynamic.DynamicCredentialsService dynamicCredentialsService;
+    @Mock private io.terrakube.api.plugin.scheduler.ExecutionLease lease;
     @Spy private JobVariablesService jobVariablesService = new JobVariablesService(encryption());
 
     private static io.terrakube.api.plugin.security.encryption.EncryptionService encryption() {
@@ -688,5 +694,225 @@ class ExecutorServiceTest {
         assertThatThrownBy(() -> executorService.execute(job, "plan-step", flow(FlowType.terraformPlan)))
                 .isInstanceOf(ExecutionException.class)
                 .hasMessageNotContaining("private-invalid-ciphertext");
+    }
+
+    private void dispatchableJob() {
+        Organization organization = new Organization();
+        organization.setId(UUID.randomUUID());
+        organization.setName("test");
+        job.setOrganization(organization);
+        workspace.setId(UUID.randomUUID());
+        workspace.setOrganization(organization);
+        workspace.setBranch("main");
+        workspace.setSource("https://github.com/example/repo.git");
+        workspace.setTerraformVersion("1.14.0");
+        workspace.setIacType("terraform");
+    }
+
+    @org.junit.jupiter.api.AfterEach
+    void clearLease() {
+        io.terrakube.api.plugin.scheduler.ExecutionLeaseContext.clear();
+    }
+
+    @Test
+    void aFailedVaultLoginStopsTheDispatchBeforeAnythingIsSubmitted() throws Exception {
+        dispatchableJob();
+        Variable enable = new Variable();
+        enable.setKey("ENABLE_DYNAMIC_CREDENTIALS_VAULT");
+        enable.setValue("true");
+        enable.setCategory(Category.ENV);
+        when(variableRepository.findByWorkspace(workspace)).thenReturn(Optional.of(List.of(enable)));
+        when(dynamicCredentialsService.generateDynamicCredentialsVault(eq(job), any(), isNull()))
+                .thenThrow(new io.terrakube.api.plugin.token.dynamic.DynamicCredentialsException(
+                        "Vault dynamic credentials: Vault rejected the login with HTTP 403"));
+
+        assertThatThrownBy(() -> executorService.execute(job, "plan-step", flow(FlowType.terraformPlan)))
+                .isInstanceOf(ExecutionException.class)
+                .hasMessageContaining("Vault rejected the login with HTTP 403");
+
+        verify(persistentExecutorService, never()).send(any(), any());
+    }
+
+    @Test
+    void aFailedVaultLoginDuringPlanPhaseStopsTheDispatch() throws Exception {
+        dispatchableJob();
+        Variable enable = new Variable();
+        enable.setKey("ENABLE_DYNAMIC_CREDENTIALS_VAULT");
+        enable.setValue("true");
+        enable.setCategory(Category.ENV);
+        when(variableRepository.findByWorkspace(workspace)).thenReturn(Optional.of(List.of(enable)));
+        when(dynamicCredentialsService.runPhase(eq(job), any())).thenReturn("plan");
+        when(dynamicCredentialsService.generateDynamicCredentialsVault(eq(job), any(), eq("plan")))
+                .thenThrow(new io.terrakube.api.plugin.token.dynamic.DynamicCredentialsException(
+                        "Vault dynamic credentials: Vault rejected the login with HTTP 403"));
+
+        assertThatThrownBy(() -> executorService.execute(job, "plan-step", flow(FlowType.terraformPlan)))
+                .isInstanceOf(ExecutionException.class)
+                .hasMessageContaining("Vault rejected the login with HTTP 403");
+
+        verify(persistentExecutorService, never()).send(any(), any());
+    }
+
+    @Test
+    void planStepSetsRunPhaseVariablesAndOverwritesStaleWorkspaceValues() throws Exception {
+        dispatchableJob();
+        Variable enableAws = new Variable();
+        enableAws.setKey("ENABLE_DYNAMIC_CREDENTIALS_AWS");
+        enableAws.setValue("true");
+        enableAws.setCategory(Category.ENV);
+        Variable staleEnv = new Variable();
+        staleEnv.setKey("TERRAKUBE_RUN_PHASE");
+        staleEnv.setValue("apply");
+        staleEnv.setCategory(Category.ENV);
+        Variable staleTfVar = new Variable();
+        staleTfVar.setKey("TF_VAR_terrakube_run_phase");
+        staleTfVar.setValue("apply");
+        staleTfVar.setCategory(Category.ENV);
+        when(variableRepository.findByWorkspace(workspace)).thenReturn(Optional.of(List.of(enableAws, staleEnv, staleTfVar)));
+        when(dynamicCredentialsService.runPhase(eq(job), any())).thenReturn("plan");
+        when(dynamicCredentialsService.generateDynamicCredentialsAws(eq(job), any(), eq("plan")))
+                .thenAnswer(inv -> new HashMap<>(inv.<HashMap<String, String>>getArgument(1)));
+
+        executorService.execute(job, "plan-step", flow(FlowType.terraformPlan));
+
+        ArgumentCaptor<ExecutorContext> captor = ArgumentCaptor.forClass(ExecutorContext.class);
+        verify(persistentExecutorService, times(1)).send(eq(job), captor.capture());
+        verify(dynamicCredentialsService).generateDynamicCredentialsAws(eq(job), any(), eq("plan"));
+        assertThat(captor.getValue().getEnvironmentVariables())
+                .containsEntry("TERRAKUBE_RUN_PHASE", "plan")
+                .containsEntry("TF_VAR_terrakube_run_phase", "plan");
+    }
+
+    @Test
+    void applyStepSetsRunPhaseVariables() throws Exception {
+        dispatchableJob();
+        Variable enableAws = new Variable();
+        enableAws.setKey("ENABLE_DYNAMIC_CREDENTIALS_AWS");
+        enableAws.setValue("true");
+        enableAws.setCategory(Category.ENV);
+        when(variableRepository.findByWorkspace(workspace)).thenReturn(Optional.of(List.of(enableAws)));
+        when(dynamicCredentialsService.runPhase(eq(job), any())).thenReturn("apply");
+        when(dynamicCredentialsService.generateDynamicCredentialsAws(eq(job), any(), eq("apply")))
+                .thenAnswer(inv -> new HashMap<>(inv.<HashMap<String, String>>getArgument(1)));
+
+        executorService.execute(job, "apply-step", flow(FlowType.terraformApply));
+
+        ArgumentCaptor<ExecutorContext> captor = ArgumentCaptor.forClass(ExecutorContext.class);
+        verify(persistentExecutorService, times(1)).send(eq(job), captor.capture());
+        verify(dynamicCredentialsService).generateDynamicCredentialsAws(eq(job), any(), eq("apply"));
+        assertThat(captor.getValue().getEnvironmentVariables())
+                .containsEntry("TERRAKUBE_RUN_PHASE", "apply")
+                .containsEntry("TF_VAR_terrakube_run_phase", "apply");
+    }
+
+    @Test
+    void disabledRunPhaseOrUnrelatedFlagDoesNotSetRunPhaseEnvVariables() throws Exception {
+        dispatchableJob();
+        Variable customFlag = new Variable();
+        customFlag.setKey("ENABLE_DYNAMIC_CREDENTIALS_CUSTOM");
+        customFlag.setValue("true");
+        customFlag.setCategory(Category.ENV);
+        when(variableRepository.findByWorkspace(workspace)).thenReturn(Optional.of(List.of(customFlag)));
+
+        executorService.execute(job, "plan-step", flow(FlowType.terraformPlan));
+
+        ArgumentCaptor<ExecutorContext> firstCaptor = ArgumentCaptor.forClass(ExecutorContext.class);
+        verify(persistentExecutorService).send(eq(job), firstCaptor.capture());
+        verify(dynamicCredentialsService, never()).runPhase(any(), any());
+        assertThat(firstCaptor.getValue().getEnvironmentVariables())
+                .doesNotContainKeys("TERRAKUBE_RUN_PHASE", "TF_VAR_terrakube_run_phase");
+
+        Variable enableAws = new Variable();
+        enableAws.setKey("ENABLE_DYNAMIC_CREDENTIALS_AWS");
+        enableAws.setValue("true");
+        enableAws.setCategory(Category.ENV);
+        when(variableRepository.findByWorkspace(workspace)).thenReturn(Optional.of(List.of(enableAws)));
+        when(dynamicCredentialsService.runPhase(eq(job), any())).thenReturn(null);
+        when(dynamicCredentialsService.generateDynamicCredentialsAws(eq(job), any(), isNull()))
+                .thenAnswer(inv -> new HashMap<>(inv.<HashMap<String, String>>getArgument(1)));
+
+        executorService.execute(job, "plan-step-2", flow(FlowType.terraformPlan));
+
+        ArgumentCaptor<ExecutorContext> secondCaptor = ArgumentCaptor.forClass(ExecutorContext.class);
+        verify(persistentExecutorService, times(2)).send(eq(job), secondCaptor.capture());
+        assertThat(secondCaptor.getAllValues().get(1).getEnvironmentVariables())
+                .doesNotContainKeys("TERRAKUBE_RUN_PHASE", "TF_VAR_terrakube_run_phase");
+    }
+
+    @Test
+    void postApplyCustomScriptsPassesJobAndFlowAndReceivesApplyRunPhase() throws Exception {
+        dispatchableJob();
+        Variable enableAws = new Variable();
+        enableAws.setKey("ENABLE_DYNAMIC_CREDENTIALS_AWS");
+        enableAws.setValue("true");
+        enableAws.setCategory(Category.ENV);
+        when(variableRepository.findByWorkspace(workspace)).thenReturn(Optional.of(List.of(enableAws)));
+        Flow customScriptsFlow = flow(FlowType.customScripts);
+        when(dynamicCredentialsService.runPhase(job, customScriptsFlow)).thenReturn("apply");
+        when(dynamicCredentialsService.generateDynamicCredentialsAws(eq(job), any(), eq("apply")))
+                .thenAnswer(inv -> new HashMap<>(inv.<HashMap<String, String>>getArgument(1)));
+
+        executorService.execute(job, "post-apply-script", customScriptsFlow);
+
+        ArgumentCaptor<ExecutorContext> captor = ArgumentCaptor.forClass(ExecutorContext.class);
+        verify(persistentExecutorService).send(eq(job), captor.capture());
+        verify(dynamicCredentialsService).runPhase(job, customScriptsFlow);
+        verify(dynamicCredentialsService).generateDynamicCredentialsAws(eq(job), any(), eq("apply"));
+        assertThat(captor.getValue().getEnvironmentVariables())
+                .containsEntry("TERRAKUBE_RUN_PHASE", "apply")
+                .containsEntry("TF_VAR_terrakube_run_phase", "apply");
+    }
+
+    @Test
+    void nothingIsSubmittedWhenTheWorkerLostItsExecutionLockOrTheStepIsAlreadyClaimed() throws Exception {
+        dispatchableJob();
+        io.terrakube.api.plugin.scheduler.ExecutionLeaseContext.bind(lease);
+        when(lease.claimDispatch("plan-step")).thenReturn(false);
+
+        assertThatThrownBy(() -> executorService.execute(job, "plan-step", flow(FlowType.terraformPlan)))
+                .isInstanceOf(DispatchNotClaimedException.class);
+
+        verify(persistentExecutorService, never()).send(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+        verify(lease, never()).releaseDispatchClaim(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void aClaimedStepIsSubmittedOnceAndKeepsItsClaim() throws Exception {
+        dispatchableJob();
+        io.terrakube.api.plugin.scheduler.ExecutionLeaseContext.bind(lease);
+        when(lease.claimDispatch("plan-step")).thenReturn(true);
+
+        executorService.execute(job, "plan-step", flow(FlowType.terraformPlan));
+
+        verify(persistentExecutorService, org.mockito.Mockito.times(1)).send(org.mockito.ArgumentMatchers.eq(job), org.mockito.ArgumentMatchers.any());
+        verify(lease, never()).releaseDispatchClaim(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void theClaimIsReleasedOnlyWhenTheExecutorWasNotReached() throws Exception {
+        dispatchableJob();
+        io.terrakube.api.plugin.scheduler.ExecutionLeaseContext.bind(lease);
+        when(lease.claimDispatch("plan-step")).thenReturn(true);
+        org.mockito.Mockito.doThrow(new ExecutorUnavailableException("no ready executor"))
+                .when(persistentExecutorService).send(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+
+        assertThatThrownBy(() -> executorService.execute(job, "plan-step", flow(FlowType.terraformPlan)))
+                .isInstanceOf(ExecutorUnavailableException.class);
+
+        verify(lease).releaseDispatchClaim("plan-step");
+    }
+
+    @Test
+    void theClaimIsKeptWhenTheOutcomeOfTheSubmissionIsUnknown() throws Exception {
+        dispatchableJob();
+        io.terrakube.api.plugin.scheduler.ExecutionLeaseContext.bind(lease);
+        when(lease.claimDispatch("plan-step")).thenReturn(true);
+        org.mockito.Mockito.doThrow(new ExecutionException("executor answered 500"))
+                .when(persistentExecutorService).send(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+
+        assertThatThrownBy(() -> executorService.execute(job, "plan-step", flow(FlowType.terraformPlan)))
+                .isInstanceOf(ExecutionException.class);
+
+        verify(lease, never()).releaseDispatchClaim(org.mockito.ArgumentMatchers.any());
     }
 }

@@ -203,6 +203,16 @@ public class JobLogAccessService {
     }
 
     @Transactional(readOnly = true)
+    public boolean canWriteLogs(Authentication authentication) {
+        if (authentication == null || !(authentication instanceof JwtAuthenticationToken jwt)) {
+            return false;
+        }
+        Map<String, Object> claims = jwt.getTokenAttributes();
+        InternalTokenType tokenType = InternalTokenClassifier.classify(claims);
+        return tokenType == InternalTokenType.EXECUTOR_SERVICE;
+    }
+
+    @Transactional(readOnly = true)
     public boolean canWriteContext(Authentication authentication, int jobId) {
         if (authentication == null || !(authentication instanceof JwtAuthenticationToken jwt)) {
             return false;
