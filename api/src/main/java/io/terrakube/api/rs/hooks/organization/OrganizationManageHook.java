@@ -48,6 +48,10 @@ public class OrganizationManageHook implements LifeCycleHook<Organization> {
                     }
                     break;
                 case UPDATE:
+                    if (transactionPhase == LifeCycleHookBinding.TransactionPhase.PRECOMMIT
+                            && (optional.isEmpty() || "name".equals(optional.get().getFieldName()))) {
+                        validateOrganizationNameConflict(organization);
+                    }
                     if(organization.isDisabled()){
                         softDeleteService.disableOrganization(organization);
                     }
