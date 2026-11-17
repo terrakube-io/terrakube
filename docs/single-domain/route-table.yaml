@@ -25,7 +25,7 @@ routes:
     strip: /api/private-registry
     status: canonical
     auth: mixed            # module downloads public, metadata authenticated
-    served_roots: [/terraform/modules/v1, /terraform/providers/v1, /terraform/readme/v1, /.well-known]
+    served_roots: [/terraform/modules/v1, /terraform/providers/v1, /terraform/providers/mirror/v1, /terraform/readme/v1, /.well-known]
   - prefix: /api/
     match: prefix
     component: api

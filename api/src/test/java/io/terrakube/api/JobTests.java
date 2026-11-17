@@ -195,7 +195,11 @@ class JobTests extends ServerApplicationTests {
             for (JobKey key : scheduler.getJobKeys(GroupMatcher.anyJobGroup())) {
                 if (isJobContext(key, name)) {
                     scheduled = true;
-                    scheduler.deleteJob(key);
+                    try {
+                        scheduler.deleteJob(key);
+                    } catch (SchedulerException e) {
+                        // Quartz removed or fired the trigger at the same moment; the next pass re-checks.
+                    }
                 }
             }
             if (!running && !scheduled) {

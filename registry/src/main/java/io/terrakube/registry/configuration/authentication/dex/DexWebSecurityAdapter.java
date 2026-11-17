@@ -52,6 +52,8 @@ public class DexWebSecurityAdapter {
                         .requestMatchers("/.well-known/**").permitAll()
                         .requestMatchers("/actuator/**").permitAll()
                         .requestMatchers("/terraform/modules/v1/download/**").permitAll()
+                        // Mirror archives only; the controller requires a ticket or an authorized token.
+                        .requestMatchers(HttpMethod.GET, "/terraform/providers/mirror/v1/*/*/*/*/*/*.zip").permitAll()
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .anyRequest().authenticated()
                 )
