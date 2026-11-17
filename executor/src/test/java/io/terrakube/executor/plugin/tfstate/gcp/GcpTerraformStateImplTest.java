@@ -22,6 +22,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -79,6 +80,34 @@ class GcpTerraformStateImplTest {
         assertTrue(content.contains("bucket      = \"test-bucket\""));
         assertTrue(content.contains("prefix      = \"tfstate/org1/ws1/terraform.tfstate\""));
         assertTrue(content.contains("credentials = \"GCP_CREDENTIALS_FILE.json\""));
+    }
+
+    @Test
+    void testGetBackendStateFileWithApplicationDefaultCredentials(@TempDir Path tempDir) throws IOException {
+        for (String noKey : new String[]{null, "", "   "}) {
+            File workingDirectory = Files.createTempDirectory(tempDir, "ws").toFile();
+            GcpTerraformStateImpl adcState = GcpTerraformStateImpl.builder()
+                    .bucketName(bucketName)
+                    .credentials(noKey)
+                    .storage(storage)
+                    .terrakubeClient(terrakubeClient)
+                    .terraformOutputPathService(terraformOutputPathService)
+                    .terraformStatePathService(terraformStatePathService)
+                    .storageRetryMetrics(new io.terrakube.executor.plugin.tfstate.StorageRetryMetrics(
+                            new io.micrometer.core.instrument.simple.SimpleMeterRegistry()))
+                    .build();
+
+            String result = adcState.getBackendStateFile("org1", "ws1", workingDirectory, "1.5.0");
+
+            assertEquals("gcp_backend_override.tf", result);
+            // Without a key the gcs backend uses Application Default Credentials, so no key file is written
+            // and the backend block does not point at one.
+            assertFalse(new File(workingDirectory, "GCP_CREDENTIALS_FILE.json").exists());
+            String content = FileUtils.readFileToString(new File(workingDirectory, "gcp_backend_override.tf"), Charset.defaultCharset());
+            assertTrue(content.contains("bucket      = \"test-bucket\""));
+            assertTrue(content.contains("prefix      = \"tfstate/org1/ws1/terraform.tfstate\""));
+            assertFalse(content.contains("credentials"));
+        }
     }
 
     @Test
@@ -204,7 +233,6 @@ class GcpTerraformStateImplTest {
 
         assertTrue(result);
         File downloadedPlan = new File(workingDirectory, "terraformLibrary.tfPlan");
-        assertTrue(downloadedPlan.exists());
         assertEquals("source-content", FileUtils.readFileToString(downloadedPlan, Charset.defaultCharset()));
 
         verify(storage).get(expectedBlobId);

@@ -58,7 +58,10 @@ public class GcpTerraformStateImpl implements TerraformState {
     @NonNull
     private Storage storage;
 
-    @NonNull
+    /**
+     * Base64 encoded service account key. Blank when the executor runs with Application Default
+     * Credentials, in which case Terraform's gcs backend uses them as well.
+     */
     private String credentials;
 
     @NonNull
@@ -85,7 +88,9 @@ public class GcpTerraformStateImpl implements TerraformState {
             gcpBackendHcl.appendln("  backend \"gcs\" {");
             gcpBackendHcl.appendln("    bucket      = \"" + bucketName + "\"");
             gcpBackendHcl.appendln("    prefix      = \"tfstate/" + organizationId + "/" + workspaceId + "/terraform.tfstate" + "\"");
-            gcpBackendHcl.appendln("    credentials = \"" + GCP_CREDENTIALS_FILE + "\"");
+            if (hasCredentialsKey()) {
+                gcpBackendHcl.appendln("    credentials = \"" + GCP_CREDENTIALS_FILE + "\"");
+            }
             gcpBackendHcl.appendln("  }");
             gcpBackendHcl.appendln("}");
 
@@ -100,7 +105,10 @@ public class GcpTerraformStateImpl implements TerraformState {
                             workingDirectory.getAbsolutePath().concat("/").concat(BACKEND_FILE_NAME)
                     )
             );
-            FileUtils.writeStringToFile(gcpBackendCredentials, new String(Base64.decodeBase64(credentials), StandardCharsets.UTF_8), Charset.defaultCharset());
+            // Without a key, Terraform's gcs backend falls back to Application Default Credentials.
+            if (hasCredentialsKey()) {
+                FileUtils.writeStringToFile(gcpBackendCredentials, new String(Base64.decodeBase64(credentials), StandardCharsets.UTF_8), Charset.defaultCharset());
+            }
             FileUtils.writeStringToFile(gcpBackendFile, gcpBackendHcl.toString(), Charset.defaultCharset());
 
         } catch (IOException e) {
@@ -108,6 +116,10 @@ public class GcpTerraformStateImpl implements TerraformState {
             gcpBackend = null;
         }
         return gcpBackend;
+    }
+
+    private boolean hasCredentialsKey() {
+        return credentials != null && !credentials.isBlank();
     }
 
     @Override
