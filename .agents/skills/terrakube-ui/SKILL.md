@@ -29,35 +29,18 @@ Key module paths:
 
 ## 2. Linting and Code Formatting
 
-CI checks PRs using modular lint and format commands. ESLint includes `prettier/prettier` rules, so formatting violations cause ESLint check failures.
+CI lints, format-checks, and type-checks all of `src` on every UI pull request. ESLint includes `prettier/prettier` rules, so formatting violations cause ESLint check failures.
 
-### Modular Commands (Targeting `src/modules`)
-- **Check Linting**:
-  ```bash
-  yarn lint:modules:check
-  ```
-- **Auto-Fix Linting & Formatting**:
-  ```bash
-  yarn lint:modules
-  ```
-- **Check Prettier Formatting**:
-  ```bash
-  yarn format:modules:check
-  ```
-- **Auto-Fix Prettier Formatting**:
-  ```bash
-  yarn format:modules
-  ```
-
-### Global Commands (Targeting all of `src`)
 - **Check Linting**: `yarn lint:check`
-- **Auto-Fix Linting**: `yarn lint`
+- **Auto-Fix Linting & Formatting**: `yarn lint`
 - **Check Prettier**: `yarn format:check`
 - **Auto-Fix Prettier**: `yarn format`
+- **Type-Check** (app and tests): `yarn typecheck`
+- **Everything CI runs** (lint, format, typecheck, tests): `yarn check`
 
 ### Common Lint Gotchas
 - **Unused imports & variables**: Any unused import (e.g. `fireEvent` from `@testing-library/react`) triggers `@typescript-eslint/no-unused-vars` and blocks CI.
-- **Prettier line wrapping & trailing commas**: Prettier formatting is enforced directly inside ESLint; running `yarn lint:modules` automatically formats code to match configured rules.
+- **Prettier line wrapping & trailing commas**: Prettier formatting is enforced directly inside ESLint; running `yarn lint` automatically formats code to match configured rules.
 
 ---
 
@@ -106,7 +89,6 @@ The test suite runs with Jest. By default in local environments, `yarn test` run
 ## 5. Pre-Commit / Pre-PR Checklist
 
 Before pushing frontend changes to Git:
-1. `yarn lint:modules` (or `yarn lint` for full project)
-2. `yarn lint:modules:check` (verify 0 errors)
-3. `yarn test --watchAll=false` (verify all test suites pass)
-4. `yarn build` (verify bundle builds cleanly without TypeScript or bundler errors)
+1. `yarn lint` (auto-fix lint and formatting)
+2. `yarn check` (lint, format, typecheck, and tests must pass)
+3. `yarn build` (verify bundle builds cleanly without TypeScript or bundler errors)
