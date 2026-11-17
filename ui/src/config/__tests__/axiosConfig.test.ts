@@ -23,10 +23,7 @@ const rejectWith =
     Promise.reject({
       isAxiosError: true,
       config,
-      response:
-        status == null
-          ? undefined
-          : { status, data: {}, statusText: "", headers: {}, config },
+      response: status == null ? undefined : { status, data: {}, statusText: "", headers: {}, config },
       toJSON: () => ({}),
       ...extra,
     });

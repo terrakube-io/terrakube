@@ -1,13 +1,5 @@
 import React, { Component, ErrorInfo, ReactNode, useEffect, useState } from "react";
-import {
-  SiDocker,
-  SiGithub,
-  SiGooglecloud,
-  SiGrafana,
-  SiKubernetes,
-  SiPrometheus,
-  SiTerraform,
-} from "react-icons/si";
+import { SiDocker, SiGithub, SiGooglecloud, SiGrafana, SiKubernetes, SiPrometheus, SiTerraform } from "react-icons/si";
 import { VscAzure } from "react-icons/vsc";
 import { antdIcons, getIcon } from "./config/iconList";
 import axiosInstance from "./config/axiosConfig";
@@ -259,7 +251,12 @@ const ActionLoader = ({ action, context }: { action: any; context: any }) => {
         if (cancelled) return;
         console.error("Error creating component:", err);
         setError(`Error: ${err instanceof Error ? err.message : String(err)}`);
-        setComponent(() => () => <div>Error loading component</div>);
+        setComponent(
+          () =>
+            function ActionLoadError() {
+              return <div>Error loading component</div>;
+            }
+        );
       }
     };
 

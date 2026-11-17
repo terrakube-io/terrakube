@@ -1,4 +1,3 @@
-import React from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { DateTime } from "luxon";
 import { ExemptionRecord, PolicyExemptionTable } from "../PolicyExemptionTable";

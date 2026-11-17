@@ -144,7 +144,7 @@ export const WorkspaceTeamAccess = ({ workspace, manageWorkspace }: Props) => {
     try {
       const result = await workspaceAccessService.listWorkspaceAccess(orgid, workspaceId);
       if (!result.isError) {
-        setAccessList(result.data);
+        setAccessList(result.data ?? []);
       } else {
         message.error("Failed to load team access list");
       }

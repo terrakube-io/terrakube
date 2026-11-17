@@ -1,4 +1,4 @@
-import React, { createContext, ReactNode, useContext, useState } from "react";
+import { createContext, ReactNode, useContext, useState } from "react";
 import { ColorSchemeOption, ThemeMode, defaultColorScheme, defaultThemeMode } from "../config/themeConfig";
 
 interface ThemeContextType {

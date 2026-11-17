@@ -377,7 +377,7 @@ export const DetailsJob = ({ jobId, workspaceName, canApprove = false }: Props) 
 
     // guard so a click inside this toggle never reaches the Collapse header's own click-to-toggle handler.
     return (
-      <div onClick={(event) => event.stopPropagation()}>
+      <div role="presentation" onClick={(event) => event.stopPropagation()}>
         <Radio.Group onChange={onChange} value={uiType} size="small">
           <Radio.Button value="structured">Structured</Radio.Button>
           <Radio.Button value="console">Console</Radio.Button>

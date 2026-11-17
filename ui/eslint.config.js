@@ -30,11 +30,12 @@ export default tseslint.config(
     },
     settings: {
       react: {
-        version: "19.2.7",
+        version: "19.3",
       },
       "import/resolver": {
         typescript: {
-          project: "./tsconfig.json",
+          project: ["./tsconfig.app.json", "./tsconfig.test.json"],
+          noWarnOnMultipleProjects: true,
         },
       },
     },
@@ -44,6 +45,17 @@ export default tseslint.config(
       "react/react-in-jsx-scope": ["off"],
       "react-refresh/only-export-components": ["warn", { allowConstantExport: true }],
       "@typescript-eslint/no-explicit-any": "off",
+      // tsc (yarn typecheck) already checks these, and they misread Vite query imports such as `?worker`.
+      // https://typescript-eslint.io/troubleshooting/typed-linting/performance#eslint-plugin-import
+      "import/named": "off",
+      "import/namespace": "off",
+      "import/default": "off",
+      "import/no-named-as-default-member": "off",
+      // `_` marks a deliberately unused parameter or destructured binding.
+      "@typescript-eslint/no-unused-vars": [
+        "error",
+        { argsIgnorePattern: "^_", varsIgnorePattern: "^_", caughtErrorsIgnorePattern: "^_", ignoreRestSiblings: true },
+      ],
     },
   }
 );
