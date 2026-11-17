@@ -253,5 +253,12 @@ describe("setupWorkspaceIncludes job and history titles", () => {
     Object.assign(cli.included[0].attributes, { comments: "terraform-cli" });
     expect((await runSetup(cli)).jobs[0].title).toBe("Triggered via CLI");
   });
+
+  it("prefers the job comment over the Triggered via title for webhook runs", async () => {
+    const payload = createPayload("Github");
+    Object.assign(payload.included[0].attributes, { comments: "Deploy release 2.4" });
+    const { jobs } = await runSetup(payload);
+    expect(jobs[0].title).toBe("Deploy release 2.4");
+  });
 });
 
