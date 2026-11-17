@@ -98,6 +98,67 @@ class GcpTerraformStateImplTest {
         verify(storage).create(any(BlobInfo.class), eq("plan-content".getBytes()));
     }
 
+    @Test
+    void testSaveTerraformPlanAlsoUploadsPlanJsonWhenPresent(@TempDir Path tempDir) throws IOException {
+        File workingDirectory = tempDir.toFile();
+        FileUtils.writeStringToFile(new File(workingDirectory, "terraformLibrary.tfPlan"), "plan-content", Charset.defaultCharset());
+        FileUtils.writeStringToFile(new File(workingDirectory, "plan.json"), "{\"format_version\":\"1.2\"}", StandardCharsets.UTF_8);
+
+        ArgumentCaptor<BlobInfo> infoCaptor = ArgumentCaptor.forClass(BlobInfo.class);
+        String result = gcpTerraformState.saveTerraformPlan("org1", "ws1", "job1", "step1", workingDirectory);
+
+        assertEquals("https://storage.cloud.google.com/test-bucket/tfstate/org1/ws1/job1/step1/terraformLibrary.tfPlan", result);
+        verify(storage, times(2)).create(infoCaptor.capture(), any(byte[].class));
+        assertEquals(
+                java.util.List.of(
+                        BlobId.of("test-bucket", "tfstate/org1/ws1/job1/step1/terraformLibrary.tfPlan"),
+                        BlobId.of("test-bucket", "tfstate/org1/ws1/job1/step1/terraformLibrary.tfPlan.json")),
+                infoCaptor.getAllValues().stream().map(BlobInfo::getBlobId).toList());
+    }
+
+    @Test
+    void testDownloadTerraformPlanJson(@TempDir Path tempDir) throws IOException {
+        File workingDirectory = tempDir.toFile();
+        when(terrakubeClient.getJobById("org1", "job1").getData().getAttributes().getTerraformPlan())
+                .thenReturn("https://storage.cloud.google.com/test-bucket/tfstate/org1/ws1/job1/step1/terraformLibrary.tfPlan");
+
+        BlobId expectedBlobId = BlobId.of("test-bucket", "tfstate/org1/ws1/job1/step1/terraformLibrary.tfPlan.json");
+        Blob blob = mock(Blob.class);
+        when(storage.get(expectedBlobId)).thenReturn(blob);
+        doAnswer(invocation -> {
+            FileUtils.writeStringToFile(invocation.<Path>getArgument(0).toFile(), "{\"resource_changes\":[]}", StandardCharsets.UTF_8);
+            return null;
+        }).when(blob).downloadTo(any(Path.class));
+
+        assertTrue(gcpTerraformState.downloadTerraformPlanJson("org1", "ws1", "job1", "step1", workingDirectory));
+        assertEquals("{\"resource_changes\":[]}", FileUtils.readFileToString(new File(workingDirectory, "plan.json"), StandardCharsets.UTF_8));
+        verify(storage).get(expectedBlobId);
+    }
+
+    @Test
+    void testDownloadTerraformPlanJson_ReturnsFalseWhenMissingOrUnset(@TempDir Path tempDir) {
+        File workingDirectory = tempDir.toFile();
+        when(terrakubeClient.getJobById("org1", "job1").getData().getAttributes().getTerraformPlan())
+                .thenReturn(null);
+        assertFalse(gcpTerraformState.downloadTerraformPlanJson("org1", "ws1", "job1", "step1", workingDirectory));
+
+        when(terrakubeClient.getJobById("org1", "job1").getData().getAttributes().getTerraformPlan())
+                .thenReturn("https://storage.cloud.google.com/test-bucket/tfstate/org1/ws1/job1/step1/terraformLibrary.tfPlan");
+        when(storage.get(any(BlobId.class))).thenReturn(null);
+        assertFalse(gcpTerraformState.downloadTerraformPlanJson("org1", "ws1", "job1", "step1", workingDirectory));
+    }
+
+    @Test
+    void testDownloadTerraformPlanJson_ThrowsOnStorageOutage(@TempDir Path tempDir) {
+        File workingDirectory = tempDir.toFile();
+        when(terrakubeClient.getJobById("org1", "job1").getData().getAttributes().getTerraformPlan())
+                .thenReturn("https://storage.cloud.google.com/test-bucket/tfstate/org1/ws1/job1/step1/terraformLibrary.tfPlan");
+        when(storage.get(any(BlobId.class))).thenThrow(new com.google.cloud.storage.StorageException(503, "Service unavailable"));
+
+        assertThrows(io.terrakube.executor.plugin.tfstate.TerraformStateUnavailableException.class,
+                () -> gcpTerraformState.downloadTerraformPlanJson("org1", "ws1", "job1", "step1", workingDirectory));
+    }
+
     // #3671 follow-up: a genuine GCS write failure must retry then throw instead of silently
     // returning null (indistinguishable from "no plan file to save").
     @Test
