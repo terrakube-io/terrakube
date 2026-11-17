@@ -42,6 +42,16 @@ export function buildResourceOptions(resources: Resource[]): { value: string; la
     .map((address) => ({ value: address, label: address }));
 }
 
+// Jobs created through the Terraform CLI get this fixed value in comments, so it says nothing about the run.
+const CLI_JOB_COMMENT = "terraform-cli";
+
+// A job created through the API can carry a short reason in its comments; use its first line as the run title.
+function getJobComment(comments: unknown): string | undefined {
+  if (typeof comments !== "string") return undefined;
+  const firstLine = comments.trim().split("\n")[0].trim();
+  return firstLine && firstLine !== CLI_JOB_COMMENT ? firstLine : undefined;
+}
+
 export const include = {
   VARIABLE: "variable",
   JOB: "job",
@@ -121,9 +131,11 @@ export async function setupWorkspaceIncludes(
         const isNonUi = jobVia && jobVia !== JobVia.Ui && jobVia !== "UI";
         jobs.push({
           id: element.id,
-          title: isNonUi
-            ? "Triggered via " + formatJobVia(jobVia)
-            : "Queue manually using " + getIaCNameById(data?.data?.attributes?.iacType),
+          title:
+            getJobComment(element.attributes?.comments) ??
+            (isNonUi
+              ? "Triggered via " + formatJobVia(jobVia)
+              : "Queue manually using " + getIaCNameById(data?.data?.attributes?.iacType)),
           commitId: element.attributes.commitId,
           stepNumber: element.attributes.stepNumber,
           latestChange: relativeTime(element.attributes.createdDate),
