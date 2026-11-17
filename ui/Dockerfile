@@ -1,10 +1,10 @@
-#=> Build container (node:24-alpine)
-FROM node:24-alpine@sha256:116b800c3754b440ee0aa3ed2f20f5bf3d99a554bfd9adeea09ea8017f6e85f5 AS builder
+#=> Build container (node:26-alpine, the current LTS; keep in step with ui/.node-version)
+FROM node:26-alpine@sha256:8996bb5821d62a8fd9bb27c1cb07462f3fdce6e47d640c6a881ead0b064ce216 AS builder
 WORKDIR /app
 
-# Enable Corepack so it picks up the Yarn version pinned in
-# package.json's packageManager field.
-RUN corepack enable
+# Node 25+ no longer bundles Corepack. Install it, then enable it so it picks up
+# the Yarn version pinned in package.json's packageManager field.
+RUN npm install -g corepack@0.36.0 && corepack enable
 
 COPY package.json yarn.lock .yarnrc.yml ./
 
