@@ -153,6 +153,7 @@ class HttpTerraformStateImplTest {
 
         when(delegate.saveTerraformPlan(ORG_ID, WS_ID, JOB_ID, STEP_ID, workingDir)).thenReturn("plan-url");
         when(delegate.downloadTerraformPlan(ORG_ID, WS_ID, JOB_ID, STEP_ID, workingDir)).thenReturn(true);
+        when(delegate.downloadTerraformPlanJson(ORG_ID, WS_ID, JOB_ID, STEP_ID, workingDir)).thenReturn(true);
         when(delegate.saveArtifacts(ORG_ID, WS_ID, JOB_ID, STEP_ID, workingDir)).thenReturn("sha256");
         when(delegate.downloadArtifacts(ORG_ID, WS_ID, JOB_ID, workingDir)).thenReturn("sha256");
         when(delegate.saveBufferedOutput(ORG_ID, JOB_ID, STEP_ID, buffer, "err")).thenReturn("output-url");
@@ -165,6 +166,7 @@ class HttpTerraformStateImplTest {
 
         assertEquals("plan-url", httpTerraformState.saveTerraformPlan(ORG_ID, WS_ID, JOB_ID, STEP_ID, workingDir));
         assertTrue(httpTerraformState.downloadTerraformPlan(ORG_ID, WS_ID, JOB_ID, STEP_ID, workingDir));
+        assertTrue(httpTerraformState.downloadTerraformPlanJson(ORG_ID, WS_ID, JOB_ID, STEP_ID, workingDir));
         assertEquals("sha256", httpTerraformState.saveArtifacts(ORG_ID, WS_ID, JOB_ID, STEP_ID, workingDir));
         assertEquals("sha256", httpTerraformState.downloadArtifacts(ORG_ID, WS_ID, JOB_ID, workingDir));
         httpTerraformState.deleteArtifacts(ORG_ID, WS_ID, JOB_ID);
