@@ -942,6 +942,80 @@ class NewSecurityChecksTest {
     }
 
     @Test
+    void testWorkspaceStateSharingScopesAreMutuallyExclusive() throws NoSuchFieldException {
+        org.junit.jupiter.api.Assertions.assertNotNull(
+                Workspace.class.getDeclaredField("globalRemoteState").getAnnotation(LifeCycleHookBinding.class));
+        org.junit.jupiter.api.Assertions.assertNotNull(
+                Workspace.class.getDeclaredField("projectRemoteState").getAnnotation(LifeCycleHookBinding.class));
+
+        WorkspaceManageHook hook = new WorkspaceManageHook(null, null, null, null, mock(WorkspaceRepository.class));
+        Organization organization = new Organization();
+        organization.setName("org");
+        Workspace workspace = new Workspace();
+        workspace.setOrganization(organization);
+        workspace.setGlobalRemoteState(true);
+        workspace.setProjectRemoteState(true);
+
+        for (String field : List.of("globalRemoteState", "projectRemoteState")) {
+            ChangeSpec change = new ChangeSpec(null, field, false, true);
+            org.junit.jupiter.api.Assertions.assertThrows(WorkspaceManagementException.class, () ->
+                    hook.execute(LifeCycleHookBinding.Operation.UPDATE, LifeCycleHookBinding.TransactionPhase.PRECOMMIT,
+                            workspace, requestScope, Optional.of(change)));
+        }
+        workspace.setGlobalRemoteState(false);
+        ChangeSpec projectChange = new ChangeSpec(null, "projectRemoteState", false, true);
+        org.junit.jupiter.api.Assertions.assertDoesNotThrow(() ->
+                hook.execute(LifeCycleHookBinding.Operation.UPDATE, LifeCycleHookBinding.TransactionPhase.PRECOMMIT,
+                        workspace, requestScope, Optional.of(projectChange)));
+    }
+
+    @Test
+    void testCannotAddProjectCoveredWorkspaceToIndividualStateGrants() throws NoSuchFieldException {
+        org.junit.jupiter.api.Assertions.assertNotNull(
+                Workspace.class.getDeclaredField("sharedIds").getAnnotation(LifeCycleHookBinding.class));
+        WorkspaceRepository repo = mock(WorkspaceRepository.class);
+        WorkspaceManageHook hook = new WorkspaceManageHook(null, null, null, null, repo);
+        Organization organization = new Organization();
+        organization.setId(UUID.randomUUID());
+        organization.setName("org");
+        Project project = new Project();
+        project.setId(UUID.randomUUID());
+        project.setOrganization(organization);
+        Workspace source = new Workspace();
+        source.setOrganization(organization);
+        source.setProject(project);
+        source.setGlobalRemoteState(false);
+        source.setProjectRemoteState(true);
+        Workspace consumer = new Workspace();
+        consumer.setId(UUID.randomUUID());
+        consumer.setOrganization(organization);
+        when(repo.findAllByProject_Id(project.getId())).thenReturn(List.of(consumer));
+        String consumerId = consumer.getId().toString();
+        source.setSharedIds(consumerId);
+        ChangeSpec added = new ChangeSpec(null, "sharedIds", "", consumerId);
+
+        org.junit.jupiter.api.Assertions.assertThrows(WorkspaceManagementException.class, () ->
+                hook.execute(LifeCycleHookBinding.Operation.UPDATE, LifeCycleHookBinding.TransactionPhase.PRECOMMIT,
+                        source, requestScope, Optional.of(added)));
+        org.junit.jupiter.api.Assertions.assertThrows(WorkspaceManagementException.class, () ->
+                hook.execute(LifeCycleHookBinding.Operation.CREATE, LifeCycleHookBinding.TransactionPhase.PRECOMMIT,
+                        source, requestScope, Optional.empty()));
+
+        String otherId = UUID.randomUUID().toString();
+        source.setSharedIds(consumerId + "," + otherId);
+        ChangeSpec existingGrant = new ChangeSpec(null, "sharedIds", consumerId.toUpperCase(), source.getSharedIds());
+        org.junit.jupiter.api.Assertions.assertDoesNotThrow(() ->
+                hook.execute(LifeCycleHookBinding.Operation.UPDATE, LifeCycleHookBinding.TransactionPhase.PRECOMMIT,
+                        source, requestScope, Optional.of(existingGrant)));
+
+        source.setProjectRemoteState(false);
+        source.setSharedIds(consumerId);
+        org.junit.jupiter.api.Assertions.assertDoesNotThrow(() ->
+                hook.execute(LifeCycleHookBinding.Operation.UPDATE, LifeCycleHookBinding.TransactionPhase.PRECOMMIT,
+                        source, requestScope, Optional.of(added)));
+    }
+
+    @Test
     void testWorkspaceManageHookUpdateConflictAndCoTenancy() throws NoSuchFieldException {
         // Class-level hook has CREATE only (UPDATE moved to field level)
         LifeCycleHookBinding[] classHooks = Workspace.class.getAnnotationsByType(LifeCycleHookBinding.class);

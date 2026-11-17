@@ -654,6 +654,7 @@ export type WorkspaceAttributes = {
   source: string;
   terraformVersion: string;
   globalRemoteState?: boolean;
+  projectRemoteState?: boolean;
   sharedIds?: string;
   policyComplianceStatus?: "COMPLIANT" | "NON_COMPLIANT" | "EXEMPTED" | "UNKNOWN";
   currentMonthlyCost?: number | string | null;

@@ -163,4 +163,5 @@
     <include file="/db/changelog/local/changelog-2.35.0-project-owner.xml"/>
     <include file="/db/changelog/local/changelog-2.35.0-managed-in-code.xml"/>
     <include file="/db/changelog/local/changelog-2.35.0-workspace-cost-tracking.xml"/>
+    <include file="/db/changelog/local/changelog-2.35.0-project-remote-state.xml" />
 </databaseChangeLog>
