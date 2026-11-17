@@ -3,6 +3,7 @@ package io.terrakube.api.plugin.state;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.terrakube.api.plugin.scheduler.ScheduleJobService;
+import io.terrakube.api.plugin.scheduler.JobStatusChangeService;
 import io.terrakube.api.plugin.security.encryption.EncryptionService;
 import io.terrakube.api.plugin.state.model.apply.ApplyRunData;
 import io.terrakube.api.plugin.state.model.apply.ApplyRunModel;
@@ -161,6 +162,9 @@ public class RemoteTfeService {
 
     private static final Pattern EXACT_TERRAFORM_VERSION_PATTERN = Pattern.compile("^\\d+(\\.\\d+){0,2}(-[0-9A-Za-z.-]+)?$");
     private JobNotificationTrigger jobNotificationTrigger;
+
+    @Autowired
+    private JobStatusChangeService jobStatusChangeService;
 
     @Autowired
     private JobApprovalService jobApprovalService;
@@ -1354,7 +1358,6 @@ public class RemoteTfeService {
         job.setPlanChanges(true);
         job.setRefreshOnly(false);
         job = jobRepository.save(job);
-        jobNotificationTrigger.notifyStatusChanged(job);
 
         // dummy step
         Step step = new Step();
@@ -1407,6 +1410,9 @@ public class RemoteTfeService {
         // upload json state to backend storage
         storageTypeService.uploadTerraformStateJson(workspace.getOrganization().getId().toString(),
                 workspace.getId().toString(), terraformStateJson, history.getId().toString());
+
+        // State uploads bypass Elide job hooks, so update the workspace and live status explicitly.
+        jobStatusChangeService.afterStatusChanged(job);
 
         // validate KEEP_JOB_HISTORY for local runs
         deleteOldJobs(job);
