@@ -33,13 +33,7 @@ public class OrganizationManageHook implements LifeCycleHook<Organization> {
                 case CREATE:
                     switch (transactionPhase) {
                         case PRECOMMIT:
-                            List<Organization> matches = organizationRepository.findAllByName(organization.getName());
-                            boolean conflict = matches.stream()
-                                    .anyMatch(match -> !match.getId().equals(organization.getId()));
-                            if (conflict) {
-                                throw new OrganizationManagementException(HttpStatus.SC_CONFLICT,
-                                        "An organization named " + organization.getName() + " already exists.");
-                            }
+                            validateOrganizationNameConflict(organization);
                             break;
                         case POSTCOMMIT:
                             try {
@@ -63,5 +57,15 @@ public class OrganizationManageHook implements LifeCycleHook<Organization> {
                     break;
             }
 
+    }
+
+    private void validateOrganizationNameConflict(Organization organization) {
+        List<Organization> matches = organizationRepository.findAllByNameIgnoreCase(organization.getName());
+        boolean conflict = matches.stream()
+                .anyMatch(match -> !match.getId().equals(organization.getId()));
+        if (conflict) {
+            throw new OrganizationManagementException(HttpStatus.SC_CONFLICT,
+                    "An organization named " + organization.getName() + " already exists.");
+        }
     }
 }

@@ -23,7 +23,9 @@ public interface OrganizationRepository extends JpaRepository<Organization, UUID
     // enforces uniqueness at commit. A single-result derived method would throw
     // IncorrectResultSizeDataAccessException in that window, so callers doing a proactive
     // uniqueness check must use this list form and filter out the entity being validated.
-    List<Organization> findAllByName(String name);
+    // The comparison ignores case so that names like "Acme" and "acme" count as the same
+    // organization on every database, not only on case-insensitive collations.
+    List<Organization> findAllByNameIgnoreCase(String name);
 
     /**
      * Locks the organization's row for the rest of the transaction. A plain
