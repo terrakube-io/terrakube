@@ -5,8 +5,10 @@ import io.terrakube.client.model.graphql.GraphQLRequest;
 import io.terrakube.client.model.graphql.GraphQLResponse;
 import io.terrakube.client.model.graphql.queries.search.organization.OrganizationNode;
 import io.terrakube.client.model.graphql.queries.search.organization.SearchOrganizationResponse;
+import io.terrakube.registry.configuration.CacheConfig;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
 import java.util.concurrent.atomic.AtomicReference;
@@ -29,6 +31,8 @@ public class CommonSearchService {
             "  }\n" +
             "}";
 
+    // No sync: it cannot be combined with unless, and a missing organization must be looked up again.
+    @Cacheable(cacheNames = CacheConfig.ORGANIZATION_ID_CACHE, unless = "#result == null")
     public String getOrganizationId(String organizationName) {
         GraphQLRequest query = new GraphQLRequest();
         query.setQuery(String.format(SEARCH_ORGANIZATION_GRAPHQL, organizationName));

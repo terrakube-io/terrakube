@@ -81,6 +81,24 @@ class AzureStorageServiceImplPresignedTest {
         assertTrue(uriStr.contains("sig="), "SAS URL should include signature parameter");
     }
 
+    @Test
+    void getPresignedDownloadUrl_pathEndsInZipWithoutDoubleSlash() {
+        BlobServiceClient realClient = new com.azure.storage.blob.BlobServiceClientBuilder()
+                .connectionString("DefaultEndpointsProtocol=https;AccountName=myaccount;"
+                        + "AccountKey=" + java.util.Base64.getEncoder().encodeToString("secret".getBytes())
+                        + ";EndpointSuffix=core.windows.net")
+                .buildClient();
+
+        URI uri = buildServiceWithRedirect(realClient, mock(GitService.class), true)
+                .getPresignedDownloadUrl("org", "module", "azure", "1.0.0").orElseThrow();
+
+        assertEquals("https", uri.getScheme());
+        // The Azure SDK percent-encodes the slashes inside the blob name; Azure and go-getter decode them.
+        assertTrue(uri.getPath().endsWith("/module.zip"), uri.getPath());
+        assertFalse(uri.getRawPath().contains("//"), uri.getRawPath());
+        assertFalse(uri.getPath().contains("//"), uri.getPath());
+    }
+
     // ---- getPresignedDownloadUrl: SAS generation fails → StorageUnavailableException ----
 
     @Test

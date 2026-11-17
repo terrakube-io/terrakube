@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+    <!-- NULL next_refresh means "due now", so the columns need no default. Existing modules count as
+         having a recent tag, so they keep a short refresh interval for the first days after the upgrade. -->
+    <changeSet id="2-35-0-module-refresh-schedule" author="terrakube">
+        <addColumn tableName="module">
+            <column name="next_refresh" type="datetime"/>
+            <column name="last_refresh" type="datetime"/>
+            <column name="last_tag_detected_at" type="datetime"/>
+            <column name="last_refresh_error" type="varchar(1024)"/>
+        </addColumn>
+        <update tableName="module">
+            <column name="last_tag_detected_at" valueComputed="CURRENT_TIMESTAMP"/>
+        </update>
+    </changeSet>
+
+    <changeSet id="2-35-0-idx-module-next-refresh" author="terrakube">
+        <preConditions onFail="MARK_RAN">
+            <not><indexExists indexName="idx_module_next_refresh" tableName="module"/></not>
+        </preConditions>
+        <createIndex tableName="module" indexName="idx_module_next_refresh">
+            <column name="next_refresh"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>

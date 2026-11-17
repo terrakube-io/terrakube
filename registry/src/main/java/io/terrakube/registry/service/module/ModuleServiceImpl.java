@@ -15,18 +15,22 @@ import io.terrakube.registry.configuration.CacheConfig;
 import io.terrakube.registry.plugin.storage.StorageService;
 import io.terrakube.registry.service.git.ModuleVersionDownload;
 import io.terrakube.registry.service.search.CommonSearchService;
+import jakarta.annotation.PreDestroy;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
-import org.springframework.scheduling.annotation.Async;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
 
@@ -182,7 +186,7 @@ public class ModuleServiceImpl implements ModuleService {
                     module.getRelationships().getVcs().getData().getId());
             vcsType = vcsInformation.getAttributes().getVcsType();
             vcsConnectionType = vcsInformation.getAttributes().getConnectionType();
-            accessToken = getAccessToken(organizationId, vcsInformation.getId(), moduleSource);
+            accessToken = getAccessToken(vcsInformation, moduleSource);
         }
 
         if (module.getRelationships().getSsh().getData() != null) {
@@ -200,59 +204,82 @@ public class ModuleServiceImpl implements ModuleService {
         return moduleVersionPath;
     }
 
-    static final int DOWNLOAD_COUNT_MAX_ATTEMPTS = 3;
-    private static final long[] DOWNLOAD_COUNT_BACKOFF_MILLIS = {500, 2000};
+    // Downloads not yet written to the API, per module. A download only adds to this map; flushDownloadCounts writes
+    // each module's total with one GET and one PATCH, instead of one of each per download.
+    // Counts live in memory, so a SIGKILL loses up to one interval, and two replicas flushing the same module at once
+    // can overwrite each other's PATCH (read-modify-write), losing up to one interval of one replica's counts. Fine
+    // for a display counter; an atomic increment in the API would remove the second loss.
+    private final Map<ModuleKey, Long> pendingDownloadCounts = new ConcurrentHashMap<>();
+    private static final long SHUTDOWN_FLUSH_MILLIS = 10_000;
 
-    // Runs on the dedicated downloadCountExecutor (DownloadCountExecutorConfig) so this
-    // best-effort bookkeeping call never delays the Terraform-facing metadata response
-    // (ModuleWebServiceImpl.getModuleVersionPath already returns before this completes). Failures
-    // here must never surface to the caller or affect the HTTP response already issued - this
-    // counter is not used for authorization, billing, or publication correctness.
-    @Async("downloadCountExecutor")
+    private record ModuleKey(String organization, String module, String provider) {
+    }
+
     @Override
     public void updateModuleDownloadCount(String organizationName, String moduleName, String providerName) {
-        for (int attempt = 1; attempt <= DOWNLOAD_COUNT_MAX_ATTEMPTS; attempt++) {
-            try {
-                doUpdateModuleDownloadCount(organizationName, moduleName, providerName);
+        pendingDownloadCounts.merge(new ModuleKey(organizationName, moduleName, providerName), 1L, Long::sum);
+    }
+
+    @Scheduled(fixedDelayString = "${io.terrakube.registry.download-count.flush-interval-seconds:30}",
+            initialDelayString = "${io.terrakube.registry.download-count.flush-interval-seconds:30}",
+            timeUnit = TimeUnit.SECONDS)
+    public void flushDownloadCounts() {
+        flushDownloadCounts(Long.MAX_VALUE);
+    }
+
+    // Also runs on graceful shutdown, so a rolling deploy does not drop the last interval's downloads. Bounded, so
+    // an unreachable API delays shutdown by SHUTDOWN_FLUSH_MILLIS plus at most one client timeout, not one per module.
+    @PreDestroy
+    public void flushDownloadCountsOnShutdown() {
+        flushDownloadCounts(System.currentTimeMillis() + SHUTDOWN_FLUSH_MILLIS);
+        if (!pendingDownloadCounts.isEmpty()) {
+            log.warn("Dropping {} downloads of {} module(s): not written to the API before shutdown",
+                    pendingDownloadCounts.values().stream().mapToLong(Long::longValue).sum(), pendingDownloadCounts.size());
+        }
+    }
+
+    /** Writes pending counts until deadline (epoch millis); modules not reached stay pending. */
+    void flushDownloadCounts(long deadline) {
+        for (ModuleKey key : pendingDownloadCounts.keySet()) {
+            if (System.currentTimeMillis() >= deadline) {
                 return;
+            }
+            Long delta = pendingDownloadCounts.remove(key);
+            if (delta == null) {
+                continue;
+            }
+            try {
+                addDownloads(key, delta);
             } catch (Exception e) {
-                if (attempt == DOWNLOAD_COUNT_MAX_ATTEMPTS) {
-                    log.error("Giving up updating download count for {}/{}/{} after {} attempts: {}",
-                            organizationName, moduleName, providerName, attempt, e.getMessage());
-                    return;
-                }
-                log.warn("Attempt {} to update download count for {}/{}/{} failed, retrying: {}",
-                        attempt, organizationName, moduleName, providerName, e.getMessage());
-                sleepBackoff(DOWNLOAD_COUNT_BACKOFF_MILLIS[attempt - 1]);
+                // Kept for the next run: the API may be restarting.
+                pendingDownloadCounts.merge(key, delta, Long::sum);
+                log.warn("Could not update download count for {}/{}/{}, retrying next run: {}",
+                        key.organization(), key.module(), key.provider(), e.getMessage());
             }
         }
     }
 
-    private void doUpdateModuleDownloadCount(String organizationName, String moduleName, String providerName) {
-        String organizationId = commonSearchService.getOrganizationId(organizationName);
-        Module module = terrakubeClient.getModuleByNameAndProvider(organizationId, moduleName, providerName).getData()
-                .get(0);
+    private void addDownloads(ModuleKey key, long delta) {
+        String organizationId = commonSearchService.getOrganizationId(key.organization());
+        List<Module> modules = organizationId == null ? null
+                : terrakubeClient.getModuleByNameAndProvider(organizationId, key.module(), key.provider()).getData();
+        if (modules == null || modules.isEmpty()) {
+            // Deleted since it was downloaded; retrying would never succeed.
+            log.warn("Dropping {} downloads of {}/{}/{}: module not found", delta,
+                    key.organization(), key.module(), key.provider());
+            return;
+        }
+        Module module = modules.get(0);
         ModuleRequest moduleRequest = new ModuleRequest();
         ModuleAttributes moduleAttributes = new ModuleAttributes();
-        moduleAttributes.setDownloadQuantity(module.getAttributes().getDownloadQuantity() + 1);
+        moduleAttributes.setDownloadQuantity(module.getAttributes().getDownloadQuantity() + (int) delta);
         module.setAttributes(moduleAttributes);
         moduleRequest.setData(module);
 
         terrakubeClient.updateModule(moduleRequest, organizationId, module.getId());
     }
 
-    private void sleepBackoff(long millis) {
-        try {
-            Thread.sleep(millis);
-        } catch (InterruptedException interruptedException) {
-            Thread.currentThread().interrupt();
-        }
-    }
-
-    private String getAccessToken(String organizationId, String vcsId, String repository_source) {
-        Vcs vcs = getVcsInformation(organizationId, vcsId);
-        if (vcs == null)
-            return null;
+    private String getAccessToken(Vcs vcs, String repository_source) {
         String token = vcs.getAttributes().getAccessToken();
         if (token == null && vcs.getAttributes().getConnectionType().equals("STANDALONE")) {
             log.info("The VCS connection is on a standalone app, getting the GitHub App token");

@@ -231,6 +231,30 @@ class AwsStorageServiceImplTest {
     }
 
     @Test
+    void presignedUrlPathEndsInZipWithoutDoubleSlash() {
+        S3Presigner presigner = S3Presigner.builder()
+                .region(software.amazon.awssdk.regions.Region.US_EAST_1)
+                .credentialsProvider(software.amazon.awssdk.auth.credentials.StaticCredentialsProvider.create(
+                        software.amazon.awssdk.auth.credentials.AwsBasicCredentials.create("AKIATEST", "secret")))
+                .build();
+        AwsStorageServiceImpl awsStorageService = AwsStorageServiceImpl.builder()
+                .s3client(mock(S3Client.class))
+                .bucketName("test-bucket")
+                .gitService(mock(GitService.class))
+                .registryHostname("host")
+                .s3Presigner(presigner)
+                .presignedRedirectEnabled(true)
+                .presignedUrlExpirySeconds(300)
+                .build();
+
+        java.net.URI uri = awsStorageService.getPresignedDownloadUrl("org", "module", "aws", "1.0.0").orElseThrow();
+
+        assertEquals("https", uri.getScheme());
+        assertTrue(uri.getRawPath().endsWith("/module.zip"), uri.getRawPath());
+        assertFalse(uri.getRawPath().contains("//"), uri.getRawPath());
+    }
+
+    @Test
     void shouldThrowStorageUnavailableWhenPresigningFails() {
         S3Client s3Client = mock(S3Client.class);
         GitService gitService = mock(GitService.class);

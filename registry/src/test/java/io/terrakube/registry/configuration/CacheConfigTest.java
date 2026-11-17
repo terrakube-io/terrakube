@@ -24,8 +24,34 @@ class CacheConfigTest {
                 CacheConfig.MODULE_VERSION_PATH_CACHE,
                 CacheConfig.MODULE_VERSION_REMOVED_CACHE,
                 CacheConfig.PROVIDER_WARNINGS_CACHE,
-                CacheConfig.MODULE_DETAILS_CACHE);
+                CacheConfig.MODULE_DETAILS_CACHE,
+                CacheConfig.PROVIDER_VERSIONS_CACHE,
+                CacheConfig.PROVIDER_FILE_CACHE,
+                CacheConfig.ORGANIZATION_ID_CACHE);
         cacheManager.getCacheNames().forEach(name -> assertThat(cacheManager.getCache(name)).isNotNull());
+    }
+
+    @Test
+    void aNonPositiveProviderTtlIsRejected() {
+        OpenRegistryProperties properties = properties(600);
+        properties.setProviderCacheTtlSeconds(0);
+        assertThatThrownBy(properties::validate)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("providerCacheTtlSeconds");
+    }
+
+    @Test
+    void providerCachesExpireAfterTheConfiguredTtl() {
+        OpenRegistryProperties properties = properties(600);
+        properties.setProviderCacheTtlSeconds(7);
+        CacheManager cacheManager = new CacheConfig().cacheManager(properties);
+
+        for (String name : new String[]{CacheConfig.PROVIDER_VERSIONS_CACHE, CacheConfig.PROVIDER_FILE_CACHE}) {
+            com.github.benmanes.caffeine.cache.Cache<?, ?> nativeCache =
+                    (com.github.benmanes.caffeine.cache.Cache<?, ?>) cacheManager.getCache(name).getNativeCache();
+            assertThat(nativeCache.policy().expireAfterWrite().orElseThrow().getExpiresAfter(java.util.concurrent.TimeUnit.SECONDS))
+                    .isEqualTo(7);
+        }
     }
 
     @Test

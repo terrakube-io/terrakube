@@ -10,6 +10,7 @@ import io.terrakube.api.plugin.security.audit.AuditActorContext;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import io.terrakube.api.plugin.scheduler.ScheduleJobService;
+import io.terrakube.api.plugin.scheduler.module.ModuleRefreshTransactions;
 import io.terrakube.api.plugin.vcs.provider.azdevops.AzDevOpsWebhookService;
 import io.terrakube.api.plugin.vcs.provider.bitbucket.BitBucketWebhookService;
 import io.terrakube.api.plugin.vcs.provider.github.GitHubWebhookService;
@@ -51,6 +52,7 @@ public class WebhookService {
     PrCommentService prCommentService;
     WorkspaceBranchPolicy workspaceBranchPolicy;
     WebhookProperties webhookProperties;
+    ModuleRefreshTransactions moduleRefreshTransactions;
 
     @Transactional
     public String processWebhook(String webhookId, String jsonPayload, Map<String, String> headers) {
@@ -100,6 +102,14 @@ public class WebhookService {
         if (!webhookResult.isValid()
                 || webhookResult.getEvent().equals(String.valueOf(WebhookEventType.PING).toLowerCase()))
             return result;
+
+        if (webhookResult.getTag() != null) {
+            moduleRefreshTransactions.markDueBySource(RepoUrlNormalizer.normalize(workspace.getSource()),
+                    webhookResult.getTag());
+        }
+        if (webhookResult.isModuleOnly()) {
+            return result;
+        }
 
         if (!WebhookEventMatcher.shouldProcessPullRequest(workspace, webhookResult,
                 webhookProperties.isPrBaseBranchFilter())) {
