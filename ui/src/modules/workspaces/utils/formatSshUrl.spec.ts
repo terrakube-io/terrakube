@@ -46,4 +46,19 @@ describe("formatSshUrl", () => {
     const result = formatSshUrl("git@github-test.com:terrakube-io/terrakube-docker-compose.git");
     expect(result).toBe("https://github-test.com/terrakube-io/terrakube-docker-compose");
   });
+
+  test("GitHub Pages repository URL is formatted correctly", () => {
+    const result = formatSshUrl("https://github.com/octocat/octocat.github.io.git");
+    expect(result).toBe("https://github.com/octocat/octocat.github.io");
+  });
+
+  test("Repository name containing .git is preserved", () => {
+    const result = formatSshUrl("https://github.com/acme/my.gitops-config.git");
+    expect(result).toBe("https://github.com/acme/my.gitops-config");
+  });
+
+  test("Gitea host containing .git is preserved", () => {
+    const result = formatSshUrl("https://code.gitea.io/acme/infra.git");
+    expect(result).toBe("https://code.gitea.io/acme/infra");
+  });
 });

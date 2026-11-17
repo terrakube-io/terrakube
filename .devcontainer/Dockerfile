@@ -1,5 +1,5 @@
 # dev-17-bookworm
-FROM mcr.microsoft.com/devcontainers/java:dev-25-bookworm@sha256:adc03adadb0285f88eaa04403252cb6ad7d283fda4ce9f6939c13f311f0cb236
+FROM mcr.microsoft.com/devcontainers/java:dev-25-bookworm@sha256:33bfab561ee5cf1d2aa544c178ef4a813d8ffbb95130e171a95883436f9e677c
 
 # Install necessary packages
 RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \

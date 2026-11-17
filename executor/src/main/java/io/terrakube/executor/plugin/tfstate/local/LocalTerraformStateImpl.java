@@ -45,6 +45,7 @@ import io.terrakube.executor.service.mode.TerraformJob;
 public class LocalTerraformStateImpl implements TerraformState {
 
     private static final String TERRAFORM_PLAN_FILE = "terraformLibrary.tfPlan";
+    private static final String TERRAFORM_PLAN_JSON_FILE = "plan.json";
     private static final String TERRAFORM_STATE_FILE = "terraform.tfstate";
     private static final String LOCAL_BACKEND_DIRECTORY = "/.terraform-spring-boot/local/backend/%s/%s/" + TERRAFORM_STATE_FILE;
     private static final String LOCAL_PLAN_DIRECTORY = "/.terraform-spring-boot/local/state/%s/%s/%s/%s/" + TERRAFORM_PLAN_FILE;
@@ -55,7 +56,7 @@ public class LocalTerraformStateImpl implements TerraformState {
     private static final String LOCAL_ARTIFACTS_ROOT = "/.terraform-spring-boot/local/";
     private static final String LOCAL_OUTPUT_PARTS_DIRECTORY = "/.terraform-spring-boot/local/output/%s/%s/%s";
     private static final String LOCAL_OUTPUT_DIRECTORY = "/.terraform-spring-boot/local/output/%s/%s/%s.tfoutput";
-    private static final String LOCAL_BINARY_DIRECTORY = "/.terraform-spring-boot/local/binary/%s/%s/%s";
+    private static final String LOCAL_BINARY_DIRECTORY = "/.terraform-spring-boot/local/binary/%s/%s/%s_%s/%s";
     private static final String LOCAL_OPA_BINARY_DIRECTORY = "/.terraform-spring-boot/local/opa/%s/%s_%s/opa";
     private static final String LOCAL_CONTEXT_SPOOL_DIRECTORY = "/.terraform-spring-boot/local/context-spool/%s/%s/%s-%s.json.gz";
 
@@ -130,11 +131,20 @@ public class LocalTerraformStateImpl implements TerraformState {
 
         if (tfPlan.exists()) {
             File targetFile = new File(stepStateDirectory);
-            return storageRetryMetrics.withRetry("local", "plan-write", () -> {
+            String savedPath = storageRetryMetrics.withRetry("local", "plan-write", () -> {
                 FileUtils.copyFile(tfPlan, targetFile);
                 log.info("Local state file saved to {}", stepStateDirectory);
                 return stepStateDirectory;
             });
+            File tfPlanJson = new File(workingDirectory, TERRAFORM_PLAN_JSON_FILE);
+            if (tfPlanJson.exists()) {
+                File targetJsonFile = new File(stepStateDirectory + ".json");
+                storageRetryMetrics.withRetry("local", "plan-json-write", () -> {
+                    FileUtils.copyFile(tfPlanJson, targetJsonFile);
+                    return null;
+                });
+            }
+            return savedPath;
         } else {
             return null;
         }
@@ -177,6 +187,47 @@ public class LocalTerraformStateImpl implements TerraformState {
                     planExists.set(true);
                 });
         return planExists.get();
+    }
+
+    @Override
+    public boolean downloadTerraformPlanJson(String organizationId, String workspaceId, String jobId, String stepId,
+                                             File workingDirectory) {
+        String stateFilePath = terrakubeClient.getJobById(organizationId, jobId).getData().getAttributes().getTerraformPlan();
+        if (stateFilePath == null || stateFilePath.isBlank()) {
+            return false;
+        }
+        String jsonStatePath = stateFilePath + ".json";
+        File targetFile = new File(workingDirectory, TERRAFORM_PLAN_JSON_FILE);
+        log.info("Copying Terraform plan JSON from {}:", jsonStatePath);
+        if (jsonStatePath.startsWith("http://") || jsonStatePath.startsWith("https://")) {
+            return storageRetryMetrics.withRetry("local", "plan-json-read", () -> {
+                HttpURLConnection connection = (HttpURLConnection) new URL(jsonStatePath).openConnection();
+                connection.setRequestMethod("GET");
+                if (workspaceSecurity != null) {
+                    connection.setRequestProperty("Authorization", "Bearer " + workspaceSecurity.generateAccessToken(60, organizationId, workspaceId, jobId, stepId));
+                }
+                try {
+                    if (connection.getResponseCode() == HttpURLConnection.HTTP_NOT_FOUND) {
+                        return false;
+                    }
+                    try (InputStream in = connection.getInputStream()) {
+                        FileUtils.copyInputStreamToFile(in, targetFile);
+                    }
+                    return true;
+                } finally {
+                    connection.disconnect();
+                }
+            });
+        } else {
+            File sourceFile = new File(jsonStatePath);
+            if (!sourceFile.exists()) {
+                return false;
+            }
+            return storageRetryMetrics.withRetry("local", "plan-json-read", () -> {
+                FileUtils.copyFile(sourceFile, targetFile);
+                return true;
+            });
+        }
     }
 
     @Override
@@ -319,32 +370,32 @@ public class LocalTerraformStateImpl implements TerraformState {
     }
 
     @Override
-    public boolean saveTerraformBinary(String version, boolean tofu, File binaryFile) {
+    public boolean saveTerraformBinary(String version, boolean tofu, String os, String arch, File binaryFile) {
         String product = tofu ? "tofu" : "terraform";
-        String binaryPath = String.format(LOCAL_BINARY_DIRECTORY, product, version, product);
+        String binaryPath = String.format(LOCAL_BINARY_DIRECTORY, product, version, os, arch, product);
         log.info("Saving {} binary to local storage: {}", product, binaryPath);
         try {
             File targetFile = new File(FileUtils.getUserDirectoryPath().concat(
                     FilenameUtils.separatorsToSystem(binaryPath)));
             FileUtils.copyFile(binaryFile, targetFile);
-            log.info("Successfully cached {} binary version {} in local storage", product, version);
+            log.info("Successfully cached {} binary version {} ({}_{}) in local storage", product, version, os, arch);
             return true;
         } catch (Exception e) {
-            log.warn("Failed to cache {} binary version {} in local storage: {}", product, version, e.getMessage());
+            log.warn("Failed to cache {} binary version {} ({}_{}) in local storage: {}", product, version, os, arch, e.getMessage());
             return false;
         }
     }
 
     @Override
-    public boolean downloadTerraformBinary(String version, boolean tofu, File targetFile) {
+    public boolean downloadTerraformBinary(String version, boolean tofu, String os, String arch, File targetFile) {
         String product = tofu ? "tofu" : "terraform";
-        String binaryPath = String.format(LOCAL_BINARY_DIRECTORY, product, version, product);
+        String binaryPath = String.format(LOCAL_BINARY_DIRECTORY, product, version, os, arch, product);
         log.info("Attempting to restore {} binary from local storage: {}", product, binaryPath);
         try {
             File sourceFile = new File(FileUtils.getUserDirectoryPath().concat(
                     FilenameUtils.separatorsToSystem(binaryPath)));
             if (!sourceFile.exists()) {
-                log.info("{} binary version {} not found in local storage cache", product, version);
+                log.info("{} binary version {} ({}_{}) not found in local storage cache", product, version, os, arch);
                 return false;
             }
 
@@ -359,10 +410,10 @@ public class LocalTerraformStateImpl implements TerraformState {
                 log.warn("Failed to set executable permission on restored {} binary", product);
             }
 
-            log.info("Successfully restored {} binary version {} from local storage", product, version);
+            log.info("Successfully restored {} binary version {} ({}_{}) from local storage", product, version, os, arch);
             return true;
         } catch (Exception e) {
-            log.warn("Failed to restore {} binary version {} from local storage: {}", product, version, e.getMessage());
+            log.warn("Failed to restore {} binary version {} ({}_{}) from local storage: {}", product, version, os, arch, e.getMessage());
             return false;
         }
     }

@@ -1,3 +1,4 @@
+import { apiUrl } from "@/config/apiUrls";
 import { ApprovalAttribution } from "@/components/display/ApprovalAttribution";
 import {
   ArrowRightOutlined,
@@ -370,9 +371,7 @@ export const WorkspaceDetails = ({
   };
 
   const loadPermissionSet = () => {
-    const url = `${
-      new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin
-    }/access-token/v1/teams/permissions/organization/${organizationId}`;
+    const url = `${apiUrl("")}/access-token/v1/teams/permissions/organization/${organizationId}`;
     axiosInstance
       .get(url)
       .then((response) => {
@@ -383,9 +382,9 @@ export const WorkspaceDetails = ({
 
         if (id === undefined || id === null) setPermissionsLoaded(true);
         if (id !== undefined && id !== null) {
-          const urlWorkspaceAccess = `${
-            new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin
-          }/access-token/v1/teams/permissions/organization/${organizationId}/workspace/${id}`;
+          const urlWorkspaceAccess = `${apiUrl(
+            ""
+          )}/access-token/v1/teams/permissions/organization/${organizationId}/workspace/${id}`;
           axiosInstance
             .get(urlWorkspaceAccess)
             .then((response) => {
@@ -563,7 +562,11 @@ export const WorkspaceDetails = ({
                     <article className="latest-run" aria-label={runCardTitle}>
                       <div className="latest-run-title">
                         <Typography.Title level={4}>
-                          <Link to={runLink(latestJob.id)} onClick={() => changeJob(latestJob.id)}>
+                          <Link
+                            to={runLink(latestJob.id)}
+                            onClick={() => changeJob(latestJob.id)}
+                            title={latestJob.title}
+                          >
                             {latestJob.title}
                           </Link>
                         </Typography.Title>
@@ -891,7 +894,7 @@ export const WorkspaceDetails = ({
                   workspace: workspace,
                   state: contextState,
                   resources: resources,
-                  apiUrl: new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin,
+                  apiUrl: apiUrl(""),
                   settings: action.settings,
                 });
                 if (settings) {
@@ -912,7 +915,7 @@ export const WorkspaceDetails = ({
                     workspace: workspace,
                     state: contextState,
                     resources: resources,
-                    apiUrl: new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin,
+                    apiUrl: apiUrl(""),
                     settings: action.settings,
                   }}
                 />

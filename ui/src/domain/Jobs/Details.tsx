@@ -41,7 +41,7 @@ import {
 } from "./outputDelivery";
 import { RunDiagnostics } from "./RunDiagnostics";
 import { collectRunDiagnostics } from "./collectDiagnostics";
-import { getPublicApiOrigin } from "./outputUrl";
+import { apiUrl } from "@/config/apiUrls";
 import { hasBlockingPolicyViolations } from "./policyViolations";
 import { parseClosedByTerrakube } from "./closedByTerrakube";
 import { shouldStepBeCollapsible, shouldStepBeExpandedByDefault } from "./stepExpansion";
@@ -599,7 +599,7 @@ export const DetailsJob = ({ jobId, workspaceName, canApprove = false }: Props) 
   const loadContext = useCallback(async () => {
     const requestId = ++contextRequestRef.current;
     const signal = getContextSignal();
-    const apiOrigin = getPublicApiOrigin();
+    const apiOrigin = apiUrl("");
 
     try {
       const response = await axiosAuxiliary.get(`${apiOrigin}/context/v1/${jobId}`, {
@@ -754,7 +754,7 @@ export const DetailsJob = ({ jobId, workspaceName, canApprove = false }: Props) 
 
   const isJobRunning = job?.data?.attributes.status === "running";
   const liveStructuredOutput = useStructuredOutputStream<LiveStructuredOutput | null>({
-    url: `${getPublicApiOrigin()}/context/v1/${jobId}/stream`,
+    url: `${apiUrl("")}/context/v1/${jobId}/stream`,
     enabled: Boolean(jobId) && (isJobRunning || reconcileUntil != null),
     initial: null,
   });

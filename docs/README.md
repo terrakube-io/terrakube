@@ -13,6 +13,7 @@ The full user and administrator documentation is at [docs.terrakube.io](https://
 | [Inactive runs and approval timeouts](ops/inactive-jobs-and-approval-timeouts.md) | Runs are being closed automatically, or a run is stuck waiting for approval. |
 | [Zero-pending job reconciliation](ops/zero-pending-job-reconciliation.md) | A run is stuck with nothing left to execute and the executor queue is blocked. |
 | [Per-job Terraform variables](ops/job-variables.md) | You want to pass `TF_VAR_*` values to a single run. |
+| [Single-domain route table](single-domain/README.md) | You add an endpoint under a new root path, or change single-domain routing. |
 
 ## Templates
 
@@ -20,6 +21,12 @@ The full user and administrator documentation is at [docs.terrakube.io](https://
 | --- | --- |
 | [Plan artifacts](templates/plan-artifacts.md) | The apply step cannot find a file that the plan step built. |
 | [Require a saved plan](templates/require-saved-plan.md) | You want an apply step to run only from the plan that was saved for the job. |
+
+## Contributing
+
+| Page | Read it when |
+| --- | --- |
+| [Repository code map](contributing/code-map.md) | You want to know where services and features live, how a run flows from API to executor, or which classes have the highest coupling. |
 
 ## Contributing to these pages
 

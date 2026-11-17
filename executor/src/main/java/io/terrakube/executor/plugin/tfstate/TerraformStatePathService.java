@@ -21,9 +21,19 @@ public class TerraformStatePathService {
     @Value("${io.terrakube.api.url}")
     private String apiUrl;
 
+    // Single-domain public URL. State JSON URLs are shown to clients, so they use <public>/api; the
+    // HTTP backend address is used by Terraform inside the executor and stays on the API URL.
+    @Value("${io.terrakube.public-url:}")
+    private String publicUrl;
+
+    private String clientBaseUrl() {
+        return publicUrl == null || publicUrl.isBlank() ? this.apiUrl : publicUrl + "/api";
+    }
+
     public String getStateJsonPath(String organizationId, String workspaceId, String stateFilename) {
-        log.info("File State Json: {}", String.format(GENERIC_JSON_PATH, this.apiUrl, organizationId, workspaceId, stateFilename));
-        return String.format(GENERIC_JSON_PATH, this.apiUrl, organizationId, workspaceId, stateFilename);
+        String path = String.format(GENERIC_JSON_PATH, clientBaseUrl(), organizationId, workspaceId, stateFilename);
+        log.info("File State Json: {}", path);
+        return path;
     }
 
     public String getTerraformBinaryPlanPath(String organizationId, String workspaceId, String jobId, String stepId) {

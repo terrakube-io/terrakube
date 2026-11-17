@@ -92,6 +92,78 @@ class LocalTerraformStateImplTest {
     }
 
     @Test
+    void testSaveAndDownloadTerraformPlanJsonLocalAndHttp(@TempDir Path tempDir) throws IOException {
+        File workingDirectory = tempDir.resolve("plan-work").toFile();
+        assertTrue(workingDirectory.mkdirs());
+        FileUtils.writeStringToFile(new File(workingDirectory, "terraformLibrary.tfPlan"), "plan-content", Charset.defaultCharset());
+        FileUtils.writeStringToFile(new File(workingDirectory, "plan.json"), "{\"resource_changes\":[]}", Charset.defaultCharset());
+
+        try {
+            String savedPlanPath = localTerraformState.saveTerraformPlan("org1", "ws1", "job-json", "step1", workingDirectory);
+            assertNotNull(savedPlanPath);
+            assertTrue(new File(savedPlanPath + ".json").exists());
+
+            when(terrakubeClient.getJobById("org1", "job-json").getData().getAttributes().getTerraformPlan())
+                    .thenReturn(savedPlanPath);
+
+            File evalWorkDir = tempDir.resolve("eval-work").toFile();
+            assertTrue(evalWorkDir.mkdirs());
+            assertTrue(localTerraformState.downloadTerraformPlanJson("org1", "ws1", "job-json", "step1", evalWorkDir));
+            assertEquals("{\"resource_changes\":[]}", FileUtils.readFileToString(new File(evalWorkDir, "plan.json"), Charset.defaultCharset()));
+
+            // Missing .json returns false cleanly
+            assertTrue(new File(savedPlanPath + ".json").delete());
+            File missingWorkDir = tempDir.resolve("missing-work").toFile();
+            assertTrue(missingWorkDir.mkdirs());
+            assertFalse(localTerraformState.downloadTerraformPlanJson("org1", "ws1", "job-json", "step1", missingWorkDir));
+
+            // Null recorded plan returns false cleanly
+            when(terrakubeClient.getJobById("org1", "job-json").getData().getAttributes().getTerraformPlan())
+                    .thenReturn(null);
+            assertFalse(localTerraformState.downloadTerraformPlanJson("org1", "ws1", "job-json", "step1", missingWorkDir));
+        } finally {
+            FileUtils.deleteQuietly(new File(FileUtils.getUserDirectoryPath(), ".terraform-spring-boot"));
+        }
+
+        // HTTP download happy path + 404 path
+        com.sun.net.httpserver.HttpServer server = com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress(0), 0);
+        java.util.concurrent.atomic.AtomicReference<String> authHeader = new java.util.concurrent.atomic.AtomicReference<>();
+        server.createContext("/plan.tfstate.json", exchange -> {
+            authHeader.set(exchange.getRequestHeaders().getFirst("Authorization"));
+            byte[] response = "{\"http_plan\":true}".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, response.length);
+            exchange.getResponseBody().write(response);
+            exchange.close();
+        });
+        server.createContext("/missing.tfstate.json", exchange -> {
+            exchange.sendResponseHeaders(404, -1);
+            exchange.close();
+        });
+        server.start();
+        try {
+            int port = server.getAddress().getPort();
+            io.terrakube.executor.service.workspace.security.WorkspaceSecurity workspaceSecurity =
+                    mock(io.terrakube.executor.service.workspace.security.WorkspaceSecurity.class);
+            when(workspaceSecurity.generateAccessToken(60, "org1", "ws1", "job-http", "step1")).thenReturn("jwt-token");
+            localTerraformState.setWorkspaceSecurity(workspaceSecurity);
+
+            File httpWorkDir = tempDir.resolve("http-work").toFile();
+            assertTrue(httpWorkDir.mkdirs());
+            when(terrakubeClient.getJobById("org1", "job-http").getData().getAttributes().getTerraformPlan())
+                    .thenReturn("http://localhost:" + port + "/plan.tfstate");
+            assertTrue(localTerraformState.downloadTerraformPlanJson("org1", "ws1", "job-http", "step1", httpWorkDir));
+            assertEquals("Bearer jwt-token", authHeader.get());
+            assertEquals("{\"http_plan\":true}", FileUtils.readFileToString(new File(httpWorkDir, "plan.json"), Charset.defaultCharset()));
+
+            when(terrakubeClient.getJobById("org1", "job-http").getData().getAttributes().getTerraformPlan())
+                    .thenReturn("http://localhost:" + port + "/missing.tfstate");
+            assertFalse(localTerraformState.downloadTerraformPlanJson("org1", "ws1", "job-http", "step1", httpWorkDir));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
     void testDownloadTerraformPlan(@TempDir Path tempDir) throws IOException {
         String organizationId = "org1";
         String workspaceId = "ws1";
@@ -276,6 +348,29 @@ class LocalTerraformStateImplTest {
 
         // Cleanup
         FileUtils.deleteQuietly(new File(FileUtils.getUserDirectoryPath(), ".terraform-spring-boot"));
+    }
+
+    @Test
+    void testTerraformBinaryIsOnlyRestoredOnTheOsAndArchitectureItWasCachedFrom(@TempDir Path tempDir) throws IOException {
+        // A version no real job uses, so only this test's own cache directory is created and removed.
+        String version = "0.0.0-binary-cache-test";
+        File cacheDirectory = new File(FileUtils.getUserDirectoryPath(),
+                ".terraform-spring-boot/local/binary/terraform/" + version);
+        try {
+            File sourceFile = tempDir.resolve("terraform").toFile();
+            FileUtils.writeStringToFile(sourceFile, "amd64-terraform-binary", Charset.defaultCharset());
+
+            assertTrue(localTerraformState.saveTerraformBinary(version, false, "linux", "amd64", sourceFile));
+
+            File targetFile = tempDir.resolve("restored/terraform").toFile();
+            assertFalse(localTerraformState.downloadTerraformBinary(version, false, "linux", "arm64", targetFile));
+            assertFalse(targetFile.exists());
+
+            assertTrue(localTerraformState.downloadTerraformBinary(version, false, "linux", "amd64", targetFile));
+            assertEquals("amd64-terraform-binary", FileUtils.readFileToString(targetFile, Charset.defaultCharset()));
+        } finally {
+            FileUtils.deleteQuietly(cacheDirectory);
+        }
     }
 
     @Test

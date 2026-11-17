@@ -312,6 +312,7 @@ public class ExecutorJobImpl implements ExecutorJob {
         boolean executionSuccess;
         boolean handedOver = false;
         try {
+            installBinaryForScripts(terraformJob, output);
             executionSuccess = scriptEngineService.execute(terraformJob, terraformJob.getCommandList(), terraformWorkingDir, output);
             terraformResult.setOutputBuffer(scriptOutput);
             handedOver = true;
@@ -324,6 +325,25 @@ public class ExecutorJobImpl implements ExecutorJob {
         terraformResult.setOutputErrorLog(scriptErrorOutput.toString());
         terraformResult.setSuccessfulExecution(executionSuccess);
         return terraformResult;
+    }
+
+    // Scripts run terraform/tofu from their PATH, which only has it once the job's version is in this
+    // executor's binary cache. Without this a script step fails with "command not found" on any
+    // executor that hasn't run a plan, apply or destroy for that version yet. Best effort, so a script
+    // that doesn't call terraform still runs when the binary can't be installed.
+    private void installBinaryForScripts(TerraformJob terraformJob, Consumer<String> output) {
+        if (terraformJob.getCommandList() == null || terraformJob.getCommandList().isEmpty()) {
+            return;
+        }
+        try {
+            terraformExecutor.installBinary(terraformJob);
+        } catch (Exception e) {
+            String product = terraformJob.isTofu() ? "OpenTofu" : "Terraform";
+            log.warn("Unable to install {} {} for job {}: {}", product, terraformJob.getTerraformVersion(),
+                    terraformJob.getJobId(), e.getMessage());
+            output.accept(String.format("Unable to install %s %s, scripts may not find it on the PATH: %s",
+                    product, terraformJob.getTerraformVersion(), e.getMessage()));
+        }
     }
 
     private static String getCommitId(File workspaceFolder) {

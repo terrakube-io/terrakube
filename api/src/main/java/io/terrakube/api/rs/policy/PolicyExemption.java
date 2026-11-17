@@ -18,6 +18,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Temporal;
 import jakarta.persistence.TemporalType;
+import jakarta.validation.constraints.NotBlank;
 import lombok.Getter;
 import lombok.Setter;
 import org.hibernate.annotations.JdbcTypeCode;
@@ -56,6 +57,7 @@ public class PolicyExemption extends GenericAuditFields {
     @JoinColumn(name = "project_id")
     private Project project;
 
+    @NotBlank(message = "ticketReference is required")
     @Column(name = "ticket_reference", nullable = false)
     private String ticketReference;
 

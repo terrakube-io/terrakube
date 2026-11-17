@@ -45,8 +45,8 @@ public class GitHubWebhookService extends WebhookServiceBase {
     private final ObjectMapper objectMapper;
     private final TokenService tokenService;
 
-    @Value("${io.terrakube.hostname}")
-    private String hostname;
+    @Value("#{@publicUrls.apiBaseUrl()}")
+    private String apiBaseUrl;
     @Value("${io.terrakube.ui.url}")
     private String uiUrl;
     @Value("${io.terrakube.webhook.insecure-ssl:1}")
@@ -140,7 +140,7 @@ public class GitHubWebhookService extends WebhookServiceBase {
                 }
             } else {
                 result.setValid(false);
-                log.error("No valid github pull request event: {} ", action);
+                log.info("Ignoring pull_request with action '{}': only 'opened', 'synchronize' and 'reopened' are handled", action);
             }
         } else if ("release".equals(event)) {
             String action = rootNode.path("action").asText();
@@ -151,7 +151,7 @@ public class GitHubWebhookService extends WebhookServiceBase {
                 result.setBranch(rootNode.path("release").path("tag_name").asText());
             } else {
                 result.setValid(false);
-                log.error("No valid github release event: {}", action);
+                log.info("Ignoring release with action '{}': only 'created' is handled", action);
             }
         } else if ("issue_comment".equals(event)) {
             String action = rootNode.path("action").asText();
@@ -213,7 +213,7 @@ public class GitHubWebhookService extends WebhookServiceBase {
             }
         } else {
             result.setValid(false);
-            log.error("No valid github event " + result.getEvent());
+            log.info("Ignoring GitHub event '{}': only 'push', 'pull_request', 'release' and 'issue_comment' are handled", result.getEvent());
         }
 
         return result;
@@ -365,7 +365,7 @@ public class GitHubWebhookService extends WebhookServiceBase {
         String id = webhook.getRemoteHookId();
         String secret = Base64.getEncoder()
                 .encodeToString(workspace.getId().toString().getBytes(StandardCharsets.UTF_8));
-        String webhookUrl = String.format("https://%s/webhook/v1/%s", hostname, webhook.getId().toString());
+        String webhookUrl = String.format("%s/webhook/v1/%s", apiBaseUrl, webhook.getId().toString());
         String[] ownerAndRepo = extractOwnerAndRepo(workspace.getSource());
 
         String events = webhook.getEvents().stream().map(WebhookEvent::getEvent).distinct()
@@ -538,7 +538,7 @@ public class GitHubWebhookService extends WebhookServiceBase {
     public String createOrUpdateRepoWebhook(RepoWebhook repoWebhook, Set<WebhookEventType> eventTypes,
             boolean hasPrWorkflow) {
         String id = repoWebhook.getRemoteHookId();
-        String webhookUrl = String.format("https://%s/webhook/v2/%s", hostname, repoWebhook.getId().toString());
+        String webhookUrl = String.format("%s/webhook/v2/%s", apiBaseUrl, repoWebhook.getId().toString());
         String[] ownerAndRepo = extractOwnerAndRepo(repoWebhook.getRepositoryUrl());
 
         String events = eventTypes.stream()

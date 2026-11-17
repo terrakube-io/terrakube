@@ -271,7 +271,7 @@ public class JobLogBroadcaster {
             if (!stepId.equals(stepOf(record))) {
                 return;
             }
-            emitter.send(SseEmitter.event().id(record.getId().getValue()).data(outputOf(record)));
+            emitter.send(SseEmitter.event().id(record.getId().getValue()).data(sseData(outputOf(record))));
             lastSendNanos = System.nanoTime();
         }
     }
@@ -408,6 +408,18 @@ public class JobLogBroadcaster {
 
     private static String outputOf(MapRecord record) {
         return StringRecord.of(record).getValue().get("output");
+    }
+
+    /**
+     * SSE clients strip one space after {@code data:} and end a line at {@code \r}, {@code \n} or {@code \r\n};
+     * Spring writes {@code data:} right before the text. Normalising line breaks to {@code \n} and starting
+     * every line with a space lets a client recover the exact text, leading spaces included.
+     */
+    private static String sseData(String output) {
+        if (output == null) {
+            return null;
+        }
+        return " " + output.replace("\r\n", "\n").replace('\r', '\n').replace("\n", "\n ");
     }
 
     private static long sizeOf(String output) {
