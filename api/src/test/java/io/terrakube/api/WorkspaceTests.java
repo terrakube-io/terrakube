@@ -389,6 +389,77 @@ class WorkspaceTests extends ServerApplicationTests {
     }
 
     @Test
+    void createWorkspaceWithNameDifferingOnlyByCaseIsRejected() {
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
+                .body("{\n" +
+                        "  \"data\": {\n" +
+                        "    \"type\": \"workspace\",\n" +
+                        "    \"attributes\": {\n" +
+                        "      \"name\": \"SAMPLE_SIMPLE\",\n" +
+                        "      \"source\": \"https://github.com/AzBuilder/terraform-azurerm-terrakube-app-registration.git\",\n" +
+                        "      \"branch\": \"main\",\n" +
+                        "      \"terraformVersion\": \"1.0.11\"\n" +
+                        "    }\n" +
+                        "  }\n" +
+                        "}")
+                .when()
+                .post("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/workspace")
+                .then()
+                .log()
+                .ifValidationFails()
+                .statusCode(HttpStatus.CONFLICT.value());
+    }
+
+    @Test
+    void renameWorkspaceToNameDifferingOnlyByCaseIsRejected() {
+        String workspaceId = given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
+                .body("{\n" +
+                        "  \"data\": {\n" +
+                        "    \"type\": \"workspace\",\n" +
+                        "    \"attributes\": {\n" +
+                        "      \"name\": \"CaseRenameWorkspace\",\n" +
+                        "      \"source\": \"https://github.com/AzBuilder/terraform-azurerm-terrakube-app-registration.git\",\n" +
+                        "      \"branch\": \"main\",\n" +
+                        "      \"terraformVersion\": \"1.0.11\"\n" +
+                        "    }\n" +
+                        "  }\n" +
+                        "}")
+                .when()
+                .post("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/workspace")
+                .then()
+                .log()
+                .ifValidationFails()
+                .statusCode(HttpStatus.CREATED.value()).extract().path("data.id");
+
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
+                .body("{\n" +
+                        "  \"data\": {\n" +
+                        "    \"type\": \"workspace\",\n" +
+                        "    \"id\": \"" + workspaceId + "\",\n" +
+                        "    \"attributes\": {\n" +
+                        "      \"name\": \"Sample_Simple\"\n" +
+                        "    }\n" +
+                        "  }\n" +
+                        "}")
+                .when()
+                .patch("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/workspace/" + workspaceId)
+                .then()
+                .log()
+                .ifValidationFails()
+                .statusCode(HttpStatus.CONFLICT.value());
+
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+                .when()
+                .delete("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/workspace/" + workspaceId)
+                .then()
+                .statusCode(HttpStatus.NO_CONTENT.value());
+    }
+
+    @Test
     void workspaceNameOf128CharactersIsAccepted() {
         String workspaceName = "x".repeat(128);
 
