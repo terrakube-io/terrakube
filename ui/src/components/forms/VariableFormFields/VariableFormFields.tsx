@@ -1,4 +1,4 @@
-import { Checkbox, Form, Input, RadioChangeEvent } from "antd";
+import { Checkbox, Form, Input, type RadioChangeEvent } from "antd";
 import RadioChoices from "@/components/settings/RadioChoices";
 
 type Props = {

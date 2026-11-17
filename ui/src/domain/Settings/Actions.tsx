@@ -318,9 +318,9 @@ export const ActionSettings = ({ editorMode, editorId, managePermission = true }
             className="editor-form"
             saveLabel={mode === "create" ? "Create action" : "Update action"}
             saveDisabled={!managePermission}
-            onFinish={(values) => {
+            onFinish={async (values) => {
               const editorValue = editorRef.current ? editorRef.current.getValue() : actionContent;
-              const error = validateActionSyntax(editorValue);
+              const error = await validateActionSyntax(editorValue);
               setSyntaxError(error);
               if (error) {
                 editorRef.current?.focus();
