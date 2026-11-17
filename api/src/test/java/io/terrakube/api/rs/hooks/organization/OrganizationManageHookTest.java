@@ -102,4 +102,15 @@ class OrganizationManageHookTest {
         verify(softDeleteService).disableOrganization(organization);
         verify(organizationRepository, never()).findAllByNameIgnoreCase(anyString());
     }
+
+    @Test
+    void updateWithoutChangeSpecDoesNothing() {
+        Organization organization = organization("Acme");
+        organization.setDisabled(true);
+
+        hook.execute(Operation.UPDATE, TransactionPhase.PRECOMMIT, organization, null, Optional.empty());
+
+        verify(organizationRepository, never()).findAllByNameIgnoreCase(anyString());
+        verify(softDeleteService, never()).disableOrganization(organization);
+    }
 }
