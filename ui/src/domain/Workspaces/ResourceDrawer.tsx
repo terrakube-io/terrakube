@@ -1,3 +1,4 @@
+import { apiUrl } from "@/config/apiUrls";
 import { Avatar, Col, Drawer, Row, Space, Spin, Tabs } from "antd";
 import { lazy, Suspense, useEffect, useState } from "react";
 import axiosInstance from "../../config/axiosConfig";
@@ -49,7 +50,7 @@ export const ResourceDrawer = ({ open, resource, setOpen, workspace }: Props) =>
           for (const criteria of displayCriteria) {
             const settings = evaluateCriteria(criteria, {
               state: resource,
-              apiUrl: new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin,
+              apiUrl: apiUrl(""),
             });
             if (settings) {
               action.settings = settings; // Attach settings to the action
@@ -85,7 +86,7 @@ export const ResourceDrawer = ({ open, resource, setOpen, workspace }: Props) =>
 
   const context = {
     state: resource,
-    apiUrl: new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin,
+    apiUrl: apiUrl(""),
     workspace: workspace,
   };
 

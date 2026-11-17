@@ -28,8 +28,8 @@ import java.util.Collections;
 @Slf4j
 public class AzDevOpsTokenService {
 
-    @Value("${io.terrakube.hostname}")
-    private String hostname;
+    @Value("#{@publicUrls.apiBaseUrl()}")
+    private String apiBaseUrl;
 
     @Autowired
     private DynamicCredentialsService dynamicCredentialsService;
@@ -46,7 +46,7 @@ public class AzDevOpsTokenService {
         formData.add("client_assertion", clientSecret);
         formData.add("grant_type", "urn:ietf:params:oauth:grant-type:jwt-bearer");
         formData.add("assertion", tempCode);
-        formData.add("redirect_uri", String.format("https://%s/callback/v1/vcs/%s", hostname, callback == null ? vcsId: callback));
+        formData.add("redirect_uri", String.format("%s/callback/v1/vcs/%s", apiBaseUrl, callback == null ? vcsId: callback));
 
         AzDevOpsToken azDevOpsToken = getWebClient(endpoint).post()
                 .uri("/oauth2/token")
@@ -64,7 +64,7 @@ public class AzDevOpsTokenService {
         formData.add("client_assertion", clientSecret);
         formData.add("grant_type", "refresh_token");
         formData.add("assertion", refreshToken);
-        formData.add("redirect_uri", String.format("https://%s/callback/v1/vcs/%s", hostname, callback == null ? vcsId: callback));
+        formData.add("redirect_uri", String.format("%s/callback/v1/vcs/%s", apiBaseUrl, callback == null ? vcsId: callback));
 
         AzDevOpsToken azDevOpsToken  = getWebClient(endpoint).post()
                 .uri("/oauth2/token")

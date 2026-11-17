@@ -1,0 +1,70 @@
+# Single-domain variant: UI, API, registry and Dex all served from https://terrakube.${DOMAIN}.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.single-domain.yml up -d
+#
+# Routing follows docs/single-domain/route-table.yaml (most specific first):
+#   /.well-known/{terraform.json,openid-configuration,jwks} -> API
+#   /api/private-registry/                                  -> registry
+#   /api/, /webhook/, /callback/, /access-token/            -> API
+#   /dex/                                                   -> Dex
+#   everything else                                         -> UI
+# scripts/check-route-table.py checks these rules against the route table.
+
+services:
+  terrakube-api:
+    environment:
+      TerrakubePublicUrl: https://terrakube.${DOMAIN}
+      TerrakubeHostname: ""
+      TerrakubeUiURL: https://terrakube.${DOMAIN}
+      DexIssuerUri: https://terrakube.${DOMAIN}/dex
+      TerraformLoginApiUrl: ""
+    labels:
+      traefik.http.routers.terrakube-api-https.rule: >-
+        Host(`terrakube.${DOMAIN}`) && (Path(`/.well-known/terraform.json`) || Path(`/.well-known/openid-configuration`) || Path(`/.well-known/jwks`) || PathPrefix(`/api/`) || PathPrefix(`/webhook/`) || PathPrefix(`/callback/`) || PathPrefix(`/access-token/`))
+      traefik.http.routers.terrakube-api-https.priority: 100
+      traefik.http.routers.terrakube-api-http.rule: Host(`terrakube.${DOMAIN}`) && PathPrefix(`/api/`)
+      traefik.http.routers.terrakube-api-http.priority: 100
+
+  terrakube-registry:
+    environment:
+      TerrakubePublicUrl: https://terrakube.${DOMAIN}
+      AzBuilderRegistry: https://terrakube.${DOMAIN}/api/private-registry
+      AzBuilderApiUrl: http://terrakube-api:8080
+      DexIssuerUri: https://terrakube.${DOMAIN}/dex
+      AppIssuerUri: https://terrakube.${DOMAIN}/dex
+      TerrakubeUiURL: https://terrakube.${DOMAIN}
+      TerraformLoginApiUrl: ""
+    labels:
+      traefik.http.routers.terrakube-registry-https.rule: Host(`terrakube.${DOMAIN}`) && PathPrefix(`/api/private-registry/`)
+      traefik.http.routers.terrakube-registry-https.priority: 200
+      traefik.http.routers.terrakube-registry-http.rule: Host(`terrakube.${DOMAIN}`) && PathPrefix(`/api/private-registry/`)
+      traefik.http.routers.terrakube-registry-http.priority: 200
+
+  terrakube-executor:
+    environment:
+      TerrakubePublicUrl: https://terrakube.${DOMAIN}
+      # Server-to-server traffic stays on the internal network and uses legacy paths.
+      AzBuilderApiUrl: http://terrakube-api:8080
+      TerrakubeApiUrl: http://terrakube-api:8080
+      TerrakubeRegistryDomain: terrakube.${DOMAIN}
+
+  terrakube-dex:
+    volumes:
+      - ./config-ldap.single-domain.yaml:/etc/dex/config.docker.yaml
+    labels:
+      traefik.http.routers.terrakube-dex-https.rule: Host(`terrakube.${DOMAIN}`) && PathPrefix(`/dex/`)
+      traefik.http.routers.terrakube-dex-https.priority: 100
+      traefik.http.routers.terrakube-dex-http.rule: Host(`terrakube.${DOMAIN}`) && PathPrefix(`/dex/`)
+      traefik.http.routers.terrakube-dex-http.priority: 100
+
+  terrakube-ui:
+    volumes:
+      - ./env-config.single-domain.js:/usr/share/nginx/html/env-config.js
+    environment:
+      REACT_APP_TERRAKUBE_PUBLIC_URL: https://terrakube.${DOMAIN}
+      REACT_APP_TERRAKUBE_API_URL: https://terrakube.${DOMAIN}/api/v1/
+      REACT_APP_AUTHORITY: https://terrakube.${DOMAIN}/dex
+      REACT_APP_REGISTRY_URI: https://terrakube.${DOMAIN}/api/private-registry
+    labels:
+      traefik.http.routers.terrakube-ui-https.priority: 1
+      traefik.http.routers.terrakube-ui-http.priority: 1

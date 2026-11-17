@@ -159,7 +159,12 @@ export default function RunList({ jobs, onRunClick, runLink }: Props) {
                     <Avatar size={20} shape="square" icon={<UserOutlined />} />
                     <div className="run-row-body">
                       <div className="run-row-title">
-                        <Link to={runLink(item.id)} onClick={() => onRunClick(item.id)} className="run-row-link">
+                        <Link
+                          to={runLink(item.id)}
+                          onClick={() => onRunClick(item.id)}
+                          className="run-row-link"
+                          title={item.title}
+                        >
                           {item.title}
                         </Link>
                         {item.id === currentId && <Tag>Current</Tag>}

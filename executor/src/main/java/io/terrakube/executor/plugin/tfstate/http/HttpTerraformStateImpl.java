@@ -130,6 +130,11 @@ public class HttpTerraformStateImpl implements TerraformState {
     }
 
     @Override
+    public boolean downloadTerraformPlanJson(String organizationId, String workspaceId, String jobId, String stepId, File workingDirectory) {
+        return delegate != null && delegate.downloadTerraformPlanJson(organizationId, workspaceId, jobId, stepId, workingDirectory);
+    }
+
+    @Override
     public String saveArtifacts(String organizationId, String workspaceId, String jobId, String stepId, File bundle) {
         return delegate != null ? delegate.saveArtifacts(organizationId, workspaceId, jobId, stepId, bundle) : null;
     }

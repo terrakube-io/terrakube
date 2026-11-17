@@ -1,3 +1,4 @@
+import { apiUrl } from "@/config/apiUrls";
 import { AutoComplete, Checkbox, Form, Input, Select, Space, Spin, message } from "antd";
 import { GlobalOutlined } from "@ant-design/icons";
 import { useEffect, useState } from "react";
@@ -71,7 +72,7 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace,
   const vcsDriven = workspaceData.attributes?.source !== "empty";
 
   const loadVersions = (iacType: string) => {
-    const versionsApi = `${new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin}/${iacType}/index.json`;
+    const versionsApi = `${apiUrl("")}/${iacType}/index.json`;
     axiosInstance.get(versionsApi).then((resp) => {
       const tfVersions = [];
       if (iacType === "tofu") {
@@ -90,7 +91,7 @@ export const WorkspaceGeneral = ({ workspaceData, orgTemplates, manageWorkspace,
   useEffect(() => {
     setWaiting(true);
     const iacType = workspaceData.attributes?.iacType;
-    const versionsApi = `${new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin}/${iacType}/index.json`;
+    const versionsApi = `${apiUrl("")}/${iacType}/index.json`;
 
     // Parallel load: versions, agent list, projects, and VCS providers
     Promise.all([

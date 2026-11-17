@@ -1,5 +1,6 @@
 package io.terrakube.registry.plugin.storage.gcp;
 
+import com.google.auth.ServiceAccountSigner;
 import com.google.cloud.storage.BlobId;
 import com.google.cloud.storage.BlobInfo;
 import com.google.cloud.storage.Storage;
@@ -87,9 +88,11 @@ public class GcpStorageServiceImpl implements StorageService {
      * getModuleVersionPath's 10-minute cache) — its validity window is much shorter than the cache
      * TTL, so every ZIP request gets a fresh signature computed here.
      *
-     * <p>Requires the service account credentials to have the
-     * {@code iam.serviceAccounts.signBlob} IAM permission. This is available automatically
-     * when using a service-account JSON key via {@code GoogleCredentials.fromStream(...)}.
+     * <p>The URL is signed with the credentials' service account: locally with a service account
+     * key, or through the IAM {@code signBlob} API with Application Default Credentials (for
+     * example GKE Workload Identity bound to a Google service account), which needs
+     * {@code iam.serviceAccounts.signBlob} on that service account
+     * ({@code roles/iam.serviceAccountTokenCreator}).
      */
     @Override
     public Optional<URI> getPresignedDownloadUrl(String organizationName, String moduleName, String providerName,
@@ -110,6 +113,12 @@ public class GcpStorageServiceImpl implements StorageService {
             // Never log the signed URL itself — it carries the signature query string.
             log.info("Generated GCS V4-signed download URL for bucket {} key {}", bucketName, blobKey);
             return Optional.of(signedUrl.toURI());
+        } catch (ServiceAccountSigner.SigningException e) {
+            String message = "Failed to sign a GCS URL for key " + blobKey + ". With Application Default Credentials "
+                    + "the identity must be a Google service account with iam.serviceAccounts.signBlob on itself "
+                    + "(roles/iam.serviceAccountTokenCreator)";
+            log.error("{}: {}", message, e.getMessage());
+            throw new StorageUnavailableException(message, e);
         } catch (Exception e) {
             log.error("Failed to generate GCS signed URL for bucket {} key {}: {}", bucketName, blobKey,
                     e.getMessage());
