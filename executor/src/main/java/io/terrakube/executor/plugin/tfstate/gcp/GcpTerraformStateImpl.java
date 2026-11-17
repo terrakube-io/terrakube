@@ -3,6 +3,7 @@ package io.terrakube.executor.plugin.tfstate.gcp;
 import io.terrakube.executor.plugin.tfstate.OutputPartNames;
 import io.terrakube.executor.service.logs.StepOutputPartWriter;
 import io.terrakube.executor.service.logs.StepOutputBuffer;
+import com.google.cloud.storage.Blob;
 import com.google.cloud.storage.BlobId;
 import com.google.cloud.storage.BlobInfo;
 import com.google.cloud.storage.Storage;
@@ -47,6 +48,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class GcpTerraformStateImpl implements TerraformState {
 
     private static final String TERRAFORM_PLAN_FILE = "terraformLibrary.tfPlan";
+    private static final String TERRAFORM_PLAN_JSON_FILE = "plan.json";
     private static final String GCP_CREDENTIALS_FILE = "GCP_CREDENTIALS_FILE.json";
     private static final String BACKEND_FILE_NAME = "gcp_backend_override.tf";
     private static final String CONTEXT_SPOOL_LOCATION = "context-spool/%s/%s/%s-%s.json.gz";
@@ -126,14 +128,30 @@ public class GcpTerraformStateImpl implements TerraformState {
                 throw new TerraformStateUnavailableException("Unable to read local plan file " + tfPlanContent.getAbsolutePath(), e);
             }
 
+            byte[] jsonContent = null;
+            File tfPlanJson = new File(workingDirectory, TERRAFORM_PLAN_JSON_FILE);
+            if (tfPlanJson.exists()) {
+                try {
+                    jsonContent = FileUtils.readFileToByteArray(tfPlanJson);
+                } catch (IOException e) {
+                    throw new TerraformStateUnavailableException("Unable to read local plan JSON file " + tfPlanJson.getAbsolutePath(), e);
+                }
+            }
+
             BlobId blobId = BlobId.of(bucketName, blobKey);
             BlobInfo blobInfo = BlobInfo.newBuilder(blobId).build();
-            return storageRetryMetrics.withRetry("gcp", "plan-write", () -> {
+            String url = storageRetryMetrics.withRetry("gcp", "plan-write", () -> {
                 storage.create(blobInfo, content);
-                String url = String.format("https://storage.cloud.google.com/%s/%s", bucketName, blobKey);
-                log.info("File URL {}", url);
-                return url;
+                String planUrl = String.format("https://storage.cloud.google.com/%s/%s", bucketName, blobKey);
+                log.info("File URL {}", planUrl);
+                return planUrl;
             });
+            if (jsonContent != null) {
+                byte[] planJsonBytes = jsonContent;
+                BlobInfo jsonBlobInfo = BlobInfo.newBuilder(BlobId.of(bucketName, blobKey + ".json")).build();
+                storageRetryMetrics.withRetry("gcp", "plan-json-write", () -> storage.create(jsonBlobInfo, planJsonBytes));
+            }
+            return url;
         } else {
             return null;
         }
@@ -164,6 +182,34 @@ public class GcpTerraformStateImpl implements TerraformState {
                     planGcExist.set(true);
                 });
         return planGcExist.get();
+    }
+
+    @Override
+    public boolean downloadTerraformPlanJson(String organizationId, String workspaceId, String jobId, String stepId, File workingDirectory) {
+        String stateUrl = terrakubeClient.getJobById(organizationId, jobId).getData().getAttributes().getTerraformPlan();
+        if (stateUrl == null || stateUrl.isBlank()) {
+            return false;
+        }
+        String blobPath;
+        try {
+            String bucketNamePath = String.format("/%s/", bucketName);
+            blobPath = new URL(stateUrl).getPath().replace(bucketNamePath, "") + ".json";
+        } catch (IOException e) {
+            log.error(e.getMessage());
+            return false;
+        }
+        BlobId blobId = BlobId.of(bucketName, blobPath);
+        log.info("Downloading Terraform plan JSON blob from gs://{}/{}", bucketName, blobPath);
+        Blob blob = storageRetryMetrics.withRetry("gcp", "plan-json-read", () -> storage.get(blobId));
+        if (blob == null) {
+            return false;
+        }
+        File targetFile = new File(workingDirectory, TERRAFORM_PLAN_JSON_FILE);
+        storageRetryMetrics.withRetry("gcp", "plan-json-read", () -> {
+            blob.downloadTo(targetFile.toPath());
+            return null;
+        });
+        return true;
     }
 
     @Override

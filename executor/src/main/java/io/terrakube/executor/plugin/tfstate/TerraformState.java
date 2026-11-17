@@ -36,6 +36,19 @@ public interface TerraformState {
     boolean downloadTerraformPlan(String organizationId, String workspaceId, String jobId, String stepId, File workingDirectory);
 
     /**
+     * Restores the JSON representation of the Terraform plan ({@code plan.json}) recorded on the job into
+     * {@code workingDirectory/plan.json} for headless OPA policy evaluations where {@code terraform show -json}
+     * cannot run because workspace providers are not initialized.
+     *
+     * @return {@code true} if {@code plan.json} was found in storage and written to {@code workingDirectory};
+     *         {@code false} when no recorded plan JSON is available.
+     * @throws TerraformStateUnavailableException when storage could not be read after retries.
+     */
+    default boolean downloadTerraformPlanJson(String organizationId, String workspaceId, String jobId, String stepId, File workingDirectory) {
+        return false;
+    }
+
+    /**
      * Stores the plan artifacts bundle of a plan step, under its own prefix (plan-artifacts/), apart
      * from state and plan history so a lifecycle rule can expire it independently. The bundle is
      * streamed from {@code bundle}, not read into memory.

@@ -2325,4 +2325,64 @@ class TerraformExecutorServiceImplTest {
     private static String outputOf(ExecutorJobResult result) {
         return result.getOutputBuffer().toString();
     }
+
+    @Test
+    void planWritesPlanJsonBeforeSaveTerraformPlanEvenWhenNoPoliciesAreAttached() throws Exception {
+        TerraformExecutorServiceImpl subject = spy(subject());
+        TerraformJob terraformJob = createJob();
+
+        when(terraformClient.init(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(true));
+        TerraformClient jsonPlanClient = mock(TerraformClient.class);
+        when(jsonPlanClient.planDetailExitCode(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(2));
+        doReturn(jsonPlanClient).when(subject).buildJsonEnabledPlanClient();
+        when(planStructuredOutputService.getPlanAsJson(eq(terraformJob), any(File.class)))
+                .thenReturn("{\"format_version\":\"1.2\",\"resource_changes\":[]}");
+
+        List<String> capturedPlanJson = new ArrayList<>();
+        when(terraformState.saveTerraformPlan(eq("org"), eq("workspace"), eq("42"), eq("1"), any(File.class)))
+                .thenAnswer(invocation -> {
+                    File workingDir = invocation.getArgument(4);
+                    File planJson = new File(workingDir, "plan.json");
+                    assertTrue(planJson.exists(), "plan.json must exist before saveTerraformPlan runs");
+                    capturedPlanJson.add(Files.readString(planJson.toPath()));
+                    return "https://storage.example/tfstate/org/workspace/42/1/terraformLibrary.tfPlan";
+                });
+
+        ExecutorJobResult result = subject.plan(terraformJob, tempDir.toFile(), false);
+
+        assertTrue(result.isSuccessfulExecution());
+        assertEquals(List.of("{\"format_version\":\"1.2\",\"resource_changes\":[]}"), capturedPlanJson);
+        assertEquals("https://storage.example/tfstate/org/workspace/42/1/terraformLibrary.tfPlan", result.getPlanFile());
+    }
+
+    @Test
+    void planReusesWrittenPlanJsonForInlineOpaEvaluationWithoutRecomputing() throws Exception {
+        io.terrakube.executor.service.opa.OpaExecutorService opaService = mock(io.terrakube.executor.service.opa.OpaExecutorService.class);
+        TerraformExecutorServiceImpl subject = spy(subject());
+        subject.opaExecutorService = opaService;
+        TerraformJob terraformJob = createJob();
+        io.terrakube.executor.service.mode.PolicyContext policy = new io.terrakube.executor.service.mode.PolicyContext();
+        policy.setPolicyId("policy-1");
+        terraformJob.setPolicyList(List.of(policy));
+
+        when(terraformClient.init(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(true));
+        TerraformClient jsonPlanClient = mock(TerraformClient.class);
+        when(jsonPlanClient.planDetailExitCode(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(2));
+        doReturn(jsonPlanClient).when(subject).buildJsonEnabledPlanClient();
+        when(planStructuredOutputService.getPlanAsJson(eq(terraformJob), any(File.class)))
+                .thenReturn("{\"format_version\":\"1.2\"}");
+        when(opaService.evaluateAllPolicies(eq(terraformJob), any(File.class), any(File.class), any()))
+                .thenReturn(List.of());
+
+        ExecutorJobResult result = subject.plan(terraformJob, tempDir.toFile(), false);
+
+        assertTrue(result.isSuccessfulExecution());
+        verify(planStructuredOutputService, Mockito.times(1)).getPlanAsJson(eq(terraformJob), any(File.class));
+        verify(opaService).evaluateAllPolicies(eq(terraformJob), any(File.class),
+                argThat(file -> file.exists() && "plan.json".equals(file.getName())), any());
+    }
 }
