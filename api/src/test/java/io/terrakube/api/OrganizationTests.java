@@ -1,5 +1,6 @@
 package io.terrakube.api;
 
+import io.terrakube.api.rs.Organization;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.MockitoAnnotations;
@@ -98,6 +99,55 @@ class OrganizationTests extends ServerApplicationTests {
                 .then()
                 .assertThat().body("data.attributes.name", equalTo("aws"))
                 .statusCode(HttpStatus.OK.value());
+    }
+
+    @Test
+    void updatingOtherFieldsWorksNextToALegacyCaseVariant() {
+        // Existing PostgreSQL installs can already hold "AWS" next to the seeded "aws"; both must stay editable.
+        Organization caseVariant = new Organization();
+        caseVariant.setName("AWS");
+        caseVariant.setDescription("Legacy case variant");
+        caseVariant = organizationRepository.save(caseVariant);
+
+        try {
+            given()
+                    .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_ADMIN"), "Content-Type", "application/vnd.api+json")
+                    .body("{\n" +
+                            "  \"data\": {\n" +
+                            "    \"type\": \"organization\",\n" +
+                            "    \"id\": \"3a130a1c-d96f-4f99-83b8-58d472567e3a\",\n" +
+                            "    \"attributes\": {\n" +
+                            "      \"description\": \"Updated next to a case variant\"\n" +
+                            "    }\n" +
+                            "  }\n" +
+                            "}")
+                    .when()
+                    .patch("/api/v1/organization/3a130a1c-d96f-4f99-83b8-58d472567e3a")
+                    .then()
+                    .log()
+                    .ifValidationFails()
+                    .statusCode(HttpStatus.NO_CONTENT.value());
+
+            given()
+                    .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_ADMIN"), "Content-Type", "application/vnd.api+json")
+                    .body("{\n" +
+                            "  \"data\": {\n" +
+                            "    \"type\": \"organization\",\n" +
+                            "    \"id\": \"" + caseVariant.getId() + "\",\n" +
+                            "    \"attributes\": {\n" +
+                            "      \"disabled\": true\n" +
+                            "    }\n" +
+                            "  }\n" +
+                            "}")
+                    .when()
+                    .patch("/api/v1/organization/" + caseVariant.getId())
+                    .then()
+                    .log()
+                    .ifValidationFails()
+                    .statusCode(HttpStatus.NO_CONTENT.value());
+        } finally {
+            organizationRepository.deleteById(caseVariant.getId());
+        }
     }
 
     @Test
