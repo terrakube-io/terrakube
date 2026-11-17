@@ -52,6 +52,55 @@ class OrganizationTests extends ServerApplicationTests {
     }
 
     @Test
+    void createOrganizationWithNameDifferingOnlyByCaseIsRejected() {
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_ADMIN"), "Content-Type", "application/vnd.api+json")
+                .body("{\n" +
+                        "  \"data\": {\n" +
+                        "    \"type\": \"organization\",\n" +
+                        "    \"attributes\": {\n" +
+                        "      \"name\": \"SIMPLE\",\n" +
+                        "      \"description\": \"Case variant of the simple organization\"\n" +
+                        "    }\n" +
+                        "  }\n" +
+                        "}")
+                .when()
+                .post("/api/v1/organization/")
+                .then()
+                .log()
+                .ifValidationFails()
+                .statusCode(HttpStatus.CONFLICT.value());
+    }
+
+    @Test
+    void renameOrganizationToNameDifferingOnlyByCaseIsRejected() {
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_ADMIN"), "Content-Type", "application/vnd.api+json")
+                .body("{\n" +
+                        "  \"data\": {\n" +
+                        "    \"type\": \"organization\",\n" +
+                        "    \"id\": \"3a130a1c-d96f-4f99-83b8-58d472567e3a\",\n" +
+                        "    \"attributes\": {\n" +
+                        "      \"name\": \"Simple\"\n" +
+                        "    }\n" +
+                        "  }\n" +
+                        "}")
+                .when()
+                .patch("/api/v1/organization/3a130a1c-d96f-4f99-83b8-58d472567e3a")
+                .then()
+                .log()
+                .ifValidationFails()
+                .statusCode(HttpStatus.CONFLICT.value());
+
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_ADMIN")).when()
+                .get("/api/v1/organization/3a130a1c-d96f-4f99-83b8-58d472567e3a")
+                .then()
+                .assertThat().body("data.attributes.name", equalTo("aws"))
+                .statusCode(HttpStatus.OK.value());
+    }
+
+    @Test
     void searchOrganizationAsNonMember() {
         given()
                 .headers("Authorization", "Bearer " + generatePAT("FAKE_ADMIN")).when()
