@@ -87,7 +87,7 @@ public class WorkspaceManageHook implements LifeCycleHook<Workspace> {
 
     private void validateWorkspaceNameConflict(Workspace workspace) {
         if (workspace.getOrganization() != null && workspace.getOrganization().getName() != null && workspace.getName() != null) {
-            List<Workspace> matches = workspaceRepository.findAllByOrganizationNameAndName(
+            List<Workspace> matches = workspaceRepository.findAllByOrganizationNameAndNameIgnoreCase(
                     workspace.getOrganization().getName(), workspace.getName());
             boolean conflict = matches.stream()
                     .anyMatch(match -> workspace.getId() == null || !match.getId().equals(workspace.getId()));

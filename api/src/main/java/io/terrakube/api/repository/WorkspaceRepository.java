@@ -63,7 +63,9 @@ public interface WorkspaceRepository extends JpaRepository<Workspace, UUID> {
     // Postgres enforces uniqueness at commit. A single-result derived method would throw
     // IncorrectResultSizeDataAccessException in that window, so callers doing a proactive
     // uniqueness check must use this list form and filter out the entity being validated.
-    List<Workspace> findAllByOrganizationNameAndName(String organizationName, String workspaceName);
+    // The workspace name comparison ignores case so that names like "Payments" and "payments"
+    // count as the same workspace on every database, not only on case-insensitive collations.
+    List<Workspace> findAllByOrganizationNameAndNameIgnoreCase(String organizationName, String workspaceName);
 
     Optional<List<Workspace>> findWorkspacesByOrganizationNameAndNameStartingWith(String organizationName, String workspaceNameStartingWidth);
 

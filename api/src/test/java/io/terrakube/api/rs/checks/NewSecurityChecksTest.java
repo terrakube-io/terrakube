@@ -982,14 +982,14 @@ class NewSecurityChecksTest {
 
         // 1. Name change without conflict -> succeeds
         ChangeSpec nameChangeNoConflict = new ChangeSpec(null, "name", "old", "ws1");
-        when(wsRepo.findAllByOrganizationNameAndName("OrgA", "ws1")).thenReturn(List.of(ws1));
+        when(wsRepo.findAllByOrganizationNameAndNameIgnoreCase("OrgA", "ws1")).thenReturn(List.of(ws1));
         org.junit.jupiter.api.Assertions.assertDoesNotThrow(() ->
                 hook.execute(LifeCycleHookBinding.Operation.UPDATE, LifeCycleHookBinding.TransactionPhase.PRECOMMIT, ws1, requestScope, Optional.of(nameChangeNoConflict)));
 
         // 2. Name change with duplicate conflict -> throws SC_CONFLICT (409)
         ChangeSpec nameChangeConflict = new ChangeSpec(null, "name", "old", "ws2");
         ws1.setName("ws2");
-        when(wsRepo.findAllByOrganizationNameAndName("OrgA", "ws2")).thenReturn(List.of(ws2));
+        when(wsRepo.findAllByOrganizationNameAndNameIgnoreCase("OrgA", "ws2")).thenReturn(List.of(ws2));
         org.junit.jupiter.api.Assertions.assertThrows(WorkspaceManagementException.class, () ->
                 hook.execute(LifeCycleHookBinding.Operation.UPDATE, LifeCycleHookBinding.TransactionPhase.PRECOMMIT, ws1, requestScope, Optional.of(nameChangeConflict)));
 
