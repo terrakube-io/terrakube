@@ -183,7 +183,7 @@ class JobApprovalHookTest {
     @ParameterizedTest
     @EnumSource(value = JobStatus.class, names = {"cancelled"}, mode = EnumSource.Mode.EXCLUDE)
     void refusesToMoveACancelledJobToAnyOtherStatus(JobStatus to) {
-        PolicyBlocksApprovalException thrown = assertThrows(PolicyBlocksApprovalException.class,
+        JobCancelledException thrown = assertThrows(JobCancelledException.class,
                 () -> hook.execute(Operation.UPDATE, TransactionPhase.PRECOMMIT, job, scope,
                         statusChange(JobStatus.cancelled, to)));
 

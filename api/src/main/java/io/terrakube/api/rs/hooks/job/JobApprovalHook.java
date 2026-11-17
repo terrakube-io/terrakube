@@ -57,7 +57,7 @@ public class JobApprovalHook implements LifeCycleHook<Job> {
                 .filter(change -> JobStatus.cancelled.equals(change.getOriginal()))
                 .filter(change -> !JobStatus.cancelled.equals(change.getModified()));
         if (fromCancelled.isPresent()) {
-            throw new PolicyBlocksApprovalException(String.format(
+            throw new JobCancelledException(String.format(
                     "Job %d is cancelled and cannot be moved to status '%s'.",
                     job.getId(), fromCancelled.get().getModified()));
         }
