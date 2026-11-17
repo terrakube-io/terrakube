@@ -20,6 +20,7 @@ import io.terrakube.client.model.organization.workspace.access.Access;
 import io.terrakube.client.model.organization.workspace.access.AccessAttributes;
 import io.terrakube.client.model.response.Response;
 import io.terrakube.client.model.response.ResponseWithInclude;
+import io.terrakube.client.security.TerrakubeCallerClassifier;
 import io.terrakube.registry.service.search.CommonSearchService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -28,13 +29,16 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -309,6 +313,34 @@ class ModuleAuthorizationServiceTest {
 
         when(commonSearchService.getOrganizationId("unknown-org")).thenReturn(null);
         assertFalse(authService.isAuthorized(ownerUser, "unknown-org"));
+    }
+
+    @Test
+    void testActiveStepStatusesSingleSource_AndProxyUnwrapsInvocationTargetException() {
+        assertEquals(
+                Set.of("running", "queue", "pending", "waitingApproval", "approved"),
+                TerrakubeCallerClassifier.ACTIVE_STEP_STATUSES
+        );
+
+        when(terrakubeClient.getJobById(ORG_ID, "101"))
+                .thenThrow(new IllegalStateException("downstream-api-failure"));
+
+        TerrakubeClient cachedProxy = (TerrakubeClient) ReflectionTestUtils.getField(authService, "cachedLookupClient");
+        IllegalStateException unwrapped = assertThrows(
+                IllegalStateException.class,
+                () -> cachedProxy.getJobById(ORG_ID, "101")
+        );
+        assertEquals("downstream-api-failure", unwrapped.getMessage());
+
+        JwtAuthenticationToken runner = jwtToken(Map.of(
+                "iss", "TerrakubeInternal",
+                "sub", "TerrakubeInternal (EXECUTOR)",
+                "organizationId", ORG_ID,
+                "workspaceId", WS_ID,
+                "jobId", "101",
+                "stepId", STEP_ID
+        ));
+        assertFalse(authService.isAuthorized(runner, ORG_NAME));
     }
 
     private JwtAuthenticationToken jwtToken(Map<String, Object> claims) {

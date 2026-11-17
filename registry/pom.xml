@@ -18,7 +18,7 @@
         <azure.version>6.5.0</azure.version>
         <msal4j.version>1.26.0</msal4j.version>
         <lombok.version>1.18.48</lombok.version>
-        <terrakube-client-starter.version>1.12.0-beta.1</terrakube-client-starter.version>
+        <terrakube-client-starter.version>1.12.0</terrakube-client-starter.version>
         <jgit.version>7.8.1.202611041320-r</jgit.version>
         <bouncy.castle>1.86</bouncy.castle>
         <commons-io.version>2.22.0</commons-io.version>

@@ -5,8 +5,6 @@ import com.github.benmanes.caffeine.cache.Caffeine;
 import io.terrakube.client.TerrakubeClient;
 import io.terrakube.client.model.federated.Federated;
 import io.terrakube.client.model.federated.claim.FederatedClaim;
-import io.terrakube.client.model.organization.job.Job;
-import io.terrakube.client.model.organization.job.step.Step;
 import io.terrakube.client.model.organization.team.Team;
 import io.terrakube.client.model.organization.workspace.Workspace;
 import io.terrakube.client.model.organization.workspace.access.Access;
@@ -25,12 +23,11 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.stereotype.Service;
 
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Proxy;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
-import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 @Slf4j
@@ -38,13 +35,6 @@ import java.util.concurrent.TimeUnit;
 public class ModuleAuthorizationService {
 
     private static final long CACHE_TTL_SECONDS = 60;
-    private static final Set<String> ACTIVE_STATUSES = Set.of(
-            "running",
-            "queue",
-            "pending",
-            "waitingApproval",
-            "approved"
-    );
 
     private final CommonSearchService commonSearchService;
     private final TerrakubeClient terrakubeClient;
@@ -129,83 +119,8 @@ public class ModuleAuthorizationService {
             return false;
         }
 
-        if (caller.getCallerType() == CallerType.WORKSPACE_EXECUTOR) {
-            return isAuthorizedWorkspaceExecutor(caller, tokenClaims, targetOrgId);
-        }
-
         return TerrakubeCallerClassifier.isAuthorizedForOrganization(
                 caller, targetOrgId, instanceOwner, cachedLookupClient);
-    }
-
-    private boolean isAuthorizedWorkspaceExecutor(
-            CallerClassification caller,
-            Map<String, Object> tokenClaims,
-            String targetOrgId) {
-        if (terrakubeClient == null
-                || !targetOrgId.equalsIgnoreCase(caller.getOrganizationId())
-                || !isValidUuid(caller.getWorkspaceId())
-                || !isValidUuid(caller.getStepId())
-                || !RegistryPathValidator.isValidIdentifier(caller.getJobId())
-                || !hasStrictStepBinding(tokenClaims, caller)) {
-            return false;
-        }
-
-        try {
-            ResponseWithInclude<Job, Step> jobResponse = terrakubeClient.getJobById(targetOrgId, caller.getJobId());
-            if (jobResponse == null || jobResponse.getData() == null || jobResponse.getData().getAttributes() == null) {
-                return false;
-            }
-            Job job = jobResponse.getData();
-            String jobStatus = job.getAttributes().getStatus();
-            if (jobStatus == null || !ACTIVE_STATUSES.contains(jobStatus)) {
-                return false;
-            }
-
-            if (job.getRelationships() == null
-                    || job.getRelationships().getWorkspace() == null
-                    || job.getRelationships().getWorkspace().getData() == null
-                    || !caller.getWorkspaceId().equalsIgnoreCase(job.getRelationships().getWorkspace().getData().getId())) {
-                return false;
-            }
-
-            String stepStatus = findStepStatus(jobResponse.getIncluded(), caller.getStepId());
-            if (stepStatus == null) {
-                Response<Step> stepResponse = terrakubeClient.getStepById(targetOrgId, caller.getJobId(), caller.getStepId());
-                if (stepResponse != null && stepResponse.getData() != null && stepResponse.getData().getAttributes() != null) {
-                    stepStatus = stepResponse.getData().getAttributes().getStatus();
-                }
-            }
-            return stepStatus != null && ACTIVE_STATUSES.contains(stepStatus);
-        } catch (Exception e) {
-            log.warn("Failed to verify runner job {} / step {} in org {}: {}",
-                    caller.getJobId(), caller.getStepId(), targetOrgId, e.getMessage());
-            return false;
-        }
-    }
-
-    private boolean hasStrictStepBinding(Map<String, Object> tokenClaims, CallerClassification caller) {
-        Object stepClaim = tokenClaims != null ? tokenClaims.get("stepId") : null;
-        if (stepClaim instanceof String && !((String) stepClaim).isBlank()) {
-            return true;
-        }
-        // When stepId is omitted and resolved via jti, require exact "<jobId>-<stepUuid>" format.
-        Object jtiClaim = tokenClaims != null ? tokenClaims.get("jti") : null;
-        if (!(jtiClaim instanceof String jti)) {
-            return false;
-        }
-        return jti.equals(caller.getJobId() + "-" + caller.getStepId());
-    }
-
-    private String findStepStatus(List<Step> includedSteps, String stepId) {
-        if (includedSteps == null || includedSteps.isEmpty()) {
-            return null;
-        }
-        for (Step step : includedSteps) {
-            if (step != null && stepId.equalsIgnoreCase(step.getId()) && step.getAttributes() != null) {
-                return step.getAttributes().getStatus();
-            }
-        }
-        return null;
     }
 
     private String resolveOrganizationId(String organizationName) {
@@ -278,22 +193,14 @@ public class ModuleAuthorizationService {
                             return fresh;
                         }
                         default -> {
-                            return method.invoke(terrakubeClient, args);
+                            try {
+                                return method.invoke(terrakubeClient, args);
+                            } catch (InvocationTargetException e) {
+                                throw e.getTargetException();
+                            }
                         }
                     }
                 }
         );
-    }
-
-    private static boolean isValidUuid(String value) {
-        if (value == null || value.isBlank()) {
-            return false;
-        }
-        try {
-            UUID.fromString(value.trim());
-            return true;
-        } catch (IllegalArgumentException e) {
-            return false;
-        }
     }
 }

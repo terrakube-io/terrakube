@@ -17,10 +17,13 @@ import io.terrakube.client.model.organization.team.Team;
 import io.terrakube.client.model.organization.team.TeamAttributes;
 import io.terrakube.client.model.response.Response;
 import io.terrakube.client.model.response.ResponseWithInclude;
+import io.terrakube.registry.controller.model.provider.FileDTO;
+import io.terrakube.registry.controller.model.provider.VersionDTO;
 import io.terrakube.registry.plugin.storage.StorageService;
 import io.terrakube.registry.service.module.ModuleAuthorizationService;
 import io.terrakube.registry.service.module.ModuleDownloadTicketService;
 import io.terrakube.registry.service.module.ModuleService;
+import io.terrakube.registry.service.provider.ProviderService;
 import io.terrakube.registry.service.search.CommonSearchService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -61,6 +64,9 @@ class ModuleSecurityTest {
 
     @Mock
     private io.terrakube.registry.service.ReadMeServiceImpl readMeService;
+
+    @Mock
+    private ProviderService providerService;
 
     private ModuleDownloadTicketService ticketService;
     private MockMvc mockMvc;
@@ -391,6 +397,9 @@ class ModuleSecurityTest {
         MockMvc realAuthReadMeMvc = MockMvcBuilders.standaloneSetup(
                 new ReadMeWebServiceImpl(moduleService, readMeService, storageService, realAuthService)
         ).build();
+        MockMvc realAuthProviderMvc = MockMvcBuilders.standaloneSetup(
+                new ProviderWebServiceImpl(providerService, realAuthService)
+        ).build();
 
         Authentication userAuth = createJwtToken("any-team");
         for (String injectedOrg : List.of("simple,name==aws", "simple*", "simple\"", "simple%2Cname==aws")) {
@@ -404,7 +413,92 @@ class ModuleSecurityTest {
                     .andExpect(status().isForbidden());
             realAuthReadMeMvc.perform(get("/terraform/readme/v1/" + injectedOrg + "/vpc/aws/1.0.0/download").principal(userAuth))
                     .andExpect(status().isForbidden());
+            realAuthProviderMvc.perform(get("/terraform/providers/v1/" + injectedOrg + "/random/versions").principal(userAuth))
+                    .andExpect(status().isForbidden());
+            realAuthProviderMvc.perform(get("/terraform/providers/v1/" + injectedOrg + "/random/3.0.1/download/linux/amd64").principal(userAuth))
+                    .andExpect(status().isForbidden());
         }
+    }
+
+    @Test
+    void testRealAuthorization_ProviderEndpoints_EnforceRunnerOrgScope() throws Exception {
+        CommonSearchService searchService = org.mockito.Mockito.mock(CommonSearchService.class);
+        TerrakubeClient terrakubeClient = org.mockito.Mockito.mock(TerrakubeClient.class);
+        ModuleAuthorizationService realAuthService = new ModuleAuthorizationService(
+                searchService,
+                terrakubeClient,
+                "https://dex.example.com",
+                "owner@example.com",
+                "DEX"
+        );
+        MockMvc realAuthProviderMvc = MockMvcBuilders.standaloneSetup(
+                new ProviderWebServiceImpl(providerService, realAuthService)
+        ).build();
+
+        String awsOrgId = "11111111-1111-1111-1111-111111111111";
+        String simpleOrgId = "22222222-2222-2222-2222-222222222222";
+        String awsWsId = "33333333-3333-3333-3333-333333333333";
+        String simpleWsId = "55555555-5555-5555-5555-555555555555";
+        String awsStepId = "44444444-4444-4444-4444-444444444444";
+        String simpleStepId = "66666666-6666-6666-6666-666666666666";
+
+        when(searchService.getOrganizationId("aws")).thenReturn(awsOrgId);
+
+        VersionDTO versionDTO = new VersionDTO();
+        versionDTO.setVersion("3.0.1");
+        versionDTO.setProtocols(List.of("5.0"));
+        when(providerService.getAvailableVersions("aws", "random")).thenReturn(List.of(versionDTO));
+        when(providerService.getWarnings("aws", "random")).thenReturn(List.of());
+
+        FileDTO fileDTO = new FileDTO();
+        fileDTO.setOs("linux");
+        fileDTO.setArch("amd64");
+        fileDTO.setFilename("terraform-provider-random_3.0.1_linux_amd64.zip");
+        fileDTO.setDownload_url("https://releases.example.com/random_3.0.1.zip");
+        when(providerService.getFileInformation("aws", "random", "3.0.1", "linux", "amd64")).thenReturn(fileDTO);
+
+        when(terrakubeClient.getJobById(awsOrgId, "101"))
+                .thenReturn(jobStepResponse(awsWsId, "running", awsStepId, "running"));
+
+        Authentication simpleRunnerAuth = new JwtAuthenticationToken(new Jwt(
+                "simple-runner-jwt",
+                Instant.now(),
+                Instant.now().plusSeconds(3600),
+                Map.of("alg", "HS256"),
+                Map.of(
+                        "iss", "TerrakubeInternal",
+                        "sub", "TerrakubeInternal (EXECUTOR)",
+                        "organizationId", simpleOrgId,
+                        "workspaceId", simpleWsId,
+                        "jobId", "202",
+                        "stepId", simpleStepId
+                )
+        ));
+
+        realAuthProviderMvc.perform(get("/terraform/providers/v1/aws/random/versions").principal(simpleRunnerAuth))
+                .andExpect(status().isForbidden());
+        realAuthProviderMvc.perform(get("/terraform/providers/v1/aws/random/3.0.1/download/linux/amd64").principal(simpleRunnerAuth))
+                .andExpect(status().isForbidden());
+
+        Authentication awsRunnerAuth = new JwtAuthenticationToken(new Jwt(
+                "aws-runner-jwt",
+                Instant.now(),
+                Instant.now().plusSeconds(3600),
+                Map.of("alg", "HS256"),
+                Map.of(
+                        "iss", "TerrakubeInternal",
+                        "sub", "TerrakubeInternal (EXECUTOR)",
+                        "organizationId", awsOrgId,
+                        "workspaceId", awsWsId,
+                        "jobId", "101",
+                        "stepId", awsStepId
+                )
+        ));
+
+        realAuthProviderMvc.perform(get("/terraform/providers/v1/aws/random/versions").principal(awsRunnerAuth))
+                .andExpect(status().isOk());
+        realAuthProviderMvc.perform(get("/terraform/providers/v1/aws/random/3.0.1/download/linux/amd64").principal(awsRunnerAuth))
+                .andExpect(status().isOk());
     }
 
     private ResponseWithInclude<Job, Step> jobStepResponse(String wsId, String jobStatus, String stepId, String stepStatus) {
