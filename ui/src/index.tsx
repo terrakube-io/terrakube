@@ -3,10 +3,12 @@ import "./styles/variables.css";
 import "./styles/global.css";
 import React from "react";
 import { createRoot } from "react-dom/client";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider } from "react-oidc-context";
 import { mgr } from "./config/authConfig";
 import { getUiRedirectUri } from "./config/basePath";
 import App from "./domain/Home/App";
+import { clearQueriesOnSignOut, queryClient } from "./modules/api/queryClient";
 import "./index.css";
 
 // Get the root element from the DOM
@@ -23,11 +25,15 @@ const onSigninCallback = (): void => {
   window.history.replaceState({}, document.title, base);
 };
 
+clearQueriesOnSignOut(queryClient, mgr);
+
 // Shares the UserManager with axiosConfig/apiWrapper so removeUser() there updates this provider immediately.
 root.render(
   <React.StrictMode>
     <AuthProvider userManager={mgr} onSigninCallback={onSigninCallback}>
-      <App />
+      <QueryClientProvider client={queryClient}>
+        <App />
+      </QueryClientProvider>
     </AuthProvider>
   </React.StrictMode>
 );
