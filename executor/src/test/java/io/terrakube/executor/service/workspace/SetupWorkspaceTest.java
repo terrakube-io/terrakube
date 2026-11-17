@@ -204,6 +204,10 @@ public class SetupWorkspaceTest {
         public String version() {
             return "";
         }
+
+        @Override
+        public void installBinary(TerraformJob terraformJob) {
+        }
     }
 
     private TerraformJob localGitJob(File sourceRepository, String branch) {

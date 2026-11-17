@@ -600,6 +600,67 @@ class TerraformExecutorServiceImplTest {
     }
 
     @Test
+    void installBinaryDownloadsTheJobsTerraformVersionAndCachesIt() throws Exception {
+        TerraformExecutorServiceImpl subject = subject();
+        TerraformJob terraformJob = createJob();
+        File binaryFile = new File(tempDir.toFile(), "terraform");
+
+        TerraformDownloader downloader = Mockito.mock(TerraformDownloader.class);
+        when(terraformClient.createTerraformDownloader()).thenReturn(downloader);
+        when(downloader.resolveTerraformVersion("1.9.0")).thenReturn("1.9.0");
+        when(downloader.getTerraformBinaryPath("1.9.0", false)).thenReturn(binaryFile.getAbsolutePath());
+        when(downloader.downloadTerraformVersion("1.9.0")).thenReturn(binaryFile.getAbsolutePath());
+        when(binaryCacheRecoveryService.resolve("1.9.0", false)).thenReturn(
+                new BinaryCacheRecoveryService.Resolution(binaryFile, false, "local-download"));
+        when(binaryCacheRecoveryService.isValidExecutable(binaryFile)).thenReturn(true);
+
+        subject.installBinary(terraformJob);
+
+        verify(downloader).downloadTerraformVersion("1.9.0");
+        verify(downloader, never()).downloadTofuVersion(anyString());
+        // Same as after init: a freshly downloaded binary is cached for the next executor.
+        verify(terraformState).saveTerraformBinary("1.9.0", false, BinaryArchiveLocator.os(), BinaryArchiveLocator.arch(), binaryFile);
+    }
+
+    @Test
+    void installBinaryDownloadsTheResolvedTofuVersion() throws Exception {
+        TerraformExecutorServiceImpl subject = subject();
+        TerraformJob terraformJob = createJob();
+        terraformJob.setTofu(true);
+        terraformJob.setTerraformVersion("~> 1.10");
+        File binaryFile = new File(tempDir.toFile(), "tofu");
+
+        TerraformDownloader downloader = Mockito.mock(TerraformDownloader.class);
+        when(terraformClient.createTerraformDownloader()).thenReturn(downloader);
+        when(downloader.resolveTofuVersion("~> 1.10")).thenReturn("v1.10.6");
+        when(downloader.resolveTofuVersion("1.10.6")).thenReturn("v1.10.6");
+        when(downloader.downloadTofuVersion("1.10.6")).thenReturn(binaryFile.getAbsolutePath());
+        when(binaryCacheRecoveryService.resolve("v1.10.6", true)).thenReturn(
+                new BinaryCacheRecoveryService.Resolution(binaryFile, true, "s3"));
+
+        subject.installBinary(terraformJob);
+
+        // Scripts get the concrete version, which is also the directory BashEngine puts on their PATH.
+        assertEquals("1.10.6", terraformJob.getTerraformVersion());
+        verify(downloader).downloadTofuVersion("1.10.6");
+        verify(downloader, never()).downloadTerraformVersion(anyString());
+        // Restored from cloud storage, so there is nothing new to upload.
+        verify(terraformState, never()).saveTerraformBinary(anyString(), anyBoolean(), anyString(), anyString(), any(File.class));
+    }
+
+    @Test
+    void installBinaryDoesNothingWhenTheJobHasNoVersion() throws Exception {
+        TerraformExecutorServiceImpl subject = subject();
+        TerraformJob terraformJob = createJob();
+        terraformJob.setTerraformVersion(null);
+
+        subject.installBinary(terraformJob);
+
+        verify(terraformClient, never()).createTerraformDownloader();
+        verify(terraformState, never()).saveTerraformBinary(anyString(), anyBoolean(), anyString(), anyString(), any(File.class));
+    }
+
+    @Test
     void planPublishesTerraformInitStderrToJobOutput() throws Exception {
         TerraformExecutorServiceImpl subject = subject();
         TerraformJob terraformJob = createJob();
