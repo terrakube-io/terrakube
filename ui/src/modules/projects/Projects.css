@@ -97,6 +97,19 @@
   height: auto;
 }
 
+.project-access-permission-heading {
+  white-space: nowrap;
+}
+
+.anticon.project-access-permission {
+  color: var(--tk-text-secondary);
+  font-size: 16px;
+}
+
+.anticon.project-access-permission--granted {
+  color: var(--tk-status-success);
+}
+
 .ant-typography.project-access-footnote {
   display: block;
   margin-top: 16px;
