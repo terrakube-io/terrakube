@@ -1375,6 +1375,34 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
     }
 
     /**
+     * Scripts find terraform/tofu on their PATH only once the job's version is in the local binary
+     * cache. Plan, apply and destroy get it through init; this gets it the same way for a step that
+     * only runs scripts: resolve the version, restore the binary from cloud storage when it's there,
+     * otherwise download it and cache it for the next executor.
+     */
+    @Override
+    public void installBinary(TerraformJob terraformJob) throws IOException {
+        String requestedVersion = terraformJob.getTerraformVersion();
+        if (requestedVersion == null || requestedVersion.isBlank()) {
+            return;
+        }
+
+        resolveTerraformVersion(terraformJob);
+        boolean binaryWasAlreadyCached = ensureBinaryCached(terraformJob);
+
+        TerraformDownloader downloader = createTerraformDownloader();
+        String version = terraformJob.getTerraformVersion();
+        String binaryPath = terraformJob.isTofu()
+                ? downloader.downloadTofuVersion(version)
+                : downloader.downloadTerraformVersion(version);
+        log.info("{} {} is available at {} for job {}", getIaCType(terraformJob), version, binaryPath, terraformJob.getJobId());
+
+        if (!binaryWasAlreadyCached) {
+            saveBinaryToCache(terraformJob);
+        }
+    }
+
+    /**
      * Replace a workspace version constraint (e.g. {@code >= 1.3.0}, {@code ~> 1.9}) on the job
      * with the concrete version it resolves to, so every process built for this job afterwards
      * sees a real version. terraform-client only resolves the constraint for the download and
