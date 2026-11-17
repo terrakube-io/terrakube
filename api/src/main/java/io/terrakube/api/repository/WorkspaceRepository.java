@@ -69,6 +69,8 @@ public interface WorkspaceRepository extends JpaRepository<Workspace, UUID> {
 
     Optional<List<Workspace>> findWorkspacesByOrganization(Organization organization);
 
+    List<Workspace> findAllByProject_Id(UUID projectId);
+
     @Query("SELECT w FROM workspace w JOIN w.webhook wh WHERE wh.migratedV2 = true")
     List<Workspace> findAllWithMigratedWebhook();
 

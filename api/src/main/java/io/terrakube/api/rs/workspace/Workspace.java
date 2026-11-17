@@ -92,9 +92,15 @@ public class Workspace extends GenericAuditFields {
     @Column(name = "allow_remote_apply")
     private boolean allowRemoteApply = false;
 
+    @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.PRECOMMIT, hook = WorkspaceManageHook.class)
     @Column(name = "global_remote_state")
     private boolean globalRemoteState = true;
 
+    @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.PRECOMMIT, hook = WorkspaceManageHook.class)
+    @Column(name = "project_remote_state", nullable = false)
+    private boolean projectRemoteState;
+
+    @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.PRECOMMIT, hook = WorkspaceManageHook.class)
     @Column(name = "shared_ids")
     private String sharedIds;
 
@@ -161,7 +167,7 @@ public class Workspace extends GenericAuditFields {
 
     @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.PRECOMMIT, hook = WorkspaceManageHook.class)
     @UpdatePermission(expression = "team manage workspace OR team project limited reassign workspace")
-    @OneToOne
+    @ManyToOne
     private Project project;
 
     @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.PRECOMMIT, hook = WorkspaceManageHook.class)

@@ -18,17 +18,21 @@ type Props = {
 
 type UpdateStateSharedForm = {
   globalRemoteState: boolean;
+  projectRemoteState: boolean;
 };
 
 interface SharedWorkspace {
   id: string;
   name: string;
+  projectId?: string;
 }
 
 export const WorkspaceStateShared = ({ workspace, manageWorkspace, onWorkspaceUpdate }: Props) => {
   const [form] = Form.useForm();
   const globalRemoteState = Form.useWatch("globalRemoteState", form);
   const organizationId = workspace.relationships.organization.data.id;
+  const projectId = workspace.relationships.project?.data?.id;
+  const projectAccessEnabled = workspace.attributes.projectRemoteState && !workspace.attributes.globalRemoteState;
   const id = workspace.id;
   const [waiting, setWaiting] = useState(false);
   const [sharedWorkspaces, setSharedWorkspaces] = useState<SharedWorkspace[]>([]);
@@ -70,15 +74,17 @@ export const WorkspaceStateShared = ({ workspace, manageWorkspace, onWorkspaceUp
     setFetching(true);
     try {
       const response = await axiosInstance.get(
-        `/organization/${organizationId}/workspace?filter[workspace]=name==*${search}*`
+        `/organization/${organizationId}/workspace?filter[workspace]=name==*${search}*&include=project`
       );
-      const workspaces = response.data.data.map((item: any) => ({
+      const workspaces = response.data.data.map((item: Workspace) => ({
         id: item.id,
         name: item.attributes.name,
+        projectId: item.relationships?.project?.data?.id,
       }));
       setOptions(workspaces);
     } catch (error) {
       console.error("Error fetching workspaces:", error);
+      message.error(`Could not search workspaces: ${getErrorMessage(error)}`);
     } finally {
       setFetching(false);
     }
@@ -120,6 +126,10 @@ export const WorkspaceStateShared = ({ workspace, manageWorkspace, onWorkspaceUp
 
     const selectedWs = options.find((ws) => ws.id === workspaceId);
     if (!selectedWs) return;
+    if (projectAccessEnabled && projectId && selectedWs.projectId === projectId) {
+      message.warning("This workspace already has access through the project");
+      return;
+    }
 
     setWaiting(true);
     try {
@@ -155,6 +165,7 @@ export const WorkspaceStateShared = ({ workspace, manageWorkspace, onWorkspaceUp
             id: id,
             attributes: {
               globalRemoteState: values.globalRemoteState,
+              projectRemoteState: values.projectRemoteState,
             },
           },
         },
@@ -180,7 +191,7 @@ export const WorkspaceStateShared = ({ workspace, manageWorkspace, onWorkspaceUp
       <SettingsPageHeader
         docUrl="https://docs.terrakube.io/user-guide/workspaces/share-workspace-state"
         title="State shared"
-        description="Choose which other workspaces can read this workspace's state."
+        description="Choose either organization-wide or project-wide access. You can also grant access to selected workspaces when organization-wide access is off."
         divider={false}
       />
       <Spin spinning={waiting}>
@@ -188,7 +199,18 @@ export const WorkspaceStateShared = ({ workspace, manageWorkspace, onWorkspaceUp
           form={form}
           name="state-shared"
           onFinish={onFinish}
-          initialValues={{ globalRemoteState: workspace.attributes.globalRemoteState }}
+          onValuesChange={(changed: Partial<UpdateStateSharedForm>) => {
+            if (changed.globalRemoteState) {
+              form.setFieldValue("projectRemoteState", false);
+            } else if (changed.projectRemoteState) {
+              form.setFieldValue("globalRemoteState", false);
+            }
+          }}
+          initialValues={{
+            globalRemoteState: workspace.attributes.globalRemoteState,
+            projectRemoteState:
+              !workspace.attributes.globalRemoteState && (workspace.attributes.projectRemoteState ?? false),
+          }}
           disabled={!manageWorkspace}
           saveDisabled={!manageWorkspace}
         >
@@ -200,6 +222,14 @@ export const WorkspaceStateShared = ({ workspace, manageWorkspace, onWorkspaceUp
           >
             <Checkbox>{"Share this workspace's state with all workspaces in the organization"}</Checkbox>
           </Form.Item>
+          <Form.Item
+            name="projectRemoteState"
+            valuePropName="checked"
+            label="Project access"
+            extra="All workspaces in this project, including future workspaces, can read this workspace's state."
+          >
+            <Checkbox>{"Share this workspace's state with all workspaces in this project"}</Checkbox>
+          </Form.Item>
         </SettingsForm>
 
         {!globalRemoteState && (
@@ -207,7 +237,7 @@ export const WorkspaceStateShared = ({ workspace, manageWorkspace, onWorkspaceUp
             <SettingsSection
               maxWidth={680}
               title="Workspaces with access"
-              description="These workspaces can read this workspace's state. Adding or removing one applies immediately."
+              description="Individual grants apply immediately and remain when project access changes. Workspaces already covered by project access cannot be added."
             >
               <Select<string>
                 showSearch
@@ -223,7 +253,14 @@ export const WorkspaceStateShared = ({ workspace, manageWorkspace, onWorkspaceUp
                 notFoundContent={fetching ? "Searching..." : null}
                 options={options
                   .filter((option) => option.id !== id)
-                  .map((option) => ({ value: option.id, label: option.name }))}
+                  .map((option) => {
+                    const coveredByProject = !!projectAccessEnabled && !!projectId && option.projectId === projectId;
+                    return {
+                      value: option.id,
+                      label: coveredByProject ? `${option.name} (already has project access)` : option.name,
+                      disabled: coveredByProject,
+                    };
+                  })}
               />
               <Table
                 dataSource={sharedWorkspaces}
@@ -264,7 +301,7 @@ export const WorkspaceStateShared = ({ workspace, manageWorkspace, onWorkspaceUp
       <DeleteConfirmationModal
         open={pendingRemoval !== null}
         title={`Remove access for ${pendingRemoval?.name}?`}
-        message={`${pendingRemoval?.name} will no longer be able to read this workspace's state.`}
+        message={`This removes ${pendingRemoval?.name}'s individual access. Access granted through the project or organization will remain.`}
         okText="Remove access"
         onConfirm={() => pendingRemoval && handleRemoveWorkspace(pendingRemoval)}
         onCancel={() => setPendingRemoval(null)}

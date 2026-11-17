@@ -1,8 +1,12 @@
 package io.terrakube.api.rs.hooks.workspace;
 
+import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import org.apache.hc.core5.http.HttpStatus;
 
@@ -46,6 +50,10 @@ public class WorkspaceManageHook implements LifeCycleHook<Workspace> {
                                 validateWorkspaceNameConflict(workspace);
                             } else if ("agent".equals(fieldName) || "vcs".equals(fieldName) || "ssh".equals(fieldName) || "project".equals(fieldName)) {
                                 validateWorkspaceRelationships(workspace);
+                            } else if ("globalRemoteState".equals(fieldName) || "projectRemoteState".equals(fieldName)) {
+                                validateStateSharing(workspace);
+                            } else if ("sharedIds".equals(fieldName)) {
+                                validateNewSharedWorkspaces(workspace, (String) optional.get().getOriginal());
                             } else if ("deleted".equals(fieldName)) {
                                 if (workspace.isDeleted()) {
                                     softDeleteService.disableWorkspaceSchedules(workspace);
@@ -54,6 +62,7 @@ public class WorkspaceManageHook implements LifeCycleHook<Workspace> {
                         } else {
                             validateWorkspaceNameConflict(workspace);
                             validateWorkspaceRelationships(workspace);
+                            validateStateSharing(workspace);
                             if (workspace.isDeleted()) {
                                 softDeleteService.disableWorkspaceSchedules(workspace);
                             }
@@ -68,6 +77,8 @@ public class WorkspaceManageHook implements LifeCycleHook<Workspace> {
                     case PRECOMMIT:
                         validateWorkspaceNameConflict(workspace);
                         validateWorkspaceRelationships(workspace);
+                        validateStateSharing(workspace);
+                        validateNewSharedWorkspaces(workspace, null);
 
                         if (workspace.getExecutionMode() == null) {
                             log.debug("setting default execution mode");
@@ -83,6 +94,42 @@ public class WorkspaceManageHook implements LifeCycleHook<Workspace> {
                 log.info("No hook define for this operation");
                 break;
         }
+    }
+
+    private void validateStateSharing(Workspace workspace) {
+        if (workspace.isGlobalRemoteState() && workspace.isProjectRemoteState()) {
+            throw new WorkspaceManagementException(HttpStatus.SC_BAD_REQUEST,
+                    "Organization-wide and project-wide state sharing cannot both be enabled");
+        }
+    }
+
+    private void validateNewSharedWorkspaces(Workspace workspace, String originalSharedIds) {
+        if (!workspace.isProjectRemoteState() || workspace.getProject() == null
+                || workspace.getProject().getId() == null || workspace.getOrganization() == null
+                || workspace.getOrganization().getId() == null) {
+            return;
+        }
+        Set<String> addedIds = sharedIds(workspace.getSharedIds());
+        addedIds.removeAll(sharedIds(originalSharedIds));
+        if (addedIds.isEmpty()) {
+            return;
+        }
+        boolean alreadyCovered = workspaceRepository.findAllByProject_Id(workspace.getProject().getId()).stream()
+                .anyMatch(consumer -> consumer.getId() != null
+                        && addedIds.contains(consumer.getId().toString().toLowerCase(Locale.ROOT))
+                        && consumer.getOrganization() != null
+                        && workspace.getOrganization().getId().equals(consumer.getOrganization().getId()));
+        if (alreadyCovered) {
+            throw new WorkspaceManagementException(HttpStatus.SC_BAD_REQUEST,
+                    "A workspace with project access cannot also be added individually");
+        }
+    }
+
+    private Set<String> sharedIds(String value) {
+        return Arrays.stream(value == null ? new String[0] : value.split(","))
+                .map(id -> id.trim().toLowerCase(Locale.ROOT))
+                .filter(id -> !id.isEmpty())
+                .collect(Collectors.toSet());
     }
 
     private void validateWorkspaceNameConflict(Workspace workspace) {

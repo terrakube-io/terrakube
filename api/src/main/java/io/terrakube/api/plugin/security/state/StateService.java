@@ -261,6 +261,28 @@ public class StateService {
                }
             }
 
+            // Shared with all workspaces in the same project
+            if (targetWs.isProjectRemoteState() && targetWs.getProject() != null
+                    && targetWs.getProject().getId() != null) {
+               try {
+                  UUID consumerWsId = UUID.fromString(tokenWorkspaceId.toString());
+                  Optional<Workspace> consumerWorkspace = workspaceRepository.findById(consumerWsId);
+                  if (consumerWorkspace.isPresent() && consumerWorkspace.get().getProject() != null
+                          && consumerWorkspace.get().getOrganization() != null
+                          && targetWs.getOrganization() != null
+                          && consumerWorkspace.get().getOrganization().getId() != null
+                          && targetWs.getOrganization().getId() != null
+                          && targetWs.getOrganization().getId().equals(consumerWorkspace.get().getOrganization().getId())
+                          && targetWs.getProject().getId().equals(consumerWorkspace.get().getProject().getId())) {
+                     log.debug("Remote state read granted via projectRemoteState for workspace {} to consumer {}",
+                             workspaceId, tokenWorkspaceId);
+                     return true;
+                  }
+               } catch (IllegalArgumentException e) {
+                  log.debug("Workspace token has invalid workspace ID for project state sharing: {}", tokenWorkspaceId);
+               }
+            }
+
             // Explicitly shared with specific workspace IDs
             String sharedIds = targetWs.getSharedIds();
             if (sharedIds != null && !sharedIds.isBlank()) {
