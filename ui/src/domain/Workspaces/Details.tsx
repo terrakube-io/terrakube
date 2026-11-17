@@ -596,7 +596,11 @@ export const WorkspaceDetails = ({
                     <article className="latest-run" aria-label={runCardTitle}>
                       <div className="latest-run-title">
                         <Typography.Title level={4}>
-                          <Link to={runLink(latestJob.id)} onClick={() => changeJob(latestJob.id)}>
+                          <Link
+                            to={runLink(latestJob.id)}
+                            onClick={() => changeJob(latestJob.id)}
+                            title={latestJob.title}
+                          >
                             {latestJob.title}
                           </Link>
                         </Typography.Title>
