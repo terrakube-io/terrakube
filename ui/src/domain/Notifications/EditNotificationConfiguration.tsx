@@ -1,3 +1,4 @@
+import { apiUrl } from "@/config/apiUrls";
 import {
   CheckCircleOutlined,
   CloseCircleOutlined,
@@ -249,7 +250,7 @@ export const EditNotificationConfiguration = ({
     setTesting(true);
     setTestResult(null);
     try {
-      const origin = new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin;
+      const origin = apiUrl("");
       if (configId) {
         // Saved config: test through the real config so it exercises exactly what
         // production dispatch will use (including whatever's already persisted).

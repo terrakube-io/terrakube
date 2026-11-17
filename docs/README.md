@@ -13,6 +13,7 @@ The full user and administrator documentation is at [docs.terrakube.io](https://
 | [Inactive runs and approval timeouts](ops/inactive-jobs-and-approval-timeouts.md) | Runs are being closed automatically, or a run is stuck waiting for approval. |
 | [Zero-pending job reconciliation](ops/zero-pending-job-reconciliation.md) | A run is stuck with nothing left to execute and the executor queue is blocked. |
 | [Per-job Terraform variables](ops/job-variables.md) | You want to pass `TF_VAR_*` values to a single run. |
+| [Single-domain route table](single-domain/README.md) | You add an endpoint under a new root path, or change single-domain routing. |
 
 ## Templates
 

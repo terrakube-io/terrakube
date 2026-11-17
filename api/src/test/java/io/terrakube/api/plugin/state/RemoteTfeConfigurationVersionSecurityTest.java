@@ -46,7 +46,7 @@ class RemoteTfeConfigurationVersionSecurityTest {
         ticketService = new ConfigurationUploadTicketService("test-secret-key-12345678901234567890", 3600);
         remoteTfeService = new RemoteTfeService(
                 null, contentRepository, null, workspaceRepository,
-                null, null, null, "terrakube.example.com",
+                null, null, null, "https://terrakube.example.com",
                 storageTypeService, null, null, 1,
                 null, null, null, null,
                 null, null, null, null,
