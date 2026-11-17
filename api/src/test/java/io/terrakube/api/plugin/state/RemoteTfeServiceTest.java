@@ -25,6 +25,8 @@ import io.terrakube.api.plugin.workspace.WorkspaceJobStatusService;
 import io.terrakube.api.plugin.state.model.state.StateModel;
 import io.terrakube.api.plugin.security.encryption.EncryptionService;
 import io.terrakube.api.plugin.security.rbac.RbacService;
+import io.terrakube.api.plugin.state.model.outputs.OutputData;
+import io.terrakube.api.plugin.state.model.outputs.StateOutput;
 import io.terrakube.api.plugin.state.model.outputs.StateOutputs;
 import io.terrakube.api.plugin.state.model.state.StateData;
 import io.terrakube.api.plugin.state.model.workspace.WorkspaceData;
@@ -90,6 +92,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -2243,6 +2246,125 @@ class RemoteTfeServiceTest {
         when(membershipService.checkProjectMembership(Mockito.any(), Mockito.any(), Mockito.any())).thenReturn(false);
 
         assertThrows(AccessDeniedException.class, () -> service.getCurrentOutputs(targetWsId.toString(), userToken));
+    }
+
+    @Test
+    void getStateVersionOutput_resolvesTheIdOfASensitiveListedOutput() {
+        RemoteTfeService service = remoteTfeService();
+        Organization org = organization("sample-org");
+        Team adminTeam = team("admin-team");
+        org.setTeam(List.of(adminTeam));
+        Workspace targetWs = workspace("target-ws", org);
+
+        when(workspaceRepository.findById(targetWs.getId())).thenReturn(Optional.of(targetWs));
+        when(storageTypeService.getCurrentTerraformState(org.getId().toString(), targetWs.getId().toString()))
+                .thenReturn("""
+                        {"outputs":{
+                          "db_password":{"value":"secret123","sensitive":true,"type":"string"},
+                          "ports":{"value":[80,443],"sensitive":true,"type":["list","number"]}}}
+                        """.getBytes(StandardCharsets.UTF_8));
+
+        JwtAuthenticationToken userToken = currentUser();
+        when(teamTokenService.getCurrentGroups(userToken)).thenReturn(List.of("admin-team"));
+        when(rbacService.canManageState(adminTeam)).thenReturn(true);
+
+        StateOutputs outputs = service.getCurrentOutputs(targetWs.getId().toString(), userToken);
+        assertEquals(2, outputs.getData().size());
+        for (OutputData listed : outputs.getData()) {
+            StateOutput read = service.getStateVersionOutput(listed.getId(), userToken);
+            assertNotNull(read);
+            assertEquals(listed.getId(), read.getData().getId());
+            assertEquals("state-version-outputs", read.getData().getType());
+            assertEquals(listed.getAttributes(), read.getData().getAttributes());
+        }
+
+        StateOutput ports = service.getStateVersionOutput(
+                RemoteTfeService.stateVersionOutputId(targetWs.getId().toString(), "ports"), userToken);
+        assertEquals(List.of(80, 443), ports.getData().getAttributes().get("value"));
+        assertEquals(List.of("list", "number"), ports.getData().getAttributes().get("detailed-type"));
+        assertEquals(true, ports.getData().getAttributes().get("sensitive"));
+    }
+
+    @Test
+    void getCurrentOutputs_keepsThePrimitiveTypeOfEachOutputInDetailedType() {
+        RemoteTfeService service = remoteTfeService();
+        Organization org = organization("sample-org");
+        Team adminTeam = team("admin-team");
+        org.setTeam(List.of(adminTeam));
+        Workspace targetWs = workspace("target-ws", org);
+
+        when(workspaceRepository.findById(targetWs.getId())).thenReturn(Optional.of(targetWs));
+        when(storageTypeService.getCurrentTerraformState(org.getId().toString(), targetWs.getId().toString()))
+                .thenReturn("""
+                        {"outputs":{
+                          "name":{"value":"app","type":"string"},
+                          "replicas":{"value":3,"type":"number"},
+                          "enabled":{"value":true,"type":"bool"}}}
+                        """.getBytes(StandardCharsets.UTF_8));
+
+        JwtAuthenticationToken userToken = currentUser();
+        when(teamTokenService.getCurrentGroups(userToken)).thenReturn(List.of("admin-team"));
+        when(rbacService.canManageState(adminTeam)).thenReturn(true);
+
+        Map<Object, Object> detailedTypes = new HashMap<>();
+        service.getCurrentOutputs(targetWs.getId().toString(), userToken).getData().forEach(output ->
+                detailedTypes.put(output.getAttributes().get("name"), output.getAttributes().get("detailed-type")));
+        assertEquals(Map.of("name", "string", "replicas", "number", "enabled", "bool"), detailedTypes);
+    }
+
+    @Test
+    void getStateVersionOutput_returnsNullForAnUnknownOutputOrId() {
+        RemoteTfeService service = remoteTfeService();
+        Organization org = organization("sample-org");
+        Team adminTeam = team("admin-team");
+        org.setTeam(List.of(adminTeam));
+        Workspace targetWs = workspace("target-ws", org);
+
+        when(workspaceRepository.findById(targetWs.getId())).thenReturn(Optional.of(targetWs));
+        when(storageTypeService.getCurrentTerraformState(org.getId().toString(), targetWs.getId().toString()))
+                .thenReturn("{\"outputs\":{\"foo\":{\"value\":\"bar\",\"type\":\"string\"}}}".getBytes(StandardCharsets.UTF_8));
+
+        JwtAuthenticationToken userToken = currentUser();
+        when(teamTokenService.getCurrentGroups(userToken)).thenReturn(List.of("admin-team"));
+        when(rbacService.canManageState(adminTeam)).thenReturn(true);
+
+        String workspaceId = targetWs.getId().toString();
+        assertNull(service.getStateVersionOutput(RemoteTfeService.stateVersionOutputId(workspaceId, "missing"), userToken));
+        assertNull(service.getStateVersionOutput(RemoteTfeService.stateVersionOutputId(UUID.randomUUID().toString(), "foo"), userToken));
+        assertNull(service.getStateVersionOutput(RemoteTfeService.stateVersionOutputId("not-a-uuid", "foo"), userToken));
+        assertNull(service.getStateVersionOutput(UUID.randomUUID().toString(), userToken));
+        assertNull(service.getStateVersionOutput("wsout-%%%", userToken));
+        assertNull(service.getStateVersionOutput("wsout-", userToken));
+    }
+
+    @Test
+    void getStateVersionOutput_withoutManageStatePermission_throwsAccessDeniedException() {
+        RemoteTfeService service = remoteTfeService();
+        Organization org = organization("sample-org");
+        Team viewerTeam = team("viewer-team");
+        org.setTeam(List.of(viewerTeam));
+        Workspace targetWs = workspace("target-ws", org);
+
+        when(workspaceRepository.findById(targetWs.getId())).thenReturn(Optional.of(targetWs));
+
+        JwtAuthenticationToken userToken = currentUser();
+        when(teamTokenService.getCurrentGroups(userToken)).thenReturn(List.of("viewer-team"));
+        when(rbacService.canManageState(viewerTeam)).thenReturn(false);
+
+        String outputId = RemoteTfeService.stateVersionOutputId(targetWs.getId().toString(), "db_password");
+        assertThrows(AccessDeniedException.class, () -> service.getStateVersionOutput(outputId, userToken));
+        assertThrows(AccessDeniedException.class, () -> service.getStateVersionOutput(outputId, null));
+        Mockito.verifyNoInteractions(storageTypeService);
+    }
+
+    @Test
+    void stateVersionOutputId_roundTripsAnyOutputNameUsingOnlyGoTfeIdCharacters() {
+        String workspaceId = UUID.randomUUID().toString();
+        for (String name : List.of("db_password", "endpoint-url", "名前", "a:b")) {
+            String id = RemoteTfeService.stateVersionOutputId(workspaceId, name);
+            assertTrue(id.matches("^[a-zA-Z0-9\\-._]+$"), id);
+            assertArrayEquals(new String[] { workspaceId, name }, RemoteTfeService.parseStateVersionOutputId(id));
+        }
     }
 
     @Test

@@ -6,6 +6,7 @@ import io.terrakube.api.plugin.state.model.configuration.ConfigurationData;
 import io.terrakube.api.plugin.state.model.entitlement.EntitlementData;
 import io.terrakube.api.plugin.state.model.organization.OrganizationData;
 import io.terrakube.api.plugin.state.model.organization.capacity.OrgCapacityData;
+import io.terrakube.api.plugin.state.model.outputs.StateOutput;
 import io.terrakube.api.plugin.state.model.outputs.StateOutputs;
 import io.terrakube.api.plugin.state.model.plan.PlanRunData;
 import io.terrakube.api.plugin.state.model.project.ProjectData;
@@ -444,6 +445,13 @@ public class RemoteTfeController {
     public ResponseEntity<StateOutputs> getCurrentOutputs(@PathVariable("workspaceId") String workspaceId, Principal principal) {
         log.info("Get current outputs for: {}", workspaceId);
         return ResponseEntity.of(Optional.ofNullable(remoteTfeService.getCurrentOutputs(workspaceId, (JwtAuthenticationToken) principal)));
+    }
+
+    @Transactional
+    @GetMapping(produces = "application/vnd.api+json", path = "/state-version-outputs/{outputId}")
+    public ResponseEntity<StateOutput> getStateVersionOutput(@PathVariable("outputId") String outputId, Principal principal) {
+        log.info("Get state version output: {}", outputId);
+        return ResponseEntity.of(Optional.ofNullable(remoteTfeService.getStateVersionOutput(outputId, (JwtAuthenticationToken) principal)));
     }
 
     @GetMapping(value = "configuration-versions/{planId}/terraformContent.tar.gz", produces = MediaType.APPLICATION_OCTET_STREAM_VALUE)
