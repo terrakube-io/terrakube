@@ -1,6 +1,6 @@
 import { Modal, Space, Form, Input, Typography, Alert, Button, Flex, Select, Tag } from "antd";
 import { useState, useEffect } from "react";
-import { DateTime } from "luxon";
+import dayjs from "dayjs";
 import { formatOrdinalDate } from "@/modules/utils/dates";
 import useApiRequest from "@/modules/api/useApiRequest";
 import { ApiResponse } from "@/modules/api/types";
@@ -39,7 +39,7 @@ export default function CreatePatModal({ onCancel, action, onCreated, open, shor
     if (selectedDays === 0) {
       setExpiryDate("Never expires");
     } else {
-      setExpiryDate(`This token will expire ${formatOrdinalDate(DateTime.now().plus({ days: selectedDays }))}`);
+      setExpiryDate(`This token will expire ${formatOrdinalDate(dayjs().add(selectedDays, "day"))}`);
     }
   }, [selectedDays]);
 
