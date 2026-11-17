@@ -420,6 +420,11 @@
 .latest-run-title h4.ant-typography {
   margin: 0;
   font-size: 16px;
+  /* The title can be a job comment of up to 512 characters; keep it to one line, with the full text in the title attribute. */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .latest-run-byline {
