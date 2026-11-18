@@ -34,7 +34,7 @@ const renderList = (jobs: FlatJob[]) =>
 describe("RunList", () => {
   beforeEach(() => sessionStorage.clear());
 
-  it("shows the count, only statuses that have runs, and separate plan, apply, and total durations", async () => {
+  it("shows the count, only statuses that have runs, and a byline with commit and duration", async () => {
     sessionStorage.setItem(ORGANIZATION_ARCHIVE, "org-1");
     renderList([job("1", JobStatus.Completed), job("2", JobStatus.Failed), job("3", JobStatus.Completed)]);
 
@@ -49,21 +49,8 @@ describe("RunList", () => {
     expect(within(rows[0]).getByRole("link", { name: "Run 3 title" })).toHaveAttribute("href", "/runs/3");
     expect(within(rows[0]).getByText("Current")).toBeInTheDocument();
     expect(within(rows[0]).getByText("937b249")).toBeInTheDocument();
-    expect(within(rows[0]).getByText("Plan: —")).toBeInTheDocument();
-    expect(within(rows[0]).getByText("Apply: —")).toBeInTheDocument();
-    expect(within(rows[0]).getByText("Total: 1m 05s")).toBeInTheDocument();
+    expect(within(rows[0]).getByText("1m 05s")).toBeInTheDocument();
     await waitFor(() => expect(within(rows[0]).getByText("Plan and Apply")).toBeInTheDocument());
-  });
-
-  it("shows plan, apply, and total durations separately", () => {
-    renderList([
-      job("2", JobStatus.Failed, { planDurationMs: 30000, applyDurationMs: 120000 }),
-      job("1", JobStatus.Completed),
-    ]);
-    const row = screen.getAllByRole("listitem")[0];
-    expect(within(row).getByText("Plan: 30s")).toBeInTheDocument();
-    expect(within(row).getByText("Apply: 2m")).toBeInTheDocument();
-    expect(within(row).getByText("Total: 1m 05s")).toBeInTheDocument();
   });
 
   it("filters by status and search, and clears back to every run", () => {

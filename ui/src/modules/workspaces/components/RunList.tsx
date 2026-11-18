@@ -1,5 +1,5 @@
 import { Avatar, Button, Pagination, Tag, Tooltip, Typography } from "antd";
-import { UserOutlined, WarningOutlined } from "@ant-design/icons";
+import { FieldTimeOutlined, UserOutlined, WarningOutlined } from "@ant-design/icons";
 import { FiGitCommit } from "react-icons/fi";
 import { Link, useParams } from "react-router-dom";
 import { FlatJob, formatJobVia } from "../../../domain/types";
@@ -10,7 +10,7 @@ import RunFilter, { ALL_RUNS } from "./RunFilter";
 import WorkspaceStatusTag from "@/components/display/WorkspaceStatusTag";
 import { EmptyState } from "@/components/feedback/EmptyState";
 import { formatDateTime, formatDuration } from "@/modules/utils/dates";
-import { formatExecutionDuration } from "@/domain/Jobs/executionDuration";
+import { isTerminalStatus } from "@/domain/Jobs/stepStatus";
 import "@/domain/Jobs/runTokens.css";
 import "./RunList.css";
 
@@ -151,6 +151,9 @@ export default function RunList({ jobs, onRunClick, runLink }: Props) {
               {paginatedJobs.map((item) => {
                 const commitId = item.commitId && item.commitId !== "000000000" ? item.commitId : undefined;
                 const templateName = item.templateReference ? templateNames[item.templateReference] : undefined;
+                const duration = isTerminalStatus(item.status)
+                  ? formatDuration(item.createdDate, item.updatedDate)
+                  : null;
                 return (
                   <li key={item.id} className="run-row">
                     <Avatar size={20} shape="square" icon={<UserOutlined />} />
@@ -183,9 +186,11 @@ export default function RunList({ jobs, onRunClick, runLink }: Props) {
                             <FiGitCommit aria-label="commit" /> <code>{commitId.substring(0, 7)}</code>
                           </span>
                         )}
-                        <span>Plan: {formatExecutionDuration(item.planDurationMs)}</span>
-                        <span>Apply: {formatExecutionDuration(item.applyDurationMs)}</span>
-                        <span>Total: {formatDuration(item.createdDate, item.updatedDate) ?? "—"}</span>
+                        {duration && (
+                          <span>
+                            <FieldTimeOutlined aria-label="duration" /> {duration}
+                          </span>
+                        )}
                       </p>
                     </div>
                     <div className="run-row-status">
