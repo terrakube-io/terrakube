@@ -56,6 +56,7 @@ public class WebhookResult {
         copy.commentBody = this.commentBody;
         copy.commentCommand = this.commentCommand;
         copy.commentId = this.commentId;
+        copy.commentAuthorId = this.commentAuthorId;
         copy.isPrComment = this.isPrComment;
         copy.prFilesUrl = this.prFilesUrl;
         copy.rawPayload = this.rawPayload;

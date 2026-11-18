@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -996,7 +997,9 @@ class RepoWebhookServiceTest {
 
             WebhookResult commentResult = resolvedCommentResult("apply", 14, "comment-apply-3");
             when(gitHubWebhookService.parseGitHubPayload(eq(payload), any())).thenReturn(commentResult);
-            when(prApplyAuthorizationService.refusalReason(ws, commentResult))
+            // The v2 path hands each workspace a copy of the result, so match it by comment id.
+            when(prApplyAuthorizationService.refusalReason(eq(ws),
+                    argThat(result -> "comment-apply-3".equals(result.getCommentId()))))
                     .thenReturn(Optional.of("`reader` cannot apply"));
 
             Map<String, String> headers = Map.of("x-github-event", "issue_comment");
