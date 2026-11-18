@@ -20,6 +20,8 @@ public class ExecutorContext {
     private boolean multiStepJob;
     private String type;
     private String organizationId;
+    // The name the registry takes in the provider mirror URL; null from an API that does not send it.
+    private String organizationName;
     private String workspaceId;
     private String jobId;
     private String stepId;

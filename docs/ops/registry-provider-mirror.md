@@ -124,6 +124,20 @@ A pull-through download is streamed to a temporary file in `java.io.tmpdir` (`/t
 
 There is no total size limit for `mirror/`. With pull-through on, any member of any organization can make the registry download and keep any version and platform of a provider from an allowlisted upstream. Each archive is capped by `RegistryMirrorMaxArchiveSizeMb`, but the total is not. Watch the storage size, and use a bucket lifecycle rule or quota if needed. Deleted archives are fetched again on the next request.
 
+## Using the mirror from Terrakube runs
+
+Terrakube executors can install providers through the organization's mirror without any change to the workspace code. When enabled, the executor adds a `provider_installation` block to the `~/.terraformrc` it already writes for the job, next to the registry credentials, and deletes the file when the job ends. Terraform and OpenTofu both read it.
+
+| Setting (executor) | Property | Default | Meaning |
+| --- | --- | --- | --- |
+| `TerrakubeProviderMirrorEnabled` | `io.terrakube.provider-mirror.enabled` | `false` | Write the mirror block for every run. |
+| `TerrakubeProviderMirrorOnly` | `io.terrakube.provider-mirror.only` | `false` | Leave out the `direct {}` fallback, so a provider that is not in the mirror fails `init`. |
+| `TerrakubeProviderMirrorRegistryUrl` | `io.terrakube.provider-mirror.registry-url` | derived | Registry base URL. Defaults to `https://<TerrakubeRegistryDomain>`, or `<TerrakubePublicUrl>/api/private-registry` when no registry domain is set. |
+
+The run uses the token the executor already sends to the registry. The mirror URL names the run's own organization, and the API sends the organization name with the job. An API that is too old to send it leaves the mirror off and the run installs providers from their origin.
+
+By default the block ends with `direct {}`. The CLI uses it for a provider the mirror answers that it does not have, so an empty mirror breaks nothing. It is not a fallback for an unreachable mirror: if the registry cannot be reached, `init` fails with the CLI's "Failed to query available provider packages" error (checked with Terraform 1.16.6 and OpenTofu). Ephemeral executor pods read the same settings from their environment, so put them in the ConfigMap or Secret that the ephemeral configuration already passes to the pod (the one that carries `TerrakubeRegistryDomain`), or in the workspace's `EPHEMERAL_JOB_ENV_VARS`. Use the "only" setting for installs that cannot reach the internet. Lock files behave as described under "Client configuration": a mirror records only the current platform's hashes, so keep committing a `.terraform.lock.hcl` generated with `providers lock` for every platform you use.
+
 ## Manual verification
 
 1. Set `RegistryMirrorPullThroughEnabled=true` on the registry.

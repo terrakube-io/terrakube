@@ -8,6 +8,11 @@ public interface WorkspaceSecurity {
         addTerraformCredentials(workspaceId);
     }
 
+    default void addTerraformCredentials(String organizationId, String organizationName, String workspaceId,
+                                         String jobId, String stepId) {
+        addTerraformCredentials(organizationId, workspaceId, jobId, stepId);
+    }
+
     String generateAccessToken(String workspaceId);
 
     String generateAccessToken(int minutes);
