@@ -14,7 +14,7 @@ import io.terrakube.api.rs.workspace.Workspace;
 import java.sql.Types;
 import java.util.UUID;
 
-@ReadPermission(expression = "user is a superuser OR team manage workspace access OR team limited manage workspace access")
+@ReadPermission(expression = "user is a superuser OR team manage workspace access OR team limited manage workspace access OR user is a registry service")
 @CreatePermission(expression = "user is a superuser OR team manage workspace access OR team limited manage workspace access")
 @UpdatePermission(expression = "user is a superuser OR team manage workspace access OR team limited manage workspace access")
 @DeletePermission(expression = "user is a superuser OR team manage workspace access OR team limited manage workspace access")

@@ -1,5 +1,19 @@
 #!/bin/bash
 
+# --single-domain: serve UI, API, registry and Dex from https://terrakube.localhost (local Dev
+# Container only). See docs/single-domain/README.md.
+single_domain=false
+SINGLE_DOMAIN_URL="https://terrakube.localhost"
+args=()
+for arg in "$@"; do
+	if [ "$arg" = "--single-domain" ]; then single_domain=true; else args+=("$arg"); fi
+done
+set -- "${args[@]}"
+if [ "$single_domain" = "true" ] && [ "$CODESPACES" = "true" ]; then
+	echo "--single-domain is only supported in the local Dev Container" >&2
+	exit 1
+fi
+
 while getopts 'd:s:' OPTION; do
 	echo $OPTION
 	case "$OPTION" in
@@ -50,6 +64,14 @@ function generateApiVars() {
 	TerraformLoginDefaultDays=30
 	TerraformLoginMaxDays=365
 	TerraformLoginApiUrl="https://$TerrakubeHostname"
+	if [ "$single_domain" = "true" ]; then
+		# Unset values are derived from TerrakubePublicUrl by the API.
+		TerrakubePublicUrl="$SINGLE_DOMAIN_URL"
+		TerrakubeHostname=""
+		DexIssuerUri="$SINGLE_DOMAIN_URL/dex"
+		TerrakubeUiURL="$SINGLE_DOMAIN_URL"
+		TerraformLoginApiUrl=""
+	fi
 	TerraformLoginDexTokenUrl=""
 	TerraformLoginDexJwkSetUrl=""
 	if [ "$USER" = "vscode" ]; then
@@ -112,6 +134,7 @@ function generateApiVars() {
 	echo "UserValidationType=$UserValidationType" >>.envApi
 	echo "AuthenticationValidationType=$AuthenticationValidationType" >>.envApi
 	echo "TerrakubeHostname=$TerrakubeHostname" >>.envApi
+	[ -n "$TerrakubePublicUrl" ] && echo "TerrakubePublicUrl=$TerrakubePublicUrl" >>.envApi
 	echo "AzBuilderExecutorUrl=$AzBuilderExecutorUrl" >>.envApi
 	echo "PatSecret=$PatSecret" >>.envApi
 	echo "InternalSecret=$InternalSecret" >>.envApi
@@ -154,6 +177,12 @@ function generateExecutorVars() {
 		AzBuilderApiUrl="http://localhost:8080"
 		TerrakubeRegistryDomain="localhost:8075"
 		TerrakubeApiUrl="http://localhost:8080"
+	fi
+	if [ "$single_domain" = "true" ]; then
+		# Server-to-server traffic stays on legacy paths inside the container.
+		AzBuilderApiUrl="http://localhost:8080"
+		TerrakubeApiUrl="http://localhost:8080"
+		TerrakubeRegistryDomain="terrakube.localhost"
 	fi
 
 	if [ "$storage_value" = "MINIO" ]; then
@@ -229,6 +258,7 @@ function generateExecutorVars() {
 	echo "TerrakubeToolsBranch=$TerrakubeToolsBranch" >>.envExecutor
 	echo "TerrakubeRegistryDomain=$TerrakubeRegistryDomain" >>.envExecutor
 	echo "TerrakubeApiUrl=$TerrakubeApiUrl" >>.envExecutor
+	[ -n "$TerrakubePublicUrl" ] && echo "TerrakubePublicUrl=$TerrakubePublicUrl" >>.envExecutor
 	echo "CustomTerraformReleasesUrl=\"https://releases.hashicorp.com/terraform/index.json\"" >>.envExecutor
 	echo "CustomTofuReleasesUrl=\"https://api.github.com/repos/opentofu/opentofu/releases\"" >>.envExecutor
 	echo "TerrakubeRedisHostname=$TerrakubeRedisHostname" >>.envExecutor
@@ -276,6 +306,13 @@ function generateRegistryVars() {
 		TerrakubeUiURL="http://locahost:3000"
 		AppIssuerUri="https://localhost:5556/dex"
 	fi
+	if [ "$single_domain" = "true" ]; then
+		AzBuilderRegistry="$SINGLE_DOMAIN_URL/api/private-registry"
+		AzBuilderApiUrl="http://localhost:8080"
+		DexIssuerUri="$SINGLE_DOMAIN_URL/dex"
+		TerrakubeUiURL="$SINGLE_DOMAIN_URL"
+		AppIssuerUri="$SINGLE_DOMAIN_URL/dex"
+	fi
 
 	if [ "$storage_value" = "MINIO" ]; then
 		RegistryStorageType=AwsStorageImpl
@@ -299,6 +336,7 @@ function generateRegistryVars() {
 	rm -f .envRegistry
 
 	echo "AzBuilderRegistry=$AzBuilderRegistry" >>.envRegistry
+	[ -n "$TerrakubePublicUrl" ] && echo "TerrakubePublicUrl=$TerrakubePublicUrl" >>.envRegistry
 	echo "AzBuilderApiUrl=$AzBuilderApiUrl" >>.envRegistry
 	echo "AuthenticationValidationTypeRegistry=$AuthenticationValidationTypeRegistry" >>.envRegistry
 	echo "TerrakubeEnableSecurity=$TerrakubeEnableSecurity" >>.envRegistry
@@ -335,6 +373,11 @@ function generateUiVars() {
 		REACT_CONFIG_REGISTRY_URI="https://terrakube-registry.localhost"
 		REACT_CONFIG_AUTHORITY="https://terrakube-dex.localhost/dex"
 	fi
+	if [ "$single_domain" = "true" ]; then
+		REACT_CONFIG_TERRAKUBE_URL="$SINGLE_DOMAIN_URL/api/v1/"
+		REACT_CONFIG_REGISTRY_URI="$SINGLE_DOMAIN_URL/api/private-registry"
+		REACT_CONFIG_AUTHORITY="$SINGLE_DOMAIN_URL/dex"
+	fi
 
 	REACT_CONFIG_CLIENT_ID="example-app"
 	REACT_CONFIG_SCOPE="email openid profile offline_access groups"
@@ -343,6 +386,7 @@ function generateUiVars() {
 	rm -f .envUi
 
 	echo "REACT_APP_TERRAKUBE_API_URL=$REACT_CONFIG_TERRAKUBE_URL" >>.envUi
+	[ "$single_domain" = "true" ] && echo "REACT_APP_TERRAKUBE_PUBLIC_URL=$SINGLE_DOMAIN_URL" >>.envUi
 	echo "REACT_APP_CLIENT_ID=$REACT_CONFIG_CLIENT_ID" >>.envUi
 	echo "REACT_APP_AUTHORITY=$REACT_CONFIG_AUTHORITY" >>.envUi
 	echo "REACT_APP_REDIRECT_URI=$REACT_CONFIG_REDIRECT" >>.envUi
@@ -409,6 +453,11 @@ function generateDexConfiguration() {
 		jwtIssuer="https://terrakube-dex.localhost"
 		uiRedirect="https://terrakube.localhost"
 		apiUrl="https://terrakube-api.localhost"
+	fi
+
+	if [ "$single_domain" = "true" ]; then
+		jwtIssuer="$SINGLE_DOMAIN_URL"
+		apiUrl="$SINGLE_DOMAIN_URL/api"
 	fi
 
 	sed -i "s+TEMPLATE_DEVCONTAINER_JWT_ISSUER+$jwtIssuer+gi" scripts/setup/devcontainer/config-ldap.yaml

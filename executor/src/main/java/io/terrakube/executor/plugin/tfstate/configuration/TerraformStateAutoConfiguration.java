@@ -2,10 +2,7 @@ package io.terrakube.executor.plugin.tfstate.configuration;
 
 import com.azure.storage.blob.BlobServiceClient;
 import com.azure.storage.blob.BlobServiceClientBuilder;
-import com.google.auth.Credentials;
-import com.google.auth.oauth2.GoogleCredentials;
 import com.google.cloud.storage.Storage;
-import com.google.cloud.storage.StorageOptions;
 import io.terrakube.client.TerrakubeClient;
 import io.terrakube.executor.plugin.tfstate.StorageRetryMetrics;
 import io.terrakube.executor.plugin.tfstate.TerraformOutputPathService;
@@ -16,13 +13,13 @@ import io.terrakube.executor.plugin.tfstate.aws.AwsTerraformStateImpl;
 import io.terrakube.executor.plugin.tfstate.aws.AwsTerraformStateProperties;
 import io.terrakube.executor.plugin.tfstate.azure.AzureTerraformStateImpl;
 import io.terrakube.executor.plugin.tfstate.azure.AzureTerraformStateProperties;
+import io.terrakube.executor.plugin.tfstate.gcp.GcpStorageClients;
 import io.terrakube.executor.plugin.tfstate.gcp.GcpTerraformStateImpl;
 import io.terrakube.executor.plugin.tfstate.gcp.GcpTerraformStateProperties;
 import io.terrakube.executor.plugin.tfstate.http.HttpTerraformStateImpl;
 import io.terrakube.executor.plugin.tfstate.local.LocalTerraformStateImpl;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.codec.binary.Base64;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -36,8 +33,6 @@ import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.S3Configuration;
 
-import java.io.ByteArrayInputStream;
-import java.io.IOException;
 import java.net.URI;
 
 @Slf4j
@@ -143,31 +138,19 @@ public class TerraformStateAutoConfiguration {
                             .build();
                     break;
                 case GcpTerraformStateImpl:
-                    try {
-                        log.info("GCP Credentials Base64 {} length", gcpTerraformStateProperties.getCredentials().length());
-                        Credentials gcpCredentials = GoogleCredentials.fromStream(
-                                new ByteArrayInputStream(
-                                        Base64.decodeBase64(gcpTerraformStateProperties.getCredentials())
-                                )
-                        );
-                        Storage gcpStorage = StorageOptions.newBuilder()
-                                .setCredentials(gcpCredentials)
-                                .setProjectId(gcpTerraformStateProperties.getProjectId())
-                                .build()
-                                .getService();
+                    Storage gcpStorage = GcpStorageClients.storage(
+                            GcpStorageClients.credentials(gcpTerraformStateProperties.getCredentials()),
+                            gcpTerraformStateProperties.getProjectId());
 
-                        terraformState = GcpTerraformStateImpl.builder().storage(gcpStorage)
-                                .terraformStatePathService(terraformStatePathService)
-                                .terraformOutputPathService(terraformOutputPathService)
-                                .bucketName(gcpTerraformStateProperties.getBucketName())
-                                .credentials(gcpTerraformStateProperties.getCredentials())
-                                .terrakubeClient(terrakubeClient)
-                                .terraformStateMetadataService(terraformStateMetadataService)
-                                .storageRetryMetrics(storageRetryMetrics)
-                                .build();
-                    } catch (IOException e) {
-                        log.error(e.getMessage());
-                    }
+                    terraformState = GcpTerraformStateImpl.builder().storage(gcpStorage)
+                            .terraformStatePathService(terraformStatePathService)
+                            .terraformOutputPathService(terraformOutputPathService)
+                            .bucketName(gcpTerraformStateProperties.getBucketName())
+                            .credentials(gcpTerraformStateProperties.getCredentials())
+                            .terrakubeClient(terrakubeClient)
+                            .terraformStateMetadataService(terraformStateMetadataService)
+                            .storageRetryMetrics(storageRetryMetrics)
+                            .build();
                     break;
                 case HttpTerraformStateImpl:
                     TerraformState localDelegate = LocalTerraformStateImpl.builder()

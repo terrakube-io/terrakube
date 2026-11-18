@@ -22,9 +22,31 @@ public interface TerraformState {
         return Collections.emptyMap();
     }
 
+    /**
+     * Whether this backend replaces the backend the workspace declares with one of another type, so that the
+     * {@code -backend-config} arguments written for the declared type (S3, azurerm, gcs) are rejected by
+     * {@code terraform init}. The executor then leaves them out.
+     */
+    default boolean rejectsBackendConfigArguments() {
+        return false;
+    }
+
     String saveTerraformPlan(String organizationId, String workspaceId, String jobId, String stepId, File workingDirectory);
 
     boolean downloadTerraformPlan(String organizationId, String workspaceId, String jobId, String stepId, File workingDirectory);
+
+    /**
+     * Restores the JSON representation of the Terraform plan ({@code plan.json}) recorded on the job into
+     * {@code workingDirectory/plan.json} for headless OPA policy evaluations where {@code terraform show -json}
+     * cannot run because workspace providers are not initialized.
+     *
+     * @return {@code true} if {@code plan.json} was found in storage and written to {@code workingDirectory};
+     *         {@code false} when no recorded plan JSON is available.
+     * @throws TerraformStateUnavailableException when storage could not be read after retries.
+     */
+    default boolean downloadTerraformPlanJson(String organizationId, String workspaceId, String jobId, String stepId, File workingDirectory) {
+        return false;
+    }
 
     /**
      * Stores the plan artifacts bundle of a plan step, under its own prefix (plan-artifacts/), apart
@@ -86,14 +108,18 @@ public interface TerraformState {
     /**
      * Upload a terraform/tofu binary to cloud storage for caching.
      * Fresh executor pods can restore the binary from storage instead of
-     * re-downloading from HashiCorp/GitHub.
+     * re-downloading from HashiCorp/GitHub. The binary is stored per OS and
+     * architecture, so executors of different architectures sharing one storage
+     * backend never restore a binary they cannot execute.
      *
      * @param version    the resolved concrete version (e.g. "1.5.7")
      * @param tofu       true for OpenTofu, false for Terraform
+     * @param os         operating system (e.g. "linux")
+     * @param arch       architecture (e.g. "amd64", "arm64")
      * @param binaryFile the local binary executable file to upload
      * @return true if save succeeded
      */
-    default boolean saveTerraformBinary(String version, boolean tofu, File binaryFile) {
+    default boolean saveTerraformBinary(String version, boolean tofu, String os, String arch, File binaryFile) {
         return false;
     }
 
@@ -102,10 +128,12 @@ public interface TerraformState {
      *
      * @param version    the resolved concrete version (e.g. "1.5.7")
      * @param tofu       true for OpenTofu, false for Terraform
+     * @param os         operating system (e.g. "linux")
+     * @param arch       architecture (e.g. "amd64", "arm64")
      * @param targetFile where to write the restored binary on the local filesystem
      * @return true if binary was found in storage and restored successfully
      */
-    default boolean downloadTerraformBinary(String version, boolean tofu, File targetFile) {
+    default boolean downloadTerraformBinary(String version, boolean tofu, String os, String arch, File targetFile) {
         return false;
     }
 

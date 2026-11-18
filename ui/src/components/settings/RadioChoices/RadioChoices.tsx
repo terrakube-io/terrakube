@@ -1,4 +1,4 @@
-import { Radio, RadioGroupProps } from "antd";
+import { Radio, type RadioGroupProps } from "antd";
 import clsx from "classnames";
 import "./RadioChoices.css";
 

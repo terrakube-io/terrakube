@@ -47,6 +47,11 @@ public class UpdateJobStatusImpl implements UpdateJobStatus {
                 }
             }
 
+            if (job.getAttributes().getStatus().equals("cancelled")) {
+                // The API refuses to move a cancelled job, and the step is already marked cancelled.
+                throw new JobCancelledBeforeStartException(terraformJob.getJobId());
+            }
+
             if (job.getAttributes().getStatus().equals("rejected")) {
                 log.warn("Job {} is rejected, keeping job status unchanged", terraformJob.getJobId());
             } else {
@@ -74,6 +79,11 @@ public class UpdateJobStatusImpl implements UpdateJobStatus {
 
     @Override
     public void setCompletedStatus(boolean successful, boolean isPlan, int exitCode, TerraformJob terraformJob, StepOutputBuffer jobOutput, String jobErrorOutput, String jobPlan, String commitId, boolean hasSoftMandatoryViolations, String approvalTeam, String deliveryState, Long deliveryRevision) {
+        // Callers pass e.getMessage() or a result's error log, either of which can be null. A null here used to
+        // throw after the step output was saved, so the job was reported as an "Unexpected error executing job".
+        if (jobErrorOutput == null) {
+            jobErrorOutput = "";
+        }
         if (jobOutput == null) {
             // A step that produced no buffer still has to be completed, otherwise the job stays running.
             try (StepOutputBuffer empty = new StepOutputBuffer()) {
@@ -149,8 +159,11 @@ public class UpdateJobStatusImpl implements UpdateJobStatus {
         // string, the marker is always appended.
         String existingOutput = job.getAttributes().getOutput() == null ? "" : job.getAttributes().getOutput();
         String stepOutput = existingOutput + " Step " + stepId + " completed\n";
+        String effectiveJobPlan = (!isPlan && (jobPlan == null || jobPlan.isBlank()))
+                ? job.getAttributes().getTerraformPlan()
+                : jobPlan;
         job.getAttributes().setOutput(stepOutput);
-        job.getAttributes().setTerraformPlan(jobPlan);
+        job.getAttributes().setTerraformPlan(effectiveJobPlan);
         job.getAttributes().setCommitId(commitId);
 
         Job updateJob = new Job();
@@ -161,7 +174,7 @@ public class UpdateJobStatusImpl implements UpdateJobStatus {
         updateAttributes.setStatus(status);
         updateAttributes.setPlanChanges(planChanges);
         updateAttributes.setOutput(stepOutput);
-        updateAttributes.setTerraformPlan(jobPlan);
+        updateAttributes.setTerraformPlan(effectiveJobPlan);
         // Plan artifacts are recorded together with the plan file, in the one update that completes
         // the plan step. Only sent when the feature is in use, so every other job is unaffected (an
         // API from before this field existed would refuse an unknown attribute). When a plan in such

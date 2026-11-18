@@ -5,11 +5,13 @@ import io.terrakube.client.model.graphql.GraphQLRequest;
 import io.terrakube.client.model.graphql.GraphQLResponse;
 import io.terrakube.client.model.graphql.queries.search.organization.OrganizationNode;
 import io.terrakube.client.model.graphql.queries.search.organization.SearchOrganizationResponse;
+import io.terrakube.registry.configuration.CacheConfig;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
-import java.util.concurrent.atomic.AtomicReference;
+import java.util.List;
 
 @AllArgsConstructor
 @Slf4j
@@ -18,7 +20,7 @@ public class CommonSearchService {
 
     TerrakubeClient terrakubeClient;
 
-    public static final String SEARCH_ORGANIZATION_GRAPHQL="{ \n" +
+    public static final String SEARCH_ORGANIZATION_GRAPHQL = "{ \n" +
             "  organization(filter: \"name==%s\") {\n" +
             "    edges {\n" +
             "      node {\n" +
@@ -29,18 +31,36 @@ public class CommonSearchService {
             "  }\n" +
             "}";
 
+    // No sync: it cannot be combined with unless, and a missing organization must be looked up again.
+    @Cacheable(cacheNames = CacheConfig.ORGANIZATION_ID_CACHE, unless = "#result == null")
     public String getOrganizationId(String organizationName) {
+        if (!RegistryPathValidator.isValidIdentifier(organizationName)) {
+            log.warn("Rejected invalid organization identifier: {}", organizationName);
+            return null;
+        }
+
         GraphQLRequest query = new GraphQLRequest();
         query.setQuery(String.format(SEARCH_ORGANIZATION_GRAPHQL, organizationName));
-        AtomicReference<String> organizationId = new AtomicReference<>();
         GraphQLResponse<SearchOrganizationResponse> response = terrakubeClient.searchOrganization(query);
-        response.getData().getOrganization().getEdges().forEach(organizationEdge -> {
-            OrganizationNode organizationNode = organizationEdge.getNode();
-            log.info("API response: Organization: {} Id: {}", organizationNode.getName(), organizationNode.getId());
-            organizationId.set(organizationNode.getId());
-        });
+        if (response == null
+                || response.getData() == null
+                || response.getData().getOrganization() == null
+                || response.getData().getOrganization().getEdges() == null) {
+            return null;
+        }
 
-        return organizationId.get();
+        List<OrganizationNode> matchingNodes = response.getData().getOrganization().getEdges().stream()
+                .map(edge -> edge != null ? edge.getNode() : null)
+                .filter(node -> node != null && organizationName.equals(node.getName()))
+                .toList();
+
+        if (matchingNodes.size() != 1) {
+            log.warn("Expected exactly 1 organization matching '{}', found {}", organizationName, matchingNodes.size());
+            return null;
+        }
+
+        OrganizationNode organizationNode = matchingNodes.get(0);
+        log.info("API response: Organization: {} Id: {}", organizationNode.getName(), organizationNode.getId());
+        return organizationNode.getId();
     }
-
 }

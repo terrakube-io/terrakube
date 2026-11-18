@@ -344,12 +344,12 @@ public class OpaExecutorServiceImpl implements OpaExecutorService {
             // Step 1: Resolve plan.json without full terraform init
             File planJsonFile = new File(workingDirectory, "plan.json");
             if (!planJsonFile.exists()) {
-                // Attempt to restore plan from storage
-                boolean downloaded = terraformState.downloadTerraformPlan(
+                // Attempt to restore plan.json from storage
+                boolean downloaded = terraformState.downloadTerraformPlanJson(
                         job.getOrganizationId(), job.getWorkspaceId(), job.getJobId(), job.getStepId(), workingDirectory
                 );
-                if (!downloaded) {
-                    log.warn("Could not find plan.json or download terraform plan file from storage");
+                if (!downloaded || !planJsonFile.exists()) {
+                    log.warn("Could not find plan.json or download terraform plan JSON file from storage");
                     output.appendln("No plan.json or state found for compliance evaluation.");
                     result.setOutputBuffer(output);
                     handedOver = true;
@@ -368,6 +368,7 @@ public class OpaExecutorServiceImpl implements OpaExecutorService {
             handedOver = true;
             result.setSuccessfulExecution(!hasHardViolations);
             result.setExitCode(hasHardViolations ? 1 : 0);
+            result.setOutputErrorLog("");
             result.setPlan(false);
 
             return result;

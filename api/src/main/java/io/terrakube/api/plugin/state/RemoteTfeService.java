@@ -3,6 +3,7 @@ package io.terrakube.api.plugin.state;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.terrakube.api.plugin.scheduler.ScheduleJobService;
+import io.terrakube.api.plugin.scheduler.JobStatusChangeService;
 import io.terrakube.api.plugin.security.encryption.EncryptionService;
 import io.terrakube.api.plugin.state.model.apply.ApplyRunData;
 import io.terrakube.api.plugin.state.model.apply.ApplyRunModel;
@@ -17,6 +18,7 @@ import io.terrakube.api.plugin.state.model.organization.capacity.OrgCapacityAttr
 import io.terrakube.api.plugin.state.model.organization.capacity.OrgCapacityData;
 import io.terrakube.api.plugin.state.model.organization.capacity.OrgCapacityModel;
 import io.terrakube.api.plugin.state.model.outputs.OutputData;
+import io.terrakube.api.plugin.state.model.outputs.StateOutput;
 import io.terrakube.api.plugin.state.model.outputs.StateOutputs;
 import io.terrakube.api.plugin.state.model.plan.PlanRunData;
 import io.terrakube.api.plugin.state.model.plan.PlanRunModel;
@@ -94,6 +96,7 @@ import org.springframework.http.HttpStatus;
 import io.terrakube.api.plugin.security.token.InternalTokenClassifier;
 import io.terrakube.api.plugin.security.token.InternalTokenType;
 import org.springframework.web.server.ResponseStatusException;
+import java.util.concurrent.TimeUnit;
 
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -126,7 +129,11 @@ public class RemoteTfeService {
     private HistoryRepository historyRepository;
     private TemplateRepository templateRepository;
     private ScheduleJobService scheduleJobService;
-    private String hostname;
+    private String apiBaseUrl;
+
+    // Relative links are resolved by the CLI against the host it called: /api on a single-domain host.
+    @Value("#{@publicUrls.apiPathPrefix()}")
+    private String apiPathPrefix = "";
     private StorageTypeService storageTypeService;
     private StepRepository stepRepository;
     @SuppressWarnings("rawtypes")
@@ -153,6 +160,7 @@ public class RemoteTfeService {
 
     private static final String LATEST_TERRAFORM_VERSION = "latest";
     private static final int CLI_APPROVAL_STEP = 150;
+    private static final String STATE_VERSION_OUTPUT_ID_PREFIX = "wsout-";
     // HCP Terraform limits for direct tag bindings; tag.name is varchar(128) and workspacetag.tag_value varchar(256)
     private static final int TAG_KEY_MAX_LENGTH = 128;
     private static final int TAG_VALUE_MAX_LENGTH = 256;
@@ -160,6 +168,9 @@ public class RemoteTfeService {
 
     private static final Pattern EXACT_TERRAFORM_VERSION_PATTERN = Pattern.compile("^\\d+(\\.\\d+){0,2}(-[0-9A-Za-z.-]+)?$");
     private JobNotificationTrigger jobNotificationTrigger;
+
+    @Autowired
+    private JobStatusChangeService jobStatusChangeService;
 
     @Autowired
     private JobApprovalService jobApprovalService;
@@ -204,6 +215,13 @@ public class RemoteTfeService {
         this.stepLogService = stepLogService;
     }
 
+    @Value("${io.terrakube.tfe.log-read-url-expiry-minutes:60}")
+    private int logReadUrlExpiryMinutes = 60;
+
+    public void setLogReadUrlExpiryMinutes(int logReadUrlExpiryMinutes) {
+        this.logReadUrlExpiryMinutes = logReadUrlExpiryMinutes;
+    }
+
     public void setUploadTicketService(ConfigurationUploadTicketService uploadTicketService) {
         this.uploadTicketService = uploadTicketService;
     }
@@ -231,7 +249,7 @@ public class RemoteTfeService {
                             HistoryRepository historyRepository,
                             TemplateRepository templateRepository,
                             ScheduleJobService scheduleJobService,
-                            @Value("${io.terrakube.hostname}") String hostname,
+                            @Value("#{@publicUrls.apiBaseUrl()}") String apiBaseUrl,
                             StorageTypeService storageTypeService,
                             StepRepository stepRepository,
                             @SuppressWarnings("rawtypes") RedisTemplate redisTemplate,
@@ -249,7 +267,7 @@ public class RemoteTfeService {
         this.historyRepository = historyRepository;
         this.templateRepository = templateRepository;
         this.scheduleJobService = scheduleJobService;
-        this.hostname = hostname;
+        this.apiBaseUrl = apiBaseUrl;
         this.storageTypeService = storageTypeService;
         this.stepRepository = stepRepository;
         this.redisTemplate = redisTemplate;
@@ -292,6 +310,9 @@ public class RemoteTfeService {
     }
 
     private boolean validateUserIsMemberOrg(Organization organization, JwtAuthenticationToken currentUser) {
+        if (organization == null || currentUser == null) {
+            return false;
+        }
         if (isExecutorService(currentUser) || isWorkspaceExecutorForOrg(organization, currentUser)) {
             return true;
         }
@@ -300,17 +321,22 @@ public class RemoteTfeService {
         }
         List<String> userGroups = teamTokenService.getCurrentGroups(currentUser);
         AtomicBoolean userIsMemberOrg = new AtomicBoolean(false);
-        organization.getTeam().forEach(orgTeam -> {
-            userGroups.forEach(userTeam -> {
-                if (orgTeam.getName().equals(userTeam)) {
-                    userIsMemberOrg.set(true);
-                }
+        if (organization.getTeam() != null) {
+            organization.getTeam().forEach(orgTeam -> {
+                userGroups.forEach(userTeam -> {
+                    if (orgTeam.getName().equals(userTeam)) {
+                        userIsMemberOrg.set(true);
+                    }
+                });
             });
-        });
+        }
         return userIsMemberOrg.get();
     }
 
     private boolean validateUserLimitedWorkspaceAccess(Organization organization, JwtAuthenticationToken currentUser) {
+        if (organization == null || currentUser == null) {
+            return false;
+        }
         List<String> groups = teamTokenService.getCurrentGroups(currentUser);
         Optional<List<Access>> accessList = accessRepository.findAllByWorkspaceOrganizationIdAndNameIn(organization.getId(), groups);
         if (accessList.isPresent()) {
@@ -321,6 +347,9 @@ public class RemoteTfeService {
     }
 
     private boolean validateUserManageWorkspace(Organization organization, JwtAuthenticationToken currentUser) {
+        if (organization == null || currentUser == null) {
+            return false;
+        }
         if (isExecutorService(currentUser)) {
             return true;
         }
@@ -340,6 +369,9 @@ public class RemoteTfeService {
     }
 
     private boolean validateLimitedManageWorkspace(Workspace workspace, JwtAuthenticationToken currentUser) {
+        if (workspace == null || currentUser == null) {
+            return false;
+        }
         List<Access> teamsWithLimitedAccess = workspace.getAccess();
         List<String> userGroups = teamTokenService.getCurrentGroups(currentUser);
         AtomicBoolean userWithManageWorkspace = new AtomicBoolean(false);
@@ -353,6 +385,9 @@ public class RemoteTfeService {
     }
 
     private boolean validateUserManageJob(Workspace workspace, JwtAuthenticationToken currentUser) {
+        if (workspace == null || currentUser == null) {
+            return false;
+        }
         if (isExecutorService(currentUser)) {
             return true;
         }
@@ -383,6 +418,9 @@ public class RemoteTfeService {
      * Validates that the current user has state management permission for the workspace.
      */
     private boolean validateUserManageState(Workspace workspace, JwtAuthenticationToken currentUser) {
+        if (workspace == null || currentUser == null) {
+            return false;
+        }
         if (isExecutorService(currentUser) || isWorkspaceExecutorFor(workspace, currentUser)) {
             return true;
         }
@@ -409,7 +447,7 @@ public class RemoteTfeService {
                 }
             });
 
-        return userCanManageState.get();
+        return userCanManageState.get() || hasProjectAccess(workspace, currentUser, rbacService::canManageState);
     }
 
     /**
@@ -426,11 +464,38 @@ public class RemoteTfeService {
         return membershipService.checkProjectMembership(new User(currentUser), project.getProjectAccess(), allows);
     }
 
+    public boolean validateUserViewWorkspace(Workspace workspace, JwtAuthenticationToken currentUser) {
+        if (workspace == null || currentUser == null) {
+            return false;
+        }
+        if (isExecutorService(currentUser) || isWorkspaceExecutorFor(workspace, currentUser)) {
+            return true;
+        }
+        if (InternalTokenClassifier.classify(currentUser.getTokenAttributes()) != InternalTokenType.NOT_INTERNAL) {
+            return false;
+        }
+        if (workspace.getOrganization() != null && validateUserIsMemberOrg(workspace.getOrganization(), currentUser)) {
+            return true;
+        }
+        List<String> userGroups = teamTokenService.getCurrentGroups(currentUser);
+        if (workspace.getAccess() != null && !workspace.getAccess().isEmpty()) {
+            for (Access access : workspace.getAccess()) {
+                if (userGroups.contains(access.getName())) {
+                    return true;
+                }
+            }
+        }
+        return hasProjectAccess(workspace, currentUser, access -> true);
+    }
+
     /**
      * Validates that the current user has permission to plan (queue) jobs
      * in the workspace.
      */
     private boolean validateUserPlanJob(Workspace workspace, JwtAuthenticationToken currentUser) {
+        if (workspace == null || currentUser == null) {
+            return false;
+        }
         if (isExecutorService(currentUser)) {
             return true;
         }
@@ -465,6 +530,9 @@ public class RemoteTfeService {
      * in the workspace. In RBAC V2, this is distinct from plan-only permission.
      */
     private boolean validateUserApproveJob(Workspace workspace, JwtAuthenticationToken currentUser) {
+        if (workspace == null || currentUser == null) {
+            return false;
+        }
         if (isExecutorService(currentUser)) {
             return true;
         }
@@ -722,7 +790,7 @@ public class RemoteTfeService {
                 workspaceModel.getRelationships().setRemoteStateConsumer(new RemoteStateConsumer());
                 workspaceModel.getRelationships().getRemoteStateConsumer().setLinks(new LinksStateConsumer());
                 workspaceModel.getRelationships().getRemoteStateConsumer().getLinks().setRelated(
-                        String.format("/remote/tfe/v2/workspaces/%s/relationships/remote-state-consumers", workspace.getId()));
+                        apiPathPrefix + String.format("/remote/tfe/v2/workspaces/%s/relationships/remote-state-consumers", workspace.getId()));
                 log.info("Workspace remote state consumer relationship URL: {}", workspaceModel.getRelationships().getRemoteStateConsumer().getLinks().getRelated());
             }
 
@@ -734,14 +802,21 @@ public class RemoteTfeService {
     }
 
     StateConsumerList getWorkspaceStateConsumers(String workspaceId, JwtAuthenticationToken currentUser) {
+        if (currentUser == null) {
+            throw new org.springframework.security.access.AccessDeniedException("Unauthenticated access denied");
+        }
         log.info("Getting workspace state consumers for workspace ID: {}", workspaceId);
         Optional<Workspace> workspaceFound = Optional
-                .of(workspaceRepository.getReferenceById(UUID.fromString(workspaceId)));
+                .ofNullable(findWorkspace(workspaceId));
 
         StateConsumerList stateConsumerList = new StateConsumerList();
         stateConsumerList.setData(new ArrayList<>());
 
         workspaceFound.ifPresent(workspaceData -> {
+            if (!validateUserViewWorkspace(workspaceData, currentUser)) {
+                throw new org.springframework.security.access.AccessDeniedException(
+                        "User does not have permission to view workspace " + workspaceData.getName());
+            }
             log.info("Workspace found {}, globalRemoteState: {}, generating workspace list", workspaceData.getName(), workspaceData.isGlobalRemoteState());
             if (workspaceData.isGlobalRemoteState()) {
                 log.info("Generating workspace list from organization (globalRemoteState is true)");
@@ -771,9 +846,7 @@ public class RemoteTfeService {
                 }
             }
         });
-
         return stateConsumerList;
-
     }
 
     WorkspaceList listWorkspace(String organizationName, WorkspaceListQuery query, JwtAuthenticationToken currentUser) {
@@ -1291,7 +1364,6 @@ public class RemoteTfeService {
         job.setPlanChanges(true);
         job.setRefreshOnly(false);
         job = jobRepository.save(job);
-        jobNotificationTrigger.notifyStatusChanged(job);
 
         // dummy step
         Step step = new Step();
@@ -1316,8 +1388,8 @@ public class RemoteTfeService {
         history = historyRepository.save(history);
 
         history.setOutput(String
-                .format("https://%s/tfstate/v1/organization/%s/workspace/%s/state/%s.json",
-                        hostname,
+                .format("%s/tfstate/v1/organization/%s/workspace/%s/state/%s.json",
+                        apiBaseUrl,
                         workspace.getOrganization().getId().toString(),
                         workspace.getId().toString(),
                         history.getId().toString()));
@@ -1344,6 +1416,9 @@ public class RemoteTfeService {
         // upload json state to backend storage
         storageTypeService.uploadTerraformStateJson(workspace.getOrganization().getId().toString(),
                 workspace.getId().toString(), terraformStateJson, history.getId().toString());
+
+        // State uploads bypass Elide job hooks, so update the workspace and live status explicitly.
+        jobStatusChangeService.afterStatusChanged(job);
 
         // validate KEEP_JOB_HISTORY for local runs
         deleteOldJobs(job);
@@ -1480,11 +1555,56 @@ public class RemoteTfeService {
         return false;
     }
 
-    StateData getWorkspaceState(String historyId) {
-        return getWorkspaceState(historyId, null);
+    private Job findJob(int jobId) {
+        return jobRepository.findById(jobId).orElse(null);
+    }
+
+    private Workspace findWorkspace(String workspaceId) {
+        try {
+            return workspaceRepository.findById(UUID.fromString(workspaceId)).orElse(null);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    public void authorizeStateRead(Workspace workspace, JwtAuthenticationToken currentUser) {
+        if (currentUser == null) {
+            throw new org.springframework.security.access.AccessDeniedException("Unauthenticated access denied");
+        }
+        if (workspace == null) {
+            return;
+        }
+        InternalTokenType tokenType = InternalTokenClassifier.classify(currentUser.getTokenAttributes());
+        if (tokenType == InternalTokenType.WORKSPACE_EXECUTOR) {
+            String workspaceIdToken = (String) currentUser.getTokenAttributes().get("workspaceId");
+            if (!validateWorkspaceIdTokenCanAccessState(workspaceIdToken, workspace.getId().toString())) {
+                log.warn("WorkspaceIdToken {} not authorized for workspace {}", workspaceIdToken, workspace.getId());
+                String messageFormat = """
+                         This Terrakube job is not authorized to read the state of the workspace '%s'.
+                         Most commonly, this is required when using the terraform_remote_state data source.
+                         To allow this access, '%s' must configure this workspace ('%s')"
+                         as an authorized remote state consumer""";
+                String errorMessage = String.format(messageFormat, getWorkspaceName(workspace.getId().toString()), getWorkspaceName(workspace.getId().toString()), getWorkspaceName(workspaceIdToken));
+                throw new org.springframework.security.access.AccessDeniedException(errorMessage);
+            }
+        } else if (tokenType == InternalTokenType.EXECUTOR_SERVICE) {
+            // Backend executor daemon is authorized
+        } else if (tokenType != InternalTokenType.NOT_INTERNAL) {
+            log.warn("Internal token cannot read state: {}", currentUser.getTokenAttributes().get("sub"));
+            throw new org.springframework.security.access.AccessDeniedException("Internal token not authorized to read state");
+        } else {
+            if (!validateUserManageState(workspace, currentUser)) {
+                log.warn("User does not have permission to view state in workspace {}", workspace.getName());
+                throw new org.springframework.security.access.AccessDeniedException(
+                        "User does not have permission to view state in workspace " + workspace.getName());
+            }
+        }
     }
 
     StateData getWorkspaceState(String historyId, JwtAuthenticationToken currentUser) {
+        if (currentUser == null) {
+            throw new org.springframework.security.access.AccessDeniedException("Unauthenticated access denied");
+        }
         Optional<History> historyTmp = historyRepository.findById(UUID.fromString(historyId));
 
         if (historyTmp.isPresent()) {
@@ -1494,33 +1614,7 @@ public class RemoteTfeService {
                 return null;
             }
 
-            if (currentUser != null) {
-                InternalTokenType tokenType = InternalTokenClassifier.classify(currentUser.getTokenAttributes());
-                if (tokenType == InternalTokenType.WORKSPACE_EXECUTOR) {
-                    String workspaceIdToken = (String) currentUser.getTokenAttributes().get("workspaceId");
-                    if (!validateWorkspaceIdTokenCanAccessState(workspaceIdToken, workspace.getId().toString())) {
-                        log.warn("WorkspaceIdToken {} not authorized for history {}", workspaceIdToken, historyId);
-                        String messageFormat = """
-                                 This Terrakube job is not authorized to read the state of the workspace '%s'.
-                                 Most commonly, this is required when using the terraform_remote_state data source.
-                                 To allow this access, '%s' must configure this workspace ('%s')"
-                                 as an authorized remote state consumer""";
-                        String errorMessage = String.format(messageFormat, getWorkspaceName(workspace.getId().toString()), getWorkspaceName(workspace.getId().toString()), getWorkspaceName(workspaceIdToken));
-                        throw new org.springframework.security.access.AccessDeniedException(errorMessage);
-                    }
-                } else if (tokenType == InternalTokenType.EXECUTOR_SERVICE) {
-                    // Backend executor daemon is authorized
-                } else if (tokenType != InternalTokenType.NOT_INTERNAL) {
-                    log.warn("Internal token cannot read state: {}", currentUser.getTokenAttributes().get("sub"));
-                    throw new org.springframework.security.access.AccessDeniedException("Internal token not authorized to read state");
-                } else {
-                    if (!validateUserManageState(workspace, currentUser)) {
-                        log.warn("User does not have permission to view state in workspace {}", workspace.getName());
-                        throw new org.springframework.security.access.AccessDeniedException(
-                                "User does not have permission to view state in workspace " + workspace.getName());
-                    }
-                }
-            }
+            authorizeStateRead(workspace, currentUser);
             StateData response = new StateData();
             response.setData(new StateModel());
             response.getData().setId(historyId.toString());
@@ -1531,13 +1625,13 @@ public class RemoteTfeService {
             responseAttributes.put("vcs-commit-url", null);
 
             responseAttributes.put("hosted-state-download-url", String
-                    .format("https://%s/tfstate/v1/organization/%s/workspace/%s/state/terraform.tfstate",
-                            hostname,
+                    .format("%s/tfstate/v1/organization/%s/workspace/%s/state/terraform.tfstate",
+                            apiBaseUrl,
                             history.getWorkspace().getOrganization().getId().toString(),
                             history.getWorkspace().getId()));
             responseAttributes.put("hosted-json-state-download-url", String
-                    .format("https://%s/tfstate/v1/organization/%s/workspace/%s/state/%s.json",
-                            hostname,
+                    .format("%s/tfstate/v1/organization/%s/workspace/%s/state/%s.json",
+                            apiBaseUrl,
                             history.getWorkspace().getOrganization().getId().toString(),
                             history.getWorkspace().getId(),
                             history.getId().toString()));
@@ -1554,27 +1648,27 @@ public class RemoteTfeService {
 
             if (archiveRawState.isPresent())
                 responseAttributes.put("hosted-state-upload-url", String
-                        .format("https://%s/tfstate/v1/archive/%s/terraform.tfstate",
-                                hostname,
+                        .format("%s/tfstate/v1/archive/%s/terraform.tfstate",
+                                apiBaseUrl,
                                 archiveRawState.get().getId()));
 
             if (archiveJsonState.isPresent())
                 responseAttributes.put("hosted-json-state-upload-url", String
-                        .format("https://%s/tfstate/v1/archive/%s/terraform.json.tfstate",
-                                hostname,
+                        .format("%s/tfstate/v1/archive/%s/terraform.json.tfstate",
+                                apiBaseUrl,
                                 archiveJsonState.get().getId()));
 
             response.getData().setAttributes(responseAttributes);
 
             log.info("Download State URL: {}", String
-                    .format("https://%s/tfstate/v1/organization/%s/workspace/%s/state/terraform.tfstate",
-                            hostname,
+                    .format("%s/tfstate/v1/organization/%s/workspace/%s/state/terraform.tfstate",
+                            apiBaseUrl,
                             history.getWorkspace().getOrganization().getId().toString(),
                             history.getWorkspace().getId()));
 
             log.info("Download State JSON URL: {}", String
-                    .format("https://%s/tfstate/v1/organization/%s/workspace/%s/state/%s.json",
-                            hostname,
+                    .format("%s/tfstate/v1/organization/%s/workspace/%s/state/%s.json",
+                            apiBaseUrl,
                             history.getWorkspace().getOrganization().getId().toString(),
                             history.getWorkspace().getId(),
                             history.getId().toString()));
@@ -1585,8 +1679,16 @@ public class RemoteTfeService {
             return null;
     }
 
-    StateData getCurrentWorkspaceState(String workspaceId) throws JsonProcessingException {
-        Workspace workspace = workspaceRepository.getReferenceById(UUID.fromString(workspaceId));
+    StateData getCurrentWorkspaceState(String workspaceId, JwtAuthenticationToken currentUser) throws JsonProcessingException {
+        Workspace workspace = findWorkspace(workspaceId);
+        if (workspace == null) {
+            return null;
+        }
+        if (currentUser == null) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "Unauthenticated access denied");
+        }
+        authorizeStateRead(workspace, currentUser);
 
         log.info("Searching for existing terraform state for {} in the storage service", workspace.getId());
         byte[] currentState;
@@ -1614,8 +1716,8 @@ public class RemoteTfeService {
             responseAttributes.put("vcs-commit-url", null);
             responseAttributes.put("vcs-commit-sha", null);
             responseAttributes.put("hosted-state-download-url", String
-                    .format("https://%s/tfstate/v1/organization/%s/workspace/%s/state/terraform.tfstate",
-                            hostname,
+                    .format("%s/tfstate/v1/organization/%s/workspace/%s/state/terraform.tfstate",
+                            apiBaseUrl,
                             workspace.getOrganization().getId().toString(),
                             workspace.getId().toString()));
 
@@ -1666,8 +1768,8 @@ public class RemoteTfeService {
             this.uploadTicketService = new ConfigurationUploadTicketService(null, 3600);
         }
         String ticket = uploadTicketService.generateTicket(content.getId().toString());
-        String uploadUrl = String.format("https://%s/remote/tfe/v2/configuration-versions/%s?ticket=%s",
-                hostname, content.getId().toString(), ticket);
+        String uploadUrl = String.format("%s/remote/tfe/v2/configuration-versions/%s?ticket=%s",
+                apiBaseUrl, content.getId().toString(), ticket);
         configurationData.getData().getAttributes().put("upload-url", uploadUrl);
         log.debug("upload-url generated for content {}", content.getId());
         return configurationData;
@@ -1794,8 +1896,8 @@ public class RemoteTfeService {
                             + "manage the workspace. Variables: " + String.join(", ", runVariables.keySet()));
         }
 
-        String sourceTarGz = String.format("https://%s/remote/tfe/v2/configuration-versions/%s/terraformContent.tar.gz",
-                hostname, configurationId);
+        String sourceTarGz = String.format("%s/remote/tfe/v2/configuration-versions/%s/terraformContent.tar.gz",
+                apiBaseUrl, configurationId);
         // We intentionally do NOT persist this configuration version onto workspace.source
         // here. Doing so on every run (including speculative plan-only runs and runs that are
         // later discarded before approval) made workspace.source track the last configuration
@@ -1903,7 +2005,7 @@ public class RemoteTfeService {
 
         scheduleJobService.createJobContext(job);
         log.info("Job Context Created");
-        return getRun(job.getId(), null);
+        return getRun(job.getId(), null, currentUser);
     }
 
     private String getTemplateName(String configurationId, boolean isDestroy) {
@@ -1919,15 +2021,24 @@ public class RemoteTfeService {
         }
     }
 
-    RunsData getRun(int runId, String include) {
-        return getRun(runId, include, null);
-    }
-
     RunsData getRun(int runId, String include, JwtAuthenticationToken currentUser) {
         log.info("Searching Run {}", runId);
-        Job job = jobRepository.getReferenceById(Integer.valueOf(runId));
+        Job job = findJob(runId);
+        if (job == null) {
+            return null;
+        }
 
-        if (job.getWorkspace() != null) {
+        if (currentUser == null) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "Unauthenticated access denied");
+        }
+        if (job.getWorkspace() == null) {
+            return null;
+        }
+        if (!validateUserViewWorkspace(job.getWorkspace(), currentUser)) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "User does not have permission to view this run");
+        }
             RunsData runsData = new RunsData();
             RunsModel runsModel = new RunsModel();
             runsModel.setId("run-" + runId);
@@ -1979,9 +2090,7 @@ public class RemoteTfeService {
             runsModel.getAttributes().put("actions", actions);
 
             HashMap<String, Object> permissions = new HashMap<>();
-            boolean canApply = currentUser != null
-                    ? validateUserApproveJob(job.getWorkspace(), currentUser)
-                    : true; // default to true for internal calls without user context
+            boolean canApply = validateUserApproveJob(job.getWorkspace(), currentUser);
             permissions.put("can-apply", canApply);
             runsModel.getAttributes().put("permissions", permissions);
 
@@ -2045,13 +2154,13 @@ public class RemoteTfeService {
                 if (runsData.getIncluded() == null) {
                     runsData.setIncluded(new ArrayList<>());
                 }
-                runsData.getIncluded().add(getApply(runId).getData());
+                runsData.getIncluded().add(getApply(runId, currentUser).getData());
             }
             if (includes.contains("plan")) {
                 if (runsData.getIncluded() == null) {
                     runsData.setIncluded(new ArrayList<>());
                 }
-                runsData.getIncluded().add(getPlan(runId).getData());
+                runsData.getIncluded().add(getPlan(runId, currentUser).getData());
             }
 
             log.info("Included: {}", include);
@@ -2065,11 +2174,18 @@ public class RemoteTfeService {
 
             log.info("{}", runsData.toString());
             return runsData;
-        } else
-            return null;
     }
 
-    RunsDataList getRunsQueue(String organizationName) {
+    RunsDataList getRunsQueue(String organizationName, JwtAuthenticationToken currentUser) {
+        Organization organization = organizationRepository.getOrganizationByName(organizationName);
+        if (organization == null) {
+            return null;
+        }
+        if (currentUser == null || (!validateUserIsMemberOrg(organization, currentUser)
+                && !validateUserLimitedWorkspaceAccess(organization, currentUser))) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "User does not have permission to view runs queue for organization " + organizationName);
+        }
         RunsDataList runsDataList = new RunsDataList();
         runsDataList.setData(new ArrayList<RunsModel>());
         List<Job> jobList = jobRepository.findAllByOrganizationNameAndStatusInOrderByIdAsc(
@@ -2082,8 +2198,11 @@ public class RemoteTfeService {
 
         int runQueue = 0;
         for (Job job : jobList) {
+            if (!validateUserViewWorkspace(job.getWorkspace(), currentUser)) {
+                continue;
+            }
             log.info("Run Queue {} job {}", runQueue, job.getId());
-            Optional<RunsData> runsData = Optional.ofNullable(getRun(job.getId(), null));
+            Optional<RunsData> runsData = Optional.ofNullable(getRun(job.getId(), null, currentUser));
             if (runsData.isPresent()) {
                 RunsModel runsModel = runsData.get().getData();
                 runsModel.getAttributes().put("position-in-queue", runQueue);
@@ -2096,22 +2215,25 @@ public class RemoteTfeService {
         return runsDataList;
     }
 
-    RunsDataList getWorkspaceRuns(String workspaceId) {
+    RunsDataList getWorkspaceRuns(String workspaceId, JwtAuthenticationToken currentUser) {
         RunsDataList runsDataList = new RunsDataList();
         runsDataList.setData(new ArrayList<RunsModel>());
-        Optional<Workspace> workspaceList = workspaceRepository.findById(UUID.fromString(workspaceId));
-        if (!workspaceList.isPresent()) {
+        Workspace workspace = findWorkspace(workspaceId);
+        if (workspace == null) {
             return runsDataList;
         }
-        Workspace workspace = workspaceList.get();
+        if (currentUser == null || !validateUserViewWorkspace(workspace, currentUser)) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "User does not have permission to view runs in workspace " + workspace.getName());
+        }
         jobRepository.findAllByWorkspaceAndStatusInOrderByIdDesc(workspace, Arrays.asList(
                 JobStatus.pending,
                 JobStatus.running,
                 JobStatus.queue,
                 JobStatus.waitingApproval)).forEach(job -> {
             log.info("Run Workspace {} job {}", workspace.getName(), job.getId());
-            Optional<RunsData> runsData = Optional.ofNullable(getRun(job.getId(), null));
-            runsDataList.getData().add(runsData.get().getData());
+            Optional<RunsData> runsData = Optional.ofNullable(getRun(job.getId(), null, currentUser));
+            runsData.ifPresent(data -> runsDataList.getData().add(data.getData()));
         });
 
         runsDataList.setCurrentPage(1);
@@ -2211,7 +2333,7 @@ public class RemoteTfeService {
                         jobApprovalService.recordApproval(job, currentUser);
                     }
                     step.setStatus(JobStatus.completed);
-                    step.setOutput(String.format("https://%s/tfoutput/v1/organization/%s/job/%s/step/%s", this.hostname,
+                    step.setOutput(String.format("%s/tfoutput/v1/organization/%s/job/%s/step/%s", this.apiBaseUrl,
                             job.getOrganization().getId().toString(), job.getId(), step.getId()));
                     stepRepository.save(step);
                     job.setStatus(JobStatus.pending);
@@ -2226,20 +2348,34 @@ public class RemoteTfeService {
                 }
             }
         }
-        return getRun(runId, null);
+        return getRun(runId, null, currentUser);
     }
 
     RunsData runDiscard(int runId, JwtAuthenticationToken currentUser) {
-        try {
-            log.warn("Updating job status for discard: {}", runId);
-            Job job = jobRepository.getReferenceById(Integer.valueOf(runId));
+        log.warn("Updating job status for discard: {}", runId);
+        Job job = jobRepository.getReferenceById(Integer.valueOf(runId));
 
-            // Authorize: user must have manage job permission to discard
-            if (!validateUserManageJob(job.getWorkspace(), currentUser)) {
-                log.warn("User does not have permission to discard job {} in workspace {}", runId, job.getWorkspace().getName());
-                throw new org.springframework.security.access.AccessDeniedException(
-                        "User does not have permission to discard runs in this workspace");
-            }
+        // The workspace of a deleted workspace reads as null: a clean refusal instead of a server error.
+        if (job.getWorkspace() == null) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "The workspace of this run no longer exists");
+        }
+
+        // Authorize: user must have approve/apply permission to discard/cancel a run
+        if (currentUser == null || !validateUserApproveJob(job.getWorkspace(), currentUser)) {
+            log.warn("User does not have permission to discard job {} in workspace {}", runId, job.getWorkspace().getName());
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "User does not have permission to discard runs in this workspace");
+        }
+
+        // Only active jobs that still hold the queue can be discarded
+        if (job.getStatus() == null || !job.getStatus().holdsTheQueue()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, String.format(
+                    "Job %d is %s and cannot be discarded.",
+                    job.getId(), job.getStatus()));
+        }
+
+        try {
             job.setStatus(JobStatus.cancelled);
             job = jobRepository.save(job);
             jobNotificationTrigger.notifyStatusChanged(job);
@@ -2247,18 +2383,24 @@ public class RemoteTfeService {
         } catch (ParseException | SchedulerException e) {
             log.error(e.getMessage());
         }
-        return getRun(runId, null);
+        return getRun(runId, null, currentUser);
     }
 
-    PlanRunData getPlan(int planId) {
+    PlanRunData getPlan(int planId, JwtAuthenticationToken currentUser) {
+        Job job = findJob(planId);
+        if (job == null) {
+            return null;
+        }
+        if (currentUser == null || !validateUserViewWorkspace(job.getWorkspace(), currentUser)) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "User does not have permission to view this plan");
+        }
         PlanRunData plansData = new PlanRunData();
         PlanRunModel planRunModel = new PlanRunModel();
         planRunModel.setId(String.valueOf(planId));
         planRunModel.setType("plans");
         planRunModel.setAttributes(new HashMap<>());
         String planStatus = "pending";
-
-        Job job = jobRepository.getReferenceById(Integer.valueOf(planId));
         if (job.getStep() != null && !job.getStep().isEmpty()) {
             for (Step step : job.getStep()) {
                 if (step.getStepNumber() == 100) {
@@ -2298,23 +2440,37 @@ public class RemoteTfeService {
         planRunModel.getAttributes().put("actions", actions);
 
         planRunModel.getAttributes().put("status", planStatus);
-        String encryptedPlanId = encryptionService.encrypt(String.valueOf(planId));
-        log.info("log-read-url: {}", String.format("https://%s/remote/tfe/v2/plans/logs/%s", hostname, encryptedPlanId));
+        String encryptedPlanId = buildLogCapabilityToken(planId);
         planRunModel.getAttributes().put("log-read-url",
-                String.format("https://%s/remote/tfe/v2/plans/logs/%s", hostname, encryptedPlanId));
+                String.format("%s/remote/tfe/v2/plans/logs/%s", apiBaseUrl, encryptedPlanId));
         plansData.setData(planRunModel);
         return plansData;
     }
 
-    ApplyRunData getApply(int planId) {
+    private String buildLogCapabilityToken(int jobId) {
+        if (logReadUrlExpiryMinutes > 0) {
+            long issuedAt = System.currentTimeMillis();
+            return encryptionService.encrypt(jobId + "|" + issuedAt);
+        } else {
+            return encryptionService.encrypt(String.valueOf(jobId));
+        }
+    }
+
+    ApplyRunData getApply(int planId, JwtAuthenticationToken currentUser) {
+        Job job = findJob(planId);
+        if (job == null) {
+            return null;
+        }
+        if (currentUser == null || !validateUserViewWorkspace(job.getWorkspace(), currentUser)) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "User does not have permission to view this apply");
+        }
         ApplyRunData applyRunData = new ApplyRunData();
         ApplyRunModel applyModel = new ApplyRunModel();
         applyModel.setId(String.valueOf(planId));
         applyModel.setType("applies");
         applyModel.setAttributes(new HashMap<>());
         String applyStatus = "pending";
-
-        Job job = jobRepository.getReferenceById(Integer.valueOf(planId));
         if (job.getStep() != null && !job.getStep().isEmpty()) {
             for (Step step : job.getStep()) {
                 if (step.getStepNumber() == 200) {
@@ -2337,10 +2493,9 @@ public class RemoteTfeService {
             }
         }
         applyModel.getAttributes().put("status", applyStatus);
-        String encryptedPlanId = encryptionService.encrypt(String.valueOf(planId));
-        log.info("log-read-url: {}", String.format("https://%s/remote/tfe/v2/applies/logs/%s", hostname, encryptedPlanId));
+        String encryptedPlanId = buildLogCapabilityToken(planId);
         applyModel.getAttributes().put("log-read-url",
-                String.format("https://%s/remote/tfe/v2/applies/logs/%s", hostname, encryptedPlanId));
+                String.format("%s/remote/tfe/v2/applies/logs/%s", apiBaseUrl, encryptedPlanId));
 
         applyRunData.setData(applyModel);
         return applyRunData;
@@ -2358,12 +2513,44 @@ public class RemoteTfeService {
         if (offset < 0 || limit <= 0) {
             return new byte[0];
         }
-        String jobId = encryptionService.decrypt(encryptedJobId);
-        log.info("Searching logs for job {} stepNumber {}", jobId, stepNumber);
-        Optional<Job> job = jobRepository.findById(Integer.valueOf(jobId));
+        String decrypted;
+        try {
+            decrypted = encryptionService.decrypt(encryptedJobId);
+        } catch (Exception e) {
+            log.warn("Failed to decrypt log token: {}", e.getMessage());
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Invalid log token");
+        }
+        String[] parts = decrypted.split("\\|");
+        int parsedJobId;
+        Long issuedAt = null;
+        try {
+            parsedJobId = Integer.parseInt(parts[0]);
+            if (parts.length >= 2) {
+                issuedAt = Long.parseLong(parts[1]);
+            }
+        } catch (NumberFormatException e) {
+            log.warn("Invalid log token payload");
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Invalid log token");
+        }
+        log.info("Searching logs for job {} stepNumber {}", parsedJobId, stepNumber);
+        Optional<Job> job = jobRepository.findById(parsedJobId);
         if (job.isEmpty()) {
-            log.warn("No logs found for job {}", jobId);
+            log.warn("No logs found for job {}", parsedJobId);
             return new byte[0];
+        }
+        if (issuedAt != null && logReadUrlExpiryMinutes > 0) {
+            Job jobEntity = job.get();
+            JobStatus jobStatus = jobEntity.getStatus();
+            boolean jobStillActive = jobStatus != null && jobStatus.holdsTheQueue();
+            if (!jobStillActive) {
+                long lastUpdatedAt = jobEntity.getUpdatedDate() != null ? jobEntity.getUpdatedDate().getTime() : issuedAt;
+                long windowAnchor = Math.max(lastUpdatedAt, issuedAt);
+                long windowMillis = TimeUnit.MINUTES.toMillis(logReadUrlExpiryMinutes);
+                if (System.currentTimeMillis() > windowAnchor + windowMillis) {
+                    log.warn("Log read URL has expired for job {}", parsedJobId);
+                    throw new ResponseStatusException(HttpStatus.GONE, "Log read URL has expired");
+                }
+            }
         }
 
         if (job.get().getStep() == null || job.get().getStep().isEmpty()) {
@@ -2478,56 +2665,140 @@ public class RemoteTfeService {
         return Arrays.copyOfRange(bytes, offset, endIndex);
     }
 
-    StateOutputs getCurrentOutputs(String workspaceId) {
+    StateOutputs getCurrentOutputs(String workspaceId, JwtAuthenticationToken currentUser) {
+        if (currentUser == null) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "Unauthenticated access denied");
+        }
         StateOutputs stateOutputs = new StateOutputs();
         stateOutputs.setData(new ArrayList());
         try {
             Optional<Workspace> searchWorkspace = workspaceRepository.findById(UUID.fromString(workspaceId));
             if (searchWorkspace.isPresent()) {
                 Workspace workspace = searchWorkspace.get();
-                byte[] currentState = storageTypeService
-                        .getCurrentTerraformState(workspace.getOrganization().getId().toString(), workspaceId);
-                String state = new String(currentState, StandardCharsets.UTF_8);
-                TerraformState terraformState = new ObjectMapper().readValue(state, TerraformState.class);
-
-                terraformState.getOutputs().forEach((mapKey, mapValue) -> {
+                authorizeStateRead(workspace, currentUser);
+                readCurrentStateOutputs(workspace).forEach((mapKey, mapValue) -> {
                     log.info("Processing Key output: {}", mapKey);
-
-                    OutputData outputData = new OutputData();
-                    outputData.setId(UUID.randomUUID().toString());
-                    outputData.setType("state-version-outputs");
-                    outputData.setAttributes(new HashMap());
-                    outputData.getAttributes().put("name", mapKey);
-
-                    LinkedHashMap linkedHashMap = (LinkedHashMap) mapValue;
-
-                    outputData.getAttributes().put("value", linkedHashMap.get("value"));
-
-                    if (linkedHashMap.get("sensitive") != null)
-                        outputData.getAttributes().put("sensitive", linkedHashMap.get("sensitive"));
-                    else
-                        outputData.getAttributes().put("sensitive", false);
-
-                    if (linkedHashMap.get("type") instanceof String) {
-                        outputData.getAttributes().put("type", "string");
-                        outputData.getAttributes().put("detailed-type", "string");
-                    } else {
-                        outputData.getAttributes().put("type", "object");
-                        outputData.getAttributes().put("detailed-type", linkedHashMap.get("type"));
-                    }
-                    stateOutputs.getData().add(outputData);
-
+                    stateOutputs.getData().add(toStateVersionOutput(workspace, mapKey, mapValue));
                 });
             }
         } catch (StorageUnavailableException ex) {
             // Same reasoning as getCurrentWorkspaceState: a transient storage failure must not
             // look like "this workspace has no outputs" to a real Terraform CLI client (#3671).
             throw ex;
+        } catch (org.springframework.security.access.AccessDeniedException ex) {
+            throw ex;
         } catch (Exception ex) {
             log.error(ex.getMessage());
         }
 
         return stateOutputs;
+    }
+
+    /**
+     * Reads a single output of the workspace's current state, which is how the Terraform and
+     * OpenTofu cloud backends fetch the value of every sensitive output listed by
+     * {@link #getCurrentOutputs(String, JwtAuthenticationToken)} (#3925).
+     *
+     * @return the output, or {@code null} when the id, the workspace or the output is unknown
+     */
+    StateOutput getStateVersionOutput(String outputId, JwtAuthenticationToken currentUser) {
+        if (currentUser == null) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "Unauthenticated access denied");
+        }
+        String[] workspaceIdAndName = parseStateVersionOutputId(outputId);
+        if (workspaceIdAndName == null) {
+            return null;
+        }
+        Workspace workspace = findWorkspace(workspaceIdAndName[0]);
+        if (workspace == null) {
+            return null;
+        }
+        authorizeStateRead(workspace, currentUser);
+
+        Map<String, Map<String, Object>> outputs;
+        try {
+            outputs = readCurrentStateOutputs(workspace);
+        } catch (StorageUnavailableException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            log.error("Could not read the outputs of workspace {}: {}", workspace.getId(), ex.getMessage());
+            return null;
+        }
+
+        String outputName = workspaceIdAndName[1];
+        Map<String, Object> output = outputs.get(outputName);
+        if (output == null) {
+            return null;
+        }
+        StateOutput stateOutput = new StateOutput();
+        stateOutput.setData(toStateVersionOutput(workspace, outputName, output));
+        return stateOutput;
+    }
+
+    private Map<String, Map<String, Object>> readCurrentStateOutputs(Workspace workspace) throws JsonProcessingException {
+        byte[] currentState = storageTypeService
+                .getCurrentTerraformState(workspace.getOrganization().getId().toString(), workspace.getId().toString());
+        String state = new String(currentState, StandardCharsets.UTF_8);
+        TerraformState terraformState = new ObjectMapper().readValue(state, TerraformState.class);
+        return terraformState.getOutputs() != null ? terraformState.getOutputs() : Map.of();
+    }
+
+    private OutputData toStateVersionOutput(Workspace workspace, String name, Map<String, Object> output) {
+        OutputData outputData = new OutputData();
+        outputData.setId(stateVersionOutputId(workspace.getId().toString(), name));
+        outputData.setType("state-version-outputs");
+        outputData.setAttributes(new HashMap());
+        outputData.getAttributes().put("name", name);
+
+        outputData.getAttributes().put("value", output.get("value"));
+
+        if (output.get("sensitive") != null)
+            outputData.getAttributes().put("sensitive", output.get("sensitive"));
+        else
+            outputData.getAttributes().put("sensitive", false);
+
+        // The state keeps the output type in cty's JSON form: a primitive type name such as
+        // "string", "number" or "bool", or a list such as ["list","string"] for complex types.
+        // The CLI decodes the value with detailed-type, so it must carry that type unchanged.
+        Object outputType = output.get("type");
+        outputData.getAttributes().put("type", outputType instanceof String ? "string" : "object");
+        outputData.getAttributes().put("detailed-type", outputType);
+        return outputData;
+    }
+
+    /**
+     * Output ids identify an output by its workspace and name, so they stay valid for as long as
+     * the output exists and can be resolved without storing them. They only use the characters
+     * go-tfe accepts in an id ({@code [a-zA-Z0-9._-]}), whatever the output name contains.
+     */
+    static String stateVersionOutputId(String workspaceId, String outputName) {
+        String key = workspaceId + ":" + outputName;
+        return STATE_VERSION_OUTPUT_ID_PREFIX
+                + Base64.getUrlEncoder().withoutPadding().encodeToString(key.getBytes(StandardCharsets.UTF_8));
+    }
+
+    /**
+     * @return the workspace id and the output name encoded in the id, or {@code null} when the id
+     * was not built by {@link #stateVersionOutputId(String, String)}
+     */
+    static String[] parseStateVersionOutputId(String outputId) {
+        if (outputId == null || !outputId.startsWith(STATE_VERSION_OUTPUT_ID_PREFIX)) {
+            return null;
+        }
+        String key;
+        try {
+            key = new String(Base64.getUrlDecoder().decode(outputId.substring(STATE_VERSION_OUTPUT_ID_PREFIX.length())),
+                    StandardCharsets.UTF_8);
+        } catch (IllegalArgumentException ex) {
+            return null;
+        }
+        int separator = key.indexOf(':');
+        if (separator <= 0 || separator == key.length() - 1) {
+            return null;
+        }
+        return new String[] { key.substring(0, separator), key.substring(separator + 1) };
     }
 
     public ProjectList searchOrganizationProjects(String organizationName, JwtAuthenticationToken currentUser){
@@ -2678,12 +2949,30 @@ public class RemoteTfeService {
         return false;
     }
 
+    public boolean canViewPolicyCheck(PolicyEvaluation eval, JwtAuthenticationToken currentUser) {
+        if (currentUser == null || eval == null) {
+            return false;
+        }
+        if (eval.getJob() != null && eval.getJob().getWorkspace() != null
+                && validateUserViewWorkspace(eval.getJob().getWorkspace(), currentUser)) {
+            return true;
+        }
+        return validateUserCanOverridePolicy(eval, currentUser);
+    }
+
     public PolicyCheckList getRunPolicyChecks(int runId, JwtAuthenticationToken currentUser) {
-        Job job = jobRepository.findById(runId).orElse(null);
+        Job job = findJob(runId);
+        if (job == null) {
+            return null;
+        }
+        if (currentUser == null || (job.getWorkspace() != null && !validateUserViewWorkspace(job.getWorkspace(), currentUser))) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "User does not have permission to view policy checks for this run");
+        }
         PolicyCheckList list = new PolicyCheckList();
         list.setData(new ArrayList<>());
 
-        if (policyEvaluationRepository != null && job != null) {
+        if (policyEvaluationRepository != null) {
             List<PolicyEvaluation> evaluations = policyEvaluationRepository.findByJob(job);
             if (evaluations != null) {
                 for (PolicyEvaluation eval : evaluations) {
@@ -2702,8 +2991,13 @@ public class RemoteTfeService {
         if (evalOpt.isEmpty()) {
             return null;
         }
+        PolicyEvaluation eval = evalOpt.get();
+        if (!canViewPolicyCheck(eval, currentUser)) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "User does not have permission to view this policy check");
+        }
         PolicyCheckData data = new PolicyCheckData();
-        data.setData(buildPolicyCheckModel(evalOpt.get(), currentUser));
+        data.setData(buildPolicyCheckModel(eval, currentUser));
         return data;
     }
 
@@ -2716,6 +3010,10 @@ public class RemoteTfeService {
             return "Policy evaluation not found.\n";
         }
         PolicyEvaluation eval = evalOpt.get();
+        if (!canViewPolicyCheck(eval, currentUser)) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "User does not have permission to view output for this policy check");
+        }
 
         StringBuilder sb = new StringBuilder();
         sb.append("\n------------------------------------------------------------------------\n");
@@ -2791,7 +3089,6 @@ public class RemoteTfeService {
         }
 
         PolicyOverride override = new PolicyOverride();
-        override.setId(UUID.randomUUID());
         override.setEvaluation(evaluation);
         override.setOverriddenBy(username);
         override.setOverriddenAt(new Date());

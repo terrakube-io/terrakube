@@ -538,4 +538,29 @@ class JobLogAccessServiceTest {
         assertEquals(JobLogAccessService.LogAccessResult.FORBIDDEN, service.checkJobAccess(jwt, jobId));
         verify(teamRepository, never()).findAllByOrganizationIdAndNameIn(any(), any());
     }
+
+    // --- canWriteLogs tests --------------------------------------------------------------------------
+
+    @Test
+    void testCanWriteLogs_ExecutorServiceToken_ReturnsTrue() {
+        when(jwt.getTokenAttributes()).thenReturn(executorServiceToken());
+        assertTrue(service.canWriteLogs(jwt));
+    }
+
+    @Test
+    void testCanWriteLogs_RunnerToken_ReturnsFalse() {
+        when(jwt.getTokenAttributes()).thenReturn(runnerToken(String.valueOf(jobId)));
+        assertFalse(service.canWriteLogs(jwt));
+    }
+
+    @Test
+    void testCanWriteLogs_UserToken_ReturnsFalse() {
+        when(jwt.getTokenAttributes()).thenReturn(Map.of("iss", "https://idp.example.com", "email", "alice@corp.com"));
+        assertFalse(service.canWriteLogs(jwt));
+    }
+
+    @Test
+    void testCanWriteLogs_NullAuthentication_ReturnsFalse() {
+        assertFalse(service.canWriteLogs(null));
+    }
 }

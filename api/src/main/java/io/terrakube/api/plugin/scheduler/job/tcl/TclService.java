@@ -98,11 +98,36 @@ public class TclService {
             return job;
     }
 
-    private FlowConfig getFlowConfig(String tcl) {
+    public static FlowConfig parseFlowConfig(String tcl) {
         Yaml yaml = new Yaml(new Constructor(FlowConfig.class, new LoaderOptions()));
+        return yaml.load(new String(Base64.getDecoder().decode(tcl)));
+    }
+
+    public static boolean hasPrecedingApplyOrDestroy(Job job, Flow currentFlow) {
+        if (job == null || currentFlow == null || job.getTcl() == null || job.getTcl().isBlank()) {
+            return false;
+        }
+        try {
+            FlowConfig flowConfig = parseFlowConfig(job.getTcl());
+            if (flowConfig == null || flowConfig.getFlow() == null) {
+                return false;
+            }
+            String applyName = FlowType.terraformApply.name();
+            String destroyName = FlowType.terraformDestroy.name();
+            return flowConfig.getFlow().stream()
+                    .anyMatch(other -> other.getStep() < currentFlow.getStep()
+                            && (applyName.equals(other.getType()) || destroyName.equals(other.getType())));
+        } catch (Exception e) {
+            log.warn("Error inspecting TCL flow for job {} step {}: {}", job.getId(), currentFlow.getStep(),
+                    e.getMessage());
+            return false;
+        }
+    }
+
+    private FlowConfig getFlowConfig(String tcl) {
         FlowConfig flowConfig = null;
         try {
-            flowConfig = yaml.load(new String(Base64.getDecoder().decode(tcl)));
+            flowConfig = parseFlowConfig(tcl);
             // Log at DEBUG to avoid keyword-based monitors (e.g. Datadog, CloudWatch, Loki)
             // flagging the FlowConfig toString() output (which contains "error=null" field text)
             // as ERROR-level events in healthy runs. See: https://github.com/terrakube-io/terrakube/issues/3544

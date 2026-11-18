@@ -121,7 +121,58 @@ class JobLogBroadcasterTest {
                 broadcaster.subscribe("stepA", new RecordingEmitter(), RecordId.of("0-0")));
     }
 
-    /** Captures the {@code data:} payloads sent to an emitter and its completion state. */
+    @Test
+    @Timeout(10)
+    void keepsLeadingSpacesOfStepLogLines() {
+        List<MapRecord> stored = List.of(
+                rec("stepA", "  + create", "1-0"),
+                rec("stepA", " one space", "2-0"),
+                rec("stepA", "\tno space", "3-0"),
+                rec("stepA", "", "4-0"));
+        when(reader.readAfter(eq("42"), any(RecordId.class), any(Duration.class)))
+                .thenReturn(stored)
+                .thenReturn(List.of());
+        when(reader.readAfterPage(eq("42"), any(RecordId.class), org.mockito.ArgumentMatchers.anyInt()))
+                .thenAnswer(i -> stored.stream()
+                        .filter(r -> StreamIds.compare(r.getId(), i.getArgument(1)) > 0)
+                        .toList());
+        when(jobStatusCache.isTerminal("42")).thenReturn(false).thenReturn(true);
+
+        RecordingEmitter a = new RecordingEmitter();
+        LogsProperties p = props();
+        p.setSseFreshViewerTailRecords(0);
+        JobLogBroadcaster broadcaster = new JobLogBroadcaster("42", reader, jobStatusCache, p, () -> { });
+        broadcaster.subscribe("stepA", a, RecordId.of("0-0"));
+        broadcaster.start();
+
+        await().atMost(Duration.ofSeconds(5)).until(() -> a.completed);
+        assertEquals(List.of("  + create", " one space", "\tno space", ""), a.data);
+    }
+
+    @Test
+    @Timeout(10)
+    void keepsEveryLineOfMultiLineRecordsAndTreatsCarriageReturnAsLineBreak() {
+        // A fresh viewer is served from the recent tail.
+        when(reader.readTail(eq("42"), org.mockito.ArgumentMatchers.anyInt())).thenReturn(List.of(
+                rec("stepA", "  first\n  second", "1-0"),
+                rec("stepA", "  crlf\r\n  lone cr\r  last", "2-0"),
+                rec("stepA", " trailing\n", "3-0")));
+        when(reader.readAfter(eq("42"), any(RecordId.class), any(Duration.class))).thenReturn(List.of());
+        when(jobStatusCache.isTerminal("42")).thenReturn(true);
+
+        RecordingEmitter a = new RecordingEmitter();
+        JobLogBroadcaster broadcaster = new JobLogBroadcaster("42", reader, jobStatusCache, props(), () -> { });
+        broadcaster.subscribe("stepA", a, RecordId.of("0-0"));
+        broadcaster.start();
+
+        await().atMost(Duration.ofSeconds(5)).until(() -> a.completed);
+        assertEquals(List.of("  first\n  second", "  crlf\n  lone cr\n  last", " trailing\n"), a.data);
+    }
+
+    /**
+     * Captures the data of the unnamed events sent to an emitter, parsed as an SSE client does (one leading
+     * space stripped after {@code data:}, lines joined with {@code \n}), and its completion state.
+     */
     static class RecordingEmitter extends SseEmitter {
         final List<String> data = new CopyOnWriteArrayList<>();
         volatile boolean completed = false;
@@ -139,13 +190,18 @@ class JobLogBroadcasterTest {
                 }
             }
             boolean named = false;
-            for (String line : sb.toString().split("\n")) {
+            List<String> lines = new java.util.ArrayList<>();
+            for (String line : sb.toString().split("\r\n|\r|\n", -1)) {
                 if (line.startsWith("event:")) {
                     named = true;
                 }
-                if (line.startsWith("data:") && !named) {
-                    data.add(line.substring("data:".length()));
+                if (line.startsWith("data:")) {
+                    String value = line.substring("data:".length());
+                    lines.add(value.startsWith(" ") ? value.substring(1) : value);
                 }
+            }
+            if (!named && !lines.isEmpty()) {
+                data.add(String.join("\n", lines));
             }
         }
 

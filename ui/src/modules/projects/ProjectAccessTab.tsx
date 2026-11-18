@@ -1,8 +1,21 @@
-import { DeleteOutlined, PlusOutlined } from "@ant-design/icons";
-import { Button, Form, Popconfirm, Select, Space, Spin, Table, Tag, Tooltip, Typography, message } from "antd";
+import { CheckCircleFilled, CloseCircleOutlined, DeleteOutlined, PlusOutlined } from "@ant-design/icons";
+import {
+  Button,
+  Checkbox,
+  Form,
+  Popconfirm,
+  Select,
+  Space,
+  Spin,
+  Table,
+  Tag,
+  Tooltip,
+  Typography,
+  message,
+} from "antd";
 import { useEffect, useState } from "react";
 import axiosInstance from "@/config/axiosConfig";
-import projectService, { ProjectAccessModel } from "./projectService";
+import projectService, { ProjectAccessModel, ProjectAccessPermissions } from "./projectService";
 import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
 import "./Projects.css";
 
@@ -15,6 +28,11 @@ type Props = {
 type AddTeamForm = {
   teamName: string;
   role: string;
+  manageWorkspace?: boolean;
+  manageState?: boolean;
+  planJob?: boolean;
+  approveJob?: boolean;
+  destroyJob?: boolean;
 };
 
 type TeamOption = { id: string; name: string };
@@ -44,14 +62,53 @@ const ROLES = [
     color: "default",
     description: "Read-only access. Cannot make any changes.",
   },
+  {
+    value: "custom",
+    label: "Custom",
+    color: "default",
+    description: "Choose individual permissions on the project's workspaces. Cannot manage project team access.",
+  },
+];
+
+const PERMISSION_FIELDS: { key: keyof ProjectAccessPermissions; label: string; shortLabel: string }[] = [
+  { key: "manageWorkspace", label: "Manage workspaces", shortLabel: "Workspaces" },
+  { key: "manageState", label: "Manage state", shortLabel: "State" },
+  { key: "planJob", label: "Plan runs", shortLabel: "Plan" },
+  { key: "approveJob", label: "Approve runs", shortLabel: "Approve" },
+  { key: "destroyJob", label: "Destroy runs", shortLabel: "Destroy" },
 ];
 
 function roleColor(role: string): string {
   return ROLES.find((r) => r.value === role)?.color ?? "default";
 }
 
+function roleLabel(role: string): string {
+  return ROLES.find((r) => r.value === role)?.label ?? "Custom";
+}
+
 function roleDescription(role: string): string {
   return ROLES.find((r) => r.value === role)?.description ?? "";
+}
+
+// Mirrors RbacV2Service: a preset role decides every permission, only a custom role reads the saved flags.
+function effectivePermissions(record: ProjectAccessModel): ProjectAccessPermissions {
+  switch (record.role) {
+    case "admin":
+    case "write":
+      return { manageWorkspace: true, manageState: true, planJob: true, approveJob: true, destroyJob: true };
+    case "plan":
+      return { manageWorkspace: false, manageState: false, planJob: true, approveJob: false, destroyJob: false };
+    case "read":
+      return { manageWorkspace: false, manageState: false, planJob: false, approveJob: false, destroyJob: false };
+    default:
+      return {
+        manageWorkspace: record.manageWorkspace,
+        manageState: record.manageState,
+        planJob: record.planJob,
+        approveJob: record.approveJob,
+        destroyJob: record.destroyJob,
+      };
+  }
 }
 
 export default function ProjectAccessTab({ orgid, projectId, canManage }: Props) {
@@ -62,15 +119,23 @@ export default function ProjectAccessTab({ orgid, projectId, canManage }: Props)
   const [loadingTeams, setLoadingTeams] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingRole, setEditingRole] = useState<string>("");
+  const [editingPermissions, setEditingPermissions] = useState<ProjectAccessPermissions>({
+    manageWorkspace: false,
+    manageState: false,
+    planJob: false,
+    approveJob: false,
+    destroyJob: false,
+  });
   const [savingRole, setSavingRole] = useState(false);
   const [form] = Form.useForm<AddTeamForm>();
+  const addRole = Form.useWatch("role", form);
 
   const load = async () => {
     setLoading(true);
     try {
       const result = await projectService.listProjectAccess(orgid, projectId);
       if (!result.isError) {
-        setAccessList(result.data);
+        setAccessList(result.data ?? []);
       } else {
         message.error("Failed to load team access list");
       }
@@ -100,7 +165,17 @@ export default function ProjectAccessTab({ orgid, projectId, canManage }: Props)
   const onAdd = async (values: AddTeamForm) => {
     setAdding(true);
     try {
-      await projectService.addProjectAccess(orgid, projectId, values.teamName, values.role);
+      const permissions =
+        values.role === "custom"
+          ? {
+              manageWorkspace: !!values.manageWorkspace,
+              manageState: !!values.manageState,
+              planJob: !!values.planJob,
+              approveJob: !!values.approveJob,
+              destroyJob: !!values.destroyJob,
+            }
+          : undefined;
+      await projectService.addProjectAccess(orgid, projectId, values.teamName, values.role, permissions);
       message.success(`Team "${values.teamName}" added to project`);
       form.resetFields();
       await load();
@@ -132,17 +207,20 @@ export default function ProjectAccessTab({ orgid, projectId, canManage }: Props)
   const onEditRole = (record: ProjectAccessModel) => {
     setEditingId(record.id);
     setEditingRole(record.role);
+    setEditingPermissions(effectivePermissions(record));
   };
 
   const onSaveRole = async (record: ProjectAccessModel) => {
-    if (editingRole === record.role) {
+    // A custom role can keep its name and still change its permissions.
+    if (editingRole === record.role && editingRole !== "custom") {
       setEditingId(null);
       return;
     }
     setSavingRole(true);
     try {
-      await projectService.updateProjectAccess(orgid, projectId, record.id, editingRole);
-      message.success(`Role for "${record.name}" updated to ${editingRole}`);
+      const permissions = editingRole === "custom" ? editingPermissions : undefined;
+      await projectService.updateProjectAccess(orgid, projectId, record.id, editingRole, permissions);
+      message.success(`Role for "${record.name}" updated to ${roleLabel(editingRole)}`);
       setEditingId(null);
       await load();
     } catch (err: any) {
@@ -170,36 +248,51 @@ export default function ProjectAccessTab({ orgid, projectId, canManage }: Props)
       render: (role: string, record: ProjectAccessModel) => {
         if (canManage && editingId === record.id) {
           return (
-            <Space>
-              <Select
-                size="small"
-                value={editingRole}
-                onChange={setEditingRole}
-                className="project-access-role-select"
-                options={ROLES.map((r) => ({ value: r.value, label: r.label }))}
-                optionRender={(opt) => {
-                  const r = ROLES.find((x) => x.value === opt.value);
-                  if (!r) return opt.label;
-                  return (
-                    <Space orientation="vertical" size={2} className="project-access-role-option">
-                      <Tag color={r.color}>{r.label}</Tag>
-                      <Typography.Text type="secondary" className="project-access-role-description">
-                        {r.description}
-                      </Typography.Text>
-                    </Space>
-                  );
-                }}
-                labelRender={(item) => {
-                  const r = ROLES.find((x) => x.value === item.value);
-                  return r ? <Tag color={r.color}>{r.label}</Tag> : <span>{item.label}</span>;
-                }}
-              />
-              <Button type="primary" size="small" loading={savingRole} onClick={() => onSaveRole(record)}>
-                Save
-              </Button>
-              <Button size="small" onClick={() => setEditingId(null)}>
-                Cancel
-              </Button>
+            <Space orientation="vertical" size={8}>
+              <Space>
+                <Select
+                  size="small"
+                  value={editingRole}
+                  onChange={setEditingRole}
+                  className="project-access-role-select"
+                  options={ROLES.map((r) => ({ value: r.value, label: r.label }))}
+                  optionRender={(opt) => {
+                    const r = ROLES.find((x) => x.value === opt.value);
+                    if (!r) return opt.label;
+                    return (
+                      <Space orientation="vertical" size={2} className="project-access-role-option">
+                        <Tag color={r.color}>{r.label}</Tag>
+                        <Typography.Text type="secondary" className="project-access-role-description">
+                          {r.description}
+                        </Typography.Text>
+                      </Space>
+                    );
+                  }}
+                  labelRender={(item) => {
+                    const r = ROLES.find((x) => x.value === item.value);
+                    return r ? <Tag color={r.color}>{r.label}</Tag> : <span>{item.label}</span>;
+                  }}
+                />
+                <Button type="primary" size="small" loading={savingRole} onClick={() => onSaveRole(record)}>
+                  Save
+                </Button>
+                <Button size="small" onClick={() => setEditingId(null)}>
+                  Cancel
+                </Button>
+              </Space>
+              {editingRole === "custom" && (
+                <Space orientation="vertical" size={4}>
+                  {PERMISSION_FIELDS.map((field) => (
+                    <Checkbox
+                      key={field.key}
+                      checked={editingPermissions[field.key]}
+                      onChange={(e) => setEditingPermissions((prev) => ({ ...prev, [field.key]: e.target.checked }))}
+                    >
+                      {field.label}
+                    </Checkbox>
+                  ))}
+                </Space>
+              )}
             </Space>
           );
         }
@@ -207,7 +300,7 @@ export default function ProjectAccessTab({ orgid, projectId, canManage }: Props)
           <Space>
             <Tooltip title={roleDescription(role)}>
               <Tag color={roleColor(role)} className="project-access-role-tag">
-                {role ?? "custom"}
+                {roleLabel(role)}
               </Tag>
             </Tooltip>
             {canManage && (
@@ -223,6 +316,35 @@ export default function ProjectAccessTab({ orgid, projectId, canManage }: Props)
           </Space>
         );
       },
+    },
+    {
+      title: "Permissions",
+      key: "permissions",
+      children: PERMISSION_FIELDS.map((field) => ({
+        title: (
+          <Tooltip title={field.label}>
+            <span className="project-access-permission-heading">{field.shortLabel}</span>
+          </Tooltip>
+        ),
+        key: field.key,
+        align: "center" as const,
+        render: (_: any, record: ProjectAccessModel) => {
+          const granted = effectivePermissions(record)[field.key];
+          const label = `${granted ? "Can" : "Cannot"} ${field.label.toLowerCase()}`;
+          return (
+            <Tooltip title={label}>
+              {granted ? (
+                <CheckCircleFilled
+                  aria-label={label}
+                  className="project-access-permission project-access-permission--granted"
+                />
+              ) : (
+                <CloseCircleOutlined aria-label={label} className="project-access-permission" />
+              )}
+            </Tooltip>
+          );
+        },
+      })),
     },
     {
       title: "",
@@ -260,6 +382,7 @@ export default function ProjectAccessTab({ orgid, projectId, canManage }: Props)
           columns={columns}
           rowKey="id"
           pagination={false}
+          scroll={{ x: "max-content" }}
           locale={{
             emptyText: canManage
               ? "No teams have been granted project-level access."
@@ -309,6 +432,12 @@ export default function ProjectAccessTab({ orgid, projectId, canManage }: Props)
                 }}
               />
             </Form.Item>
+            {addRole === "custom" &&
+              PERMISSION_FIELDS.map((field) => (
+                <Form.Item key={field.key} name={field.key} valuePropName="checked">
+                  <Checkbox>{field.label}</Checkbox>
+                </Form.Item>
+              ))}
             <Form.Item>
               <Button type="primary" htmlType="submit" icon={<PlusOutlined />} loading={adding}>
                 Add Team

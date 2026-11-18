@@ -18,6 +18,7 @@ import io.terrakube.executor.service.logs.StepOutputArchiveService;
 import io.terrakube.executor.service.logs.StepOutputBuffer;
 import io.terrakube.executor.service.mode.TerraformJob;
 import io.terrakube.executor.service.scripts.ScriptEngineService;
+import io.terrakube.executor.service.terraform.cache.BinaryArchiveLocator;
 import io.terrakube.executor.service.terraform.cache.BinaryCacheRecoveryException;
 import io.terrakube.executor.service.terraform.cache.BinaryCacheRecoveryService;
 import io.terrakube.executor.service.terraform.structured.StructuredOutputPersistenceQueue;
@@ -321,14 +322,15 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                             terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), renderedForComment.text());
                 }
 
-                if (opaExecutorService != null && terraformJob.getPolicyList() != null && !terraformJob.getPolicyList().isEmpty()) {
-                    File planJsonFile = new File(terraformWorkingDir, "plan.json");
-                    if (!planJsonFile.exists()) {
-                        String planJson = planStructuredOutputService.getPlanAsJson(terraformJob, terraformWorkingDir);
-                        if (planJson != null && !planJson.isBlank()) {
-                            FileUtils.writeStringToFile(planJsonFile, planJson, StandardCharsets.UTF_8);
-                        }
+                File planJsonFile = new File(terraformWorkingDir, "plan.json");
+                if (!planJsonFile.exists() && planStructuredOutputService != null) {
+                    String planJson = planStructuredOutputService.getPlanAsJson(terraformJob, terraformWorkingDir);
+                    if (planJson != null && !planJson.isBlank()) {
+                        FileUtils.writeStringToFile(planJsonFile, planJson, StandardCharsets.UTF_8);
                     }
+                }
+
+                if (opaExecutorService != null && terraformJob.getPolicyList() != null && !terraformJob.getPolicyList().isEmpty()) {
                     if (planJsonFile.exists()) {
                         List<OpaEvaluationResult> opaResults = opaExecutorService.evaluateAllPolicies(terraformJob, terraformWorkingDir, planJsonFile, planOutput);
                         boolean hasHardViolations = opaResults.stream().anyMatch(r -> r.getHardMandatoryViolations() > 0);
@@ -851,6 +853,9 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                 .redirectErrorStream(true)
                 .terraformReleasesUrl(terraformClient.getTerraformReleasesUrl())
                 .tofuReleasesUrl(terraformClient.getTofuReleasesUrl())
+                .downloadResponseTimeout(terraformClient.getDownloadResponseTimeout())
+                .releasesDownloadTimeout(terraformClient.getReleasesDownloadTimeout())
+                .binaryDownloadTimeout(terraformClient.getBinaryDownloadTimeout())
                 .build();
     }
 
@@ -863,6 +868,9 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                 .redirectErrorStream(true)
                 .terraformReleasesUrl(terraformClient.getTerraformReleasesUrl())
                 .tofuReleasesUrl(terraformClient.getTofuReleasesUrl())
+                .downloadResponseTimeout(terraformClient.getDownloadResponseTimeout())
+                .releasesDownloadTimeout(terraformClient.getReleasesDownloadTimeout())
+                .binaryDownloadTimeout(terraformClient.getBinaryDownloadTimeout())
                 .build();
     }
 
@@ -875,6 +883,9 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                 .redirectErrorStream(true)
                 .terraformReleasesUrl(terraformClient.getTerraformReleasesUrl())
                 .tofuReleasesUrl(terraformClient.getTofuReleasesUrl())
+                .downloadResponseTimeout(terraformClient.getDownloadResponseTimeout())
+                .releasesDownloadTimeout(terraformClient.getReleasesDownloadTimeout())
+                .binaryDownloadTimeout(terraformClient.getBinaryDownloadTimeout())
                 .build();
     }
 
@@ -1365,6 +1376,34 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
     }
 
     /**
+     * Scripts find terraform/tofu on their PATH only once the job's version is in the local binary
+     * cache. Plan, apply and destroy get it through init; this gets it the same way for a step that
+     * only runs scripts: resolve the version, restore the binary from cloud storage when it's there,
+     * otherwise download it and cache it for the next executor.
+     */
+    @Override
+    public void installBinary(TerraformJob terraformJob) throws IOException {
+        String requestedVersion = terraformJob.getTerraformVersion();
+        if (requestedVersion == null || requestedVersion.isBlank()) {
+            return;
+        }
+
+        resolveTerraformVersion(terraformJob);
+        boolean binaryWasAlreadyCached = ensureBinaryCached(terraformJob);
+
+        TerraformDownloader downloader = createTerraformDownloader();
+        String version = terraformJob.getTerraformVersion();
+        String binaryPath = terraformJob.isTofu()
+                ? downloader.downloadTofuVersion(version)
+                : downloader.downloadTerraformVersion(version);
+        log.info("{} {} is available at {} for job {}", getIaCType(terraformJob), version, binaryPath, terraformJob.getJobId());
+
+        if (!binaryWasAlreadyCached) {
+            saveBinaryToCache(terraformJob);
+        }
+    }
+
+    /**
      * Replace a workspace version constraint (e.g. {@code >= 1.3.0}, {@code ~> 1.9}) on the job
      * with the concrete version it resolves to, so every process built for this job afterwards
      * sees a real version. terraform-client only resolves the constraint for the download and
@@ -1494,8 +1533,10 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
             // Only ever cache a binary that actually passes the same check a restore would have
             // to pass - an incomplete extraction must not be uploaded and handed to every other pod.
             if (binaryCacheRecoveryService.isValidExecutable(binaryFile)) {
-                log.info("Caching binary to cloud storage: {} version {}", tofu ? "tofu" : "terraform", resolvedVersion);
-                terraformState.saveTerraformBinary(resolvedVersion, tofu, binaryFile);
+                String os = BinaryArchiveLocator.os();
+                String arch = BinaryArchiveLocator.arch();
+                log.info("Caching binary to cloud storage: {} version {} ({}_{})", tofu ? "tofu" : "terraform", resolvedVersion, os, arch);
+                terraformState.saveTerraformBinary(resolvedVersion, tofu, os, arch, binaryFile);
             } else {
                 log.warn("Binary file not valid at {} after init, cannot cache to storage", binaryPath);
             }
@@ -1601,6 +1642,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                 terraformWorkingDir,
                 terraformJob
         );
+        environmentVariables = withoutRejectedBackendConfig(environmentVariables, terraformJob);
         if (hasRunVariablesFile(terraformJob)) {
             File runVariablesFile = writeRunVariablesFile(terraformJob, workspaceRootDirectory);
             // Copied so the job's own map never accumulates arguments across the calls of one step.
@@ -1621,6 +1663,31 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                 .tofu(terraformJob.isTofu())
                 .sshFile(sshKeyFile)
                 .build();
+    }
+
+    /**
+     * The HTTP backend replaces the workspace's own backend, and Terraform rejects any {@code -backend-config} key it
+     * does not know. State no longer goes through the arguments written for S3, azurerm or gcs, so they are left out.
+     */
+    private HashMap<String, String> withoutRejectedBackendConfig(HashMap<String, String> environmentVariables, TerraformJob terraformJob) {
+        String name = "TF_CLI_ARGS_init";
+        if (!terraformState.rejectsBackendConfigArguments() || environmentVariables == null) {
+            return environmentVariables;
+        }
+        BackendConfigArguments.Stripped stripped = BackendConfigArguments.strip(environmentVariables.get(name));
+        if (stripped.removed().isEmpty()) {
+            return environmentVariables;
+        }
+        log.warn("Job {} ignores the -backend-config arguments of {} ({}): state is kept by the Terrakube HTTP backend, which does not accept them",
+                terraformJob.getJobId(), name, String.join(", ", stripped.removed()));
+        // Copied so the job's own map keeps what the user set.
+        HashMap<String, String> copy = new HashMap<>(environmentVariables);
+        if (stripped.arguments() == null) {
+            copy.remove(name);
+        } else {
+            copy.put(name, stripped.arguments());
+        }
+        return copy;
     }
 
     private static boolean hasRunVariablesFile(TerraformJob terraformJob) {

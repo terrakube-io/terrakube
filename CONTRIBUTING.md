@@ -14,6 +14,8 @@ If you encounter any bugs in the code, or want to request a new feature or enhan
 We welcome pull requests for bug fixes. For a new feature or a material change,
 please create an issue first so we can discuss the approach.
 
+If you want to understand where services, packages, and the run execution path live, start with the [Repository code map](docs/contributing/code-map.md). Architecture rules and subsystem best practices for contributors (and AI coding assistants) are documented in [AGENTS.md](AGENTS.md) and [`.agents/skills/`](.agents/skills/).
+
 If you want to develop or test Terrakube locally, please read the
 [development guide](.devcontainer/README.md). It covers macOS, Linux, Windows,
 and WSL using Dev Containers.
@@ -33,8 +35,7 @@ mvn -B verify -Dspring-boot.build-image.skip=true
 # UI changes
 cd ui
 yarn install --immutable
-yarn lint:modules:check
-yarn format:modules:check
+yarn check   # lint, format, typecheck and unit tests
 yarn build
 ```
 

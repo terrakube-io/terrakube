@@ -1,6 +1,9 @@
 package io.terrakube.api.plugin.scheduler.job.tcl.executor.persistent;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doReturn;
@@ -10,7 +13,13 @@ import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.io.Decoders;
+import io.jsonwebtoken.security.Keys;
 import java.net.URISyntaxException;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.Optional;
 
@@ -82,8 +91,12 @@ public class PersistentExecutorServiceTest {
     }
 
     private PersistentExecutorService subject() {
+        return subject("http://default-executor/");
+    }
+
+    private PersistentExecutorService subject(String executorUrl) {
         PersistentExecutorService persistentExecutorService = spy(new PersistentExecutorService(
-                "http://default-executor/",
+                executorUrl,
                 globalVarRepository,
                 webClientBuilder,
                 RandomStringUtils.randomAlphanumeric(32)));
@@ -230,5 +243,63 @@ public class PersistentExecutorServiceTest {
 
         verify(requestBodyUriSpec).uri("http://ze-agent/api/v1/terraform-rs");
         verify(requestHeadersSpec, times(1)).retrieve();
+    }
+
+    // The ClusterIP of the chart's executor Service is a private address, and the operator is who set it.
+    @Test
+    public void sendsToTheExecutorUrlOfTheOperatorOnAPrivateNetwork() throws ExecutionException {
+        doReturn(HttpStatus.ACCEPTED).when(responseEntity).getStatusCode();
+        PersistentExecutorService subject = subject("http://10.96.0.12:8090/api/v1/terraform-rs");
+        subject.setAgentUrlValidator(new AgentUrlValidator(true));
+
+        subject.send(jobOnDefaultExecutor(), context());
+
+        verify(requestBodyUriSpec).uri("http://10.96.0.12:8090/api/v1/terraform-rs");
+    }
+
+    @Test
+    public void blocksAnAgentOnAPrivateNetwork() {
+        PersistentExecutorService subject = subject();
+        subject.setAgentUrlValidator(new AgentUrlValidator(true));
+        Job job = jobOnAgent();
+        job.getWorkspace().getAgent().setUrl("http://10.96.0.12:8090");
+
+        assertThrows(ExecutionException.class, () -> subject.send(job, context()));
+        verify(requestBodyUriSpec, never()).uri(anyString());
+    }
+
+    @Test
+    public void blocksTheDefaultExecutorAnOrganizationSetsOnAPrivateNetwork() {
+        Globalvar executorUrl = new Globalvar();
+        executorUrl.setValue("http://10.96.0.12:8090");
+        doReturn(Optional.of(executorUrl)).when(globalVarRepository).findByOrganizationAndKey(any(), any());
+        PersistentExecutorService subject = subject();
+        subject.setAgentUrlValidator(new AgentUrlValidator(true));
+
+        assertThrows(ExecutionException.class, () -> subject.send(jobOnDefaultExecutor(), context()));
+        verify(requestBodyUriSpec, never()).uri(anyString());
+    }
+
+    @Test
+    public void generateSystemTokenPinsExpectedExecutorDispatchClaims() {
+        String secret = Base64.getUrlEncoder().withoutPadding().encodeToString(
+                "terrakube-internal-dispatch-secret-at-least-64-bytes-long-for-hmac!".getBytes(StandardCharsets.UTF_8));
+        PersistentExecutorService realService = new PersistentExecutorService(
+                "http://default-executor/",
+                globalVarRepository,
+                webClientBuilder,
+                secret);
+
+        String token = realService.generateSystemToken();
+        Claims claims = Jwts.parser()
+                .verifyWith(Keys.hmacShaKeyFor(Decoders.BASE64URL.decode(secret)))
+                .build()
+                .parseSignedClaims(token)
+                .getPayload();
+
+        assertEquals("TERRAKUBE_INTERNAL", claims.getIssuer());
+        assertEquals("Terrakube Internal (Token)", claims.getSubject());
+        assertTrue(claims.getAudience() != null && claims.getAudience().contains("TERRAKUBE_INTERNAL"));
+        assertNull(claims.get("workspaceId"));
     }
 }

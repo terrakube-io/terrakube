@@ -4,6 +4,8 @@ import { ErrorState } from "@/components/feedback/ErrorState";
 type Props = {
   children: React.ReactNode;
   catchGlobal?: boolean;
+  // Clears a shown error when it changes (e.g. the route), without remounting the children.
+  resetKey?: string;
 };
 
 type State = {
@@ -26,6 +28,12 @@ export default class ErrorBoundary extends React.Component<Props, State> {
 
   componentDidCatch(error: Error, info: React.ErrorInfo) {
     console.error("Unhandled render error:", error, info.componentStack);
+  }
+
+  componentDidUpdate(prev: Props) {
+    if (this.state.error && prev.resetKey !== this.props.resetKey) {
+      this.setState({ error: null });
+    }
   }
 
   componentDidMount() {

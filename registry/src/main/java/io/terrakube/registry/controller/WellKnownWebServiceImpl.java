@@ -2,10 +2,13 @@ package io.terrakube.registry.controller;
 
 import io.terrakube.registry.configuration.OpenRegistryProperties;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.CacheControl;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.time.Duration;
 
 @RestController
 @RequestMapping("/.well-known/terraform.json")
@@ -45,6 +48,6 @@ public class WellKnownWebServiceImpl {
               "login.v1": %s
             }""", hostname, hostname, loginBlock);
 
-        return ResponseEntity.ok(body);
+        return ResponseEntity.ok().cacheControl(CacheControl.maxAge(Duration.ofSeconds(300)).cachePublic()).body(body);
     }
 }

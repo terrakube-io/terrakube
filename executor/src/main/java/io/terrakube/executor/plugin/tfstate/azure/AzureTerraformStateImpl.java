@@ -53,6 +53,7 @@ public class AzureTerraformStateImpl implements TerraformState {
 
     private static final String CONTAINER_NAME = "tfstate";
     private static final String TERRAFORM_PLAN_FILE = "terraformLibrary.tfPlan";
+    private static final String TERRAFORM_PLAN_JSON_FILE = "plan.json";
     private static final String BACKEND_FILE_NAME = "azure_backend_override.tf";
     private static final String CONTAINER_OUTPUT_NAME = "tfoutput";
     private static final String CONTAINER_BINARY_NAME = "tfbinary";
@@ -131,6 +132,14 @@ public class AzureTerraformStateImpl implements TerraformState {
                 blobClient.uploadFromFile(tfPlan.getAbsolutePath(), true);
                 return null;
             });
+            File tfPlanJson = new File(workingDirectory, TERRAFORM_PLAN_JSON_FILE);
+            if (tfPlanJson.exists()) {
+                BlobClient jsonBlobClient = blobContainerClient.getBlobClient(blobName + ".json");
+                storageRetryMetrics.withRetry("azure", "plan-json-write", () -> {
+                    jsonBlobClient.uploadFromFile(tfPlanJson.getAbsolutePath(), true);
+                    return null;
+                });
+            }
             return blobClient.getBlobUrl();
         } else {
             return null;
@@ -283,6 +292,37 @@ public class AzureTerraformStateImpl implements TerraformState {
     }
 
     @Override
+    public boolean downloadTerraformPlanJson(String organizationId, String workspaceId, String jobId, String stepId, File workingDirectory) {
+        String stateUrl = terrakubeClient.getJobById(organizationId, jobId).getData().getAttributes().getTerraformPlan();
+        if (stateUrl == null || stateUrl.isBlank()) {
+            return false;
+        }
+        String blobName;
+        try {
+            blobName = new URL(stateUrl).getPath().replace("/tfstate/", "").replace("%2F", "/") + ".json";
+        } catch (IOException e) {
+            log.error(e.getMessage());
+            return false;
+        }
+        log.info("Downloading Terraform plan JSON from container {} blob {}", CONTAINER_NAME, blobName);
+        BlobClient blobClient = blobServiceClient.getBlobContainerClient(CONTAINER_NAME).getBlobClient(blobName);
+        File targetFile = new File(workingDirectory, TERRAFORM_PLAN_JSON_FILE);
+        try {
+            storageRetryMetrics.withRetry("azure", "plan-json-read", () -> {
+                blobClient.downloadToFile(targetFile.getAbsolutePath(), true);
+                return null;
+            });
+            return true;
+        } catch (TerraformStateUnavailableException e) {
+            if (e.getCause() instanceof BlobStorageException storageException && storageException.getStatusCode() == 404) {
+                log.warn("Terraform plan JSON {} not found in container {}", blobName, CONTAINER_NAME);
+                return false;
+            }
+            throw e;
+        }
+    }
+
+    @Override
     public String saveBufferedOutput(String organizationId, String jobId, String stepId, StepOutputBuffer output, String outputError) {
         BlobContainerClient blobContainerClient = blobServiceClient.getBlobContainerClient(CONTAINER_OUTPUT_NAME);
 
@@ -344,9 +384,9 @@ public class AzureTerraformStateImpl implements TerraformState {
     }
 
     @Override
-    public boolean saveTerraformBinary(String version, boolean tofu, File binaryFile) {
+    public boolean saveTerraformBinary(String version, boolean tofu, String os, String arch, File binaryFile) {
         String product = tofu ? "tofu" : "terraform";
-        String blobName = product + "/" + version + "/" + product;
+        String blobName = product + "/" + version + "/" + os + "_" + arch + "/" + product;
         log.info("Saving {} binary to Azure Blob: {}", product, blobName);
         try {
             BlobContainerClient blobContainerClient = blobServiceClient.getBlobContainerClient(CONTAINER_BINARY_NAME);
@@ -355,18 +395,18 @@ public class AzureTerraformStateImpl implements TerraformState {
             }
             BlobClient blobClient = blobContainerClient.getBlobClient(blobName);
             blobClient.uploadFromFile(binaryFile.getAbsolutePath(), true);
-            log.info("Successfully cached {} binary version {} in Azure Blob", product, version);
+            log.info("Successfully cached {} binary version {} ({}_{}) in Azure Blob", product, version, os, arch);
             return true;
         } catch (Exception e) {
-            log.warn("Failed to cache {} binary version {} in Azure Blob: {}", product, version, e.getMessage());
+            log.warn("Failed to cache {} binary version {} ({}_{}) in Azure Blob: {}", product, version, os, arch, e.getMessage());
             return false;
         }
     }
 
     @Override
-    public boolean downloadTerraformBinary(String version, boolean tofu, File targetFile) {
+    public boolean downloadTerraformBinary(String version, boolean tofu, String os, String arch, File targetFile) {
         String product = tofu ? "tofu" : "terraform";
-        String blobName = product + "/" + version + "/" + product;
+        String blobName = product + "/" + version + "/" + os + "_" + arch + "/" + product;
         log.info("Attempting to restore {} binary from Azure Blob: {}", product, blobName);
         try {
             BlobContainerClient blobContainerClient = blobServiceClient.getBlobContainerClient(CONTAINER_BINARY_NAME);
@@ -376,7 +416,7 @@ public class AzureTerraformStateImpl implements TerraformState {
             }
             BlobClient blobClient = blobContainerClient.getBlobClient(blobName);
             if (!blobClient.exists()) {
-                log.info("{} binary version {} not found in Azure Blob cache", product, version);
+                log.info("{} binary version {} ({}_{}) not found in Azure Blob cache", product, version, os, arch);
                 return false;
             }
 
@@ -391,10 +431,10 @@ public class AzureTerraformStateImpl implements TerraformState {
                 log.warn("Failed to set executable permission on restored {} binary", product);
             }
 
-            log.info("Successfully restored {} binary version {} from Azure Blob", product, version);
+            log.info("Successfully restored {} binary version {} ({}_{}) from Azure Blob", product, version, os, arch);
             return true;
         } catch (Exception e) {
-            log.warn("Failed to restore {} binary version {} from Azure Blob: {}", product, version, e.getMessage());
+            log.warn("Failed to restore {} binary version {} ({}_{}) from Azure Blob: {}", product, version, os, arch, e.getMessage());
             return false;
         }
     }

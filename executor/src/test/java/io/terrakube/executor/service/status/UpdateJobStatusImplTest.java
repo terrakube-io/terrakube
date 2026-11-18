@@ -3,6 +3,7 @@ package io.terrakube.executor.service.status;
 import io.terrakube.executor.service.logs.StepOutputBuffer;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
@@ -215,6 +216,21 @@ public class UpdateJobStatusImplTest {
     }
 
     @Test
+    public void aNullErrorOutputStillCompletesTheJob() {
+        stubJobWithStatus("running");
+        doReturn("output-url").when(terraformState).saveBufferedOutput(anyString(), anyString(), anyString(), any(StepOutputBuffer.class), anyString());
+
+        try (StepOutputBuffer buffer = StepOutputBuffer.ofMessage("policy output\n")) {
+            subject().setCompletedStatus(true, false, 0, terraformJob(), buffer, null, null, "0000000");
+        }
+
+        verify(terraformState).saveBufferedOutput(anyString(), anyString(), anyString(), any(StepOutputBuffer.class), eq(""));
+        ArgumentCaptor<JobRequest> job = ArgumentCaptor.forClass(JobRequest.class);
+        verify(terrakubeClient).updateJob(job.capture(), anyString(), anyString());
+        Assertions.assertEquals("pending", job.getValue().getData().getAttributes().getStatus());
+    }
+
+    @Test
     public void aStepThatProducedNoOutputBufferIsStillCompleted() {
         stubJobWithStatus("running");
         doReturn("output-url").when(terraformState).saveBufferedOutput(anyString(), anyString(), anyString(), any(StepOutputBuffer.class), anyString());
@@ -233,6 +249,17 @@ public class UpdateJobStatusImplTest {
         subject().setRunningStatus(terraformJob(), "0000000");
 
         verify(terrakubeClient, times(1)).updateStep(any(), anyString(), anyString(), anyString());
+        verify(terrakubeClient, never()).updateJob(any(JobRequest.class), anyString(), anyString());
+    }
+
+    @Test
+    public void setRunningStatusOnCancelledJobStopsWithoutTouchingJobOrStep() {
+        stubJobWithStatus("cancelled");
+
+        Assertions.assertThrows(JobCancelledBeforeStartException.class,
+                () -> subject().setRunningStatus(terraformJob(), "0000000"));
+
+        verify(terrakubeClient, never()).updateStep(any(), anyString(), anyString(), anyString());
         verify(terrakubeClient, never()).updateJob(any(JobRequest.class), anyString(), anyString());
     }
 
@@ -424,6 +451,34 @@ public class UpdateJobStatusImplTest {
         complete(subject(), true, false, 0, terraformJob, "apply output", "", "", "commit-1");
 
         Assertions.assertNull(updatedJobAttributes().getTerraformPlanArtifacts());
+    }
+
+    @Test
+    public void nonPlanStepWithNullOrBlankPlanFilePreservesExistingTerraformPlan() {
+        Job job = stubJobWithStatus("running", 2);
+        String recordedPlanUrl = "https://storage.example/tfstate/ze-org/ws-1/4711/step-0/terraformLibrary.tfPlan";
+        job.getAttributes().setTerraformPlan(recordedPlanUrl);
+        doReturn("output-url").when(terraformState).saveBufferedOutput(anyString(), anyString(), anyString(), any(StepOutputBuffer.class), anyString());
+
+        complete(subject(), true, false, 0, terraformJob(), "apply output", "", null, "commit-1");
+
+        JobAttributes sent = updatedJobAttributes();
+        Assertions.assertEquals(recordedPlanUrl, sent.getTerraformPlan());
+        Assertions.assertEquals(recordedPlanUrl, job.getAttributes().getTerraformPlan());
+    }
+
+    @Test
+    public void policyEvaluationCompletionPreservesRecordedTerraformPlanWhenPlanFileIsEmpty() {
+        Job job = stubJobWithStatus("running", 1);
+        String recordedPlanUrl = "https://storage.example/tfstate/ze-org/ws-1/4710/step-0/terraformLibrary.tfPlan";
+        job.getAttributes().setTerraformPlan(recordedPlanUrl);
+        doReturn("output-url").when(terraformState).saveBufferedOutput(anyString(), anyString(), anyString(), any(StepOutputBuffer.class), anyString());
+
+        complete(subject(), true, false, 0, terraformJob(), "policy output", "", "", "commit-1");
+
+        JobAttributes sent = updatedJobAttributes();
+        Assertions.assertEquals(recordedPlanUrl, sent.getTerraformPlan());
+        Assertions.assertEquals(recordedPlanUrl, job.getAttributes().getTerraformPlan());
     }
 
     private static void complete(UpdateJobStatusImpl subject, boolean successful, boolean isPlan, int exitCode, TerraformJob job,

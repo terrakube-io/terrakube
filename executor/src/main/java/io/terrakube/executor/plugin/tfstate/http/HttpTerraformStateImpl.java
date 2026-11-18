@@ -92,6 +92,11 @@ public class HttpTerraformStateImpl implements TerraformState {
         return httpBackend;
     }
 
+    @Override
+    public boolean rejectsBackendConfigArguments() {
+        return true;
+    }
+
     private String resolveScopedToken(String organizationId, String workspaceId, String jobId, String stepId) {
         if (workspaceSecurity == null) {
             return "";
@@ -122,6 +127,11 @@ public class HttpTerraformStateImpl implements TerraformState {
     @Override
     public boolean downloadTerraformPlan(String organizationId, String workspaceId, String jobId, String stepId, File workingDirectory) {
         return delegate != null && delegate.downloadTerraformPlan(organizationId, workspaceId, jobId, stepId, workingDirectory);
+    }
+
+    @Override
+    public boolean downloadTerraformPlanJson(String organizationId, String workspaceId, String jobId, String stepId, File workingDirectory) {
+        return delegate != null && delegate.downloadTerraformPlanJson(organizationId, workspaceId, jobId, stepId, workingDirectory);
     }
 
     @Override
@@ -166,13 +176,13 @@ public class HttpTerraformStateImpl implements TerraformState {
     }
 
     @Override
-    public boolean saveTerraformBinary(String version, boolean tofu, File binaryFile) {
-        return delegate != null && delegate.saveTerraformBinary(version, tofu, binaryFile);
+    public boolean saveTerraformBinary(String version, boolean tofu, String os, String arch, File binaryFile) {
+        return delegate != null && delegate.saveTerraformBinary(version, tofu, os, arch, binaryFile);
     }
 
     @Override
-    public boolean downloadTerraformBinary(String version, boolean tofu, File targetFile) {
-        return delegate != null && delegate.downloadTerraformBinary(version, tofu, targetFile);
+    public boolean downloadTerraformBinary(String version, boolean tofu, String os, String arch, File targetFile) {
+        return delegate != null && delegate.downloadTerraformBinary(version, tofu, os, arch, targetFile);
     }
 
     @Override

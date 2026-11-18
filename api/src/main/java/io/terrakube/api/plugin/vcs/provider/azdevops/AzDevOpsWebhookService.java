@@ -11,6 +11,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -23,6 +24,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import io.terrakube.api.plugin.vcs.WebhookProperties;
 import io.terrakube.api.plugin.vcs.WebhookResult;
 import io.terrakube.api.plugin.vcs.WebhookServiceBase;
 import io.terrakube.api.rs.job.Job;
@@ -78,6 +80,7 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
     private static final String FIELD_RESOURCE_VERSION = "resourceVersion";
     private static final String FIELD_REPOSITORY = "repository";
     private static final String FIELD_COMMIT_ID = "commitId";
+    private static final String FIELD_TARGET_REF_NAME = "targetRefName";
     private static final String REF_TAGS_PREFIX = "refs/tags/";
     private static final String REF_HEADS_PREFIX = "refs/heads/";
     private static final String NO_RESPONSE = "No response";
@@ -85,15 +88,23 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
 
     private final ObjectMapper objectMapper;
     private final AzDevOpsTokenService azDevOpsTokenService;
+    private final WebhookProperties webhookProperties;
 
-    @Value("${io.terrakube.hostname}")
-    private String hostname;
+    @Value("#{@publicUrls.apiBaseUrl()}")
+    private String apiBaseUrl;
     @Value("${io.terrakube.ui.url}")
     private String uiUrl;
 
-    public AzDevOpsWebhookService(ObjectMapper objectMapper, AzDevOpsTokenService azDevOpsTokenService) {
+    @Autowired
+    public AzDevOpsWebhookService(ObjectMapper objectMapper, AzDevOpsTokenService azDevOpsTokenService,
+            WebhookProperties webhookProperties) {
         this.objectMapper = objectMapper;
         this.azDevOpsTokenService = azDevOpsTokenService;
+        this.webhookProperties = webhookProperties;
+    }
+
+    public AzDevOpsWebhookService(ObjectMapper objectMapper, AzDevOpsTokenService azDevOpsTokenService) {
+        this(objectMapper, azDevOpsTokenService, new WebhookProperties());
     }
 
     public WebhookResult processWebhook(String jsonPayload, Map<String, String> headers, String token,
@@ -163,6 +174,7 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
             result.setEvent("release");
             result.setRelease(true);
             result.setBranch(refName.substring(REF_TAGS_PREFIX.length()));
+            result.setTag(refName.substring(REF_TAGS_PREFIX.length()));
         } else {
             result.setEvent("push");
             result.setBranch(stripRefPrefix(refName));
@@ -255,6 +267,7 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
         int prNumber = resource.path("pullRequestId").asInt();
         result.setPrNumber(prNumber);
         result.setBranch(stripRefPrefix(resource.path("sourceRefName").asText()));
+        result.setBaseBranch(stripRefPrefix(resource.path(FIELD_TARGET_REF_NAME).asText(null)));
         result.setCommit(resource.path("lastMergeSourceCommit").path(FIELD_COMMIT_ID).asText());
         result.setCreatedBy(resolveUser(resource.path("createdBy")));
 
@@ -264,6 +277,10 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
 
         if (repo != null && !repositoryId.isEmpty() && prNumber > 0) {
             result.setFileChanges(getPullRequestChanges(workspace.getVcs(), repo, repositoryId, prNumber));
+            if (webhookProperties.isPrBaseBranchFilter()
+                    && result.getBaseBranch() == null && workspace.getVcs() != null) {
+                result.setBaseBranch(fetchPrTargetBranch(workspace.getVcs(), workspace.getSource(), repositoryId, prNumber));
+            }
         }
 
         return result;
@@ -289,6 +306,7 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
         result.setPrNumber(prNumber);
         result.setCreatedBy(resolveUser(resource.path("comment").path("author")));
         result.setBranch(stripRefPrefix(pullRequest.path("sourceRefName").asText()));
+        result.setBaseBranch(stripRefPrefix(pullRequest.path(FIELD_TARGET_REF_NAME).asText(null)));
         result.setCommit(pullRequest.path("lastMergeSourceCommit").path(FIELD_COMMIT_ID).asText());
 
         JsonNode repository = pullRequest.path(FIELD_REPOSITORY);
@@ -297,6 +315,10 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
 
         if (repo != null && !repositoryId.isEmpty() && prNumber > 0) {
             result.setFileChanges(getPullRequestChanges(workspace.getVcs(), repo, repositoryId, prNumber));
+            if (webhookProperties.isPrBaseBranchFilter()
+                    && result.getBaseBranch() == null && workspace.getVcs() != null) {
+                result.setBaseBranch(fetchPrTargetBranch(workspace.getVcs(), workspace.getSource(), repositoryId, prNumber));
+            }
         }
 
         return result;
@@ -324,7 +346,7 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
 
         String secret = Base64.getEncoder()
                 .encodeToString(workspace.getId().toString().getBytes(StandardCharsets.UTF_8));
-        String webhookUrl = String.format("https://%s/webhook/v1/%s", hostname, webhook.getId());
+        String webhookUrl = String.format("%s/webhook/v1/%s", apiBaseUrl, webhook.getId());
 
         Set<String> azureEventTypes = resolveAzureEventTypes(webhook);
 
@@ -649,7 +671,7 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
         return changedFiles;
     }
 
-    private List<String> getPullRequestChanges(Vcs vcs, AzureRepo repo, String repositoryId, int prNumber) {
+    List<String> getPullRequestChanges(Vcs vcs, AzureRepo repo, String repositoryId, int prNumber) {
         List<String> changedFiles = new ArrayList<>();
         String encodedProject = UriUtils.encodePathSegment(repo.project, StandardCharsets.UTF_8);
         String iterationsUrl = String.format(
@@ -748,7 +770,7 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
         }
     }
 
-    private ResponseEntity<String> callAzureApi(Vcs vcs, String body, String apiUrl, HttpMethod httpMethod) {
+    ResponseEntity<String> callAzureApi(Vcs vcs, String body, String apiUrl, HttpMethod httpMethod) {
         String token = resolveToken(vcs);
         if (token == null || token.isEmpty()) {
             log.error("No Azure DevOps access token available for vcs {}", vcs.getId());
@@ -784,9 +806,56 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
         return displayName == null || displayName.isEmpty() ? "system" : displayName;
     }
 
-    private String stripRefPrefix(String ref) {
+    public String resolveRepositoryId(Vcs vcs, String source) {
+        AzureRepo repo = parseSource(source);
+        if (repo == null) {
+            return null;
+        }
+        String[] repositoryAndProject = resolveRepository(vcs, repo);
+        return repositoryAndProject.length > 0 ? repositoryAndProject[0] : null;
+    }
+
+    public String fetchPrTargetBranch(Vcs vcs, String source, int prNumber) {
+        return fetchPrTargetBranch(vcs, source, null, prNumber);
+    }
+
+    public String fetchPrTargetBranch(Vcs vcs, String source, String repositoryId, int prNumber) {
+        AzureRepo repo = parseSource(source);
+        if (repo == null) {
+            return null;
+        }
+        if (repositoryId == null || repositoryId.isBlank()) {
+            String[] repositoryAndProject = resolveRepository(vcs, repo);
+            if (repositoryAndProject.length == 0) {
+                return null;
+            }
+            repositoryId = repositoryAndProject[0];
+        }
+        return fetchPrTargetBranchForRepo(vcs, repo, repositoryId, prNumber);
+    }
+
+    private String fetchPrTargetBranchForRepo(Vcs vcs, AzureRepo repo, String repositoryId, int prNumber) {
+        String encodedProject = UriUtils.encodePathSegment(repo.project, StandardCharsets.UTF_8);
+        String prUrl = String.format(
+                "%s/%s/_apis/git/repositories/%s/pullRequests/%s?api-version=%s",
+                repo.orgBaseUrl, encodedProject, repositoryId, prNumber, API_VERSION);
+
+        ResponseEntity<String> response = callAzureApi(vcs, "", prUrl, HttpMethod.GET);
+        if (response != null && response.getStatusCode().is2xxSuccessful()) {
+            try {
+                JsonNode rootNode = objectMapper.readTree(response.getBody());
+                String targetRef = rootNode.path(FIELD_TARGET_REF_NAME).asText(null);
+                return stripRefPrefix(targetRef);
+            } catch (Exception e) {
+                log.error("Error parsing Azure DevOps pull request target branch", e);
+            }
+        }
+        return null;
+    }
+
+    public String stripRefPrefix(String ref) {
         if (ref == null) {
-            return "";
+            return null;
         }
         if (ref.startsWith(REF_HEADS_PREFIX)) {
             return ref.substring(REF_HEADS_PREFIX.length());
@@ -929,6 +998,7 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
             result.setEvent("release");
             result.setRelease(true);
             result.setBranch(refName.substring(REF_TAGS_PREFIX.length()));
+            result.setTag(refName.substring(REF_TAGS_PREFIX.length()));
         } else {
             result.setEvent("push");
             result.setBranch(stripRefPrefix(refName));
@@ -948,6 +1018,7 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
         int prNumber = resource.path("pullRequestId").asInt();
         result.setPrNumber(prNumber);
         result.setBranch(stripRefPrefix(resource.path("sourceRefName").asText()));
+        result.setBaseBranch(stripRefPrefix(resource.path(FIELD_TARGET_REF_NAME).asText(null)));
         result.setCommit(resource.path("lastMergeSourceCommit").path(FIELD_COMMIT_ID).asText());
         result.setCreatedBy(resolveUser(resource.path("createdBy")));
         // File changes are deferred — fetched per-workspace via fetchPrFileChanges().
@@ -974,6 +1045,7 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
         result.setPrNumber(prNumber);
         result.setCreatedBy(resolveUser(resource.path("comment").path("author")));
         result.setBranch(stripRefPrefix(pullRequest.path("sourceRefName").asText()));
+        result.setBaseBranch(stripRefPrefix(pullRequest.path(FIELD_TARGET_REF_NAME).asText(null)));
         result.setCommit(pullRequest.path("lastMergeSourceCommit").path(FIELD_COMMIT_ID).asText());
         // File changes are deferred — fetched per-workspace via fetchPrFileChanges().
         return result;
@@ -985,7 +1057,8 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
      * DevOps event types and creates one subscription per event type, storing
      * their IDs comma-separated in {@link RepoWebhook#getRemoteHookId()}.
      */
-    public String createOrUpdateRepoWebhook(RepoWebhook repoWebhook, Set<WebhookEventType> eventTypes) {
+    public String createOrUpdateRepoWebhook(RepoWebhook repoWebhook, Set<WebhookEventType> eventTypes,
+            boolean tagEvents) {
         String remoteHookId = repoWebhook.getRemoteHookId();
         AzureRepo repo = parseSource(repoWebhook.getRepositoryUrl());
         if (repo == null) {
@@ -1009,10 +1082,10 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
             deleteRepoWebhookSubscriptions(vcs, repo, remoteHookId);
         }
 
-        String webhookUrl = String.format("https://%s/webhook/v2/%s", hostname, repoWebhook.getId().toString());
+        String webhookUrl = String.format("%s/webhook/v2/%s", apiBaseUrl, repoWebhook.getId().toString());
         String secret = repoWebhook.getWebhookSecret();
 
-        Set<String> azureEventTypes = resolveAzureEventTypesFromSet(eventTypes);
+        Set<String> azureEventTypes = resolveAzureEventTypesFromSet(eventTypes, tagEvents);
 
         List<String> subscriptionIds = new ArrayList<>();
         for (String azureEventType : azureEventTypes) {
@@ -1103,10 +1176,18 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
      * per-workspace during v2 webhook fanout.
      */
     public List<String> fetchPrFileChanges(Vcs vcs, String source, int prNumber) {
+        return fetchPrFileChanges(vcs, source, null, prNumber);
+    }
+
+    public List<String> fetchPrFileChanges(Vcs vcs, String source, String repositoryId, int prNumber) {
         AzureRepo repo = parseSource(source);
         if (repo == null) {
             log.error(UNABLE_TO_PARSE_SOURCE_MESSAGE, source);
             return new ArrayList<>();
+        }
+
+        if (repositoryId != null && !repositoryId.isBlank()) {
+            return getPullRequestChanges(vcs, repo, repositoryId, prNumber);
         }
 
         String[] repositoryAndProject = resolveRepository(vcs, repo);
@@ -1118,10 +1199,14 @@ public class AzDevOpsWebhookService extends WebhookServiceBase {
 
     /**
      * Resolves the set of Azure DevOps event type strings from aggregated
-     * {@link WebhookEventType}s (used by the shared v2 webhook flow).
+     * {@link WebhookEventType}s (used by the shared v2 webhook flow). Tags for modules arrive as pushes of
+     * refs/tags/*, so tagEvents subscribes to pushes.
      */
-    private Set<String> resolveAzureEventTypesFromSet(Set<WebhookEventType> eventTypes) {
+    static Set<String> resolveAzureEventTypesFromSet(Set<WebhookEventType> eventTypes, boolean tagEvents) {
         Set<String> azureEventTypes = new LinkedHashSet<>();
+        if (tagEvents) {
+            azureEventTypes.add(EVENT_PUSH);
+        }
         for (WebhookEventType eventType : eventTypes) {
             switch (eventType) {
                 case PUSH:

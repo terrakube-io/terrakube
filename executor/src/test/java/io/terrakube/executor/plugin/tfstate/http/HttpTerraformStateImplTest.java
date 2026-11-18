@@ -153,18 +153,20 @@ class HttpTerraformStateImplTest {
 
         when(delegate.saveTerraformPlan(ORG_ID, WS_ID, JOB_ID, STEP_ID, workingDir)).thenReturn("plan-url");
         when(delegate.downloadTerraformPlan(ORG_ID, WS_ID, JOB_ID, STEP_ID, workingDir)).thenReturn(true);
+        when(delegate.downloadTerraformPlanJson(ORG_ID, WS_ID, JOB_ID, STEP_ID, workingDir)).thenReturn(true);
         when(delegate.saveArtifacts(ORG_ID, WS_ID, JOB_ID, STEP_ID, workingDir)).thenReturn("sha256");
         when(delegate.downloadArtifacts(ORG_ID, WS_ID, JOB_ID, workingDir)).thenReturn("sha256");
         when(delegate.saveBufferedOutput(ORG_ID, JOB_ID, STEP_ID, buffer, "err")).thenReturn("output-url");
         when(delegate.saveOutputPart(ORG_ID, JOB_ID, STEP_ID, 1, partSource)).thenReturn(true);
-        when(delegate.saveTerraformBinary("1.6.0", false, workingDir)).thenReturn(true);
-        when(delegate.downloadTerraformBinary("1.6.0", false, workingDir)).thenReturn(true);
+        when(delegate.saveTerraformBinary("1.6.0", false, "linux", "arm64", workingDir)).thenReturn(true);
+        when(delegate.downloadTerraformBinary("1.6.0", false, "linux", "arm64", workingDir)).thenReturn(true);
         when(delegate.saveOpaBinary("0.60.0", "linux", "amd64", workingDir)).thenReturn(true);
         when(delegate.downloadOpaBinary("0.60.0", "linux", "amd64", workingDir)).thenReturn(true);
         when(delegate.spoolContextPatch(ORG_ID, JOB_ID, STEP_ID, "post", patchBytes)).thenReturn("spool-key");
 
         assertEquals("plan-url", httpTerraformState.saveTerraformPlan(ORG_ID, WS_ID, JOB_ID, STEP_ID, workingDir));
         assertTrue(httpTerraformState.downloadTerraformPlan(ORG_ID, WS_ID, JOB_ID, STEP_ID, workingDir));
+        assertTrue(httpTerraformState.downloadTerraformPlanJson(ORG_ID, WS_ID, JOB_ID, STEP_ID, workingDir));
         assertEquals("sha256", httpTerraformState.saveArtifacts(ORG_ID, WS_ID, JOB_ID, STEP_ID, workingDir));
         assertEquals("sha256", httpTerraformState.downloadArtifacts(ORG_ID, WS_ID, JOB_ID, workingDir));
         httpTerraformState.deleteArtifacts(ORG_ID, WS_ID, JOB_ID);
@@ -178,11 +180,16 @@ class HttpTerraformStateImplTest {
         httpTerraformState.deleteOutputParts(ORG_ID, JOB_ID, STEP_ID);
         verify(delegate).deleteOutputParts(ORG_ID, JOB_ID, STEP_ID);
 
-        assertTrue(httpTerraformState.saveTerraformBinary("1.6.0", false, workingDir));
-        assertTrue(httpTerraformState.downloadTerraformBinary("1.6.0", false, workingDir));
+        assertTrue(httpTerraformState.saveTerraformBinary("1.6.0", false, "linux", "arm64", workingDir));
+        assertTrue(httpTerraformState.downloadTerraformBinary("1.6.0", false, "linux", "arm64", workingDir));
         assertTrue(httpTerraformState.saveOpaBinary("0.60.0", "linux", "amd64", workingDir));
         assertTrue(httpTerraformState.downloadOpaBinary("0.60.0", "linux", "amd64", workingDir));
         assertEquals("spool-key", httpTerraformState.spoolContextPatch(ORG_ID, JOB_ID, STEP_ID, "post", patchBytes));
         assertNotNull(httpTerraformState.getDelegate());
+    }
+
+    @Test
+    void rejectsBackendConfigArgumentsBecauseItReplacesTheWorkspaceBackend() {
+        assertTrue(httpTerraformState.rejectsBackendConfigArguments());
     }
 }

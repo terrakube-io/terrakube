@@ -162,7 +162,9 @@ class ReplayAndIsolationTest {
     @Test
     @Timeout(30)
     void aStalledViewerIsDisconnectedWithoutDelayingOtherViewers() throws Exception {
-        properties.setSseSubscriberMaxQueuedBytes(20_000);
+        // The stalled viewer is sent ~270 KB, far past this budget. The healthy one needs headroom:
+        // on a slow CI runner a 20 KB budget also disconnected it mid-stream.
+        properties.setSseSubscriberMaxQueuedBytes(64_000);
         JobLogBroadcaster shared = broadcaster();
 
         CountDownLatch release = new CountDownLatch(1);
@@ -428,7 +430,8 @@ class ReplayAndIsolationTest {
                 } else if (line.startsWith("id:")) {
                     id = line.substring(3);
                 } else if (line.startsWith("data:")) {
-                    payload = line.substring(5);
+                    // As an SSE client does: one leading space after "data:" is stripped.
+                    payload = line.startsWith("data: ") ? line.substring(6) : line.substring(5);
                 }
             }
             if (payload == null) {

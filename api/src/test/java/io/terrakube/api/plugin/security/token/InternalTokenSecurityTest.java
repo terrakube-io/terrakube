@@ -1,5 +1,6 @@
 package io.terrakube.api.plugin.security.token;
 
+import com.yahoo.elide.annotation.ReadPermission;
 import com.yahoo.elide.core.security.RequestScope;
 import com.yahoo.elide.core.security.User;
 import io.terrakube.api.rs.checks.ssh.ReadPrivateKey;
@@ -7,9 +8,14 @@ import io.terrakube.api.rs.checks.user.IsExecutorService;
 import io.terrakube.api.rs.checks.user.IsRegistryService;
 import io.terrakube.api.rs.checks.vcs.ReadAccessToken;
 import io.terrakube.api.rs.checks.vcs.ReadGitHubAppInstallationToken;
+import io.terrakube.api.rs.job.Job;
+import io.terrakube.api.rs.job.JobStatus;
+import io.terrakube.api.rs.job.step.Step;
 import io.terrakube.api.rs.ssh.Ssh;
 import io.terrakube.api.rs.vcs.GitHubAppToken;
 import io.terrakube.api.rs.vcs.Vcs;
+import io.terrakube.api.rs.workspace.Workspace;
+import io.terrakube.api.rs.workspace.access.Access;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -221,5 +227,57 @@ class InternalTokenSecurityTest {
         ));
         when(requestScope.getUser()).thenReturn(executorUser);
         assertFalse(check.ok(token, requestScope, Optional.empty()));
+    }
+
+    @Test
+    void testRegistryServiceReadPermissions_OnStepJobWorkspaceAndAccess() {
+        for (Class<?> entityClass : new Class<?>[]{Step.class, Job.class, Workspace.class, Access.class}) {
+            ReadPermission readPermission = entityClass.getAnnotation(ReadPermission.class);
+            assertNotNull(readPermission, entityClass.getSimpleName() + " must declare @ReadPermission");
+            assertTrue(
+                    readPermission.expression().contains(IsRegistryService.RULE),
+                    entityClass.getSimpleName() + " @ReadPermission must allow '" + IsRegistryService.RULE + "'"
+            );
+        }
+
+        IsRegistryService check = new IsRegistryService();
+        User runnerWithFullScope = createUserWithClaims(Map.of(
+                "iss", "TerrakubeInternal",
+                "sub", "TerrakubeInternal (EXECUTOR)",
+                "organizationId", UUID.randomUUID().toString(),
+                "workspaceId", UUID.randomUUID().toString(),
+                "jobId", "42",
+                "stepId", UUID.randomUUID().toString()
+        ));
+        assertFalse(check.ok(runnerWithFullScope));
+    }
+
+    @Test
+    void testRegistryServiceRestrictedFields_ExcludeStepOutputJobOutputAndTerraformPlan() throws NoSuchFieldException {
+        ReadPermission stepOutputPerm = Step.class.getDeclaredField("output").getAnnotation(ReadPermission.class);
+        assertNotNull(stepOutputPerm);
+        assertFalse(stepOutputPerm.expression().contains(IsRegistryService.RULE));
+
+        ReadPermission jobOutputPerm = Job.class.getDeclaredField("output").getAnnotation(ReadPermission.class);
+        assertNotNull(jobOutputPerm);
+        assertFalse(jobOutputPerm.expression().contains(IsRegistryService.RULE));
+
+        ReadPermission jobPlanPerm = Job.class.getDeclaredField("terraformPlan").getAnnotation(ReadPermission.class);
+        assertNotNull(jobPlanPerm);
+        assertFalse(jobPlanPerm.expression().contains(IsRegistryService.RULE));
+    }
+
+    @Test
+    void testActiveStepStatuses_MatchNonTerminalJobStatusHoldingQueue() {
+        java.util.Set<String> expectedActive = java.util.Set.of(
+                "running", "queue", "pending", "waitingApproval", "approved"
+        );
+        java.util.Set<String> apiActive = JobStatus.holdingTheQueue().stream()
+                .map(Enum::name)
+                .collect(java.util.stream.Collectors.toSet());
+        assertEquals(expectedActive, apiActive);
+        for (JobStatus status : JobStatus.holdingTheQueue()) {
+            assertFalse(status.isTerminal(), status + " must be non-terminal");
+        }
     }
 }

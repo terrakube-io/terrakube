@@ -33,7 +33,7 @@ import io.terrakube.api.rs.job.JobStatus;
 public class GitLabWebhookServiceTest {
 
     private GitLabWebhookService newService() {
-        return new GitLabWebhookService(new ObjectMapper(), "localhost", "http://localhost",
+        return new GitLabWebhookService(new ObjectMapper(), "https://localhost", "http://localhost",
                 WebClient.builder(), 30, 25);
     }
 
@@ -56,17 +56,106 @@ public class GitLabWebhookServiceTest {
     @Test
     public void parseGitLabPayloadStoresMergeRequestIidForFileFetch() {
         String payload = "{\"object_kind\":\"merge_request\",\"object_attributes\":{\"iid\":42,"
-                + "\"action\":\"open\",\"source_branch\":\"feature\",\"last_commit\":{\"id\":\"def456\"}}}";
+                + "\"action\":\"open\",\"source_branch\":\"feature\",\"target_branch\":\"main\",\"last_commit\":{\"id\":\"def456\"}}}";
 
         WebhookResult result = newService().parseGitLabPayload(payload, Map.of());
 
         assertEquals("merge_request", result.getEvent());
         assertEquals("feature", result.getBranch());
+        assertEquals("main", result.getBaseBranch());
         assertEquals("def456", result.getCommit());
         assertEquals(42L, result.getPrNumber());
         // The MR iid is the marker used later to resolve the changed files per workspace
         assertEquals("42", result.getPrFilesUrl());
         assertTrue(result.isValid());
+    }
+
+    @Test
+    public void parseGitLabPayloadIgnoresNoteWithoutMergeRequest() {
+        String payload = """
+                {
+                  "object_kind": "note",
+                  "object_attributes": {
+                    "noteable_type": "Issue",
+                    "note": "terrakube plan"
+                  }
+                }
+                """;
+        WebhookResult result = newService().parseGitLabPayload(payload, Map.of());
+        assertFalse(result.isValid());
+    }
+
+    @Test
+    public void parseGitLabPayloadMarksInvalidWhenMergeRequestNoteLacksMergeRequestNodeOrIid() {
+        String payloadMissingMr = """
+                {
+                  "object_kind": "note",
+                  "object_attributes": {
+                    "noteable_type": "MergeRequest",
+                    "note": "terrakube plan",
+                    "id": 123
+                  },
+                  "user": {"username": "jdoe"}
+                }
+                """;
+        WebhookResult result1 = newService().parseGitLabPayload(payloadMissingMr, Map.of());
+        assertFalse(result1.isValid());
+
+        String payloadMissingIid = """
+                {
+                  "object_kind": "note",
+                  "object_attributes": {
+                    "noteable_type": "MergeRequest",
+                    "note": "terrakube plan",
+                    "id": 123
+                  },
+                  "user": {"username": "jdoe"},
+                  "merge_request": {
+                    "source_branch": "feature"
+                  }
+                }
+                """;
+        WebhookResult result2 = newService().parseGitLabPayload(payloadMissingIid, Map.of());
+        assertFalse(result2.isValid());
+    }
+
+    @Test
+    public void processWebhookMarksInvalidWhenMergeRequestNoteLacksMergeRequestNodeOrIid() {
+        String token = "gitlab-test-token";
+        Map<String, String> headers = Map.of("x-gitlab-token", token);
+        io.terrakube.api.rs.workspace.Workspace workspace = new io.terrakube.api.rs.workspace.Workspace();
+        workspace.setId(UUID.randomUUID());
+
+        String payloadMissingMr = """
+                {
+                  "object_kind": "note",
+                  "object_attributes": {
+                    "noteable_type": "MergeRequest",
+                    "note": "terrakube plan",
+                    "id": 123
+                  },
+                  "user": {"username": "jdoe"}
+                }
+                """;
+        WebhookResult result1 = newService().processWebhook(payloadMissingMr, headers, token, workspace);
+        assertFalse(result1.isValid());
+
+        String payloadMissingIid = """
+                {
+                  "object_kind": "note",
+                  "object_attributes": {
+                    "noteable_type": "MergeRequest",
+                    "note": "terrakube plan",
+                    "id": 123
+                  },
+                  "user": {"username": "jdoe"},
+                  "merge_request": {
+                    "source_branch": "feature"
+                  }
+                }
+                """;
+        WebhookResult result2 = newService().processWebhook(payloadMissingIid, headers, token, workspace);
+        assertFalse(result2.isValid());
     }
 
     @Test
@@ -80,6 +169,30 @@ public class GitLabWebhookServiceTest {
         assertTrue(result.isRelease());
         assertTrue(result.isValid());
         assertEquals("Release 1.0.0", result.getBranch());
+        assertEquals("v1.0.0", result.getTag());
+    }
+
+    @Test
+    public void parseGitLabPayloadParsesTagPushForModulesOnly() {
+        String payload = "{\"object_kind\":\"tag_push\",\"ref\":\"refs/tags/vpc/v1.4.0\",\"user_username\":\"jdoe\"}";
+
+        WebhookResult result = newService().parseGitLabPayload(payload, Map.of());
+
+        assertEquals("tag_push", result.getEvent());
+        assertEquals("vpc/v1.4.0", result.getTag());
+        assertTrue(result.isValid());
+        assertTrue(result.isModuleOnly());
+        assertFalse(result.isRelease());
+    }
+
+    @Test
+    public void parseGitLabPayloadBranchPushHasNoTag() {
+        String payload = "{\"object_kind\":\"push\",\"ref\":\"refs/heads/main\",\"checkout_sha\":\"abc123\",\"commits\":[]}";
+
+        WebhookResult result = newService().parseGitLabPayload(payload, Map.of());
+
+        assertEquals(null, result.getTag());
+        assertFalse(result.isModuleOnly());
     }
 
     @Test
@@ -208,7 +321,7 @@ public class GitLabWebhookServiceTest {
         }
 
         private String sync() {
-            return subject.createOrUpdateRepoWebhook(repoWebhook, EnumSet.of(WebhookEventType.PUSH), false);
+            return subject.createOrUpdateRepoWebhook(repoWebhook, EnumSet.of(WebhookEventType.PUSH), false, false);
         }
 
         @Test
@@ -260,6 +373,34 @@ public class GitLabWebhookServiceTest {
             assertThrows(HttpClientErrorException.Forbidden.class, this::sync);
 
             wireMockServer.verify(0, postRequestedFor(urlEqualTo(HOOKS)));
+        }
+
+        @Test
+        void tagEventsEnableTagPushEvents() throws Exception {
+            wireMockServer.stubFor(post(urlEqualTo(HOOKS))
+                    .willReturn(aResponse().withStatus(201).withHeader("Content-Type", "application/json")
+                            .withBody("{\"id\":222}")));
+
+            subject.createOrUpdateRepoWebhook(repoWebhook, EnumSet.noneOf(WebhookEventType.class), false, true);
+
+            var body = new ObjectMapper().readTree(
+                    wireMockServer.findAll(postRequestedFor(urlEqualTo(HOOKS))).getFirst().getBodyAsString());
+            assertTrue(body.path("tag_push_events").asBoolean());
+            assertFalse(body.path("push_events").asBoolean());
+        }
+
+        @Test
+        void tagPushEventsStayOffWithoutTagEvents() throws Exception {
+            wireMockServer.stubFor(post(urlEqualTo(HOOKS))
+                    .willReturn(aResponse().withStatus(201).withHeader("Content-Type", "application/json")
+                            .withBody("{\"id\":222}")));
+
+            sync();
+
+            var body = new ObjectMapper().readTree(
+                    wireMockServer.findAll(postRequestedFor(urlEqualTo(HOOKS))).getFirst().getBodyAsString());
+            assertFalse(body.path("tag_push_events").asBoolean());
+            assertTrue(body.path("push_events").asBoolean());
         }
     }
 }

@@ -1,4 +1,4 @@
-import { fetchStepLog, StepLogFetchError, StepLogNotFoundError } from "../fetchStepLog";
+import { fetchStepLog, StepLogNotFoundError } from "../fetchStepLog";
 
 jest.mock("../../../config/axiosConfig", () => ({
   __esModule: true,

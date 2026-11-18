@@ -30,13 +30,40 @@ public class ModuleDownloadTicketService {
     }
 
     public String generateTicket(String organization, String module, String provider, String version) {
-        long expTimestamp = Instant.now().getEpochSecond() + ticketTtlSeconds;
-        String canonical = buildCanonicalString(organization, module, provider, version, expTimestamp);
-        byte[] signature = sign(canonical);
-        return expTimestamp + "." + HexFormat.of().formatHex(signature);
+        return generate(String.join("/", organization, module, provider, version));
     }
 
     public boolean validateTicket(String ticket, String organization, String module, String provider, String version) {
+        return validate(ticket, String.join("/", organization, module, provider, version));
+    }
+
+    /**
+     * Ticket for one provider mirror archive. The signed string starts with {@code mirror/} and has eight
+     * parts against five for a module, and no part can contain a slash, so a module ticket never validates
+     * as a mirror ticket or the other way round.
+     */
+    public String generateMirrorTicket(String organization, String hostname, String namespace, String type,
+            String version, String platform) {
+        return generate(mirrorPath(organization, hostname, namespace, type, version, platform));
+    }
+
+    public boolean validateMirrorTicket(String ticket, String organization, String hostname, String namespace,
+            String type, String version, String platform) {
+        return validate(ticket, mirrorPath(organization, hostname, namespace, type, version, platform));
+    }
+
+    private static String mirrorPath(String organization, String hostname, String namespace, String type,
+            String version, String platform) {
+        return String.join("/", "mirror", organization, hostname, namespace, type, version, platform);
+    }
+
+    private String generate(String path) {
+        long expTimestamp = Instant.now().getEpochSecond() + ticketTtlSeconds;
+        byte[] signature = sign(path + "/" + expTimestamp);
+        return expTimestamp + "." + HexFormat.of().formatHex(signature);
+    }
+
+    private boolean validate(String ticket, String path) {
         if (ticket == null || ticket.isBlank()) {
             return false;
         }
@@ -56,7 +83,7 @@ public class ModuleDownloadTicketService {
         }
 
         if (Instant.now().getEpochSecond() > expTimestamp) {
-            log.warn("Expired download ticket for {}/{}/{}/{} (exp: {})", organization, module, provider, version, expTimestamp);
+            log.warn("Expired download ticket for {} (exp: {})", path, expTimestamp);
             return false;
         }
 
@@ -68,18 +95,13 @@ public class ModuleDownloadTicketService {
             return false;
         }
 
-        String canonical = buildCanonicalString(organization, module, provider, version, expTimestamp);
-        byte[] expectedSig = sign(canonical);
+        byte[] expectedSig = sign(path + "/" + expTimestamp);
 
         boolean matches = MessageDigest.isEqual(expectedSig, actualSig);
         if (!matches) {
-            log.warn("Invalid signature on download ticket for {}/{}/{}/{}", organization, module, provider, version);
+            log.warn("Invalid signature on download ticket for {}", path);
         }
         return matches;
-    }
-
-    private String buildCanonicalString(String organization, String module, String provider, String version, long expTimestamp) {
-        return String.format("%s/%s/%s/%s/%d", organization, module, provider, version, expTimestamp);
     }
 
     private byte[] sign(String data) {

@@ -28,6 +28,10 @@ public class ExecutorContext {
     private long executionEpoch;
     private String terraformVersion;
     private String source;
+    // Public API hostname (io.terrakube.hostname) used by RemoteTfeService for remote-content
+    // URLs; forwarded so the executor validates against the same trusted host even when
+    // io.terrakube.api.url points to an internal service URL.
+    private String remoteContentHostname;
     private String branch;
     private String folder;
     private String vcsType;

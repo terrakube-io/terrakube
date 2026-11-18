@@ -22,7 +22,7 @@ export type WorkspaceAccessPermissions = {
 };
 
 async function listWorkspaceAccess(
-  organizationId: string,
+  _organizationId: string,
   workspaceId: string
 ): Promise<ApiResponse<WorkspaceAccessModel[]>> {
   const body = {

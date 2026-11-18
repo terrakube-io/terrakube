@@ -35,8 +35,8 @@ public class BitBucketWebhookService extends WebhookServiceBase {
 
     private final ObjectMapper objectMapper;
 
-    @Value("${io.terrakube.hostname}")
-    private String hostname;
+    @Value("#{@publicUrls.apiBaseUrl()}")
+    private String apiBaseUrl;
 
     private WorkspaceRepository workspaceRepository;
 
@@ -135,6 +135,8 @@ public class BitBucketWebhookService extends WebhookServiceBase {
 
             String sourceBranch = pullRequestNode.path("source").path("branch").path("name").asText();
             result.setBranch(sourceBranch);
+            String destinationBranch = pullRequestNode.path("destination").path("branch").path("name").asText(null);
+            result.setBaseBranch(destinationBranch);
 
             result.setCreatedBy("no-reply@terrakube.io");
 
@@ -165,6 +167,7 @@ public class BitBucketWebhookService extends WebhookServiceBase {
 
             String tagName = newNode.path("name").asText();
             result.setBranch(tagName);
+            result.setTag(tagName);
             result.setRelease(true);
 
             JsonNode targetNode = newNode.path("target");
@@ -213,6 +216,7 @@ public class BitBucketWebhookService extends WebhookServiceBase {
             JsonNode pullRequestNode = rootNode.path("pullrequest");
             result.setPrNumber(pullRequestNode.path("id").asInt());
             result.setBranch(pullRequestNode.path("source").path("branch").path("name").asText());
+            result.setBaseBranch(pullRequestNode.path("destination").path("branch").path("name").asText(null));
             result.setCommit(pullRequestNode.path("source").path("commit").path("hash").asText());
 
             JsonNode linksNode = pullRequestNode.path("links");
@@ -323,7 +327,7 @@ public class BitBucketWebhookService extends WebhookServiceBase {
             String secret = Base64.getEncoder()
                     .encodeToString(workspace.getId().toString().getBytes(StandardCharsets.UTF_8));
             String[] ownerAndRepo = extractOwnerAndRepo(workspace.getSource());
-            String webhookUrl = String.format("https://%s/webhook/v1/%s", hostname, webhook.getId().toString());
+            String webhookUrl = String.format("%s/webhook/v1/%s", apiBaseUrl, webhook.getId().toString());
 
             // Check if any event has PR workflow enabled
             boolean hasPrWorkflow = webhook.getEvents() != null && webhook.getEvents().stream()

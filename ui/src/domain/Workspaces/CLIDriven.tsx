@@ -1,3 +1,4 @@
+import { publicHostname } from "@/config/apiUrls";
 import { CopyOutlined } from "@ant-design/icons";
 import { Button, message, Tabs, Typography } from "antd";
 import { HiOutlineExternalLink } from "react-icons/hi";
@@ -29,7 +30,7 @@ const Snippet = ({ code, disabled }: { code: string; disabled: boolean }) => (
 );
 
 export const CLIDriven = ({ organizationName, workspaceName }: Props) => {
-  const hostname = new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).hostname;
+  const hostname = publicHostname();
   const configBlock = (opener: string) =>
     `terraform {
   ${opener}

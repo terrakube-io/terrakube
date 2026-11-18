@@ -108,6 +108,71 @@ class AzureTerraformStateImplTest {
     }
 
     @Test
+    void testSaveTerraformPlanAlsoUploadsPlanJsonWhenPresent(@TempDir Path tempDir) throws IOException {
+        File workingDirectory = tempDir.toFile();
+        File planFile = new File(workingDirectory, "terraformLibrary.tfPlan");
+        File planJsonFile = new File(workingDirectory, "plan.json");
+        FileUtils.writeStringToFile(planFile, "plan-content", Charset.defaultCharset());
+        FileUtils.writeStringToFile(planJsonFile, "{\"format_version\":\"1.2\"}", Charset.defaultCharset());
+
+        BlobClient jsonBlobClient = mock(BlobClient.class);
+        when(blobContainerClient.exists()).thenReturn(true);
+        when(blobContainerClient.getBlobClient("org1/ws1/job1/step1/terraformLibrary.tfPlan")).thenReturn(blobClient);
+        when(blobContainerClient.getBlobClient("org1/ws1/job1/step1/terraformLibrary.tfPlan.json")).thenReturn(jsonBlobClient);
+        when(blobClient.getBlobUrl()).thenReturn("https://storage.azure.com/tfstate/org1/ws1/job1/step1/terraformLibrary.tfPlan");
+
+        String result = azureTerraformState.saveTerraformPlan("org1", "ws1", "job1", "step1", workingDirectory);
+
+        assertEquals("https://storage.azure.com/tfstate/org1/ws1/job1/step1/terraformLibrary.tfPlan", result);
+        verify(blobClient).uploadFromFile(planFile.getAbsolutePath(), true);
+        verify(jsonBlobClient).uploadFromFile(planJsonFile.getAbsolutePath(), true);
+    }
+
+    @Test
+    void testDownloadTerraformPlanJson(@TempDir Path tempDir) throws IOException {
+        File workingDirectory = tempDir.toFile();
+        when(terrakubeClient.getJobById("org1", "job1").getData().getAttributes().getTerraformPlan())
+                .thenReturn("https://storage.azure.com/tfstate/org1/ws1/job1/step1/terraformLibrary.tfPlan");
+        doAnswer(invocation -> {
+            FileUtils.writeStringToFile(new File((String) invocation.getArgument(0)), "{\"resource_changes\":[]}", Charset.defaultCharset());
+            return null;
+        }).when(blobClient).downloadToFile(anyString(), eq(true));
+
+        assertTrue(azureTerraformState.downloadTerraformPlanJson("org1", "ws1", "job1", "step1", workingDirectory));
+        verify(blobContainerClient).getBlobClient("org1/ws1/job1/step1/terraformLibrary.tfPlan.json");
+        assertEquals("{\"resource_changes\":[]}", FileUtils.readFileToString(new File(workingDirectory, "plan.json"), Charset.defaultCharset()));
+    }
+
+    @Test
+    void testDownloadTerraformPlanJson_ReturnsFalseWhenMissingOrUnset(@TempDir Path tempDir) {
+        File workingDirectory = tempDir.toFile();
+        when(terrakubeClient.getJobById("org1", "job1").getData().getAttributes().getTerraformPlan())
+                .thenReturn(null);
+        assertFalse(azureTerraformState.downloadTerraformPlanJson("org1", "ws1", "job1", "step1", workingDirectory));
+
+        when(terrakubeClient.getJobById("org1", "job1").getData().getAttributes().getTerraformPlan())
+                .thenReturn("https://storage.azure.com/tfstate/org1/ws1/job1/step1/terraformLibrary.tfPlan");
+        com.azure.storage.blob.models.BlobStorageException notFound = mock(com.azure.storage.blob.models.BlobStorageException.class);
+        when(notFound.getStatusCode()).thenReturn(404);
+        doThrow(notFound).when(blobClient).downloadToFile(anyString(), eq(true));
+
+        assertFalse(azureTerraformState.downloadTerraformPlanJson("org1", "ws1", "job1", "step1", workingDirectory));
+    }
+
+    @Test
+    void testDownloadTerraformPlanJson_ThrowsOnStorageOutage(@TempDir Path tempDir) {
+        File workingDirectory = tempDir.toFile();
+        when(terrakubeClient.getJobById("org1", "job1").getData().getAttributes().getTerraformPlan())
+                .thenReturn("https://storage.azure.com/tfstate/org1/ws1/job1/step1/terraformLibrary.tfPlan");
+        com.azure.storage.blob.models.BlobStorageException unavailable = mock(com.azure.storage.blob.models.BlobStorageException.class);
+        when(unavailable.getStatusCode()).thenReturn(503);
+        doThrow(unavailable).when(blobClient).downloadToFile(anyString(), eq(true));
+
+        assertThrows(io.terrakube.executor.plugin.tfstate.TerraformStateUnavailableException.class,
+                () -> azureTerraformState.downloadTerraformPlanJson("org1", "ws1", "job1", "step1", workingDirectory));
+    }
+
+    @Test
     void testSaveTerraformPlan_ContainerCreated(@TempDir Path tempDir) throws IOException {
         String organizationId = "org1";
         String workspaceId = "ws1";
@@ -413,5 +478,31 @@ class AzureTerraformStateImplTest {
 
         when(blobClient.deleteIfExists()).thenThrow(new RuntimeException("denied"));
         assertDoesNotThrow(() -> azureTerraformState.deleteArtifacts("org1", "ws1", "job1"));
+    }
+
+    @Test
+    void testSaveTerraformBinaryKeysTheBlobByOsAndArchitecture(@TempDir Path tempDir) throws IOException {
+        File binary = tempDir.resolve("tofu").toFile();
+        FileUtils.writeStringToFile(binary, "tofu-binary", Charset.defaultCharset());
+        when(blobContainerClient.exists()).thenReturn(true);
+
+        assertTrue(azureTerraformState.saveTerraformBinary("v1.12.6", true, "linux", "arm64", binary));
+
+        verify(blobServiceClient).getBlobContainerClient("tfbinary");
+        verify(blobContainerClient).getBlobClient("tofu/v1.12.6/linux_arm64/tofu");
+        verify(blobClient).uploadFromFile(binary.getAbsolutePath(), true);
+    }
+
+    @Test
+    void testDownloadTerraformBinaryReadsTheBlobOfItsOwnOsAndArchitecture(@TempDir Path tempDir) {
+        when(blobContainerClient.exists()).thenReturn(true);
+        when(blobClient.exists()).thenReturn(true);
+        File target = tempDir.resolve("terraform/1.9.0/terraform").toFile();
+
+        assertTrue(azureTerraformState.downloadTerraformBinary("1.9.0", false, "linux", "amd64", target));
+
+        verify(blobServiceClient).getBlobContainerClient("tfbinary");
+        verify(blobContainerClient).getBlobClient("terraform/1.9.0/linux_amd64/terraform");
+        verify(blobClient).downloadToFile(target.getAbsolutePath(), true);
     }
 }

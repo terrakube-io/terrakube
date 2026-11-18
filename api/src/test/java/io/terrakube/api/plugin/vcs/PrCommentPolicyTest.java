@@ -215,6 +215,102 @@ class PrCommentPolicyTest {
     }
 
     @Test
+    void testPolicyGuardrailsSummaryAsSentByExecutor() {
+        Job job = createTestJob(VcsType.GITHUB);
+
+        // The executor serializes every PolicyViolation field, so violations without an
+        // exemption carry explicit nulls, and enforcementLevel is the enum name.
+        String contextJson = """
+                {
+                  "policyEvaluation": {
+                    "status": "FAILED",
+                    "warningRules": 1,
+                    "softMandatoryViolations": 1,
+                    "hardMandatoryViolations": 0,
+                    "results": [
+                      {
+                        "policySetName": "destructive-changes",
+                        "enforcementLevel": "ADVISORY",
+                        "violations": [
+                          {
+                            "ruleId": "resource_deleted",
+                            "address": "example_resource.this",
+                            "message": "plan destroys example_resource.this",
+                            "status": "WARNING",
+                            "ticketReference": null,
+                            "expiresAt": null,
+                            "justification": null
+                          }
+                        ]
+                      },
+                      {
+                        "policySetName": "change-window",
+                        "enforcementLevel": "SOFT_MANDATORY",
+                        "exemptedViolations": [
+                          {
+                            "ruleId": "outside_change_window",
+                            "address": "example_resource.exempt",
+                            "message": "apply outside the change window",
+                            "status": "EXEMPTED",
+                            "ticketReference": "CHG-123",
+                            "expiresAt": null,
+                            "justification": null
+                          }
+                        ],
+                        "violations": [
+                          {
+                            "ruleId": "outside_change_window",
+                            "address": "global",
+                            "message": "apply outside the change window",
+                            "status": "FAILED",
+                            "ticketReference": null,
+                            "expiresAt": null,
+                            "justification": null
+                          }
+                        ]
+                      },
+                      {
+                        "policySetName": null,
+                        "policySetId": "policy-set-id",
+                        "enforcementLevel": "ADVISORY",
+                        "violations": [
+                          {
+                            "ruleId": "tag_missing",
+                            "address": null,
+                            "message": "resource has no owner tag",
+                            "status": null,
+                            "ticketReference": null,
+                            "expiresAt": null,
+                            "justification": null
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                }
+                """;
+
+        when(storageTypeService.getContext(456)).thenReturn(contextJson);
+        when(policyEvaluationRepository.findByJob(job)).thenReturn(List.of());
+
+        String summary = prCommentService.renderPolicyGuardrailsSummary(job).orElseThrow();
+
+        assertTrue(summary.contains("| `destructive-changes` | ℹ️ Advisory | `example_resource.this` | "
+                + "Rule: `resource_deleted`<br/>plan destroys example_resource.this |"));
+        assertTrue(summary.contains("| `change-window` | ⚠️ **FAILED** (Soft) | `global` |"));
+        // An exemption with a ticket but no expiry: the ticket is shown, the expiry is left out.
+        assertTrue(summary.contains("| `change-window` | 🛡️ **EXEMPTED** | `example_resource.exempt` | "
+                + "Rule: `outside_change_window`<br/>Ticket: **CHG-123**<br/>apply outside the change window |"));
+        // A null policySetName falls back to policySetId, and a null address to "-".
+        assertTrue(summary.contains("| `policy-set-id` | ℹ️ Advisory | `-` | "
+                + "Rule: `tag_missing`<br/>resource has no owner tag |"));
+        assertFalse(summary.contains("❌ **FAILED** (Hard)"));
+        assertFalse(summary.contains("Ticket: **null**"));
+        assertFalse(summary.contains("Expires: null"));
+        assertFalse(summary.contains("`null`"));
+    }
+
+    @Test
     void testPolicyCommitStatusGitHubExemptedSuccess() {
         Job job = createTestJob(VcsType.GITHUB);
 
