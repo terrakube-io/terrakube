@@ -628,13 +628,27 @@ public class ScheduleJob implements org.quartz.Job {
     }
 
     private void onDispatchSucceeded(Job job) {
+        // A conditional update, not a save of this worker's copy of the job: the job can be
+        // cancelled while the executor is still answering, and a save would write the status
+        // loaded before the dispatch back over the cancel, so the cancelled run would go on.
+        Date now = new Date();
+        if (jobRepository.markDispatched(job.getId(), now) == 0) {
+            jobRepository.findById(job.getId()).map(Job::getStatus).ifPresent(job::setStatus);
+            if (job.getStatus() == JobStatus.cancelled) {
+                log.warn("Job {} was cancelled while it was being dispatched, keeping it cancelled", job.getId());
+                updateJobStepsWithStatus(job.getId(), JobStatus.cancelled);
+            } else {
+                log.info("Job {} is {} after its dispatch, leaving its status as it is", job.getId(), job.getStatus());
+            }
+            return;
+        }
         job.setStatus(JobStatus.queue);
-        // Dispatch finally succeeded - clear stale backoff bookkeeping (attempt count and
-        // first-failure-at are left as a historical record of how many attempts it took) so run
-        // details don't keep showing an old error once the job is actually running.
+        // Dispatch finally succeeded - the update above also cleared stale backoff bookkeeping
+        // (attempt count and first-failure-at are left as a historical record of how many attempts
+        // it took) so run details don't keep showing an old error once the job is actually running.
         job.setDispatchNextRetryAt(null);
         job.setDispatchLastError(null);
-        jobRepository.save(job);
+        job.setUpdatedDate(now);
         jobNotificationTrigger.notifyStatusChanged(job);
     }
 

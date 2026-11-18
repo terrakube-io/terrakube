@@ -13,6 +13,7 @@ import io.terrakube.executor.service.scripts.ScriptEngineService;
 import io.terrakube.executor.service.workspace.SetupWorkspace;
 import io.terrakube.executor.service.workspace.WorkspaceException;
 import io.terrakube.executor.service.shutdown.ShutdownServiceImpl;
+import io.terrakube.executor.service.status.JobCancelledBeforeStartException;
 import io.terrakube.executor.service.status.UpdateJobStatus;
 import io.terrakube.executor.service.terraform.ContextRevision;
 import io.terrakube.executor.service.terraform.TerraformExecutor;
@@ -238,7 +239,12 @@ public class ExecutorJobImpl implements ExecutorJob {
         if (!terraformJob.getBranch().equals("remote-content"))
             commitId = getCommitId(terraformWorkingDir);
 
-        updateJobStatus.setRunningStatus(terraformJob, commitId);
+        try {
+            updateJobStatus.setRunningStatus(terraformJob, commitId);
+        } catch (JobCancelledBeforeStartException e) {
+            log.info("{}, skipping it", e.getMessage());
+            return;
+        }
 
         switch (terraformJob.getType()) {
             case "terraformPlanDestroy":
