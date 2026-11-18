@@ -44,7 +44,7 @@ describe("DetailsJob apply structured output", () => {
     useStructuredOutputStreamMock.mockReturnValue(null);
   });
 
-  it("shows command execution in phase headers even for failed or non-expandable steps", async () => {
+  it("shows command execution only for command steps, including a missing duration", async () => {
     getMock.mockImplementation((url: string) =>
       Promise.resolve(
         url.includes("/context/v1/")
@@ -62,6 +62,11 @@ describe("DetailsJob apply structured output", () => {
                     id: "approval",
                     type: "step",
                     attributes: { name: "Approve Plan", status: "pending", stepNumber: 2 },
+                  },
+                  {
+                    id: "apply",
+                    type: "step",
+                    attributes: { name: "Apply", status: "notExecuted", stepNumber: 3, executionPhase: "apply" },
                   },
                 ],
               },

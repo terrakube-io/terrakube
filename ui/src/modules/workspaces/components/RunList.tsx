@@ -9,7 +9,8 @@ import { ORGANIZATION_ARCHIVE } from "../../../config/actionTypes";
 import RunFilter, { ALL_RUNS } from "./RunFilter";
 import WorkspaceStatusTag from "@/components/display/WorkspaceStatusTag";
 import { EmptyState } from "@/components/feedback/EmptyState";
-import { formatDateTime } from "@/modules/utils/dates";
+import { formatDateTime, formatDuration } from "@/modules/utils/dates";
+import { formatExecutionDuration } from "@/domain/Jobs/executionDuration";
 import "@/domain/Jobs/runTokens.css";
 import "./RunList.css";
 
@@ -182,6 +183,9 @@ export default function RunList({ jobs, onRunClick, runLink }: Props) {
                             <FiGitCommit aria-label="commit" /> <code>{commitId.substring(0, 7)}</code>
                           </span>
                         )}
+                        <span>Plan: {formatExecutionDuration(item.planDurationMs)}</span>
+                        <span>Apply: {formatExecutionDuration(item.applyDurationMs)}</span>
+                        <span>Total: {formatDuration(item.createdDate, item.updatedDate) ?? "—"}</span>
                       </p>
                     </div>
                     <div className="run-row-status">
