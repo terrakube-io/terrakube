@@ -322,14 +322,15 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                             terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), renderedForComment.text());
                 }
 
-                if (opaExecutorService != null && terraformJob.getPolicyList() != null && !terraformJob.getPolicyList().isEmpty()) {
-                    File planJsonFile = new File(terraformWorkingDir, "plan.json");
-                    if (!planJsonFile.exists()) {
-                        String planJson = planStructuredOutputService.getPlanAsJson(terraformJob, terraformWorkingDir);
-                        if (planJson != null && !planJson.isBlank()) {
-                            FileUtils.writeStringToFile(planJsonFile, planJson, StandardCharsets.UTF_8);
-                        }
+                File planJsonFile = new File(terraformWorkingDir, "plan.json");
+                if (!planJsonFile.exists() && planStructuredOutputService != null) {
+                    String planJson = planStructuredOutputService.getPlanAsJson(terraformJob, terraformWorkingDir);
+                    if (planJson != null && !planJson.isBlank()) {
+                        FileUtils.writeStringToFile(planJsonFile, planJson, StandardCharsets.UTF_8);
                     }
+                }
+
+                if (opaExecutorService != null && terraformJob.getPolicyList() != null && !terraformJob.getPolicyList().isEmpty()) {
                     if (planJsonFile.exists()) {
                         List<OpaEvaluationResult> opaResults = opaExecutorService.evaluateAllPolicies(terraformJob, terraformWorkingDir, planJsonFile, planOutput);
                         boolean hasHardViolations = opaResults.stream().anyMatch(r -> r.getHardMandatoryViolations() > 0);

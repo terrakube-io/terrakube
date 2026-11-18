@@ -53,6 +53,7 @@ public class AzureTerraformStateImpl implements TerraformState {
 
     private static final String CONTAINER_NAME = "tfstate";
     private static final String TERRAFORM_PLAN_FILE = "terraformLibrary.tfPlan";
+    private static final String TERRAFORM_PLAN_JSON_FILE = "plan.json";
     private static final String BACKEND_FILE_NAME = "azure_backend_override.tf";
     private static final String CONTAINER_OUTPUT_NAME = "tfoutput";
     private static final String CONTAINER_BINARY_NAME = "tfbinary";
@@ -131,6 +132,14 @@ public class AzureTerraformStateImpl implements TerraformState {
                 blobClient.uploadFromFile(tfPlan.getAbsolutePath(), true);
                 return null;
             });
+            File tfPlanJson = new File(workingDirectory, TERRAFORM_PLAN_JSON_FILE);
+            if (tfPlanJson.exists()) {
+                BlobClient jsonBlobClient = blobContainerClient.getBlobClient(blobName + ".json");
+                storageRetryMetrics.withRetry("azure", "plan-json-write", () -> {
+                    jsonBlobClient.uploadFromFile(tfPlanJson.getAbsolutePath(), true);
+                    return null;
+                });
+            }
             return blobClient.getBlobUrl();
         } else {
             return null;
@@ -280,6 +289,37 @@ public class AzureTerraformStateImpl implements TerraformState {
                     planExists.set(true);
                 });
         return planExists.get();
+    }
+
+    @Override
+    public boolean downloadTerraformPlanJson(String organizationId, String workspaceId, String jobId, String stepId, File workingDirectory) {
+        String stateUrl = terrakubeClient.getJobById(organizationId, jobId).getData().getAttributes().getTerraformPlan();
+        if (stateUrl == null || stateUrl.isBlank()) {
+            return false;
+        }
+        String blobName;
+        try {
+            blobName = new URL(stateUrl).getPath().replace("/tfstate/", "").replace("%2F", "/") + ".json";
+        } catch (IOException e) {
+            log.error(e.getMessage());
+            return false;
+        }
+        log.info("Downloading Terraform plan JSON from container {} blob {}", CONTAINER_NAME, blobName);
+        BlobClient blobClient = blobServiceClient.getBlobContainerClient(CONTAINER_NAME).getBlobClient(blobName);
+        File targetFile = new File(workingDirectory, TERRAFORM_PLAN_JSON_FILE);
+        try {
+            storageRetryMetrics.withRetry("azure", "plan-json-read", () -> {
+                blobClient.downloadToFile(targetFile.getAbsolutePath(), true);
+                return null;
+            });
+            return true;
+        } catch (TerraformStateUnavailableException e) {
+            if (e.getCause() instanceof BlobStorageException storageException && storageException.getStatusCode() == 404) {
+                log.warn("Terraform plan JSON {} not found in container {}", blobName, CONTAINER_NAME);
+                return false;
+            }
+            throw e;
+        }
     }
 
     @Override

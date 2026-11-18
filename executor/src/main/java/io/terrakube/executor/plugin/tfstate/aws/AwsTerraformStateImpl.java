@@ -56,6 +56,7 @@ public class AwsTerraformStateImpl implements TerraformState {
 
     private static final String OUTPUT_PREFIX = "tfoutput/";
     private static final String TERRAFORM_PLAN_FILE = "terraformLibrary.tfPlan";
+    private static final String TERRAFORM_PLAN_JSON_FILE = "plan.json";
     private static final String BACKEND_FILE_NAME = "aws_backend_override.tf";
 
     @NonNull
@@ -209,6 +210,15 @@ public class AwsTerraformStateImpl implements TerraformState {
 
             storageRetryMetrics.withRetry("aws", "plan-write", () -> s3client.putObject(putObjectRequest, RequestBody.fromFile(tfPlanContent)));
 
+            File tfPlanJson = new File(workingDirectory, TERRAFORM_PLAN_JSON_FILE);
+            if (tfPlanJson.exists()) {
+                PutObjectRequest putJsonRequest = PutObjectRequest.builder()
+                        .bucket(bucketName)
+                        .key(blobKey + ".json")
+                        .build();
+                storageRetryMetrics.withRetry("aws", "plan-json-write", () -> s3client.putObject(putJsonRequest, RequestBody.fromFile(tfPlanJson)));
+            }
+
             GetUrlRequest getUrlRequest = GetUrlRequest.builder()
                     .bucket(bucketName)
                     .key(blobKey)
@@ -245,6 +255,37 @@ public class AwsTerraformStateImpl implements TerraformState {
                     }
                 });
         return planExists.get();
+    }
+
+    @Override
+    public boolean downloadTerraformPlanJson(String organizationId, String workspaceId, String jobId, String stepId, File workingDirectory) {
+        String stateUrl = terrakubeClient.getJobById(organizationId, jobId).getData().getAttributes().getTerraformPlan();
+        if (stateUrl == null || stateUrl.isBlank()) {
+            return false;
+        }
+        String objectKey;
+        try {
+            objectKey = "tfstate/" + new URL(stateUrl).getPath().split("/tfstate/")[1] + ".json";
+        } catch (IOException | ArrayIndexOutOfBoundsException e) {
+            log.error(e.getMessage());
+            return false;
+        }
+        log.info("Downloading Terraform plan JSON from bucket {} key {}", bucketName, objectKey);
+        File targetFile = new File(workingDirectory, TERRAFORM_PLAN_JSON_FILE);
+        GetObjectRequest objectRequest = GetObjectRequest.builder().bucket(bucketName).key(objectKey).build();
+        try {
+            storageRetryMetrics.withRetry("aws", "plan-json-read", () -> {
+                Files.deleteIfExists(targetFile.toPath());
+                return s3client.getObject(objectRequest, ResponseTransformer.toFile(targetFile.toPath()));
+            });
+            return true;
+        } catch (TerraformStateUnavailableException e) {
+            if (e.getCause() instanceof NoSuchKeyException) {
+                log.warn("Terraform plan JSON {} not found in bucket {}", objectKey, bucketName);
+                return false;
+            }
+            throw e;
+        }
     }
 
     @Override
