@@ -1,6 +1,8 @@
 package io.terrakube.registry.controller;
 
+import io.terrakube.registry.configuration.OpenRegistryProperties;
 import io.terrakube.registry.controller.model.module.ModuleDetailsDTO;
+import io.terrakube.registry.service.module.ModuleDownloadTicketService;
 import io.terrakube.registry.plugin.storage.StorageService;
 import io.terrakube.registry.service.inspect.ModuleInspectorService;
 import io.terrakube.registry.plugin.storage.StorageUnavailableException;
@@ -8,13 +10,16 @@ import io.terrakube.registry.service.module.ModuleService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.filter.ShallowEtagHeaderFilter;
 
 import java.net.URI;
 import java.util.List;
 import java.util.Optional;
 
 import io.terrakube.registry.service.module.ModuleAuthorizationService;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
@@ -38,6 +43,7 @@ class ModuleWebServiceImplTest {
     private StorageService storageService;
     private ModuleAuthorizationService moduleAuthorizationService;
     private ModuleInspectorService moduleInspectorService;
+    private ModuleWebServiceImpl controller;
     private MockMvc mockMvc;
 
     @BeforeEach
@@ -49,7 +55,7 @@ class ModuleWebServiceImplTest {
         moduleInspectorService = mock(ModuleInspectorService.class);
         when(moduleService.isVersionRemoved("org", "module", "aws", "2.0.0")).thenReturn(true);
 
-        ModuleWebServiceImpl controller = new ModuleWebServiceImpl();
+        controller = new ModuleWebServiceImpl();
         controller.moduleService = moduleService;
         controller.storageService = storageService;
         controller.moduleAuthorizationService = moduleAuthorizationService;
@@ -68,7 +74,8 @@ class ModuleWebServiceImplTest {
 
         mockMvc.perform(get("/terraform/modules/v1/download/org/module/aws/1.0.0/module.zip"))
                 .andExpect(status().isFound())
-                .andExpect(header().string("Location", presignedUrl.toString()));
+                .andExpect(header().string("Location", presignedUrl.toString()))
+                .andExpect(header().string("Cache-Control", "no-store"));
 
         verify(storageService).getPresignedDownloadUrl("org", "module", "aws", "1.0.0");
         verifyNoMoreInteractions(storageService);
@@ -85,6 +92,26 @@ class ModuleWebServiceImplTest {
                 .andExpect(status().isOk());
 
         verify(storageService).downloadModule("org", "module", "aws", "1.0.0");
+    }
+
+    // ShallowEtagHeaderFilter maps /terraform/modules/v1/* and would otherwise buffer the whole archive.
+    @Test
+    void zipIsNotBufferedByTheEtagFilter() throws Exception {
+        when(storageService.getPresignedDownloadUrl("org", "module", "aws", "1.0.0")).thenReturn(Optional.empty());
+        when(storageService.downloadModule("org", "module", "aws", "1.0.0")).thenReturn("zip-content".getBytes());
+        MockMvc filtered = MockMvcBuilders
+                .standaloneSetup(new ModuleWebServiceImpl(moduleService, storageService, null, moduleAuthorizationService))
+                .addFilters(new ShallowEtagHeaderFilter())
+                .build();
+
+        MvcResult result = filtered.perform(get("/terraform/modules/v1/download/org/module/aws/1.0.0/module.zip"))
+                .andExpect(status().isOk())
+                .andExpect(header().doesNotExist("ETag"))
+                .andReturn();
+
+        // The attribute ShallowEtagHeaderFilter.disableContentCaching sets.
+        assertThat(result.getRequest().getAttribute(ShallowEtagHeaderFilter.class.getName() + ".STREAMING"))
+                .isEqualTo(true);
     }
 
     @Test
@@ -124,8 +151,74 @@ class ModuleWebServiceImplTest {
 
         mockMvc.perform(get("/terraform/modules/v1/org/module/aws/1.0.0/download"))
                 .andExpect(status().isNoContent())
-                .andExpect(header().string("X-Terraform-Get", "s3::path"));
+                .andExpect(header().string("X-Terraform-Get", "s3::path"))
+                .andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(header().doesNotExist("ETag"));
         verify(moduleService, never()).getAvailableVersions(anyString(), anyString(), anyString());
+    }
+
+    private void enableDirectDownload() {
+        OpenRegistryProperties properties = new OpenRegistryProperties();
+        properties.setDirectStorageDownload(true);
+        controller.openRegistryProperties = properties;
+        controller.ticketService = mock(ModuleDownloadTicketService.class);
+        when(controller.ticketService.generateTicket("org", "module", "aws", "1.0.0")).thenReturn("t1");
+        when(moduleService.getModuleVersionPath("org", "module", "aws", "1.0.0"))
+                .thenReturn("https://registry/module.zip");
+    }
+
+    @Test
+    void directDownloadUsesPresignedUrlWithoutTicket() throws Exception {
+        enableDirectDownload();
+        URI presigned = URI.create("https://bucket.s3.amazonaws.com/registry/org/module/aws/1.0.0/module.zip?X-Amz-Signature=x");
+        when(storageService.getPresignedDownloadUrl("org", "module", "aws", "1.0.0")).thenReturn(Optional.of(presigned));
+
+        mockMvc.perform(get("/terraform/modules/v1/org/module/aws/1.0.0/download"))
+                .andExpect(status().isNoContent())
+                .andExpect(header().string("X-Terraform-Get", presigned.toString()))
+                .andExpect(header().string("Cache-Control", "no-store"));
+        verify(controller.ticketService, never()).generateTicket(anyString(), anyString(), anyString(), anyString());
+    }
+
+    @Test
+    void directDownloadFallsBackToTicketUrlWhenPresignEmpty() throws Exception {
+        enableDirectDownload();
+        when(storageService.getPresignedDownloadUrl("org", "module", "aws", "1.0.0")).thenReturn(Optional.empty());
+
+        mockMvc.perform(get("/terraform/modules/v1/org/module/aws/1.0.0/download"))
+                .andExpect(status().isNoContent())
+                .andExpect(header().string("X-Terraform-Get", "https://registry/module.zip?ticket=t1"));
+    }
+
+    @Test
+    void directDownloadFallsBackToTicketUrlWhenPresignFails() throws Exception {
+        enableDirectDownload();
+        when(storageService.getPresignedDownloadUrl("org", "module", "aws", "1.0.0"))
+                .thenThrow(new StorageUnavailableException("boom", new RuntimeException()));
+
+        mockMvc.perform(get("/terraform/modules/v1/org/module/aws/1.0.0/download"))
+                .andExpect(status().isNoContent())
+                .andExpect(header().string("X-Terraform-Get", "https://registry/module.zip?ticket=t1"));
+    }
+
+    @Test
+    void directDownloadOffNeverPresigns() throws Exception {
+        controller.openRegistryProperties = new OpenRegistryProperties();
+        when(moduleService.getModuleVersionPath("org", "module", "aws", "1.0.0")).thenReturn("s3::path");
+
+        mockMvc.perform(get("/terraform/modules/v1/org/module/aws/1.0.0/download"))
+                .andExpect(header().string("X-Terraform-Get", "s3::path"));
+        verify(storageService, never()).getPresignedDownloadUrl(anyString(), anyString(), anyString(), anyString());
+    }
+
+    @Test
+    void removedVersionNeverPresigns() throws Exception {
+        enableDirectDownload();
+        when(moduleService.isVersionRemoved("org", "module", "aws", "1.0.0")).thenReturn(true);
+
+        mockMvc.perform(get("/terraform/modules/v1/org/module/aws/1.0.0/download"))
+                .andExpect(status().isNotFound());
+        verify(storageService, never()).getPresignedDownloadUrl(anyString(), anyString(), anyString(), anyString());
     }
 
     @Test
@@ -151,5 +244,20 @@ class ModuleWebServiceImplTest {
                 .andExpect(status().isForbidden());
 
         verifyNoMoreInteractions(moduleInspectorService);
+    }
+
+    @Test
+    void metadataIsPrivateAndAlwaysRevalidated() throws Exception {
+        when(moduleService.getAvailableVersions("org", "module", "aws")).thenReturn(List.of("1.0.0"));
+        when(moduleInspectorService.details("org", "module", "aws", "1.0.0", ""))
+                .thenReturn(mock(ModuleDetailsDTO.class));
+
+        for (String path : List.of("/terraform/modules/v1/org/module/aws/versions",
+                "/terraform/modules/v1/org/module/aws/1.0.0/details")) {
+            mockMvc.perform(get(path))
+                    .andExpect(status().isOk())
+                    .andExpect(header().string("Cache-Control", "no-cache, private"))
+                    .andExpect(header().string("Vary", "Authorization"));
+        }
     }
 }

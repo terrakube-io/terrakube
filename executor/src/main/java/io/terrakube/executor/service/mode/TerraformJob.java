@@ -28,6 +28,7 @@ public class TerraformJob {
     private long executionEpoch;
     private String terraformVersion;
     private String source;
+    private String remoteContentHostname;
     private String branch;
     private String folder;
     private String vcsType;

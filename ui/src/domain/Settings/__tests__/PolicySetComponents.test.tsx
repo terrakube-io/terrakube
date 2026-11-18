@@ -1,5 +1,4 @@
 import { render, screen, fireEvent } from "@testing-library/react";
-import React from "react";
 import { MemoryRouter } from "react-router-dom";
 import { PolicySetCard, PolicySetFilter, PolicySetTable } from "../components";
 

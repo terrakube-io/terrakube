@@ -47,6 +47,11 @@ public class UpdateJobStatusImpl implements UpdateJobStatus {
                 }
             }
 
+            if (job.getAttributes().getStatus().equals("cancelled")) {
+                // The API refuses to move a cancelled job, and the step is already marked cancelled.
+                throw new JobCancelledBeforeStartException(terraformJob.getJobId());
+            }
+
             if (job.getAttributes().getStatus().equals("rejected")) {
                 log.warn("Job {} is rejected, keeping job status unchanged", terraformJob.getJobId());
             } else {

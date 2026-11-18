@@ -165,7 +165,7 @@ describe("WorkspaceTable", () => {
 
     const { container, rerender } = renderTable({ workspaces: manyWorkspaces });
 
-    fireEvent.click(screen.getByTitle("2"));
+    fireEvent.click(screen.getByRole("button", { name: "Page 2" }));
     expect(screen.getByText("bulk-workspace-20")).toBeInTheDocument();
 
     // Simulate a polling refresh: same workspaces, but a brand-new array reference.
@@ -189,7 +189,7 @@ describe("WorkspaceTable", () => {
 
     const { rerender } = renderTable({ workspaces: manyWorkspaces });
 
-    fireEvent.click(screen.getByTitle("2"));
+    fireEvent.click(screen.getByRole("button", { name: "Page 2" }));
     expect(screen.getByText("bulk-workspace-20")).toBeInTheDocument();
 
     const shrunkWorkspaces = manyWorkspaces.slice(0, 5);

@@ -103,6 +103,10 @@ export type TemplateAttributes = {
 export type Job = {
   id: string;
   attributes: JobAttributes;
+  relationships?: {
+    organization?: { data?: { id: string } };
+    workspace?: { data?: { id: string } };
+  };
 };
 
 export enum JobStatus {
@@ -324,6 +328,9 @@ export type ModuleAttributes = {
   registryPath: string;
   tagPrefix?: string;
   updatedDate?: string;
+  lastRefresh?: string | null;
+  nextRefresh?: string | null;
+  lastRefreshError?: string | null;
 } & AuditFieldBase;
 
 export type ModuleVersionAttributes = {

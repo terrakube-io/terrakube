@@ -1,4 +1,10 @@
-import { buildResourceOptions, getResourceAddress, parseState, parseOldState, setupWorkspaceIncludes } from "../workspaceDataUtils";
+import {
+  buildResourceOptions,
+  getResourceAddress,
+  parseState,
+  parseOldState,
+  setupWorkspaceIncludes,
+} from "../workspaceDataUtils";
 import { Resource } from "../../types";
 
 const baseResource: Resource = {
@@ -21,7 +27,7 @@ describe("getResourceAddress", () => {
     expect(getResourceAddress(resource)).toBe("module.instances.random_pet.example");
   });
 
-  it("returns type.name[\"string_key\"] when index is a string", () => {
+  it('returns type.name["string_key"] when index is a string', () => {
     const resource = { ...baseResource, module: "root_module", name: "users", index: "name.surname" };
     expect(getResourceAddress(resource)).toBe('random_pet.users["name.surname"]');
   });
@@ -31,7 +37,7 @@ describe("getResourceAddress", () => {
     expect(getResourceAddress(resource)).toBe("random_pet.servers[0]");
   });
 
-  it("returns module.type.name[\"string_key\"] for child module resource with index", () => {
+  it('returns module.type.name["string_key"] for child module resource with index', () => {
     const resource = { ...baseResource, module: "module.cluster", name: "node", index: "primary" };
     expect(getResourceAddress(resource)).toBe('module.cluster.random_pet.node["primary"]');
   });
@@ -261,4 +267,3 @@ describe("setupWorkspaceIncludes job and history titles", () => {
     expect(jobs[0].title).toBe("Deploy release 2.4");
   });
 });
-

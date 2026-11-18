@@ -1,4 +1,10 @@
-import { CopyOutlined, DownloadOutlined, ExportOutlined, ReloadOutlined, VerticalAlignBottomOutlined } from "@ant-design/icons";
+import {
+  CopyOutlined,
+  DownloadOutlined,
+  ExportOutlined,
+  ReloadOutlined,
+  VerticalAlignBottomOutlined,
+} from "@ant-design/icons";
 import { message, Tooltip } from "antd";
 import { useEffect, useState } from "react";
 import { useAnsiLines } from "./ansiChunks";
@@ -93,11 +99,7 @@ export const TerminalOutput = ({
           </Tooltip>
         </div>
 
-        {truncated && (
-          <div className="terminal-notice">
-            Earlier output truncated — use Download for the full log.
-          </div>
-        )}
+        {truncated && <div className="terminal-notice">Earlier output truncated — use Download for the full log.</div>}
 
         {error ? (
           <div className="terminal-notice terminal-notice--error">

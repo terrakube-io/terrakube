@@ -62,6 +62,8 @@ public class SetupWorkspaceImpl implements SetupWorkspace {
     public static final String SSH_DIRECTORY = "%s/.ssh";
     public static final String SSH_DIRECTORY_MODULE = "%s/.sshModule";
     private static final Pattern COMMIT_ID_PATTERN = Pattern.compile("^[a-fA-F0-9]{40}$");
+    private static final Pattern CONFIG_VERSION_PATH_PATTERN = Pattern.compile(
+            "^/remote/tfe/v2/configuration-versions/[a-fA-F0-9-]+/terraformContent\\.tar\\.gz$");
 
     WorkspaceSecurity workspaceSecurity;
     boolean enableRegistrySecurity;
@@ -93,7 +95,7 @@ public class SetupWorkspaceImpl implements SetupWorkspace {
             } else if (!terraformJob.getBranch().equals("remote-content")) {
                 downloadWorkspaceGit(workspaceCloneFolder, terraformJob);
             } else {
-                downloadWorkspaceTarGz(workspaceCloneFolder, terraformJob.getOrganizationId(), terraformJob.getJobId());
+                downloadWorkspaceTarGz(workspaceCloneFolder, terraformJob);
             }
 
             if (terraformJob.getModuleSshKey() != null && !terraformJob.getModuleSshKey().isEmpty()) {
@@ -420,7 +422,102 @@ public class SetupWorkspaceImpl implements SetupWorkspace {
         return configureTransport(fetchCommand, sshSessionFactory, credentialsProvider(terraformJob));
     }
 
-    private void downloadWorkspaceTarGz(File tarGzFolder, String organizationId, String jobId) throws IOException, URISyntaxException {
+    static void validateConfigurationVersionSource(String source, String configuredApiUrl) throws IOException {
+        validateConfigurationVersionSource(source, configuredApiUrl, null);
+    }
+
+    static void validateConfigurationVersionSource(
+            String source, String configuredApiUrl, String expectedHostname) throws IOException {
+        boolean hasApiUrl = configuredApiUrl != null && !configuredApiUrl.isBlank();
+        boolean hasExpectedHost = expectedHostname != null && !expectedHostname.isBlank();
+        if (source == null || source.isBlank() || (!hasApiUrl && !hasExpectedHost)) {
+            throw new IOException("Refusing to download remote-content configuration from untrusted URL: " + source);
+        }
+        URI sourceUri;
+        try {
+            sourceUri = new URI(source.trim());
+        } catch (URISyntaxException | IllegalArgumentException e) {
+            throw new IOException("Refusing to download remote-content configuration from untrusted URL: " + source, e);
+        }
+
+        if (sourceUri.getUserInfo() != null || sourceUri.getRawUserInfo() != null) {
+            throw new IOException("Refusing to download remote-content configuration from untrusted URL: " + source);
+        }
+
+        String sourceScheme = sourceUri.getScheme();
+        if (!"http".equalsIgnoreCase(sourceScheme) && !"https".equalsIgnoreCase(sourceScheme)) {
+            throw new IOException("Refusing to download remote-content configuration from untrusted URL: " + source);
+        }
+
+        if (sourceUri.getRawQuery() != null || sourceUri.getRawFragment() != null) {
+            throw new IOException("Refusing to download remote-content configuration from untrusted URL: " + source);
+        }
+
+        String rawPath = sourceUri.getRawPath();
+        String normalizedPath = sourceUri.normalize().getPath();
+        if (rawPath == null || normalizedPath == null
+                || !CONFIG_VERSION_PATH_PATTERN.matcher(rawPath).matches()
+                || !CONFIG_VERSION_PATH_PATTERN.matcher(normalizedPath).matches()) {
+            throw new IOException("Refusing to download remote-content configuration from untrusted URL: " + source);
+        }
+
+        boolean trustedOrigin = (hasExpectedHost && matchesExpectedHostname(sourceUri, expectedHostname))
+                || (hasApiUrl && matchesConfiguredApiUrl(sourceUri, configuredApiUrl));
+        if (!trustedOrigin) {
+            throw new IOException("Refusing to download remote-content configuration from untrusted URL: " + source);
+        }
+    }
+
+    private static boolean matchesExpectedHostname(URI sourceUri, String hostname) {
+        if (!"https".equalsIgnoreCase(sourceUri.getScheme())) {
+            return false;
+        }
+        try {
+            URI expectedUri = new URI("https://" + hostname.trim());
+            String sourceHost = sourceUri.getHost();
+            String expectedHost = expectedUri.getHost();
+            if (sourceHost == null || expectedHost == null || !sourceHost.equalsIgnoreCase(expectedHost)) {
+                return false;
+            }
+            if (expectedUri.getPort() != -1) {
+                return effectivePort(sourceUri) == expectedUri.getPort();
+            }
+            return sourceUri.getPort() == -1 || effectivePort(sourceUri) == defaultPort(sourceUri.getScheme());
+        } catch (URISyntaxException | IllegalArgumentException e) {
+            return false;
+        }
+    }
+
+    private static boolean matchesConfiguredApiUrl(URI sourceUri, String configuredApiUrl) {
+        try {
+            URI apiUri = new URI(configuredApiUrl.trim());
+            String sourceScheme = sourceUri.getScheme();
+            String apiScheme = apiUri.getScheme();
+            if (sourceScheme == null || apiScheme == null || !sourceScheme.equalsIgnoreCase(apiScheme)) {
+                return false;
+            }
+            String sourceHost = sourceUri.getHost();
+            String apiHost = apiUri.getHost();
+            if (sourceHost == null || apiHost == null || !sourceHost.equalsIgnoreCase(apiHost)) {
+                return false;
+            }
+            return effectivePort(sourceUri) == effectivePort(apiUri);
+        } catch (URISyntaxException | IllegalArgumentException e) {
+            return false;
+        }
+    }
+
+    private static int effectivePort(URI uri) {
+        return uri.getPort() != -1 ? uri.getPort() : defaultPort(uri.getScheme());
+    }
+
+    private static int defaultPort(String scheme) {
+        return "https".equalsIgnoreCase(scheme) ? 443 : 80;
+    }
+
+    private void downloadWorkspaceTarGz(File tarGzFolder, TerraformJob terraformJob) throws IOException, URISyntaxException {
+        String organizationId = terraformJob.getOrganizationId();
+        String jobId = terraformJob.getJobId();
         String source = terrakubeClient.getJobById(organizationId, jobId).getData().getAttributes().getOverrideSource();
         log.info("Download workspace from source: {}", source);
         if (source == null || source.isBlank()) {
@@ -429,13 +526,31 @@ public class SetupWorkspaceImpl implements SetupWorkspace {
                             + " (overrideSource is null). The workspace branch is 'remote-content' but no configuration"
                             + " has been uploaded — upload it via the terraform CLI or attach a VCS connection before running.");
         }
-        File terraformTarGz = new File(tarGzFolder.getPath() + "/terraformContent.tar.gz");
-        URL url = new URI(source).toURL();
-        URLConnection urlConnection = url.openConnection();
-        urlConnection.setRequestProperty("Authorization", "Bearer " + workspaceSecurity.generateAccessToken(1));
+        validateConfigurationVersionSource(source, this.apiUrl, terraformJob.getRemoteContentHostname());
 
-        try (OutputStream stream = new FileOutputStream(terraformTarGz)) {
-            IOUtils.copy(urlConnection.getInputStream(), stream);
+        File terraformTarGz = new File(tarGzFolder.getPath() + "/terraformContent.tar.gz");
+        URL url = new URI(source.trim()).toURL();
+        URLConnection urlConnection = url.openConnection();
+        if (!(urlConnection instanceof HttpURLConnection httpConnection)) {
+            throw new IOException("Refusing to download remote-content configuration from non-HTTP URL: " + source);
+        }
+        httpConnection.setInstanceFollowRedirects(false);
+        String scopedToken = workspaceSecurity.generateAccessToken(
+                1,
+                organizationId,
+                terraformJob.getWorkspaceId(),
+                jobId,
+                terraformJob.getStepId());
+        httpConnection.setRequestProperty("Authorization", "Bearer " + scopedToken);
+
+        int statusCode = httpConnection.getResponseCode();
+        if (statusCode >= 300 && statusCode < 400) {
+            throw new IOException("Refusing HTTP redirect (" + statusCode + ") when downloading remote-content configuration");
+        }
+
+        try (InputStream responseStream = httpConnection.getInputStream();
+             OutputStream stream = new FileOutputStream(terraformTarGz)) {
+            IOUtils.copy(responseStream, stream);
         }
 
         if (terraformTarGz.length() == 0) {

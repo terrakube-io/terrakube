@@ -1,12 +1,23 @@
 package io.terrakube.executor.service.mode.online;
 
+import feign.FeignException;
+import feign.Request;
 import io.terrakube.client.TerrakubeClient;
+import io.terrakube.client.model.generic.Resource;
+import io.terrakube.client.model.organization.job.Job;
+import io.terrakube.client.model.organization.job.JobAttributes;
+import io.terrakube.client.model.organization.job.OrganizationData;
+import io.terrakube.client.model.organization.job.Relationships;
+import io.terrakube.client.model.organization.job.WorkspaceData;
+import io.terrakube.client.model.organization.job.step.Step;
 import io.terrakube.client.model.organization.workspace.Workspace;
 import io.terrakube.client.model.organization.workspace.WorkspaceAttributes;
 import io.terrakube.client.model.response.Response;
+import io.terrakube.client.model.response.ResponseWithInclude;
 import io.terrakube.executor.service.executor.ExecutorCapacityGate;
 import io.terrakube.executor.service.executor.ExecutorJob;
 import io.terrakube.executor.service.mode.TerraformJob;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.boot.availability.AvailabilityChangeEvent;
@@ -16,11 +27,14 @@ import org.springframework.core.task.TaskRejectedException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
@@ -35,6 +49,44 @@ class OnlineModeServiceImplTest {
     private final ApplicationEventPublisher eventPublisher = publishedEvents::add;
     private final TerrakubeClient terrakubeClient = mock(TerrakubeClient.class);
 
+    @BeforeEach
+    void setUp() {
+        when(terrakubeClient.getJobById("org", "job-1"))
+                .thenReturn(jobResponse("org", "workspace", "job-1", "pending"));
+    }
+
+    private static ResponseWithInclude<Job, Step> jobResponse(
+            String organizationId, String workspaceId, String jobId, String status) {
+        JobAttributes attributes = new JobAttributes();
+        attributes.setStatus(status);
+
+        Resource wsResource = new Resource();
+        wsResource.setId(workspaceId);
+        wsResource.setType("workspace");
+        WorkspaceData workspaceData = new WorkspaceData();
+        workspaceData.setData(wsResource);
+
+        Resource orgResource = new Resource();
+        orgResource.setId(organizationId);
+        orgResource.setType("organization");
+        OrganizationData organizationData = new OrganizationData();
+        organizationData.setData(orgResource);
+
+        Relationships relationships = new Relationships();
+        relationships.setWorkspace(workspaceData);
+        relationships.setOrganization(organizationData);
+
+        Job job = new Job();
+        job.setId(jobId);
+        job.setType("job");
+        job.setAttributes(attributes);
+        job.setRelationships(relationships);
+
+        ResponseWithInclude<Job, Step> response = new ResponseWithInclude<>();
+        response.setData(job);
+        return response;
+    }
+
     @SuppressWarnings("unchecked")
     private ReadinessState stateAt(int index) {
         return ((AvailabilityChangeEvent<ReadinessState>) publishedEvents.get(index)).getState();
@@ -44,6 +96,7 @@ class OnlineModeServiceImplTest {
         TerraformJob job = new TerraformJob();
         job.setOrganizationId("org");
         job.setWorkspaceId("workspace");
+        job.setJobId("job-1");
         return job;
     }
 
@@ -112,5 +165,128 @@ class OnlineModeServiceImplTest {
 
         assertEquals(HttpStatus.ACCEPTED, result.getStatusCode());
         assertEquals("trusted/override/folder", job.getFolder());
+    }
+
+    @Test
+    void rejectsWith403AndReleasesGateWhenJobNotFoundInApi() {
+        ExecutorCapacityGate gate = new ExecutorCapacityGate();
+        OnlineModeServiceImpl subject = new OnlineModeServiceImpl(executorJob, gate, eventPublisher, terrakubeClient);
+        when(terrakubeClient.getJobById("org", "job-1")).thenReturn(null);
+
+        ResponseEntity<TerraformJob> response = subject.terraformJob(job());
+
+        assertEquals(HttpStatus.FORBIDDEN, response.getStatusCode());
+        verifyNoInteractions(executorJob);
+        assertEquals(2, publishedEvents.size());
+        assertEquals(ReadinessState.REFUSING_TRAFFIC, stateAt(0));
+        assertEquals(ReadinessState.ACCEPTING_TRAFFIC, stateAt(1));
+        assertTrue(gate.tryAcquire());
+    }
+
+    @Test
+    void rejectsWith503AndReleasesGateWhenApiLookupThrows() {
+        ExecutorCapacityGate gate = new ExecutorCapacityGate();
+        OnlineModeServiceImpl subject = new OnlineModeServiceImpl(executorJob, gate, eventPublisher, terrakubeClient);
+        when(terrakubeClient.getJobById("org", "job-1")).thenThrow(new RuntimeException("API timeout"));
+
+        ResponseEntity<TerraformJob> response = subject.terraformJob(job());
+
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, response.getStatusCode());
+        verifyNoInteractions(executorJob);
+        assertEquals(2, publishedEvents.size());
+        assertEquals(ReadinessState.REFUSING_TRAFFIC, stateAt(0));
+        assertEquals(ReadinessState.ACCEPTING_TRAFFIC, stateAt(1));
+        assertTrue(gate.tryAcquire());
+    }
+
+    @Test
+    void rejectsWith403AndReleasesGateWhenApiReturns404() {
+        ExecutorCapacityGate gate = new ExecutorCapacityGate();
+        OnlineModeServiceImpl subject = new OnlineModeServiceImpl(executorJob, gate, eventPublisher, terrakubeClient);
+        Request feignRequest = Request.create(
+                Request.HttpMethod.GET, "/api/v1/organization/org/job/job-1", Map.of(), null, StandardCharsets.UTF_8, null);
+        when(terrakubeClient.getJobById("org", "job-1"))
+                .thenThrow(new FeignException.NotFound("not found", feignRequest, null, Map.of()));
+
+        ResponseEntity<TerraformJob> response = subject.terraformJob(job());
+
+        assertEquals(HttpStatus.FORBIDDEN, response.getStatusCode());
+        verifyNoInteractions(executorJob);
+        assertEquals(2, publishedEvents.size());
+        assertEquals(ReadinessState.REFUSING_TRAFFIC, stateAt(0));
+        assertEquals(ReadinessState.ACCEPTING_TRAFFIC, stateAt(1));
+        assertTrue(gate.tryAcquire());
+    }
+
+    @Test
+    void rejectsWith403WhenJobBelongsToDifferentWorkspace() {
+        ExecutorCapacityGate gate = new ExecutorCapacityGate();
+        OnlineModeServiceImpl subject = new OnlineModeServiceImpl(executorJob, gate, eventPublisher, terrakubeClient);
+        when(terrakubeClient.getJobById("org", "job-1"))
+                .thenReturn(jobResponse("org", "other-workspace", "job-1", "pending"));
+
+        ResponseEntity<TerraformJob> response = subject.terraformJob(job());
+
+        assertEquals(HttpStatus.FORBIDDEN, response.getStatusCode());
+        verifyNoInteractions(executorJob);
+        assertEquals(2, publishedEvents.size());
+        assertEquals(ReadinessState.ACCEPTING_TRAFFIC, stateAt(1));
+        assertTrue(gate.tryAcquire());
+    }
+
+    @Test
+    void rejectsWith403WhenJobBelongsToDifferentOrganization() {
+        ExecutorCapacityGate gate = new ExecutorCapacityGate();
+        OnlineModeServiceImpl subject = new OnlineModeServiceImpl(executorJob, gate, eventPublisher, terrakubeClient);
+        when(terrakubeClient.getJobById("org", "job-1"))
+                .thenReturn(jobResponse("other-org", "workspace", "job-1", "pending"));
+
+        ResponseEntity<TerraformJob> response = subject.terraformJob(job());
+
+        assertEquals(HttpStatus.FORBIDDEN, response.getStatusCode());
+        verifyNoInteractions(executorJob);
+        assertTrue(gate.tryAcquire());
+    }
+
+    @Test
+    void rejectsWith403WhenJobIsInTerminalStatus() {
+        ExecutorCapacityGate gate = new ExecutorCapacityGate();
+        OnlineModeServiceImpl subject = new OnlineModeServiceImpl(executorJob, gate, eventPublisher, terrakubeClient);
+        when(terrakubeClient.getJobById("org", "job-1"))
+                .thenReturn(jobResponse("org", "workspace", "job-1", "completed"));
+
+        ResponseEntity<TerraformJob> response = subject.terraformJob(job());
+
+        assertEquals(HttpStatus.FORBIDDEN, response.getStatusCode());
+        verifyNoInteractions(executorJob);
+        assertTrue(gate.tryAcquire());
+    }
+
+    @Test
+    void rejectsWith403WhenJobIdIsMissing() {
+        ExecutorCapacityGate gate = new ExecutorCapacityGate();
+        OnlineModeServiceImpl subject = new OnlineModeServiceImpl(executorJob, gate, eventPublisher, terrakubeClient);
+        TerraformJob job = job();
+        job.setJobId(null);
+
+        ResponseEntity<TerraformJob> response = subject.terraformJob(job);
+
+        assertEquals(HttpStatus.FORBIDDEN, response.getStatusCode());
+        verifyNoInteractions(executorJob);
+        assertTrue(gate.tryAcquire());
+    }
+
+    @Test
+    void acceptsJobInRejectedStatusForOnRejectCommands() {
+        ExecutorCapacityGate gate = new ExecutorCapacityGate();
+        OnlineModeServiceImpl subject = new OnlineModeServiceImpl(executorJob, gate, eventPublisher, terrakubeClient);
+        when(terrakubeClient.getJobById("org", "job-1"))
+                .thenReturn(jobResponse("org", "workspace", "job-1", "rejected"));
+
+        TerraformJob job = job();
+        ResponseEntity<TerraformJob> response = subject.terraformJob(job);
+
+        assertEquals(HttpStatus.ACCEPTED, response.getStatusCode());
+        verify(executorJob, times(1)).createJob(job);
     }
 }

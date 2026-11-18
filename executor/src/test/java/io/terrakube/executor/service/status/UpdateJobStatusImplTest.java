@@ -253,6 +253,17 @@ public class UpdateJobStatusImplTest {
     }
 
     @Test
+    public void setRunningStatusOnCancelledJobStopsWithoutTouchingJobOrStep() {
+        stubJobWithStatus("cancelled");
+
+        Assertions.assertThrows(JobCancelledBeforeStartException.class,
+                () -> subject().setRunningStatus(terraformJob(), "0000000"));
+
+        verify(terrakubeClient, never()).updateStep(any(), anyString(), anyString(), anyString());
+        verify(terrakubeClient, never()).updateJob(any(JobRequest.class), anyString(), anyString());
+    }
+
+    @Test
     public void setRunningStatusOnActiveJobUpdatesJob() {
         stubJobWithStatus("pending");
         doReturn("output-path").when(terraformOutputPathService).getOutputPath(anyString(), anyString(), anyString());

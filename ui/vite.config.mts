@@ -1,10 +1,22 @@
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import react from "@vitejs/plugin-react";
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 import { visualizer } from "rollup-plugin-visualizer";
+import { rewriteAntdImports } from "./vite/antdSubpathImports";
 
 const projectRoot = dirname(fileURLToPath(import.meta.url));
+
+// See vite/antdSubpathImports.ts for why antd imports are rewritten.
+const antdSubpathImports = (): Plugin => ({
+  name: "antd-subpath-imports",
+  enforce: "pre",
+  transform(code, id) {
+    if (!/\/src\/.*\.(tsx?|jsx?)$/.test(id)) return null;
+    const rewritten = rewriteAntdImports(code);
+    return rewritten === code ? null : rewritten;
+  },
+});
 
 export default defineConfig(({ mode }) => {
   const isProd = mode === "production";
@@ -44,15 +56,10 @@ export default defineConfig(({ mode }) => {
       // Heavy chunks (antd, babel-standalone, icons, hcl-parser, charts) are intentionally
       // isolated and lazy-loaded; the default 500 KB warning is noise here.
       chunkSizeWarningLimit: 1500,
-      rollupOptions: {
-        output: {
-          // Preserve route-level dynamic-import boundaries. Forcing dependencies into global
-          // manual chunks made optional editors/parsers dependencies of the application entry,
-          // so the browser preloaded them before the user visited those routes.
-        },
+      rolldownOptions: {
         plugins: analyze
           ? [
-              // Treemap report at build/bundle-stats.html. Enabled via `ANALYZE=1 bun run build`
+              // Treemap report at build/bundle-stats.html. Enabled via `ANALYZE=1 yarn build`
               // so default builds stay fast (visualizer otherwise dominates plugin time).
               visualizer({
                 filename: "build/bundle-stats.html",
@@ -65,6 +72,6 @@ export default defineConfig(({ mode }) => {
           : [],
       },
     },
-    plugins: [react()],
+    plugins: [antdSubpathImports(), react()],
   };
 });

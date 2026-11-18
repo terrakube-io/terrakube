@@ -6,6 +6,7 @@ import io.terrakube.executor.service.mode.TerraformJob;
 import io.terrakube.executor.service.scripts.ScriptEngineService;
 import io.terrakube.executor.service.scripts.ScriptType;
 import io.terrakube.executor.service.shutdown.ShutdownServiceImpl;
+import io.terrakube.executor.service.status.JobCancelledBeforeStartException;
 import io.terrakube.executor.service.status.UpdateJobStatus;
 import io.terrakube.executor.service.terraform.ContextRevision;
 import io.terrakube.executor.service.terraform.TerraformExecutor;
@@ -229,6 +230,21 @@ class ExecutorJobImplTest {
         inOrder.verify(updateJobStatus).setCompletedStatus(eq(false), eq(false), eq(-1), eq(job), any(io.terrakube.executor.service.logs.StepOutputBuffer.class), any(), any(), any());
         inOrder.verify(jobExecutionWatchdog).markFree();
         inOrder.verify(executorCapacityGate).release();
+    }
+
+    @Test
+    void skipsAJobCancelledBeforeItStartsWithoutRunningOrReportingIt() throws Exception {
+        TerraformJob job = createJob("terraformApply");
+        when(setupWorkspace.prepareWorkspace(job)).thenReturn(tempDir.toFile());
+        doThrow(new JobCancelledBeforeStartException("42")).when(updateJobStatus).setRunningStatus(eq(job), any());
+
+        subject(eventPublisher).createJob(job);
+
+        verifyNoInteractions(terraformExecutor);
+        verify(updateJobStatus, never()).setCompletedStatus(anyBoolean(), anyBoolean(), anyInt(), any(), any(), any(), any(), any(),
+                anyBoolean(), any(), any(), any());
+        verify(jobExecutionWatchdog).markFree();
+        verify(executorCapacityGate).release();
     }
 
     @Test

@@ -18,6 +18,7 @@ import io.terrakube.api.plugin.state.model.organization.capacity.OrgCapacityAttr
 import io.terrakube.api.plugin.state.model.organization.capacity.OrgCapacityData;
 import io.terrakube.api.plugin.state.model.organization.capacity.OrgCapacityModel;
 import io.terrakube.api.plugin.state.model.outputs.OutputData;
+import io.terrakube.api.plugin.state.model.outputs.StateOutput;
 import io.terrakube.api.plugin.state.model.outputs.StateOutputs;
 import io.terrakube.api.plugin.state.model.plan.PlanRunData;
 import io.terrakube.api.plugin.state.model.plan.PlanRunModel;
@@ -159,6 +160,7 @@ public class RemoteTfeService {
 
     private static final String LATEST_TERRAFORM_VERSION = "latest";
     private static final int CLI_APPROVAL_STEP = 150;
+    private static final String STATE_VERSION_OUTPUT_ID_PREFIX = "wsout-";
     // HCP Terraform limits for direct tag bindings; tag.name is varchar(128) and workspacetag.tag_value varchar(256)
     private static final int TAG_KEY_MAX_LENGTH = 128;
     private static final int TAG_VALUE_MAX_LENGTH = 256;
@@ -2675,38 +2677,9 @@ public class RemoteTfeService {
             if (searchWorkspace.isPresent()) {
                 Workspace workspace = searchWorkspace.get();
                 authorizeStateRead(workspace, currentUser);
-                byte[] currentState = storageTypeService
-                        .getCurrentTerraformState(workspace.getOrganization().getId().toString(), workspaceId);
-                String state = new String(currentState, StandardCharsets.UTF_8);
-                TerraformState terraformState = new ObjectMapper().readValue(state, TerraformState.class);
-
-                terraformState.getOutputs().forEach((mapKey, mapValue) -> {
+                readCurrentStateOutputs(workspace).forEach((mapKey, mapValue) -> {
                     log.info("Processing Key output: {}", mapKey);
-
-                    OutputData outputData = new OutputData();
-                    outputData.setId(UUID.randomUUID().toString());
-                    outputData.setType("state-version-outputs");
-                    outputData.setAttributes(new HashMap());
-                    outputData.getAttributes().put("name", mapKey);
-
-                    LinkedHashMap linkedHashMap = (LinkedHashMap) mapValue;
-
-                    outputData.getAttributes().put("value", linkedHashMap.get("value"));
-
-                    if (linkedHashMap.get("sensitive") != null)
-                        outputData.getAttributes().put("sensitive", linkedHashMap.get("sensitive"));
-                    else
-                        outputData.getAttributes().put("sensitive", false);
-
-                    if (linkedHashMap.get("type") instanceof String) {
-                        outputData.getAttributes().put("type", "string");
-                        outputData.getAttributes().put("detailed-type", "string");
-                    } else {
-                        outputData.getAttributes().put("type", "object");
-                        outputData.getAttributes().put("detailed-type", linkedHashMap.get("type"));
-                    }
-                    stateOutputs.getData().add(outputData);
-
+                    stateOutputs.getData().add(toStateVersionOutput(workspace, mapKey, mapValue));
                 });
             }
         } catch (StorageUnavailableException ex) {
@@ -2720,6 +2693,112 @@ public class RemoteTfeService {
         }
 
         return stateOutputs;
+    }
+
+    /**
+     * Reads a single output of the workspace's current state, which is how the Terraform and
+     * OpenTofu cloud backends fetch the value of every sensitive output listed by
+     * {@link #getCurrentOutputs(String, JwtAuthenticationToken)} (#3925).
+     *
+     * @return the output, or {@code null} when the id, the workspace or the output is unknown
+     */
+    StateOutput getStateVersionOutput(String outputId, JwtAuthenticationToken currentUser) {
+        if (currentUser == null) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "Unauthenticated access denied");
+        }
+        String[] workspaceIdAndName = parseStateVersionOutputId(outputId);
+        if (workspaceIdAndName == null) {
+            return null;
+        }
+        Workspace workspace = findWorkspace(workspaceIdAndName[0]);
+        if (workspace == null) {
+            return null;
+        }
+        authorizeStateRead(workspace, currentUser);
+
+        Map<String, Map<String, Object>> outputs;
+        try {
+            outputs = readCurrentStateOutputs(workspace);
+        } catch (StorageUnavailableException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            log.error("Could not read the outputs of workspace {}: {}", workspace.getId(), ex.getMessage());
+            return null;
+        }
+
+        String outputName = workspaceIdAndName[1];
+        Map<String, Object> output = outputs.get(outputName);
+        if (output == null) {
+            return null;
+        }
+        StateOutput stateOutput = new StateOutput();
+        stateOutput.setData(toStateVersionOutput(workspace, outputName, output));
+        return stateOutput;
+    }
+
+    private Map<String, Map<String, Object>> readCurrentStateOutputs(Workspace workspace) throws JsonProcessingException {
+        byte[] currentState = storageTypeService
+                .getCurrentTerraformState(workspace.getOrganization().getId().toString(), workspace.getId().toString());
+        String state = new String(currentState, StandardCharsets.UTF_8);
+        TerraformState terraformState = new ObjectMapper().readValue(state, TerraformState.class);
+        return terraformState.getOutputs() != null ? terraformState.getOutputs() : Map.of();
+    }
+
+    private OutputData toStateVersionOutput(Workspace workspace, String name, Map<String, Object> output) {
+        OutputData outputData = new OutputData();
+        outputData.setId(stateVersionOutputId(workspace.getId().toString(), name));
+        outputData.setType("state-version-outputs");
+        outputData.setAttributes(new HashMap());
+        outputData.getAttributes().put("name", name);
+
+        outputData.getAttributes().put("value", output.get("value"));
+
+        if (output.get("sensitive") != null)
+            outputData.getAttributes().put("sensitive", output.get("sensitive"));
+        else
+            outputData.getAttributes().put("sensitive", false);
+
+        // The state keeps the output type in cty's JSON form: a primitive type name such as
+        // "string", "number" or "bool", or a list such as ["list","string"] for complex types.
+        // The CLI decodes the value with detailed-type, so it must carry that type unchanged.
+        Object outputType = output.get("type");
+        outputData.getAttributes().put("type", outputType instanceof String ? "string" : "object");
+        outputData.getAttributes().put("detailed-type", outputType);
+        return outputData;
+    }
+
+    /**
+     * Output ids identify an output by its workspace and name, so they stay valid for as long as
+     * the output exists and can be resolved without storing them. They only use the characters
+     * go-tfe accepts in an id ({@code [a-zA-Z0-9._-]}), whatever the output name contains.
+     */
+    static String stateVersionOutputId(String workspaceId, String outputName) {
+        String key = workspaceId + ":" + outputName;
+        return STATE_VERSION_OUTPUT_ID_PREFIX
+                + Base64.getUrlEncoder().withoutPadding().encodeToString(key.getBytes(StandardCharsets.UTF_8));
+    }
+
+    /**
+     * @return the workspace id and the output name encoded in the id, or {@code null} when the id
+     * was not built by {@link #stateVersionOutputId(String, String)}
+     */
+    static String[] parseStateVersionOutputId(String outputId) {
+        if (outputId == null || !outputId.startsWith(STATE_VERSION_OUTPUT_ID_PREFIX)) {
+            return null;
+        }
+        String key;
+        try {
+            key = new String(Base64.getUrlDecoder().decode(outputId.substring(STATE_VERSION_OUTPUT_ID_PREFIX.length())),
+                    StandardCharsets.UTF_8);
+        } catch (IllegalArgumentException ex) {
+            return null;
+        }
+        int separator = key.indexOf(':');
+        if (separator <= 0 || separator == key.length() - 1) {
+            return null;
+        }
+        return new String[] { key.substring(0, separator), key.substring(separator + 1) };
     }
 
     public ProjectList searchOrganizationProjects(String organizationName, JwtAuthenticationToken currentUser){

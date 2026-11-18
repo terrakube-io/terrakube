@@ -211,7 +211,7 @@ export default function ProjectDetailPage({ organizationName, setOrganizationNam
     async function loadWorkspaces() {
       try {
         const result = await workspaceService.listWorkspaces(orgid!);
-        if (!result.isError) {
+        if (!result.isError && result.data) {
           const assignedCount = result.data.workspaces.filter((ws) => ws.projectId === id).length;
           setAssignedWorkspacesCount(assignedCount);
         }
@@ -231,7 +231,7 @@ export default function ProjectDetailPage({ organizationName, setOrganizationNam
     if (key === "general" && orgid && id) {
       execute();
       workspaceService.listWorkspaces(orgid).then((result) => {
-        if (!result.isError) {
+        if (!result.isError && result.data) {
           const assignedCount = result.data.workspaces.filter((ws) => ws.projectId === id).length;
           setAssignedWorkspacesCount(assignedCount);
         }

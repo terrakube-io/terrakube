@@ -5,6 +5,11 @@ import io.terrakube.executor.service.mode.TerraformJob;
 
 public interface UpdateJobStatus {
 
+    /**
+     * Reports the job as running.
+     *
+     * @throws JobCancelledBeforeStartException when the job was cancelled before this executor started it
+     */
     void setRunningStatus(TerraformJob job, String commitId);
 
     default void setCompletedStatus(boolean successful, boolean isPlan, int exitCode, TerraformJob job, StepOutputBuffer jobOutput, String jobErrorOutput, String jobPlan, String commitId) {

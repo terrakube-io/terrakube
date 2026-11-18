@@ -104,4 +104,44 @@ class LocalStorageServiceImplTest {
                     () -> localStorageService.downloadModule("org", "module", "local", "non-existent"));
         }
     }
+
+    @Test
+    void objectRoundTrip() throws IOException {
+        LocalStorageServiceImpl storage = LocalStorageServiceImpl.builder()
+                .gitService(mock(GitService.class)).registryHostname("host").build();
+        Path source = tempDir.resolve("source.zip");
+        java.nio.file.Files.writeString(source, "archive");
+
+        try (MockedStatic<FileUtils> fileUtilsMockedStatic = Mockito.mockStatic(FileUtils.class)) {
+            fileUtilsMockedStatic.when(FileUtils::getUserDirectoryPath).thenReturn(tempDir.toAbsolutePath().toString());
+            String key = "mirror/registry.terraform.io/hashicorp/random/index.json";
+
+            assertFalse(storage.objectExists(key));
+            assertTrue(storage.readObject(key).isEmpty());
+            storage.writeObject(key, source, "application/json");
+            storage.writeObject(key, source, "application/json");
+
+            assertTrue(storage.objectExists(key));
+            try (java.io.InputStream in = storage.readObject(key).orElseThrow()) {
+                assertEquals("archive", new String(in.readAllBytes()));
+            }
+            assertTrue(java.nio.file.Files.isRegularFile(
+                    tempDir.resolve(".terraform-spring-boot/local/mirror/registry.terraform.io/hashicorp/random/index.json")));
+            assertTrue(storage.presignObject(key).isEmpty());
+        }
+    }
+
+    @Test
+    void keyEscapingBaseIsRejected() {
+        LocalStorageServiceImpl storage = LocalStorageServiceImpl.builder()
+                .gitService(mock(GitService.class)).registryHostname("host").build();
+
+        try (MockedStatic<FileUtils> fileUtilsMockedStatic = Mockito.mockStatic(FileUtils.class)) {
+            fileUtilsMockedStatic.when(FileUtils::getUserDirectoryPath).thenReturn(tempDir.toAbsolutePath().toString());
+
+            assertThrows(IllegalArgumentException.class, () -> storage.readObject("mirror/../../outside.json"));
+            assertThrows(IllegalArgumentException.class, () -> storage.objectExists("/etc/passwd"));
+            assertThrows(IllegalArgumentException.class, () -> storage.writeObject("..", tempDir, "x"));
+        }
+    }
 }
