@@ -292,10 +292,11 @@ public class ExecutorService {
                 persistentExecutorService.send(job, executorContext);
             }
         } catch (ExecutorUnavailableException e) {
-            // The executor could not be reached, so this is the one outcome that may be retried.
-            // Any other failure leaves the claim in place: the submission may have gone through,
-            // and the job is failed rather than sent again.
-            if (lease != null) {
+            // Release the claim immediately only for pre-acceptance failures (connection refused,
+            // DNS, HTTP 503). Ambiguous post-send failures (read timeout, 502/504) retain the 5m
+            // claim so non-idempotent steps (terraformApply) cannot be double-dispatched while an
+            // executor is still cloning the repo, while still recovering once the claim TTL expires.
+            if (lease != null && !e.mayHaveBeenAccepted()) {
                 lease.releaseDispatchClaim(stepId);
             }
             throw e;

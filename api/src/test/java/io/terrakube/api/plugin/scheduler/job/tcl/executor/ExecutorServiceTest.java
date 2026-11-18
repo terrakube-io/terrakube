@@ -905,6 +905,20 @@ class ExecutorServiceTest {
     }
 
     @Test
+    void theClaimIsKeptWhenExecutorUnavailableMayHaveBeenAccepted() throws Exception {
+        dispatchableJob();
+        io.terrakube.api.plugin.scheduler.ExecutionLeaseContext.bind(lease);
+        when(lease.claimDispatch("apply-step")).thenReturn(true);
+        org.mockito.Mockito.doThrow(new ExecutorUnavailableException("read timeout", null, true))
+                .when(persistentExecutorService).send(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+
+        assertThatThrownBy(() -> executorService.execute(job, "apply-step", flow(FlowType.terraformApply)))
+                .isInstanceOf(ExecutorUnavailableException.class);
+
+        verify(lease, never()).releaseDispatchClaim(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
     void theClaimIsKeptWhenTheOutcomeOfTheSubmissionIsUnknown() throws Exception {
         dispatchableJob();
         io.terrakube.api.plugin.scheduler.ExecutionLeaseContext.bind(lease);

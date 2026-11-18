@@ -239,6 +239,10 @@ public class ScheduleJob implements org.quartz.Job {
     }
 
     private boolean doRunExecution(Job job) {
+        return doRunExecution(job, true);
+    }
+
+    private boolean doRunExecution(Job job, boolean refreshWorkspace) {
         int jobId = job.getId();
         Optional<InactiveJobsProperties.Expiry> expired = inactiveJobsProperties.expiryOf(job, new Date(System.currentTimeMillis()), jobRepository);
         if (expired.isPresent()) {
@@ -346,7 +350,9 @@ public class ScheduleJob implements org.quartz.Job {
                     log.info("Job {} Status {}", job.getId(), job.getStatus());
                     break;
             }
-            updateWorkspaceStatus(job);
+            if (refreshWorkspace) {
+                updateWorkspaceStatus(job);
+            }
         }
         return deschedule;
     }
@@ -603,20 +609,82 @@ public class ScheduleJob implements org.quartz.Job {
         }
         try {
             executorService.execute(job, stepId, flow);
-            onDispatchSucceeded(job);
-            scheduleJobService.wakeQueueHead();
+            return onDispatchSucceeded(job, stepId);
         } catch (DispatchNotClaimedException e) {
-            log.warn("Job {} Step {} was not dispatched, will retry: {}", job.getId(), stepId, e.getMessage());
+            log.info("Job {} Step {} was not dispatched, will retry: {}", job.getId(), stepId, e.getMessage());
             return false;
         } catch (ExecutorUnavailableException e) {
-            log.warn("No executor available for Job {} Step {}, will retry: {}", job.getId(), stepId, e.getMessage());
+            if (e.mayHaveBeenAccepted()) {
+                Optional<Boolean> recovered = reconcileProgressedDispatch(job, stepId, false);
+                if (recovered.isPresent()) {
+                    return recovered.get();
+                }
+            }
+            log.warn("No executor available for Job {} Step {} (mayHaveBeenAccepted={}), will retry: {}",
+                    job.getId(), stepId, e.mayHaveBeenAccepted(), e.getMessage());
             return false;
         } catch (DispatchRetryableException e) {
             return onDispatchFailedRetryable(job, stepId, e);
         } catch (ExecutionException e) {
-            errorJobAtStep(job, stepId, e);
+            return errorJobAtStep(job, stepId, e);
         }
-        return true;
+    }
+
+    // Reconciles from authoritative DB state when an atomic post-dispatch CAS (markDispatched /
+    // failDispatched) matched 0 rows, or when an ambiguous post-send timeout occurred while this
+    // worker held ExecutionLease (causing JobManageHook's trigger to skip).
+    private Optional<Boolean> reconcileProgressedDispatch(Job job, String stepId, boolean casRejected) {
+        Job liveJob = jobRepository.findById(job.getId()).orElse(null);
+        if (liveJob != null && liveJob.getStatus() == JobStatus.cancelled) {
+            job.setStatus(JobStatus.cancelled);
+            log.warn("Job {} was cancelled while it was being dispatched, keeping it cancelled", job.getId());
+            updateJobStepsWithStatus(job.getId(), JobStatus.cancelled);
+            return Optional.of(true);
+        }
+        Step liveStep = findStep(stepId);
+        boolean stepProgressed = liveStep != null && liveStep.getStatus() != null && liveStep.getStatus() != JobStatus.pending;
+        boolean jobMoved = liveJob != null && liveJob.getStatus() != null
+                && liveJob.getStatus() != JobStatus.pending && liveJob.getStatus() != JobStatus.approved;
+        if (!casRejected && !stepProgressed && !jobMoved) {
+            return Optional.empty();
+        }
+        scheduleJobService.wakeQueueHead();
+        if (liveJob != null && liveJob.getStatus() != null) {
+            job.setStatus(liveJob.getStatus());
+        }
+        if (liveJob == null || !isStepTerminal(liveStep)
+                || job.getStatus() == JobStatus.running || job.getStatus() == JobStatus.queue) {
+            log.info("Job {} Step {} is already in flight after dispatch (jobStatus={}, stepStatus={}), leaving live state as is",
+                    job.getId(), stepId, job.getStatus(), liveStep != null ? liveStep.getStatus() : null);
+            return Optional.of(true);
+        }
+        log.warn("Job {} Step {} already finished in database (jobStatus={}, stepStatus={}) during dispatch; advancing from live state",
+                job.getId(), stepId, liveJob.getStatus(), liveStep.getStatus());
+        if (liveJob.getStatus() == JobStatus.waitingApproval || liveJob.getStatus() == JobStatus.noChanges) {
+            return Optional.of(true);
+        }
+        // Safe from same-step recursion: liveStep is strictly terminal (!= pending) here, whereas
+        // TclService.getPendingSteps only selects steps with status == pending.
+        boolean deschedule = liveJob.getStatus() == JobStatus.pending && !liveJob.isPlanChanges()
+                ? reconcileOutOfSteps(liveJob)
+                : doRunExecution(liveJob, false);
+        job.setStatus(liveJob.getStatus());
+        return Optional.of(deschedule);
+    }
+
+    private static boolean isStepTerminal(Step step) {
+        return step != null && step.getStatus() != null
+                && step.getStatus() != JobStatus.pending
+                && step.getStatus() != JobStatus.queue
+                && step.getStatus() != JobStatus.running;
+    }
+
+    private Step findStep(String stepId) {
+        try {
+            return stepRepository.findById(UUID.fromString(stepId)).orElse(null);
+        } catch (IllegalArgumentException ex) {
+            return null;
+        }
     }
 
     private boolean isDispatchDeferred(Job job) {
@@ -627,20 +695,13 @@ public class ScheduleJob implements org.quartz.Job {
         return nextRetryAt != null && nextRetryAt.after(new Date());
     }
 
-    private void onDispatchSucceeded(Job job) {
-        // A conditional update, not a save of this worker's copy of the job: the job can be
-        // cancelled while the executor is still answering, and a save would write the status
-        // loaded before the dispatch back over the cancel, so the cancelled run would go on.
+    private boolean onDispatchSucceeded(Job job, String stepId) {
+        // Atomic CAS on (jobId, stepId): transitions to queue only while the job is still
+        // pending/approved AND stepId is still pending. If cancelled or already progressed on
+        // the executor, markDispatched matches 0 rows and reconcileProgressedDispatch recovers.
         Date now = new Date();
-        if (jobRepository.markDispatched(job.getId(), now) == 0) {
-            jobRepository.findById(job.getId()).map(Job::getStatus).ifPresent(job::setStatus);
-            if (job.getStatus() == JobStatus.cancelled) {
-                log.warn("Job {} was cancelled while it was being dispatched, keeping it cancelled", job.getId());
-                updateJobStepsWithStatus(job.getId(), JobStatus.cancelled);
-            } else {
-                log.info("Job {} is {} after its dispatch, leaving its status as it is", job.getId(), job.getStatus());
-            }
-            return;
+        if (jobRepository.markDispatched(job.getId(), UUID.fromString(stepId), now) == 0) {
+            return reconcileProgressedDispatch(job, stepId, true).orElse(true);
         }
         job.setStatus(JobStatus.queue);
         // Dispatch finally succeeded - the update above also cleared stale backoff bookkeeping
@@ -650,6 +711,8 @@ public class ScheduleJob implements org.quartz.Job {
         job.setDispatchLastError(null);
         job.setUpdatedDate(now);
         jobNotificationTrigger.notifyStatusChanged(job);
+        scheduleJobService.wakeQueueHead();
+        return true;
     }
 
     // Returns false (keep the 30s trigger alive) while the retry budget still has room; true
@@ -658,8 +721,7 @@ public class ScheduleJob implements org.quartz.Job {
     // stay an unbounded wait, not consume this budget.
     private boolean onDispatchFailedRetryable(Job job, String stepId, DispatchRetryableException e) {
         if (!dispatchRetryProperties.isEnabled()) {
-            errorJobAtStep(job, stepId, e);
-            return true;
+            return errorJobAtStep(job, stepId, e);
         }
         Date now = new Date();
         DispatchRetryDecision decision = dispatchRetryCalculator.decide(job, now, e.getRetryAfter());
@@ -668,8 +730,7 @@ public class ScheduleJob implements org.quartz.Job {
             dispatchRetryMetrics.budgetExhausted();
             log.warn("Job {} Step {} exhausted its dispatch-retry budget ({} attempts), failing: {}", job.getId(),
                     stepId, decision.newFailureCount(), e.getMessage());
-            errorJobAtStep(job, stepId, e);
-            return true;
+            return errorJobAtStep(job, stepId, e);
         }
         job.setDispatchFailureCount(decision.newFailureCount());
         job.setDispatchFirstFailureAt(decision.firstFailureAt());
@@ -705,23 +766,22 @@ public class ScheduleJob implements org.quartz.Job {
         }
     }
 
-    private void errorJobAtStep(Job job, String stepId, Throwable e) {
+    private boolean errorJobAtStep(Job job, String stepId, Throwable e) {
+        UUID stepUuid = UUID.fromString(stepId);
+        if (jobRepository.failDispatched(job.getId(), stepUuid, new Date()) == 0) {
+            return reconcileProgressedDispatch(job, stepId, true).orElse(true);
+        }
+        List<Step> jobSteps = stepRepository.findByJobId(job.getId());
         String logMessage = String.format(
             "Error when sending context to executor marking job %s as failed, step count %s",
             job.getId(),
-            stepRepository.findByJobId(job.getId()).size()
+            jobSteps.size()
         );
         log.error(logMessage, e);
         job.setStatus(JobStatus.failed);
-        jobRepository.save(job);
         jobNotificationTrigger.notifyStatusChanged(job);
-        Step step = null;
-        try {
-            step = stepRepository.findById(UUID.fromString(stepId)).orElse(null);
-        } catch (UnsupportedOperationException | NoSuchMethodError ex) {
-            step = stepRepository.getReferenceById(UUID.fromString(stepId));
-        }
-        if (step != null) {
+        Step step = findStep(stepId);
+        if (step != null && step.getStatus() == JobStatus.pending) {
             String rawMessage = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
             String formatted = String.format("Error sending to executor: %s", rawMessage);
             String message = formatted.substring(0, Math.min(formatted.length(), 127));
@@ -730,6 +790,7 @@ public class ScheduleJob implements org.quartz.Job {
         }
         updateJobStepsWithStatus(job.getId(), JobStatus.failed);
         updateJobStatusOnVcs(job, JobStatus.unknown);
+        return true;
     }
 
     // Takes the raw job id, not the entity: the orphaned-trigger path (see execute) calls this
