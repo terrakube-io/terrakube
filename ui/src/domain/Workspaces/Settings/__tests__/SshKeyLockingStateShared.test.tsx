@@ -170,12 +170,9 @@ describe("WorkspaceStateShared", () => {
 
   it("switches between organization and project access and saves only the selected scope", async () => {
     (axiosInstance.post as jest.Mock).mockResolvedValue({ status: 200 });
-    render(
-      <WorkspaceStateShared
-        workspace={workspace({ globalRemoteState: true, projectRemoteState: false })}
-        manageWorkspace
-      />
-    );
+    const current = workspace({ globalRemoteState: true, projectRemoteState: false });
+    current.relationships.project = { data: { id: "project-1" } };
+    render(<WorkspaceStateShared workspace={current} manageWorkspace />);
 
     const organization = screen.getByRole("checkbox", {
       name: /all workspaces in the organization/,
@@ -204,6 +201,46 @@ describe("WorkspaceStateShared", () => {
     });
   });
 
+  it("disables project access without a project and preserves organization access", () => {
+    render(
+      <WorkspaceStateShared
+        workspace={workspace({ globalRemoteState: true, projectRemoteState: false })}
+        manageWorkspace
+      />
+    );
+    const project = screen.getByRole("checkbox", { name: /all workspaces in this project/ });
+    expect(project).toBeDisabled();
+    expect(screen.getByText(/This workspace is not in a project/)).toBeInTheDocument();
+    fireEvent.click(project);
+    expect(screen.getByRole("checkbox", { name: /all workspaces in the organization/ })).toBeChecked();
+  });
+
+  it("allows disabling existing project access after the project is removed", async () => {
+    (axiosInstance.post as jest.Mock).mockResolvedValueOnce({ status: 200 });
+    render(
+      <WorkspaceStateShared
+        workspace={workspace({ globalRemoteState: false, projectRemoteState: true })}
+        manageWorkspace
+      />
+    );
+    const project = screen.getByRole("checkbox", { name: /all workspaces in this project/ });
+    expect(project).toBeEnabled();
+    expect(project).toBeChecked();
+    fireEvent.click(project);
+    fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
+    await waitFor(() => expect(axiosInstance.post).toHaveBeenCalled());
+    expect(
+      (axiosInstance.post as jest.Mock).mock.calls[0][1]["atomic:operations"][0].data.attributes.projectRemoteState
+    ).toBe(false);
+  });
+
+  it("keeps project access disabled for users without manage permission", () => {
+    const current = workspace({ globalRemoteState: false, projectRemoteState: true });
+    current.relationships.project = { data: { id: "project-1" } };
+    render(<WorkspaceStateShared workspace={current} manageWorkspace={false} />);
+    expect(screen.getByRole("checkbox", { name: /all workspaces in this project/ })).toBeDisabled();
+  });
+
   it("shows organization access only when existing data has both scopes enabled", () => {
     render(
       <WorkspaceStateShared
@@ -212,7 +249,9 @@ describe("WorkspaceStateShared", () => {
       />
     );
     expect(screen.getByRole("checkbox", { name: /all workspaces in the organization/ })).toBeChecked();
-    expect(screen.getByRole("checkbox", { name: /all workspaces in this project/ })).not.toBeChecked();
+    const project = screen.getByRole("checkbox", { name: /all workspaces in this project/ });
+    expect(project).not.toBeChecked();
+    expect(project).toBeDisabled();
   });
 
   it.each([

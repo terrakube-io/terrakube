@@ -226,9 +226,15 @@ export const WorkspaceStateShared = ({ workspace, manageWorkspace, onWorkspaceUp
             name="projectRemoteState"
             valuePropName="checked"
             label="Project access"
-            extra="All workspaces in this project, including future workspaces, can read this workspace's state."
+            extra={
+              projectId
+                ? "All workspaces in this project, including future workspaces, can read this workspace's state."
+                : "This workspace is not in a project. Add it to a project to share its state with the project."
+            }
           >
-            <Checkbox>{"Share this workspace's state with all workspaces in this project"}</Checkbox>
+            <Checkbox disabled={!manageWorkspace || (!projectId && !projectAccessEnabled)}>
+              {"Share this workspace's state with all workspaces in this project"}
+            </Checkbox>
           </Form.Item>
         </SettingsForm>
 

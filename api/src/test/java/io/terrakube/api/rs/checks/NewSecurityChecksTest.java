@@ -963,10 +963,29 @@ class NewSecurityChecksTest {
                             workspace, requestScope, Optional.of(change)));
         }
         workspace.setGlobalRemoteState(false);
+        Project project = new Project();
+        project.setId(UUID.randomUUID());
+        workspace.setProject(project);
         ChangeSpec projectChange = new ChangeSpec(null, "projectRemoteState", false, true);
         org.junit.jupiter.api.Assertions.assertDoesNotThrow(() ->
                 hook.execute(LifeCycleHookBinding.Operation.UPDATE, LifeCycleHookBinding.TransactionPhase.PRECOMMIT,
                         workspace, requestScope, Optional.of(projectChange)));
+    }
+
+    @Test
+    void testProjectSharingRequiresProjectOnCreate() {
+        WorkspaceRepository repo = mock(WorkspaceRepository.class);
+        WorkspaceManageHook hook = new WorkspaceManageHook(null, null, null, null, repo);
+        Organization organization = new Organization();
+        organization.setName("org");
+        Workspace workspace = new Workspace();
+        workspace.setOrganization(organization);
+        workspace.setGlobalRemoteState(false);
+        workspace.setProjectRemoteState(true);
+
+        org.junit.jupiter.api.Assertions.assertThrows(WorkspaceManagementException.class, () ->
+                hook.execute(LifeCycleHookBinding.Operation.CREATE, LifeCycleHookBinding.TransactionPhase.PRECOMMIT,
+                        workspace, requestScope, Optional.empty()));
     }
 
     @Test

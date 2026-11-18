@@ -98,6 +98,40 @@ class ProjectStateSharingIntegrationTest extends ServerApplicationTests {
     }
 
     @Test
+    void projectSharingRequiresProjectWhenEnabledButAllowsRemovalAndRecovery() {
+        given().headers("Authorization", "Bearer " + token, "Content-Type", "application/vnd.api+json")
+                .body("{\"data\":null}")
+                .when().patch("/api/v1/organization/" + ORG_ID + "/workspace/" + source.getId()
+                        + "/relationships/project")
+                .then().statusCode(204);
+        assertEquals(400, update("{\"globalRemoteState\":false,\"projectRemoteState\":true}"));
+        assertTrue(currentSource().isGlobalRemoteState());
+        assertFalse(currentSource().isProjectRemoteState());
+        given().headers("Authorization", "Bearer " + token, "Content-Type", "application/vnd.api+json")
+                .body("{\"data\":{\"type\":\"workspace\",\"id\":\"" + source.getId()
+                        + "\",\"attributes\":{\"globalRemoteState\":false,\"projectRemoteState\":true}}}")
+                .when().patch("/api/v1/organization/" + ORG_ID + "/workspace/" + source.getId())
+                .then().statusCode(400);
+        assertTrue(currentSource().isGlobalRemoteState());
+
+        given().headers("Authorization", "Bearer " + token, "Content-Type", "application/vnd.api+json")
+                .body("{\"data\":{\"type\":\"project\",\"id\":\"" + project.getId() + "\"}}")
+                .when().patch("/api/v1/organization/" + ORG_ID + "/workspace/" + source.getId()
+                        + "/relationships/project")
+                .then().statusCode(204);
+        assertEquals(200, update("{\"globalRemoteState\":false,\"projectRemoteState\":true}"));
+        given().headers("Authorization", "Bearer " + token, "Content-Type", "application/vnd.api+json")
+                .body("{\"data\":null}")
+                .when().patch("/api/v1/organization/" + ORG_ID + "/workspace/" + source.getId()
+                        + "/relationships/project")
+                .then().statusCode(204);
+        assertTrue(currentSource().isProjectRemoteState());
+        assertEquals(200, update("{\"projectRemoteState\":true}"));
+        assertEquals(200, update("{\"projectRemoteState\":false}"));
+        assertFalse(currentSource().isProjectRemoteState());
+    }
+
+    @Test
     void workspaceSearchIncludesProjectRelationshipForPicker() {
         given().header("Authorization", "Bearer " + token)
                 .queryParam("filter[workspace]", "name==*" + sameProject.getName() + "*")

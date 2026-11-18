@@ -52,6 +52,10 @@ public class WorkspaceManageHook implements LifeCycleHook<Workspace> {
                                 validateWorkspaceRelationships(workspace);
                             } else if ("globalRemoteState".equals(fieldName) || "projectRemoteState".equals(fieldName)) {
                                 validateStateSharing(workspace);
+                                if ("projectRemoteState".equals(fieldName)
+                                        && !Boolean.TRUE.equals(optional.get().getOriginal())) {
+                                    validateProjectForStateSharing(workspace);
+                                }
                             } else if ("sharedIds".equals(fieldName)) {
                                 validateNewSharedWorkspaces(workspace, (String) optional.get().getOriginal());
                             } else if ("deleted".equals(fieldName)) {
@@ -78,6 +82,7 @@ public class WorkspaceManageHook implements LifeCycleHook<Workspace> {
                         validateWorkspaceNameConflict(workspace);
                         validateWorkspaceRelationships(workspace);
                         validateStateSharing(workspace);
+                        validateProjectForStateSharing(workspace);
                         validateNewSharedWorkspaces(workspace, null);
 
                         if (workspace.getExecutionMode() == null) {
@@ -100,6 +105,14 @@ public class WorkspaceManageHook implements LifeCycleHook<Workspace> {
         if (workspace.isGlobalRemoteState() && workspace.isProjectRemoteState()) {
             throw new WorkspaceManagementException(HttpStatus.SC_BAD_REQUEST,
                     "Organization-wide and project-wide state sharing cannot both be enabled");
+        }
+    }
+
+    private void validateProjectForStateSharing(Workspace workspace) {
+        if (workspace.isProjectRemoteState()
+                && (workspace.getProject() == null || workspace.getProject().getId() == null)) {
+            throw new WorkspaceManagementException(HttpStatus.SC_BAD_REQUEST,
+                    "Project-wide state sharing requires the workspace to belong to a project");
         }
     }
 
