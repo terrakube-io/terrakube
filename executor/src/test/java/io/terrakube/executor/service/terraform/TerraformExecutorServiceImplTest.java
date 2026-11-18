@@ -18,6 +18,7 @@ import io.terrakube.executor.service.logs.StepOutputBuffer;
 import io.terrakube.executor.service.logs.ProcessLogs;
 import io.terrakube.executor.service.mode.TerraformJob;
 import io.terrakube.executor.service.scripts.ScriptEngineService;
+import io.terrakube.executor.service.terraform.cache.BinaryArchiveLocator;
 import io.terrakube.executor.service.terraform.cache.BinaryCacheRecoveryException;
 import io.terrakube.executor.service.terraform.cache.BinaryCacheRecoveryService;
 import io.terrakube.executor.service.terraform.structured.StructuredOutputPersistenceQueue;
@@ -40,6 +41,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Files;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -458,6 +460,25 @@ class TerraformExecutorServiceImplTest {
     }
 
     @Test
+    void jsonClientsKeepTheConfiguredReleasesUrlsAndDownloadTimeouts() {
+        TerraformExecutorServiceImpl subject = subject();
+        when(terraformClient.getTerraformReleasesUrl()).thenReturn("https://mirror.example/terraform/index.json");
+        when(terraformClient.getTofuReleasesUrl()).thenReturn("https://mirror.example/tofu/index.json");
+        when(terraformClient.getDownloadResponseTimeout()).thenReturn(Duration.ofSeconds(30));
+        when(terraformClient.getReleasesDownloadTimeout()).thenReturn(Duration.ofMinutes(1));
+        when(terraformClient.getBinaryDownloadTimeout()).thenReturn(Duration.ofMinutes(5));
+
+        for (TerraformClient client : List.of(subject.buildJsonEnabledPlanClient(),
+                subject.buildJsonEnabledApplyClient(), subject.buildJsonEnabledDestroyClient())) {
+            assertEquals("https://mirror.example/terraform/index.json", client.getTerraformReleasesUrl());
+            assertEquals("https://mirror.example/tofu/index.json", client.getTofuReleasesUrl());
+            assertEquals(Duration.ofSeconds(30), client.getDownloadResponseTimeout());
+            assertEquals(Duration.ofMinutes(1), client.getReleasesDownloadTimeout());
+            assertEquals(Duration.ofMinutes(5), client.getBinaryDownloadTimeout());
+        }
+    }
+
+    @Test
     void namesTheConfiguredTerraformReleasesUrlWhenThatListCannotBeFetched() {
         TerraformExecutorServiceImpl subject = subject();
         TerraformJob terraformJob = createJob();
@@ -527,7 +548,35 @@ class TerraformExecutorServiceImplTest {
 
         // A binary the recovery service already validated (existing-local or a restored S3 copy)
         // was never freshly downloaded by the library, so there is nothing new to upload.
-        verify(terraformState, never()).saveTerraformBinary(anyString(), anyBoolean(), any(File.class));
+        verify(terraformState, never()).saveTerraformBinary(anyString(), anyBoolean(), anyString(), anyString(), any(File.class));
+    }
+
+    @Test
+    void uploadsAFreshlyDownloadedBinaryToCloudStorageUnderThisExecutorsOsAndArchitecture() throws Exception {
+        TerraformExecutorServiceImpl subject = spy(subject());
+        TerraformJob terraformJob = createJob();
+        File binaryFile = new File(tempDir.toFile(), "terraform");
+
+        TerraformDownloader downloader = Mockito.mock(TerraformDownloader.class);
+        when(terraformClient.createTerraformDownloader()).thenReturn(downloader);
+        when(downloader.resolveTerraformVersion("1.9.0")).thenReturn("1.9.0");
+        when(downloader.getTerraformBinaryPath("1.9.0", false)).thenReturn(binaryFile.getAbsolutePath());
+        when(binaryCacheRecoveryService.resolve("1.9.0", false)).thenReturn(
+                new BinaryCacheRecoveryService.Resolution(binaryFile, false, "local-download"));
+        when(binaryCacheRecoveryService.isValidExecutable(binaryFile)).thenReturn(true);
+        when(terraformClient.init(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(true));
+        // Without this, the real JSON plan client fetches the live release lists over the network.
+        TerraformClient jsonPlanClient = Mockito.mock(TerraformClient.class);
+        when(jsonPlanClient.planDetailExitCode(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(0));
+        doReturn(jsonPlanClient).when(subject).buildJsonEnabledPlanClient();
+
+        subject.plan(terraformJob, tempDir.toFile(), false);
+
+        // Executors of another architecture can share the same storage, so the binary must only
+        // ever be restored by executors that can run it.
+        verify(terraformState).saveTerraformBinary("1.9.0", false, BinaryArchiveLocator.os(), BinaryArchiveLocator.arch(), binaryFile);
     }
 
     @Test
@@ -548,6 +597,67 @@ class TerraformExecutorServiceImplTest {
         // A cache that is known to be broken must never reach the shell invocation that produces
         // the opaque "No such file or directory" failure the whole feature exists to avoid.
         verify(terraformClient, never()).init(any(TerraformProcessData.class), any(Consumer.class), any());
+    }
+
+    @Test
+    void installBinaryDownloadsTheJobsTerraformVersionAndCachesIt() throws Exception {
+        TerraformExecutorServiceImpl subject = subject();
+        TerraformJob terraformJob = createJob();
+        File binaryFile = new File(tempDir.toFile(), "terraform");
+
+        TerraformDownloader downloader = Mockito.mock(TerraformDownloader.class);
+        when(terraformClient.createTerraformDownloader()).thenReturn(downloader);
+        when(downloader.resolveTerraformVersion("1.9.0")).thenReturn("1.9.0");
+        when(downloader.getTerraformBinaryPath("1.9.0", false)).thenReturn(binaryFile.getAbsolutePath());
+        when(downloader.downloadTerraformVersion("1.9.0")).thenReturn(binaryFile.getAbsolutePath());
+        when(binaryCacheRecoveryService.resolve("1.9.0", false)).thenReturn(
+                new BinaryCacheRecoveryService.Resolution(binaryFile, false, "local-download"));
+        when(binaryCacheRecoveryService.isValidExecutable(binaryFile)).thenReturn(true);
+
+        subject.installBinary(terraformJob);
+
+        verify(downloader).downloadTerraformVersion("1.9.0");
+        verify(downloader, never()).downloadTofuVersion(anyString());
+        // Same as after init: a freshly downloaded binary is cached for the next executor.
+        verify(terraformState).saveTerraformBinary("1.9.0", false, BinaryArchiveLocator.os(), BinaryArchiveLocator.arch(), binaryFile);
+    }
+
+    @Test
+    void installBinaryDownloadsTheResolvedTofuVersion() throws Exception {
+        TerraformExecutorServiceImpl subject = subject();
+        TerraformJob terraformJob = createJob();
+        terraformJob.setTofu(true);
+        terraformJob.setTerraformVersion("~> 1.10");
+        File binaryFile = new File(tempDir.toFile(), "tofu");
+
+        TerraformDownloader downloader = Mockito.mock(TerraformDownloader.class);
+        when(terraformClient.createTerraformDownloader()).thenReturn(downloader);
+        when(downloader.resolveTofuVersion("~> 1.10")).thenReturn("v1.10.6");
+        when(downloader.resolveTofuVersion("1.10.6")).thenReturn("v1.10.6");
+        when(downloader.downloadTofuVersion("1.10.6")).thenReturn(binaryFile.getAbsolutePath());
+        when(binaryCacheRecoveryService.resolve("v1.10.6", true)).thenReturn(
+                new BinaryCacheRecoveryService.Resolution(binaryFile, true, "s3"));
+
+        subject.installBinary(terraformJob);
+
+        // Scripts get the concrete version, which is also the directory BashEngine puts on their PATH.
+        assertEquals("1.10.6", terraformJob.getTerraformVersion());
+        verify(downloader).downloadTofuVersion("1.10.6");
+        verify(downloader, never()).downloadTerraformVersion(anyString());
+        // Restored from cloud storage, so there is nothing new to upload.
+        verify(terraformState, never()).saveTerraformBinary(anyString(), anyBoolean(), anyString(), anyString(), any(File.class));
+    }
+
+    @Test
+    void installBinaryDoesNothingWhenTheJobHasNoVersion() throws Exception {
+        TerraformExecutorServiceImpl subject = subject();
+        TerraformJob terraformJob = createJob();
+        terraformJob.setTerraformVersion(null);
+
+        subject.installBinary(terraformJob);
+
+        verify(terraformClient, never()).createTerraformDownloader();
+        verify(terraformState, never()).saveTerraformBinary(anyString(), anyBoolean(), anyString(), anyString(), any(File.class));
     }
 
     @Test
@@ -2275,5 +2385,65 @@ class TerraformExecutorServiceImplTest {
     // Step output travels in a buffer that may have moved to a file.
     private static String outputOf(ExecutorJobResult result) {
         return result.getOutputBuffer().toString();
+    }
+
+    @Test
+    void planWritesPlanJsonBeforeSaveTerraformPlanEvenWhenNoPoliciesAreAttached() throws Exception {
+        TerraformExecutorServiceImpl subject = spy(subject());
+        TerraformJob terraformJob = createJob();
+
+        when(terraformClient.init(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(true));
+        TerraformClient jsonPlanClient = mock(TerraformClient.class);
+        when(jsonPlanClient.planDetailExitCode(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(2));
+        doReturn(jsonPlanClient).when(subject).buildJsonEnabledPlanClient();
+        when(planStructuredOutputService.getPlanAsJson(eq(terraformJob), any(File.class)))
+                .thenReturn("{\"format_version\":\"1.2\",\"resource_changes\":[]}");
+
+        List<String> capturedPlanJson = new ArrayList<>();
+        when(terraformState.saveTerraformPlan(eq("org"), eq("workspace"), eq("42"), eq("1"), any(File.class)))
+                .thenAnswer(invocation -> {
+                    File workingDir = invocation.getArgument(4);
+                    File planJson = new File(workingDir, "plan.json");
+                    assertTrue(planJson.exists(), "plan.json must exist before saveTerraformPlan runs");
+                    capturedPlanJson.add(Files.readString(planJson.toPath()));
+                    return "https://storage.example/tfstate/org/workspace/42/1/terraformLibrary.tfPlan";
+                });
+
+        ExecutorJobResult result = subject.plan(terraformJob, tempDir.toFile(), false);
+
+        assertTrue(result.isSuccessfulExecution());
+        assertEquals(List.of("{\"format_version\":\"1.2\",\"resource_changes\":[]}"), capturedPlanJson);
+        assertEquals("https://storage.example/tfstate/org/workspace/42/1/terraformLibrary.tfPlan", result.getPlanFile());
+    }
+
+    @Test
+    void planReusesWrittenPlanJsonForInlineOpaEvaluationWithoutRecomputing() throws Exception {
+        io.terrakube.executor.service.opa.OpaExecutorService opaService = mock(io.terrakube.executor.service.opa.OpaExecutorService.class);
+        TerraformExecutorServiceImpl subject = spy(subject());
+        subject.opaExecutorService = opaService;
+        TerraformJob terraformJob = createJob();
+        io.terrakube.executor.service.mode.PolicyContext policy = new io.terrakube.executor.service.mode.PolicyContext();
+        policy.setPolicyId("policy-1");
+        terraformJob.setPolicyList(List.of(policy));
+
+        when(terraformClient.init(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(true));
+        TerraformClient jsonPlanClient = mock(TerraformClient.class);
+        when(jsonPlanClient.planDetailExitCode(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(2));
+        doReturn(jsonPlanClient).when(subject).buildJsonEnabledPlanClient();
+        when(planStructuredOutputService.getPlanAsJson(eq(terraformJob), any(File.class)))
+                .thenReturn("{\"format_version\":\"1.2\"}");
+        when(opaService.evaluateAllPolicies(eq(terraformJob), any(File.class), any(File.class), any()))
+                .thenReturn(List.of());
+
+        ExecutorJobResult result = subject.plan(terraformJob, tempDir.toFile(), false);
+
+        assertTrue(result.isSuccessfulExecution());
+        verify(planStructuredOutputService, Mockito.times(1)).getPlanAsJson(eq(terraformJob), any(File.class));
+        verify(opaService).evaluateAllPolicies(eq(terraformJob), any(File.class),
+                argThat(file -> file.exists() && "plan.json".equals(file.getName())), any());
     }
 }

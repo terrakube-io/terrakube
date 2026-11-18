@@ -6,6 +6,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.MockitoAnnotations;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -13,17 +15,25 @@ import org.springframework.http.HttpStatus;
 import graphql.AssertException;
 import io.terrakube.api.repository.PolicyEvaluationRepository;
 import io.terrakube.api.repository.PolicyOverrideRepository;
+import io.terrakube.api.repository.PolicySetRepository;
 import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.job.step.Step;
+import io.terrakube.api.rs.policy.PolicyEnforcementLevel;
 import io.terrakube.api.rs.policy.PolicyEvaluation;
 import io.terrakube.api.rs.policy.PolicyEvaluationStatus;
 import io.terrakube.api.rs.policy.PolicyOverride;
+import io.terrakube.api.rs.policy.PolicySet;
 import io.terrakube.api.rs.team.Team;
 import io.terrakube.api.rs.template.Template;
 import io.terrakube.api.rs.workspace.Workspace;
 
+import io.terrakube.api.plugin.scheduler.ScheduleJobService;
+import org.quartz.JobExecutionContext;
+import org.quartz.JobKey;
+import org.quartz.SchedulerException;
+import org.quartz.impl.matchers.GroupMatcher;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Date;
@@ -48,6 +58,9 @@ class JobTests extends ServerApplicationTests {
 
     @Autowired
     PolicyOverrideRepository policyOverrideRepository;
+
+    @Autowired
+    PolicySetRepository policySetRepository;
 
     Workspace workspace;
     Organization organization;
@@ -169,6 +182,47 @@ class JobTests extends ServerApplicationTests {
             } catch (InterruptedException e) {}
         }
         throw new AssertException(String.format("Timeout waiting for job %s to reach status %s", jobId, status));
+    }
+
+    /**
+     * Stops the scheduler from working on a job, so a test can set its status directly.
+     * Removes every Quartz job for it and waits until no run of it is in progress;
+     * otherwise a run that loaded the job earlier saves it back over the test's status.
+     */
+    private void detachFromScheduler(String jobId) throws SchedulerException {
+        String name = ScheduleJobService.PREFIX_JOB_CONTEXT + jobId;
+        Instant deadline = Instant.now().plusSeconds(10);
+        while (Instant.now().isBefore(deadline)) {
+            boolean running = false;
+            for (JobExecutionContext context : scheduler.getCurrentlyExecutingJobs()) {
+                running |= isJobContext(context.getJobDetail().getKey(), name);
+            }
+            boolean scheduled = false;
+            for (JobKey key : scheduler.getJobKeys(GroupMatcher.anyJobGroup())) {
+                if (isJobContext(key, name)) {
+                    scheduled = true;
+                    try {
+                        scheduler.deleteJob(key);
+                    } catch (SchedulerException e) {
+                        // Quartz removed or fired the trigger at the same moment; the next pass re-checks.
+                    }
+                }
+            }
+            if (!running && !scheduled) {
+                return;
+            }
+            try {
+                Thread.sleep(50);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException(e);
+            }
+        }
+        throw new AssertException(String.format("Timeout detaching job %s from the scheduler", jobId));
+    }
+
+    private static boolean isJobContext(JobKey key, String name) {
+        return key.getName().equals(name) || key.getName().startsWith(name + "_");
     }
 
     @Test
@@ -329,6 +383,35 @@ class JobTests extends ServerApplicationTests {
 
 
     @Test
+    public void executorCannotMoveACancelledJobOn() {
+        devsManageJobs(true);
+        String jobId = createJob(jobDefinition("2db36f7c-f549-4341-a789-315d47eb061d"));
+
+        // The run was cancelled after it had already been handed to an executor.
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
+                .body(statusChangePayload(jobId, JobStatus.cancelled))
+                .when()
+                .patch("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/job/" + jobId)
+                .then()
+                .statusCode(HttpStatus.NO_CONTENT.value());
+
+        // The token the executor's API client sends with its status updates.
+        String runnerToken = generateExecutorToken();
+
+        for (JobStatus reported : new JobStatus[] {JobStatus.running, JobStatus.completed}) {
+            given()
+                    .headers("Authorization", "Bearer " + runnerToken, "Content-Type", "application/vnd.api+json")
+                    .body(statusChangePayload(jobId, reported))
+                    .when()
+                    .patch("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/job/" + jobId)
+                    .then()
+                    .statusCode(HttpStatus.CONFLICT.value());
+            assertEquals(JobStatus.cancelled, jobRepository.findById(Integer.parseInt(jobId)).orElseThrow().getStatus());
+        }
+    }
+
+    @Test
     public void appointedTeamCanApproveJobWithoutManageJobPermission() throws InterruptedException {
         Template template = createTemplate("flow:\n- name: Approve\n  type: approval\n  team: TERRAKUBE_DEVELOPERS\n");
 
@@ -428,6 +511,56 @@ class JobTests extends ServerApplicationTests {
     }
 
     @Test
+    public void softPolicyViolationCanBeOverriddenViaEndpointAndApproved() throws InterruptedException {
+        PolicySet policySet = new PolicySet();
+        policySet.setName("soft-policy-" + UUID.randomUUID());
+        policySet.setEnforcementLevel(PolicyEnforcementLevel.SOFT_MANDATORY);
+        policySet.setOverrideTeam("TERRAKUBE_DEVELOPERS");
+        policySet.setOrganization(organization);
+        policySet = policySetRepository.save(policySet);
+
+        try {
+            Template template = createTemplate("flow:\n- name: Approve\n  type: approval\n  team: TERRAKUBE_DEVELOPERS\n");
+
+            devsManageJobs(true);
+            String jobId = createJob(jobDefinition(template.getId().toString()));
+            devsManageJobs(false);
+            awaitJobStatus(jobId, JobStatus.waitingApproval, Duration.ofSeconds(10));
+            Job job = jobRepository.findById(Integer.parseInt(jobId)).orElseThrow();
+            PolicyEvaluation evaluation = new PolicyEvaluation();
+            evaluation.setJob(job);
+            evaluation.setStep(stepRepository.findFirstByJobIdOrderByStepNumber(job.getId()).orElseThrow());
+            evaluation.setStatus(PolicyEvaluationStatus.FAILED);
+            evaluation.setSoftMandatoryViolations(1);
+            evaluation = policyEvaluationRepository.save(evaluation);
+
+            given()
+                    .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
+                    .body("{\"justification\":\"accepted risk\"}")
+                    .when()
+                    .post("/remote/tfe/v2/policy-checks/" + evaluation.getId() + "/actions/override")
+                    .then()
+                    .assertThat()
+                    .statusCode(HttpStatus.OK.value());
+
+            PolicyOverride savedOverride = policyOverrideRepository.findByEvaluation(evaluation).orElseThrow();
+            assertNotNull(savedOverride.getId());
+            assertEquals("accepted risk", savedOverride.getJustification());
+
+            given()
+                    .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
+                    .body(statusChangePayload(jobId, JobStatus.approved))
+                    .when()
+                    .patch("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/job/" + jobId)
+                    .then()
+                    .assertThat()
+                    .statusCode(HttpStatus.NO_CONTENT.value());
+        } finally {
+            policySetRepository.deleteById(policySet.getId());
+        }
+    }
+
+    @Test
     public void approvalIsRefusedForAHardPolicyViolationEvenWithAnOverride() throws InterruptedException {
         Template template = createTemplate("flow:\n- name: Approve\n  type: approval\n  team: TERRAKUBE_DEVELOPERS\n");
 
@@ -460,14 +593,15 @@ class JobTests extends ServerApplicationTests {
     }
 
     @Test
-    public void approvalIsRefusedForAJobThatIsNotWaitingForApproval() {
+    public void approvalIsRefusedForAJobThatIsNotWaitingForApproval() throws SchedulerException {
         devsManageJobs(true);
         String jobId = createJob(jobDefinition("2db36f7c-f549-4341-a789-315d47eb061d"));
+        detachFromScheduler(jobId);
         Job job = jobRepository.findById(Integer.parseInt(jobId)).orElseThrow();
         job.setStatus(JobStatus.running);
         jobRepository.save(job);
 
-        // The approve permission of the team is enough for Elide, so only the hook stops this.
+        // Approval permissions apply only to waitingApproval -> approved/rejected transitions.
         given()
                 .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
                 .body(statusChangePayload(jobId, JobStatus.approved))
@@ -475,12 +609,36 @@ class JobTests extends ServerApplicationTests {
                 .patch("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/job/" + jobId)
                 .then()
                 .assertThat()
-                .statusCode(HttpStatus.CONFLICT.value());
+                .statusCode(HttpStatus.FORBIDDEN.value());
 
         Job refused = jobRepository.findById(Integer.parseInt(jobId)).orElseThrow();
         assertEquals(JobStatus.running, refused.getStatus());
         assertNull(refused.getApprovedBy());
         assertNull(refused.getApprovedAt());
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = JobStatus.class, names = {"completed", "cancelled"})
+    void failedJobStatusCannotBeRewrittenByAnApprover(JobStatus requestedStatus) throws SchedulerException {
+        devsManageJobs(true);
+        String jobId = createJob(jobDefinition("2db36f7c-f549-4341-a789-315d47eb061d"));
+        detachFromScheduler(jobId);
+        Job job = jobRepository.findById(Integer.parseInt(jobId)).orElseThrow();
+        job.setStatus(JobStatus.failed);
+        jobRepository.save(job);
+
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"),
+                        "Content-Type", "application/vnd.api+json")
+                .body(statusChangePayload(jobId, requestedStatus))
+                .when()
+                .patch("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/job/" + jobId)
+                .then()
+                .assertThat()
+                .statusCode(HttpStatus.FORBIDDEN.value());
+
+        Job refused = jobRepository.findById(Integer.parseInt(jobId)).orElseThrow();
+        assertEquals(JobStatus.failed, refused.getStatus());
     }
 
     @Test
@@ -495,6 +653,48 @@ class JobTests extends ServerApplicationTests {
                 .post("/api/v1/organization/" + organization.getId() + "/job")
                 .then()
                 .statusCode(HttpStatus.CONFLICT.value());
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = JobStatus.class, names = {"waitingApproval", "completed", "failed", "cancelled"})
+    public void aJobCannotBeCreatedWithAnyNonPendingStatus(JobStatus initialStatus) {
+        devsManageJobs(true);
+        long before = jobRepository.count();
+        String body = jobDefinition("2db36f7c-f549-4341-a789-315d47eb061d")
+                .replace("\"templateReference\":", "\"status\":\"" + initialStatus.name() + "\",\"templateReference\":");
+
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
+                .body(body)
+                .post("/api/v1/organization/" + organization.getId() + "/job")
+                .then()
+                .statusCode(HttpStatus.CONFLICT.value());
+
+        assertEquals(before, jobRepository.count());
+    }
+
+    @Test
+    public void nullStatusUpdateOnWaitingApprovalDoesNotCrashWithServerError() {
+        Template template = createTemplate("flow:\n- name: Approve\n  type: approval\n");
+
+        devsManageJobs(true);
+        String jobId = createJob(jobDefinition(template.getId().toString()));
+        devsManageJobs(false);
+
+        awaitJobStatus(jobId, JobStatus.waitingApproval, Duration.ofSeconds(10));
+
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"),
+                        "Content-Type", "application/vnd.api+json")
+                .body("{\"data\":{\"type\":\"job\",\"id\":\"" + jobId + "\",\"attributes\":{\"status\":null}}}")
+                .when()
+                .patch("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/job/" + jobId)
+                .then()
+                .assertThat()
+                .statusCode(HttpStatus.FORBIDDEN.value());
+
+        Job unchanged = jobRepository.findById(Integer.parseInt(jobId)).orElseThrow();
+        assertEquals(JobStatus.waitingApproval, unchanged.getStatus());
     }
 
     @Test

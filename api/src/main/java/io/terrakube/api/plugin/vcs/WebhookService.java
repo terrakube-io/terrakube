@@ -10,6 +10,7 @@ import io.terrakube.api.plugin.security.audit.AuditActorContext;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import io.terrakube.api.plugin.scheduler.ScheduleJobService;
+import io.terrakube.api.plugin.scheduler.module.ModuleRefreshTransactions;
 import io.terrakube.api.plugin.vcs.provider.azdevops.AzDevOpsWebhookService;
 import io.terrakube.api.plugin.vcs.provider.bitbucket.BitBucketWebhookService;
 import io.terrakube.api.plugin.vcs.provider.github.GitHubWebhookService;
@@ -50,6 +51,8 @@ public class WebhookService {
     WorkspaceRepository workspaceRepository;
     PrCommentService prCommentService;
     WorkspaceBranchPolicy workspaceBranchPolicy;
+    WebhookProperties webhookProperties;
+    ModuleRefreshTransactions moduleRefreshTransactions;
     PrApplyAuthorizationService prApplyAuthorizationService;
 
     @Transactional
@@ -100,6 +103,19 @@ public class WebhookService {
         if (!webhookResult.isValid()
                 || webhookResult.getEvent().equals(String.valueOf(WebhookEventType.PING).toLowerCase()))
             return result;
+
+        if (webhookResult.getTag() != null) {
+            moduleRefreshTransactions.markDueBySource(RepoUrlNormalizer.normalize(workspace.getSource()),
+                    webhookResult.getTag());
+        }
+        if (webhookResult.isModuleOnly()) {
+            return result;
+        }
+
+        if (!WebhookEventMatcher.shouldProcessPullRequest(workspace, webhookResult,
+                webhookProperties.isPrBaseBranchFilter())) {
+            return result;
+        }
 
         try {
             if (webhookResult.isPrComment()) {
@@ -294,18 +310,7 @@ public class WebhookService {
     }
 
     private WebhookEvent findMatchingEvent(WebhookResult result, Webhook webhook) {
-        WebhookEventType eventType = result.isPrComment()
-                ? WebhookEventType.PULL_REQUEST
-                : WebhookEventType.valueOf(result.getNormalizedEvent().toUpperCase());
-
-        return webhookEventRepository
-                .findByWebhookAndEventOrderByPriorityAsc(webhook, eventType)
-                .stream()
-                .filter(webhookEvent -> checkBranch(result.getBranch(), webhookEvent)
-                        && checkFileChanges(result.getFileChanges(), webhookEvent))
-                .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException(
-                        "No valid template found for webhook event " + result.getEvent()));
+        return WebhookEventMatcher.findMatchingEvent(result, webhook, webhookEventRepository);
     }
 
     @Transactional

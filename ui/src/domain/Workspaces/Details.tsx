@@ -1,3 +1,4 @@
+import { apiUrl } from "@/config/apiUrls";
 import { ApprovalAttribution } from "@/components/display/ApprovalAttribution";
 import {
   ArrowRightOutlined,
@@ -18,7 +19,7 @@ import { useJobStatusSubscription, usePolling } from "../../hooks";
 import { BiTerminal } from "react-icons/bi";
 import { FiGitCommit } from "react-icons/fi";
 import { HiOutlineExternalLink } from "react-icons/hi";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 const ActionLoader = lazy(() => import("../../ActionLoader"));
 import { ORGANIZATION_ARCHIVE, ORGANIZATION_NAME, WORKSPACE_ARCHIVE } from "../../config/actionTypes";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
@@ -109,7 +110,6 @@ export const WorkspaceDetails = ({
   selectedTab,
   settingsSection,
 }: Props) => {
-  const navigate = useNavigate();
   const { id, runid, orgid } = useParams<Params>();
   if (orgid !== null && orgid !== undefined && orgid !== "") {
     sessionStorage.setItem(ORGANIZATION_ARCHIVE, orgid);
@@ -144,7 +144,7 @@ export const WorkspaceDetails = ({
   const [templates, setTemplates] = useState([]);
   const [lastRun, setLastRun] = useState("");
   const [executionMode, setExecutionMode] = useState("...");
-  const [agent, setAgent] = useState("...");
+  const [, setAgent] = useState("...");
   const [orgTemplates, setOrgTemplates] = useState([]);
   const [vcsProvider, setVCSProvider] = useState<VcsType>(VcsType.UNKNOWN);
   const [resources, setResources] = useState<Resource[]>([]);
@@ -287,37 +287,6 @@ export const WorkspaceDetails = ({
     setResource(record);
   };
 
-  const switchKey = (key: string) => {
-    setActiveKey(key);
-    switch (key) {
-      case "1":
-        navigate(`/organizations/${organizationId}/workspaces/${id}`);
-        break;
-      case "2":
-        setJobVisible(false);
-        navigate(`/organizations/${organizationId}/workspaces/${id}/runs`);
-        break;
-      case "3":
-        setStateDetailsVisible(false);
-        navigate(`/organizations/${organizationId}/workspaces/${id}/states`);
-        break;
-      case "4":
-        navigate(`/organizations/${organizationId}/workspaces/${id}/variables`);
-        break;
-      case "5":
-        navigate(`/organizations/${organizationId}/workspaces/${id}/schedules`);
-        break;
-      case "6":
-        navigate(`/organizations/${organizationId}/workspaces/${id}/settings`);
-        break;
-      case "7":
-        navigate(`/organizations/${organizationId}/workspaces/${id}/run-triggers`);
-        break;
-      default:
-        break;
-    }
-  };
-
   const evaluateCriteria = (criteria: any, _: any) => {
     try {
       const result = eval(criteria.filter);
@@ -402,9 +371,7 @@ export const WorkspaceDetails = ({
   };
 
   const loadPermissionSet = () => {
-    const url = `${
-      new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin
-    }/access-token/v1/teams/permissions/organization/${organizationId}`;
+    const url = `${apiUrl("")}/access-token/v1/teams/permissions/organization/${organizationId}`;
     axiosInstance
       .get(url)
       .then((response) => {
@@ -415,9 +382,9 @@ export const WorkspaceDetails = ({
 
         if (id === undefined || id === null) setPermissionsLoaded(true);
         if (id !== undefined && id !== null) {
-          const urlWorkspaceAccess = `${
-            new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin
-          }/access-token/v1/teams/permissions/organization/${organizationId}/workspace/${id}`;
+          const urlWorkspaceAccess = `${apiUrl(
+            ""
+          )}/access-token/v1/teams/permissions/organization/${organizationId}/workspace/${id}`;
           axiosInstance
             .get(urlWorkspaceAccess)
             .then((response) => {
@@ -520,9 +487,7 @@ export const WorkspaceDetails = ({
       });
   };
 
-  const handleClickSettings = () => {
-    switchKey("6");
-  };
+  const workspaceSettingsPath = `/organizations/${organizationId}/workspaces/${id}/settings`;
 
   const [lockModal, lockModalContext] = Modal.useModal();
 
@@ -557,7 +522,7 @@ export const WorkspaceDetails = ({
           "Content-Type": "application/vnd.api+json",
         },
       })
-      .then((response) => {
+      .then(() => {
         loadWorkspace(true);
         const newstatus = locked ? "unlocked" : "locked";
         message.success("Workspace " + newstatus + " successfully");
@@ -597,7 +562,11 @@ export const WorkspaceDetails = ({
                     <article className="latest-run" aria-label={runCardTitle}>
                       <div className="latest-run-title">
                         <Typography.Title level={4}>
-                          <Link to={runLink(latestJob.id)} onClick={() => changeJob(latestJob.id)}>
+                          <Link
+                            to={runLink(latestJob.id)}
+                            onClick={() => changeJob(latestJob.id)}
+                            title={latestJob.title}
+                          >
                             {latestJob.title}
                           </Link>
                         </Typography.Title>
@@ -925,7 +894,7 @@ export const WorkspaceDetails = ({
                   workspace: workspace,
                   state: contextState,
                   resources: resources,
-                  apiUrl: new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin,
+                  apiUrl: apiUrl(""),
                   settings: action.settings,
                 });
                 if (settings) {
@@ -946,7 +915,7 @@ export const WorkspaceDetails = ({
                     workspace: workspace,
                     state: contextState,
                     resources: resources,
-                    apiUrl: new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin,
+                    apiUrl: apiUrl(""),
                     settings: action.settings,
                   }}
                 />
@@ -998,9 +967,9 @@ export const WorkspaceDetails = ({
               </Paragraph>
             )}
             {isSettings ? null : workspace.attributes?.description === "" ? (
-              <a className="workspace-button" onClick={handleClickSettings}>
+              <Link className="workspace-button" to={workspaceSettingsPath} onClick={() => setActiveKey("6")}>
                 Add workspace description
-              </a>
+              </Link>
             ) : (
               <Typography.Text type="secondary">{workspace.attributes.description}</Typography.Text>
             )}
@@ -1030,9 +999,9 @@ export const WorkspaceDetails = ({
                   {getIaCIconById(workspace.attributes?.iacType)}
                   <Typography.Text>
                     {getIaCNameById(workspace.attributes?.iacType)}{" "}
-                    <a onClick={handleClickSettings} className="workspace-button">
+                    <Link to={workspaceSettingsPath} onClick={() => setActiveKey("6")} className="workspace-button">
                       {workspace.attributes.terraformVersion}
-                    </a>
+                    </Link>
                   </Typography.Text>
                 </span>
                 <Typography.Text>

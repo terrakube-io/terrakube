@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 import {
   BarsOutlined,
   ExclamationCircleOutlined,
@@ -13,7 +14,7 @@ import { WorkspaceStatusFilter } from "./workspaceFilter";
 export type WorkspaceStatusPaletteEntry = {
   value: string;
   label: string;
-  icon: JSX.Element;
+  icon: ReactElement;
   color?: string;
 };
 

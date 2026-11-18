@@ -46,16 +46,18 @@ import reactor.core.publisher.Mono;
 @Slf4j
 public class GitLabWebhookService extends WebhookServiceBase {
 
+    private static final String FIELD_TARGET_BRANCH = "target_branch";
+
     private ObjectMapper objectMapper;
-    private String hostname;
+    private String apiBaseUrl;
     private WebClient.Builder webClientBuilder;
     private String uiUrl;
     private int pagesize = 25;
     private int timeout = 30;
 
-    public GitLabWebhookService(ObjectMapper objectMapper, @Value("${io.terrakube.hostname}") String hostname, @Value("${io.terrakube.ui.url}") String uiUrl, WebClient.Builder webClientBuilder, @Value("${io.terrakube.vcs.gitlab.timeout}") int timeout, @Value("${io.terrakube.vcs.gitlab.pageSize}") int pageSize) {
+    public GitLabWebhookService(ObjectMapper objectMapper, @Value("#{@publicUrls.apiBaseUrl()}") String apiBaseUrl, @Value("${io.terrakube.ui.url}") String uiUrl, WebClient.Builder webClientBuilder, @Value("${io.terrakube.vcs.gitlab.timeout}") int timeout, @Value("${io.terrakube.vcs.gitlab.pageSize}") int pageSize) {
         this.objectMapper = objectMapper;
-        this.hostname = hostname;
+        this.apiBaseUrl = apiBaseUrl;
         this.webClientBuilder = webClientBuilder;
         this.uiUrl = uiUrl;
         this.pagesize = pageSize;
@@ -161,6 +163,7 @@ public class GitLabWebhookService extends WebhookServiceBase {
                 case "update":
                     log.info("New merge request {}: {}", action, mrModel.getObjectAttributes().getTitle());
                     result.setBranch(mrModel.getObjectAttributes().getSourceBranch());
+                    result.setBaseBranch(mrModel.getObjectAttributes().getTargetBranch());
                     result.setCreatedBy("system");
                     result.setPrNumber(mrModel.getObjectAttributes().getIid());
 
@@ -208,7 +211,7 @@ public class GitLabWebhookService extends WebhookServiceBase {
         if (!oldrev.isEmpty()) {
             return true;
         }
-        return rootNode.path("changes").has("target_branch");
+        return rootNode.path("changes").has(FIELD_TARGET_BRANCH);
     }
 
     private WebhookResult handleNoteEvent(WebhookResult result, String jsonPayload, Workspace workspace) {
@@ -238,7 +241,12 @@ public class GitLabWebhookService extends WebhookServiceBase {
             result.setCommentAuthorId(rootNode.path("user").path("id").asText(""));
 
             JsonNode mrNode = rootNode.path("merge_request");
+            if (mrNode.isMissingNode() || !mrNode.has("iid")) {
+                result.setValid(false);
+                return result;
+            }
             result.setBranch(mrNode.path("source_branch").asText());
+            result.setBaseBranch(mrNode.path(FIELD_TARGET_BRANCH).asText(null));
             result.setPrNumber(mrNode.path("iid").asInt());
 
             if (mrNode.has("last_commit")) {
@@ -285,6 +293,7 @@ public class GitLabWebhookService extends WebhookServiceBase {
                     result.setValid(true);
                     result.setRelease(true);
                     result.setBranch(releaseName);
+                    result.setTag(tagName);
                     break;
                 default:
                     log.info("Release action '{}' for: {} not specifically handled", action, releaseName);
@@ -441,7 +450,7 @@ public class GitLabWebhookService extends WebhookServiceBase {
 
         String ownerAndRepo = extractOwnerAndRepoGitlab(workspace.getSource());
         String token = workspace.getVcs().getAccessToken();
-        String webhookUrl = String.format("https://%s/webhook/v1/%s", hostname, webhook.getId());
+        String webhookUrl = String.format("%s/webhook/v1/%s", apiBaseUrl, webhook.getId());
         RestTemplate restTemplate = new RestTemplate();
 
         // Create the headers
@@ -893,6 +902,10 @@ public class GitLabWebhookService extends WebhookServiceBase {
                 case "note":
                     parseNoteEvent(result, rootNode);
                     break;
+                case "tag_push":
+                    result.setTag(rootNode.path("ref").asText().replaceFirst("^refs/tags/", ""));
+                    result.setCreatedBy(rootNode.path("user_username").asText());
+                    break;
                 default:
                     result.setValid(false);
                     log.error("No valid gitlab event {}", event);
@@ -943,6 +956,7 @@ public class GitLabWebhookService extends WebhookServiceBase {
 
             if ("open".equals(action) || "update".equals(action) || "reopen".equals(action)) {
                 result.setBranch(mrModel.getObjectAttributes().getSourceBranch());
+                result.setBaseBranch(mrModel.getObjectAttributes().getTargetBranch());
                 result.setCreatedBy("system");
                 result.setPrNumber(mrModel.getObjectAttributes().getIid());
                 if (mrModel.getObjectAttributes().getLastCommit() != null) {
@@ -985,7 +999,12 @@ public class GitLabWebhookService extends WebhookServiceBase {
         result.setCommentAuthorId(rootNode.path("user").path("id").asText(""));
 
         JsonNode mrNode = rootNode.path("merge_request");
+        if (mrNode.isMissingNode() || !mrNode.has("iid")) {
+            result.setValid(false);
+            return;
+        }
         result.setBranch(mrNode.path("source_branch").asText());
+        result.setBaseBranch(mrNode.path(FIELD_TARGET_BRANCH).asText(null));
         result.setPrNumber(mrNode.path("iid").asInt());
         if (mrNode.has("last_commit")) {
             result.setCommit(mrNode.path("last_commit").path("id").asText());
@@ -1021,12 +1040,12 @@ public class GitLabWebhookService extends WebhookServiceBase {
      * are enabled.
      */
     public String createOrUpdateRepoWebhook(RepoWebhook repoWebhook, Set<WebhookEventType> eventTypes,
-            boolean hasPrWorkflow) {
+            boolean hasPrWorkflow, boolean tagEvents) {
         String remoteHookId = repoWebhook.getRemoteHookId();
         Vcs vcs = repoWebhook.getVcs();
         String token = vcs.getAccessToken();
         String ownerAndRepo = extractOwnerAndRepoGitlab(repoWebhook.getRepositoryUrl());
-        String webhookUrl = String.format("https://%s/webhook/v2/%s", hostname, repoWebhook.getId().toString());
+        String webhookUrl = String.format("%s/webhook/v2/%s", apiBaseUrl, repoWebhook.getId().toString());
 
         boolean pushEvents = eventTypes.contains(WebhookEventType.PUSH);
         boolean mergeRequestsEvents = eventTypes.contains(WebhookEventType.PULL_REQUEST);
@@ -1040,6 +1059,7 @@ public class GitLabWebhookService extends WebhookServiceBase {
                 + ",\"merge_requests_events\":" + mergeRequestsEvents
                 + ",\"releases_events\":" + releasesEvents
                 + ",\"note_events\":" + noteEvents
+                + ",\"tag_push_events\":" + tagEvents
                 + ",\"enable_ssl_verification\":false,\"token\":\"" + repoWebhook.getWebhookSecret() + "\"}";
 
         String projectId;

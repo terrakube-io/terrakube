@@ -26,10 +26,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import io.terrakube.api.plugin.execution.WorkspaceBranchPolicy;
 import io.terrakube.api.plugin.scheduler.ScheduleJobService;
+import io.terrakube.api.plugin.scheduler.module.ModuleRefreshProperties;
+import io.terrakube.api.plugin.scheduler.module.ModuleRefreshTransactions;
 import io.terrakube.api.plugin.vcs.PrApplyAuthorizationService;
 import io.terrakube.api.plugin.vcs.PrCommentService;
 import io.terrakube.api.plugin.vcs.RepoWebhookDeliveryTransactions;
 import io.terrakube.api.plugin.vcs.RepoWebhookService;
+import io.terrakube.api.plugin.vcs.WebhookProperties;
 import io.terrakube.api.plugin.vcs.WebhookResult;
 import io.terrakube.api.plugin.vcs.provider.azdevops.AzDevOpsWebhookService;
 import io.terrakube.api.plugin.vcs.provider.github.GitHubWebhookService;
@@ -144,7 +147,8 @@ class RepoWebhookJobAuditIntegrationTest extends ServerApplicationTests {
             RepoWebhookService service = new RepoWebhookService(mock(RepoWebhookRepository.class), workspaceLookup,
                     events, gitHub, mock(GitLabWebhookService.class), mock(AzDevOpsWebhookService.class),
                     jobRepository, scheduling, mock(PrCommentService.class), mock(RepoWebhookDeliveryTransactions.class),
-                    new ObjectMapper(), worker, mock(WorkspaceBranchPolicy.class),
+                    new ObjectMapper(), worker, mock(WorkspaceBranchPolicy.class), new WebhookProperties(),
+                    mock(ModuleRefreshTransactions.class), new ModuleRefreshProperties(),
                     mock(PrApplyAuthorizationService.class));
             service.processClaimedDelivery(repoWebhook, "payload", Map.of());
             var captor = ArgumentCaptor.forClass(Job.class);

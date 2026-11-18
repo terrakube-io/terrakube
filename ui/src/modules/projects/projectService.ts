@@ -15,6 +15,15 @@ export type ProjectAccessModel = {
   destroyJob: boolean;
 };
 
+// The individual permissions a team gets on every workspace of the project when its role is "custom".
+export type ProjectAccessPermissions = {
+  manageWorkspace: boolean;
+  manageState: boolean;
+  planJob: boolean;
+  approveJob: boolean;
+  destroyJob: boolean;
+};
+
 async function listProjects(organizationId: string): Promise<ApiResponse<ProjectModel[]>> {
   const body = {
     query: `{
@@ -153,7 +162,7 @@ async function deleteProject(organizationId: string, projectId: string): Promise
 }
 
 async function listProjectAccess(
-  organizationId: string,
+  _organizationId: string,
   projectId: string
 ): Promise<ApiResponse<ProjectAccessModel[]>> {
   const body = {
@@ -219,7 +228,8 @@ async function addProjectAccess(
   organizationId: string,
   projectId: string,
   teamName: string,
-  role: string
+  role: string,
+  permissions?: ProjectAccessPermissions
 ): Promise<void> {
   const body = {
     data: {
@@ -227,6 +237,7 @@ async function addProjectAccess(
       attributes: {
         name: teamName,
         role,
+        ...(permissions ?? {}),
       },
     },
   };
@@ -244,13 +255,14 @@ async function updateProjectAccess(
   organizationId: string,
   projectId: string,
   accessId: string,
-  role: string
+  role: string,
+  permissions?: ProjectAccessPermissions
 ): Promise<void> {
   const body = {
     data: {
       id: accessId,
       type: "project_access",
-      attributes: { role },
+      attributes: { role, ...(permissions ?? {}) },
     },
   };
   await axiosInstance.patch(`organization/${organizationId}/project/${projectId}/projectAccess/${accessId}`, body, {

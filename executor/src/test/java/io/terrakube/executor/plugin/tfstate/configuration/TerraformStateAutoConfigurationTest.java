@@ -9,6 +9,8 @@ import io.terrakube.executor.plugin.tfstate.TerraformStatePathService;
 import io.terrakube.executor.plugin.tfstate.aws.AwsTerraformStateImpl;
 import io.terrakube.executor.plugin.tfstate.aws.AwsTerraformStateProperties;
 import io.terrakube.executor.plugin.tfstate.azure.AzureTerraformStateProperties;
+import io.terrakube.executor.plugin.tfstate.gcp.GcpStorageClientsTest;
+import io.terrakube.executor.plugin.tfstate.gcp.GcpTerraformStateImpl;
 import io.terrakube.executor.plugin.tfstate.gcp.GcpTerraformStateProperties;
 import io.terrakube.executor.plugin.tfstate.http.HttpTerraformStateImpl;
 import io.terrakube.executor.plugin.tfstate.local.LocalTerraformStateImpl;
@@ -21,6 +23,7 @@ import software.amazon.awssdk.core.checksums.ResponseChecksumValidation;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
 
 class TerraformStateAutoConfigurationTest {
@@ -112,6 +115,57 @@ class TerraformStateAutoConfigurationTest {
 
         HttpTerraformStateImpl httpState = assertInstanceOf(HttpTerraformStateImpl.class, state);
         assertEquals(180, httpState.getTokenTtlMinutes());
+    }
+
+    @Test
+    void terraformStateBuildsGcpBackendFromAConfiguredKey() throws Exception {
+        TerraformStateAutoConfiguration config = new TerraformStateAutoConfiguration();
+        TerraformStateProperties props = new TerraformStateProperties();
+        props.setType(TerraformStateType.GcpTerraformStateImpl);
+
+        GcpTerraformStateProperties gcpProps = new GcpTerraformStateProperties();
+        gcpProps.setCredentials(GcpStorageClientsTest.serviceAccountKeyBase64());
+        gcpProps.setBucketName("test-bucket");
+
+        TerraformState state = config.terraformState(
+                mock(TerrakubeClient.class),
+                props,
+                new AzureTerraformStateProperties(),
+                new AwsTerraformStateProperties(),
+                gcpProps,
+                new TerraformStatePathService(),
+                new TerraformOutputPathService(),
+                mock(TerraformStateMetadataService.class),
+                mock(StorageRetryMetrics.class),
+                mock(WorkspaceSecurity.class)
+        );
+
+        assertInstanceOf(GcpTerraformStateImpl.class, state);
+    }
+
+    @Test
+    void terraformStateFailsStartupWhenTheGcpKeyIsInvalid() {
+        TerraformStateAutoConfiguration config = new TerraformStateAutoConfiguration();
+        TerraformStateProperties props = new TerraformStateProperties();
+        props.setType(TerraformStateType.GcpTerraformStateImpl);
+
+        GcpTerraformStateProperties gcpProps = new GcpTerraformStateProperties();
+        gcpProps.setCredentials("bm90IGEga2V5");
+        gcpProps.setBucketName("test-bucket");
+
+        // Used to log the error and leave the bean null, which only failed later with a NullPointerException.
+        assertThrows(IllegalStateException.class, () -> config.terraformState(
+                mock(TerrakubeClient.class),
+                props,
+                new AzureTerraformStateProperties(),
+                new AwsTerraformStateProperties(),
+                gcpProps,
+                new TerraformStatePathService(),
+                new TerraformOutputPathService(),
+                mock(TerraformStateMetadataService.class),
+                mock(StorageRetryMetrics.class),
+                mock(WorkspaceSecurity.class)
+        ));
     }
 
     @EnableConfigurationProperties(TerraformStateProperties.class)

@@ -1,4 +1,4 @@
-import { DateTime } from "luxon";
+import dayjs from "dayjs";
 import { formatDuration } from "@/modules/utils/dates";
 import { FlatJob, JobStatus } from "../types";
 
@@ -31,9 +31,9 @@ export function computeWorkspaceMetrics(jobs: FlatJob[]): WorkspaceMetrics | nul
   const durations = finished
     .filter((job) => TIMED_JOB_STATUSES.includes(job.status))
     .map((job) => {
-      const start = DateTime.fromISO(job.createdDate ?? "");
-      const end = DateTime.fromISO(job.updatedDate ?? "");
-      return start.isValid && end.isValid && end >= start ? end.toMillis() - start.toMillis() : null;
+      const start = dayjs(job.createdDate ?? "");
+      const end = dayjs(job.updatedDate ?? "");
+      return start.isValid() && end.isValid() && !end.isBefore(start) ? end.valueOf() - start.valueOf() : null;
     })
     .filter((ms): ms is number => ms !== null);
   const averageMs = durations.length ? durations.reduce((sum, ms) => sum + ms, 0) / durations.length : null;
@@ -42,7 +42,7 @@ export function computeWorkspaceMetrics(jobs: FlatJob[]): WorkspaceMetrics | nul
     finished
       .filter((job) => SUCCESSFUL_JOB_STATUSES.includes(job.status) && job.updatedDate)
       .map((job) => job.updatedDate!)
-      .sort((a, b) => DateTime.fromISO(b).toMillis() - DateTime.fromISO(a).toMillis())[0] ?? null;
+      .sort((a, b) => dayjs(b).valueOf() - dayjs(a).valueOf())[0] ?? null;
 
   return {
     runCount: jobs.length,

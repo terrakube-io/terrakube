@@ -2,22 +2,19 @@ package io.terrakube.api.plugin.storage.configuration;
 
 import com.azure.storage.blob.BlobServiceClient;
 import com.azure.storage.blob.BlobServiceClientBuilder;
-import com.google.auth.Credentials;
-import com.google.auth.oauth2.GoogleCredentials;
 import com.google.cloud.storage.Storage;
-import com.google.cloud.storage.StorageOptions;
 import io.terrakube.api.plugin.storage.StorageRetryMetrics;
 import io.terrakube.api.plugin.storage.StorageTypeService;
 import io.terrakube.api.plugin.storage.aws.AwsStorageTypeProperties;
 import io.terrakube.api.plugin.storage.aws.AwsStorageTypeServiceImpl;
 import io.terrakube.api.plugin.storage.azure.AzureStorageTypeProperties;
 import io.terrakube.api.plugin.storage.azure.AzureStorageTypeServiceImpl;
+import io.terrakube.api.plugin.storage.gcp.GcpStorageClients;
 import io.terrakube.api.plugin.storage.gcp.GcpStorageTypeProperties;
 import io.terrakube.api.plugin.storage.gcp.GcpStorageTypeServiceImpl;
 import io.terrakube.api.plugin.storage.local.LocalStorageTypeServiceImpl;
 import io.terrakube.api.plugin.streaming.StreamingService;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.codec.binary.Base64;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -34,8 +31,6 @@ import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.S3Configuration;
 
-import java.io.ByteArrayInputStream;
-import java.io.IOException;
 import java.net.URI;
 import java.time.Duration;
 
@@ -129,29 +124,15 @@ public class StorageTypeAutoConfiguration {
                         .build();
                 break;
             case GCP:
-                log.info("GCP Base64 {} length", gcpStorageTypeProperties.getCredentials().length());
-                Credentials gcpCredentials = null;
-                try {
-                    gcpCredentials = GoogleCredentials.fromStream(
-                            new ByteArrayInputStream(
-                                    Base64.decodeBase64(gcpStorageTypeProperties.getCredentials())
-                            )
-                    );
-                    Storage gcpStorage = StorageOptions.newBuilder()
-                            .setCredentials(gcpCredentials)
-                            .setProjectId(gcpStorageTypeProperties.getProjectId())
-                            .build()
-                            .getService();
+                Storage gcpStorage = GcpStorageClients.storage(
+                        GcpStorageClients.credentials(gcpStorageTypeProperties.getCredentials()),
+                        gcpStorageTypeProperties.getProjectId());
 
-                    storageTypeService = GcpStorageTypeServiceImpl.builder()
-                            .storage(gcpStorage)
-                            .bucketName(gcpStorageTypeProperties.getBucketName())
-                            .storageRetryMetrics(storageRetryMetrics)
-                            .build();
-                } catch (IOException e) {
-                    log.error(e.getMessage());
-                }
-
+                storageTypeService = GcpStorageTypeServiceImpl.builder()
+                        .storage(gcpStorage)
+                        .bucketName(gcpStorageTypeProperties.getBucketName())
+                        .storageRetryMetrics(storageRetryMetrics)
+                        .build();
                 break;
             default:
                 storageTypeService = LocalStorageTypeServiceImpl.builder()

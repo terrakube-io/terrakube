@@ -1,5 +1,6 @@
 package io.terrakube.registry.plugin.storage.gcp;
 
+import com.google.auth.ServiceAccountSigner;
 import com.google.cloud.storage.BlobId;
 import com.google.cloud.storage.BlobInfo;
 import com.google.cloud.storage.Storage;
@@ -77,6 +78,26 @@ class GcpStorageServiceImplPresignedTest {
         assertTrue(uriStr.contains("X-Goog-Signature"), "Should include GCS signature parameter");
     }
 
+    @Test
+    void getPresignedDownloadUrl_pathEndsInZipWithoutDoubleSlash() throws Exception {
+        java.security.KeyPairGenerator generator = java.security.KeyPairGenerator.getInstance("RSA");
+        generator.initialize(2048);
+        com.google.auth.oauth2.ServiceAccountCredentials credentials =
+                com.google.auth.oauth2.ServiceAccountCredentials.newBuilder()
+                        .setClientEmail("signer@test-project.iam.gserviceaccount.com")
+                        .setPrivateKey(generator.generateKeyPair().getPrivate())
+                        .build();
+        Storage realStorage = com.google.cloud.storage.StorageOptions.newBuilder()
+                .setProjectId("test-project").setCredentials(credentials).build().getService();
+
+        URI uri = buildService(realStorage, mock(GitService.class), true)
+                .getPresignedDownloadUrl("org", "module", "gcp", "1.0.0").orElseThrow();
+
+        assertEquals("https", uri.getScheme());
+        assertTrue(uri.getRawPath().endsWith("/module.zip"), uri.getRawPath());
+        assertFalse(uri.getRawPath().contains("//"), uri.getRawPath());
+    }
+
     // ---- getPresignedDownloadUrl: signUrl fails → StorageUnavailableException ----
 
     @Test
@@ -91,6 +112,24 @@ class GcpStorageServiceImplPresignedTest {
 
         assertThrows(StorageUnavailableException.class,
                 () -> service.getPresignedDownloadUrl("org", "module", "gcp", "1.0.0"));
+    }
+
+    // ---- getPresignedDownloadUrl: IAM refuses to sign → StorageUnavailableException with the cause ----
+
+    @Test
+    void getPresignedDownloadUrl_whenSigningIsRefused_explainsThePermissionNeeded() {
+        Storage storage = mock(Storage.class);
+        GitService gitService = mock(GitService.class);
+
+        when(storage.signUrl(any(BlobInfo.class), anyLong(), any(TimeUnit.class),
+                any(Storage.SignUrlOption.class)))
+                .thenThrow(new ServiceAccountSigner.SigningException("Failed to sign the provided bytes", null));
+
+        GcpStorageServiceImpl service = buildService(storage, gitService, true);
+
+        StorageUnavailableException e = assertThrows(StorageUnavailableException.class,
+                () -> service.getPresignedDownloadUrl("org", "module", "gcp", "1.0.0"));
+        assertTrue(e.getMessage().contains("iam.serviceAccounts.signBlob"), e.getMessage());
     }
 
     // ---- downloadModule: success ----

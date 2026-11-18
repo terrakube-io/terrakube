@@ -480,6 +480,7 @@ class OpaExecutorServiceTest {
 
         assertTrue(result.isSuccessfulExecution());
         assertEquals(0, result.getExitCode());
+        assertEquals("", result.getOutputErrorLog());
         try (StepOutputBuffer output = result.getOutputBuffer()) {
             assertEquals("policy one: passed\npolicy two: passed\n", output.toString());
         }
@@ -494,6 +495,64 @@ class OpaExecutorServiceTest {
 
         assertFalse(result.isSuccessfulExecution());
         assertEquals(1, result.getExitCode());
+        try (StepOutputBuffer output = result.getOutputBuffer()) {
+            assertEquals("No plan.json or state found for compliance evaluation.\n", output.toString());
+        }
+    }
+
+    @Test
+    void evaluateJobRestoresPlanJsonFromStorageWhenMissingLocally(@TempDir Path tempDir) throws Exception {
+        File workingDirectory = tempDir.resolve("work").toFile();
+        assertTrue(workingDirectory.mkdirs());
+        TerraformJob job = policyJob();
+
+        Mockito.when(terraformState.downloadTerraformPlanJson(
+                Mockito.eq(job.getOrganizationId()),
+                Mockito.eq(job.getWorkspaceId()),
+                Mockito.eq(job.getJobId()),
+                Mockito.eq(job.getStepId()),
+                Mockito.eq(workingDirectory))).thenAnswer(invocation -> {
+            java.nio.file.Files.writeString(workingDirectory.toPath().resolve("plan.json"), "{\"resource_changes\":[]}");
+            return true;
+        });
+
+        OpaExecutorServiceImpl subject = Mockito.spy(opaExecutorService);
+        Mockito.doAnswer(invocation -> {
+            File evaluatedPlan = invocation.getArgument(2);
+            assertTrue(evaluatedPlan.exists());
+            assertEquals("{\"resource_changes\":[]}", java.nio.file.Files.readString(evaluatedPlan.toPath()));
+            Consumer<String> output = invocation.getArgument(3);
+            output.accept("security-baseline: passed");
+            return List.of();
+        }).when(subject).evaluateAllPolicies(Mockito.eq(job), Mockito.eq(workingDirectory), Mockito.any(File.class), Mockito.any());
+
+        ExecutorJobResult result = subject.evaluateJob(job, workingDirectory);
+
+        assertTrue(result.isSuccessfulExecution());
+        assertEquals(0, result.getExitCode());
+        Mockito.verify(terraformState, Mockito.never()).downloadTerraformPlan(
+                Mockito.anyString(), Mockito.anyString(), Mockito.anyString(), Mockito.anyString(), Mockito.any(File.class));
+        try (StepOutputBuffer output = result.getOutputBuffer()) {
+            assertEquals("security-baseline: passed\n", output.toString());
+        }
+    }
+
+    @Test
+    void evaluateJobFailsWhenDownloadReportsSuccessButPlanJsonFileIsMissing(@TempDir Path tempDir) throws Exception {
+        File workingDirectory = tempDir.resolve("work").toFile();
+        assertTrue(workingDirectory.mkdirs());
+        TerraformJob job = policyJob();
+
+        Mockito.when(terraformState.downloadTerraformPlanJson(
+                job.getOrganizationId(), job.getWorkspaceId(), job.getJobId(), job.getStepId(), workingDirectory))
+                .thenReturn(true);
+
+        OpaExecutorServiceImpl subject = Mockito.spy(opaExecutorService);
+        ExecutorJobResult result = subject.evaluateJob(job, workingDirectory);
+
+        assertFalse(result.isSuccessfulExecution());
+        assertEquals(1, result.getExitCode());
+        Mockito.verify(subject, Mockito.never()).evaluateAllPolicies(Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any());
         try (StepOutputBuffer output = result.getOutputBuffer()) {
             assertEquals("No plan.json or state found for compliance evaluation.\n", output.toString());
         }

@@ -1,9 +1,30 @@
 package io.terrakube.registry.controller;
 
+import io.terrakube.client.TerrakubeClient;
+import io.terrakube.client.model.federated.ClaimsData;
+import io.terrakube.client.model.federated.Federated;
+import io.terrakube.client.model.federated.FederatedAttributes;
+import io.terrakube.client.model.federated.Relationships;
+import io.terrakube.client.model.federated.claim.FederatedClaim;
+import io.terrakube.client.model.federated.claim.FederatedClaimAttributes;
+import io.terrakube.client.model.generic.Resource;
+import io.terrakube.client.model.organization.job.Job;
+import io.terrakube.client.model.organization.job.JobAttributes;
+import io.terrakube.client.model.organization.job.WorkspaceData;
+import io.terrakube.client.model.organization.job.step.Step;
+import io.terrakube.client.model.organization.job.step.StepAttributes;
+import io.terrakube.client.model.organization.team.Team;
+import io.terrakube.client.model.organization.team.TeamAttributes;
+import io.terrakube.client.model.response.Response;
+import io.terrakube.client.model.response.ResponseWithInclude;
+import io.terrakube.registry.controller.model.provider.FileDTO;
+import io.terrakube.registry.controller.model.provider.VersionDTO;
 import io.terrakube.registry.plugin.storage.StorageService;
 import io.terrakube.registry.service.module.ModuleAuthorizationService;
 import io.terrakube.registry.service.module.ModuleDownloadTicketService;
 import io.terrakube.registry.service.module.ModuleService;
+import io.terrakube.registry.service.provider.ProviderService;
+import io.terrakube.registry.service.search.CommonSearchService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -43,6 +64,9 @@ class ModuleSecurityTest {
 
     @Mock
     private io.terrakube.registry.service.ReadMeServiceImpl readMeService;
+
+    @Mock
+    private ProviderService providerService;
 
     private ModuleDownloadTicketService ticketService;
     private MockMvc mockMvc;
@@ -228,6 +252,281 @@ class ModuleSecurityTest {
 
         nullAuthMockMvc.perform(get("/terraform/modules/v1/download/my-org/vpc/aws/1.0.0/module.zip").principal(auth))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void testRealAuthorization_RunnerTokenAndFederatedOidc_EnforceOrgAndStepScope() throws Exception {
+        CommonSearchService searchService = org.mockito.Mockito.mock(CommonSearchService.class);
+        TerrakubeClient terrakubeClient = org.mockito.Mockito.mock(TerrakubeClient.class);
+        ModuleAuthorizationService realAuthService = new ModuleAuthorizationService(
+                searchService,
+                terrakubeClient,
+                "https://dex.example.com",
+                "owner@example.com",
+                "DEX"
+        );
+        MockMvc realAuthModuleMvc = MockMvcBuilders.standaloneSetup(
+                new ModuleWebServiceImpl(moduleService, storageService, ticketService, realAuthService)
+        ).build();
+        MockMvc realAuthReadMeMvc = MockMvcBuilders.standaloneSetup(
+                new ReadMeWebServiceImpl(moduleService, readMeService, storageService, realAuthService)
+        ).build();
+
+        String myOrgId = "11111111-1111-1111-1111-111111111111";
+        String otherOrgId = "22222222-2222-2222-2222-222222222222";
+        String wsId = "33333333-3333-3333-3333-333333333333";
+        String stepId = "44444444-4444-4444-4444-444444444444";
+        when(searchService.getOrganizationId("my-org")).thenReturn(myOrgId);
+        when(searchService.getOrganizationId("other-org")).thenReturn(otherOrgId);
+        when(moduleService.getAvailableVersions("my-org", "vpc", "aws")).thenReturn(List.of("1.0.0"));
+        when(moduleService.isVersionRemoved("my-org", "vpc", "aws", "1.0.0")).thenReturn(false);
+        when(moduleService.getModuleVersionPath("my-org", "vpc", "aws", "1.0.0")).thenReturn("https://example.com");
+        when(storageService.downloadModule("my-org", "vpc", "aws", "1.0.0")).thenReturn("zip".getBytes());
+        when(readMeService.getContent(any())).thenReturn("# Readme");
+
+        ResponseWithInclude<Job, Step> activeJobResp = jobStepResponse(wsId, "running", stepId, "running");
+        ResponseWithInclude<Job, Step> completedJobResp = jobStepResponse(wsId, "running", stepId, "completed");
+
+        when(terrakubeClient.getJobById(myOrgId, "101"))
+                .thenReturn(activeJobResp)
+                .thenReturn(completedJobResp);
+
+        Authentication runnerAuth = new JwtAuthenticationToken(new Jwt(
+                "runner-jwt",
+                Instant.now(),
+                Instant.now().plusSeconds(3600),
+                Map.of("alg", "HS256"),
+                Map.of(
+                        "iss", "TerrakubeInternal",
+                        "sub", "TerrakubeInternal (EXECUTOR)",
+                        "organizationId", myOrgId,
+                        "workspaceId", wsId,
+                        "jobId", "101",
+                        "stepId", stepId
+                )
+        ));
+
+        // Active runner token allowed on own org, denied on other-org, then denied once step completes
+        realAuthModuleMvc.perform(get("/terraform/modules/v1/my-org/vpc/aws/versions").principal(runnerAuth))
+                .andExpect(status().isOk());
+        realAuthModuleMvc.perform(get("/terraform/modules/v1/other-org/vpc/aws/versions").principal(runnerAuth))
+                .andExpect(status().isForbidden());
+        realAuthReadMeMvc.perform(get("/terraform/readme/v1/other-org/vpc/aws/1.0.0/download").principal(runnerAuth))
+                .andExpect(status().isForbidden());
+        realAuthModuleMvc.perform(get("/terraform/modules/v1/my-org/vpc/aws/versions").principal(runnerAuth))
+                .andExpect(status().isForbidden());
+
+        // Federated OIDC allowed only in org where Federated.name is a Team
+        FederatedClaim fedClaim = new FederatedClaim();
+        fedClaim.setId("claim-1");
+        FederatedClaimAttributes fedClaimAttrs = new FederatedClaimAttributes();
+        fedClaimAttrs.setClaimKey("repository");
+        fedClaimAttrs.setClaimValue("acme/infra");
+        fedClaim.setAttributes(fedClaimAttrs);
+        Federated fed = new Federated();
+        fed.setId("fed-1");
+        FederatedAttributes fedAttrs = new FederatedAttributes();
+        fedAttrs.setName("github-pipeline-team");
+        fedAttrs.setIssuerUrl("https://token.actions.githubusercontent.com");
+        fedAttrs.setAudience("terrakube");
+        fed.setAttributes(fedAttrs);
+        ClaimsData claimsData = new ClaimsData();
+        claimsData.setData(List.of((Resource) fedClaim));
+        Relationships fedRels = new Relationships();
+        fedRels.setClaims(claimsData);
+        fed.setRelationships(fedRels);
+        ResponseWithInclude<List<Federated>, FederatedClaim> fedResp = new ResponseWithInclude<>();
+        fedResp.setData(List.of(fed));
+        fedResp.setIncluded(List.of(fedClaim));
+        when(terrakubeClient.getFederatedByIssuerUrlAndAudienceWithClaims(
+                "https://token.actions.githubusercontent.com", "terrakube")).thenReturn(fedResp);
+
+        Team team = new Team();
+        team.setId("team-1");
+        TeamAttributes teamAttrs = new TeamAttributes();
+        teamAttrs.setName("github-pipeline-team");
+        team.setAttributes(teamAttrs);
+        Response<List<Team>> myOrgTeams = new Response<>();
+        myOrgTeams.setData(List.of(team));
+        Response<List<Team>> otherOrgTeams = new Response<>();
+        otherOrgTeams.setData(List.of());
+        ResponseWithInclude<List<io.terrakube.client.model.organization.workspace.Workspace>, io.terrakube.client.model.organization.workspace.access.Access> emptyAccess = new ResponseWithInclude<>();
+        emptyAccess.setData(List.of());
+        emptyAccess.setIncluded(List.of());
+
+        when(terrakubeClient.getAllTeams(myOrgId)).thenReturn(myOrgTeams);
+        when(terrakubeClient.getAllTeams(otherOrgId)).thenReturn(otherOrgTeams);
+        when(terrakubeClient.getWorkspacesWithAccess(otherOrgId)).thenReturn(emptyAccess);
+
+        Authentication fedAuth = new JwtAuthenticationToken(new Jwt(
+                "fed-jwt",
+                Instant.now(),
+                Instant.now().plusSeconds(3600),
+                Map.of("alg", "RS256"),
+                Map.of(
+                        "iss", "https://token.actions.githubusercontent.com",
+                        "aud", List.of("terrakube"),
+                        "repository", "acme/infra",
+                        "email", "owner@example.com",
+                        "groups", List.of("TERRAKUBE_ADMIN")
+                )
+        ));
+
+        realAuthReadMeMvc.perform(get("/terraform/readme/v1/my-org/vpc/aws/1.0.0/download").principal(fedAuth))
+                .andExpect(status().isOk());
+        realAuthModuleMvc.perform(get("/terraform/modules/v1/other-org/vpc/aws/versions").principal(fedAuth))
+                .andExpect(status().isForbidden());
+        realAuthReadMeMvc.perform(get("/terraform/readme/v1/other-org/vpc/aws/1.0.0/download").principal(fedAuth))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void testRealAuthorization_OrgNameInjectionPayloads_ReturnForbiddenOnAllEndpoints() throws Exception {
+        CommonSearchService searchService = org.mockito.Mockito.mock(CommonSearchService.class);
+        TerrakubeClient terrakubeClient = org.mockito.Mockito.mock(TerrakubeClient.class);
+        ModuleAuthorizationService realAuthService = new ModuleAuthorizationService(
+                searchService,
+                terrakubeClient,
+                "https://dex.example.com",
+                "owner@example.com",
+                "DEX"
+        );
+        MockMvc realAuthModuleMvc = MockMvcBuilders.standaloneSetup(
+                new ModuleWebServiceImpl(moduleService, storageService, ticketService, realAuthService)
+        ).build();
+        MockMvc realAuthReadMeMvc = MockMvcBuilders.standaloneSetup(
+                new ReadMeWebServiceImpl(moduleService, readMeService, storageService, realAuthService)
+        ).build();
+        MockMvc realAuthProviderMvc = MockMvcBuilders.standaloneSetup(
+                new ProviderWebServiceImpl(providerService, realAuthService)
+        ).build();
+
+        Authentication userAuth = createJwtToken("any-team");
+        for (String injectedOrg : List.of("simple,name==aws", "simple*", "simple\"", "simple%2Cname==aws")) {
+            realAuthModuleMvc.perform(get("/terraform/modules/v1/" + injectedOrg + "/vpc/aws/versions").principal(userAuth))
+                    .andExpect(status().isForbidden());
+            realAuthModuleMvc.perform(get("/terraform/modules/v1/" + injectedOrg + "/vpc/aws/1.0.0/download").principal(userAuth))
+                    .andExpect(status().isForbidden());
+            realAuthModuleMvc.perform(get("/terraform/modules/v1/" + injectedOrg + "/vpc/aws/1.0.0/details").principal(userAuth))
+                    .andExpect(status().isForbidden());
+            realAuthModuleMvc.perform(get("/terraform/modules/v1/download/" + injectedOrg + "/vpc/aws/1.0.0/module.zip").principal(userAuth))
+                    .andExpect(status().isForbidden());
+            realAuthReadMeMvc.perform(get("/terraform/readme/v1/" + injectedOrg + "/vpc/aws/1.0.0/download").principal(userAuth))
+                    .andExpect(status().isForbidden());
+            realAuthProviderMvc.perform(get("/terraform/providers/v1/" + injectedOrg + "/random/versions").principal(userAuth))
+                    .andExpect(status().isForbidden());
+            realAuthProviderMvc.perform(get("/terraform/providers/v1/" + injectedOrg + "/random/3.0.1/download/linux/amd64").principal(userAuth))
+                    .andExpect(status().isForbidden());
+        }
+    }
+
+    @Test
+    void testRealAuthorization_ProviderEndpoints_EnforceRunnerOrgScope() throws Exception {
+        CommonSearchService searchService = org.mockito.Mockito.mock(CommonSearchService.class);
+        TerrakubeClient terrakubeClient = org.mockito.Mockito.mock(TerrakubeClient.class);
+        ModuleAuthorizationService realAuthService = new ModuleAuthorizationService(
+                searchService,
+                terrakubeClient,
+                "https://dex.example.com",
+                "owner@example.com",
+                "DEX"
+        );
+        MockMvc realAuthProviderMvc = MockMvcBuilders.standaloneSetup(
+                new ProviderWebServiceImpl(providerService, realAuthService)
+        ).build();
+
+        String awsOrgId = "11111111-1111-1111-1111-111111111111";
+        String simpleOrgId = "22222222-2222-2222-2222-222222222222";
+        String awsWsId = "33333333-3333-3333-3333-333333333333";
+        String simpleWsId = "55555555-5555-5555-5555-555555555555";
+        String awsStepId = "44444444-4444-4444-4444-444444444444";
+        String simpleStepId = "66666666-6666-6666-6666-666666666666";
+
+        when(searchService.getOrganizationId("aws")).thenReturn(awsOrgId);
+
+        VersionDTO versionDTO = new VersionDTO();
+        versionDTO.setVersion("3.0.1");
+        versionDTO.setProtocols(List.of("5.0"));
+        when(providerService.getAvailableVersions("aws", "random")).thenReturn(List.of(versionDTO));
+        when(providerService.getWarnings("aws", "random")).thenReturn(List.of());
+
+        FileDTO fileDTO = new FileDTO();
+        fileDTO.setOs("linux");
+        fileDTO.setArch("amd64");
+        fileDTO.setFilename("terraform-provider-random_3.0.1_linux_amd64.zip");
+        fileDTO.setDownload_url("https://releases.example.com/random_3.0.1.zip");
+        when(providerService.getFileInformation("aws", "random", "3.0.1", "linux", "amd64")).thenReturn(fileDTO);
+
+        when(terrakubeClient.getJobById(awsOrgId, "101"))
+                .thenReturn(jobStepResponse(awsWsId, "running", awsStepId, "running"));
+
+        Authentication simpleRunnerAuth = new JwtAuthenticationToken(new Jwt(
+                "simple-runner-jwt",
+                Instant.now(),
+                Instant.now().plusSeconds(3600),
+                Map.of("alg", "HS256"),
+                Map.of(
+                        "iss", "TerrakubeInternal",
+                        "sub", "TerrakubeInternal (EXECUTOR)",
+                        "organizationId", simpleOrgId,
+                        "workspaceId", simpleWsId,
+                        "jobId", "202",
+                        "stepId", simpleStepId
+                )
+        ));
+
+        realAuthProviderMvc.perform(get("/terraform/providers/v1/aws/random/versions").principal(simpleRunnerAuth))
+                .andExpect(status().isForbidden());
+        realAuthProviderMvc.perform(get("/terraform/providers/v1/aws/random/3.0.1/download/linux/amd64").principal(simpleRunnerAuth))
+                .andExpect(status().isForbidden());
+
+        Authentication awsRunnerAuth = new JwtAuthenticationToken(new Jwt(
+                "aws-runner-jwt",
+                Instant.now(),
+                Instant.now().plusSeconds(3600),
+                Map.of("alg", "HS256"),
+                Map.of(
+                        "iss", "TerrakubeInternal",
+                        "sub", "TerrakubeInternal (EXECUTOR)",
+                        "organizationId", awsOrgId,
+                        "workspaceId", awsWsId,
+                        "jobId", "101",
+                        "stepId", awsStepId
+                )
+        ));
+
+        realAuthProviderMvc.perform(get("/terraform/providers/v1/aws/random/versions").principal(awsRunnerAuth))
+                .andExpect(status().isOk());
+        realAuthProviderMvc.perform(get("/terraform/providers/v1/aws/random/3.0.1/download/linux/amd64").principal(awsRunnerAuth))
+                .andExpect(status().isOk());
+    }
+
+    private ResponseWithInclude<Job, Step> jobStepResponse(String wsId, String jobStatus, String stepId, String stepStatus) {
+        Job job = new Job();
+        job.setId("101");
+        JobAttributes jobAttrs = new JobAttributes();
+        jobAttrs.setStatus(jobStatus);
+        job.setAttributes(jobAttrs);
+
+        Resource wsRes = new Resource();
+        wsRes.setId(wsId);
+        WorkspaceData wsData = new WorkspaceData();
+        wsData.setData(wsRes);
+        io.terrakube.client.model.organization.job.Relationships rels =
+                new io.terrakube.client.model.organization.job.Relationships();
+        rels.setWorkspace(wsData);
+        job.setRelationships(rels);
+
+        Step step = new Step();
+        step.setId(stepId);
+        StepAttributes stepAttrs = new StepAttributes();
+        stepAttrs.setStatus(stepStatus);
+        step.setAttributes(stepAttrs);
+
+        ResponseWithInclude<Job, Step> response = new ResponseWithInclude<>();
+        response.setData(job);
+        response.setIncluded(List.of(step));
+        return response;
     }
 
 

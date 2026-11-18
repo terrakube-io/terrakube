@@ -1,13 +1,18 @@
 package io.terrakube.api.plugin.logs;
 
+import io.terrakube.api.plugin.security.job.JobLogAccessService;
+import io.terrakube.api.plugin.state.model.logs.Log;
+import io.terrakube.api.plugin.state.model.logs.LogsRequest;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.server.ResponseStatusException;
+import org.springframework.security.core.Authentication;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
-import io.terrakube.api.plugin.state.model.logs.LogsRequest;
+import org.springframework.web.server.ResponseStatusException;
+
+import java.security.Principal;
 
 @AllArgsConstructor
 @RestController
@@ -16,10 +21,15 @@ import io.terrakube.api.plugin.state.model.logs.LogsRequest;
 public class LogsController {
     private final LogsService logsService;
     private final LogsProperties properties;
+    private final JobLogAccessService jobLogAccessService;
 
     @Transactional
     @PostMapping(produces = "application/vnd.api+json", value = "/{jobId}/setup-consumer-groups")
-    public ResponseEntity<Void> setupConsumerGroups(@PathVariable("jobId") String jobId) {
+    public ResponseEntity<Void> setupConsumerGroups(@PathVariable("jobId") String jobId, Principal principal) {
+        if (!jobLogAccessService.canWriteLogs(principal instanceof Authentication auth ? auth : null)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Only internal executor service tokens are authorized to write logs");
+        }
         log.info("Setting up consumer groups for job {}", jobId);
         logsService.setupConsumerGroups(jobId);
         return ResponseEntity.ok().build();
@@ -27,11 +37,15 @@ public class LogsController {
 
     @Transactional
     @PostMapping(produces = "application/vnd.api+json", value = "")
-    public ResponseEntity<Void> appendLogs(@RequestBody LogsRequest logsRequest
-    ) {
+    public ResponseEntity<Void> appendLogs(@RequestBody LogsRequest logsRequest, Principal principal) {
+        if (!jobLogAccessService.canWriteLogs(principal instanceof Authentication auth ? auth : null)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Only internal executor service tokens are authorized to write logs");
+        }
         if (logsRequest == null || logsRequest.getData() == null || logsRequest.getData().isEmpty()) {
             return ResponseEntity.ok().build();
         }
+
         // Every line counts its text and a fixed overhead, so a request of thousands of empty lines
         // cannot slip under the limit and turn into that many Redis writes.
         long bytes = logsRequest.getData().stream()

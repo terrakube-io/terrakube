@@ -13,7 +13,13 @@ import io.terrakube.registry.service.git.ModuleVersionDownload;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
+import java.util.Optional;
 
 @Builder
 @Slf4j
@@ -61,5 +67,49 @@ public class LocalStorageServiceImpl implements StorageService {
             // Same contract as the cloud backends: a failed read is an error, never an empty archive.
             throw new StorageUnavailableException("Failed to read module ZIP " + localOutputDirectory, e);
         }
+    }
+
+    @Override
+    public Optional<InputStream> readObject(String key) {
+        Path file = resolveKey(key);
+        try {
+            return Optional.of(Files.newInputStream(file));
+        } catch (NoSuchFileException e) {
+            return Optional.empty();
+        } catch (IOException e) {
+            throw new StorageUnavailableException("Failed to read " + file, e);
+        }
+    }
+
+    @Override
+    public boolean objectExists(String key) {
+        return Files.isRegularFile(resolveKey(key));
+    }
+
+    @Override
+    public void writeObject(String key, Path file, String contentType) {
+        Path target = resolveKey(key);
+        try {
+            Files.createDirectories(target.getParent());
+            // Copy next to the target, then rename, so readers never see a half-written file.
+            Path temp = Files.createTempFile(target.getParent(), ".upload", null);
+            try {
+                Files.copy(file, temp, StandardCopyOption.REPLACE_EXISTING);
+                Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            } finally {
+                Files.deleteIfExists(temp);
+            }
+        } catch (IOException e) {
+            throw new StorageUnavailableException("Failed to write " + target, e);
+        }
+    }
+
+    private static Path resolveKey(String key) {
+        Path base = Paths.get(FileUtils.getUserDirectoryPath(), ".terraform-spring-boot", "local").normalize();
+        Path resolved = base.resolve(key).normalize();
+        if (!resolved.startsWith(base) || resolved.equals(base)) {
+            throw new IllegalArgumentException("Storage key escapes the local storage directory: " + key);
+        }
+        return resolved;
     }
 }

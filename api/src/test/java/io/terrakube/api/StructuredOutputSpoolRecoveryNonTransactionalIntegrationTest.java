@@ -56,23 +56,26 @@ class StructuredOutputSpoolRecoveryNonTransactionalIntegrationTest extends Serve
     private Step step;
 
     @BeforeEach
-    void setupTestData() {
+    void setupTestData() throws Exception {
         organization = organizationRepository
                 .findById(UUID.fromString("d9b58bd3-f3fc-4056-a026-1163297e80a8")).orElseThrow();
         workspace = workspaceRepository
                 .findById(UUID.fromString("5ed411ca-7ab8-4d2f-b591-02d0d5788afc")).orElseThrow();
 
+        // Held until @AfterEach: test bodies stub redisTemplate too.
+        pauseScheduler();
         valueOperations = org.mockito.Mockito.mock(org.springframework.data.redis.core.ValueOperations.class);
-        lenient().doReturn(valueOperations).when(redisTemplate).opsForValue();
         lenient().doReturn(true).when(valueOperations).setIfAbsent(any(), any(), any(java.time.Duration.class));
-        lenient().doReturn(true).when(redisTemplate).delete(anyString());
         Properties redisProps = new Properties();
         redisProps.setProperty("uptime_in_seconds", "3600");
+        lenient().doReturn(valueOperations).when(redisTemplate).opsForValue();
+        lenient().doReturn(true).when(redisTemplate).delete(anyString());
         lenient().doReturn(redisProps).when(redisTemplate).execute(any(RedisCallback.class));
     }
 
     @AfterEach
-    void cleanup() {
+    void cleanup() throws Exception {
+        resumeScheduler();
         try {
             if (step != null && step.getId() != null) {
                 stepRepository.deleteById(step.getId());

@@ -33,9 +33,9 @@ export default function PolicyStatusTag({
 
   // Unknown leaves --status-color unset: the tk-status-tag default in global.css is the neutral grey.
   let color: string | undefined;
-  let icon = <QuestionCircleOutlined />;
-  let label = "Unknown";
-  let testIdKey = "unknown";
+  let icon: React.ReactNode;
+  let label: string;
+  let testIdKey: string;
 
   switch (normalizedStatus) {
     case "COMPLIANT":

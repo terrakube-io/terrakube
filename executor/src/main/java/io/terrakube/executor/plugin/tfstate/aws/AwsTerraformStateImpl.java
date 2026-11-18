@@ -56,6 +56,7 @@ public class AwsTerraformStateImpl implements TerraformState {
 
     private static final String OUTPUT_PREFIX = "tfoutput/";
     private static final String TERRAFORM_PLAN_FILE = "terraformLibrary.tfPlan";
+    private static final String TERRAFORM_PLAN_JSON_FILE = "plan.json";
     private static final String BACKEND_FILE_NAME = "aws_backend_override.tf";
 
     @NonNull
@@ -209,6 +210,15 @@ public class AwsTerraformStateImpl implements TerraformState {
 
             storageRetryMetrics.withRetry("aws", "plan-write", () -> s3client.putObject(putObjectRequest, RequestBody.fromFile(tfPlanContent)));
 
+            File tfPlanJson = new File(workingDirectory, TERRAFORM_PLAN_JSON_FILE);
+            if (tfPlanJson.exists()) {
+                PutObjectRequest putJsonRequest = PutObjectRequest.builder()
+                        .bucket(bucketName)
+                        .key(blobKey + ".json")
+                        .build();
+                storageRetryMetrics.withRetry("aws", "plan-json-write", () -> s3client.putObject(putJsonRequest, RequestBody.fromFile(tfPlanJson)));
+            }
+
             GetUrlRequest getUrlRequest = GetUrlRequest.builder()
                     .bucket(bucketName)
                     .key(blobKey)
@@ -245,6 +255,37 @@ public class AwsTerraformStateImpl implements TerraformState {
                     }
                 });
         return planExists.get();
+    }
+
+    @Override
+    public boolean downloadTerraformPlanJson(String organizationId, String workspaceId, String jobId, String stepId, File workingDirectory) {
+        String stateUrl = terrakubeClient.getJobById(organizationId, jobId).getData().getAttributes().getTerraformPlan();
+        if (stateUrl == null || stateUrl.isBlank()) {
+            return false;
+        }
+        String objectKey;
+        try {
+            objectKey = "tfstate/" + new URL(stateUrl).getPath().split("/tfstate/")[1] + ".json";
+        } catch (IOException | ArrayIndexOutOfBoundsException e) {
+            log.error(e.getMessage());
+            return false;
+        }
+        log.info("Downloading Terraform plan JSON from bucket {} key {}", bucketName, objectKey);
+        File targetFile = new File(workingDirectory, TERRAFORM_PLAN_JSON_FILE);
+        GetObjectRequest objectRequest = GetObjectRequest.builder().bucket(bucketName).key(objectKey).build();
+        try {
+            storageRetryMetrics.withRetry("aws", "plan-json-read", () -> {
+                Files.deleteIfExists(targetFile.toPath());
+                return s3client.getObject(objectRequest, ResponseTransformer.toFile(targetFile.toPath()));
+            });
+            return true;
+        } catch (TerraformStateUnavailableException e) {
+            if (e.getCause() instanceof NoSuchKeyException) {
+                log.warn("Terraform plan JSON {} not found in bucket {}", objectKey, bucketName);
+                return false;
+            }
+            throw e;
+        }
     }
 
     @Override
@@ -447,9 +488,9 @@ public class AwsTerraformStateImpl implements TerraformState {
     }
 
     @Override
-    public boolean saveTerraformBinary(String version, boolean tofu, File binaryFile) {
+    public boolean saveTerraformBinary(String version, boolean tofu, String os, String arch, File binaryFile) {
         String product = tofu ? "tofu" : "terraform";
-        String blobKey = "tfbinary/" + product + "/" + version + "/" + product;
+        String blobKey = "tfbinary/" + product + "/" + version + "/" + os + "_" + arch + "/" + product;
         log.info("Saving {} binary to S3: {}", product, blobKey);
         try {
             PutObjectRequest putObjectRequest = PutObjectRequest.builder()
@@ -458,18 +499,18 @@ public class AwsTerraformStateImpl implements TerraformState {
                     .build();
 
             s3client.putObject(putObjectRequest, RequestBody.fromFile(binaryFile));
-            log.info("Successfully cached {} binary version {} in S3", product, version);
+            log.info("Successfully cached {} binary version {} ({}_{}) in S3", product, version, os, arch);
             return true;
         } catch (Exception e) {
-            log.warn("Failed to cache {} binary version {} in S3: {}", product, version, e.getMessage());
+            log.warn("Failed to cache {} binary version {} ({}_{}) in S3: {}", product, version, os, arch, e.getMessage());
             return false;
         }
     }
 
     @Override
-    public boolean downloadTerraformBinary(String version, boolean tofu, File targetFile) {
+    public boolean downloadTerraformBinary(String version, boolean tofu, String os, String arch, File targetFile) {
         String product = tofu ? "tofu" : "terraform";
-        String blobKey = "tfbinary/" + product + "/" + version + "/" + product;
+        String blobKey = "tfbinary/" + product + "/" + version + "/" + os + "_" + arch + "/" + product;
         log.info("Attempting to restore {} binary from S3: {}", product, blobKey);
         try {
             // Check if the object exists first
@@ -498,13 +539,13 @@ public class AwsTerraformStateImpl implements TerraformState {
                 log.warn("Failed to set executable permission on restored {} binary", product);
             }
 
-            log.info("Successfully restored {} binary version {} from S3", product, version);
+            log.info("Successfully restored {} binary version {} ({}_{}) from S3", product, version, os, arch);
             return true;
         } catch (NoSuchKeyException e) {
-            log.info("{} binary version {} not found in S3 cache", product, version);
+            log.info("{} binary version {} ({}_{}) not found in S3 cache", product, version, os, arch);
             return false;
         } catch (Exception e) {
-            log.warn("Failed to restore {} binary version {} from S3: {}", product, version, e.getMessage());
+            log.warn("Failed to restore {} binary version {} ({}_{}) from S3: {}", product, version, os, arch, e.getMessage());
             return false;
         }
     }

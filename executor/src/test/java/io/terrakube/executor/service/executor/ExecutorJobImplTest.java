@@ -1,9 +1,12 @@
 package io.terrakube.executor.service.executor;
 
 import io.terrakube.executor.configuration.ExecutorFlagsProperties;
+import io.terrakube.executor.service.mode.Command;
 import io.terrakube.executor.service.mode.TerraformJob;
 import io.terrakube.executor.service.scripts.ScriptEngineService;
+import io.terrakube.executor.service.scripts.ScriptType;
 import io.terrakube.executor.service.shutdown.ShutdownServiceImpl;
+import io.terrakube.executor.service.status.JobCancelledBeforeStartException;
 import io.terrakube.executor.service.status.UpdateJobStatus;
 import io.terrakube.executor.service.terraform.ContextRevision;
 import io.terrakube.executor.service.terraform.TerraformExecutor;
@@ -20,6 +23,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.redis.core.RedisTemplate;
 
 import java.io.File;
+import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -31,7 +35,9 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
@@ -227,6 +233,21 @@ class ExecutorJobImplTest {
     }
 
     @Test
+    void skipsAJobCancelledBeforeItStartsWithoutRunningOrReportingIt() throws Exception {
+        TerraformJob job = createJob("terraformApply");
+        when(setupWorkspace.prepareWorkspace(job)).thenReturn(tempDir.toFile());
+        doThrow(new JobCancelledBeforeStartException("42")).when(updateJobStatus).setRunningStatus(eq(job), any());
+
+        subject(eventPublisher).createJob(job);
+
+        verifyNoInteractions(terraformExecutor);
+        verify(updateJobStatus, never()).setCompletedStatus(anyBoolean(), anyBoolean(), anyInt(), any(), any(), any(), any(), any(),
+                anyBoolean(), any(), any(), any());
+        verify(jobExecutionWatchdog).markFree();
+        verify(executorCapacityGate).release();
+    }
+
+    @Test
     void streamsCustomScriptsOutputThroughLogsService() throws Exception {
         TerraformJob job = createJob("customScripts");
         File workDir = tempDir.toFile();
@@ -318,5 +339,84 @@ class ExecutorJobImplTest {
         subjectWithSecurity.createJob(job);
 
         verify(mockSecurity).cleanTerraformCredentials();
+    }
+
+    private TerraformJob createScriptJob(String type) {
+        TerraformJob job = createJob(type);
+        job.setTerraformVersion("1.9.0");
+        Command command = new Command();
+        command.setRuntime(ScriptType.BASH);
+        command.setScript("terraform version");
+        command.setPriority(100);
+        job.setCommandList(List.of(command));
+        return job;
+    }
+
+    @Test
+    void installsTheJobsTerraformVersionBeforeRunningCustomScripts() throws Exception {
+        TerraformJob job = createScriptJob("customScripts");
+        File workDir = tempDir.toFile();
+        when(setupWorkspace.prepareWorkspace(job)).thenReturn(workDir);
+        when(scriptEngineService.execute(eq(job), any(), eq(workDir), any())).thenReturn(true);
+
+        subject(eventPublisher).createJob(job);
+
+        // On a fresh executor the binary is only on the scripts' PATH if it was installed first.
+        InOrder inOrder = inOrder(terraformExecutor, scriptEngineService);
+        inOrder.verify(terraformExecutor).installBinary(job);
+        inOrder.verify(scriptEngineService).execute(eq(job), eq(job.getCommandList()), eq(workDir), any());
+        verify(updateJobStatus).setCompletedStatus(eq(true), anyBoolean(), anyInt(), eq(job), any(), any(), any(), any(), anyBoolean(), any(), any(), any());
+    }
+
+    @Test
+    void installsTheJobsVersionBeforeRunningApprovalCommands() throws Exception {
+        TerraformJob job = createScriptJob("approval");
+        File workDir = tempDir.toFile();
+        when(setupWorkspace.prepareWorkspace(job)).thenReturn(workDir);
+        when(scriptEngineService.execute(eq(job), any(), eq(workDir), any())).thenReturn(true);
+
+        subject(eventPublisher).createJob(job);
+
+        InOrder inOrder = inOrder(terraformExecutor, scriptEngineService);
+        inOrder.verify(terraformExecutor).installBinary(job);
+        inOrder.verify(scriptEngineService).execute(eq(job), any(), eq(workDir), any());
+    }
+
+    @Test
+    void doesNotInstallAnythingForAStepWithNoCommands() throws Exception {
+        TerraformJob job = createJob("approval");
+        job.setTerraformVersion("1.9.0");
+        File workDir = tempDir.toFile();
+        when(setupWorkspace.prepareWorkspace(job)).thenReturn(workDir);
+        when(scriptEngineService.execute(eq(job), any(), eq(workDir), any())).thenReturn(true);
+
+        subject(eventPublisher).createJob(job);
+
+        verify(terraformExecutor, never()).installBinary(any());
+    }
+
+    @Test
+    void stillRunsTheScriptsWhenTheBinaryCannotBeInstalled() throws Exception {
+        TerraformJob job = createScriptJob("customScripts");
+        File workDir = tempDir.toFile();
+        when(setupWorkspace.prepareWorkspace(job)).thenReturn(workDir);
+        doThrow(new IOException("Could not fetch the Terraform releases list")).when(terraformExecutor).installBinary(job);
+        when(scriptEngineService.execute(eq(job), any(), eq(workDir), any())).thenReturn(true);
+
+        java.util.concurrent.atomic.AtomicReference<String> savedOutput = new java.util.concurrent.atomic.AtomicReference<>();
+        Mockito.doAnswer(invocation -> {
+            savedOutput.set(invocation.getArgument(4).toString());
+            return null;
+        }).when(updateJobStatus).setCompletedStatus(
+                anyBoolean(), anyBoolean(), anyInt(), eq(job),
+                any(io.terrakube.executor.service.logs.StepOutputBuffer.class), any(), any(), any(), anyBoolean(), any(), any(), any());
+
+        subject(eventPublisher).createJob(job);
+
+        // A script that doesn't call terraform must not fail because the binary couldn't be fetched,
+        // but the step output says why terraform may be missing.
+        verify(scriptEngineService).execute(eq(job), any(), eq(workDir), any());
+        verify(updateJobStatus).setCompletedStatus(eq(true), anyBoolean(), anyInt(), eq(job), any(), any(), any(), any(), anyBoolean(), any(), any(), any());
+        assertTrue(savedOutput.get().contains("Unable to install Terraform 1.9.0"), savedOutput.get());
     }
 }

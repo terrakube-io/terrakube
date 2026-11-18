@@ -259,6 +259,71 @@ class AwsTerraformStateImplTest {
     }
 
     @Test
+    void testSaveTerraformPlanAlsoUploadsPlanJsonWhenPresent(@TempDir Path tempDir) throws Exception {
+        File workingDirectory = tempDir.toFile();
+        FileUtils.writeStringToFile(new File(workingDirectory, "terraformLibrary.tfPlan"), "plan-content", Charset.defaultCharset());
+        FileUtils.writeStringToFile(new File(workingDirectory, "plan.json"), "{\"format_version\":\"1.2\"}", Charset.defaultCharset());
+
+        S3Utilities s3Utilities = mock(S3Utilities.class);
+        when(s3Client.utilities()).thenReturn(s3Utilities);
+        when(s3Utilities.getUrl(any(GetUrlRequest.class))).thenReturn(new URL("https://s3.amazonaws.com/test-bucket/tfstate/org1/ws1/job1/step1/terraformLibrary.tfPlan"));
+
+        org.mockito.ArgumentCaptor<PutObjectRequest> requestCaptor = org.mockito.ArgumentCaptor.forClass(PutObjectRequest.class);
+        String url = awsTerraformState.saveTerraformPlan("org1", "ws1", "job1", "step1", workingDirectory);
+
+        assertEquals("https://s3.amazonaws.com/test-bucket/tfstate/org1/ws1/job1/step1/terraformLibrary.tfPlan", url);
+        verify(s3Client, times(2)).putObject(requestCaptor.capture(), any(RequestBody.class));
+        assertEquals(
+                java.util.List.of(
+                        "tfstate/org1/ws1/job1/step1/terraformLibrary.tfPlan",
+                        "tfstate/org1/ws1/job1/step1/terraformLibrary.tfPlan.json"),
+                requestCaptor.getAllValues().stream().map(PutObjectRequest::key).toList());
+    }
+
+    @Test
+    void testDownloadTerraformPlanJson(@TempDir Path tempDir) throws Exception {
+        File workingDirectory = tempDir.toFile();
+        when(terrakubeClient.getJobById("org1", "job1").getData().getAttributes().getTerraformPlan())
+                .thenReturn("https://s3.amazonaws.com/test-bucket/tfstate/org1/ws1/job1/step1/terraformLibrary.tfPlan");
+
+        org.mockito.ArgumentCaptor<GetObjectRequest> requestCaptor = org.mockito.ArgumentCaptor.forClass(GetObjectRequest.class);
+        when(s3Client.getObject(requestCaptor.capture(), any(ResponseTransformer.class))).thenAnswer(invocation -> {
+            FileUtils.writeStringToFile(new File(workingDirectory, "plan.json"), "{\"resource_changes\":[]}", Charset.defaultCharset());
+            return GetObjectResponse.builder().build();
+        });
+
+        assertTrue(awsTerraformState.downloadTerraformPlanJson("org1", "ws1", "job1", "step1", workingDirectory));
+        assertEquals("tfstate/org1/ws1/job1/step1/terraformLibrary.tfPlan.json", requestCaptor.getValue().key());
+        assertEquals("{\"resource_changes\":[]}", FileUtils.readFileToString(new File(workingDirectory, "plan.json"), Charset.defaultCharset()));
+    }
+
+    @Test
+    void testDownloadTerraformPlanJson_ReturnsFalseWhenMissingOrUnset(@TempDir Path tempDir) {
+        File workingDirectory = tempDir.toFile();
+        when(terrakubeClient.getJobById("org1", "job1").getData().getAttributes().getTerraformPlan())
+                .thenReturn(null);
+        assertFalse(awsTerraformState.downloadTerraformPlanJson("org1", "ws1", "job1", "step1", workingDirectory));
+
+        when(terrakubeClient.getJobById("org1", "job1").getData().getAttributes().getTerraformPlan())
+                .thenReturn("https://s3.amazonaws.com/test-bucket/tfstate/org1/ws1/job1/step1/terraformLibrary.tfPlan");
+        when(s3Client.getObject(any(GetObjectRequest.class), any(ResponseTransformer.class)))
+                .thenThrow(NoSuchKeyException.builder().message("Not found").build());
+        assertFalse(awsTerraformState.downloadTerraformPlanJson("org1", "ws1", "job1", "step1", workingDirectory));
+    }
+
+    @Test
+    void testDownloadTerraformPlanJson_ThrowsOnStorageOutage(@TempDir Path tempDir) {
+        File workingDirectory = tempDir.toFile();
+        when(terrakubeClient.getJobById("org1", "job1").getData().getAttributes().getTerraformPlan())
+                .thenReturn("https://s3.amazonaws.com/test-bucket/tfstate/org1/ws1/job1/step1/terraformLibrary.tfPlan");
+        when(s3Client.getObject(any(GetObjectRequest.class), any(ResponseTransformer.class)))
+                .thenThrow(S3Exception.builder().message("Service unavailable").build());
+
+        assertThrows(io.terrakube.executor.plugin.tfstate.TerraformStateUnavailableException.class,
+                () -> awsTerraformState.downloadTerraformPlanJson("org1", "ws1", "job1", "step1", workingDirectory));
+    }
+
+    @Test
     void testDownloadTerraformPlan(@TempDir Path tempDir) throws MalformedURLException {
         String organizationId = "org1";
         String workspaceId = "ws1";
@@ -630,5 +695,34 @@ class AwsTerraformStateImplTest {
 
         when(s3Client.deleteObject(any(DeleteObjectRequest.class))).thenThrow(S3Exception.builder().message("denied").build());
         assertDoesNotThrow(() -> awsTerraformState.deleteArtifacts("org1", "ws1", "job1"));
+    }
+
+    @Test
+    void testSaveTerraformBinaryKeysTheObjectByOsAndArchitecture(@TempDir Path tempDir) throws IOException {
+        File binary = tempDir.resolve("tofu").toFile();
+        FileUtils.writeStringToFile(binary, "tofu-binary", Charset.defaultCharset());
+        org.mockito.ArgumentCaptor<PutObjectRequest> request = org.mockito.ArgumentCaptor.forClass(PutObjectRequest.class);
+
+        assertTrue(awsTerraformState.saveTerraformBinary("v1.12.6", true, "linux", "arm64", binary));
+
+        verify(s3Client).putObject(request.capture(), any(RequestBody.class));
+        assertEquals("tfbinary/tofu/v1.12.6/linux_arm64/tofu", request.getValue().key());
+    }
+
+    @Test
+    void testDownloadTerraformBinaryReadsTheObjectOfItsOwnOsAndArchitecture(@TempDir Path tempDir) throws IOException {
+        String key = "tfbinary/terraform/1.9.0/linux_amd64/terraform";
+        ResponseBytes<GetObjectResponse> responseBytes = mock(ResponseBytes.class);
+        when(responseBytes.asByteArray()).thenReturn("terraform-binary".getBytes());
+        when(s3Client.getObject(any(GetObjectRequest.class), any(ResponseTransformer.class))).thenReturn(responseBytes);
+        org.mockito.ArgumentCaptor<GetObjectRequest> request = org.mockito.ArgumentCaptor.forClass(GetObjectRequest.class);
+        File target = tempDir.resolve("terraform/1.9.0/terraform").toFile();
+
+        assertTrue(awsTerraformState.downloadTerraformBinary("1.9.0", false, "linux", "amd64", target));
+
+        verify(s3Client).headObject(argThat((HeadObjectRequest head) -> key.equals(head.key())));
+        verify(s3Client).getObject(request.capture(), any(ResponseTransformer.class));
+        assertEquals(key, request.getValue().key());
+        assertEquals("terraform-binary", FileUtils.readFileToString(target, Charset.defaultCharset()));
     }
 }

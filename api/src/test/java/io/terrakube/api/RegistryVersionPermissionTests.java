@@ -5,10 +5,15 @@ import io.terrakube.api.repository.ModuleVersionRepository;
 import io.terrakube.api.repository.ProviderImplementationRepository;
 import io.terrakube.api.repository.ProviderRepository;
 import io.terrakube.api.repository.ProviderVersionRepository;
+import io.terrakube.api.rs.job.Job;
+import io.terrakube.api.rs.job.JobStatus;
+import io.terrakube.api.rs.job.step.Step;
 import io.terrakube.api.rs.module.ModuleVersion;
 import io.terrakube.api.rs.provider.Provider;
 import io.terrakube.api.rs.provider.implementation.Version;
 import io.terrakube.api.rs.team.Team;
+import io.terrakube.api.rs.workspace.Workspace;
+import org.hamcrest.Matchers;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -20,6 +25,8 @@ import java.util.UUID;
 
 import static io.restassured.RestAssured.given;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.when;
 
@@ -208,5 +215,81 @@ class RegistryVersionPermissionTests extends ServerApplicationTests {
     @Test
     void teamWithoutManageProviderCannotAddImplementations() {
         assertEquals(HttpStatus.FORBIDDEN.value(), createImplementation(VIEW_ONLY_TEAM));
+    }
+
+    @Test
+    void registryServiceCanReadJobAndStepStatusWithoutOutputOrTerraformPlan() {
+        Workspace workspace = new Workspace();
+        workspace.setName("registry-perm-ws-" + UUID.randomUUID());
+        workspace.setSource("https://github.com/terrakube-io/terrakube.git");
+        workspace.setBranch("main");
+        workspace.setTerraformVersion("1.13.1");
+        workspace.setOrganization(provider.getOrganization());
+        workspace = workspaceRepository.saveAndFlush(workspace);
+
+        Job job = new Job();
+        job.setOrganization(provider.getOrganization());
+        job.setWorkspace(workspace);
+        job.setStatus(JobStatus.running);
+        job.setOutput("secret-job-output");
+        job.setTerraformPlan("secret-terraform-plan");
+        job = jobRepository.saveAndFlush(job);
+
+        Step step = new Step();
+        step.setJob(job);
+        step.setName("terraformPlan");
+        step.setStatus(JobStatus.running);
+        step.setStepNumber(100);
+        step.setOutput("secret-step-output");
+        step = stepRepository.saveAndFlush(step);
+
+        try {
+            String registryToken = generateRegistryToken();
+
+            var jsonApiResponse = given()
+                    .headers("Authorization", "Bearer " + registryToken, "Accept", "application/vnd.api+json")
+                    .when()
+                    .get("/api/v1/organization/" + ORGANIZATION_ID + "/job/" + job.getId() + "?include=step")
+                    .then()
+                    .statusCode(HttpStatus.OK.value())
+                    .extract()
+                    .response();
+
+            assertEquals("running", jsonApiResponse.jsonPath().getString("data.attributes.status"));
+            assertEquals(workspace.getId().toString(), jsonApiResponse.jsonPath().getString("data.relationships.workspace.data.id"));
+            assertNull(jsonApiResponse.jsonPath().get("data.attributes.output"));
+            assertNull(jsonApiResponse.jsonPath().get("data.attributes.terraformPlan"));
+            assertEquals("running", jsonApiResponse.jsonPath().getString("included[0].attributes.status"));
+            assertNull(jsonApiResponse.jsonPath().get("included[0].attributes.output"));
+
+            String graphqlQuery = "{\"query\":\"{ organization(ids: [\\\"" + ORGANIZATION_ID
+                    + "\\\"]) { edges { node { job(ids: [\\\"" + job.getId()
+                    + "\\\"]) { edges { node { id status output terraformPlan step { edges { node { id status output } } } } } } } } } }\"}";
+
+            var graphqlResponse = given()
+                    .headers(
+                            "Authorization", "Bearer " + registryToken,
+                            "Content-Type", "application/json",
+                            "Accept", "application/json"
+                    )
+                    .body(graphqlQuery)
+                    .when()
+                    .post("/graphql/api/v1")
+                    .then()
+                    .statusCode(HttpStatus.OK.value())
+                    .extract()
+                    .response();
+
+            assertNotNull(graphqlResponse.jsonPath().getList("errors"),
+                    "Expected Elide GraphQL errors when REGISTRY_SERVICE reads restricted output/terraformPlan fields: "
+                            + graphqlResponse.asString());
+            assertTrue(graphqlResponse.asString().contains("ReadPermission")
+                            || Matchers.not(Matchers.empty()).matches(graphqlResponse.jsonPath().getList("errors")),
+                    "Expected non-empty GraphQL errors for restricted fields");
+        } finally {
+            stepRepository.delete(step);
+            jobRepository.delete(job);
+            workspaceRepository.delete(workspace);
+        }
     }
 }

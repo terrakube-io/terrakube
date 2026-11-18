@@ -46,12 +46,17 @@ public class DexWebSecurityAdapter {
 
     @Bean
     @Order(1)
-    public SecurityFilterChain filterChain(HttpSecurity http, @Value("${io.terrakube.token.issuer-uri}") String issuerUri, @Value("${io.terrakube.token.audience-validation:false}") boolean audienceValidation, @Value("${io.terrakube.token.extra-audiences:}") String extraAudiences, @Value("${io.terrakube.token.pat}") String patJwtSecret, @Value("${io.terrakube.token.internal}") String internalJwtSecret, TerrakubeClient terrakubeClient, OpenRegistryProperties openRegistryProperties) throws Exception {
+    public SecurityFilterChain filterChain(HttpSecurity http, @Value("${io.terrakube.token.issuer-uri:}") String issuerUri, @Value("${io.terrakube.registry.authentication.type:DEX}") String authType, @Value("${io.terrakube.token.audience-validation:false}") boolean audienceValidation, @Value("${io.terrakube.token.extra-audiences:}") String extraAudiences, @Value("${io.terrakube.token.pat}") String patJwtSecret, @Value("${io.terrakube.token.internal}") String internalJwtSecret, TerrakubeClient terrakubeClient, OpenRegistryProperties openRegistryProperties) throws Exception {
+        if (issuerUri == null || issuerUri.isBlank()) {
+            throw new IllegalStateException("io.terrakube.token.issuer-uri (DexIssuerUri) must be configured when io.terrakube.registry.authentication.type=" + authType);
+        }
         http.cors(Customizer.withDefaults())
                 .authorizeHttpRequests(authz -> authz
                         .requestMatchers("/.well-known/**").permitAll()
                         .requestMatchers("/actuator/**").permitAll()
                         .requestMatchers("/terraform/modules/v1/download/**").permitAll()
+                        // Mirror archives only; the controller requires a ticket or an authorized token.
+                        .requestMatchers(HttpMethod.GET, "/terraform/providers/mirror/v1/*/*/*/*/*/*.zip").permitAll()
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .anyRequest().authenticated()
                 )

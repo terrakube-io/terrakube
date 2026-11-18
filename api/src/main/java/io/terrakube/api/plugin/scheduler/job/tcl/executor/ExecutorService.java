@@ -1,5 +1,6 @@
 package io.terrakube.api.plugin.scheduler.job.tcl.executor;
 
+import java.net.URI;
 import java.net.URISyntaxException;
 import java.security.NoSuchAlgorithmException;
 import java.security.spec.InvalidKeySpecException;
@@ -9,7 +10,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -24,6 +27,9 @@ import io.terrakube.api.plugin.scheduler.job.tcl.executor.ephemeral.EphemeralExe
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.persistent.PersistentExecutorService;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.Flow;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.FlowType;
+import io.terrakube.api.plugin.scheduler.ExecutionLease;
+import io.terrakube.api.plugin.scheduler.ExecutionLeaseContext;
+import io.terrakube.api.plugin.token.dynamic.DynamicCredentialsException;
 import io.terrakube.api.plugin.token.dynamic.DynamicCredentialsService;
 import io.terrakube.api.plugin.vcs.TokenService;
 import io.terrakube.api.plugin.vcs.provider.exception.VcsTokenAcquisitionException;
@@ -57,6 +63,13 @@ public class ExecutorService {
 
     private static final String EPHEMERAL_EXECUTOR_FLAG = "TERRAKUBE_ENABLE_EPHEMERAL_EXECUTOR";
     static final String PLAN_ARTIFACTS_VARIABLE = "TERRAKUBE_PLAN_ARTIFACTS";
+    private static final Pattern REMOTE_CONTENT_PATH_PATTERN = Pattern.compile(
+            "^/remote/tfe/v2/configuration-versions/[a-fA-F0-9-]+/terraformContent\\.tar\\.gz$");
+    private static final Set<String> DYNAMIC_CREDENTIALS_FLAGS = Set.of(
+            "ENABLE_DYNAMIC_CREDENTIALS_AZURE",
+            "ENABLE_DYNAMIC_CREDENTIALS_VAULT",
+            "ENABLE_DYNAMIC_CREDENTIALS_AWS",
+            "ENABLE_DYNAMIC_CREDENTIALS_GCP");
 
     @Value("${io.terrakube.hostname}")
     String hostname;
@@ -198,6 +211,7 @@ public class ExecutorService {
             executorContext.setSource(job.getOverrideSource());
         }
         executorContext.setBranch(branchFor(job));
+        executorContext.setRemoteContentHostname(hostname);
         if (WorkspaceBranches.REMOTE_CONTENT.equals(job.getOverrideBranch())) {
             executorContext.setShowHeader(false);
         }
@@ -210,13 +224,19 @@ public class ExecutorService {
         // constructing the download URL. The UI disables "Run now" for this case; this guard
         // is defense-in-depth for direct API calls / stale clients.
         if (!FlowType.policyEvaluation.name().equals(flow.getType())
-                && WorkspaceBranches.REMOTE_CONTENT.equals(executorContext.getBranch())
-                && (executorContext.getSource() == null || executorContext.getSource().isBlank()
-                        || "empty".equals(executorContext.getSource()))) {
-            throw new ExecutionException(
-                    "Cannot run job " + job.getId() + ": workspace '" + job.getWorkspace().getName()
-                            + "' has branch 'remote-content' but no configuration has been uploaded. "
-                            + "Upload configuration via the terraform CLI or attach a VCS connection before running.");
+                && WorkspaceBranches.REMOTE_CONTENT.equals(executorContext.getBranch())) {
+            if (executorContext.getSource() == null || executorContext.getSource().isBlank()
+                    || "empty".equals(executorContext.getSource())) {
+                throw new ExecutionException(
+                        "Cannot run job " + job.getId() + ": workspace '" + job.getWorkspace().getName()
+                                + "' has branch 'remote-content' but no configuration has been uploaded. "
+                                + "Upload configuration via the terraform CLI or attach a VCS connection before running.");
+            }
+            if (!isValidRemoteContentSource(executorContext.getSource(), hostname)) {
+                throw new ExecutionException(
+                        "Cannot run job " + job.getId()
+                                + ": remote-content source URL is invalid or does not point to this Terrakube API's configuration-version endpoint.");
+            }
         }
 
         // A UI "Run now" job only sets overrideBranch, not overrideSource (see
@@ -252,10 +272,33 @@ public class ExecutorService {
             executorContext.setPolicyExemptionList(policyResolutionService.resolveExemptionsForJob(job));
         }
         executorContext = validateJobAddress(executorContext, job);
-        if (isEphemeralExecutorEnabled(executorContext.getEnvironmentVariables())) {
-            ephemeralExecutorService.send(job, executorContext);
-        } else {
-            persistentExecutorService.send(job, executorContext);
+        sendClaimed(job, stepId, executorContext);
+    }
+
+    // Credential preparation above can take a while. Before anything leaves for an executor, the
+    // scheduler's execution lock must still be this worker's and the step must not have been
+    // claimed by an earlier attempt; otherwise another worker may already have submitted it.
+    private void sendClaimed(Job job, String stepId, ExecutorContext executorContext) throws ExecutionException {
+        ExecutionLease lease = ExecutionLeaseContext.current();
+        if (lease != null && !lease.claimDispatch(stepId)) {
+            throw new DispatchNotClaimedException(String.format(
+                    "Job %s step %s was not submitted: this worker no longer holds the job's execution lock, or the step was already claimed",
+                    job.getId(), stepId));
+        }
+        try {
+            if (isEphemeralExecutorEnabled(executorContext.getEnvironmentVariables())) {
+                ephemeralExecutorService.send(job, executorContext);
+            } else {
+                persistentExecutorService.send(job, executorContext);
+            }
+        } catch (ExecutorUnavailableException e) {
+            // The executor could not be reached, so this is the one outcome that may be retried.
+            // Any other failure leaves the claim in place: the submission may have gone through,
+            // and the job is failed rather than sent again.
+            if (lease != null) {
+                lease.releaseDispatchClaim(stepId);
+            }
+            throw e;
         }
     }
 
@@ -378,6 +421,57 @@ public class ExecutorService {
                 : null;
     }
 
+    static boolean isValidRemoteContentSource(String source, String hostname) {
+        if (source == null || source.isBlank() || hostname == null || hostname.isBlank()) {
+            return false;
+        }
+        try {
+            URI sourceUri = new URI(source.trim());
+            if (sourceUri.getUserInfo() != null || sourceUri.getRawUserInfo() != null) {
+                return false;
+            }
+            String scheme = sourceUri.getScheme();
+            if (!"https".equalsIgnoreCase(scheme)) {
+                return false;
+            }
+            if (!matchesExpectedHostname(sourceUri, hostname)) {
+                return false;
+            }
+            if (sourceUri.getRawQuery() != null || sourceUri.getRawFragment() != null) {
+                return false;
+            }
+            String rawPath = sourceUri.getRawPath();
+            String normalizedPath = sourceUri.normalize().getPath();
+            return rawPath != null
+                    && normalizedPath != null
+                    && REMOTE_CONTENT_PATH_PATTERN.matcher(rawPath).matches()
+                    && REMOTE_CONTENT_PATH_PATTERN.matcher(normalizedPath).matches();
+        } catch (URISyntaxException | IllegalArgumentException e) {
+            return false;
+        }
+    }
+
+    private static boolean matchesExpectedHostname(URI sourceUri, String hostname) throws URISyntaxException {
+        URI expectedUri = new URI("https://" + hostname.trim());
+        String sourceHost = sourceUri.getHost();
+        String expectedHost = expectedUri.getHost();
+        if (sourceHost == null || expectedHost == null || !sourceHost.equalsIgnoreCase(expectedHost)) {
+            return false;
+        }
+        if (expectedUri.getPort() != -1) {
+            return effectivePort(sourceUri) == expectedUri.getPort();
+        }
+        return sourceUri.getPort() == -1 || effectivePort(sourceUri) == defaultPort(sourceUri.getScheme());
+    }
+
+    private static int effectivePort(URI uri) {
+        return uri.getPort() != -1 ? uri.getPort() : defaultPort(uri.getScheme());
+    }
+
+    private static int defaultPort(String scheme) {
+        return "https".equalsIgnoreCase(scheme) ? 443 : 80;
+    }
+
     /**
      * Persists the resolved source directly onto the job for CLI/API driven (remote-content) jobs
      * whose overrideSource was not already set at creation time. A UI "Run now" job is the case
@@ -414,6 +508,10 @@ public class ExecutorService {
         if (resolvedSource == null || resolvedSource.isBlank() || "empty".equals(resolvedSource)) {
             return;
         }
+        if (!isValidRemoteContentSource(resolvedSource, hostname)) {
+            log.warn("Refusing to persist untrusted overrideSource onto job {}: {}", job.getId(), resolvedSource);
+            return;
+        }
         log.info("Persisting resolved configuration source onto job {} for remote-content workspace",
                 job.getId());
         job.setOverrideSource(resolvedSource);
@@ -442,6 +540,11 @@ public class ExecutorService {
             return;
         }
         if (resolvedSource == null || resolvedSource.isBlank()) {
+            return;
+        }
+        if (!isValidRemoteContentSource(resolvedSource, hostname)) {
+            log.warn("Refusing to persist untrusted applied configuration source onto workspace {}: {}",
+                    workspace.getName(), resolvedSource);
             return;
         }
         if (resolvedSource.equals(workspace.getSource())) {
@@ -474,22 +577,40 @@ public class ExecutorService {
             workspaceEnvVariables = loadDefault(job, Category.ENV, workspaceEnvVariables);
         }
 
+        boolean dynamicCredentials = DYNAMIC_CREDENTIALS_FLAGS.stream()
+                .anyMatch(workspaceEnvVariables::containsKey);
+        // Null when run-phase credentials are disabled globally or no dynamic credential provider is enabled.
+        String runPhase = dynamicCredentials ? dynamicCredentialsService.runPhase(job, flow) : null;
+        if (runPhase != null) {
+            // Lets the configuration pick phase-specific secrets, e.g. a Vault path per phase.
+            workspaceEnvVariables.put("TERRAKUBE_RUN_PHASE", runPhase);
+            workspaceEnvVariables.put("TF_VAR_terrakube_run_phase", runPhase);
+        }
+
         if (workspaceEnvVariables.containsKey("ENABLE_DYNAMIC_CREDENTIALS_AZURE")) {
             workspaceEnvVariables = dynamicCredentialsService.generateDynamicCredentialsAzure(job,
-                    workspaceEnvVariables);
+                    workspaceEnvVariables, runPhase);
         }
 
         if (workspaceEnvVariables.containsKey("ENABLE_DYNAMIC_CREDENTIALS_VAULT")) {
-            workspaceEnvVariables = dynamicCredentialsService.generateDynamicCredentialsVault(job,
-                    workspaceEnvVariables);
+            try {
+                workspaceEnvVariables = dynamicCredentialsService.generateDynamicCredentialsVault(job,
+                        workspaceEnvVariables, runPhase);
+            } catch (DynamicCredentialsException e) {
+                // Stop before anything is submitted: an executor started with no VAULT_TOKEN only
+                // fails later with an unrelated error.
+                throw new ExecutionException(e.getMessage(), e);
+            }
         }
 
         if (workspaceEnvVariables.containsKey("ENABLE_DYNAMIC_CREDENTIALS_AWS")) {
-            workspaceEnvVariables = dynamicCredentialsService.generateDynamicCredentialsAws(job, workspaceEnvVariables);
+            workspaceEnvVariables = dynamicCredentialsService.generateDynamicCredentialsAws(job, workspaceEnvVariables,
+                    runPhase);
         }
 
         if (workspaceEnvVariables.containsKey("ENABLE_DYNAMIC_CREDENTIALS_GCP")) {
-            workspaceEnvVariables = dynamicCredentialsService.generateDynamicCredentialsGcp(job, workspaceEnvVariables);
+            workspaceEnvVariables = dynamicCredentialsService.generateDynamicCredentialsGcp(job, workspaceEnvVariables,
+                    runPhase);
         }
 
         if (workspaceEnvVariables.containsKey("PRIVATE_EXTENSION_VCS_ID_AUTH")) {

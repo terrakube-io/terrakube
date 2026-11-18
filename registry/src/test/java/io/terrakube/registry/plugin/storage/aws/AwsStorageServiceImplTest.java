@@ -231,6 +231,30 @@ class AwsStorageServiceImplTest {
     }
 
     @Test
+    void presignedUrlPathEndsInZipWithoutDoubleSlash() {
+        S3Presigner presigner = S3Presigner.builder()
+                .region(software.amazon.awssdk.regions.Region.US_EAST_1)
+                .credentialsProvider(software.amazon.awssdk.auth.credentials.StaticCredentialsProvider.create(
+                        software.amazon.awssdk.auth.credentials.AwsBasicCredentials.create("AKIATEST", "secret")))
+                .build();
+        AwsStorageServiceImpl awsStorageService = AwsStorageServiceImpl.builder()
+                .s3client(mock(S3Client.class))
+                .bucketName("test-bucket")
+                .gitService(mock(GitService.class))
+                .registryHostname("host")
+                .s3Presigner(presigner)
+                .presignedRedirectEnabled(true)
+                .presignedUrlExpirySeconds(300)
+                .build();
+
+        java.net.URI uri = awsStorageService.getPresignedDownloadUrl("org", "module", "aws", "1.0.0").orElseThrow();
+
+        assertEquals("https", uri.getScheme());
+        assertTrue(uri.getRawPath().endsWith("/module.zip"), uri.getRawPath());
+        assertFalse(uri.getRawPath().contains("//"), uri.getRawPath());
+    }
+
+    @Test
     void shouldThrowStorageUnavailableWhenPresigningFails() {
         S3Client s3Client = mock(S3Client.class);
         GitService gitService = mock(GitService.class);
@@ -250,5 +274,48 @@ class AwsStorageServiceImplTest {
 
         assertThrows(StorageUnavailableException.class,
                 () -> awsStorageService.getPresignedDownloadUrl("org", "module", "aws", "1.0.0"));
+    }
+
+    @Test
+    void readWriteExistsPresignObject() throws Exception {
+        S3Client s3Client = mock(S3Client.class);
+        S3Presigner s3Presigner = mock(S3Presigner.class);
+        AwsStorageServiceImpl storage = AwsStorageServiceImpl.builder()
+                .s3client(s3Client).bucketName("test-bucket").gitService(mock(GitService.class)).registryHostname("host")
+                .s3Presigner(s3Presigner).presignedRedirectEnabled(true).build();
+        String key = "mirror/registry.terraform.io/hashicorp/random/terraform-provider-random_3.6.0_linux_amd64.zip";
+
+        when(s3Client.getObject(any(GetObjectRequest.class))).thenThrow(NoSuchKeyException.builder().build());
+        assertTrue(storage.readObject(key).isEmpty());
+
+        when(s3Client.headObject(any(HeadObjectRequest.class))).thenReturn(HeadObjectResponse.builder().build());
+        assertTrue(storage.objectExists(key));
+        when(s3Client.headObject(any(HeadObjectRequest.class))).thenThrow(S3Exception.builder().statusCode(404).build());
+        assertFalse(storage.objectExists(key));
+
+        Path file = tempDir.resolve("a.zip");
+        java.nio.file.Files.writeString(file, "zip");
+        storage.writeObject(key, file, "application/zip");
+        verify(s3Client).putObject(argThat((PutObjectRequest request) -> key.equals(request.key())
+                && "test-bucket".equals(request.bucket()) && "application/zip".equals(request.contentType())), any(RequestBody.class));
+
+        PresignedGetObjectRequest presigned = mock(PresignedGetObjectRequest.class);
+        when(presigned.url()).thenReturn(new URL("https://test-bucket.s3.amazonaws.com/" + key + "?X-Amz-Signature=x"));
+        when(s3Presigner.presignGetObject(any(software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest.class)))
+                .thenReturn(presigned);
+        assertTrue(storage.presignObject(key).orElseThrow().getRawPath().endsWith(key));
+    }
+
+    @Test
+    void objectErrorsAreStorageUnavailable() {
+        S3Client s3Client = mock(S3Client.class);
+        AwsStorageServiceImpl storage = AwsStorageServiceImpl.builder()
+                .s3client(s3Client).bucketName("test-bucket").gitService(mock(GitService.class)).registryHostname("host").build();
+        when(s3Client.getObject(any(GetObjectRequest.class))).thenThrow(S3Exception.builder().statusCode(500).build());
+        when(s3Client.headObject(any(HeadObjectRequest.class))).thenThrow(S3Exception.builder().statusCode(500).build());
+
+        assertThrows(StorageUnavailableException.class, () -> storage.readObject("mirror/x"));
+        assertThrows(StorageUnavailableException.class, () -> storage.objectExists("mirror/x"));
+        assertTrue(storage.presignObject("mirror/x").isEmpty());
     }
 }

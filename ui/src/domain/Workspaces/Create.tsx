@@ -1,3 +1,4 @@
+import { apiUrl } from "@/config/apiUrls";
 import { DownOutlined, GithubOutlined, GitlabOutlined, LockOutlined } from "@ant-design/icons";
 import {
   Alert,
@@ -23,7 +24,6 @@ import { BiBookBookmark, BiTerminal, BiUpload } from "react-icons/bi";
 import { SiBitbucket, SiGit } from "react-icons/si";
 import { VscAzureDevops } from "react-icons/vsc";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { v7 as uuid } from "uuid";
 import { ORGANIZATION_ARCHIVE, ORGANIZATION_NAME } from "../../config/actionTypes";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import organizationService from "@/modules/organizations/organizationService";
@@ -198,7 +198,7 @@ export const CreateWorkspace = () => {
     setLoading(true);
     getIacTypes();
 
-    const versionsApi = `${new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin}/${iacType.id}/index.json`;
+    const versionsApi = `${apiUrl("")}/${iacType.id}/index.json`;
 
     // Parallel load: versions, SSH keys, templates, VCS, and projects
     Promise.all([
@@ -240,7 +240,7 @@ export const CreateWorkspace = () => {
 
         // Set projects
         if (!projectsRes.isError) {
-          setProjectList(projectsRes.data);
+          setProjectList(projectsRes.data ?? []);
           if (preselectedProjectId) {
             form.setFieldsValue({ project: preselectedProjectId });
           }
@@ -286,7 +286,7 @@ export const CreateWorkspace = () => {
     setStep3Hidden(false);
   };
 
-  const vcsApiUrl = (path: string) => `${new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin}${path}`;
+  const vcsApiUrl = (path: string) => `${apiUrl("")}${path}`;
 
   const fetchVcsGroups = (id: string) => {
     setGroupsLoading(true);
@@ -401,7 +401,7 @@ export const CreateWorkspace = () => {
   };
 
   const loadVersions = (iacType: IacType) => {
-    const versionsApi = `${new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin}/${iacType.id}/index.json`;
+    const versionsApi = `${apiUrl("")}/${iacType.id}/index.json`;
     axiosInstance.get(versionsApi).then((resp) => {
       const tfVersions = [];
       if (iacType.id === "tofu") {
@@ -427,7 +427,7 @@ export const CreateWorkspace = () => {
     if (creating) return;
     setCreating(true);
 
-    const workspace_lid = uuid();
+    const workspace_lid = crypto.randomUUID();
     const body = {
       "atomic:operations": [
         {
@@ -670,6 +670,7 @@ export const CreateWorkspace = () => {
                   vcs.map(function (item) {
                     return (
                       <Button
+                        key={item.id}
                         icon={<VcsLogo type={item.attributes.vcsType} size={20} />}
                         onClick={() => {
                           handleGitClick(item.id);

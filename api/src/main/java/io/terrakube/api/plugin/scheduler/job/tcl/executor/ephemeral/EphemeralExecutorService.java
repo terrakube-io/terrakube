@@ -12,8 +12,10 @@ import org.springframework.stereotype.Service;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutionException;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutorContext;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutorUnavailableException;
+import io.terrakube.api.plugin.security.encryption.EncryptionService;
 import io.terrakube.api.rs.job.Job;
 
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 @Slf4j
@@ -46,12 +48,16 @@ public class EphemeralExecutorService {
 
     KubernetesClient kubernetesClient;
     EphemeralConfiguration ephemeralConfiguration;
+    EncryptionService encryptionService;
 
     public void send(Job job, ExecutorContext executorContext) throws ExecutionException {
         final String jobName = String.format("job-%s-%s", job.getId(), System.currentTimeMillis());
         log.info("Ephemeral Executor Image {}, Job: {}, Namespace: {}, NodeSelector: {}", ephemeralConfiguration.getImage(), jobName, ephemeralConfiguration.getNamespace(), ephemeralConfiguration.getNodeSelector());
         final List<EnvFromSource> executorEnvFromSources = new ArrayList<>();
         final List<String> validSecrets = new ArrayList<>();
+        if (!ephemeralConfiguration.isEmptyDirSecret()) {
+            log.warn("Ephemeral executor emptyDirSecret is disabled. InternalSecret and credentials will be exposed via container envFrom (/proc/1/environ), allowing code executed in the workspace to decrypt EphemeralJobData. Enable emptyDirSecret to protect credentials.");
+        }
         if (ephemeralConfiguration.getSecret() != null) {
             for (String secretName : ephemeralConfiguration.getSecret()) {
                 if (secretName == null) {
@@ -97,9 +103,11 @@ public class EphemeralExecutorService {
             executorFlagBatchJsonContent.setName("EphemeralJobData");
             ObjectMapper mapper = new ObjectMapper();
             String jobJson = mapper.writeValueAsString(executorContext);
-            executorFlagBatchJsonContent.setValue(Base64.getEncoder().encodeToString(jobJson.getBytes("UTF-8")));
+            String encryptedJobJson = encryptionService.encrypt(jobJson);
+            executorFlagBatchJsonContent.setValue(Base64.getEncoder().encodeToString(encryptedJobJson.getBytes(StandardCharsets.UTF_8)));
         } catch (Exception e) {
-            log.error(e.getMessage());
+            log.error("Failed to encrypt ephemeral job data: {}", e.getMessage(), e);
+            throw new ExecutionException(e);
         }
 
         final List<EnvVar> executorEnvVarFlags = new LinkedList<>();

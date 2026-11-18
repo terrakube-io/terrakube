@@ -143,16 +143,52 @@ class JobApprovalHookTest {
                 () -> hook.execute(Operation.CREATE, TransactionPhase.PRECOMMIT, job, scope, Optional.empty()));
 
         assertEquals(409, thrown.getStatus());
+        assertEquals("A job cannot be created as approved: it is approved while it waits for approval.",
+                thrown.getMessage());
+        verifyNoInteractions(policyApprovalGuard, jobApprovalService);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = JobStatus.class, names = {"waitingApproval", "queue", "running", "completed", "failed", "cancelled", "rejected", "notExecuted"})
+    void refusesAJobCreatedWithAnyNonPendingStatus(JobStatus status) {
+        job.setStatus(status);
+
+        PolicyBlocksApprovalException thrown = assertThrows(PolicyBlocksApprovalException.class,
+                () -> hook.execute(Operation.CREATE, TransactionPhase.PRECOMMIT, job, scope, Optional.empty()));
+
+        assertEquals(409, thrown.getStatus());
         verifyNoInteractions(policyApprovalGuard, jobApprovalService);
     }
 
     @Test
-    void aJobCreatedInAnotherStatusIsLeftAlone() {
+    void refusesAJobCreatedWithNullStatus() {
+        job.setStatus(null);
+
+        PolicyBlocksApprovalException thrown = assertThrows(PolicyBlocksApprovalException.class,
+                () -> hook.execute(Operation.CREATE, TransactionPhase.PRECOMMIT, job, scope, Optional.empty()));
+
+        assertEquals(409, thrown.getStatus());
+        verifyNoInteractions(policyApprovalGuard, jobApprovalService);
+    }
+
+    @Test
+    void aJobCreatedAsPendingIsLeftAlone() {
         job.setStatus(JobStatus.pending);
 
         hook.execute(Operation.CREATE, TransactionPhase.PRECOMMIT, job, scope, Optional.empty());
 
         verifyNoInteractions(policyApprovalGuard, jobApprovalService);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = JobStatus.class, names = {"cancelled"}, mode = EnumSource.Mode.EXCLUDE)
+    void refusesToMoveACancelledJobToAnyOtherStatus(JobStatus to) {
+        JobCancelledException thrown = assertThrows(JobCancelledException.class,
+                () -> hook.execute(Operation.UPDATE, TransactionPhase.PRECOMMIT, job, scope,
+                        statusChange(JobStatus.cancelled, to)));
+
+        assertEquals(409, thrown.getStatus());
+        verifyNoInteractions(jobApprovalService);
     }
 
     @Test

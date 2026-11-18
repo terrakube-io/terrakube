@@ -1,5 +1,7 @@
 package io.terrakube.registry.plugin.storage.gcp;
 
+import com.google.auth.ServiceAccountSigner;
+import com.google.cloud.storage.Blob;
 import com.google.cloud.storage.BlobId;
 import com.google.cloud.storage.BlobInfo;
 import com.google.cloud.storage.Storage;
@@ -14,8 +16,11 @@ import io.terrakube.registry.service.git.GitService;
 import io.terrakube.registry.service.git.ModuleVersionDownload;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.URI;
 import java.net.URL;
+import java.nio.channels.Channels;
+import java.nio.file.Path;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
@@ -87,19 +92,25 @@ public class GcpStorageServiceImpl implements StorageService {
      * getModuleVersionPath's 10-minute cache) — its validity window is much shorter than the cache
      * TTL, so every ZIP request gets a fresh signature computed here.
      *
-     * <p>Requires the service account credentials to have the
-     * {@code iam.serviceAccounts.signBlob} IAM permission. This is available automatically
-     * when using a service-account JSON key via {@code GoogleCredentials.fromStream(...)}.
+     * <p>The URL is signed with the credentials' service account: locally with a service account
+     * key, or through the IAM {@code signBlob} API with Application Default Credentials (for
+     * example GKE Workload Identity bound to a Google service account), which needs
+     * {@code iam.serviceAccounts.signBlob} on that service account
+     * ({@code roles/iam.serviceAccountTokenCreator}).
      */
     @Override
     public Optional<URI> getPresignedDownloadUrl(String organizationName, String moduleName, String providerName,
             String moduleVersion) {
+        return presignObject(String.format(GCP_ZIP_MODULE_LOCATION, organizationName, moduleName, providerName,
+                moduleVersion));
+    }
+
+    @Override
+    public Optional<URI> presignObject(String blobKey) {
         if (!presignedRedirectEnabled) {
             return Optional.empty();
         }
 
-        String blobKey = String.format(GCP_ZIP_MODULE_LOCATION, organizationName, moduleName, providerName,
-                moduleVersion);
         try {
             BlobInfo blobInfo = BlobInfo.newBuilder(BlobId.of(bucketName, blobKey)).build();
             URL signedUrl = storage.signUrl(
@@ -110,6 +121,12 @@ public class GcpStorageServiceImpl implements StorageService {
             // Never log the signed URL itself — it carries the signature query string.
             log.info("Generated GCS V4-signed download URL for bucket {} key {}", bucketName, blobKey);
             return Optional.of(signedUrl.toURI());
+        } catch (ServiceAccountSigner.SigningException e) {
+            String message = "Failed to sign a GCS URL for key " + blobKey + ". With Application Default Credentials "
+                    + "the identity must be a Google service account with iam.serviceAccounts.signBlob on itself "
+                    + "(roles/iam.serviceAccountTokenCreator)";
+            log.error("{}: {}", message, e.getMessage());
+            throw new StorageUnavailableException(message, e);
         } catch (Exception e) {
             log.error("Failed to generate GCS signed URL for bucket {} key {}: {}", bucketName, blobKey,
                     e.getMessage());
@@ -133,6 +150,34 @@ public class GcpStorageServiceImpl implements StorageService {
         } catch (StorageException e) {
             log.error("GCP Storage download failed for key {} in bucket {}: {}", blobKey, bucketName, e.getMessage());
             throw new StorageUnavailableException("Failed to download module ZIP for key " + blobKey, e);
+        }
+    }
+
+    @Override
+    public Optional<InputStream> readObject(String key) {
+        try {
+            Blob blob = storage.get(BlobId.of(bucketName, key));
+            return blob == null ? Optional.empty() : Optional.of(Channels.newInputStream(blob.reader()));
+        } catch (StorageException e) {
+            throw new StorageUnavailableException("Failed to read GCS object " + key, e);
+        }
+    }
+
+    @Override
+    public boolean objectExists(String key) {
+        try {
+            return storage.get(BlobId.of(bucketName, key)) != null;
+        } catch (StorageException e) {
+            throw new StorageUnavailableException("Failed to check GCS object " + key, e);
+        }
+    }
+
+    @Override
+    public void writeObject(String key, Path file, String contentType) {
+        try {
+            storage.createFrom(BlobInfo.newBuilder(BlobId.of(bucketName, key)).setContentType(contentType).build(), file);
+        } catch (StorageException | IOException e) {
+            throw new StorageUnavailableException("Failed to write GCS object " + key, e);
         }
     }
 }

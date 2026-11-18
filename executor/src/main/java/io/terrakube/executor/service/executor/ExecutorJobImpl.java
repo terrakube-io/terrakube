@@ -13,6 +13,7 @@ import io.terrakube.executor.service.scripts.ScriptEngineService;
 import io.terrakube.executor.service.workspace.SetupWorkspace;
 import io.terrakube.executor.service.workspace.WorkspaceException;
 import io.terrakube.executor.service.shutdown.ShutdownServiceImpl;
+import io.terrakube.executor.service.status.JobCancelledBeforeStartException;
 import io.terrakube.executor.service.status.UpdateJobStatus;
 import io.terrakube.executor.service.terraform.ContextRevision;
 import io.terrakube.executor.service.terraform.TerraformExecutor;
@@ -238,7 +239,12 @@ public class ExecutorJobImpl implements ExecutorJob {
         if (!terraformJob.getBranch().equals("remote-content"))
             commitId = getCommitId(terraformWorkingDir);
 
-        updateJobStatus.setRunningStatus(terraformJob, commitId);
+        try {
+            updateJobStatus.setRunningStatus(terraformJob, commitId);
+        } catch (JobCancelledBeforeStartException e) {
+            log.info("{}, skipping it", e.getMessage());
+            return;
+        }
 
         switch (terraformJob.getType()) {
             case "terraformPlanDestroy":
@@ -312,6 +318,7 @@ public class ExecutorJobImpl implements ExecutorJob {
         boolean executionSuccess;
         boolean handedOver = false;
         try {
+            installBinaryForScripts(terraformJob, output);
             executionSuccess = scriptEngineService.execute(terraformJob, terraformJob.getCommandList(), terraformWorkingDir, output);
             terraformResult.setOutputBuffer(scriptOutput);
             handedOver = true;
@@ -324,6 +331,25 @@ public class ExecutorJobImpl implements ExecutorJob {
         terraformResult.setOutputErrorLog(scriptErrorOutput.toString());
         terraformResult.setSuccessfulExecution(executionSuccess);
         return terraformResult;
+    }
+
+    // Scripts run terraform/tofu from their PATH, which only has it once the job's version is in this
+    // executor's binary cache. Without this a script step fails with "command not found" on any
+    // executor that hasn't run a plan, apply or destroy for that version yet. Best effort, so a script
+    // that doesn't call terraform still runs when the binary can't be installed.
+    private void installBinaryForScripts(TerraformJob terraformJob, Consumer<String> output) {
+        if (terraformJob.getCommandList() == null || terraformJob.getCommandList().isEmpty()) {
+            return;
+        }
+        try {
+            terraformExecutor.installBinary(terraformJob);
+        } catch (Exception e) {
+            String product = terraformJob.isTofu() ? "OpenTofu" : "Terraform";
+            log.warn("Unable to install {} {} for job {}: {}", product, terraformJob.getTerraformVersion(),
+                    terraformJob.getJobId(), e.getMessage());
+            output.accept(String.format("Unable to install %s %s, scripts may not find it on the PATH: %s",
+                    product, terraformJob.getTerraformVersion(), e.getMessage()));
+        }
     }
 
     private static String getCommitId(File workspaceFolder) {

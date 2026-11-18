@@ -48,7 +48,7 @@ import lombok.Setter;
 @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.CREATE, phase = LifeCycleHookBinding.TransactionPhase.PREFLUSH, hook = JobRunRightsHook.class)
 @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.CREATE, phase = LifeCycleHookBinding.TransactionPhase.POSTCOMMIT, hook = JobManageHook.class)
 @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.POSTCOMMIT, hook = JobManageHook.class)
-@ReadPermission(expression = "team view job OR team project limited view job OR team limited view job OR executor read job OR user is an executor service")
+@ReadPermission(expression = "team view job OR team project limited view job OR team limited view job OR executor read job OR user is an executor service OR user is a registry service")
 // Creating a job needs plan rights. "manage job" also matches approve-only access, which must not queue new runs.
 @CreatePermission(expression = "team plan job OR team limited plan job OR team project limited plan job")
 @UpdatePermission(expression = Job.UPDATE)
@@ -127,6 +127,7 @@ public class Job extends GenericAuditFields {
     @Column(name = "approved_at")
     private Date approvedAt;
 
+    @ReadPermission(expression = "team view job OR team project limited view job OR team limited view job OR executor read job OR user is an executor service")
     @Column(name = "output")
     private String output;
 
@@ -142,6 +143,7 @@ public class Job extends GenericAuditFields {
     @Column(name = "deleted")
     private boolean deleted = false;
 
+    @ReadPermission(expression = "team view job OR team project limited view job OR team limited view job OR executor read job OR user is an executor service")
     @Column(name = "terraform_plan")
     private String terraformPlan;
 

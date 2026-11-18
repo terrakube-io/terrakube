@@ -26,6 +26,8 @@ import org.springframework.transaction.annotation.Transactional;
 import io.terrakube.api.plugin.execution.JobBranchPolicyException;
 import io.terrakube.api.plugin.execution.WorkspaceBranchPolicy;
 import io.terrakube.api.plugin.scheduler.ScheduleJobService;
+import io.terrakube.api.plugin.scheduler.module.ModuleRefreshProperties;
+import io.terrakube.api.plugin.scheduler.module.ModuleRefreshTransactions;
 import io.terrakube.api.plugin.security.audit.AuditActorContext;
 import io.terrakube.api.plugin.vcs.provider.azdevops.AzDevOpsWebhookService;
 import io.terrakube.api.plugin.vcs.provider.github.GitHubWebhookService;
@@ -37,6 +39,7 @@ import io.terrakube.api.repository.WorkspaceRepository;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.job.JobVia;
+import io.terrakube.api.rs.vcs.Vcs;
 import io.terrakube.api.rs.vcs.VcsType;
 import io.terrakube.api.rs.webhook.RepoWebhook;
 import io.terrakube.api.rs.webhook.WebhookEvent;
@@ -67,6 +70,9 @@ public class RepoWebhookService {
     ObjectMapper objectMapper;
     Executor workspaceFanoutExecutor;
     WorkspaceBranchPolicy workspaceBranchPolicy;
+    WebhookProperties webhookProperties;
+    ModuleRefreshTransactions moduleRefreshTransactions;
+    ModuleRefreshProperties moduleRefreshProperties;
     PrApplyAuthorizationService prApplyAuthorizationService;
 
     private boolean isGitLab(RepoWebhook repoWebhook) {
@@ -99,14 +105,20 @@ public class RepoWebhookService {
     // safety mechanism.
     @Transactional
     public RepoWebhook getOrCreateRepoWebhook(Workspace workspace) {
-        String normalizedUrl = RepoUrlNormalizer.normalize(workspace.getSource());
+        return getOrCreateRepoWebhook(workspace.getSource(), workspace.getVcs());
+    }
+
+    /** @param vcs the connection a new row registers the webhook with */
+    @Transactional
+    public RepoWebhook getOrCreateRepoWebhook(String source, Vcs vcs) {
+        String normalizedUrl = RepoUrlNormalizer.normalize(source);
         return repoWebhookRepository.findByRepositoryUrl(normalizedUrl)
                 .orElseGet(() -> {
                     try {
                         RepoWebhook repoWebhook = new RepoWebhook();
                         repoWebhook.setRepositoryUrl(normalizedUrl);
                         repoWebhook.setWebhookSecret(UUID.randomUUID().toString());
-                        repoWebhook.setVcs(workspace.getVcs());
+                        repoWebhook.setVcs(vcs);
                         // saveAndFlush forces the INSERT to happen here,
                         // inside this try block, instead of being silently
                         // queued until the transaction commits — a plain
@@ -137,18 +149,21 @@ public class RepoWebhookService {
             }
         }
 
-        if (eventTypes.isEmpty()) {
+        boolean tagEvents = modulesUseWebhook(repoWebhook);
+        if (eventTypes.isEmpty() && !tagEvents) {
             log.warn("No webhook event types found for repo webhook {}", repoWebhook.getId());
             return;
         }
 
         String remoteHookId;
         if (isAzureDevOps(repoWebhook)) {
-            remoteHookId = azDevOpsWebhookService.createOrUpdateRepoWebhook(repoWebhook, eventTypes);
+            remoteHookId = azDevOpsWebhookService.createOrUpdateRepoWebhook(repoWebhook, eventTypes, tagEvents);
         } else if (isGitLab(repoWebhook)) {
-            remoteHookId = gitLabWebhookService.createOrUpdateRepoWebhook(repoWebhook, eventTypes, hasPrWorkflow);
+            remoteHookId = gitLabWebhookService.createOrUpdateRepoWebhook(repoWebhook, eventTypes, hasPrWorkflow,
+                    tagEvents);
         } else {
-            remoteHookId = gitHubWebhookService.createOrUpdateRepoWebhook(repoWebhook, eventTypes, hasPrWorkflow);
+            remoteHookId = gitHubWebhookService.createOrUpdateRepoWebhook(repoWebhook, eventTypes, hasPrWorkflow,
+                    tagEvents);
         }
         repoWebhook.setRemoteHookId(remoteHookId);
         repoWebhookRepository.save(repoWebhook);
@@ -159,7 +174,7 @@ public class RepoWebhookService {
         List<Workspace> workspaces = workspaceRepository
                 .findByNormalizedSourceWithMigratedWebhook(repoWebhook.getRepositoryUrl());
 
-        if (workspaces.isEmpty()) {
+        if (workspaces.isEmpty() && !modulesUseWebhook(repoWebhook)) {
             if (isAzureDevOps(repoWebhook)) {
                 azDevOpsWebhookService.deleteRepoWebhook(repoWebhook);
             } else if (isGitLab(repoWebhook)) {
@@ -172,6 +187,13 @@ public class RepoWebhookService {
         } else {
             createOrUpdateSharedWebhook(repoWebhook);
         }
+    }
+
+    // Modules take part in the shared webhook only when module webhooks are enabled; receiving tags does not
+    // depend on it.
+    private boolean modulesUseWebhook(RepoWebhook repoWebhook) {
+        return moduleRefreshProperties.getWebhook().isEnabled()
+                && !moduleRefreshTransactions.findWebhookEligibleBySource(repoWebhook.getRepositoryUrl()).isEmpty();
     }
 
     // @Transactional so repoWebhook.getVcs() (lazily loaded, accessed below by isGitLab/isAzureDevOps
@@ -241,6 +263,13 @@ public class RepoWebhookService {
 
         String normalizedUrl = repoWebhook.getRepositoryUrl();
 
+        if (webhookResult.getTag() != null) {
+            moduleRefreshTransactions.markDueBySource(normalizedUrl, webhookResult.getTag());
+        }
+        if (webhookResult.isModuleOnly()) {
+            return;
+        }
+
         // GitHub/GitLab PR file changes are a repo-level fact (which files a PR touched doesn't
         // depend on whose credentials asked), but processWorkspaceWebhook used to fetch them fresh
         // per workspace - on a shared webhook with N workspaces, that's N redundant paginated API
@@ -260,6 +289,24 @@ public class RepoWebhookService {
             webhookResult.setFileChanges(prFiles);
         }
 
+        if (azureDevOps && webhookProperties.isPrBaseBranchFilter()
+                && webhookResult.isPullRequestOrComment()
+                && (webhookResult.getBaseBranch() == null || webhookResult.getBaseBranch().isBlank())
+                && webhookResult.getPrNumber() != null
+                && repoWebhook.getVcs() != null) {
+            String targetBranch = azDevOpsWebhookService.fetchPrTargetBranch(
+                    repoWebhook.getVcs(), repoWebhook.getRepositoryUrl(), webhookResult.getPrNumber().intValue());
+            if (targetBranch != null) {
+                webhookResult.setBaseBranch(targetBranch);
+            }
+        }
+
+        if (webhookProperties.isPrBaseBranchFilter() && webhookResult.isPullRequestOrComment()
+                && webhookResult.getPrDetailsUrl() == null
+                && (webhookResult.getBaseBranch() == null || webhookResult.getBaseBranch().isBlank())) {
+            log.warn("PR webhook delivery for repository {} has no target branch (baseBranch); workspaces will fail closed and skip speculative plans", normalizedUrl);
+        }
+
         List<Workspace> workspaces = workspaceRepository
                 .findByNormalizedSourceWithMigratedWebhook(normalizedUrl);
 
@@ -275,7 +322,7 @@ public class RepoWebhookService {
         List<CompletableFuture<Void>> tasks = workspaces.stream()
                 .map(workspace -> CompletableFuture.runAsync(() -> {
                     try {
-                        processWorkspaceWebhook(workspace, webhookResult);
+                        processWorkspaceWebhook(workspace, webhookResult.copy());
                     } catch (Exception e) {
                         log.error("Error processing v2 webhook for workspace {}: {}", workspace.getName(),
                                 e.getMessage(), e);
@@ -304,6 +351,27 @@ public class RepoWebhookService {
             }
         }
 
+        String azRepoId = null;
+        if (isAzureDevOps(workspace) && workspace.getVcs() != null) {
+            if (webhookProperties.isPrBaseBranchFilter() && webhookResult.isPullRequestOrComment()
+                    && (webhookResult.getBaseBranch() == null || webhookResult.getBaseBranch().isBlank())
+                    && webhookResult.getPrNumber() != null) {
+                azRepoId = azDevOpsWebhookService.resolveRepositoryId(workspace.getVcs(), workspace.getSource());
+                if (azRepoId != null) {
+                    String targetBranch = azDevOpsWebhookService.fetchPrTargetBranch(
+                            workspace.getVcs(), workspace.getSource(), azRepoId, webhookResult.getPrNumber().intValue());
+                    if (targetBranch != null) {
+                        webhookResult.setBaseBranch(targetBranch);
+                    }
+                }
+            }
+        }
+
+        if (!WebhookEventMatcher.shouldProcessPullRequest(workspace, webhookResult,
+                webhookProperties.isPrBaseBranchFilter())) {
+            return;
+        }
+
         // Azure DevOps: file changes require per-workspace API calls (push payloads
         // don't include changed files, and PR changes need workspace VCS credentials).
         if (isAzureDevOps(workspace) && workspace.getVcs() != null) {
@@ -313,9 +381,15 @@ public class RepoWebhookService {
                         azDevOpsWebhookService.fetchPushFileChanges(
                                 workspace.getVcs(), workspace.getSource(), webhookResult.getRawPayload()));
             } else if ("pull_request".equals(normalizedEvent) && webhookResult.getPrNumber() != null) {
-                webhookResult.setFileChanges(
-                        azDevOpsWebhookService.fetchPrFileChanges(
-                                workspace.getVcs(), workspace.getSource(), webhookResult.getPrNumber().intValue()));
+                if (azRepoId != null && !azRepoId.isBlank()) {
+                    webhookResult.setFileChanges(
+                            azDevOpsWebhookService.fetchPrFileChanges(
+                                    workspace.getVcs(), workspace.getSource(), azRepoId, webhookResult.getPrNumber().intValue()));
+                } else {
+                    webhookResult.setFileChanges(
+                            azDevOpsWebhookService.fetchPrFileChanges(
+                                    workspace.getVcs(), workspace.getSource(), webhookResult.getPrNumber().intValue()));
+                }
             }
         } else if (webhookResult.getPrFilesUrl() != null
                 && (webhookResult.getFileChanges() == null || webhookResult.getFileChanges().isEmpty())) {

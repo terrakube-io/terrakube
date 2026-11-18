@@ -1,3 +1,4 @@
+import { apiUrl } from "@/config/apiUrls";
 import React, { useMemo, useState } from "react";
 import { Button, Drawer, Empty, Form, Input, Space, Tag, Tooltip, Typography, message, notification } from "antd";
 import clsx from "classnames";
@@ -112,7 +113,7 @@ export const PolicyChecksOutput: React.FC<Props> = ({
 
   const handleTriggerEvaluationNow = () => {
     if (!effectiveOrgId || !workspaceId) return;
-    const origin = new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin;
+    const origin = apiUrl("");
     axiosInstance
       .post(`${origin}/policy/v1/organization/${effectiveOrgId}/workspace/${workspaceId}/evaluation`)
       .then(() => {

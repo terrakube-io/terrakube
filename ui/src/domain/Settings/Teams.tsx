@@ -2,9 +2,10 @@ import { DeleteOutlined, EditOutlined, PlusOutlined } from "@ant-design/icons";
 import { Button, Flex, Grid, message, Table, Tag, Tooltip, Typography } from "antd";
 import { Loading } from "@/components/feedback/Loading";
 import { useEffect, useState } from "react";
+import { useDeleteTeam, useInvalidateTeams, useTeams } from "@/modules/teams/teamQueries";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { LinkButton } from "@/components/navigation/LinkButton";
-import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
+import { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
 import { Team, TeamRole } from "../types";
 import { EditTeam } from "./EditTeam";
 import { teamRoles } from "./TeamPermissionsV2";
@@ -37,6 +38,8 @@ function permissionSummary(team: Team): string {
   return granted.length === 0 ? "No permissions granted." : `Can manage ${granted.join(", ")}.`;
 }
 
+const LOAD_ERROR_MESSAGE_KEY = "teams-load-error";
+
 type Props = {
   editorMode?: "new" | "edit";
   editorId?: string;
@@ -45,9 +48,13 @@ type Props = {
 
 export const TeamSettings = ({ editorMode, editorId, managePermission = true }: Props) => {
   const { orgid } = useParams();
-  const [teams, setTeams] = useState<Team[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string>();
+  // `isLoading`, not `isPending`: a disabled query (no organization) stays pending and would spin forever.
+  const { data: teams = [], isLoading: loading, error: loadError } = useTeams(orgid);
+  const invalidateTeams = useInvalidateTeams(orgid);
+  const deleteTeam = useDeleteTeam(orgid, {
+    onSuccess: () => message.success("Team deleted successfully"),
+    onError: (err) => message.error(`Could not delete the team: ${getErrorMessage(err)}`),
+  });
   const [pendingDelete, setPendingDelete] = useState<Team | null>(null);
   const navigate = useNavigate();
   const screens = Grid.useBreakpoint();
@@ -56,40 +63,17 @@ export const TeamSettings = ({ editorMode, editorId, managePermission = true }: 
   const closeEditor = () => navigate(`/organizations/${orgid}/settings/teams`);
   const newTeamPath = `/organizations/${orgid}/settings/teams/new`;
   const editPath = (id: string) => `/organizations/${orgid}/settings/teams/edit/${id}`;
-
-  const onDelete = (id: string) => {
-    axiosInstance
-      .delete(`organization/${orgid}/team/${id}`)
-      .then(() => {
-        message.success("Team deleted successfully");
-        loadTeams();
-      })
-      .catch((err) => {
-        message.error(`Could not delete the team: ${getErrorMessage(err)}`);
-      });
-  };
-
-  const loadTeams = () => {
-    axiosInstance
-      .get(`organization/${orgid}/team`)
-      .then((response) => {
-        setTeams(response.data.data);
-        setLoading(false);
-      })
-      .catch((err) => {
-        if (isPermissionError(err)) {
-          setError(getErrorMessage(err));
-        } else {
-          message.error(`Could not load teams: ${getErrorMessage(err)}`);
-        }
-        setLoading(false);
-      });
-  };
+  // A permission error replaces the page; any other load error is reported and the page stays.
+  const error = loadError && isPermissionError(loadError) ? getErrorMessage(loadError) : undefined;
 
   useEffect(() => {
-    setLoading(true);
-    loadTeams();
-  }, [orgid]);
+    if (loadError && !isPermissionError(loadError)) {
+      // A fixed key, so the refetch on every window focus replaces the message instead of stacking another.
+      message.error({ key: LOAD_ERROR_MESSAGE_KEY, content: `Could not load teams: ${getErrorMessage(loadError)}` });
+    }
+  }, [loadError]);
+
+  const onDelete = (id: string) => deleteTeam.mutate(id);
 
   const columns = [
     {
@@ -163,7 +147,7 @@ export const TeamSettings = ({ editorMode, editorId, managePermission = true }: 
           mode={mode}
           setMode={closeEditor}
           teamId={teamId}
-          loadTeams={loadTeams}
+          loadTeams={invalidateTeams}
           onDeleteTeam={onDelete}
           managePermission={managePermission}
         />
