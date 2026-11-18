@@ -91,7 +91,7 @@ public class WebhookServiceTest {
         prCommentService = mock(PrCommentService.class);
         workspaceBranchPolicy = mock(WorkspaceBranchPolicy.class);
         webhookProperties = new WebhookProperties();
-        moduleRefreshTransactions = mock(ModuleRefreshTransactions.class,
+        moduleRefreshTransactions = mock(ModuleRefreshTransactions.class);
         // A mock answers Optional.empty(): every comment author may apply unless a test says otherwise.
         prApplyAuthorizationService = mock(PrApplyAuthorizationService.class);
 

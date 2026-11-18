@@ -100,7 +100,7 @@ class RepoWebhookServiceTest {
         objectMapper = new ObjectMapper();
         webhookProperties = new WebhookProperties();
         moduleRefreshTransactions = mock(ModuleRefreshTransactions.class);
-        moduleRefreshProperties = new ModuleRefreshProperties(,
+        moduleRefreshProperties = new ModuleRefreshProperties();
         // A mock answers Optional.empty(): every comment author may apply unless a test says otherwise.
         prApplyAuthorizationService = mock(PrApplyAuthorizationService.class);
 
