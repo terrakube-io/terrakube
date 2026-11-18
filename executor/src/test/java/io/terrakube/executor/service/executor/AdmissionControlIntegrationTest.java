@@ -1,5 +1,14 @@
 package io.terrakube.executor.service.executor;
 
+import io.terrakube.client.TerrakubeClient;
+import io.terrakube.client.model.generic.Resource;
+import io.terrakube.client.model.organization.job.Job;
+import io.terrakube.client.model.organization.job.JobAttributes;
+import io.terrakube.client.model.organization.job.OrganizationData;
+import io.terrakube.client.model.organization.job.Relationships;
+import io.terrakube.client.model.organization.job.WorkspaceData;
+import io.terrakube.client.model.organization.job.step.Step;
+import io.terrakube.client.model.response.ResponseWithInclude;
 import io.terrakube.executor.configuration.ExecutorFlagsProperties;
 import io.terrakube.executor.service.mode.TerraformJob;
 import io.terrakube.executor.service.mode.online.OnlineModeServiceImpl;
@@ -73,15 +82,21 @@ class AdmissionControlIntegrationTest {
 
         ExecutorCapacityGate gate = new ExecutorCapacityGate();
         RedisTemplate<String, Object> redisTemplate = Mockito.mock(RedisTemplate.class);
+        TerrakubeClient terrakubeClient = Mockito.mock(TerrakubeClient.class);
+        when(terrakubeClient.getJobById("org", "job-1"))
+                .thenReturn(jobResponse("org", "workspace-1", "job-1"));
+        when(terrakubeClient.getJobById("org", "job-3"))
+                .thenReturn(jobResponse("org", "workspace-3", "job-3"));
         ExecutorJobImpl executorJobImpl = new ExecutorJobImpl(setupWorkspace, terraformExecutor, updateJobStatus,
                 new ExecutorFlagsProperties(), shutdownService, scriptEngineService, eventPublisher,
                 jobExecutionWatchdog, gate, redisTemplate);
         OnlineModeServiceImpl controller = new OnlineModeServiceImpl(
-                new SubmittingExecutorJob(executorJobImpl, pool), gate, eventPublisher, null);
+                new SubmittingExecutorJob(executorJobImpl, pool), gate, eventPublisher, terrakubeClient);
 
         TerraformJob firstJob = new TerraformJob();
         firstJob.setOrganizationId("org");
         firstJob.setWorkspaceId("workspace-1");
+        firstJob.setJobId("job-1");
         firstJob.setType("terraformPlan");
         firstJob.setBranch("remote-content");
         firstJob.setEnvironmentVariables(new java.util.HashMap<>());
@@ -90,6 +105,7 @@ class AdmissionControlIntegrationTest {
         TerraformJob secondJob = new TerraformJob();
         secondJob.setOrganizationId("org");
         secondJob.setWorkspaceId("workspace-2");
+        secondJob.setJobId("job-2");
         secondJob.setType("terraformPlan");
 
         // First request: pod is idle, gate is acquired, job starts running (blocked on the latch).
@@ -119,6 +135,7 @@ class AdmissionControlIntegrationTest {
         TerraformJob thirdJob = new TerraformJob();
         thirdJob.setOrganizationId("org");
         thirdJob.setWorkspaceId("workspace-3");
+        thirdJob.setJobId("job-3");
         thirdJob.setType("terraformPlan");
         thirdJob.setBranch("remote-content");
         thirdJob.setEnvironmentVariables(new java.util.HashMap<>());
@@ -127,5 +144,36 @@ class AdmissionControlIntegrationTest {
         assertEquals(HttpStatus.ACCEPTED, thirdResponse.getStatusCode());
 
         pool.shutdown();
+    }
+
+    private static ResponseWithInclude<Job, Step> jobResponse(String orgId, String workspaceId, String jobId) {
+        JobAttributes attributes = new JobAttributes();
+        attributes.setStatus("pending");
+
+        Resource ws = new Resource();
+        ws.setId(workspaceId);
+        ws.setType("workspace");
+        WorkspaceData workspaceData = new WorkspaceData();
+        workspaceData.setData(ws);
+
+        Resource org = new Resource();
+        org.setId(orgId);
+        org.setType("organization");
+        OrganizationData orgData = new OrganizationData();
+        orgData.setData(org);
+
+        Relationships relationships = new Relationships();
+        relationships.setWorkspace(workspaceData);
+        relationships.setOrganization(orgData);
+
+        Job job = new Job();
+        job.setId(jobId);
+        job.setType("job");
+        job.setAttributes(attributes);
+        job.setRelationships(relationships);
+
+        ResponseWithInclude<Job, Step> response = new ResponseWithInclude<>();
+        response.setData(job);
+        return response;
     }
 }

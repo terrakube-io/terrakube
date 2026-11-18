@@ -10,10 +10,20 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.AuthenticationManagerResolver;
 import org.springframework.security.authentication.ProviderManager;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
+import org.springframework.security.oauth2.core.OAuth2Error;
+import org.springframework.security.oauth2.core.OAuth2TokenValidator;
+import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.jwt.JwtValidators;
+import java.util.Collections;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationProvider;
 
 import javax.crypto.SecretKey;
@@ -23,6 +33,11 @@ import javax.crypto.SecretKey;
 @Setter
 @Slf4j
 public class ExecutorManagerResolver implements AuthenticationManagerResolver<HttpServletRequest> {
+
+    static final String EXPECTED_ISSUER = "TERRAKUBE_INTERNAL";
+    static final String EXPECTED_SUBJECT = "Terrakube Internal (Token)";
+    static final String EXPECTED_AUDIENCE = "TERRAKUBE_INTERNAL";
+    static final String ROLE_API_DISPATCHER = "ROLE_API_DISPATCHER";
 
     private String internalJwtSecret;
 
@@ -41,11 +56,46 @@ public class ExecutorManagerResolver implements AuthenticationManagerResolver<Ht
         ProviderManager providerManager = null;
         try {
             log.info("Authenticating executor request");
-            providerManager = new ProviderManager(new JwtAuthenticationProvider(getJwtDecoder()));
+            JwtAuthenticationProvider provider = new JwtAuthenticationProvider(getJwtDecoder());
+            provider.setJwtAuthenticationConverter(apiDispatchAuthenticationConverter());
+            providerManager = new ProviderManager(provider);
         } catch (Exception ex) {
             log.error(ex.getMessage());
         }
         return providerManager;
+    }
+
+    static boolean isApiDispatchToken(Jwt jwt) {
+        return !jwt.hasClaim("workspaceId")
+                && EXPECTED_ISSUER.equals(jwt.getClaimAsString("iss"))
+                && EXPECTED_SUBJECT.equals(jwt.getSubject())
+                && jwt.getAudience() != null
+                && jwt.getAudience().contains(EXPECTED_AUDIENCE);
+    }
+
+    static OAuth2TokenValidator<Jwt> apiDispatchTokenValidator() {
+        return jwt -> {
+            if (jwt.hasClaim("workspaceId")) {
+                return OAuth2TokenValidatorResult.failure(new OAuth2Error(
+                        "invalid_token", "Workspace runner tokens are not permitted to dispatch executor jobs", null));
+            }
+            if (!isApiDispatchToken(jwt)) {
+                return OAuth2TokenValidatorResult.failure(new OAuth2Error(
+                        "invalid_token", "Token is not an authorized API scheduler dispatch token", null));
+            }
+            return OAuth2TokenValidatorResult.success();
+        };
+    }
+
+    static JwtAuthenticationConverter apiDispatchAuthenticationConverter() {
+        JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
+        converter.setJwtGrantedAuthoritiesConverter(jwt -> {
+            if (isApiDispatchToken(jwt)) {
+                return List.of(new SimpleGrantedAuthority(ROLE_API_DISPATCHER));
+            }
+            return Collections.emptyList();
+        });
+        return converter;
     }
 
     private JwtDecoder getJwtDecoder() {
@@ -56,7 +106,14 @@ public class ExecutorManagerResolver implements AuthenticationManagerResolver<Ht
             byte[] secretBytes = Decoders.BASE64URL.decode(internalJwtSecret);
             SecretKey jwtSecretKey = Keys.hmacShaKeyFor(secretBytes);
             MacAlgorithm macAlgorithm = getMacAlgorithm(secretBytes.length);
-            return NimbusJwtDecoder.withSecretKey(jwtSecretKey).macAlgorithm(macAlgorithm).build();
+            NimbusJwtDecoder decoder = NimbusJwtDecoder.withSecretKey(jwtSecretKey)
+                    .macAlgorithm(macAlgorithm)
+                    .build();
+            decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(
+                    JwtValidators.createDefault(),
+                    apiDispatchTokenValidator()
+            ));
+            return decoder;
         });
     }
 

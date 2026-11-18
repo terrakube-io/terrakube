@@ -28,6 +28,8 @@ public class SecurityAdapter {
         http.cors(Customizer.withDefaults())
                 .authorizeHttpRequests(authz -> {
                     authz.requestMatchers("/actuator/**").permitAll()
+                            .requestMatchers("/api/v1/terraform-rs/**")
+                            .hasAuthority(ExecutorManagerResolver.ROLE_API_DISPATCHER)
                             .anyRequest().authenticated();
                 })
                 .oauth2ResourceServer(oauth2 -> {

@@ -178,6 +178,8 @@ public class PersistentExecutorService {
         return new ExecutorTarget(this.executorUrl, true);
     }
 
+    // ExecutorManagerResolver in terrakube/executor pins iss="TERRAKUBE_INTERNAL",
+    // sub="Terrakube Internal (Token)", aud="TERRAKUBE_INTERNAL", and absence of workspaceId.
     public String generateSystemToken() {
         return Jwts.builder()
                 .issuer("TERRAKUBE_INTERNAL")
