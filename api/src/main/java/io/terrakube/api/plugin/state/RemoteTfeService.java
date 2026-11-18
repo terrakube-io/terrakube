@@ -3089,7 +3089,6 @@ public class RemoteTfeService {
         }
 
         PolicyOverride override = new PolicyOverride();
-        override.setId(UUID.randomUUID());
         override.setEvaluation(evaluation);
         override.setOverriddenBy(username);
         override.setOverriddenAt(new Date());
