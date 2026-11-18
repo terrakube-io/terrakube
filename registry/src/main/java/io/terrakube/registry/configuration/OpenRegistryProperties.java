@@ -27,7 +27,7 @@ public class OpenRegistryProperties {
 
     private long federatedCacheExpireAfterWrite = 10;
     private long federatedCacheMaximumSize = 1000;
-    private long providerManagerCacheExpireAfterWrite = 60;
+    private long providerManagerCacheExpireAfterWrite = 10;
     private long providerManagerCacheMaximumSize = 100;
 
     /** Seconds the module version list is kept. This is the delay before a new version is served. */
