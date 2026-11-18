@@ -1,16 +1,26 @@
 package io.terrakube.api;
 
 import io.terrakube.api.rs.Organization;
+import io.terrakube.api.rs.workspace.Workspace;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.EntityManagerFactory;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.MockitoAnnotations;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 
+import java.util.UUID;
+
 import static io.restassured.RestAssured.given;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.core.IsEqual.equalTo;
 import static org.mockito.Mockito.when;
 
 class OrganizationTests extends ServerApplicationTests {
+
+    @Autowired
+    private EntityManagerFactory entityManagerFactory;
 
     @BeforeEach
     public void setup() {
@@ -99,6 +109,55 @@ class OrganizationTests extends ServerApplicationTests {
                 .then()
                 .assertThat().body("data.attributes.name", equalTo("aws"))
                 .statusCode(HttpStatus.OK.value());
+    }
+
+    @Test
+    void disablingAnOrganizationSoftDeletesItsWorkspaces() {
+        // The soft delete runs from the field-level UPDATE binding on "disabled", so go through Elide's
+        // JSON:API PATCH rather than calling the hook directly.
+        Organization organization = new Organization();
+        organization.setName("disable-" + UUID.randomUUID().toString().substring(0, 8));
+        organization.setDescription("Disabled with a workspace");
+        organization = organizationRepository.save(organization);
+
+        Workspace workspace = new Workspace();
+        workspace.setName("disable-" + UUID.randomUUID().toString().substring(0, 8));
+        workspace.setSource("https://github.com/terrakube-io/terraform-sample.git");
+        workspace.setBranch("main");
+        workspace.setIacType("terraform");
+        workspace.setTerraformVersion("1.0");
+        workspace.setOrganization(organization);
+        workspace = workspaceRepository.save(workspace);
+
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_ADMIN"), "Content-Type", "application/vnd.api+json")
+                .body("{\n" +
+                        "  \"data\": {\n" +
+                        "    \"type\": \"organization\",\n" +
+                        "    \"id\": \"" + organization.getId() + "\",\n" +
+                        "    \"attributes\": {\n" +
+                        "      \"disabled\": true\n" +
+                        "    }\n" +
+                        "  }\n" +
+                        "}")
+                .when()
+                .patch("/api/v1/organization/" + organization.getId())
+                .then()
+                .log()
+                .ifValidationFails()
+                .statusCode(HttpStatus.NO_CONTENT.value());
+
+        // The workspace's @SQLRestriction hides soft-deleted rows from the repository, so read the column directly.
+        EntityManager entityManager = entityManagerFactory.createEntityManager();
+        try {
+            Object deleted = entityManager
+                    .createNativeQuery("SELECT deleted FROM workspace WHERE id = :id")
+                    .setParameter("id", workspace.getId().toString())
+                    .getSingleResult();
+            assertThat(deleted).isEqualTo(true);
+        } finally {
+            entityManager.close();
+        }
     }
 
     @Test
