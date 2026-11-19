@@ -22,6 +22,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -82,6 +83,34 @@ class GcpTerraformStateImplTest {
     }
 
     @Test
+    void testGetBackendStateFileWithApplicationDefaultCredentials(@TempDir Path tempDir) throws IOException {
+        for (String noKey : new String[]{null, "", "   "}) {
+            File workingDirectory = Files.createTempDirectory(tempDir, "ws").toFile();
+            GcpTerraformStateImpl adcState = GcpTerraformStateImpl.builder()
+                    .bucketName(bucketName)
+                    .credentials(noKey)
+                    .storage(storage)
+                    .terrakubeClient(terrakubeClient)
+                    .terraformOutputPathService(terraformOutputPathService)
+                    .terraformStatePathService(terraformStatePathService)
+                    .storageRetryMetrics(new io.terrakube.executor.plugin.tfstate.StorageRetryMetrics(
+                            new io.micrometer.core.instrument.simple.SimpleMeterRegistry()))
+                    .build();
+
+            String result = adcState.getBackendStateFile("org1", "ws1", workingDirectory, "1.5.0");
+
+            assertEquals("gcp_backend_override.tf", result);
+            // Without a key the gcs backend uses Application Default Credentials, so no key file is written
+            // and the backend block does not point at one.
+            assertFalse(new File(workingDirectory, "GCP_CREDENTIALS_FILE.json").exists());
+            String content = FileUtils.readFileToString(new File(workingDirectory, "gcp_backend_override.tf"), Charset.defaultCharset());
+            assertTrue(content.contains("bucket      = \"test-bucket\""));
+            assertTrue(content.contains("prefix      = \"tfstate/org1/ws1/terraform.tfstate\""));
+            assertFalse(content.contains("credentials"));
+        }
+    }
+
+    @Test
     void testSaveTerraformPlan(@TempDir Path tempDir) throws IOException {
         String organizationId = "org1";
         String workspaceId = "ws1";
@@ -96,6 +125,67 @@ class GcpTerraformStateImplTest {
         String expectedUrl = "https://storage.cloud.google.com/test-bucket/tfstate/org1/ws1/job1/step1/terraformLibrary.tfPlan";
         assertEquals(expectedUrl, result);
         verify(storage).create(any(BlobInfo.class), eq("plan-content".getBytes()));
+    }
+
+    @Test
+    void testSaveTerraformPlanAlsoUploadsPlanJsonWhenPresent(@TempDir Path tempDir) throws IOException {
+        File workingDirectory = tempDir.toFile();
+        FileUtils.writeStringToFile(new File(workingDirectory, "terraformLibrary.tfPlan"), "plan-content", Charset.defaultCharset());
+        FileUtils.writeStringToFile(new File(workingDirectory, "plan.json"), "{\"format_version\":\"1.2\"}", StandardCharsets.UTF_8);
+
+        ArgumentCaptor<BlobInfo> infoCaptor = ArgumentCaptor.forClass(BlobInfo.class);
+        String result = gcpTerraformState.saveTerraformPlan("org1", "ws1", "job1", "step1", workingDirectory);
+
+        assertEquals("https://storage.cloud.google.com/test-bucket/tfstate/org1/ws1/job1/step1/terraformLibrary.tfPlan", result);
+        verify(storage, times(2)).create(infoCaptor.capture(), any(byte[].class));
+        assertEquals(
+                java.util.List.of(
+                        BlobId.of("test-bucket", "tfstate/org1/ws1/job1/step1/terraformLibrary.tfPlan"),
+                        BlobId.of("test-bucket", "tfstate/org1/ws1/job1/step1/terraformLibrary.tfPlan.json")),
+                infoCaptor.getAllValues().stream().map(BlobInfo::getBlobId).toList());
+    }
+
+    @Test
+    void testDownloadTerraformPlanJson(@TempDir Path tempDir) throws IOException {
+        File workingDirectory = tempDir.toFile();
+        when(terrakubeClient.getJobById("org1", "job1").getData().getAttributes().getTerraformPlan())
+                .thenReturn("https://storage.cloud.google.com/test-bucket/tfstate/org1/ws1/job1/step1/terraformLibrary.tfPlan");
+
+        BlobId expectedBlobId = BlobId.of("test-bucket", "tfstate/org1/ws1/job1/step1/terraformLibrary.tfPlan.json");
+        Blob blob = mock(Blob.class);
+        when(storage.get(expectedBlobId)).thenReturn(blob);
+        doAnswer(invocation -> {
+            FileUtils.writeStringToFile(invocation.<Path>getArgument(0).toFile(), "{\"resource_changes\":[]}", StandardCharsets.UTF_8);
+            return null;
+        }).when(blob).downloadTo(any(Path.class));
+
+        assertTrue(gcpTerraformState.downloadTerraformPlanJson("org1", "ws1", "job1", "step1", workingDirectory));
+        assertEquals("{\"resource_changes\":[]}", FileUtils.readFileToString(new File(workingDirectory, "plan.json"), StandardCharsets.UTF_8));
+        verify(storage).get(expectedBlobId);
+    }
+
+    @Test
+    void testDownloadTerraformPlanJson_ReturnsFalseWhenMissingOrUnset(@TempDir Path tempDir) {
+        File workingDirectory = tempDir.toFile();
+        when(terrakubeClient.getJobById("org1", "job1").getData().getAttributes().getTerraformPlan())
+                .thenReturn(null);
+        assertFalse(gcpTerraformState.downloadTerraformPlanJson("org1", "ws1", "job1", "step1", workingDirectory));
+
+        when(terrakubeClient.getJobById("org1", "job1").getData().getAttributes().getTerraformPlan())
+                .thenReturn("https://storage.cloud.google.com/test-bucket/tfstate/org1/ws1/job1/step1/terraformLibrary.tfPlan");
+        when(storage.get(any(BlobId.class))).thenReturn(null);
+        assertFalse(gcpTerraformState.downloadTerraformPlanJson("org1", "ws1", "job1", "step1", workingDirectory));
+    }
+
+    @Test
+    void testDownloadTerraformPlanJson_ThrowsOnStorageOutage(@TempDir Path tempDir) {
+        File workingDirectory = tempDir.toFile();
+        when(terrakubeClient.getJobById("org1", "job1").getData().getAttributes().getTerraformPlan())
+                .thenReturn("https://storage.cloud.google.com/test-bucket/tfstate/org1/ws1/job1/step1/terraformLibrary.tfPlan");
+        when(storage.get(any(BlobId.class))).thenThrow(new com.google.cloud.storage.StorageException(503, "Service unavailable"));
+
+        assertThrows(io.terrakube.executor.plugin.tfstate.TerraformStateUnavailableException.class,
+                () -> gcpTerraformState.downloadTerraformPlanJson("org1", "ws1", "job1", "step1", workingDirectory));
     }
 
     // #3671 follow-up: a genuine GCS write failure must retry then throw instead of silently
@@ -143,7 +233,6 @@ class GcpTerraformStateImplTest {
 
         assertTrue(result);
         File downloadedPlan = new File(workingDirectory, "terraformLibrary.tfPlan");
-        assertTrue(downloadedPlan.exists());
         assertEquals("source-content", FileUtils.readFileToString(downloadedPlan, Charset.defaultCharset()));
 
         verify(storage).get(expectedBlobId);

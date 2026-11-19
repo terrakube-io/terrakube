@@ -79,6 +79,15 @@
   font-weight: 500;
 }
 
+/* Titles can come from a job comment (up to 512 characters), so keep them to one line; the full text is in the title attribute. */
+.run-row-title .run-row-link {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .run-row .run-row-link:hover {
   color: var(--tk-link);
 }

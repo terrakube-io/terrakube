@@ -53,7 +53,7 @@ class TerraformStateControllerTest {
                 archiveRepository,
                 workspaceRepository,
                 historyRepository,
-                "terrakube-api.localhost"
+                "https://terrakube-api.localhost"
         );
         ReflectionTestUtils.setField(controller, "stateService", stateService);
     }

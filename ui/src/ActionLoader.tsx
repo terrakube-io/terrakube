@@ -1,17 +1,10 @@
 import React, { Component, ErrorInfo, ReactNode, useEffect, useState } from "react";
-import {
-  SiDocker,
-  SiGithub,
-  SiGooglecloud,
-  SiGrafana,
-  SiKubernetes,
-  SiPrometheus,
-  SiTerraform,
-} from "react-icons/si";
+import { SiDocker, SiGithub, SiGooglecloud, SiGrafana, SiKubernetes, SiPrometheus, SiTerraform } from "react-icons/si";
 import { VscAzure } from "react-icons/vsc";
 import { antdIcons, getIcon } from "./config/iconList";
 import axiosInstance from "./config/axiosConfig";
-// Heavy deps (sucrase, antd, luxon, react-markdown, react-vis)
+import { reportDeprecatedScope } from "./modules/actions/deprecations";
+// Heavy deps (sucrase, antd, dayjs, luxon, react-markdown, react-vis)
 // are loaded lazily inside loadComponent() — they would otherwise dominate the main bundle.
 // Compiled components are cached by action string so re-renders skip the transpile step entirely.
 const compiledComponentCache = new Map<string, any>();
@@ -181,18 +174,22 @@ const ActionLoader = ({ action, context }: { action: any; context: any }) => {
         const componentString = decodeURIComponent(escape(window.atob(action)));
 
         // All heavy deps loaded lazily so they stay out of the main bundle.
-        const [{ transform }, antd, reactVis, ReactMarkdownModule, luxon] = await Promise.all([
+        const [{ transform }, antd, reactVis, ReactMarkdownModule, luxon, dayjsModule] = await Promise.all([
           import("sucrase"),
           import("antd"),
           import("react-vis"),
           import("react-markdown"),
-          import("luxon"),
+          // Deprecated for actions; only fetched for the ones that still use it.
+          /\bDateTime\b/.test(componentString) ? import("luxon") : null,
+          import("dayjs"),
         ]);
         await import("react-vis/dist/style.css");
 
         if (cancelled) return;
 
-        const { DateTime } = luxon;
+        const DateTime = luxon?.DateTime;
+        const dayjs = dayjsModule.default;
+        reportDeprecatedScope(componentString, action);
         const ReactMarkdown = (ReactMarkdownModule as any).default ?? ReactMarkdownModule;
         const antdAny = antd as any;
         const { Panel } = antdAny.Collapse;
@@ -236,7 +233,8 @@ const ActionLoader = ({ action, context }: { action: any; context: any }) => {
           VerticalGridLines,
           axiosInstance,
           RangePicker,
-          DateTime,
+          DateTime, // deprecated, see modules/actions/deprecations.ts
+          dayjs,
           ReactMarkdown,
           ...(antd as Record<string, unknown>),
           ...importedAntdComponents,
@@ -259,7 +257,12 @@ const ActionLoader = ({ action, context }: { action: any; context: any }) => {
         if (cancelled) return;
         console.error("Error creating component:", err);
         setError(`Error: ${err instanceof Error ? err.message : String(err)}`);
-        setComponent(() => () => <div>Error loading component</div>);
+        setComponent(
+          () =>
+            function ActionLoadError() {
+              return <div>Error loading component</div>;
+            }
+        );
       }
     };
 

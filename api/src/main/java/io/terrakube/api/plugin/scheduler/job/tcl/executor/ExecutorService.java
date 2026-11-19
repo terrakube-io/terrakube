@@ -1,5 +1,6 @@
 package io.terrakube.api.plugin.scheduler.job.tcl.executor;
 
+import java.net.URI;
 import java.net.URISyntaxException;
 import java.security.NoSuchAlgorithmException;
 import java.security.spec.InvalidKeySpecException;
@@ -11,6 +12,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -61,6 +63,8 @@ public class ExecutorService {
 
     private static final String EPHEMERAL_EXECUTOR_FLAG = "TERRAKUBE_ENABLE_EPHEMERAL_EXECUTOR";
     static final String PLAN_ARTIFACTS_VARIABLE = "TERRAKUBE_PLAN_ARTIFACTS";
+    private static final Pattern REMOTE_CONTENT_PATH_PATTERN = Pattern.compile(
+            "^/remote/tfe/v2/configuration-versions/[a-fA-F0-9-]+/terraformContent\\.tar\\.gz$");
     private static final Set<String> DYNAMIC_CREDENTIALS_FLAGS = Set.of(
             "ENABLE_DYNAMIC_CREDENTIALS_AZURE",
             "ENABLE_DYNAMIC_CREDENTIALS_VAULT",
@@ -207,6 +211,7 @@ public class ExecutorService {
             executorContext.setSource(job.getOverrideSource());
         }
         executorContext.setBranch(branchFor(job));
+        executorContext.setRemoteContentHostname(hostname);
         if (WorkspaceBranches.REMOTE_CONTENT.equals(job.getOverrideBranch())) {
             executorContext.setShowHeader(false);
         }
@@ -219,13 +224,19 @@ public class ExecutorService {
         // constructing the download URL. The UI disables "Run now" for this case; this guard
         // is defense-in-depth for direct API calls / stale clients.
         if (!FlowType.policyEvaluation.name().equals(flow.getType())
-                && WorkspaceBranches.REMOTE_CONTENT.equals(executorContext.getBranch())
-                && (executorContext.getSource() == null || executorContext.getSource().isBlank()
-                        || "empty".equals(executorContext.getSource()))) {
-            throw new ExecutionException(
-                    "Cannot run job " + job.getId() + ": workspace '" + job.getWorkspace().getName()
-                            + "' has branch 'remote-content' but no configuration has been uploaded. "
-                            + "Upload configuration via the terraform CLI or attach a VCS connection before running.");
+                && WorkspaceBranches.REMOTE_CONTENT.equals(executorContext.getBranch())) {
+            if (executorContext.getSource() == null || executorContext.getSource().isBlank()
+                    || "empty".equals(executorContext.getSource())) {
+                throw new ExecutionException(
+                        "Cannot run job " + job.getId() + ": workspace '" + job.getWorkspace().getName()
+                                + "' has branch 'remote-content' but no configuration has been uploaded. "
+                                + "Upload configuration via the terraform CLI or attach a VCS connection before running.");
+            }
+            if (!isValidRemoteContentSource(executorContext.getSource(), hostname)) {
+                throw new ExecutionException(
+                        "Cannot run job " + job.getId()
+                                + ": remote-content source URL is invalid or does not point to this Terrakube API's configuration-version endpoint.");
+            }
         }
 
         // A UI "Run now" job only sets overrideBranch, not overrideSource (see
@@ -410,6 +421,57 @@ public class ExecutorService {
                 : null;
     }
 
+    static boolean isValidRemoteContentSource(String source, String hostname) {
+        if (source == null || source.isBlank() || hostname == null || hostname.isBlank()) {
+            return false;
+        }
+        try {
+            URI sourceUri = new URI(source.trim());
+            if (sourceUri.getUserInfo() != null || sourceUri.getRawUserInfo() != null) {
+                return false;
+            }
+            String scheme = sourceUri.getScheme();
+            if (!"https".equalsIgnoreCase(scheme)) {
+                return false;
+            }
+            if (!matchesExpectedHostname(sourceUri, hostname)) {
+                return false;
+            }
+            if (sourceUri.getRawQuery() != null || sourceUri.getRawFragment() != null) {
+                return false;
+            }
+            String rawPath = sourceUri.getRawPath();
+            String normalizedPath = sourceUri.normalize().getPath();
+            return rawPath != null
+                    && normalizedPath != null
+                    && REMOTE_CONTENT_PATH_PATTERN.matcher(rawPath).matches()
+                    && REMOTE_CONTENT_PATH_PATTERN.matcher(normalizedPath).matches();
+        } catch (URISyntaxException | IllegalArgumentException e) {
+            return false;
+        }
+    }
+
+    private static boolean matchesExpectedHostname(URI sourceUri, String hostname) throws URISyntaxException {
+        URI expectedUri = new URI("https://" + hostname.trim());
+        String sourceHost = sourceUri.getHost();
+        String expectedHost = expectedUri.getHost();
+        if (sourceHost == null || expectedHost == null || !sourceHost.equalsIgnoreCase(expectedHost)) {
+            return false;
+        }
+        if (expectedUri.getPort() != -1) {
+            return effectivePort(sourceUri) == expectedUri.getPort();
+        }
+        return sourceUri.getPort() == -1 || effectivePort(sourceUri) == defaultPort(sourceUri.getScheme());
+    }
+
+    private static int effectivePort(URI uri) {
+        return uri.getPort() != -1 ? uri.getPort() : defaultPort(uri.getScheme());
+    }
+
+    private static int defaultPort(String scheme) {
+        return "https".equalsIgnoreCase(scheme) ? 443 : 80;
+    }
+
     /**
      * Persists the resolved source directly onto the job for CLI/API driven (remote-content) jobs
      * whose overrideSource was not already set at creation time. A UI "Run now" job is the case
@@ -446,6 +508,10 @@ public class ExecutorService {
         if (resolvedSource == null || resolvedSource.isBlank() || "empty".equals(resolvedSource)) {
             return;
         }
+        if (!isValidRemoteContentSource(resolvedSource, hostname)) {
+            log.warn("Refusing to persist untrusted overrideSource onto job {}: {}", job.getId(), resolvedSource);
+            return;
+        }
         log.info("Persisting resolved configuration source onto job {} for remote-content workspace",
                 job.getId());
         job.setOverrideSource(resolvedSource);
@@ -474,6 +540,11 @@ public class ExecutorService {
             return;
         }
         if (resolvedSource == null || resolvedSource.isBlank()) {
+            return;
+        }
+        if (!isValidRemoteContentSource(resolvedSource, hostname)) {
+            log.warn("Refusing to persist untrusted applied configuration source onto workspace {}: {}",
+                    workspace.getName(), resolvedSource);
             return;
         }
         if (resolvedSource.equals(workspace.getSource())) {

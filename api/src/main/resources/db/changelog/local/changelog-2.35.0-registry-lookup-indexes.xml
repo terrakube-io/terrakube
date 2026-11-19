@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+    <!-- Permission checks load an organization's teams, and every API request looks up federated
+         credentials by issuer. Neither column was indexed. The federated index covers issuer_url only:
+         issuer_url plus audience could exceed the SQL Server 900-byte index key limit. -->
+    <changeSet id="2-35-0-idx-team-organization-id" author="terrakube">
+        <preConditions onFail="MARK_RAN">
+            <not><indexExists indexName="idx_team_organization_id" tableName="team"/></not>
+        </preConditions>
+        <createIndex tableName="team" indexName="idx_team_organization_id">
+            <column name="organization_id"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="2-35-0-idx-federated-issuer-url" author="terrakube">
+        <preConditions onFail="MARK_RAN">
+            <not><indexExists indexName="idx_federated_issuer_url" tableName="federated"/></not>
+        </preConditions>
+        <createIndex tableName="federated" indexName="idx_federated_issuer_url">
+            <column name="issuer_url"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>

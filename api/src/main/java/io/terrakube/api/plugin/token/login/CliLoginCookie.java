@@ -21,10 +21,22 @@ public class CliLoginCookie {
     private static final byte[] HKDF_INFO = "terrakube-cli-login-cookie-v1".getBytes(StandardCharsets.UTF_8);
 
     private final byte[] key;
+    private final String path;
 
-    public CliLoginCookie(@Value("${io.terrakube.token.pat}") String patSecretBase64) {
+    public CliLoginCookie(String patSecretBase64) {
+        this(patSecretBase64, "/oauth");
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public CliLoginCookie(@Value("${io.terrakube.token.pat}") String patSecretBase64,
+                          TerraformLoginProperties loginProperties) {
+        this(patSecretBase64, loginProperties.oauthPath());
+    }
+
+    private CliLoginCookie(String patSecretBase64, String path) {
         byte[] ikm = Decoders.BASE64URL.decode(patSecretBase64);
         this.key = hkdfSha256(ikm, HKDF_INFO, 32);
+        this.path = path;
     }
 
     public String sign(String sessionId) {
@@ -59,7 +71,7 @@ public class CliLoginCookie {
 
     private ResponseCookie.ResponseCookieBuilder baseBuilder(String value) {
         return ResponseCookie.from(COOKIE_NAME, value)
-            .httpOnly(true).secure(true).sameSite("Lax").path("/oauth");
+            .httpOnly(true).secure(true).sameSite("Lax").path(path);
     }
 
     private byte[] mac(String data) {

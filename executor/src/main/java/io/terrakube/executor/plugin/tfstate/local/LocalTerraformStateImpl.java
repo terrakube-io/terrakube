@@ -45,6 +45,7 @@ import io.terrakube.executor.service.mode.TerraformJob;
 public class LocalTerraformStateImpl implements TerraformState {
 
     private static final String TERRAFORM_PLAN_FILE = "terraformLibrary.tfPlan";
+    private static final String TERRAFORM_PLAN_JSON_FILE = "plan.json";
     private static final String TERRAFORM_STATE_FILE = "terraform.tfstate";
     private static final String LOCAL_BACKEND_DIRECTORY = "/.terraform-spring-boot/local/backend/%s/%s/" + TERRAFORM_STATE_FILE;
     private static final String LOCAL_PLAN_DIRECTORY = "/.terraform-spring-boot/local/state/%s/%s/%s/%s/" + TERRAFORM_PLAN_FILE;
@@ -130,11 +131,20 @@ public class LocalTerraformStateImpl implements TerraformState {
 
         if (tfPlan.exists()) {
             File targetFile = new File(stepStateDirectory);
-            return storageRetryMetrics.withRetry("local", "plan-write", () -> {
+            String savedPath = storageRetryMetrics.withRetry("local", "plan-write", () -> {
                 FileUtils.copyFile(tfPlan, targetFile);
                 log.info("Local state file saved to {}", stepStateDirectory);
                 return stepStateDirectory;
             });
+            File tfPlanJson = new File(workingDirectory, TERRAFORM_PLAN_JSON_FILE);
+            if (tfPlanJson.exists()) {
+                File targetJsonFile = new File(stepStateDirectory + ".json");
+                storageRetryMetrics.withRetry("local", "plan-json-write", () -> {
+                    FileUtils.copyFile(tfPlanJson, targetJsonFile);
+                    return null;
+                });
+            }
+            return savedPath;
         } else {
             return null;
         }
@@ -177,6 +187,47 @@ public class LocalTerraformStateImpl implements TerraformState {
                     planExists.set(true);
                 });
         return planExists.get();
+    }
+
+    @Override
+    public boolean downloadTerraformPlanJson(String organizationId, String workspaceId, String jobId, String stepId,
+                                             File workingDirectory) {
+        String stateFilePath = terrakubeClient.getJobById(organizationId, jobId).getData().getAttributes().getTerraformPlan();
+        if (stateFilePath == null || stateFilePath.isBlank()) {
+            return false;
+        }
+        String jsonStatePath = stateFilePath + ".json";
+        File targetFile = new File(workingDirectory, TERRAFORM_PLAN_JSON_FILE);
+        log.info("Copying Terraform plan JSON from {}:", jsonStatePath);
+        if (jsonStatePath.startsWith("http://") || jsonStatePath.startsWith("https://")) {
+            return storageRetryMetrics.withRetry("local", "plan-json-read", () -> {
+                HttpURLConnection connection = (HttpURLConnection) new URL(jsonStatePath).openConnection();
+                connection.setRequestMethod("GET");
+                if (workspaceSecurity != null) {
+                    connection.setRequestProperty("Authorization", "Bearer " + workspaceSecurity.generateAccessToken(60, organizationId, workspaceId, jobId, stepId));
+                }
+                try {
+                    if (connection.getResponseCode() == HttpURLConnection.HTTP_NOT_FOUND) {
+                        return false;
+                    }
+                    try (InputStream in = connection.getInputStream()) {
+                        FileUtils.copyInputStreamToFile(in, targetFile);
+                    }
+                    return true;
+                } finally {
+                    connection.disconnect();
+                }
+            });
+        } else {
+            File sourceFile = new File(jsonStatePath);
+            if (!sourceFile.exists()) {
+                return false;
+            }
+            return storageRetryMetrics.withRetry("local", "plan-json-read", () -> {
+                FileUtils.copyFile(sourceFile, targetFile);
+                return true;
+            });
+        }
     }
 
     @Override

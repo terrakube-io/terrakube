@@ -13,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 import io.terrakube.api.rs.workspace.Workspace;
 
 import java.util.Collection;
+import java.util.Date;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -87,6 +88,16 @@ public interface JobRepository extends JpaRepository<Job, Integer> {
     @Modifying(flushAutomatically = true)
     @Query("update job j set j.status = :newStatus where j.id = :jobId and j.status in :currentStatuses")
     int updateStatusByIdAndStatusIn(@Param("newStatus") JobStatus newStatus, @Param("jobId") int jobId, @Param("currentStatuses") List<JobStatus> currentStatuses);
+
+    // Records that the scheduler handed the job to an executor, only while it is still pending or approved, in one
+    // statement: a job cancelled while it was being dispatched stays cancelled, and one the executor already
+    // reported running is not set back to queue. A save of the scheduler's copy would write the old status back.
+    @Transactional
+    @Modifying(flushAutomatically = true)
+    @Query("update job j set j.status = io.terrakube.api.rs.job.JobStatus.queue, j.dispatchNextRetryAt = null, "
+            + "j.dispatchLastError = null, j.updatedDate = :now where j.id = :jobId "
+            + "and j.status in (io.terrakube.api.rs.job.JobStatus.pending, io.terrakube.api.rs.job.JobStatus.approved)")
+    int markDispatched(@Param("jobId") int jobId, @Param("now") Date now);
 
     /**
      * Pins the version a job resolved from its constraint: only when none is set yet, or it is the same one,

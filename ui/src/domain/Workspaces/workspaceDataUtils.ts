@@ -1,3 +1,4 @@
+import { apiUrl } from "@/config/apiUrls";
 import { AxiosInstance } from "axios";
 import { axiosAuxiliary } from "../../config/axiosConfig";
 import { ORGANIZATION_ARCHIVE, WORKSPACE_ARCHIVE } from "../../config/actionTypes";
@@ -40,6 +41,16 @@ export function buildResourceOptions(resources: Resource[]): { value: string; la
     .map((resource) => getResourceAddress(resource))
     .sort((a, b) => a.localeCompare(b))
     .map((address) => ({ value: address, label: address }));
+}
+
+// Jobs created through the Terraform CLI get this fixed value in comments, so it says nothing about the run.
+const CLI_JOB_COMMENT = "terraform-cli";
+
+// A job created through the API can carry a short reason in its comments; use its first line as the run title.
+function getJobComment(comments: unknown): string | undefined {
+  if (typeof comments !== "string") return undefined;
+  const firstLine = comments.trim().split("\n")[0].trim();
+  return firstLine && firstLine !== CLI_JOB_COMMENT ? firstLine : undefined;
 }
 
 export const include = {
@@ -121,9 +132,11 @@ export async function setupWorkspaceIncludes(
         const isNonUi = jobVia && jobVia !== JobVia.Ui && jobVia !== "UI";
         jobs.push({
           id: element.id,
-          title: isNonUi
-            ? "Triggered via " + formatJobVia(jobVia)
-            : "Queue manually using " + getIaCNameById(data?.data?.attributes?.iacType),
+          title:
+            getJobComment(element.attributes?.comments) ??
+            (isNonUi
+              ? "Triggered via " + formatJobVia(jobVia)
+              : "Queue manually using " + getIaCNameById(data?.data?.attributes?.iacType)),
           commitId: element.attributes.commitId,
           stepNumber: element.attributes.stepNumber,
           latestChange: relativeTime(element.attributes.createdDate),
@@ -240,9 +253,9 @@ export async function setupWorkspaceIncludes(
   if (currentStateId !== lastState?.id) {
     const organizationId = sessionStorage.getItem(ORGANIZATION_ARCHIVE);
     const workspaceId = sessionStorage.getItem(WORKSPACE_ARCHIVE);
-    const url = `${
-      new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin
-    }/access-token/v1/teams/permissions/organization/${organizationId}/workspace/${workspaceId}`;
+    const url = `${apiUrl(
+      ""
+    )}/access-token/v1/teams/permissions/organization/${organizationId}/workspace/${workspaceId}`;
     axiosInstance
       .get(url)
       .then((response: any) => {
@@ -291,9 +304,7 @@ export function loadState(
       if (result.outputs.length < 1 && result.resources.length < 1) {
         axiosAuxiliary
           .get(
-            `${
-              new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin
-            }/tfstate/v1/organization/${organizationId}/workspace/${workspaceId}/state/terraform.tfstate`,
+            `${apiUrl("")}/tfstate/v1/organization/${organizationId}/workspace/${workspaceId}/state/terraform.tfstate`,
             { auxClass: "workspace-state-preview" }
           )
           .then((currentStateData) => {

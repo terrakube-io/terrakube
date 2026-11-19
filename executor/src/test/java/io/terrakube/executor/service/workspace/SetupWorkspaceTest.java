@@ -1,21 +1,39 @@
 package io.terrakube.executor.service.workspace;
 
+import com.sun.net.httpserver.HttpServer;
+import com.sun.net.httpserver.HttpsConfigurator;
+import com.sun.net.httpserver.HttpsServer;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.StringWriter;
 import java.lang.reflect.Proxy;
+import java.math.BigInteger;
+import java.net.InetSocketAddress;
 import java.net.URI;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
+import java.security.KeyStore;
+import java.security.cert.Certificate;
+import java.security.cert.X509Certificate;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
+import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+import javax.net.ssl.HostnameVerifier;
+import javax.net.ssl.HttpsURLConnection;
+import javax.net.ssl.KeyManagerFactory;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLSocketFactory;
+import javax.net.ssl.TrustManagerFactory;
 
 import io.terrakube.client.TerrakubeClient;
 import io.terrakube.client.model.organization.job.Job;
@@ -26,7 +44,12 @@ import org.apache.commons.compress.compressors.gzip.GzipCompressorOutputStream;
 import org.apache.commons.io.FileUtils;
 import org.apache.tools.tar.TarEntry;
 import org.apache.tools.tar.TarOutputStream;
+import org.bouncycastle.asn1.x500.X500Name;
+import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
+import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder;
 import org.bouncycastle.openssl.jcajce.JcaPEMWriter;
+import org.bouncycastle.operator.ContentSigner;
+import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.jgit.api.errors.InvalidRemoteException;
@@ -127,16 +150,6 @@ public class SetupWorkspaceTest {
         }
     }
 
-    private TerraformJob successfulTarGzJob() throws IOException {
-        TerraformJob job = new TerraformJob();
-        job.setOrganizationId("ze-org");
-        job.setWorkspaceId("ze-ws");
-        job.setSource(terraformTarGz().toString());
-        job.setBranch("remote-content");
-        job.setEnvironmentVariables(new HashMap<String, String>());
-        return job;
-    }
-
     private SetupWorkspace standardSetupWorkspaceImpl(TerraformJob job) {
         String overrideSource = job != null && "remote-content".equals(job.getBranch()) ? job.getSource() : null;
         return new SetupWorkspaceImpl(new NoopWorkspaceSecurity(), false, new NoopTerraformExecutor(),
@@ -203,6 +216,10 @@ public class SetupWorkspaceTest {
         @Override
         public String version() {
             return "";
+        }
+
+        @Override
+        public void installBinary(TerraformJob terraformJob) {
         }
     }
 
@@ -781,33 +798,91 @@ public class SetupWorkspaceTest {
         Assertions.assertEquals(InvalidRemoteException.class, e.getCause().getClass());
     }
 
+    private static HttpServer startServer(int statusCode, byte[] body, String locationHeader,
+            AtomicInteger requestCount, AtomicReference<String> authHeader) throws IOException {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/", exchange -> {
+            if (requestCount != null) {
+                requestCount.incrementAndGet();
+            }
+            if (authHeader != null) {
+                authHeader.set(exchange.getRequestHeaders().getFirst("Authorization"));
+            }
+            if (locationHeader != null) {
+                exchange.getResponseHeaders().add("Location", locationHeader);
+            }
+            byte[] responseBody = body != null ? body : new byte[0];
+            exchange.sendResponseHeaders(statusCode, responseBody.length);
+            try (var os = exchange.getResponseBody()) {
+                os.write(responseBody);
+            }
+        });
+        server.start();
+        return server;
+    }
+
+    private TerraformJob httpTarGzJob(HttpServer server) {
+        TerraformJob job = new TerraformJob();
+        job.setOrganizationId("ze-org");
+        job.setWorkspaceId("ze-ws");
+        job.setJobId("9040");
+        job.setStepId("step-1");
+        job.setSource("http://127.0.0.1:" + server.getAddress().getPort()
+                + "/remote/tfe/v2/configuration-versions/" + UUID.randomUUID() + "/terraformContent.tar.gz");
+        job.setBranch("remote-content");
+        job.setEnvironmentVariables(new HashMap<String, String>());
+        return job;
+    }
+
+    private SetupWorkspaceImpl httpSetupWorkspaceImpl(HttpServer server, TerraformJob job, WorkspaceSecurity security) {
+        String apiUrl = "http://127.0.0.1:" + server.getAddress().getPort();
+        String overrideSource = job != null && "remote-content".equals(job.getBranch()) ? job.getSource() : null;
+        return new SetupWorkspaceImpl(security, false, new NoopTerraformExecutor(),
+                apiUrl, terrakubeClient(overrideSource), new TarGzArchiver());
+    }
+
     @Test
     public void downloadsAndUnpacksTarGz() throws Exception {
-        TerraformJob job = successfulTarGzJob();
-        SetupWorkspace setup = standardSetupWorkspaceImpl(job);
-        File workspaceDir = setup.prepareWorkspace(job);
-        File terrformDir = FileUtils.getFile(workspaceDir, "main.tf");
-        Assertions.assertTrue(terrformDir.exists());
+        byte[] tarBytes = Files.readAllBytes(Path.of(terraformTarGz()));
+        HttpServer server = startServer(200, tarBytes, null, null, null);
+        try {
+            TerraformJob job = httpTarGzJob(server);
+            SetupWorkspace setup = httpSetupWorkspaceImpl(server, job, new NoopWorkspaceSecurity());
+            File workspaceDir = setup.prepareWorkspace(job);
+            File terrformDir = FileUtils.getFile(workspaceDir, "main.tf");
+            Assertions.assertTrue(terrformDir.exists());
+        } finally {
+            server.stop(0);
+        }
     }
 
     @Test
     public void keepsExecutableBitFromTarGz() throws Exception {
         Assumptions.assumeTrue(FileSystems.getDefault().supportedFileAttributeViews().contains("posix"));
-        TerraformJob job = successfulTarGzJob();
-        job.setSource(executableScriptTarGz().toString());
-        SetupWorkspace setup = standardSetupWorkspaceImpl(job);
-        File workspaceDir = setup.prepareWorkspace(job);
-        Assertions.assertTrue(Files.isExecutable(FileUtils.getFile(workspaceDir, "scripts", "run.sh").toPath()));
-        Assertions.assertFalse(Files.isExecutable(FileUtils.getFile(workspaceDir, "main.tf").toPath()));
+        byte[] tarBytes = Files.readAllBytes(Path.of(executableScriptTarGz()));
+        HttpServer server = startServer(200, tarBytes, null, null, null);
+        try {
+            TerraformJob job = httpTarGzJob(server);
+            SetupWorkspace setup = httpSetupWorkspaceImpl(server, job, new NoopWorkspaceSecurity());
+            File workspaceDir = setup.prepareWorkspace(job);
+            Assertions.assertTrue(Files.isExecutable(FileUtils.getFile(workspaceDir, "scripts", "run.sh").toPath()));
+            Assertions.assertFalse(Files.isExecutable(FileUtils.getFile(workspaceDir, "main.tf").toPath()));
+        } finally {
+            server.stop(0);
+        }
     }
 
     @Test
     public void reportsFailureonBadTarGz() throws Exception {
-        TerraformJob job = successfulTarGzJob();
-        job.setSource("file:/nonsense");
-        SetupWorkspace setup = standardSetupWorkspaceImpl(job);
-        WorkspaceException e = Assertions.assertThrows(WorkspaceException.class, () -> setup.prepareWorkspace(job));
-        Assertions.assertEquals(FileNotFoundException.class, e.getCause().getClass());
+        HttpServer server = startServer(404, new byte[0], null, null, null);
+        try {
+            TerraformJob job = httpTarGzJob(server);
+            SetupWorkspace setup = httpSetupWorkspaceImpl(server, job, new NoopWorkspaceSecurity());
+            WorkspaceException e = Assertions.assertThrows(WorkspaceException.class, () -> setup.prepareWorkspace(job));
+            Assertions.assertEquals(FileNotFoundException.class, e.getCause().getClass());
+        } finally {
+            server.stop(0);
+        }
     }
 
     // Defense in depth for #3671: a storage read failure upstream should surface as a 503 from
@@ -815,17 +890,20 @@ public class SetupWorkspaceTest {
     // instead of letting gzip parsing produce the confusing "Input is not in the .gz format".
     @Test
     public void reportsFailureWhenDownloadedTarGzIsEmpty() throws Exception {
-        TerraformJob job = successfulTarGzJob();
-        File emptyTarGz = File.createTempFile("emptyTarGzJob", ".tar.gz");
-        job.setSource(emptyTarGz.toURI().toString());
-        job.setJobId("9042");
-        SetupWorkspace setup = standardSetupWorkspaceImpl(job);
+        HttpServer server = startServer(200, new byte[0], null, null, null);
+        try {
+            TerraformJob job = httpTarGzJob(server);
+            job.setJobId("9042");
+            SetupWorkspace setup = httpSetupWorkspaceImpl(server, job, new NoopWorkspaceSecurity());
 
-        WorkspaceException e = Assertions.assertThrows(WorkspaceException.class, () -> setup.prepareWorkspace(job));
+            WorkspaceException e = Assertions.assertThrows(WorkspaceException.class, () -> setup.prepareWorkspace(job));
 
-        Assertions.assertEquals(IOException.class, e.getCause().getClass());
-        Assertions.assertTrue(e.getCause().getMessage().contains("empty"));
-        Assertions.assertTrue(e.getCause().getMessage().contains("9042"));
+            Assertions.assertEquals(IOException.class, e.getCause().getClass());
+            Assertions.assertTrue(e.getCause().getMessage().contains("empty"));
+            Assertions.assertTrue(e.getCause().getMessage().contains("9042"));
+        } finally {
+            server.stop(0);
+        }
     }
 
     // Reproduces the "Run now" gap: a UI-created job on a remote-content workspace whose
@@ -850,35 +928,313 @@ public class SetupWorkspaceTest {
     }
 
     @Test
+    public void refusesUntrustedExternalRemoteContentUrlWithoutSendingToken() throws Exception {
+        AtomicInteger attackerRequests = new AtomicInteger(0);
+        HttpServer attackerServer = startServer(200, new byte[] {1, 2, 3}, null, attackerRequests, null);
+        AtomicInteger bareTokenCalls = new AtomicInteger(0);
+        AtomicInteger scopedTokenCalls = new AtomicInteger(0);
+        WorkspaceSecurity recordingSecurity = new NoopWorkspaceSecurity() {
+            @Override
+            public String generateAccessToken(int minutes) {
+                bareTokenCalls.incrementAndGet();
+                return "bare-executor-token";
+            }
+
+            @Override
+            public String generateAccessToken(int minutes, String organizationId, String workspaceId, String jobId, String stepId) {
+                scopedTokenCalls.incrementAndGet();
+                return "scoped-token";
+            }
+        };
+        try {
+            String maliciousUrl = "http://127.0.0.1:" + attackerServer.getAddress().getPort()
+                    + "/remote/tfe/v2/configuration-versions/" + UUID.randomUUID() + "/terraformContent.tar.gz";
+            TerraformJob job = new TerraformJob();
+            job.setOrganizationId("ze-org");
+            job.setWorkspaceId("ze-ws");
+            job.setJobId("9043");
+            job.setStepId("step-1");
+            job.setSource(maliciousUrl);
+            job.setBranch("remote-content");
+            job.setEnvironmentVariables(new HashMap<>());
+
+            SetupWorkspaceImpl setup = new SetupWorkspaceImpl(recordingSecurity, false, new NoopTerraformExecutor(),
+                    "https://terrakube-api.example.com", terrakubeClient(maliciousUrl), new TarGzArchiver());
+
+            WorkspaceException e = Assertions.assertThrows(WorkspaceException.class, () -> setup.prepareWorkspace(job));
+
+            Assertions.assertInstanceOf(IOException.class, e.getCause());
+            Assertions.assertTrue(e.getCause().getMessage().contains("untrusted URL"));
+            Assertions.assertEquals(0, attackerRequests.get());
+            Assertions.assertEquals(0, bareTokenCalls.get());
+            Assertions.assertEquals(0, scopedTokenCalls.get());
+        } finally {
+            attackerServer.stop(0);
+        }
+    }
+
+    @Test
+    public void refusesUserInfoSpoofedAndOffPathRemoteContentUrls() {
+        String apiUrl = "https://terrakube-api.localhost";
+        String id = UUID.randomUUID().toString();
+
+        Assertions.assertThrows(IOException.class, () -> SetupWorkspaceImpl.validateConfigurationVersionSource(
+                "https://terrakube-api.localhost@attacker.example.com/remote/tfe/v2/configuration-versions/" + id + "/terraformContent.tar.gz",
+                apiUrl));
+        Assertions.assertThrows(IOException.class, () -> SetupWorkspaceImpl.validateConfigurationVersionSource(
+                "https://attacker.example.com/x.tar.gz",
+                apiUrl));
+        Assertions.assertThrows(IOException.class, () -> SetupWorkspaceImpl.validateConfigurationVersionSource(
+                "https://terrakube-api.localhost/remote/tfe/v2/configuration-versions/" + id + "/../other/terraformContent.tar.gz",
+                apiUrl));
+        Assertions.assertThrows(IOException.class, () -> SetupWorkspaceImpl.validateConfigurationVersionSource(
+                "https://terrakube-api.localhost/api/v1/organization/123",
+                apiUrl));
+        Assertions.assertThrows(IOException.class, () -> SetupWorkspaceImpl.validateConfigurationVersionSource(
+                "http://terrakube-api.localhost/remote/tfe/v2/configuration-versions/" + id + "/terraformContent.tar.gz",
+                apiUrl));
+        Assertions.assertThrows(IOException.class, () -> SetupWorkspaceImpl.validateConfigurationVersionSource(
+                "https://terrakube-api.localhost:8443/remote/tfe/v2/configuration-versions/" + id + "/terraformContent.tar.gz",
+                apiUrl));
+        Assertions.assertThrows(IOException.class, () -> SetupWorkspaceImpl.validateConfigurationVersionSource(
+                "file:///etc/passwd",
+                apiUrl));
+    }
+
+    @Test
+    public void refusesHttpRedirectWithoutForwardingAuthorizationHeader() throws Exception {
+        AtomicInteger attackerRequests = new AtomicInteger(0);
+        HttpServer attackerServer = startServer(200, new byte[] {1, 2, 3}, null, attackerRequests, null);
+        String redirectTarget = "http://127.0.0.1:" + attackerServer.getAddress().getPort() + "/steal";
+        HttpServer apiServer = startServer(302, new byte[0], redirectTarget, null, null);
+        try {
+            TerraformJob job = httpTarGzJob(apiServer);
+            SetupWorkspaceImpl setup = httpSetupWorkspaceImpl(apiServer, job, new NoopWorkspaceSecurity());
+
+            WorkspaceException e = Assertions.assertThrows(WorkspaceException.class, () -> setup.prepareWorkspace(job));
+
+            Assertions.assertInstanceOf(IOException.class, e.getCause());
+            Assertions.assertTrue(e.getCause().getMessage().contains("redirect"));
+            Assertions.assertEquals(0, attackerRequests.get());
+        } finally {
+            apiServer.stop(0);
+            attackerServer.stop(0);
+        }
+    }
+
+    @Test
+    public void sendsScopedWorkspaceExecutorTokenForValidRemoteContentDownload() throws Exception {
+        byte[] tarBytes = Files.readAllBytes(Path.of(terraformTarGz()));
+        AtomicReference<String> receivedAuthHeader = new AtomicReference<>();
+        HttpServer apiServer = startServer(200, tarBytes, null, null, receivedAuthHeader);
+        AtomicReference<String> capturedArgs = new AtomicReference<>();
+        WorkspaceSecurity recordingSecurity = new NoopWorkspaceSecurity() {
+            @Override
+            public String generateAccessToken(int minutes) {
+                throw new AssertionError("Bare EXECUTOR_SERVICE token must not be minted for remote-content download");
+            }
+
+            @Override
+            public String generateAccessToken(int minutes, String organizationId, String workspaceId, String jobId, String stepId) {
+                capturedArgs.set(minutes + ":" + organizationId + ":" + workspaceId + ":" + jobId + ":" + stepId);
+                return "scoped-workspace-executor-token";
+            }
+        };
+        try {
+            TerraformJob job = httpTarGzJob(apiServer);
+            job.setOrganizationId("org-123");
+            job.setWorkspaceId("ws-456");
+            job.setJobId("789");
+            job.setStepId("step-abc");
+
+            SetupWorkspaceImpl setup = httpSetupWorkspaceImpl(apiServer, job, recordingSecurity);
+            File workspaceDir = setup.prepareWorkspace(job);
+
+            Assertions.assertTrue(FileUtils.getFile(workspaceDir, "main.tf").exists());
+            Assertions.assertEquals("1:org-123:ws-456:789:step-abc", capturedArgs.get());
+            Assertions.assertEquals("Bearer scoped-workspace-executor-token", receivedAuthHeader.get());
+        } finally {
+            apiServer.stop(0);
+        }
+    }
+
+    @Test
+    public void downloadsRemoteContentFromPublicHostnameWhenApiUrlIsInternal() throws Exception {
+        byte[] tarBytes = Files.readAllBytes(Path.of(terraformTarGz()));
+        AtomicReference<String> receivedAuthHeader = new AtomicReference<>();
+
+        KeyPair keyPair = generateRsaKeyPair();
+        long now = System.currentTimeMillis();
+        X500Name dn = new X500Name("CN=127.0.0.1");
+        ContentSigner signer = new JcaContentSignerBuilder("SHA256withRSA").build(keyPair.getPrivate());
+        X509Certificate cert = new JcaX509CertificateConverter().getCertificate(
+                new JcaX509v3CertificateBuilder(dn, BigInteger.valueOf(now),
+                        new Date(now - 60_000), new Date(now + 3_600_000), dn, keyPair.getPublic()).build(signer));
+        KeyStore ks = KeyStore.getInstance("PKCS12");
+        ks.load(null, null);
+        ks.setKeyEntry("server", keyPair.getPrivate(), new char[0], new Certificate[] { cert });
+        KeyManagerFactory kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
+        kmf.init(ks, new char[0]);
+        TrustManagerFactory tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+        tmf.init(ks);
+        SSLContext sslContext = SSLContext.getInstance("TLS");
+        sslContext.init(kmf.getKeyManagers(), tmf.getTrustManagers(), null);
+
+        HttpsServer publicIngressServer = HttpsServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        publicIngressServer.setHttpsConfigurator(new HttpsConfigurator(sslContext));
+        publicIngressServer.createContext("/", exchange -> {
+            receivedAuthHeader.set(exchange.getRequestHeaders().getFirst("Authorization"));
+            exchange.sendResponseHeaders(200, tarBytes.length);
+            try (var os = exchange.getResponseBody()) {
+                os.write(tarBytes);
+            }
+        });
+        publicIngressServer.start();
+
+        SSLSocketFactory originalFactory = HttpsURLConnection.getDefaultSSLSocketFactory();
+        HostnameVerifier originalVerifier = HttpsURLConnection.getDefaultHostnameVerifier();
+        HttpsURLConnection.setDefaultSSLSocketFactory(sslContext.getSocketFactory());
+        HttpsURLConnection.setDefaultHostnameVerifier((hostname, session) -> "127.0.0.1".equals(hostname));
+
+        AtomicReference<String> capturedArgs = new AtomicReference<>();
+        WorkspaceSecurity recordingSecurity = new NoopWorkspaceSecurity() {
+            @Override
+            public String generateAccessToken(int minutes, String organizationId, String workspaceId, String jobId, String stepId) {
+                capturedArgs.set(minutes + ":" + organizationId + ":" + workspaceId + ":" + jobId + ":" + stepId);
+                return "scoped-public-token";
+            }
+        };
+        try {
+            String publicUrl = "https://127.0.0.1:" + publicIngressServer.getAddress().getPort()
+                    + "/remote/tfe/v2/configuration-versions/" + UUID.randomUUID() + "/terraformContent.tar.gz";
+            TerraformJob job = new TerraformJob();
+            job.setOrganizationId("org-split");
+            job.setWorkspaceId("ws-split");
+            job.setJobId("9050");
+            job.setStepId("step-split");
+            job.setBranch("remote-content");
+            job.setRemoteContentHostname("127.0.0.1:" + publicIngressServer.getAddress().getPort());
+            job.setEnvironmentVariables(new HashMap<>());
+
+            // apiUrl points to an internal cluster service URL that differs in scheme, host, and port
+            SetupWorkspaceImpl setup = new SetupWorkspaceImpl(recordingSecurity, false, new NoopTerraformExecutor(),
+                    "http://terrakube-api-service:8080", terrakubeClient(publicUrl), new TarGzArchiver());
+
+            File workspaceDir = setup.prepareWorkspace(job);
+
+            Assertions.assertTrue(FileUtils.getFile(workspaceDir, "main.tf").exists());
+            Assertions.assertEquals("1:org-split:ws-split:9050:step-split", capturedArgs.get());
+            Assertions.assertEquals("Bearer scoped-public-token", receivedAuthHeader.get());
+        } finally {
+            HttpsURLConnection.setDefaultSSLSocketFactory(originalFactory);
+            HttpsURLConnection.setDefaultHostnameVerifier(originalVerifier);
+            publicIngressServer.stop(0);
+        }
+    }
+
+    @Test
+    public void refusesUntrustedHostEvenWhenInternalApiUrlAndPublicHostnameDiffer() throws Exception {
+        AtomicInteger attackerRequests = new AtomicInteger(0);
+        HttpServer attackerServer = startServer(200, new byte[] {1, 2, 3}, null, attackerRequests, null);
+        AtomicInteger scopedTokenCalls = new AtomicInteger(0);
+        WorkspaceSecurity recordingSecurity = new NoopWorkspaceSecurity() {
+            @Override
+            public String generateAccessToken(int minutes, String organizationId, String workspaceId, String jobId, String stepId) {
+                scopedTokenCalls.incrementAndGet();
+                return "scoped-token";
+            }
+        };
+        try {
+            String maliciousUrl = "http://127.0.0.1:" + attackerServer.getAddress().getPort()
+                    + "/remote/tfe/v2/configuration-versions/" + UUID.randomUUID() + "/terraformContent.tar.gz";
+            TerraformJob job = new TerraformJob();
+            job.setOrganizationId("org-split");
+            job.setWorkspaceId("ws-split");
+            job.setJobId("9051");
+            job.setStepId("step-split");
+            job.setBranch("remote-content");
+            job.setRemoteContentHostname("terrakube-api.example.com");
+            job.setEnvironmentVariables(new HashMap<>());
+
+            SetupWorkspaceImpl setup = new SetupWorkspaceImpl(recordingSecurity, false, new NoopTerraformExecutor(),
+                    "http://terrakube-api-service:8080", terrakubeClient(maliciousUrl), new TarGzArchiver());
+
+            WorkspaceException e = Assertions.assertThrows(WorkspaceException.class, () -> setup.prepareWorkspace(job));
+
+            Assertions.assertInstanceOf(IOException.class, e.getCause());
+            Assertions.assertEquals(0, attackerRequests.get());
+            Assertions.assertEquals(0, scopedTokenCalls.get());
+        } finally {
+            attackerServer.stop(0);
+        }
+    }
+
+    @Test
+    public void requiresHttpsForExpectedHostnameAndRejectsHttpDowngrade() throws Exception {
+        String id = UUID.randomUUID().toString();
+        String internalApiUrl = "http://terrakube-api-service:8080";
+        String publicHost = "terrakube-api.example.com";
+
+        SetupWorkspaceImpl.validateConfigurationVersionSource(
+                "https://terrakube-api.example.com/remote/tfe/v2/configuration-versions/" + id + "/terraformContent.tar.gz",
+                internalApiUrl, publicHost);
+        SetupWorkspaceImpl.validateConfigurationVersionSource(
+                "http://terrakube-api-service:8080/remote/tfe/v2/configuration-versions/" + id + "/terraformContent.tar.gz",
+                internalApiUrl, publicHost);
+
+        Assertions.assertThrows(IOException.class, () -> SetupWorkspaceImpl.validateConfigurationVersionSource(
+                "http://terrakube-api.example.com/remote/tfe/v2/configuration-versions/" + id + "/terraformContent.tar.gz",
+                internalApiUrl, publicHost));
+        Assertions.assertThrows(IOException.class, () -> SetupWorkspaceImpl.validateConfigurationVersionSource(
+                "https://terrakube-api.example.com:8443/remote/tfe/v2/configuration-versions/" + id + "/terraformContent.tar.gz",
+                internalApiUrl, publicHost));
+        Assertions.assertThrows(IOException.class, () -> SetupWorkspaceImpl.validateConfigurationVersionSource(
+                "https://terrakube-api.example.com/remote/tfe/v2/configuration-versions/" + id + "/terraformContent.tar.gz?foo=bar",
+                internalApiUrl, publicHost));
+    }
+
+    @Test
     public void injectsAwsCredentialsWhenAsked() throws Exception {
-        TerraformJob job = successfulTarGzJob();
-        SetupWorkspace setup = standardSetupWorkspaceImpl(job);
-        job.getEnvironmentVariables().put("ENABLE_DYNAMIC_CREDENTIALS_AWS", "true");
-        job.getEnvironmentVariables().put("TERRAKUBE_AWS_CREDENTIALS_FILE", "ze-secret");
-        File workspaceDir = setup.prepareWorkspace(job);
-        File credsFile = FileUtils.getFile(workspaceDir, "terrakube_config_dynamic_credentials_aws.txt");
-        Assertions.assertTrue(credsFile.exists());
-        Assertions.assertEquals("ze-secret", FileUtils.readFileToString(credsFile, Charset.defaultCharset()));
+        byte[] tarBytes = Files.readAllBytes(Path.of(terraformTarGz()));
+        HttpServer server = startServer(200, tarBytes, null, null, null);
+        try {
+            TerraformJob job = httpTarGzJob(server);
+            SetupWorkspace setup = httpSetupWorkspaceImpl(server, job, new NoopWorkspaceSecurity());
+            job.getEnvironmentVariables().put("ENABLE_DYNAMIC_CREDENTIALS_AWS", "true");
+            job.getEnvironmentVariables().put("TERRAKUBE_AWS_CREDENTIALS_FILE", "ze-secret");
+            File workspaceDir = setup.prepareWorkspace(job);
+            File credsFile = FileUtils.getFile(workspaceDir, "terrakube_config_dynamic_credentials_aws.txt");
+            Assertions.assertTrue(credsFile.exists());
+            Assertions.assertEquals("ze-secret", FileUtils.readFileToString(credsFile, Charset.defaultCharset()));
+        } finally {
+            server.stop(0);
+        }
     }
 
     @Test
     public void injectsGcpCredentialsWhenAsked() throws Exception {
-        TerraformJob job = successfulTarGzJob();
-        SetupWorkspace setup = standardSetupWorkspaceImpl(job);
-        job.getEnvironmentVariables().put("ENABLE_DYNAMIC_CREDENTIALS_GCP", "true");
-        job.getEnvironmentVariables().put("TERRAKUBE_GCP_CREDENTIALS_FILE", "{\"access_token\":\"ze-jwt\"}");
-        job.getEnvironmentVariables().put("TERRAKUBE_GCP_CREDENTIALS_CONFIG_FILE",
-                "{\"credential_source\":{\"file\":\"${WORKSPACE_DIRECTORY}/terrakube_dynamic_credentials.json\"}}");
+        byte[] tarBytes = Files.readAllBytes(Path.of(terraformTarGz()));
+        HttpServer server = startServer(200, tarBytes, null, null, null);
+        try {
+            TerraformJob job = httpTarGzJob(server);
+            SetupWorkspace setup = httpSetupWorkspaceImpl(server, job, new NoopWorkspaceSecurity());
+            job.getEnvironmentVariables().put("ENABLE_DYNAMIC_CREDENTIALS_GCP", "true");
+            job.getEnvironmentVariables().put("TERRAKUBE_GCP_CREDENTIALS_FILE", "{\"access_token\":\"ze-jwt\"}");
+            job.getEnvironmentVariables().put("TERRAKUBE_GCP_CREDENTIALS_CONFIG_FILE",
+                    "{\"credential_source\":{\"file\":\"${WORKSPACE_DIRECTORY}/terrakube_dynamic_credentials.json\"}}");
 
-        File workspaceDir = setup.prepareWorkspace(job);
-        File jwtFile = FileUtils.getFile(workspaceDir, "terrakube_dynamic_credentials.json");
-        File configFile = FileUtils.getFile(workspaceDir, "terrakube_config_dynamic_credentials.json");
+            File workspaceDir = setup.prepareWorkspace(job);
+            File jwtFile = FileUtils.getFile(workspaceDir, "terrakube_dynamic_credentials.json");
+            File configFile = FileUtils.getFile(workspaceDir, "terrakube_config_dynamic_credentials.json");
 
-        Assertions.assertTrue(jwtFile.exists());
-        Assertions.assertTrue(configFile.exists());
-        Assertions.assertEquals("{\"access_token\":\"ze-jwt\"}", FileUtils.readFileToString(jwtFile, Charset.defaultCharset()));
-        // ${WORKSPACE_DIRECTORY} placeholder must be substituted with the actual clone path.
-        Assertions.assertEquals("{\"credential_source\":{\"file\":\"" + workspaceDir.getAbsolutePath()
-                + "/terrakube_dynamic_credentials.json\"}}", FileUtils.readFileToString(configFile, Charset.defaultCharset()));
+            Assertions.assertTrue(jwtFile.exists());
+            Assertions.assertTrue(configFile.exists());
+            Assertions.assertEquals("{\"access_token\":\"ze-jwt\"}", FileUtils.readFileToString(jwtFile, Charset.defaultCharset()));
+            // ${WORKSPACE_DIRECTORY} placeholder must be substituted with the actual clone path.
+            Assertions.assertEquals("{\"credential_source\":{\"file\":\"" + workspaceDir.getAbsolutePath()
+                    + "/terrakube_dynamic_credentials.json\"}}", FileUtils.readFileToString(configFile, Charset.defaultCharset()));
+        } finally {
+            server.stop(0);
+        }
     }
 }

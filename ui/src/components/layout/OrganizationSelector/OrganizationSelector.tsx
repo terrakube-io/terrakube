@@ -1,6 +1,6 @@
 import React from "react";
 import { BankOutlined, DownOutlined, CheckOutlined, SearchOutlined, UnorderedListOutlined } from "@ant-design/icons";
-import { Button, Dropdown, Input } from "antd";
+import { Button, Dropdown, Input, type InputRef } from "antd";
 import { Link } from "react-router-dom";
 import { FlatOrganization } from "@/domain/types";
 import "./OrganizationSelector.css";
@@ -50,6 +50,12 @@ export const OrganizationSelector: React.FC<OrganizationSelectorProps> = ({
   const [open, setOpen] = React.useState(false);
   const [searchTerm, setSearchTerm] = React.useState("");
   const containerRef = React.useRef<HTMLDivElement>(null);
+  const searchRef = React.useRef<InputRef>(null);
+
+  // Move focus into the search box when the menu opens, so typing filters right away.
+  React.useEffect(() => {
+    if (open) searchRef.current?.focus();
+  }, [open]);
 
   const selectedOrgId = React.useMemo(
     () => organizations.find((org) => org.name === organizationName)?.id,
@@ -115,7 +121,7 @@ export const OrganizationSelector: React.FC<OrganizationSelectorProps> = ({
               onChange={(event) => setSearchTerm(event.target.value)}
               onClick={(event) => event.stopPropagation()}
               allowClear
-              autoFocus
+              ref={searchRef}
             />
           )}
           <div className="org-selector-list">

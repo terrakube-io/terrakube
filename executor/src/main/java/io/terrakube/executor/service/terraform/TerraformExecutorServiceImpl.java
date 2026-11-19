@@ -322,14 +322,15 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                             terraformJob.getOrganizationId(), terraformJob.getJobId(), terraformJob.getStepId(), renderedForComment.text());
                 }
 
-                if (opaExecutorService != null && terraformJob.getPolicyList() != null && !terraformJob.getPolicyList().isEmpty()) {
-                    File planJsonFile = new File(terraformWorkingDir, "plan.json");
-                    if (!planJsonFile.exists()) {
-                        String planJson = planStructuredOutputService.getPlanAsJson(terraformJob, terraformWorkingDir);
-                        if (planJson != null && !planJson.isBlank()) {
-                            FileUtils.writeStringToFile(planJsonFile, planJson, StandardCharsets.UTF_8);
-                        }
+                File planJsonFile = new File(terraformWorkingDir, "plan.json");
+                if (!planJsonFile.exists() && planStructuredOutputService != null) {
+                    String planJson = planStructuredOutputService.getPlanAsJson(terraformJob, terraformWorkingDir);
+                    if (planJson != null && !planJson.isBlank()) {
+                        FileUtils.writeStringToFile(planJsonFile, planJson, StandardCharsets.UTF_8);
                     }
+                }
+
+                if (opaExecutorService != null && terraformJob.getPolicyList() != null && !terraformJob.getPolicyList().isEmpty()) {
                     if (planJsonFile.exists()) {
                         List<OpaEvaluationResult> opaResults = opaExecutorService.evaluateAllPolicies(terraformJob, terraformWorkingDir, planJsonFile, planOutput);
                         boolean hasHardViolations = opaResults.stream().anyMatch(r -> r.getHardMandatoryViolations() > 0);
@@ -1372,6 +1373,34 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
 
         log.warn("Terraform init Executed Successfully: {}", initSuccessful);
         return initSuccessful;
+    }
+
+    /**
+     * Scripts find terraform/tofu on their PATH only once the job's version is in the local binary
+     * cache. Plan, apply and destroy get it through init; this gets it the same way for a step that
+     * only runs scripts: resolve the version, restore the binary from cloud storage when it's there,
+     * otherwise download it and cache it for the next executor.
+     */
+    @Override
+    public void installBinary(TerraformJob terraformJob) throws IOException {
+        String requestedVersion = terraformJob.getTerraformVersion();
+        if (requestedVersion == null || requestedVersion.isBlank()) {
+            return;
+        }
+
+        resolveTerraformVersion(terraformJob);
+        boolean binaryWasAlreadyCached = ensureBinaryCached(terraformJob);
+
+        TerraformDownloader downloader = createTerraformDownloader();
+        String version = terraformJob.getTerraformVersion();
+        String binaryPath = terraformJob.isTofu()
+                ? downloader.downloadTofuVersion(version)
+                : downloader.downloadTerraformVersion(version);
+        log.info("{} {} is available at {} for job {}", getIaCType(terraformJob), version, binaryPath, terraformJob.getJobId());
+
+        if (!binaryWasAlreadyCached) {
+            saveBinaryToCache(terraformJob);
+        }
     }
 
     /**

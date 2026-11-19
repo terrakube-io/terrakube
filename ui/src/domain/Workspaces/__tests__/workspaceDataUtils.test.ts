@@ -1,4 +1,10 @@
-import { buildResourceOptions, getResourceAddress, parseState, parseOldState, setupWorkspaceIncludes } from "../workspaceDataUtils";
+import {
+  buildResourceOptions,
+  getResourceAddress,
+  parseState,
+  parseOldState,
+  setupWorkspaceIncludes,
+} from "../workspaceDataUtils";
 import { Resource } from "../../types";
 
 const baseResource: Resource = {
@@ -21,7 +27,7 @@ describe("getResourceAddress", () => {
     expect(getResourceAddress(resource)).toBe("module.instances.random_pet.example");
   });
 
-  it("returns type.name[\"string_key\"] when index is a string", () => {
+  it('returns type.name["string_key"] when index is a string', () => {
     const resource = { ...baseResource, module: "root_module", name: "users", index: "name.surname" };
     expect(getResourceAddress(resource)).toBe('random_pet.users["name.surname"]');
   });
@@ -31,7 +37,7 @@ describe("getResourceAddress", () => {
     expect(getResourceAddress(resource)).toBe("random_pet.servers[0]");
   });
 
-  it("returns module.type.name[\"string_key\"] for child module resource with index", () => {
+  it('returns module.type.name["string_key"] for child module resource with index', () => {
     const resource = { ...baseResource, module: "module.cluster", name: "node", index: "primary" };
     expect(getResourceAddress(resource)).toBe('module.cluster.random_pet.node["primary"]');
   });
@@ -236,5 +242,28 @@ describe("setupWorkspaceIncludes job and history titles", () => {
     expect(jobs[0].title).toBe("Queue manually using Terraform");
     expect(history[0].title).toBe("Queue manually using Terraform");
   });
-});
 
+  it("uses the job comment as the run title when one is set", async () => {
+    const payload = createPayload("UI");
+    Object.assign(payload.included[0].attributes, { comments: "  Rotate the database credentials\nTicket OPS-42 " });
+    const { jobs } = await runSetup(payload);
+    expect(jobs[0].title).toBe("Rotate the database credentials");
+  });
+
+  it("falls back to the default title for a blank comment or the CLI marker", async () => {
+    const blank = createPayload("UI");
+    Object.assign(blank.included[0].attributes, { comments: "   " });
+    expect((await runSetup(blank)).jobs[0].title).toBe("Queue manually using Terraform");
+
+    const cli = createPayload("CLI");
+    Object.assign(cli.included[0].attributes, { comments: "terraform-cli" });
+    expect((await runSetup(cli)).jobs[0].title).toBe("Triggered via CLI");
+  });
+
+  it("prefers the job comment over the Triggered via title for webhook runs", async () => {
+    const payload = createPayload("Github");
+    Object.assign(payload.included[0].attributes, { comments: "Deploy release 2.4" });
+    const { jobs } = await runSetup(payload);
+    expect(jobs[0].title).toBe("Deploy release 2.4");
+  });
+});

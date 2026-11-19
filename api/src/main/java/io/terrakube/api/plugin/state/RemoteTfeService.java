@@ -18,6 +18,7 @@ import io.terrakube.api.plugin.state.model.organization.capacity.OrgCapacityAttr
 import io.terrakube.api.plugin.state.model.organization.capacity.OrgCapacityData;
 import io.terrakube.api.plugin.state.model.organization.capacity.OrgCapacityModel;
 import io.terrakube.api.plugin.state.model.outputs.OutputData;
+import io.terrakube.api.plugin.state.model.outputs.StateOutput;
 import io.terrakube.api.plugin.state.model.outputs.StateOutputs;
 import io.terrakube.api.plugin.state.model.plan.PlanRunData;
 import io.terrakube.api.plugin.state.model.plan.PlanRunModel;
@@ -128,7 +129,11 @@ public class RemoteTfeService {
     private HistoryRepository historyRepository;
     private TemplateRepository templateRepository;
     private ScheduleJobService scheduleJobService;
-    private String hostname;
+    private String apiBaseUrl;
+
+    // Relative links are resolved by the CLI against the host it called: /api on a single-domain host.
+    @Value("#{@publicUrls.apiPathPrefix()}")
+    private String apiPathPrefix = "";
     private StorageTypeService storageTypeService;
     private StepRepository stepRepository;
     @SuppressWarnings("rawtypes")
@@ -155,6 +160,7 @@ public class RemoteTfeService {
 
     private static final String LATEST_TERRAFORM_VERSION = "latest";
     private static final int CLI_APPROVAL_STEP = 150;
+    private static final String STATE_VERSION_OUTPUT_ID_PREFIX = "wsout-";
     // HCP Terraform limits for direct tag bindings; tag.name is varchar(128) and workspacetag.tag_value varchar(256)
     private static final int TAG_KEY_MAX_LENGTH = 128;
     private static final int TAG_VALUE_MAX_LENGTH = 256;
@@ -243,7 +249,7 @@ public class RemoteTfeService {
                             HistoryRepository historyRepository,
                             TemplateRepository templateRepository,
                             ScheduleJobService scheduleJobService,
-                            @Value("${io.terrakube.hostname}") String hostname,
+                            @Value("#{@publicUrls.apiBaseUrl()}") String apiBaseUrl,
                             StorageTypeService storageTypeService,
                             StepRepository stepRepository,
                             @SuppressWarnings("rawtypes") RedisTemplate redisTemplate,
@@ -261,7 +267,7 @@ public class RemoteTfeService {
         this.historyRepository = historyRepository;
         this.templateRepository = templateRepository;
         this.scheduleJobService = scheduleJobService;
-        this.hostname = hostname;
+        this.apiBaseUrl = apiBaseUrl;
         this.storageTypeService = storageTypeService;
         this.stepRepository = stepRepository;
         this.redisTemplate = redisTemplate;
@@ -784,7 +790,7 @@ public class RemoteTfeService {
                 workspaceModel.getRelationships().setRemoteStateConsumer(new RemoteStateConsumer());
                 workspaceModel.getRelationships().getRemoteStateConsumer().setLinks(new LinksStateConsumer());
                 workspaceModel.getRelationships().getRemoteStateConsumer().getLinks().setRelated(
-                        String.format("/remote/tfe/v2/workspaces/%s/relationships/remote-state-consumers", workspace.getId()));
+                        apiPathPrefix + String.format("/remote/tfe/v2/workspaces/%s/relationships/remote-state-consumers", workspace.getId()));
                 log.info("Workspace remote state consumer relationship URL: {}", workspaceModel.getRelationships().getRemoteStateConsumer().getLinks().getRelated());
             }
 
@@ -1382,8 +1388,8 @@ public class RemoteTfeService {
         history = historyRepository.save(history);
 
         history.setOutput(String
-                .format("https://%s/tfstate/v1/organization/%s/workspace/%s/state/%s.json",
-                        hostname,
+                .format("%s/tfstate/v1/organization/%s/workspace/%s/state/%s.json",
+                        apiBaseUrl,
                         workspace.getOrganization().getId().toString(),
                         workspace.getId().toString(),
                         history.getId().toString()));
@@ -1619,13 +1625,13 @@ public class RemoteTfeService {
             responseAttributes.put("vcs-commit-url", null);
 
             responseAttributes.put("hosted-state-download-url", String
-                    .format("https://%s/tfstate/v1/organization/%s/workspace/%s/state/terraform.tfstate",
-                            hostname,
+                    .format("%s/tfstate/v1/organization/%s/workspace/%s/state/terraform.tfstate",
+                            apiBaseUrl,
                             history.getWorkspace().getOrganization().getId().toString(),
                             history.getWorkspace().getId()));
             responseAttributes.put("hosted-json-state-download-url", String
-                    .format("https://%s/tfstate/v1/organization/%s/workspace/%s/state/%s.json",
-                            hostname,
+                    .format("%s/tfstate/v1/organization/%s/workspace/%s/state/%s.json",
+                            apiBaseUrl,
                             history.getWorkspace().getOrganization().getId().toString(),
                             history.getWorkspace().getId(),
                             history.getId().toString()));
@@ -1642,27 +1648,27 @@ public class RemoteTfeService {
 
             if (archiveRawState.isPresent())
                 responseAttributes.put("hosted-state-upload-url", String
-                        .format("https://%s/tfstate/v1/archive/%s/terraform.tfstate",
-                                hostname,
+                        .format("%s/tfstate/v1/archive/%s/terraform.tfstate",
+                                apiBaseUrl,
                                 archiveRawState.get().getId()));
 
             if (archiveJsonState.isPresent())
                 responseAttributes.put("hosted-json-state-upload-url", String
-                        .format("https://%s/tfstate/v1/archive/%s/terraform.json.tfstate",
-                                hostname,
+                        .format("%s/tfstate/v1/archive/%s/terraform.json.tfstate",
+                                apiBaseUrl,
                                 archiveJsonState.get().getId()));
 
             response.getData().setAttributes(responseAttributes);
 
             log.info("Download State URL: {}", String
-                    .format("https://%s/tfstate/v1/organization/%s/workspace/%s/state/terraform.tfstate",
-                            hostname,
+                    .format("%s/tfstate/v1/organization/%s/workspace/%s/state/terraform.tfstate",
+                            apiBaseUrl,
                             history.getWorkspace().getOrganization().getId().toString(),
                             history.getWorkspace().getId()));
 
             log.info("Download State JSON URL: {}", String
-                    .format("https://%s/tfstate/v1/organization/%s/workspace/%s/state/%s.json",
-                            hostname,
+                    .format("%s/tfstate/v1/organization/%s/workspace/%s/state/%s.json",
+                            apiBaseUrl,
                             history.getWorkspace().getOrganization().getId().toString(),
                             history.getWorkspace().getId(),
                             history.getId().toString()));
@@ -1710,8 +1716,8 @@ public class RemoteTfeService {
             responseAttributes.put("vcs-commit-url", null);
             responseAttributes.put("vcs-commit-sha", null);
             responseAttributes.put("hosted-state-download-url", String
-                    .format("https://%s/tfstate/v1/organization/%s/workspace/%s/state/terraform.tfstate",
-                            hostname,
+                    .format("%s/tfstate/v1/organization/%s/workspace/%s/state/terraform.tfstate",
+                            apiBaseUrl,
                             workspace.getOrganization().getId().toString(),
                             workspace.getId().toString()));
 
@@ -1762,8 +1768,8 @@ public class RemoteTfeService {
             this.uploadTicketService = new ConfigurationUploadTicketService(null, 3600);
         }
         String ticket = uploadTicketService.generateTicket(content.getId().toString());
-        String uploadUrl = String.format("https://%s/remote/tfe/v2/configuration-versions/%s?ticket=%s",
-                hostname, content.getId().toString(), ticket);
+        String uploadUrl = String.format("%s/remote/tfe/v2/configuration-versions/%s?ticket=%s",
+                apiBaseUrl, content.getId().toString(), ticket);
         configurationData.getData().getAttributes().put("upload-url", uploadUrl);
         log.debug("upload-url generated for content {}", content.getId());
         return configurationData;
@@ -1890,8 +1896,8 @@ public class RemoteTfeService {
                             + "manage the workspace. Variables: " + String.join(", ", runVariables.keySet()));
         }
 
-        String sourceTarGz = String.format("https://%s/remote/tfe/v2/configuration-versions/%s/terraformContent.tar.gz",
-                hostname, configurationId);
+        String sourceTarGz = String.format("%s/remote/tfe/v2/configuration-versions/%s/terraformContent.tar.gz",
+                apiBaseUrl, configurationId);
         // We intentionally do NOT persist this configuration version onto workspace.source
         // here. Doing so on every run (including speculative plan-only runs and runs that are
         // later discarded before approval) made workspace.source track the last configuration
@@ -2327,7 +2333,7 @@ public class RemoteTfeService {
                         jobApprovalService.recordApproval(job, currentUser);
                     }
                     step.setStatus(JobStatus.completed);
-                    step.setOutput(String.format("https://%s/tfoutput/v1/organization/%s/job/%s/step/%s", this.hostname,
+                    step.setOutput(String.format("%s/tfoutput/v1/organization/%s/job/%s/step/%s", this.apiBaseUrl,
                             job.getOrganization().getId().toString(), job.getId(), step.getId()));
                     stepRepository.save(step);
                     job.setStatus(JobStatus.pending);
@@ -2436,7 +2442,7 @@ public class RemoteTfeService {
         planRunModel.getAttributes().put("status", planStatus);
         String encryptedPlanId = buildLogCapabilityToken(planId);
         planRunModel.getAttributes().put("log-read-url",
-                String.format("https://%s/remote/tfe/v2/plans/logs/%s", hostname, encryptedPlanId));
+                String.format("%s/remote/tfe/v2/plans/logs/%s", apiBaseUrl, encryptedPlanId));
         plansData.setData(planRunModel);
         return plansData;
     }
@@ -2489,7 +2495,7 @@ public class RemoteTfeService {
         applyModel.getAttributes().put("status", applyStatus);
         String encryptedPlanId = buildLogCapabilityToken(planId);
         applyModel.getAttributes().put("log-read-url",
-                String.format("https://%s/remote/tfe/v2/applies/logs/%s", hostname, encryptedPlanId));
+                String.format("%s/remote/tfe/v2/applies/logs/%s", apiBaseUrl, encryptedPlanId));
 
         applyRunData.setData(applyModel);
         return applyRunData;
@@ -2671,38 +2677,9 @@ public class RemoteTfeService {
             if (searchWorkspace.isPresent()) {
                 Workspace workspace = searchWorkspace.get();
                 authorizeStateRead(workspace, currentUser);
-                byte[] currentState = storageTypeService
-                        .getCurrentTerraformState(workspace.getOrganization().getId().toString(), workspaceId);
-                String state = new String(currentState, StandardCharsets.UTF_8);
-                TerraformState terraformState = new ObjectMapper().readValue(state, TerraformState.class);
-
-                terraformState.getOutputs().forEach((mapKey, mapValue) -> {
+                readCurrentStateOutputs(workspace).forEach((mapKey, mapValue) -> {
                     log.info("Processing Key output: {}", mapKey);
-
-                    OutputData outputData = new OutputData();
-                    outputData.setId(UUID.randomUUID().toString());
-                    outputData.setType("state-version-outputs");
-                    outputData.setAttributes(new HashMap());
-                    outputData.getAttributes().put("name", mapKey);
-
-                    LinkedHashMap linkedHashMap = (LinkedHashMap) mapValue;
-
-                    outputData.getAttributes().put("value", linkedHashMap.get("value"));
-
-                    if (linkedHashMap.get("sensitive") != null)
-                        outputData.getAttributes().put("sensitive", linkedHashMap.get("sensitive"));
-                    else
-                        outputData.getAttributes().put("sensitive", false);
-
-                    if (linkedHashMap.get("type") instanceof String) {
-                        outputData.getAttributes().put("type", "string");
-                        outputData.getAttributes().put("detailed-type", "string");
-                    } else {
-                        outputData.getAttributes().put("type", "object");
-                        outputData.getAttributes().put("detailed-type", linkedHashMap.get("type"));
-                    }
-                    stateOutputs.getData().add(outputData);
-
+                    stateOutputs.getData().add(toStateVersionOutput(workspace, mapKey, mapValue));
                 });
             }
         } catch (StorageUnavailableException ex) {
@@ -2716,6 +2693,112 @@ public class RemoteTfeService {
         }
 
         return stateOutputs;
+    }
+
+    /**
+     * Reads a single output of the workspace's current state, which is how the Terraform and
+     * OpenTofu cloud backends fetch the value of every sensitive output listed by
+     * {@link #getCurrentOutputs(String, JwtAuthenticationToken)} (#3925).
+     *
+     * @return the output, or {@code null} when the id, the workspace or the output is unknown
+     */
+    StateOutput getStateVersionOutput(String outputId, JwtAuthenticationToken currentUser) {
+        if (currentUser == null) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "Unauthenticated access denied");
+        }
+        String[] workspaceIdAndName = parseStateVersionOutputId(outputId);
+        if (workspaceIdAndName == null) {
+            return null;
+        }
+        Workspace workspace = findWorkspace(workspaceIdAndName[0]);
+        if (workspace == null) {
+            return null;
+        }
+        authorizeStateRead(workspace, currentUser);
+
+        Map<String, Map<String, Object>> outputs;
+        try {
+            outputs = readCurrentStateOutputs(workspace);
+        } catch (StorageUnavailableException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            log.error("Could not read the outputs of workspace {}: {}", workspace.getId(), ex.getMessage());
+            return null;
+        }
+
+        String outputName = workspaceIdAndName[1];
+        Map<String, Object> output = outputs.get(outputName);
+        if (output == null) {
+            return null;
+        }
+        StateOutput stateOutput = new StateOutput();
+        stateOutput.setData(toStateVersionOutput(workspace, outputName, output));
+        return stateOutput;
+    }
+
+    private Map<String, Map<String, Object>> readCurrentStateOutputs(Workspace workspace) throws JsonProcessingException {
+        byte[] currentState = storageTypeService
+                .getCurrentTerraformState(workspace.getOrganization().getId().toString(), workspace.getId().toString());
+        String state = new String(currentState, StandardCharsets.UTF_8);
+        TerraformState terraformState = new ObjectMapper().readValue(state, TerraformState.class);
+        return terraformState.getOutputs() != null ? terraformState.getOutputs() : Map.of();
+    }
+
+    private OutputData toStateVersionOutput(Workspace workspace, String name, Map<String, Object> output) {
+        OutputData outputData = new OutputData();
+        outputData.setId(stateVersionOutputId(workspace.getId().toString(), name));
+        outputData.setType("state-version-outputs");
+        outputData.setAttributes(new HashMap());
+        outputData.getAttributes().put("name", name);
+
+        outputData.getAttributes().put("value", output.get("value"));
+
+        if (output.get("sensitive") != null)
+            outputData.getAttributes().put("sensitive", output.get("sensitive"));
+        else
+            outputData.getAttributes().put("sensitive", false);
+
+        // The state keeps the output type in cty's JSON form: a primitive type name such as
+        // "string", "number" or "bool", or a list such as ["list","string"] for complex types.
+        // The CLI decodes the value with detailed-type, so it must carry that type unchanged.
+        Object outputType = output.get("type");
+        outputData.getAttributes().put("type", outputType instanceof String ? "string" : "object");
+        outputData.getAttributes().put("detailed-type", outputType);
+        return outputData;
+    }
+
+    /**
+     * Output ids identify an output by its workspace and name, so they stay valid for as long as
+     * the output exists and can be resolved without storing them. They only use the characters
+     * go-tfe accepts in an id ({@code [a-zA-Z0-9._-]}), whatever the output name contains.
+     */
+    static String stateVersionOutputId(String workspaceId, String outputName) {
+        String key = workspaceId + ":" + outputName;
+        return STATE_VERSION_OUTPUT_ID_PREFIX
+                + Base64.getUrlEncoder().withoutPadding().encodeToString(key.getBytes(StandardCharsets.UTF_8));
+    }
+
+    /**
+     * @return the workspace id and the output name encoded in the id, or {@code null} when the id
+     * was not built by {@link #stateVersionOutputId(String, String)}
+     */
+    static String[] parseStateVersionOutputId(String outputId) {
+        if (outputId == null || !outputId.startsWith(STATE_VERSION_OUTPUT_ID_PREFIX)) {
+            return null;
+        }
+        String key;
+        try {
+            key = new String(Base64.getUrlDecoder().decode(outputId.substring(STATE_VERSION_OUTPUT_ID_PREFIX.length())),
+                    StandardCharsets.UTF_8);
+        } catch (IllegalArgumentException ex) {
+            return null;
+        }
+        int separator = key.indexOf(':');
+        if (separator <= 0 || separator == key.length() - 1) {
+            return null;
+        }
+        return new String[] { key.substring(0, separator), key.substring(separator + 1) };
     }
 
     public ProjectList searchOrganizationProjects(String organizationName, JwtAuthenticationToken currentUser){
@@ -3006,7 +3089,6 @@ public class RemoteTfeService {
         }
 
         PolicyOverride override = new PolicyOverride();
-        override.setId(UUID.randomUUID());
         override.setEvaluation(evaluation);
         override.setOverriddenBy(username);
         override.setOverriddenAt(new Date());

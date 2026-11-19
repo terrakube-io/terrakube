@@ -47,6 +47,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class GcpTerraformStateImpl implements TerraformState {
 
     private static final String TERRAFORM_PLAN_FILE = "terraformLibrary.tfPlan";
+    private static final String TERRAFORM_PLAN_JSON_FILE = "plan.json";
     private static final String GCP_CREDENTIALS_FILE = "GCP_CREDENTIALS_FILE.json";
     private static final String BACKEND_FILE_NAME = "gcp_backend_override.tf";
     private static final String CONTEXT_SPOOL_LOCATION = "context-spool/%s/%s/%s-%s.json.gz";
@@ -57,7 +58,10 @@ public class GcpTerraformStateImpl implements TerraformState {
     @NonNull
     private Storage storage;
 
-    @NonNull
+    /**
+     * Base64 encoded service account key. Blank when the executor runs with Application Default
+     * Credentials, in which case Terraform's gcs backend uses them as well.
+     */
     private String credentials;
 
     @NonNull
@@ -84,7 +88,9 @@ public class GcpTerraformStateImpl implements TerraformState {
             gcpBackendHcl.appendln("  backend \"gcs\" {");
             gcpBackendHcl.appendln("    bucket      = \"" + bucketName + "\"");
             gcpBackendHcl.appendln("    prefix      = \"tfstate/" + organizationId + "/" + workspaceId + "/terraform.tfstate" + "\"");
-            gcpBackendHcl.appendln("    credentials = \"" + GCP_CREDENTIALS_FILE + "\"");
+            if (hasCredentialsKey()) {
+                gcpBackendHcl.appendln("    credentials = \"" + GCP_CREDENTIALS_FILE + "\"");
+            }
             gcpBackendHcl.appendln("  }");
             gcpBackendHcl.appendln("}");
 
@@ -99,7 +105,10 @@ public class GcpTerraformStateImpl implements TerraformState {
                             workingDirectory.getAbsolutePath().concat("/").concat(BACKEND_FILE_NAME)
                     )
             );
-            FileUtils.writeStringToFile(gcpBackendCredentials, new String(Base64.decodeBase64(credentials), StandardCharsets.UTF_8), Charset.defaultCharset());
+            // Without a key, Terraform's gcs backend falls back to Application Default Credentials.
+            if (hasCredentialsKey()) {
+                FileUtils.writeStringToFile(gcpBackendCredentials, new String(Base64.decodeBase64(credentials), StandardCharsets.UTF_8), Charset.defaultCharset());
+            }
             FileUtils.writeStringToFile(gcpBackendFile, gcpBackendHcl.toString(), Charset.defaultCharset());
 
         } catch (IOException e) {
@@ -107,6 +116,10 @@ public class GcpTerraformStateImpl implements TerraformState {
             gcpBackend = null;
         }
         return gcpBackend;
+    }
+
+    private boolean hasCredentialsKey() {
+        return credentials != null && !credentials.isBlank();
     }
 
     @Override
@@ -126,14 +139,30 @@ public class GcpTerraformStateImpl implements TerraformState {
                 throw new TerraformStateUnavailableException("Unable to read local plan file " + tfPlanContent.getAbsolutePath(), e);
             }
 
+            byte[] jsonContent = null;
+            File tfPlanJson = new File(workingDirectory, TERRAFORM_PLAN_JSON_FILE);
+            if (tfPlanJson.exists()) {
+                try {
+                    jsonContent = FileUtils.readFileToByteArray(tfPlanJson);
+                } catch (IOException e) {
+                    throw new TerraformStateUnavailableException("Unable to read local plan JSON file " + tfPlanJson.getAbsolutePath(), e);
+                }
+            }
+
             BlobId blobId = BlobId.of(bucketName, blobKey);
             BlobInfo blobInfo = BlobInfo.newBuilder(blobId).build();
-            return storageRetryMetrics.withRetry("gcp", "plan-write", () -> {
+            String url = storageRetryMetrics.withRetry("gcp", "plan-write", () -> {
                 storage.create(blobInfo, content);
-                String url = String.format("https://storage.cloud.google.com/%s/%s", bucketName, blobKey);
-                log.info("File URL {}", url);
-                return url;
+                String planUrl = String.format("https://storage.cloud.google.com/%s/%s", bucketName, blobKey);
+                log.info("File URL {}", planUrl);
+                return planUrl;
             });
+            if (jsonContent != null) {
+                byte[] planJsonBytes = jsonContent;
+                BlobInfo jsonBlobInfo = BlobInfo.newBuilder(BlobId.of(bucketName, blobKey + ".json")).build();
+                storageRetryMetrics.withRetry("gcp", "plan-json-write", () -> storage.create(jsonBlobInfo, planJsonBytes));
+            }
+            return url;
         } else {
             return null;
         }
@@ -165,6 +194,34 @@ public class GcpTerraformStateImpl implements TerraformState {
                     planGcExist.set(true);
                 });
         return planGcExist.get();
+    }
+
+    @Override
+    public boolean downloadTerraformPlanJson(String organizationId, String workspaceId, String jobId, String stepId, File workingDirectory) {
+        String stateUrl = terrakubeClient.getJobById(organizationId, jobId).getData().getAttributes().getTerraformPlan();
+        if (stateUrl == null || stateUrl.isBlank()) {
+            return false;
+        }
+        String blobPath;
+        try {
+            String bucketNamePath = String.format("/%s/", bucketName);
+            blobPath = new URL(stateUrl).getPath().replace(bucketNamePath, "") + ".json";
+        } catch (IOException e) {
+            log.error(e.getMessage());
+            return false;
+        }
+        BlobId blobId = BlobId.of(bucketName, blobPath);
+        log.info("Downloading Terraform plan JSON blob from gs://{}/{}", bucketName, blobPath);
+        Blob blob = storageRetryMetrics.withRetry("gcp", "plan-json-read", () -> storage.get(blobId));
+        if (blob == null) {
+            return false;
+        }
+        File targetFile = new File(workingDirectory, TERRAFORM_PLAN_JSON_FILE);
+        storageRetryMetrics.withRetry("gcp", "plan-json-read", () -> {
+            blob.downloadTo(targetFile.toPath());
+            return null;
+        });
+        return true;
     }
 
     @Override

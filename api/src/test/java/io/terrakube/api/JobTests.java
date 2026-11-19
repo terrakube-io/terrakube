@@ -15,13 +15,16 @@ import org.springframework.http.HttpStatus;
 import graphql.AssertException;
 import io.terrakube.api.repository.PolicyEvaluationRepository;
 import io.terrakube.api.repository.PolicyOverrideRepository;
+import io.terrakube.api.repository.PolicySetRepository;
 import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.job.step.Step;
+import io.terrakube.api.rs.policy.PolicyEnforcementLevel;
 import io.terrakube.api.rs.policy.PolicyEvaluation;
 import io.terrakube.api.rs.policy.PolicyEvaluationStatus;
 import io.terrakube.api.rs.policy.PolicyOverride;
+import io.terrakube.api.rs.policy.PolicySet;
 import io.terrakube.api.rs.team.Team;
 import io.terrakube.api.rs.template.Template;
 import io.terrakube.api.rs.workspace.Workspace;
@@ -55,6 +58,9 @@ class JobTests extends ServerApplicationTests {
 
     @Autowired
     PolicyOverrideRepository policyOverrideRepository;
+
+    @Autowired
+    PolicySetRepository policySetRepository;
 
     Workspace workspace;
     Organization organization;
@@ -195,7 +201,11 @@ class JobTests extends ServerApplicationTests {
             for (JobKey key : scheduler.getJobKeys(GroupMatcher.anyJobGroup())) {
                 if (isJobContext(key, name)) {
                     scheduled = true;
-                    scheduler.deleteJob(key);
+                    try {
+                        scheduler.deleteJob(key);
+                    } catch (SchedulerException e) {
+                        // Quartz removed or fired the trigger at the same moment; the next pass re-checks.
+                    }
                 }
             }
             if (!running && !scheduled) {
@@ -373,6 +383,35 @@ class JobTests extends ServerApplicationTests {
 
 
     @Test
+    public void executorCannotMoveACancelledJobOn() {
+        devsManageJobs(true);
+        String jobId = createJob(jobDefinition("2db36f7c-f549-4341-a789-315d47eb061d"));
+
+        // The run was cancelled after it had already been handed to an executor.
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
+                .body(statusChangePayload(jobId, JobStatus.cancelled))
+                .when()
+                .patch("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/job/" + jobId)
+                .then()
+                .statusCode(HttpStatus.NO_CONTENT.value());
+
+        // The token the executor's API client sends with its status updates.
+        String runnerToken = generateExecutorToken();
+
+        for (JobStatus reported : new JobStatus[] {JobStatus.running, JobStatus.completed}) {
+            given()
+                    .headers("Authorization", "Bearer " + runnerToken, "Content-Type", "application/vnd.api+json")
+                    .body(statusChangePayload(jobId, reported))
+                    .when()
+                    .patch("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/job/" + jobId)
+                    .then()
+                    .statusCode(HttpStatus.CONFLICT.value());
+            assertEquals(JobStatus.cancelled, jobRepository.findById(Integer.parseInt(jobId)).orElseThrow().getStatus());
+        }
+    }
+
+    @Test
     public void appointedTeamCanApproveJobWithoutManageJobPermission() throws InterruptedException {
         Template template = createTemplate("flow:\n- name: Approve\n  type: approval\n  team: TERRAKUBE_DEVELOPERS\n");
 
@@ -469,6 +508,56 @@ class JobTests extends ServerApplicationTests {
                 .then()
                 .assertThat()
                 .statusCode(HttpStatus.NO_CONTENT.value());
+    }
+
+    @Test
+    public void softPolicyViolationCanBeOverriddenViaEndpointAndApproved() throws InterruptedException {
+        PolicySet policySet = new PolicySet();
+        policySet.setName("soft-policy-" + UUID.randomUUID());
+        policySet.setEnforcementLevel(PolicyEnforcementLevel.SOFT_MANDATORY);
+        policySet.setOverrideTeam("TERRAKUBE_DEVELOPERS");
+        policySet.setOrganization(organization);
+        policySet = policySetRepository.save(policySet);
+
+        try {
+            Template template = createTemplate("flow:\n- name: Approve\n  type: approval\n  team: TERRAKUBE_DEVELOPERS\n");
+
+            devsManageJobs(true);
+            String jobId = createJob(jobDefinition(template.getId().toString()));
+            devsManageJobs(false);
+            awaitJobStatus(jobId, JobStatus.waitingApproval, Duration.ofSeconds(10));
+            Job job = jobRepository.findById(Integer.parseInt(jobId)).orElseThrow();
+            PolicyEvaluation evaluation = new PolicyEvaluation();
+            evaluation.setJob(job);
+            evaluation.setStep(stepRepository.findFirstByJobIdOrderByStepNumber(job.getId()).orElseThrow());
+            evaluation.setStatus(PolicyEvaluationStatus.FAILED);
+            evaluation.setSoftMandatoryViolations(1);
+            evaluation = policyEvaluationRepository.save(evaluation);
+
+            given()
+                    .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
+                    .body("{\"justification\":\"accepted risk\"}")
+                    .when()
+                    .post("/remote/tfe/v2/policy-checks/" + evaluation.getId() + "/actions/override")
+                    .then()
+                    .assertThat()
+                    .statusCode(HttpStatus.OK.value());
+
+            PolicyOverride savedOverride = policyOverrideRepository.findByEvaluation(evaluation).orElseThrow();
+            assertNotNull(savedOverride.getId());
+            assertEquals("accepted risk", savedOverride.getJustification());
+
+            given()
+                    .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
+                    .body(statusChangePayload(jobId, JobStatus.approved))
+                    .when()
+                    .patch("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/job/" + jobId)
+                    .then()
+                    .assertThat()
+                    .statusCode(HttpStatus.NO_CONTENT.value());
+        } finally {
+            policySetRepository.deleteById(policySet.getId());
+        }
     }
 
     @Test

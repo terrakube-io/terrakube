@@ -254,7 +254,7 @@ const IN_PROGRESS_STATUSES = new Set<ApplyChange["status"]>([
 
 const getApplyStatusMeta = (
   action: ActionName,
-  status: ApplyChange["status"],
+  status: ApplyChange["status"]
 ): { label: string; className: string } => {
   switch (status) {
     case "pending":
@@ -327,7 +327,7 @@ const providerIconMap = {
   okta: SiOkta,
   vsphere: SiVmware,
   random: SiTerraform,
-  "null": SiTerraform,
+  null: SiTerraform,
   time: SiTerraform,
   tls: SiTerraform,
   local: SiTerraform,
@@ -949,7 +949,9 @@ const renderDiffRows = (rows: DiffRow[], parentKey = "root"): ReactNode => {
               {row.hiddenCount} unchanged attribute{getPluralSuffix(row.hiddenCount)} hidden
             </div>
           ) : null}
-          {row.jsonEncoded ? <div className="structured-plan-jsonWrap structured-plan-jsonWrapClose">{"}"})</div> : null}
+          {row.jsonEncoded ? (
+            <div className="structured-plan-jsonWrap structured-plan-jsonWrapClose">{"}"})</div>
+          ) : null}
         </div>
       );
     }
@@ -1010,7 +1012,11 @@ const buildOutputValueNode = (value: unknown, label: string, key: string): Outpu
     }
   }
 
-  if (Array.isArray(value) && value.length > 0 && !(value.every(isPrimitiveValue) && JSON.stringify(value).length <= 48)) {
+  if (
+    Array.isArray(value) &&
+    value.length > 0 &&
+    !(value.every(isPrimitiveValue) && JSON.stringify(value).length <= 48)
+  ) {
     return {
       key,
       label,
@@ -1047,7 +1053,9 @@ const renderOutputValueNode = (node: OutputValueNode): ReactNode => {
           {node.label}
           {node.jsonEncoded ? <span className="structured-plan-jsonWrap">jsonencode({"{"}</span> : null}
         </div>
-        <div className="structured-plan-diffGroupChildren">{node.children.map((child) => renderOutputValueNode(child))}</div>
+        <div className="structured-plan-diffGroupChildren">
+          {node.children.map((child) => renderOutputValueNode(child))}
+        </div>
         {node.jsonEncoded ? <div className="structured-plan-jsonWrap structured-plan-jsonWrapClose">{"}"})</div> : null}
       </div>
     );
@@ -1190,11 +1198,27 @@ const buildResourceDiff = (change: PlanChange, action: ActionName, includeUnchan
 // unknown, where buildDiffRows renders a single row using this label directly (#3675).
 const buildOutputDiff = (change: PlanChange, action: ActionName) => {
   if (action === "create") {
-    return buildDiffRows(undefined, change.after, change.afterUnknown, undefined, change.afterSensitive, change.changedSensitive, "output");
+    return buildDiffRows(
+      undefined,
+      change.after,
+      change.afterUnknown,
+      undefined,
+      change.afterSensitive,
+      change.changedSensitive,
+      "output"
+    );
   }
 
   if (action === "delete") {
-    return buildDiffRows(change.before, undefined, undefined, change.beforeSensitive, undefined, change.changedSensitive, "output");
+    return buildDiffRows(
+      change.before,
+      undefined,
+      undefined,
+      change.beforeSensitive,
+      undefined,
+      change.changedSensitive,
+      "output"
+    );
   }
 
   return buildDiffRows(
@@ -1595,7 +1619,7 @@ export const StructuredPlanOutput = ({
     if (resultUnconfirmed) {
       return (
         <div className="structured-plan-noChanges structured-plan-inProgress">
-          <span>No resource changes have been recorded yet. This is not confirmed as "no changes".</span>
+          <span>No resource changes have been recorded yet. This is not confirmed as &quot;no changes&quot;.</span>
         </div>
       );
     }
@@ -1883,7 +1907,9 @@ export const StructuredPlanOutput = ({
               // toggle collapse them away) is more useful than an empty "no changes" state.
               const attributesExpandedByDefault = row.action === "import";
               const isAttributeToggleActive = expandedAttributeKeys.includes(row.key);
-              const isAttributesExpanded = attributesExpandedByDefault ? !isAttributeToggleActive : isAttributeToggleActive;
+              const isAttributesExpanded = attributesExpandedByDefault
+                ? !isAttributeToggleActive
+                : isAttributeToggleActive;
               const visibleDiffRows = isAttributesExpanded
                 ? buildResourceDiff(row.change, row.action, true).rows
                 : row.diff.rows;
@@ -1895,7 +1921,11 @@ export const StructuredPlanOutput = ({
               // before Terraform ever computed a diff for it, so it never got one of the normal
               // create/update/delete icons.
               const rowApplyStatusMeta =
-                row.applyStatus && (applyMode || row.applyStatus === "errored" || row.applyStatus === "interrupted" || row.applyStatus === "not-started")
+                row.applyStatus &&
+                (applyMode ||
+                  row.applyStatus === "errored" ||
+                  row.applyStatus === "interrupted" ||
+                  row.applyStatus === "not-started")
                   ? getApplyStatusMeta(row.action, row.applyStatus)
                   : null;
               const normalizedProviderName = row.providerName.toLowerCase() as keyof typeof providerIconMap;
@@ -2068,7 +2098,10 @@ export const StructuredPlanOutput = ({
                                 <span className="structured-plan-diagnostic-summary">
                                   {diagnostic.summary}
                                   {diagnostic.location ? (
-                                    <span className="structured-plan-diagnostic-location"> ({diagnostic.location})</span>
+                                    <span className="structured-plan-diagnostic-location">
+                                      {" "}
+                                      ({diagnostic.location})
+                                    </span>
                                   ) : null}
                                 </span>
                                 {diagnostic.detail ? (
@@ -2090,13 +2123,16 @@ export const StructuredPlanOutput = ({
                               <span
                                 aria-hidden="true"
                                 className={`structured-plan-chevron structured-plan-hiddenCountChevron${
-                                  expandedAttributeKeys.includes(`${row.key}-provisioner`) ? " structured-plan-chevron--expanded" : ""
+                                  expandedAttributeKeys.includes(`${row.key}-provisioner`)
+                                    ? " structured-plan-chevron--expanded"
+                                    : ""
                                 }`}
                               >
                                 <RightOutlined />
                               </span>
                               <span>
-                                Provisioner output{row.applyCurrentProvisioner ? ` (${row.applyCurrentProvisioner})` : ""}
+                                Provisioner output
+                                {row.applyCurrentProvisioner ? ` (${row.applyCurrentProvisioner})` : ""}
                               </span>
                             </button>
                             {expandedAttributeKeys.includes(`${row.key}-provisioner`) ? (

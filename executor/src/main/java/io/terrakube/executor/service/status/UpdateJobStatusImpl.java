@@ -47,6 +47,11 @@ public class UpdateJobStatusImpl implements UpdateJobStatus {
                 }
             }
 
+            if (job.getAttributes().getStatus().equals("cancelled")) {
+                // The API refuses to move a cancelled job, and the step is already marked cancelled.
+                throw new JobCancelledBeforeStartException(terraformJob.getJobId());
+            }
+
             if (job.getAttributes().getStatus().equals("rejected")) {
                 log.warn("Job {} is rejected, keeping job status unchanged", terraformJob.getJobId());
             } else {
@@ -154,8 +159,11 @@ public class UpdateJobStatusImpl implements UpdateJobStatus {
         // string, the marker is always appended.
         String existingOutput = job.getAttributes().getOutput() == null ? "" : job.getAttributes().getOutput();
         String stepOutput = existingOutput + " Step " + stepId + " completed\n";
+        String effectiveJobPlan = (!isPlan && (jobPlan == null || jobPlan.isBlank()))
+                ? job.getAttributes().getTerraformPlan()
+                : jobPlan;
         job.getAttributes().setOutput(stepOutput);
-        job.getAttributes().setTerraformPlan(jobPlan);
+        job.getAttributes().setTerraformPlan(effectiveJobPlan);
         job.getAttributes().setCommitId(commitId);
 
         Job updateJob = new Job();
@@ -166,7 +174,7 @@ public class UpdateJobStatusImpl implements UpdateJobStatus {
         updateAttributes.setStatus(status);
         updateAttributes.setPlanChanges(planChanges);
         updateAttributes.setOutput(stepOutput);
-        updateAttributes.setTerraformPlan(jobPlan);
+        updateAttributes.setTerraformPlan(effectiveJobPlan);
         // Plan artifacts are recorded together with the plan file, in the one update that completes
         // the plan step. Only sent when the feature is in use, so every other job is unaffected (an
         // API from before this field existed would refuse an unknown attribute). When a plan in such

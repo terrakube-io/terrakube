@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { fetchStepLog, StepLogFetchError, StepLogNotFoundError } from "../domain/Jobs/fetchStepLog";
 import { stepLogCache } from "../domain/Jobs/stepLogCache";
 

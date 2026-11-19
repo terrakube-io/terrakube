@@ -33,7 +33,7 @@
       "version": "25.0.1-librca"
     },
     "ghcr.io/devcontainers/features/node:1": {
-      "version": "24"
+      "version": "26"
     },
     "ghcr.io/devcontainers/features/terraform:1": {
       "terragrunt": "none",
@@ -47,7 +47,9 @@
   // "forwardPorts": [3000, 5432],
 
   // Use 'postCreateCommand' to run commands after the container is created.
-  "postCreateCommand": "/workspaces/terrakube/scripts/setupDevelopmentEnvironment.sh -d POSTGRESQL -s MINIO",
+  // The Node feature installs global Yarn 1 and pnpm; Corepack replaces them with the
+  // Yarn version pinned in ui/package.json (Node 25+ no longer bundles Corepack).
+  "postCreateCommand": "npm uninstall -g yarn pnpm && npm install -g corepack@0.36.0 && corepack enable && /workspaces/terrakube/scripts/setupDevelopmentEnvironment.sh -d POSTGRESQL -s MINIO",
 
   // Configure tool-specific properties.
   "customizations": {

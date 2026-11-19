@@ -37,7 +37,7 @@ describe("PolicyStatusTag", () => {
 
     render(
       <MemoryRouter>
-        <div onClick={parentClickHandler}>
+        <div role="presentation" onClick={parentClickHandler}>
           <PolicyStatusTag status="COMPLIANT" organizationId="org-1" workspaceId="ws-1" clickable />
         </div>
       </MemoryRouter>

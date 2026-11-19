@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.UUID;
 
 import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.annotations.SQLRestriction;
 import io.terrakube.api.plugin.security.audit.GenericAuditFields;
 import io.terrakube.api.rs.hooks.webhook.WebhookManageHook;
 import io.terrakube.api.rs.workspace.Workspace;
@@ -40,6 +41,9 @@ import lombok.Setter;
 @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.POSTCOMMIT, hook = WebhookManageHook.class)
 @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.DELETE, phase = LifeCycleHookBinding.TransactionPhase.POSTCOMMIT, hook = WebhookManageHook.class)
 @Entity(name = "webhook")
+// A soft deleted workspace keeps its webhook row. Hide it like the workspace itself, otherwise
+// loading it fails on the workspace that @SQLRestriction makes invisible.
+@SQLRestriction("workspace_id in (select w.id from workspace w where w.deleted = false)")
 public class Webhook extends GenericAuditFields {
 
     @Id

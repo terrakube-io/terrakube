@@ -72,7 +72,7 @@ For a structural overview of modules, packages, the end-to-end run execution pat
 
 ## 11. Terrakube UI (`ui/`)
 * The Terrakube UI application is developed in `ui/` using `yarn`.
-* Linting and formatting in CI strictly enforce ESLint and Prettier (`yarn lint:modules:check`, `yarn format:modules:check`). Run `yarn lint:modules` to auto-fix formatting issues.
+* CI enforces ESLint, Prettier, and TypeScript across all of `src` (`yarn lint:check`, `yarn format:check`, `yarn typecheck`); `yarn check` runs them plus the tests. Run `yarn lint` to auto-fix lint and formatting issues.
 * Unused variables and imports MUST be eliminated to satisfy `@typescript-eslint/no-unused-vars`.
 * Always use non-interactive Jest execution (`yarn test --watchAll=false` or `CI=true yarn test`) when running tests in automated environments.
 * Guidelines: [.agents/skills/terrakube-ui/SKILL.md](.agents/skills/terrakube-ui/SKILL.md)

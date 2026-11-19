@@ -253,6 +253,17 @@ public class UpdateJobStatusImplTest {
     }
 
     @Test
+    public void setRunningStatusOnCancelledJobStopsWithoutTouchingJobOrStep() {
+        stubJobWithStatus("cancelled");
+
+        Assertions.assertThrows(JobCancelledBeforeStartException.class,
+                () -> subject().setRunningStatus(terraformJob(), "0000000"));
+
+        verify(terrakubeClient, never()).updateStep(any(), anyString(), anyString(), anyString());
+        verify(terrakubeClient, never()).updateJob(any(JobRequest.class), anyString(), anyString());
+    }
+
+    @Test
     public void setRunningStatusOnActiveJobUpdatesJob() {
         stubJobWithStatus("pending");
         doReturn("output-path").when(terraformOutputPathService).getOutputPath(anyString(), anyString(), anyString());
@@ -440,6 +451,34 @@ public class UpdateJobStatusImplTest {
         complete(subject(), true, false, 0, terraformJob, "apply output", "", "", "commit-1");
 
         Assertions.assertNull(updatedJobAttributes().getTerraformPlanArtifacts());
+    }
+
+    @Test
+    public void nonPlanStepWithNullOrBlankPlanFilePreservesExistingTerraformPlan() {
+        Job job = stubJobWithStatus("running", 2);
+        String recordedPlanUrl = "https://storage.example/tfstate/ze-org/ws-1/4711/step-0/terraformLibrary.tfPlan";
+        job.getAttributes().setTerraformPlan(recordedPlanUrl);
+        doReturn("output-url").when(terraformState).saveBufferedOutput(anyString(), anyString(), anyString(), any(StepOutputBuffer.class), anyString());
+
+        complete(subject(), true, false, 0, terraformJob(), "apply output", "", null, "commit-1");
+
+        JobAttributes sent = updatedJobAttributes();
+        Assertions.assertEquals(recordedPlanUrl, sent.getTerraformPlan());
+        Assertions.assertEquals(recordedPlanUrl, job.getAttributes().getTerraformPlan());
+    }
+
+    @Test
+    public void policyEvaluationCompletionPreservesRecordedTerraformPlanWhenPlanFileIsEmpty() {
+        Job job = stubJobWithStatus("running", 1);
+        String recordedPlanUrl = "https://storage.example/tfstate/ze-org/ws-1/4710/step-0/terraformLibrary.tfPlan";
+        job.getAttributes().setTerraformPlan(recordedPlanUrl);
+        doReturn("output-url").when(terraformState).saveBufferedOutput(anyString(), anyString(), anyString(), any(StepOutputBuffer.class), anyString());
+
+        complete(subject(), true, false, 0, terraformJob(), "policy output", "", "", "commit-1");
+
+        JobAttributes sent = updatedJobAttributes();
+        Assertions.assertEquals(recordedPlanUrl, sent.getTerraformPlan());
+        Assertions.assertEquals(recordedPlanUrl, job.getAttributes().getTerraformPlan());
     }
 
     private static void complete(UpdateJobStatusImpl subject, boolean successful, boolean isPlan, int exitCode, TerraformJob job,

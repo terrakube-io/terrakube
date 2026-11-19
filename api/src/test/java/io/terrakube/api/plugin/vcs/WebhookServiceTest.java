@@ -26,6 +26,7 @@ import java.util.Optional;
 import io.terrakube.api.plugin.execution.JobBranchPolicyException;
 import io.terrakube.api.plugin.execution.WorkspaceBranchPolicy;
 import io.terrakube.api.plugin.scheduler.ScheduleJobService;
+import io.terrakube.api.plugin.scheduler.module.ModuleRefreshTransactions;
 import io.terrakube.api.plugin.vcs.provider.azdevops.AzDevOpsWebhookService;
 import io.terrakube.api.plugin.vcs.provider.bitbucket.BitBucketWebhookService;
 import io.terrakube.api.plugin.vcs.provider.github.GitHubWebhookService;
@@ -66,6 +67,7 @@ public class WebhookServiceTest {
     PrCommentService prCommentService;
     WorkspaceBranchPolicy workspaceBranchPolicy;
     WebhookProperties webhookProperties;
+    ModuleRefreshTransactions moduleRefreshTransactions;
 
     WebhookService subject;
 
@@ -88,6 +90,7 @@ public class WebhookServiceTest {
         prCommentService = mock(PrCommentService.class);
         workspaceBranchPolicy = mock(WorkspaceBranchPolicy.class);
         webhookProperties = new WebhookProperties();
+        moduleRefreshTransactions = mock(ModuleRefreshTransactions.class);
 
         subject = new WebhookService(
                 webhookRepository,
@@ -102,7 +105,8 @@ public class WebhookServiceTest {
                 workspaceRepository,
                 prCommentService,
                 workspaceBranchPolicy,
-                webhookProperties);
+                webhookProperties,
+                moduleRefreshTransactions);
 
         workspace = new Workspace();
         workspace.setName("test-workspace");
@@ -567,5 +571,71 @@ public class WebhookServiceTest {
 
         verify(prCommentService, never()).postBranchPolicyNotice(any(), any(), any());
         verify(jobRepository, never()).save(any());
+    }
+
+    @Test
+    public void tagPushMarksModulesDueAndStillReachesTheWorkspace() throws Exception {
+        UUID webhookId = UUID.randomUUID();
+        workspace.setId(UUID.randomUUID());
+        workspace.setSource("https://github.com/owner/modules.git");
+        doReturn(webhook).when(webhookRepository).getReferenceById(webhookId);
+
+        WebhookResult pushResult = new WebhookResult();
+        pushResult.setValid(true);
+        pushResult.setEvent("push");
+        pushResult.setBranch("v1.2.3");
+        pushResult.setTag("v1.2.3");
+        pushResult.setFileChanges(List.of("main.tf"));
+        doReturn(pushResult).when(gitHubWebhookService).processWebhook(any(), any(), any(), any());
+        doReturn(List.of())
+                .when(webhookEventRepository)
+                .findByWebhookAndEventOrderByPriorityAsc(webhook, WebhookEventType.PUSH);
+
+        assertDoesNotThrow(() -> subject.processWebhook(webhookId.toString(), "{}", Map.of()));
+
+        verify(moduleRefreshTransactions).markDueBySource("https://github.com/owner/modules", "v1.2.3");
+        // The push is still matched against the workspace's push events, as before.
+        verify(webhookEventRepository).findByWebhookAndEventOrderByPriorityAsc(webhook, WebhookEventType.PUSH);
+    }
+
+    @Test
+    public void tagCreateOnlyRefreshesModules() throws Exception {
+        UUID webhookId = UUID.randomUUID();
+        workspace.setId(UUID.randomUUID());
+        workspace.setSource("https://github.com/owner/modules");
+        doReturn(webhook).when(webhookRepository).getReferenceById(webhookId);
+
+        WebhookResult createResult = new WebhookResult();
+        createResult.setValid(true);
+        createResult.setEvent("create");
+        createResult.setTag("v2.0.0");
+        doReturn(createResult).when(gitHubWebhookService).processWebhook(any(), any(), any(), any());
+
+        assertDoesNotThrow(() -> subject.processWebhook(webhookId.toString(), "{}", Map.of()));
+
+        verify(moduleRefreshTransactions).markDueBySource("https://github.com/owner/modules", "v2.0.0");
+        verify(webhookEventRepository, never()).findByWebhookAndEventOrderByPriorityAsc(any(), any());
+        verify(jobRepository, never()).save(any());
+    }
+
+    @Test
+    public void branchPushDoesNotTouchModules() throws Exception {
+        UUID webhookId = UUID.randomUUID();
+        workspace.setId(UUID.randomUUID());
+        doReturn(webhook).when(webhookRepository).getReferenceById(webhookId);
+
+        WebhookResult pushResult = new WebhookResult();
+        pushResult.setValid(true);
+        pushResult.setEvent("push");
+        pushResult.setBranch("main");
+        pushResult.setFileChanges(List.of("main.tf"));
+        doReturn(pushResult).when(gitHubWebhookService).processWebhook(any(), any(), any(), any());
+        doReturn(List.of())
+                .when(webhookEventRepository)
+                .findByWebhookAndEventOrderByPriorityAsc(webhook, WebhookEventType.PUSH);
+
+        assertDoesNotThrow(() -> subject.processWebhook(webhookId.toString(), "{}", Map.of()));
+
+        verify(moduleRefreshTransactions, never()).markDueBySource(any(), any());
     }
 }

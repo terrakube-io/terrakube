@@ -18,7 +18,9 @@ import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignReques
 import software.amazon.awssdk.services.s3.presigner.model.PresignedGetObjectRequest;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.URI;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Optional;
 
@@ -100,12 +102,16 @@ public class AwsStorageServiceImpl implements StorageService {
     @Override
     public Optional<URI> getPresignedDownloadUrl(String organizationName, String moduleName, String providerName,
             String moduleVersion) {
+        return presignObject(String.format(BUCKET_ZIP_MODULE_LOCATION, organizationName, moduleName, providerName,
+                moduleVersion));
+    }
+
+    @Override
+    public Optional<URI> presignObject(String blobKey) {
         if (!presignedRedirectEnabled || s3Presigner == null) {
             return Optional.empty();
         }
 
-        String blobKey = String.format(BUCKET_ZIP_MODULE_LOCATION, organizationName, moduleName, providerName,
-                moduleVersion);
         try {
             GetObjectRequest getObjectRequest = GetObjectRequest.builder()
                     .bucket(bucketName)
@@ -126,6 +132,39 @@ public class AwsStorageServiceImpl implements StorageService {
         }
     }
 
+    @Override
+    public Optional<InputStream> readObject(String key) {
+        try {
+            return Optional.of(s3client.getObject(GetObjectRequest.builder().bucket(bucketName).key(key).build()));
+        } catch (NoSuchKeyException e) {
+            return Optional.empty();
+        } catch (SdkException e) {
+            log.error(S3_ERROR_LOG, key, e.getMessage());
+            throw new StorageUnavailableException("Failed to read S3 object " + key, e);
+        }
+    }
+
+    @Override
+    public boolean objectExists(String key) {
+        try {
+            return doesObjectExistByListObjects(bucketName, key);
+        } catch (SdkException e) {
+            log.error(S3_ERROR_LOG, key, e.getMessage());
+            throw new StorageUnavailableException("Failed to check S3 object " + key, e);
+        }
+    }
+
+    @Override
+    public void writeObject(String key, Path file, String contentType) {
+        try {
+            s3client.putObject(PutObjectRequest.builder().bucket(bucketName).key(key).contentType(contentType).build(),
+                    RequestBody.fromFile(file));
+        } catch (SdkException e) {
+            log.error(S3_ERROR_LOG, key, e.getMessage());
+            throw new StorageUnavailableException("Failed to write S3 object " + key, e);
+        }
+    }
+
     public boolean doesObjectExistByListObjects(String bucketName, String key) {
         try {
             HeadObjectRequest headObjectRequest = HeadObjectRequest.builder()
@@ -135,11 +174,11 @@ public class AwsStorageServiceImpl implements StorageService {
 
             s3client.headObject(headObjectRequest);
 
-            log.info("Object exists: {}", key);
+            log.debug("Object exists: {}", key);
             return true;
         } catch (S3Exception e) {
             if (e.statusCode() == 404) {
-                log.info("Object does not exist");
+                log.debug("Object does not exist: {}", key);
                 return false;
             } else {
                 throw e;

@@ -5,7 +5,6 @@ import { HiOutlineExternalLink } from "react-icons/hi";
 import { SiBitbucket } from "react-icons/si";
 import { VscAzureDevops } from "react-icons/vsc";
 import { useParams, useSearchParams } from "react-router-dom";
-import { v1 as uuidv1 } from "uuid";
 import { useOrganizationName } from "@/hooks/useOrganizationName";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import { getUiRedirectUri } from "../../config/basePath";
@@ -209,7 +208,7 @@ export const AddVCS = ({ setMode, loadVCS }: Props) => {
   const [connectionType, setConnectionType] = useState(
     vcsName ? (searchParams.get("connectionType") === STANDALONE ? STANDALONE : OAUTH) : STANDALONE
   );
-  const [uuid] = useState(uuidv1());
+  const [uuid] = useState(() => crypto.randomUUID());
 
   const provider = providerOf(vcsType);
   const label = vcsLabel(vcsType);

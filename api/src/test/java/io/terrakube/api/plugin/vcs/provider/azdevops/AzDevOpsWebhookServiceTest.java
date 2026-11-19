@@ -10,6 +10,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.Map;
 import java.util.UUID;
 
@@ -26,6 +27,7 @@ import io.terrakube.api.plugin.vcs.WebhookResult;
 import io.terrakube.api.plugin.vcs.provider.azdevops.AzDevOpsWebhookService.ChangesPage;
 import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.vcs.Vcs;
+import io.terrakube.api.rs.webhook.WebhookEventType;
 import io.terrakube.api.rs.workspace.Workspace;
 
 public class AzDevOpsWebhookServiceTest {
@@ -284,6 +286,42 @@ public class AzDevOpsWebhookServiceTest {
 
         target = service.fetchPrTargetBranch(vcs, "https://dev.azure.com/myorg/myproject/_git/myrepo", "repo-id-123", 42);
         assertNull(target);
+    }
+
+    @Nested
+    class TagEvents {
+
+        private static final String PUSH = """
+                {"eventType": "git.push", "resource": {"refUpdates": [{"name": "%s", "newObjectId": "abc123"}],
+                  "pushedBy": {"uniqueName": "jane@example.com"}}}
+                """;
+
+        @Test
+        void tagPushSetsTheTag() {
+            WebhookResult result = subject.parseAzDevOpsPayload(PUSH.formatted("refs/tags/v2.1.0"), Map.of());
+
+            assertTrue(result.isValid());
+            assertEquals("v2.1.0", result.getTag());
+            assertEquals("release", result.getEvent());
+        }
+
+        @Test
+        void branchPushHasNoTag() {
+            WebhookResult result = subject.parseAzDevOpsPayload(PUSH.formatted("refs/heads/main"), Map.of());
+
+            assertEquals("push", result.getEvent());
+            assertNull(result.getTag());
+        }
+
+        @Test
+        void tagEventsSubscribeToPushes() {
+            assertThat(AzDevOpsWebhookService.resolveAzureEventTypesFromSet(
+                    EnumSet.of(WebhookEventType.PULL_REQUEST), true))
+                    .containsExactlyInAnyOrder("git.push", "git.pullrequest.created", "git.pullrequest.updated");
+            assertThat(AzDevOpsWebhookService.resolveAzureEventTypesFromSet(
+                    EnumSet.of(WebhookEventType.PULL_REQUEST), false))
+                    .doesNotContain("git.push");
+        }
     }
 
     @Nested

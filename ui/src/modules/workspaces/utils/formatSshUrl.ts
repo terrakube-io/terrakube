@@ -1,6 +1,6 @@
 export default function (source: string): string {
   if (source.endsWith(".git")) {
-    source = source.replace(".git", "");
+    source = source.replace(/\.git$/, "");
   }
 
   if (source.startsWith("git@")) {

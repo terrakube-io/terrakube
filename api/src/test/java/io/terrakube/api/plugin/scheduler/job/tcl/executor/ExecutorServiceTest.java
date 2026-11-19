@@ -89,6 +89,8 @@ class ExecutorServiceTest {
 
     @BeforeEach
     void setUp() {
+        org.springframework.test.util.ReflectionTestUtils.setField(executorService, "hostname", "localhost");
+
         workspace = new Workspace();
         workspace.setName("my-workspace");
 
@@ -914,5 +916,108 @@ class ExecutorServiceTest {
                 .isInstanceOf(ExecutionException.class);
 
         verify(lease, never()).releaseDispatchClaim(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void shouldRejectUntrustedRemoteContentSourceInExecute() throws Exception {
+        Organization organization = new Organization();
+        organization.setId(UUID.randomUUID());
+        organization.setName("test");
+        job.setOrganization(organization);
+        workspace.setId(UUID.randomUUID());
+        workspace.setOrganization(organization);
+        workspace.setBranch("remote-content");
+        workspace.setSource("https://attacker.example.com/x.tar.gz");
+        workspace.setTerraformVersion("1.14.0");
+        workspace.setIacType("terraform");
+
+        assertThatThrownBy(() -> executorService.execute(job, "plan-step", flow(FlowType.terraformPlan)))
+                .isInstanceOf(ExecutionException.class)
+                .hasMessageContaining("remote-content source URL is invalid");
+
+        verify(persistentExecutorService, never()).send(any(), any());
+        verify(jobRepository, never()).save(any());
+    }
+
+    @Test
+    void shouldRejectUserInfoSpoofedAndOffPathRemoteContentSourcesInExecute() throws Exception {
+        Organization organization = new Organization();
+        organization.setId(UUID.randomUUID());
+        organization.setName("test");
+        job.setOrganization(organization);
+        workspace.setId(UUID.randomUUID());
+        workspace.setOrganization(organization);
+        workspace.setBranch("remote-content");
+        workspace.setTerraformVersion("1.14.0");
+        workspace.setIacType("terraform");
+
+        workspace.setSource("https://localhost@attacker.example.com/remote/tfe/v2/configuration-versions/"
+                + UUID.randomUUID() + "/terraformContent.tar.gz");
+        assertThatThrownBy(() -> executorService.execute(job, "plan-step", flow(FlowType.terraformPlan)))
+                .isInstanceOf(ExecutionException.class)
+                .hasMessageContaining("remote-content source URL is invalid");
+
+        workspace.setSource("https://localhost/api/v1/organization/123");
+        assertThatThrownBy(() -> executorService.execute(job, "plan-step", flow(FlowType.terraformPlan)))
+                .isInstanceOf(ExecutionException.class)
+                .hasMessageContaining("remote-content source URL is invalid");
+
+        verify(persistentExecutorService, never()).send(any(), any());
+    }
+
+    @Test
+    void shouldAllowValidRemoteContentSourceInExecute() throws Exception {
+        Organization organization = new Organization();
+        organization.setId(UUID.randomUUID());
+        organization.setName("test");
+        job.setOrganization(organization);
+        workspace.setId(UUID.randomUUID());
+        workspace.setOrganization(organization);
+        workspace.setBranch("remote-content");
+        workspace.setSource("https://localhost/remote/tfe/v2/configuration-versions/"
+                + UUID.randomUUID() + "/terraformContent.tar.gz");
+        workspace.setTerraformVersion("1.14.0");
+        workspace.setIacType("terraform");
+
+        executorService.execute(job, "plan-step", flow(FlowType.terraformPlan));
+
+        ArgumentCaptor<ExecutorContext> captor = ArgumentCaptor.forClass(ExecutorContext.class);
+        verify(persistentExecutorService, times(1)).send(eq(job), captor.capture());
+        assertThat(captor.getValue().getRemoteContentHostname()).isEqualTo("localhost");
+    }
+
+    @Test
+    void shouldNotPersistUntrustedOverrideSourceOrAppliedSource() {
+        workspace.setBranch("remote-content");
+        workspace.setSource("empty");
+        String malicious = "https://attacker.example.com/x.tar.gz";
+
+        executorService.persistJobOverrideSource(job, "remote-content", malicious);
+        executorService.persistAppliedConfigurationSource(job, flow(FlowType.terraformApply), malicious);
+
+        assertThat(job.getOverrideSource()).isNull();
+        assertThat(workspace.getSource()).isEqualTo("empty");
+        verify(jobRepository, never()).save(any());
+        verify(workspaceRepository, never()).save(any());
+    }
+
+    @Test
+    void shouldValidateHostnameWithPortInIsValidRemoteContentSource() {
+        String id = UUID.randomUUID().toString();
+        assertThat(ExecutorService.isValidRemoteContentSource(
+                "https://localhost:8080/remote/tfe/v2/configuration-versions/" + id + "/terraformContent.tar.gz",
+                "localhost:8080")).isTrue();
+        assertThat(ExecutorService.isValidRemoteContentSource(
+                "https://localhost:9090/remote/tfe/v2/configuration-versions/" + id + "/terraformContent.tar.gz",
+                "localhost:8080")).isFalse();
+        assertThat(ExecutorService.isValidRemoteContentSource(
+                "https://localhost/remote/tfe/v2/configuration-versions/" + id + "/../other/terraformContent.tar.gz",
+                "localhost")).isFalse();
+        assertThat(ExecutorService.isValidRemoteContentSource(
+                "http://localhost/remote/tfe/v2/configuration-versions/" + id + "/terraformContent.tar.gz",
+                "localhost")).isFalse();
+        assertThat(ExecutorService.isValidRemoteContentSource(
+                "http://localhost:8080/remote/tfe/v2/configuration-versions/" + id + "/terraformContent.tar.gz",
+                "localhost:8080")).isFalse();
     }
 }

@@ -137,10 +137,9 @@ const normalizePlanChange = (value: unknown): PlanChange | null => {
   const action = getPlanChangeActionLabel(actions, toOptionalString(value.action));
 
   const rawImporting = value.importing;
-  const importing =
-    isRecord(rawImporting)
-      ? { id: typeof rawImporting.id === "string" ? rawImporting.id : undefined }
-      : undefined;
+  const importing = isRecord(rawImporting)
+    ? { id: typeof rawImporting.id === "string" ? rawImporting.id : undefined }
+    : undefined;
 
   return {
     address: toOptionalString(value.address),
@@ -186,12 +185,22 @@ export const normalizeStructuredPlanOutput = (value: unknown): StructuredPlanOut
 };
 
 export type ChangeStatus =
-  | "pending" | "planned"
-  | "refreshing" | "reading"
-  | "applying" | "provisioning" | "applied"
-  | "importing" | "moving"
-  | "errored" | "interrupted" | "not-started"
-  | "ephemeral-opening" | "ephemeral-renewed" | "ephemeral-closing" | "ephemeral-errored";
+  | "pending"
+  | "planned"
+  | "refreshing"
+  | "reading"
+  | "applying"
+  | "provisioning"
+  | "applied"
+  | "importing"
+  | "moving"
+  | "errored"
+  | "interrupted"
+  | "not-started"
+  | "ephemeral-opening"
+  | "ephemeral-renewed"
+  | "ephemeral-closing"
+  | "ephemeral-errored";
 
 export type Diagnostic = {
   severity: "error" | "warning";
@@ -215,12 +224,22 @@ export type ApplyChange = PlanChange & {
 export type StructuredApplyOutputByStep = Record<string, ApplyChange[]>;
 
 const CHANGE_STATUSES: ChangeStatus[] = [
-  "pending", "planned",
-  "refreshing", "reading",
-  "applying", "provisioning", "applied",
-  "importing", "moving",
-  "errored", "interrupted", "not-started",
-  "ephemeral-opening", "ephemeral-renewed", "ephemeral-closing", "ephemeral-errored",
+  "pending",
+  "planned",
+  "refreshing",
+  "reading",
+  "applying",
+  "provisioning",
+  "applied",
+  "importing",
+  "moving",
+  "errored",
+  "interrupted",
+  "not-started",
+  "ephemeral-opening",
+  "ephemeral-renewed",
+  "ephemeral-closing",
+  "ephemeral-errored",
 ];
 
 const toChangeStatus = (value: unknown): ChangeStatus => {
@@ -247,7 +266,12 @@ const toDiagnostics = (value: unknown): Diagnostic[] | undefined => {
 
       const detail = toOptionalString(entry.detail);
       const location = toOptionalString(entry.location);
-      return { severity, summary, ...(detail !== undefined ? { detail } : {}), ...(location !== undefined ? { location } : {}) };
+      return {
+        severity,
+        summary,
+        ...(detail !== undefined ? { detail } : {}),
+        ...(location !== undefined ? { location } : {}),
+      };
     })
     .filter((entry): entry is Diagnostic => entry !== null);
 

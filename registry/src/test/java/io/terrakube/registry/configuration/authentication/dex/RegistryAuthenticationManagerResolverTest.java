@@ -505,6 +505,98 @@ class RegistryAuthenticationManagerResolverTest {
     }
 
     @Test
+    void resolve_federatedToken_rejectsSignedJwtWhenDecodedClaimsOrAudienceMismatch() throws Exception {
+        String issuer = "https://token.actions.githubusercontent.com";
+        String audience = "terrakube";
+        when(request.getHeader("authorization")).thenReturn(createMockJwtToken(Map.of(
+                "iss", issuer, "aud", audience, "repository", "acme/infra")));
+
+        Federated federated = federated("fed-1", issuer, audience);
+        federated.getAttributes().setName("ci-trigger");
+        when(terrakubeClient.getFederatedByIssuerUrlAndAudienceWithClaims(issuer, audience))
+                .thenReturn(federatedResponse(List.of(federated),
+                        Map.of(federated, List.of(claim("claim-1", "repository", "acme/infra")))));
+
+        when(jwtDecoder.decode("mismatched-claim-token")).thenReturn(org.springframework.security.oauth2.jwt.Jwt.withTokenValue("mismatched-claim-token")
+                .header("alg", "RS256")
+                .claim("iss", issuer)
+                .claim("aud", List.of(audience))
+                .claim("repository", "evil/repo")
+                .build());
+
+        AuthenticationManager manager = resolver.resolve(request);
+        assertThrows(BadCredentialsException.class, () ->
+                manager.authenticate(new org.springframework.security.oauth2.server.resource.authentication.BearerTokenAuthenticationToken("mismatched-claim-token")));
+
+        when(jwtDecoder.decode("mismatched-aud-token")).thenReturn(org.springframework.security.oauth2.jwt.Jwt.withTokenValue("mismatched-aud-token")
+                .header("alg", "RS256")
+                .claim("iss", issuer)
+                .claim("aud", List.of("other-audience"))
+                .claim("repository", "acme/infra")
+                .build());
+
+        assertThrows(BadCredentialsException.class, () ->
+                manager.authenticate(new org.springframework.security.oauth2.server.resource.authentication.BearerTokenAuthenticationToken("mismatched-aud-token")));
+    }
+
+    @Test
+    void defaultCacheProperties_alignProviderManagerTtlWithFederatedTtl() {
+        RegistryAuthenticationManagerResolver defaultResolver = RegistryAuthenticationManagerResolver.builder()
+                .issuerUri(issuerUri)
+                .build();
+        assertEquals(10, defaultResolver.getFederatedCacheExpireAfterWrite());
+        assertEquals(10, defaultResolver.getProviderManagerCacheExpireAfterWrite());
+    }
+
+    @Test
+    void resolve_federatedToken_nullClaimValue_failsClosedWithoutNpe() throws Exception {
+        String issuer = "https://token.actions.githubusercontent.com";
+        String audience = "terrakube";
+        when(request.getHeader("authorization")).thenReturn(createMockJwtToken(Map.of(
+                "iss", issuer, "aud", audience, "repository", "acme/infra")));
+
+        Federated malformed = federated("fed-bad", issuer, audience);
+        malformed.getAttributes().setName("bad-fed");
+        FederatedClaim nullValueClaim = claim("claim-null", "repository", null);
+        when(terrakubeClient.getFederatedByIssuerUrlAndAudienceWithClaims(issuer, audience))
+                .thenReturn(federatedResponse(List.of(malformed), Map.of(malformed, List.of(nullValueClaim))));
+
+        assertThrows(BadCredentialsException.class, () -> resolver.resolve(request));
+    }
+
+    @Test
+    void resolve_federatedToken_delimiterInClaimValues_usesCollisionFreeSha256CacheKey() throws Exception {
+        String issuer = "https://token.actions.githubusercontent.com";
+        String audience = "terrakube";
+        HttpServletRequest req1 = mock(HttpServletRequest.class);
+        HttpServletRequest req2 = mock(HttpServletRequest.class);
+        when(req1.getHeader("authorization")).thenReturn(createMockJwtToken(Map.of("iss", issuer, "aud", audience, "k", "a|b@c:d=e,f")));
+        when(req2.getHeader("authorization")).thenReturn(createMockJwtToken(Map.of("iss", issuer, "aud", audience, "k", "a|b")));
+
+        Federated first = federated("fed-1", issuer, audience);
+        first.getAttributes().setName("team-1");
+        Federated second = federated("fed-2", issuer, audience);
+        second.getAttributes().setName("team-1@terrakube:k=x");
+
+        when(terrakubeClient.getFederatedByIssuerUrlAndAudienceWithClaims(issuer, audience))
+                .thenReturn(federatedResponse(
+                        List.of(first, second),
+                        Map.of(
+                                first, List.of(claim("c1", "k", "a|b@c:d=e,f")),
+                                second, List.of(claim("c2", "k", "a|b"))
+                        )));
+
+        AuthenticationManager m1 = resolver.resolve(req1);
+        AuthenticationManager m2 = resolver.resolve(req2);
+        assertNotSame(m1, m2);
+        assertEquals(2, resolver.getProviderManagerCache().asMap().size());
+        for (String key : resolver.getProviderManagerCache().asMap().keySet()) {
+            assertTrue(key.startsWith("federated:"), "Expected SHA-256 cache key, got: " + key);
+            assertFalse(key.contains("a|b"), "Cache key must not contain plaintext claim values");
+        }
+    }
+
+    @Test
     void acceptedAudiences_combinesClientIdAndExtraAudiences() {
         assertEquals(List.of("terrakube-app", "cli", "ui"), DexWebSecurityAdapter.acceptedAudiences("terrakube-app", " cli, ui ,,terrakube-app"));
         assertEquals(List.of("terrakube-app"), DexWebSecurityAdapter.acceptedAudiences("terrakube-app", ""));

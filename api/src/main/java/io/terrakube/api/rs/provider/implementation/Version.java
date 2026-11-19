@@ -7,6 +7,7 @@ import com.yahoo.elide.annotation.ReadPermission;
 import com.yahoo.elide.annotation.UpdatePermission;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.BatchSize;
 import org.hibernate.annotations.JdbcTypeCode;
 import io.terrakube.api.rs.DeprecationMessageConverter;
 import io.terrakube.api.rs.VersionStatus;
@@ -55,6 +56,8 @@ public class Version {
     @ManyToOne
     private Provider provider;
 
+    // The registry lists every version with its platforms; load sibling collections together, not one per version.
+    @BatchSize(size = 100)
     @OneToMany(mappedBy = "version")
     List<Implementation> implementation;
 

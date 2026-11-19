@@ -54,7 +54,7 @@ class StepSecurityChecksTest {
 
         ReadPermission read = Step.class.getAnnotation(ReadPermission.class);
         assertNotNull(read, "Step must have @ReadPermission");
-        assertEquals("team view job step OR team project limited view job step OR team limited view job step OR executor read job step OR user is an executor service", read.expression());
+        assertEquals("team view job step OR team project limited view job step OR team limited view job step OR executor read job step OR user is an executor service OR user is a registry service", read.expression());
 
         CreatePermission create = Step.class.getAnnotation(CreatePermission.class);
         assertNotNull(create, "Step must have @CreatePermission");
