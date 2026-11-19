@@ -4,14 +4,19 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.MockitoAnnotations;
 import org.springframework.http.HttpStatus;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import io.terrakube.api.plugin.json.DownloadReleasesService;
 
-import java.io.File;
+import java.util.concurrent.TimeUnit;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.equalTo;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 public class IndexTests extends ServerApplicationTests {
@@ -59,7 +64,7 @@ public class IndexTests extends ServerApplicationTests {
         when(redisTemplate.hasKey("tofuReleasesResponse")).thenReturn(false);
         when(valueOperations.get("tofuReleasesResponseStale")).thenReturn("{\"stale\": true}");
         doThrow(new IllegalStateException("release download timed out"))
-                .when(downloadReleasesService).downloadReleasesToFile(anyString(), any(File.class));
+                .when(downloadReleasesService).downloadAllReleases(anyString(), any());
 
         given()
                 .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
@@ -76,7 +81,7 @@ public class IndexTests extends ServerApplicationTests {
         when(redisTemplate.hasKey("tofuReleasesResponse")).thenReturn(false);
         when(valueOperations.get(anyString())).thenReturn(null);
         doThrow(new IllegalStateException("release download timed out"))
-                .when(downloadReleasesService).downloadReleasesToFile(anyString(), any(File.class));
+                .when(downloadReleasesService).downloadAllReleases(anyString(), any());
 
         given()
                 .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
@@ -113,5 +118,54 @@ public class IndexTests extends ServerApplicationTests {
                 .then()
                 .assertThat()
                 .statusCode(HttpStatus.SERVICE_UNAVAILABLE.value());
+    }
+
+    private static ArrayNode releases(String json) throws Exception {
+        return (ArrayNode) new ObjectMapper().readTree(json);
+    }
+
+    @Test
+    void tofuIndexServesAllPagesAndCachesThem() throws Exception {
+        when(redisTemplate.hasKey("tofuReleasesResponse")).thenReturn(false);
+        when(downloadReleasesService.downloadAllReleases(anyString(), any())).thenReturn(
+                new DownloadReleasesService.ReleasesPages(
+                        releases("[{\"tag_name\":\"v1.10.0\"},{\"tag_name\":\"v1.6.0\"}]"), true));
+        String expected = "[{\"tag_name\":\"v1.10.0\"},{\"tag_name\":\"v1.6.0\"}]";
+
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+                .when()
+                .get("/tofu/index.json")
+                .then()
+                .assertThat()
+                .statusCode(HttpStatus.OK.value())
+                .body(equalTo(expected));
+
+        verify(valueOperations).set("tofuReleasesResponse", expected);
+        verify(redisTemplate).expire(eq("tofuReleasesResponse"), eq(30L), eq(TimeUnit.MINUTES));
+        verify(valueOperations).set("tofuReleasesResponseStale", expected);
+    }
+
+    @Test
+    void tofuIndexCompletesAPartialListWithTheStaleCacheAndCachesItBriefly() throws Exception {
+        when(redisTemplate.hasKey("tofuReleasesResponse")).thenReturn(false);
+        when(valueOperations.get("tofuReleasesResponseStale")).thenReturn(
+                "[{\"tag_name\":\"v1.10.0\",\"old\":true},{\"tag_name\":\"v1.6.0\"}]");
+        when(downloadReleasesService.downloadAllReleases(anyString(), any())).thenReturn(
+                new DownloadReleasesService.ReleasesPages(
+                        releases("[{\"tag_name\":\"v1.11.0\"},{\"tag_name\":\"1.10.0\"}]"), false));
+        String expected = "[{\"tag_name\":\"v1.11.0\"},{\"tag_name\":\"1.10.0\"},{\"tag_name\":\"v1.6.0\"}]";
+
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+                .when()
+                .get("/tofu/index.json")
+                .then()
+                .assertThat()
+                .statusCode(HttpStatus.OK.value())
+                .body(equalTo(expected));
+
+        verify(valueOperations).set("tofuReleasesResponse", expected);
+        verify(redisTemplate).expire(eq("tofuReleasesResponse"), eq(1L), eq(TimeUnit.MINUTES));
     }
 }
