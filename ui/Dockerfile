@@ -23,7 +23,7 @@ RUN mkdir -p /etc/sbom && \
     syft scan dir:/app -o spdx-json=/etc/sbom/sbom.spdx.json -o cyclonedx-json=/etc/sbom/sbom.cdx.json
 
 # => Run container (nginx-unprivileged:latest)
-FROM nginxinc/nginx-unprivileged:latest@sha256:09b0d3eda2aa592d2487f284519419015cab010d7df16cd0fe224b585fc60eb6
+FROM nginx/nginx-unprivileged:latest@sha256:0255fc1dcc1d7b358aac20166543e52029fea577413edadb0912f5b928c7e312
 
 # Default Terraform version, updated at build time
 ARG REACT_APP_TERRAKUBE_VERSION=2.0.0
