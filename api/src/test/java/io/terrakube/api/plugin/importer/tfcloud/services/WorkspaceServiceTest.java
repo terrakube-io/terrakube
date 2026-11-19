@@ -308,6 +308,30 @@ class WorkspaceServiceTest {
     }
 
     @Test
+    void shouldNotImportWorkspaceWhenNameDiffersOnlyByCaseFromAnExistingOne() {
+        UUID organizationId = UUID.randomUUID();
+
+        Organization destinationOrganization = new Organization();
+        destinationOrganization.setId(organizationId);
+        destinationOrganization.setName("destination-org");
+
+        WorkspaceImportRequest request = new WorkspaceImportRequest();
+        request.setId("ws-123");
+        request.setOrganizationId(organizationId.toString());
+        request.setOrganization("source-org");
+        request.setName("Payments");
+        request.setTerraformVersion("1.8.5");
+
+        when(organizationRepository.findById(organizationId)).thenReturn(Optional.of(destinationOrganization));
+        when(workspaceRepository.existsByOrganizationIdAndNameIgnoreCase(organizationId, "Payments")).thenReturn(true);
+
+        String result = workspaceService.importWorkspace("token", "https://app.terraform.io/api/v2", request);
+
+        assertThat(result).contains("already exists in this organization");
+        verify(workspaceRepository, never()).save(any(Workspace.class));
+    }
+
+    @Test
     void shouldDefaultExecutionModeToRemoteWhenMissing() {
         WorkspaceService serviceSpy = spy(workspaceService);
 

@@ -351,6 +351,15 @@ public class WorkspaceService {
         // Create the workspace
         log.info("Importing Workspace: {}", workspaceImportRequest.getName());
         Workspace workspace = createWorkspaceFromRequest(workspaceImportRequest);
+        // The importer saves through the repository, so the Elide workspace hook never runs. Apply the same
+        // case-insensitive rule here, so an import can't add "Payments" next to an existing "payments".
+        if (workspace.getOrganization() != null && workspace.getName() != null
+                && workspaceRepository.existsByOrganizationIdAndNameIgnoreCase(
+                        workspace.getOrganization().getId(), workspace.getName())) {
+            log.warn("Workspace {} already exists in the destination organization", workspace.getName());
+            return "<li>There was an error creating the workspace: a workspace named "
+                    + escapeHtml(workspace.getName()) + " already exists in this organization.</li>";
+        }
         try {
             workspace = workspaceRepository.save(workspace);
             log.info("Workspace created: {}", workspace.getId());
