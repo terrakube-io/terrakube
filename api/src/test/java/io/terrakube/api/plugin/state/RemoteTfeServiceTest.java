@@ -1821,6 +1821,106 @@ class RemoteTfeServiceTest {
     }
 
     @Test
+    void validateWorkspaceIdTokenCanAccessState_projectRemoteState_sameProject_returnsTrue() {
+        RemoteTfeService service = remoteTfeService();
+        Organization org = organization("org");
+        Project project = new Project();
+        project.setId(UUID.randomUUID());
+
+        UUID targetWsId = UUID.randomUUID();
+        Workspace targetWs = workspace("target", org);
+        targetWs.setId(targetWsId);
+        targetWs.setProject(project);
+        targetWs.setGlobalRemoteState(false);
+        targetWs.setProjectRemoteState(true);
+
+        UUID consumerWsId = UUID.randomUUID();
+        Workspace consumerWs = workspace("consumer", org);
+        consumerWs.setId(consumerWsId);
+        consumerWs.setProject(project);
+
+        when(workspaceRepository.findById(targetWsId)).thenReturn(Optional.of(targetWs));
+        when(workspaceRepository.findById(consumerWsId)).thenReturn(Optional.of(consumerWs));
+
+        assertTrue(service.validateWorkspaceIdTokenCanAccessState(consumerWsId.toString(), targetWsId.toString()));
+    }
+
+    @Test
+    void validateWorkspaceIdTokenCanAccessState_projectRemoteState_differentProject_returnsFalse() {
+        RemoteTfeService service = remoteTfeService();
+        Organization org = organization("org");
+        Project targetProject = new Project();
+        targetProject.setId(UUID.randomUUID());
+        Project consumerProject = new Project();
+        consumerProject.setId(UUID.randomUUID());
+
+        UUID targetWsId = UUID.randomUUID();
+        Workspace targetWs = workspace("target", org);
+        targetWs.setId(targetWsId);
+        targetWs.setProject(targetProject);
+        targetWs.setGlobalRemoteState(false);
+        targetWs.setProjectRemoteState(true);
+
+        UUID consumerWsId = UUID.randomUUID();
+        Workspace consumerWs = workspace("consumer", org);
+        consumerWs.setId(consumerWsId);
+        consumerWs.setProject(consumerProject);
+
+        when(workspaceRepository.findById(targetWsId)).thenReturn(Optional.of(targetWs));
+        when(workspaceRepository.findById(consumerWsId)).thenReturn(Optional.of(consumerWs));
+
+        assertFalse(service.validateWorkspaceIdTokenCanAccessState(consumerWsId.toString(), targetWsId.toString()));
+    }
+
+    @Test
+    void projectSharingRequiresMatchingProjectsAndOrganizationsButKeepsIndividualGrants() {
+        RemoteTfeService service = remoteTfeService();
+        Organization org = organization("org");
+        Project project = new Project();
+        project.setId(UUID.randomUUID());
+        Workspace target = workspace("target", org);
+        target.setGlobalRemoteState(false);
+        target.setProjectRemoteState(true);
+        target.setProject(project);
+        Workspace consumer = workspace("consumer", org);
+        consumer.setProject(project);
+        when(workspaceRepository.findById(target.getId())).thenReturn(Optional.of(target));
+        when(workspaceRepository.findById(consumer.getId())).thenReturn(Optional.of(consumer));
+
+        consumer.setOrganization(organization("different-org"));
+        assertFalse(service.validateWorkspaceIdTokenCanAccessState(consumer.getId().toString(), target.getId().toString()));
+        consumer.setOrganization(org);
+        consumer.setProject(null);
+        assertFalse(service.validateWorkspaceIdTokenCanAccessState(consumer.getId().toString(), target.getId().toString()));
+        consumer.setProject(project);
+        target.setProject(null);
+        assertFalse(service.validateWorkspaceIdTokenCanAccessState(consumer.getId().toString(), target.getId().toString()));
+        target.setProject(project);
+        target.setProjectRemoteState(false);
+        assertFalse(service.validateWorkspaceIdTokenCanAccessState(consumer.getId().toString(), target.getId().toString()));
+        target.setProjectRemoteState(true);
+        consumer.setProject(null);
+        target.setSharedIds(consumer.getId().toString());
+        assertTrue(service.validateWorkspaceIdTokenCanAccessState(consumer.getId().toString(), target.getId().toString()));
+        consumer.setProject(project);
+        target.setSharedIds(null);
+        assertTrue(service.validateWorkspaceIdTokenCanAccessState(consumer.getId().toString(), target.getId().toString()));
+    }
+
+    @Test
+    void globalSharingDoesNotGrantExplicitCrossOrganizationConsumer() {
+        RemoteTfeService service = remoteTfeService();
+        Workspace target = workspace("target", organization("org"));
+        Workspace consumer = workspace("consumer", organization("other-org"));
+        target.setGlobalRemoteState(true);
+        target.setSharedIds(consumer.getId().toString());
+        when(workspaceRepository.findById(target.getId())).thenReturn(Optional.of(target));
+        when(workspaceRepository.findById(consumer.getId())).thenReturn(Optional.of(consumer));
+
+        assertFalse(service.validateWorkspaceIdTokenCanAccessState(consumer.getId().toString(), target.getId().toString()));
+    }
+
+    @Test
     void validateWorkspaceIdTokenCanAccessState_sharedIds_returnsTrue() {
         RemoteTfeService service = remoteTfeService();
         UUID targetWsId = UUID.randomUUID();
@@ -2188,6 +2288,48 @@ class RemoteTfeServiceTest {
         when(teamTokenService.getCurrentGroups(userToken)).thenReturn(List.of("unrelated-group"));
 
         assertThrows(AccessDeniedException.class, () -> service.getWorkspaceStateConsumers(targetWsId.toString(), userToken));
+    }
+
+    @Test
+    void getWorkspaceStateConsumers_projectRemoteState_includesProjectWorkspaces() {
+        RemoteTfeService service = remoteTfeService();
+        UUID targetWsId = UUID.randomUUID();
+        UUID consumerWsId = UUID.randomUUID();
+        Organization org = organization("sample-org");
+        Team orgTeam = team("sample-team");
+        org.setTeam(List.of(orgTeam));
+        Project project = new Project();
+        project.setId(UUID.randomUUID());
+
+        Workspace targetWs = workspace("target-ws", org);
+        targetWs.setId(targetWsId);
+        targetWs.setProject(project);
+        targetWs.setGlobalRemoteState(false);
+        targetWs.setProjectRemoteState(true);
+
+        Workspace consumerWs = workspace("consumer-ws", org);
+        consumerWs.setId(consumerWsId);
+        consumerWs.setProject(project);
+        Workspace individualWs = workspace("individual-ws", org);
+        targetWs.setSharedIds(consumerWsId + "," + individualWs.getId());
+
+        when(workspaceRepository.findById(targetWsId)).thenReturn(Optional.of(targetWs));
+        when(workspaceRepository.findAllByProject_Id(project.getId())).thenReturn(List.of(targetWs, consumerWs));
+        when(workspaceRepository.getReferenceById(consumerWsId)).thenReturn(consumerWs);
+        when(workspaceRepository.getReferenceById(individualWs.getId())).thenReturn(individualWs);
+        when(workspaceRepository.getByOrganizationNameAndName("sample-org", "consumer-ws")).thenReturn(consumerWs);
+        when(workspaceRepository.getByOrganizationNameAndName("sample-org", "individual-ws")).thenReturn(individualWs);
+        when(jobRepository.findFirstByWorkspaceAndStatusInOrderByIdAsc(any(), anyList())).thenReturn(Optional.empty());
+
+        JwtAuthenticationToken userToken = currentUser();
+        when(teamTokenService.getCurrentGroups(userToken)).thenReturn(List.of("sample-team"));
+
+        var result = service.getWorkspaceStateConsumers(targetWsId.toString(), userToken);
+
+        assertEquals(2, result.getData().size());
+        assertEquals(consumerWsId.toString(), result.getData().get(0).getId());
+        assertEquals(individualWs.getId().toString(), result.getData().get(1).getId());
+        verify(workspaceRepository).findAllByProject_Id(project.getId());
     }
 
     @Test

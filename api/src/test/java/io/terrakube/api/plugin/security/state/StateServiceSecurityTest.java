@@ -8,6 +8,7 @@ import io.terrakube.api.repository.OrganizationRepository;
 import io.terrakube.api.repository.WorkspaceRepository;
 import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.federated.Federated;
+import io.terrakube.api.rs.project.Project;
 import io.terrakube.api.rs.workspace.Workspace;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -179,6 +180,125 @@ class StateServiceSecurityTest {
         when(workspaceRepository.findById(targetWsId)).thenReturn(Optional.of(targetWs));
 
         assertFalse(stateService.hasReadStatePermission(jwt, otherOrgId.toString(), targetWsId.toString()));
+    }
+
+    @Test
+    void testReadStateCrossWorkspaceProjectSharingSameProjectReturnsTrue() {
+        UUID consumerWsId = wsId;
+        UUID targetWsId = UUID.randomUUID();
+        UUID projectId = UUID.randomUUID();
+
+        JwtAuthenticationToken jwt = mock(JwtAuthenticationToken.class);
+        when(jwt.getTokenAttributes()).thenReturn(Map.of(
+                "iss", "TerrakubeInternal",
+                "organizationId", orgId.toString(),
+                "workspaceId", consumerWsId.toString()
+        ));
+
+        Organization org = new Organization();
+        org.setId(orgId);
+        Project project = new Project();
+        project.setId(projectId);
+
+        Workspace targetWs = new Workspace();
+        targetWs.setId(targetWsId);
+        targetWs.setOrganization(org);
+        targetWs.setProject(project);
+        targetWs.setGlobalRemoteState(false);
+        targetWs.setProjectRemoteState(true);
+
+        Workspace consumerWs = new Workspace();
+        consumerWs.setId(consumerWsId);
+        consumerWs.setOrganization(org);
+        consumerWs.setProject(project);
+
+        when(workspaceRepository.findById(targetWsId)).thenReturn(Optional.of(targetWs));
+        when(workspaceRepository.findById(consumerWsId)).thenReturn(Optional.of(consumerWs));
+
+        assertTrue(stateService.hasReadStatePermission(jwt, orgId.toString(), targetWsId.toString()));
+    }
+
+    @Test
+    void testReadStateCrossWorkspaceProjectSharingDifferentProjectReturnsFalse() {
+        UUID consumerWsId = wsId;
+        UUID targetWsId = UUID.randomUUID();
+
+        JwtAuthenticationToken jwt = mock(JwtAuthenticationToken.class);
+        when(jwt.getTokenAttributes()).thenReturn(Map.of(
+                "iss", "TerrakubeInternal",
+                "organizationId", orgId.toString(),
+                "workspaceId", consumerWsId.toString()
+        ));
+
+        Organization org = new Organization();
+        org.setId(orgId);
+        Project targetProject = new Project();
+        targetProject.setId(UUID.randomUUID());
+        Project consumerProject = new Project();
+        consumerProject.setId(UUID.randomUUID());
+
+        Workspace targetWs = new Workspace();
+        targetWs.setId(targetWsId);
+        targetWs.setOrganization(org);
+        targetWs.setProject(targetProject);
+        targetWs.setGlobalRemoteState(false);
+        targetWs.setProjectRemoteState(true);
+
+        Workspace consumerWs = new Workspace();
+        consumerWs.setId(consumerWsId);
+        consumerWs.setOrganization(org);
+        consumerWs.setProject(consumerProject);
+
+        when(workspaceRepository.findById(targetWsId)).thenReturn(Optional.of(targetWs));
+        when(workspaceRepository.findById(consumerWsId)).thenReturn(Optional.of(consumerWs));
+
+        assertFalse(stateService.hasReadStatePermission(jwt, orgId.toString(), targetWsId.toString()));
+    }
+
+    @Test
+    void projectSharingRequiresMatchingProjectsAndOrganizationsButKeepsIndividualGrants() {
+        UUID targetId = UUID.randomUUID();
+        JwtAuthenticationToken jwt = mock(JwtAuthenticationToken.class);
+        when(jwt.getTokenAttributes()).thenReturn(Map.of(
+                "iss", "TerrakubeInternal", "organizationId", orgId.toString(), "workspaceId", wsId.toString()));
+        Organization org = new Organization();
+        org.setId(orgId);
+        Organization otherOrg = new Organization();
+        otherOrg.setId(UUID.randomUUID());
+        Project project = new Project();
+        project.setId(UUID.randomUUID());
+        Workspace target = new Workspace();
+        target.setId(targetId);
+        target.setOrganization(org);
+        target.setProject(project);
+        target.setGlobalRemoteState(false);
+        target.setProjectRemoteState(true);
+        Workspace consumer = new Workspace();
+        consumer.setId(wsId);
+        consumer.setOrganization(org);
+        consumer.setProject(project);
+        when(workspaceRepository.findById(targetId)).thenReturn(Optional.of(target));
+        when(workspaceRepository.findById(wsId)).thenReturn(Optional.of(consumer));
+
+        consumer.setOrganization(otherOrg);
+        assertFalse(stateService.hasReadStatePermission(jwt, orgId.toString(), targetId.toString()));
+        consumer.setOrganization(org);
+        consumer.setProject(null);
+        assertFalse(stateService.hasReadStatePermission(jwt, orgId.toString(), targetId.toString()));
+        consumer.setProject(project);
+        target.setProject(null);
+        assertFalse(stateService.hasReadStatePermission(jwt, orgId.toString(), targetId.toString()));
+        target.setProject(project);
+        target.setProjectRemoteState(false);
+        assertFalse(stateService.hasReadStatePermission(jwt, orgId.toString(), targetId.toString()));
+        target.setProjectRemoteState(true);
+        consumer.setProject(null);
+        target.setSharedIds(wsId.toString());
+        assertTrue(stateService.hasReadStatePermission(jwt, orgId.toString(), targetId.toString()));
+        assertFalse(stateService.hasManageStatePermission(jwt, orgId.toString(), targetId.toString()));
+        consumer.setProject(project);
+        target.setSharedIds(null);
+        assertTrue(stateService.hasReadStatePermission(jwt, orgId.toString(), targetId.toString()));
     }
 
     @Test
