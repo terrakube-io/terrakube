@@ -40,6 +40,13 @@ public class Collection extends GenericAuditFields {
     @Column(name = "priority")
     private int priority;
 
+    /**
+     * Applies the collection to every current and future workspace of its organization,
+     * in addition to the workspaces and projects it references.
+     */
+    @Column(name = "global", nullable = false)
+    private boolean global = false;
+
     @ManyToOne
     private Organization organization;
 

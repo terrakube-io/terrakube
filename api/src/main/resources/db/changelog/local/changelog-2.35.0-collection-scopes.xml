@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+    <!-- A collection can apply to every workspace of its organization (global), to every workspace of a
+         project (a reference with project_id) or to single workspaces (a reference with workspace_id).
+         A reference now targets either a workspace or a project, so workspace_id becomes nullable.
+         Deleting a project removes its collection references; the collections themselves are kept. -->
+    <changeSet id="2-35-0-collection-scopes" author="terrakube">
+        <addColumn tableName="collection">
+            <column name="global" type="boolean" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+        </addColumn>
+        <addColumn tableName="reference">
+            <column name="project_id" type="varchar(36)">
+                <constraints nullable="true"
+                             foreignKeyName="fk_reference_project"
+                             references="project(id)"
+                             deleteCascade="true"/>
+            </column>
+        </addColumn>
+        <!-- The foreign key is dropped and added again around the change: SQL Server can refuse to alter a column
+             that a constraint depends on. -->
+        <dropForeignKeyConstraint baseTableName="reference" constraintName="fk_reference_workspace"/>
+        <dropNotNullConstraint tableName="reference" columnName="workspace_id" columnDataType="varchar(36)"/>
+        <addForeignKeyConstraint baseTableName="reference" baseColumnNames="workspace_id"
+                                 constraintName="fk_reference_workspace"
+                                 referencedTableName="workspace" referencedColumnNames="id"/>
+    </changeSet>
+
+    <changeSet id="2-35-0-idx-reference-project" author="terrakube">
+        <preConditions onFail="MARK_RAN">
+            <not><indexExists indexName="idx_reference_project" tableName="reference"/></not>
+        </preConditions>
+        <createIndex tableName="reference" indexName="idx_reference_project">
+            <column name="project_id"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>

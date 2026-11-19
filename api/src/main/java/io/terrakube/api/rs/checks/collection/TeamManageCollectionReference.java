@@ -7,6 +7,7 @@ import com.yahoo.elide.core.security.checks.OperationCheck;
 import io.terrakube.api.plugin.security.rbac.RbacService;
 import io.terrakube.api.plugin.security.user.AuthenticatedUser;
 import io.terrakube.api.rs.checks.membership.MembershipService;
+import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.collection.Reference;
 import io.terrakube.api.rs.team.Team;
 import lombok.extern.slf4j.Slf4j;
@@ -53,17 +54,28 @@ public class TeamManageCollectionReference extends OperationCheck<Reference> {
         if (reference.getCollection() == null) {
             return false;
         }
-        if (reference.getWorkspace() != null) {
-            if (reference.getCollection().getOrganization() == null
-                    || reference.getWorkspace().getOrganization() == null
-                    || reference.getCollection().getOrganization().getId() == null
-                    || !reference.getCollection().getOrganization().getId()
-                            .equals(reference.getWorkspace().getOrganization().getId())) {
-                log.warn("Rejecting collection reference: collection and workspace belong to different organizations");
-                return false;
-            }
+        if (reference.getWorkspace() != null && reference.getProject() != null) {
+            log.warn("Rejecting collection reference: it targets both a workspace and a project");
+            return false;
+        }
+        if (reference.getWorkspace() != null
+                && !sameOrganization(reference.getCollection().getOrganization(), reference.getWorkspace().getOrganization())) {
+            log.warn("Rejecting collection reference: collection and workspace belong to different organizations");
+            return false;
+        }
+        if (reference.getProject() != null
+                && !sameOrganization(reference.getCollection().getOrganization(), reference.getProject().getOrganization())) {
+            log.warn("Rejecting collection reference: collection and project belong to different organizations");
+            return false;
         }
         return true;
+    }
+
+    private boolean sameOrganization(Organization collectionOrganization, Organization targetOrganization) {
+        return collectionOrganization != null
+                && targetOrganization != null
+                && collectionOrganization.getId() != null
+                && collectionOrganization.getId().equals(targetOrganization.getId());
     }
 }
 

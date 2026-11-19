@@ -16,11 +16,23 @@ const variable = {
   attributes: { key: "AWS_REGION", value: "eu-west-1", category: "ENV", hcl: false, sensitive: false },
 };
 
-const mockGet = (collections: unknown[], items: unknown[] = []) =>
+const workspaces = [{ id: "ws-1", attributes: { name: "network" } }];
+const projects = [
+  { id: "project-1", attributes: { name: "platform" } },
+  { id: "project-2", attributes: { name: "payments" } },
+];
+const workspaceReference = { id: "ref-ws", relationships: { workspace: { data: { type: "workspace", id: "ws-1" } } } };
+const projectReference = {
+  id: "ref-project",
+  relationships: { workspace: { data: null }, project: { data: { type: "project", id: "project-1" } } },
+};
+
+const mockGet = (collections: unknown[], items: unknown[] = [], references: unknown[] = []) =>
   (axiosInstance.get as jest.Mock).mockImplementation((url: string) => {
     if (url.endsWith("/item")) return Promise.resolve({ data: { data: items } });
-    if (url.endsWith("/reference")) return Promise.resolve({ data: { data: [] } });
-    if (url.endsWith("/workspace")) return Promise.resolve({ data: { data: [] } });
+    if (url.endsWith("/reference")) return Promise.resolve({ data: { data: references } });
+    if (url.endsWith("/workspace")) return Promise.resolve({ data: { data: workspaces } });
+    if (url.endsWith("/project")) return Promise.resolve({ data: { data: projects } });
     if (/\/collection\/col-\d+$/.test(url)) return Promise.resolve({ data: { data: collection } });
     return Promise.resolve({ data: { data: collections } });
   });
@@ -69,6 +81,22 @@ describe("VariableCollectionsSettings", () => {
   });
 });
 
+describe("VariableCollectionsSettings scope", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("shows how far each collection reaches", async () => {
+    const globalCollection = {
+      id: "col-2",
+      attributes: { name: "org-defaults", description: "", priority: 5, global: true },
+    };
+    mockGet([collection, globalCollection], [variable], [workspaceReference, projectReference]);
+    renderAt("/organizations/org-1/settings/collection");
+
+    expect(await screen.findByText(/1 workspace · 1 project · 1 variable/)).toBeInTheDocument();
+    expect(await screen.findByText(/All workspaces · 1 variable/)).toBeInTheDocument();
+  });
+});
+
 describe("CreateEditCollection", () => {
   beforeEach(() => jest.clearAllMocks());
 
@@ -83,7 +111,7 @@ describe("CreateEditCollection", () => {
     await waitFor(() =>
       expect(axiosInstance.post).toHaveBeenCalledWith(
         "organization/org-1/collection",
-        { data: { type: "collection", attributes: { name: "datadog", description: "", priority: 10 } } },
+        { data: { type: "collection", attributes: { name: "datadog", description: "", priority: 10, global: false } } },
         expect.anything()
       )
     );
@@ -154,5 +182,60 @@ describe("CreateEditCollection", () => {
     );
 
     expect(await screen.findByRole("button", { name: "Delete this variable collection" })).toBeDisabled();
+  });
+
+  it("keeps the selected projects and replaces the ones that were removed", async () => {
+    mockGet([collection], [], [workspaceReference, projectReference]);
+    (axiosInstance.patch as jest.Mock).mockResolvedValue({});
+    (axiosInstance.post as jest.Mock).mockResolvedValue({ data: { data: {} } });
+    (axiosInstance.delete as jest.Mock).mockResolvedValue({});
+    renderAt("/organizations/org-1/settings/collection/edit/col-1");
+
+    expect(await screen.findByText("platform")).toBeInTheDocument();
+    fireEvent.mouseDown(screen.getByLabelText("Projects"));
+    fireEvent.click(await screen.findByText("payments"));
+    fireEvent.click(screen.getByRole("button", { name: "Update variable collection" }));
+
+    await waitFor(() =>
+      expect(axiosInstance.post).toHaveBeenCalledWith(
+        "organization/org-1/collection/col-1/reference",
+        {
+          data: {
+            type: "reference",
+            attributes: { description: "Reference to project project-2" },
+            relationships: { project: { data: { type: "project", id: "project-2" } } },
+          },
+        },
+        expect.anything()
+      )
+    );
+    expect(axiosInstance.post).toHaveBeenCalledTimes(1);
+    expect(axiosInstance.delete).not.toHaveBeenCalled();
+  });
+
+  it("applies a collection to every workspace without touching its references", async () => {
+    mockGet([collection], [], [workspaceReference]);
+    (axiosInstance.patch as jest.Mock).mockResolvedValue({});
+    renderAt("/organizations/org-1/settings/collection/edit/col-1");
+
+    fireEvent.click(await screen.findByRole("radio", { name: /All workspaces/ }));
+    await waitFor(() => expect(screen.queryByLabelText("Workspaces")).not.toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "Update variable collection" }));
+
+    await waitFor(() =>
+      expect(axiosInstance.patch).toHaveBeenCalledWith(
+        "organization/org-1/collection/col-1",
+        {
+          data: {
+            type: "collection",
+            id: "col-1",
+            attributes: { name: "aws-credentials", description: "AWS settings", priority: 20, global: true },
+          },
+        },
+        expect.anything()
+      )
+    );
+    expect(axiosInstance.post).not.toHaveBeenCalled();
+    expect(axiosInstance.delete).not.toHaveBeenCalled();
   });
 });

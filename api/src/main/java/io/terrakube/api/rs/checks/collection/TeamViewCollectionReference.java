@@ -7,6 +7,7 @@ import com.yahoo.elide.core.security.checks.OperationCheck;
 import io.terrakube.api.plugin.security.user.AuthenticatedUser;
 import io.terrakube.api.rs.checks.membership.MembershipService;
 import io.terrakube.api.rs.checks.workspace.WorkspaceCheckSupport;
+import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.collection.Reference;
 import io.terrakube.api.rs.team.Team;
 import lombok.extern.slf4j.Slf4j;
@@ -58,16 +59,22 @@ public class TeamViewCollectionReference extends OperationCheck<Reference> {
         if (reference.getCollection() == null && reference.getWorkspace() == null) {
             return false;
         }
-        if (reference.getCollection() != null && reference.getWorkspace() != null) {
-            if (reference.getCollection().getOrganization() == null
-                    || reference.getWorkspace().getOrganization() == null
-                    || reference.getCollection().getOrganization().getId() == null
-                    || !reference.getCollection().getOrganization().getId()
-                            .equals(reference.getWorkspace().getOrganization().getId())) {
-                return false;
-            }
+        if (reference.getCollection() != null && reference.getWorkspace() != null
+                && !sameOrganization(reference.getCollection().getOrganization(), reference.getWorkspace().getOrganization())) {
+            return false;
+        }
+        if (reference.getCollection() != null && reference.getProject() != null
+                && !sameOrganization(reference.getCollection().getOrganization(), reference.getProject().getOrganization())) {
+            return false;
         }
         return true;
+    }
+
+    private boolean sameOrganization(Organization collectionOrganization, Organization targetOrganization) {
+        return collectionOrganization != null
+                && targetOrganization != null
+                && collectionOrganization.getId() != null
+                && collectionOrganization.getId().equals(targetOrganization.getId());
     }
 }
 

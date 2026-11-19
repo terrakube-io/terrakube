@@ -20,6 +20,9 @@ type Collection = {
     workspaces?: {
       data: any[];
     };
+    projects?: {
+      data: any[];
+    };
     variables?: {
       data: any[];
     };
@@ -30,6 +33,7 @@ type CollectionAttributes = {
   name: string;
   description: string;
   priority: number;
+  global?: boolean;
 };
 
 type Props = {
@@ -85,16 +89,18 @@ export const VariableCollectionsSettings = ({ managePermission = true }: Props) 
 
     for (const collection of updatedCollections) {
       try {
-        // Get workspaces count
-        const workspacesResponse = await axiosInstance.get(
+        // Get workspaces and projects count
+        const referencesResponse = await axiosInstance.get(
           `organization/${orgid}/collection/${collection.id}/reference`
         );
+        const references = referencesResponse.data.data || [];
         collection.relationships = {
           ...collection.relationships,
           workspaces: {
-            data: (workspacesResponse.data.data || []).filter(
-              (item: any) => item.relationships?.workspace?.data?.id != null
-            ),
+            data: references.filter((item: any) => item.relationships?.workspace?.data?.id != null),
+          },
+          projects: {
+            data: references.filter((item: any) => item.relationships?.project?.data?.id != null),
           },
         };
 
@@ -147,9 +153,17 @@ export const VariableCollectionsSettings = ({ managePermission = true }: Props) 
   );
 
   const renderCollection = (item: Collection) => {
-    const { name, description, priority } = item.attributes;
+    const { name, description, priority, global: isGlobal } = item.attributes;
     const workspaces = item.relationships?.workspaces?.data;
+    const projects = item.relationships?.projects?.data;
     const variables = item.relationships?.variables?.data;
+    const scope = isGlobal
+      ? "All workspaces"
+      : workspaces &&
+        projects &&
+        [plural(workspaces.length, "workspace"), projects.length > 0 && plural(projects.length, "project")]
+          .filter(Boolean)
+          .join(" · ");
     return (
       <li key={item.id} className="collection-card">
         <span className="collection-card-icon" aria-hidden="true">
@@ -162,10 +176,10 @@ export const VariableCollectionsSettings = ({ managePermission = true }: Props) 
           {description && <span className="collection-card-description">{description}</span>}
           <span className="collection-card-meta">
             Priority {priority}
-            {workspaces && variables && (
+            {scope && variables && (
               <>
                 {" · "}
-                {plural(workspaces.length, "workspace")} · {plural(variables.length, "variable")}
+                {scope} · {plural(variables.length, "variable")}
               </>
             )}
           </span>
@@ -229,7 +243,7 @@ export const VariableCollectionsSettings = ({ managePermission = true }: Props) 
     <div className="setting collections-page">
       <SettingsPageHeader
         title="Variable collections"
-        description="Define variables once and apply them to several workspaces in this organization."
+        description="Define variables once and apply them to workspaces, projects or every workspace in this organization."
         divider={false}
         actions={collections.length > 0 && createButton}
       />
@@ -246,8 +260,9 @@ export const VariableCollectionsSettings = ({ managePermission = true }: Props) 
         title="Delete variable collection"
         message={
           <>
-            The collection <strong>{pendingDelete?.attributes.name}</strong>, its variables and its workspace references
-            will be deleted, and its workspaces stop receiving these variables. This cannot be undone.
+            The collection <strong>{pendingDelete?.attributes.name}</strong>, its variables and its workspace and
+            project references will be deleted, and its workspaces stop receiving these variables. This cannot be
+            undone.
           </>
         }
         okText="Delete variable collection"

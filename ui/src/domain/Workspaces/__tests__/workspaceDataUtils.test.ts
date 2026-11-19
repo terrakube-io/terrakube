@@ -267,3 +267,101 @@ describe("setupWorkspaceIncludes job and history titles", () => {
     expect(jobs[0].title).toBe("Deploy release 2.4");
   });
 });
+
+describe("setupWorkspaceIncludes collection variables", () => {
+  const item = (id: string, key: string, category: string) => ({
+    id,
+    type: "item",
+    attributes: { key, value: `${key}-value`, category, sensitive: false, hcl: false },
+  });
+  const collection = (id: string, name: string, priority: number, itemIds: string[] = []) => ({
+    id,
+    type: "collection",
+    attributes: { name, priority, global: false },
+    relationships: { item: { data: itemIds.map((itemId) => ({ type: "item", id: itemId })) } },
+  });
+
+  const responses: Record<string, any> = {
+    "/organization/org-1/globalvar": { data: [] },
+    "/organization/org-1/collection?filter[collection]=global==true&include=item": {
+      data: [
+        collection("col-global", "everywhere", 5, ["item-global"]),
+        collection("col-direct", "direct", 30, ["item-direct"]),
+      ],
+      included: [item("item-global", "tier", "TERRAFORM"), item("item-direct", "AWS_REGION", "ENV")],
+    },
+    "/reference?filter[reference]=project.id==project-1": { data: [{ id: "ref-project", type: "reference" }] },
+    "/reference/ref-project/collection?include=item": {
+      data: collection("col-project", "team-defaults", 20),
+      included: [item("item-project", "owner", "TERRAFORM")],
+    },
+    "/reference/ref-direct/collection?include=item": {
+      data: collection("col-direct", "direct", 30),
+      included: [item("item-direct", "AWS_REGION", "ENV")],
+    },
+  };
+
+  const runSetup = async (payload: any) => {
+    let terraform: any[] = [];
+    let env: any[] = [];
+    const get = jest.fn((url: string) =>
+      responses[url] ? Promise.resolve({ data: responses[url] }) : Promise.reject(new Error(`Unexpected ${url}`))
+    );
+    await setupWorkspaceIncludes(
+      payload,
+      () => {},
+      () => {},
+      () => {},
+      () => {},
+      () => {},
+      [],
+      () => {},
+      () => {},
+      () => {},
+      "",
+      { get },
+      () => {},
+      () => {},
+      () => {},
+      false,
+      () => {},
+      (vars) => {
+        terraform = vars;
+      },
+      (vars) => {
+        env = vars;
+      },
+      () => {},
+      () => {}
+    );
+    return { terraform, env, get };
+  };
+
+  it("lists global, project and direct collections once each", async () => {
+    const { terraform, env } = await runSetup({
+      data: { attributes: { iacType: "terraform" }, relationships: { project: { data: { id: "project-1" } } } },
+      included: [
+        { id: "org-1", type: "organization", attributes: {} },
+        { id: "ref-direct", type: "reference", attributes: {} },
+      ],
+    });
+
+    expect(terraform.map(({ key, collectionName, priority }) => ({ key, collectionName, priority }))).toEqual([
+      { key: "owner", collectionName: "team-defaults", priority: 20 },
+      { key: "tier", collectionName: "everywhere", priority: 5 },
+    ]);
+    expect(env.map(({ key, collectionName }) => ({ key, collectionName }))).toEqual([
+      { key: "AWS_REGION", collectionName: "direct" },
+    ]);
+  });
+
+  it("does not look up project collections for a workspace outside a project", async () => {
+    const { terraform, get } = await runSetup({
+      data: { attributes: { iacType: "terraform" }, relationships: { project: { data: null } } },
+      included: [{ id: "org-1", type: "organization", attributes: {} }],
+    });
+
+    expect(get).not.toHaveBeenCalledWith(expect.stringContaining("/reference?"));
+    expect(terraform.map(({ key }) => key)).toEqual(["tier"]);
+  });
+});

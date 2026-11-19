@@ -4,6 +4,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import SettingsSection from "@/components/settings/SettingsSection/SettingsSection";
 import { SettingsForm } from "@/components/settings/SettingsForm";
+import { RadioChoices } from "@/components/settings/RadioChoices";
 import { IdField } from "@/components/settings/IdField";
 import { EmptyState } from "@/components/feedback/EmptyState";
 import DeleteConfirmationModal from "@/components/modals/DeleteConfirmationModal/DeleteConfirmationModal";
@@ -15,11 +16,68 @@ import { CollectionVariableModal, CollectionVariableFormValues } from "./compone
 import { DangerZone } from "@/components/settings/DangerZone";
 import { deleteCollection } from "./deleteCollection";
 
-type Workspace = {
+type NamedResource = {
   id: string;
   attributes: {
     name: string;
   };
+};
+
+type CollectionReference = {
+  id: string;
+  relationships?: {
+    workspace?: { data?: { id: string } | null };
+    project?: { data?: { id: string } | null };
+  };
+};
+
+type CollectionFormValues = { name: string; description?: string; priority?: number; global?: boolean };
+
+const JSON_API_HEADERS = { headers: { "Content-Type": "application/vnd.api+json" } };
+
+const referenceTarget = (ref: CollectionReference) => ({
+  workspaceId: ref.relationships?.workspace?.data?.id,
+  projectId: ref.relationships?.project?.data?.id,
+});
+
+// Makes the references of a collection match the selected workspaces and projects. References whose
+// workspace or project no longer exists have no target left and are removed as well.
+const syncReferences = async (
+  base: string,
+  existingRefs: CollectionReference[],
+  workspaceIds: string[],
+  projectIds: string[]
+) => {
+  const linkedWorkspaces = new Set<string>();
+  const linkedProjects = new Set<string>();
+  for (const ref of existingRefs) {
+    const { workspaceId, projectId } = referenceTarget(ref);
+    if (workspaceId != null && workspaceIds.includes(workspaceId)) {
+      linkedWorkspaces.add(workspaceId);
+    } else if (projectId != null && projectIds.includes(projectId)) {
+      linkedProjects.add(projectId);
+    } else {
+      await axiosInstance.delete(`${base}/reference/${ref.id}`);
+    }
+  }
+
+  const targets = [
+    ...workspaceIds.filter((id) => !linkedWorkspaces.has(id)).map((id) => ({ type: "workspace", id })),
+    ...projectIds.filter((id) => !linkedProjects.has(id)).map((id) => ({ type: "project", id })),
+  ];
+  for (const { type, id } of targets) {
+    await axiosInstance.post(
+      `${base}/reference`,
+      {
+        data: {
+          type: "reference",
+          attributes: { description: `Reference to ${type} ${id}` },
+          relationships: { [type]: { data: { type, id } } },
+        },
+      },
+      JSON_API_HEADERS
+    );
+  }
 };
 
 type CreateEditCollectionProps = {
@@ -38,11 +96,14 @@ export const CreateEditCollection = ({
   const [loading, setLoading] = useState(false);
   const [saveLoading, setSaveLoading] = useState(false);
   const [variableLoading, setVariableLoading] = useState(false);
-  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  const [workspaces, setWorkspaces] = useState<NamedResource[]>([]);
   const [selectedWorkspaces, setSelectedWorkspaces] = useState<string[]>([]);
+  const [projects, setProjects] = useState<NamedResource[]>([]);
+  const [selectedProjects, setSelectedProjects] = useState<string[]>([]);
   const [variables, setVariables] = useState<any[]>([]);
   const [variableForm] = Form.useForm<CollectionVariableFormValues>();
-  const [collectionForm] = Form.useForm();
+  const [collectionForm] = Form.useForm<CollectionFormValues>();
+  const isGlobal = Form.useWatch("global", collectionForm);
   const [addingVariable, setAddingVariable] = useState(false);
   const [variableMode, setVariableMode] = useState<"create" | "edit">("create");
   const [editingVariableId, setEditingVariableId] = useState<string>("");
@@ -55,14 +116,20 @@ export const CreateEditCollection = ({
   // Load collection data if in edit mode
   useEffect(() => {
     setLoading(true);
+    // Projects are only listed to teams that can see them, so a failure leaves the picker empty.
+    const loadProjects = axiosInstance
+      .get(`organization/${orgid}/project`)
+      .then((response) => setProjects(response.data.data || []))
+      .catch(() => setProjects([]));
 
     if (mode === "edit" && collectionid) {
-      // Parallel load: workspaces, collection data, collection items, and collection references
+      // Parallel load: workspaces, projects, collection data, collection items, and collection references
       Promise.all([
         axiosInstance.get(`organization/${orgid}/workspace`),
         axiosInstance.get(`organization/${orgid}/collection/${collectionid}`),
         axiosInstance.get(`organization/${orgid}/collection/${collectionid}/item`),
         axiosInstance.get(`organization/${orgid}/collection/${collectionid}/reference`),
+        loadProjects,
       ])
         .then(([workspacesRes, collectionRes, itemsRes, refsRes]) => {
           setWorkspaces(workspacesRes.data.data);
@@ -73,14 +140,14 @@ export const CreateEditCollection = ({
             name: collectionData.attributes.name,
             description: collectionData.attributes.description,
             priority: collectionData.attributes.priority || 10,
+            global: collectionData.attributes.global || false,
           });
 
           setVariables(itemsRes.data.data);
 
-          const workspaceIds = refsRes.data.data
-            .filter((ref: any) => ref.relationships?.workspace?.data?.id != null)
-            .map((ref: any) => ref.relationships.workspace.data.id);
-          setSelectedWorkspaces(workspaceIds);
+          const targets = (refsRes.data.data as CollectionReference[]).map(referenceTarget);
+          setSelectedWorkspaces(targets.flatMap(({ workspaceId }) => (workspaceId != null ? [workspaceId] : [])));
+          setSelectedProjects(targets.flatMap(({ projectId }) => (projectId != null ? [projectId] : [])));
 
           setLoading(false);
         })
@@ -89,13 +156,13 @@ export const CreateEditCollection = ({
           setLoading(false);
         });
     } else {
-      // For create mode, just load workspaces
-      axiosInstance
-        .get(`organization/${orgid}/workspace`)
-        .then((response) => {
+      // For create mode, just load workspaces and projects
+      Promise.all([axiosInstance.get(`organization/${orgid}/workspace`), loadProjects])
+        .then(([response]) => {
           setWorkspaces(response.data.data);
           setVariables([]);
           setSelectedWorkspaces([]);
+          setSelectedProjects([]);
           setLoading(false);
         })
         .catch((error) => {
@@ -105,51 +172,32 @@ export const CreateEditCollection = ({
     }
   }, [orgid, collectionid, mode, collectionForm]);
 
-  const handleSave = async (values: { name: string; description?: string; priority?: number }) => {
+  const handleSave = async (values: CollectionFormValues) => {
     try {
       setSaveLoading(true);
 
-      // Match exact payload format shown in example - without global field
-      const collectionData = {
-        data: {
-          type: "collection",
-          attributes: {
-            name: values.name,
-            description: values.description || "",
-            priority: values.priority || 10,
-          },
-        },
+      const attributes = {
+        name: values.name,
+        description: values.description || "",
+        priority: values.priority || 10,
+        global: values.global || false,
       };
 
       if (mode === "create") {
-        // Create collection - use the format from the example
-        const response = await axiosInstance.post(`organization/${orgid}/collection`, collectionData, {
-          headers: { "Content-Type": "application/vnd.api+json" },
-        });
+        const response = await axiosInstance.post(
+          `organization/${orgid}/collection`,
+          { data: { type: "collection", attributes } },
+          JSON_API_HEADERS
+        );
 
         const newCollectionId = response.data.data.id;
-
-        // Add workspace references
-        for (const workspaceId of selectedWorkspaces) {
-          await axiosInstance.post(
-            `organization/${orgid}/collection/${newCollectionId}/reference`,
-            {
-              data: {
-                type: "reference",
-                attributes: {
-                  description: `Reference to workspace ${workspaceId}`,
-                },
-                relationships: {
-                  workspace: {
-                    data: {
-                      type: "workspace",
-                      id: workspaceId,
-                    },
-                  },
-                },
-              },
-            },
-            { headers: { "Content-Type": "application/vnd.api+json" } }
+        // A global collection applies to every workspace, so it needs no references.
+        if (!attributes.global) {
+          await syncReferences(
+            `organization/${orgid}/collection/${newCollectionId}`,
+            [],
+            selectedWorkspaces,
+            selectedProjects
           );
         }
 
@@ -158,66 +206,17 @@ export const CreateEditCollection = ({
         navigate(`/organizations/${orgid}/settings/collection/edit/${newCollectionId}`);
         return;
       } else if (mode === "edit" && collectionid) {
-        // Update collection - match exact format without global field
+        const base = `organization/${orgid}/collection/${collectionid}`;
         await axiosInstance.patch(
-          `organization/${orgid}/collection/${collectionid}`,
-          {
-            data: {
-              type: "collection",
-              id: collectionid,
-              attributes: {
-                name: values.name,
-                description: values.description || "",
-                priority: values.priority || 10,
-              },
-            },
-          },
-          { headers: { "Content-Type": "application/vnd.api+json" } }
+          base,
+          { data: { type: "collection", id: collectionid, attributes } },
+          JSON_API_HEADERS
         );
 
-        // Handle workspace references
-        // First get current references
-        const refsResponse = await axiosInstance.get(`organization/${orgid}/collection/${collectionid}/reference`);
-
-        const existingRefs = refsResponse.data.data;
-        const existingWorkspaceIds = existingRefs
-          .filter((ref: any) => ref.relationships?.workspace?.data?.id != null)
-          .map((ref: any) => ref.relationships.workspace.data.id);
-
-        // Delete references that are not in the new selection or where the workspace is null because it was deleted
-        for (const ref of existingRefs) {
-          const workspaceId = ref.relationships?.workspace?.data?.id;
-          if (workspaceId == null) {
-            await axiosInstance.delete(`organization/${orgid}/collection/${collectionid}/reference/${ref.id}`);
-          } else if (!selectedWorkspaces.includes(workspaceId)) {
-            await axiosInstance.delete(`organization/${orgid}/collection/${collectionid}/reference/${ref.id}`);
-          }
-        }
-
-        // Add new references
-        for (const workspaceId of selectedWorkspaces) {
-          if (!existingWorkspaceIds.includes(workspaceId)) {
-            await axiosInstance.post(
-              `organization/${orgid}/collection/${collectionid}/reference`,
-              {
-                data: {
-                  type: "reference",
-                  attributes: {
-                    description: `Reference to workspace ${workspaceId}`,
-                  },
-                  relationships: {
-                    workspace: {
-                      data: {
-                        type: "workspace",
-                        id: workspaceId,
-                      },
-                    },
-                  },
-                },
-              },
-              { headers: { "Content-Type": "application/vnd.api+json" } }
-            );
-          }
+        // A global collection applies to every workspace; its references are kept for when it is narrowed again.
+        if (!attributes.global) {
+          const refsResponse = await axiosInstance.get(`${base}/reference`);
+          await syncReferences(base, refsResponse.data.data, selectedWorkspaces, selectedProjects);
         }
 
         message.success("Variable collection updated");
@@ -496,7 +495,7 @@ export const CreateEditCollection = ({
           form={collectionForm}
           name="collection"
           onFinish={handleSave}
-          initialValues={{ name: "", description: "", priority: 10 }}
+          initialValues={{ name: "", description: "", priority: 10, global: false }}
           saveLabel={mode === "create" ? "Create variable collection" : "Update variable collection"}
           saveDisabled={!managePermission}
           saving={saveLoading}
@@ -521,20 +520,56 @@ export const CreateEditCollection = ({
             <InputNumber min={1} max={100} precision={0} />
           </Form.Item>
           <Form.Item
-            label="Workspaces"
-            htmlFor="collection-workspaces"
-            extra="Only these workspaces receive the variables in this collection."
+            name="global"
+            label="Applies to"
+            getValueProps={(value) => ({ value: value ? "all" : "selected" })}
+            normalize={(value) => value === "all"}
           >
-            <Select
-              id="collection-workspaces"
-              mode="multiple"
-              placeholder="Select workspaces"
-              value={selectedWorkspaces}
-              onChange={setSelectedWorkspaces}
-              optionFilterProp="label"
-              options={workspaces.map((workspace) => ({ value: workspace.id, label: workspace.attributes.name }))}
+            <RadioChoices
+              options={[
+                {
+                  value: "all",
+                  label: "All workspaces",
+                  help: "Every current and future workspace in the organization.",
+                },
+                {
+                  value: "selected",
+                  label: "Selected workspaces",
+                  help: "Only the workspaces and projects chosen below.",
+                },
+              ]}
             />
           </Form.Item>
+          {!isGlobal && (
+            <>
+              <Form.Item label="Workspaces" htmlFor="collection-workspaces">
+                <Select
+                  id="collection-workspaces"
+                  mode="multiple"
+                  placeholder="Select workspaces"
+                  value={selectedWorkspaces}
+                  onChange={setSelectedWorkspaces}
+                  optionFilterProp="label"
+                  options={workspaces.map((workspace) => ({ value: workspace.id, label: workspace.attributes.name }))}
+                />
+              </Form.Item>
+              <Form.Item
+                label="Projects"
+                htmlFor="collection-projects"
+                extra="Includes every current and future workspace in the project."
+              >
+                <Select
+                  id="collection-projects"
+                  mode="multiple"
+                  placeholder="Select projects"
+                  value={selectedProjects}
+                  onChange={setSelectedProjects}
+                  optionFilterProp="label"
+                  options={projects.map((project) => ({ value: project.id, label: project.attributes.name }))}
+                />
+              </Form.Item>
+            </>
+          )}
         </SettingsForm>
 
         {mode === "create" ? (
@@ -549,7 +584,7 @@ export const CreateEditCollection = ({
             <SettingsSection
               maxWidth={680}
               title={`Variables (${variables.length})`}
-              description="Jobs in the selected workspaces receive these variables. Adding, editing or deleting a variable applies immediately."
+              description="Jobs in the workspaces this collection applies to receive these variables. Adding, editing or deleting a variable applies immediately."
               extra={variables.length > 0 && addVariableButton}
             >
               {variables.length === 0 ? (
@@ -572,13 +607,13 @@ export const CreateEditCollection = ({
         {mode === "edit" && collectionName && (
           <DangerZone
             actionName="Delete this variable collection"
-            description="The collection, its variables and its workspace references are deleted. Its workspaces stop receiving these variables. This cannot be undone."
+            description="The collection, its variables and its workspace and project references are deleted. Its workspaces stop receiving these variables. This cannot be undone."
             disabled={!managePermission}
             confirmValue={collectionName}
             confirmMessage={
               <>
-                The collection <strong>{collectionName}</strong>, its variables and its workspace references will be
-                deleted, and its workspaces stop receiving these variables. This cannot be undone.
+                The collection <strong>{collectionName}</strong>, its variables and its workspace and project references
+                will be deleted, and its workspaces stop receiving these variables. This cannot be undone.
               </>
             }
             onConfirm={handleDeleteCollection}
