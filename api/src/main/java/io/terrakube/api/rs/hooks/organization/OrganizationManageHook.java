@@ -13,7 +13,6 @@ import io.terrakube.api.plugin.softdelete.SoftDeleteService;
 import io.terrakube.api.repository.OrganizationRepository;
 import io.terrakube.api.rs.Organization;
 
-import java.util.List;
 import java.util.Optional;
 
 @AllArgsConstructor
@@ -65,9 +64,12 @@ public class OrganizationManageHook implements LifeCycleHook<Organization> {
     }
 
     private void validateOrganizationNameConflict(Organization organization) {
-        List<Organization> matches = organizationRepository.findAllByNameIgnoreCase(organization.getName());
-        boolean conflict = matches.stream()
-                .anyMatch(match -> !match.getId().equals(organization.getId()));
+        if (organization.getName() == null) {
+            return;
+        }
+        boolean conflict = organization.getId() == null
+                ? organizationRepository.existsByNameIgnoreCase(organization.getName())
+                : organizationRepository.existsByNameIgnoreCaseAndIdNot(organization.getName(), organization.getId());
         if (conflict) {
             throw new OrganizationManagementException(HttpStatus.SC_CONFLICT,
                     "An organization named " + organization.getName() + " already exists.");

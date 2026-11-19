@@ -3,13 +3,13 @@ package io.terrakube.api.rs.hooks.organization;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -41,9 +41,8 @@ class OrganizationManageHookTest {
 
     @Test
     void createRejectsNameThatDiffersOnlyByCase() {
-        Organization existing = organization("acme");
         Organization created = organization("Acme");
-        when(organizationRepository.findAllByNameIgnoreCase("Acme")).thenReturn(List.of(existing, created));
+        when(organizationRepository.existsByNameIgnoreCaseAndIdNot("Acme", created.getId())).thenReturn(true);
 
         assertThatThrownBy(() -> hook.execute(Operation.CREATE, TransactionPhase.PRECOMMIT, created, null,
                 Optional.empty()))
@@ -54,7 +53,7 @@ class OrganizationManageHookTest {
     @Test
     void createAllowsNameWhenOnlyTheNewOrganizationMatches() {
         Organization created = organization("Acme");
-        when(organizationRepository.findAllByNameIgnoreCase("Acme")).thenReturn(List.of(created));
+        when(organizationRepository.existsByNameIgnoreCaseAndIdNot("Acme", created.getId())).thenReturn(false);
 
         assertThatCode(() -> hook.execute(Operation.CREATE, TransactionPhase.PRECOMMIT, created, null,
                 Optional.empty())).doesNotThrowAnyException();
@@ -62,9 +61,8 @@ class OrganizationManageHookTest {
 
     @Test
     void renameRejectsNameThatDiffersOnlyByCase() {
-        Organization existing = organization("acme");
         Organization renamed = organization("ACME");
-        when(organizationRepository.findAllByNameIgnoreCase("ACME")).thenReturn(List.of(existing, renamed));
+        when(organizationRepository.existsByNameIgnoreCaseAndIdNot("ACME", renamed.getId())).thenReturn(true);
 
         assertThatThrownBy(() -> hook.execute(Operation.UPDATE, TransactionPhase.PRECOMMIT, renamed, null,
                 Optional.of(new ChangeSpec(null, "name", "other", "ACME"))))
@@ -75,7 +73,7 @@ class OrganizationManageHookTest {
     @Test
     void renameAllowsChangingTheCaseOfTheSameOrganization() {
         Organization renamed = organization("ACME");
-        when(organizationRepository.findAllByNameIgnoreCase("ACME")).thenReturn(List.of(renamed));
+        when(organizationRepository.existsByNameIgnoreCaseAndIdNot("ACME", renamed.getId())).thenReturn(false);
 
         assertThatCode(() -> hook.execute(Operation.UPDATE, TransactionPhase.PRECOMMIT, renamed, null,
                 Optional.of(new ChangeSpec(null, "name", "acme", "ACME")))).doesNotThrowAnyException();
@@ -88,7 +86,7 @@ class OrganizationManageHookTest {
         hook.execute(Operation.UPDATE, TransactionPhase.PRECOMMIT, organization, null,
                 Optional.of(new ChangeSpec(null, "description", "old", "new")));
 
-        verify(organizationRepository, never()).findAllByNameIgnoreCase(anyString());
+        verify(organizationRepository, never()).existsByNameIgnoreCaseAndIdNot(anyString(), any());
     }
 
     @Test
@@ -100,7 +98,7 @@ class OrganizationManageHookTest {
                 Optional.of(new ChangeSpec(null, "disabled", false, true)));
 
         verify(softDeleteService).disableOrganization(organization);
-        verify(organizationRepository, never()).findAllByNameIgnoreCase(anyString());
+        verify(organizationRepository, never()).existsByNameIgnoreCaseAndIdNot(anyString(), any());
     }
 
     @Test
@@ -110,7 +108,7 @@ class OrganizationManageHookTest {
 
         hook.execute(Operation.UPDATE, TransactionPhase.PRECOMMIT, organization, null, Optional.empty());
 
-        verify(organizationRepository, never()).findAllByNameIgnoreCase(anyString());
+        verify(organizationRepository, never()).existsByNameIgnoreCaseAndIdNot(anyString(), any());
         verify(softDeleteService, never()).disableOrganization(organization);
     }
 }
