@@ -19,7 +19,11 @@ import io.terrakube.api.repository.JobRepository;
 import io.terrakube.api.repository.VariableRepository;
 import io.terrakube.api.repository.WorkspaceRepository;
 import io.terrakube.api.rs.Organization;
+import io.terrakube.api.rs.collection.Collection;
+import io.terrakube.api.rs.collection.item.Item;
+import io.terrakube.api.rs.globalvar.Globalvar;
 import io.terrakube.api.rs.job.Job;
+import io.terrakube.api.rs.project.Project;
 import io.terrakube.api.rs.ssh.Ssh;
 import io.terrakube.api.rs.vcs.Vcs;
 import io.terrakube.api.rs.vcs.VcsConnectionType;
@@ -45,7 +49,7 @@ import org.mockito.ArgumentCaptor;
 import io.terrakube.api.plugin.execution.JobVariablesService;
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.persistent.PersistentExecutorService;
 import io.terrakube.api.repository.GlobalVarRepository;
-import io.terrakube.api.repository.ReferenceRepository;
+import io.terrakube.api.repository.CollectionRepository;
 import io.terrakube.api.repository.StepRepository;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -68,7 +72,7 @@ class ExecutorServiceTest {
     private TokenService tokenService;
 
     @Mock private GlobalVarRepository globalVarRepository;
-    @Mock private ReferenceRepository referenceRepository;
+    @Mock private CollectionRepository collectionRepository;
     @Mock private StepRepository stepRepository;
     @Mock private PersistentExecutorService persistentExecutorService;
     @Mock private io.terrakube.api.plugin.token.dynamic.DynamicCredentialsService dynamicCredentialsService;
@@ -696,6 +700,72 @@ class ExecutorServiceTest {
         assertThatThrownBy(() -> executorService.execute(job, "plan-step", flow(FlowType.terraformPlan)))
                 .isInstanceOf(ExecutionException.class)
                 .hasMessageNotContaining("private-invalid-ciphertext");
+    }
+
+    @Test
+    void collectionVariablesFollowPriorityWhicheverScopeAppliesThem() throws Exception {
+        dispatchableJob();
+        Project project = new Project();
+        project.setId(UUID.randomUUID());
+        workspace.setProject(project);
+
+        Variable workspaceVariable = new Variable();
+        workspaceVariable.setKey("region");
+        workspaceVariable.setValue("from-workspace");
+        workspaceVariable.setCategory(Category.TERRAFORM);
+        when(variableRepository.findByWorkspace(workspace)).thenReturn(Optional.of(List.of(workspaceVariable)));
+
+        Globalvar globalVariable = new Globalvar();
+        globalVariable.setKey("owner");
+        globalVariable.setValue("from-global-variable");
+        globalVariable.setCategory(Category.TERRAFORM);
+        when(globalVarRepository.findByOrganization(job.getOrganization())).thenReturn(List.of(globalVariable));
+
+        // Returned in an order unrelated to priority: one organization-wide, one through the
+        // project, two set on the workspace with the same priority.
+        Collection organizationWide = collection("organization-wide", 10,
+                item("tier", "organization-wide", Category.TERRAFORM),
+                item("region", "organization-wide", Category.TERRAFORM),
+                item("owner", "organization-wide", Category.TERRAFORM),
+                item("ONLY_IN_COLLECTION", "organization-wide", Category.ENV));
+        Collection throughProject = collection("through-project", 50,
+                item("tier", "through-project", Category.TERRAFORM));
+        Collection directB = collection("direct-b", 30,
+                item("zone", "direct-b", Category.TERRAFORM));
+        Collection directA = collection("direct-a", 30,
+                item("zone", "direct-a", Category.TERRAFORM),
+                item("tier", "direct-a", Category.TERRAFORM));
+        when(collectionRepository.findApplicableToWorkspaceWithItems(job.getOrganization(), workspace, project))
+                .thenReturn(List.of(organizationWide, directB, throughProject, directA));
+
+        executorService.execute(job, "plan-step", flow(FlowType.terraformPlan));
+
+        var context = ArgumentCaptor.forClass(ExecutorContext.class);
+        verify(persistentExecutorService).send(eq(job), context.capture());
+        assertThat(context.getValue().getVariables())
+                .containsEntry("region", "from-workspace")
+                .containsEntry("owner", "from-global-variable")
+                .containsEntry("tier", "through-project")
+                .containsEntry("zone", "direct-a");
+        assertThat(context.getValue().getEnvironmentVariables())
+                .containsEntry("ONLY_IN_COLLECTION", "organization-wide");
+    }
+
+    private static Collection collection(String name, int priority, Item... items) {
+        Collection collection = new Collection();
+        collection.setId(UUID.randomUUID());
+        collection.setName(name);
+        collection.setPriority(priority);
+        collection.setItem(List.of(items));
+        return collection;
+    }
+
+    private static Item item(String key, String value, Category category) {
+        Item item = new Item();
+        item.setKey(key);
+        item.setValue(value);
+        item.setCategory(category);
+        return item;
     }
 
     private void dispatchableJob() {

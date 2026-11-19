@@ -34,16 +34,15 @@ import io.terrakube.api.plugin.token.dynamic.DynamicCredentialsService;
 import io.terrakube.api.plugin.vcs.TokenService;
 import io.terrakube.api.plugin.vcs.provider.exception.VcsTokenAcquisitionException;
 import io.terrakube.api.repository.AddressRepository;
+import io.terrakube.api.repository.CollectionRepository;
 import io.terrakube.api.repository.GlobalVarRepository;
 import io.terrakube.api.repository.JobRepository;
-import io.terrakube.api.repository.ReferenceRepository;
 import io.terrakube.api.repository.SshRepository;
 import io.terrakube.api.repository.StepRepository;
 import io.terrakube.api.repository.VariableRepository;
 import io.terrakube.api.repository.VcsRepository;
 import io.terrakube.api.repository.WorkspaceRepository;
 import io.terrakube.api.rs.collection.Collection;
-import io.terrakube.api.rs.collection.Reference;
 import io.terrakube.api.rs.collection.item.Item;
 import io.terrakube.api.rs.globalvar.Globalvar;
 import io.terrakube.api.rs.job.Job;
@@ -109,7 +108,7 @@ public class ExecutorService {
     @Autowired
     private VariableRepository variableRepository;
     @Autowired
-    private ReferenceRepository referenceRepository;
+    private CollectionRepository collectionRepository;
     @Autowired
     private AddressRepository addressRepository;
     @Autowired
@@ -708,31 +707,24 @@ public class ExecutorService {
 
         // This runs after ScheduleJob has deliberately released its transaction before making
         // external calls. The repository query fetches Collection.item, preventing a detached
-        // collection proxy from trying to acquire a session here.
-        List<Reference> referenceList = referenceRepository.findByWorkspaceWithCollectionItems(job.getWorkspace());
-
-        List<Collection> collectionList = new ArrayList();
-        for (Reference reference : referenceList) {
-            collectionList.add(reference.getCollection());
-        }
-
-        List<Collection> sortedList = collectionList.stream()
-                .sorted(Comparator.comparing(Collection::getPriority).reversed())
+        // collection proxy from trying to acquire a session here. How a collection applies to the
+        // workspace (globally, through its project or directly) does not affect precedence: the
+        // highest priority wins, and the name breaks ties so the result does not depend on row order.
+        List<Collection> sortedList = collectionRepository.findApplicableToWorkspaceWithItems(
+                        job.getOrganization(), job.getWorkspace(), job.getWorkspace().getProject())
+                .stream()
+                .sorted(Comparator.comparing(Collection::getPriority).reversed()
+                        .thenComparing(Collection::getName, Comparator.nullsLast(Comparator.naturalOrder())))
                 .toList();
 
-        sortedList.stream().forEach(collection -> {
+        sortedList.forEach(collection -> {
             log.info("Adding data from collection {} using priority {}", collection.getName(), collection.getPriority());
-
-            List<Item> itemList = new ArrayList();
-            itemList = collection.getItem();
-            for (Item item : itemList) {
+            for (Item item : collection.getItem()) {
                 if (item.getCategory().equals(category)) {
                     workspaceData.putIfAbsent(item.getKey(), item.getValue());
                 }
             }
-
         });
-
 
         return workspaceData;
     }

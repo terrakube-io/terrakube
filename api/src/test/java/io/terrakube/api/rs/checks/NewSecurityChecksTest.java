@@ -377,6 +377,58 @@ class NewSecurityChecksTest {
     }
 
     @Test
+    void testCollectionProjectReferenceChecks() {
+        Organization org1 = new Organization();
+        org1.setId(UUID.randomUUID());
+        Organization org2 = new Organization();
+        org2.setId(UUID.randomUUID());
+        Team team = new Team();
+        org1.setTeam(List.of(team));
+
+        Collection colOrg1 = new Collection();
+        colOrg1.setOrganization(org1);
+        Project projectOrg1 = new Project();
+        projectOrg1.setOrganization(org1);
+        Project projectOrg2 = new Project();
+        projectOrg2.setOrganization(org2);
+        Workspace wsOrg1 = new Workspace();
+        wsOrg1.setOrganization(org1);
+
+        TeamManageCollectionReference manageRef = new TeamManageCollectionReference();
+        ReflectionTestUtils.setField(manageRef, "authenticatedUser", authenticatedUser);
+        ReflectionTestUtils.setField(manageRef, "membershipService", membershipService);
+        ReflectionTestUtils.setField(manageRef, "rbacService", rbacService);
+        TeamViewCollectionReference viewRef = new TeamViewCollectionReference();
+        ReflectionTestUtils.setField(viewRef, "authenticatedUser", authenticatedUser);
+        ReflectionTestUtils.setField(viewRef, "membershipService", membershipService);
+        ReflectionTestUtils.setField(viewRef, "workspaceCheckSupport", workspaceCheckSupport);
+        when(authenticatedUser.isSuperUser(user)).thenReturn(false);
+        when(membershipService.checkTeamPermission(eq(user), eq(List.of(team)), any())).thenReturn(true);
+        when(membershipService.checkMembership(eq(user), eq(List.of(team)))).thenReturn(true);
+
+        // A collection manager can apply a collection to a project of the same organization
+        Reference sameOrgRef = new Reference();
+        sameOrgRef.setCollection(colOrg1);
+        sameOrgRef.setProject(projectOrg1);
+        assertTrue(manageRef.ok(sameOrgRef, requestScope, Optional.empty()));
+        assertTrue(viewRef.ok(sameOrgRef, requestScope, Optional.empty()));
+
+        // ...but not to a project of another organization
+        Reference crossOrgRef = new Reference();
+        crossOrgRef.setCollection(colOrg1);
+        crossOrgRef.setProject(projectOrg2);
+        assertFalse(manageRef.ok(crossOrgRef, requestScope, Optional.empty()));
+        assertFalse(viewRef.ok(crossOrgRef, requestScope, Optional.empty()));
+
+        // A reference targets a workspace or a project, never both
+        Reference bothRef = new Reference();
+        bothRef.setCollection(colOrg1);
+        bothRef.setWorkspace(wsOrg1);
+        bothRef.setProject(projectOrg1);
+        assertFalse(manageRef.ok(bothRef, requestScope, Optional.empty()));
+    }
+
+    @Test
     void testJobAddressChecks() {
         Organization org = new Organization();
         org.setId(UUID.randomUUID());

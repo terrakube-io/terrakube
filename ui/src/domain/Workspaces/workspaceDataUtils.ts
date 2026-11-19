@@ -101,9 +101,64 @@ export async function setupWorkspaceIncludes(
   const includes = data.included;
   const asyncPromises: Promise<void>[] = [];
 
+  // A collection can apply to the workspace globally, through its project and directly at the same time;
+  // its variables are listed once.
+  const loadedCollections = new Set<string>();
+  const addCollectionItems = (collectionInfo: any, items: any[]) => {
+    if (loadedCollections.has(collectionInfo.id)) return;
+    loadedCollections.add(collectionInfo.id);
+    items.forEach((item: any) => {
+      item.attributes.priority = collectionInfo.attributes.priority;
+      item.attributes.collectionName = collectionInfo.attributes.name;
+      if (item.attributes.category === "ENV") {
+        collectionEnvVariables.push({
+          id: item.id,
+          type: item.type,
+          ...item.attributes,
+        });
+      } else {
+        collectionVariables.push({
+          id: item.id,
+          type: item.type,
+          ...item.attributes,
+        });
+      }
+    });
+  };
+  const loadReferencedCollection = (referenceId: string) =>
+    axiosInstance.get(`/reference/${referenceId}/collection?include=item`).then((response: any) => {
+      addCollectionItems(response.data.data, response.data.included ?? []);
+    });
+
+  const projectId = data.data?.relationships?.project?.data?.id;
+  if (projectId) {
+    asyncPromises.push(
+      axiosInstance
+        .get(`/reference?filter[reference]=project.id==${projectId}`)
+        .then((response: any) =>
+          Promise.all((response.data.data ?? []).map((reference: any) => loadReferencedCollection(reference.id)))
+        )
+        .then(() => undefined)
+    );
+  }
+
   includes.forEach((element: any) => {
     switch (element.type) {
       case include.ORGANIZATION:
+        asyncPromises.push(
+          axiosInstance
+            .get(`/organization/${element.id}/collection?filter[collection]=global==true&include=item`)
+            .then((response: any) => {
+              const included = response.data.included ?? [];
+              (response.data.data ?? []).forEach((collectionInfo: any) => {
+                const itemIds = new Set((collectionInfo.relationships?.item?.data ?? []).map((item: any) => item.id));
+                addCollectionItems(
+                  collectionInfo,
+                  included.filter((item: any) => item.type === "item" && itemIds.has(item.id))
+                );
+              });
+            })
+        );
         asyncPromises.push(
           axiosInstance.get(`/organization/${element.id}/globalvar`).then((response: any) => {
             const globalVar = response.data.data;
@@ -198,37 +253,16 @@ export async function setupWorkspaceIncludes(
         };
         break;
       case include.REFERENCE:
-        asyncPromises.push(
-          axiosInstance.get(`/reference/${element.id}/collection?include=item`).then((response: any) => {
-            const collectionInfo = response.data.data;
-            if (response.data.included != null) {
-              const items = response.data.included;
-              items.forEach((item: any) => {
-                item.attributes.priority = collectionInfo.attributes.priority;
-                item.attributes.collectionName = collectionInfo.attributes.name;
-                if (item.attributes.category === "ENV") {
-                  collectionEnvVariables.push({
-                    id: item.id,
-                    type: item.type,
-                    ...item.attributes,
-                  });
-                } else {
-                  collectionVariables.push({
-                    id: item.id,
-                    type: item.type,
-                    ...item.attributes,
-                  });
-                }
-              });
-            }
-          })
-        );
+        asyncPromises.push(loadReferencedCollection(element.id));
         break;
     }
   });
 
-  await Promise.all(asyncPromises).catch((err) => {
-    console.error("Error loading workspace includes:", err);
+  // Settled rather than all: one list that fails to load must not stop the others from being shown.
+  (await Promise.allSettled(asyncPromises)).forEach((result) => {
+    if (result.status === "rejected") {
+      console.error("Error loading workspace includes:", result.reason);
+    }
   });
 
   const byKey = (a: { key?: string }, b: { key?: string }) =>

@@ -5,7 +5,7 @@ import io.terrakube.api.plugin.scheduler.job.tcl.executor.persistent.PersistentE
 import io.terrakube.api.plugin.scheduler.job.tcl.model.Flow;
 import io.terrakube.api.repository.AddressRepository;
 import io.terrakube.api.repository.GlobalVarRepository;
-import io.terrakube.api.repository.ReferenceRepository;
+import io.terrakube.api.repository.CollectionRepository;
 import io.terrakube.api.repository.StepRepository;
 import io.terrakube.api.repository.VariableRepository;
 import io.terrakube.api.rs.Organization;
@@ -37,7 +37,7 @@ class ExecutionEpochTest {
     @Mock
     private GlobalVarRepository globalVarRepository;
     @Mock
-    private ReferenceRepository referenceRepository;
+    private CollectionRepository collectionRepository;
     @Mock
     private AddressRepository addressRepository;
     @Mock

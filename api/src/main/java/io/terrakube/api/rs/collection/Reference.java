@@ -9,11 +9,16 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 import org.hibernate.annotations.JdbcTypeCode;
+import io.terrakube.api.rs.project.Project;
 import io.terrakube.api.rs.workspace.Workspace;
 
 import java.sql.Types;
 import java.util.UUID;
 
+/**
+ * Applies a collection to a single workspace or to every workspace of a project. Exactly one of
+ * {@link #workspace} and {@link #project} is set.
+ */
 @Include
 @ReadPermission(expression = "team view collection reference")
 @CreatePermission(expression = "team manage collection reference")
@@ -39,4 +44,8 @@ public class Reference {
     @UpdatePermission(expression = "user is a superuser")
     @ManyToOne
     private Workspace workspace;
+
+    @UpdatePermission(expression = "user is a superuser")
+    @ManyToOne
+    private Project project;
 }
