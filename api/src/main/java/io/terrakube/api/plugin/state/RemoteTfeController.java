@@ -20,6 +20,7 @@ import io.terrakube.api.plugin.state.model.workspace.WorkspaceList;
 import io.terrakube.api.plugin.state.model.workspace.state.consumers.StateConsumerList;
 import io.terrakube.api.plugin.state.model.workspace.tags.TagBindingList;
 import io.terrakube.api.plugin.state.model.workspace.tags.TagDataList;
+import io.terrakube.api.rs.hooks.workspace.WorkspaceManagementException;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -42,6 +43,7 @@ import java.text.ParseException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -83,6 +85,21 @@ public class RemoteTfeController {
         Map<String, Object> body = new HashMap<>();
         body.put("errors", List.of(error));
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .contentType(MediaType.valueOf("application/vnd.api+json"))
+                .body(body);
+    }
+
+    @ExceptionHandler(WorkspaceManagementException.class)
+    public ResponseEntity<Map<String, Object>> handleWorkspaceManagement(WorkspaceManagementException ex) {
+        log.warn("Workspace request rejected on TFC API: {}", ex.getMessage());
+        HttpStatus status = HttpStatus.valueOf(ex.getStatus());
+        Map<String, String> error = new HashMap<>();
+        error.put("status", String.valueOf(status.value()));
+        error.put("title", status.getReasonPhrase().toLowerCase(Locale.ROOT).replace(' ', '_'));
+        error.put("detail", ex.getMessage());
+        Map<String, Object> body = new HashMap<>();
+        body.put("errors", List.of(error));
+        return ResponseEntity.status(status)
                 .contentType(MediaType.valueOf("application/vnd.api+json"))
                 .body(body);
     }

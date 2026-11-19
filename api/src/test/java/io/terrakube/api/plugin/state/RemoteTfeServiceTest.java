@@ -1224,6 +1224,24 @@ class RemoteTfeServiceTest {
     }
 
     @Test
+    void createWorkspaceRejectsNameThatDiffersOnlyByCase() {
+        TagFixture fixture = new TagFixture();
+        when(workspaceRepository.existsByOrganizationIdAndNameIgnoreCase(fixture.organization.getId(), "payments"))
+                .thenReturn(true);
+        WorkspaceModel model = new WorkspaceModel();
+        model.setAttributes(new HashMap<>(Map.of("name", "payments", "terraform-version", "1.9.0")));
+        WorkspaceData request = new WorkspaceData();
+        request.setData(model);
+
+        io.terrakube.api.rs.hooks.workspace.WorkspaceManagementException error = assertThrows(
+                io.terrakube.api.rs.hooks.workspace.WorkspaceManagementException.class,
+                () -> fixture.service.createWorkspace("sample-org", request, fixture.currentUser));
+
+        assertEquals(409, error.getStatus());
+        verify(workspaceRepository, never()).save(any(Workspace.class));
+    }
+
+    @Test
     void createWorkspaceSetsExecutionMode() {
         TagFixture fixture = new TagFixture();
         AtomicReference<Workspace> saved = new AtomicReference<>();
