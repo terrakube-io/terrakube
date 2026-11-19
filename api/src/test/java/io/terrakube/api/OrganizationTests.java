@@ -129,34 +129,38 @@ class OrganizationTests extends ServerApplicationTests {
         workspace.setOrganization(organization);
         workspace = workspaceRepository.save(workspace);
 
-        given()
-                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_ADMIN"), "Content-Type", "application/vnd.api+json")
-                .body("{\n" +
-                        "  \"data\": {\n" +
-                        "    \"type\": \"organization\",\n" +
-                        "    \"id\": \"" + organization.getId() + "\",\n" +
-                        "    \"attributes\": {\n" +
-                        "      \"disabled\": true\n" +
-                        "    }\n" +
-                        "  }\n" +
-                        "}")
-                .when()
-                .patch("/api/v1/organization/" + organization.getId())
-                .then()
-                .log()
-                .ifValidationFails()
-                .statusCode(HttpStatus.NO_CONTENT.value());
-
-        // The workspace's @SQLRestriction hides soft-deleted rows from the repository, so read the column directly.
-        EntityManager entityManager = entityManagerFactory.createEntityManager();
         try {
-            Object deleted = entityManager
-                    .createNativeQuery("SELECT deleted FROM workspace WHERE id = :id")
-                    .setParameter("id", workspace.getId().toString())
-                    .getSingleResult();
-            assertThat(deleted).isEqualTo(true);
+            given()
+                    .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_ADMIN"), "Content-Type", "application/vnd.api+json")
+                    .body("{\n" +
+                            "  \"data\": {\n" +
+                            "    \"type\": \"organization\",\n" +
+                            "    \"id\": \"" + organization.getId() + "\",\n" +
+                            "    \"attributes\": {\n" +
+                            "      \"disabled\": true\n" +
+                            "    }\n" +
+                            "  }\n" +
+                            "}")
+                    .when()
+                    .patch("/api/v1/organization/" + organization.getId())
+                    .then()
+                    .log()
+                    .ifValidationFails()
+                    .statusCode(HttpStatus.NO_CONTENT.value());
+
+            // The workspace's @SQLRestriction hides soft-deleted rows from the repository, so read the column directly.
+            EntityManager entityManager = entityManagerFactory.createEntityManager();
+            try {
+                Object deleted = entityManager
+                        .createNativeQuery("SELECT deleted FROM workspace WHERE id = :id")
+                        .setParameter("id", workspace.getId().toString())
+                        .getSingleResult();
+                assertThat(deleted).isEqualTo(true);
+            } finally {
+                entityManager.close();
+            }
         } finally {
-            entityManager.close();
+            deleteOrganizationWithWorkspaces(organization.getId());
         }
     }
 
@@ -205,7 +209,33 @@ class OrganizationTests extends ServerApplicationTests {
                     .ifValidationFails()
                     .statusCode(HttpStatus.NO_CONTENT.value());
         } finally {
-            organizationRepository.deleteById(caseVariant.getId());
+            deleteOrganizationWithWorkspaces(caseVariant.getId());
+            organizationRepository.findById(UUID.fromString("3a130a1c-d96f-4f99-83b8-58d472567e3a")).ifPresent(aws -> {
+                aws.setDescription("aws sample organization");
+                organizationRepository.save(aws);
+            });
+        }
+    }
+
+    // Organization has @SQLRestriction("disabled = false") and Workspace has @SQLRestriction("deleted = false"),
+    // so once a test disables an organization the repositories can't see it and deleteById silently does
+    // nothing. Native deletes bypass the restriction and keep the shared database clean for later tests.
+    private void deleteOrganizationWithWorkspaces(UUID organizationId) {
+        EntityManager entityManager = entityManagerFactory.createEntityManager();
+        try {
+            entityManager.getTransaction().begin();
+            entityManager.createNativeQuery("DELETE FROM workspace WHERE organization_id = :id")
+                    .setParameter("id", organizationId.toString())
+                    .executeUpdate();
+            entityManager.createNativeQuery("DELETE FROM organization WHERE id = :id")
+                    .setParameter("id", organizationId.toString())
+                    .executeUpdate();
+            entityManager.getTransaction().commit();
+        } finally {
+            if (entityManager.getTransaction().isActive()) {
+                entityManager.getTransaction().rollback();
+            }
+            entityManager.close();
         }
     }
 
