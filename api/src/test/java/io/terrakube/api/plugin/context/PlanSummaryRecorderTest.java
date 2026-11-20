@@ -2,6 +2,7 @@ package io.terrakube.api.plugin.context;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -12,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import io.terrakube.api.plugin.scheduler.drift.DriftCheckService;
 import io.terrakube.api.repository.JobRepository;
 
 class PlanSummaryRecorderTest {
@@ -19,12 +21,14 @@ class PlanSummaryRecorderTest {
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private JobRepository jobRepository;
+    private DriftCheckService driftCheckService;
     private PlanSummaryRecorder recorder;
 
     @BeforeEach
     void setUp() {
         jobRepository = mock(JobRepository.class);
-        recorder = new PlanSummaryRecorder(jobRepository);
+        driftCheckService = mock(DriftCheckService.class);
+        recorder = new PlanSummaryRecorder(jobRepository, driftCheckService);
     }
 
     private static JsonNode finalPlanPatch(String changes, String diagnostics) throws Exception {
@@ -99,10 +103,19 @@ class PlanSummaryRecorderTest {
     }
 
     @Test
-    void aSummaryIsStoredOnTheJob() throws Exception {
+    void aSummaryIsStoredOnTheJobAndTheDriftCheckIsAsked() throws Exception {
         boolean recorded = recorder.recordFromPatch(7, finalPlanPatch("[" + resource("update") + "]", "[]"));
 
         assertThat(recorded).isTrue();
+        verify(jobRepository).updatePlanSummary(7, 0, 1, 0);
+        verify(driftCheckService).record(7);
+    }
+
+    @Test
+    void aProblemWithTheDriftCheckDoesNotUndoTheSummary() throws Exception {
+        doThrow(new IllegalStateException("db down")).when(driftCheckService).record(7);
+
+        assertThat(recorder.recordFromPatch(7, finalPlanPatch("[" + resource("update") + "]", "[]"))).isTrue();
         verify(jobRepository).updatePlanSummary(7, 0, 1, 0);
     }
 
@@ -112,5 +125,6 @@ class PlanSummaryRecorderTest {
 
         assertThat(recorded).isFalse();
         verify(jobRepository, never()).updatePlanSummary(anyInt(), anyInt(), anyInt(), anyInt());
+        verify(driftCheckService, never()).record(anyInt());
     }
 }

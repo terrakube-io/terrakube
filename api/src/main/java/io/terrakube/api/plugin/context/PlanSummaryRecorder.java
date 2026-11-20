@@ -4,8 +4,10 @@ import org.springframework.stereotype.Component;
 
 import com.fasterxml.jackson.databind.JsonNode;
 
+import io.terrakube.api.plugin.scheduler.drift.DriftCheckService;
 import io.terrakube.api.repository.JobRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * Records what a plan adds, changes and destroys on the job, from the final plan snapshot the executor sends to the
@@ -16,6 +18,7 @@ import lombok.RequiredArgsConstructor;
  * <p>Counted the way Terraform prints it: a replacement is one add and one destroy; imports, reads, ephemeral
  * resources and output changes are not counted. A plan with an error has no summary.
  */
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class PlanSummaryRecorder {
@@ -27,6 +30,7 @@ public class PlanSummaryRecorder {
     }
 
     private final JobRepository jobRepository;
+    private final DriftCheckService driftCheckService;
 
     /**
      * @param patch the body of a context patch: {@code {"revision": n, "set": {path: value}}}
@@ -38,6 +42,11 @@ public class PlanSummaryRecorder {
             return false;
         }
         jobRepository.updatePlanSummary(jobId, counts.add(), counts.change(), counts.destroy());
+        try {
+            driftCheckService.record(jobId);
+        } catch (RuntimeException e) {
+            log.warn("Could not record the drift check of job {}: {}", jobId, e.getMessage());
+        }
         return true;
     }
 

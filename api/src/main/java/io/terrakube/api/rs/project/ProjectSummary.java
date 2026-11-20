@@ -51,6 +51,7 @@ import java.util.UUID;
         select p.id as id,
                p.name as name,
                p.description as description,
+               p.owner_team as owner_team,
                p.organization_id as organization_id,
                count(w.id) as workspace_count,
                coalesce(sum(case when w.last_job_status in ('completed', 'noChanges') then 1 else 0 end), 0) as completed_count,
@@ -85,7 +86,7 @@ import java.util.UUID;
                     where cast(qw.deleted as integer) = 0 and qj.status in ('pending', 'approved', 'queue')
                     group by qw.organization_id, qw.project_id) q
                on q.organization_id = p.organization_id and q.project_id = p.id
-        group by p.id, p.name, p.description, p.organization_id
+        group by p.id, p.name, p.description, p.owner_team, p.organization_id
         """)
 @ReadPermission(expression = "user is a superuser OR project summary read filter")
 @CreatePermission(expression = "NONE")
@@ -105,6 +106,10 @@ public class ProjectSummary {
 
     @Column(name = "description")
     private String description;
+
+    /** The team that owns the project, as set on {@link Project#getOwnerTeam()}. Empty for a project nobody owns. */
+    @Column(name = "owner_team")
+    private String ownerTeam;
 
     /** The owning organization's id as a plain column, so callers can filter by organization without reading it. */
     @JdbcTypeCode(Types.VARCHAR)
