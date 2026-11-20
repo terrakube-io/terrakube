@@ -19,6 +19,8 @@ import io.terrakube.executor.service.terraform.TerraformExecutor;
 import io.terrakube.executor.service.workspace.SetupWorkspace;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
+import org.springframework.boot.availability.AvailabilityChangeEvent;
+import org.springframework.boot.availability.ReadinessState;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.http.HttpStatus;
@@ -27,6 +29,7 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
@@ -118,11 +121,10 @@ class AdmissionControlIntegrationTest {
         assertEquals(HttpStatus.SERVICE_UNAVAILABLE, secondResponse.getStatusCode());
 
         // Let the first job finish. ExecutorJobImpl releases the gate in its finally block
-        // *before* publishReadiness/publishExecutorAvailable and before the pool Runnable
-        // returns - so waiting only for the gate to free up races the pool thread still being
-        // busy, and the third submit below would then hit the queue-capacity-0 pool and be
-        // rejected (503) even though capacity is logically available. Wait for the pool thread
-        // to actually go idle instead.
+        // *before* publishExecutorAvailable and before the pool Runnable returns - so waiting only
+        // for the gate to free up races the pool thread still being busy, and the third submit
+        // below would then hit the queue-capacity-0 pool and be rejected (503) even though capacity
+        // is logically available. Wait for the pool thread to actually go idle instead.
         releaseFirstJob.countDown();
         long deadline = System.currentTimeMillis() + 5000;
         while (pool.getThreadPoolExecutor().getActiveCount() > 0 && System.currentTimeMillis() < deadline) {
@@ -144,6 +146,77 @@ class AdmissionControlIntegrationTest {
         assertEquals(HttpStatus.ACCEPTED, thirdResponse.getStatusCode());
 
         pool.shutdown();
+    }
+
+    @Test
+    void newlyAdmittedJobNeverHasRefusingTrafficOverwrittenByFinishingJobsAcceptingTraffic() throws Exception {
+        AtomicReference<ReadinessState> liveReadiness = new AtomicReference<>(ReadinessState.ACCEPTING_TRAFFIC);
+        ApplicationEventPublisher livePublisher = event -> {
+            if (event instanceof AvailabilityChangeEvent<?> ace && ace.getState() instanceof ReadinessState state) {
+                liveReadiness.set(state);
+            }
+        };
+
+        SetupWorkspace setupWorkspace = Mockito.mock(SetupWorkspace.class);
+        TerraformExecutor terraformExecutor = Mockito.mock(TerraformExecutor.class);
+        UpdateJobStatus updateJobStatus = Mockito.mock(UpdateJobStatus.class);
+        ShutdownServiceImpl shutdownService = Mockito.mock(ShutdownServiceImpl.class);
+        ScriptEngineService scriptEngineService = Mockito.mock(ScriptEngineService.class);
+        JobExecutionWatchdog jobExecutionWatchdog = Mockito.mock(JobExecutionWatchdog.class);
+        RedisTemplate<String, Object> redisTemplate = Mockito.mock(RedisTemplate.class);
+        TerrakubeClient terrakubeClient = Mockito.mock(TerrakubeClient.class);
+
+        when(setupWorkspace.prepareWorkspace(any()))
+                .thenAnswer(inv -> java.nio.file.Files.createTempDirectory("readiness-race-test").toFile());
+        ExecutorJobResult result = new ExecutorJobResult();
+        result.setSuccessfulExecution(true);
+        when(terraformExecutor.plan(any(), any(), anyBoolean())).thenReturn(result);
+
+        when(terrakubeClient.getJobById("org", "job-2"))
+                .thenReturn(jobResponse("org", "workspace-2", "job-2"));
+
+        ExecutorCapacityGate spyGate = Mockito.spy(new ExecutorCapacityGate());
+        ExecutorJob nextJobRunner = Mockito.mock(ExecutorJob.class);
+        OnlineModeServiceImpl controller = new OnlineModeServiceImpl(nextJobRunner, spyGate, livePublisher, terrakubeClient);
+        ExecutorJobImpl finishingRunner = new ExecutorJobImpl(setupWorkspace, terraformExecutor, updateJobStatus,
+                new ExecutorFlagsProperties(), shutdownService, scriptEngineService, livePublisher,
+                jobExecutionWatchdog, spyGate, redisTemplate);
+
+        TerraformJob firstJob = new TerraformJob();
+        firstJob.setOrganizationId("org");
+        firstJob.setWorkspaceId("workspace-1");
+        firstJob.setJobId("job-1");
+        firstJob.setType("terraformPlan");
+        firstJob.setBranch("remote-content");
+        firstJob.setEnvironmentVariables(new java.util.HashMap<>());
+        firstJob.setVariables(new java.util.HashMap<>());
+
+        TerraformJob secondJob = new TerraformJob();
+        secondJob.setOrganizationId("org");
+        secondJob.setWorkspaceId("workspace-2");
+        secondJob.setJobId("job-2");
+        secondJob.setType("terraformPlan");
+
+        // Simulate job-1 currently owning the gate while running (REFUSING_TRAFFIC).
+        spyGate.tryAcquire();
+        AvailabilityChangeEvent.publish(livePublisher, this, ReadinessState.REFUSING_TRAFFIC);
+
+        // Deterministically exercise the race window: the instant job-1 releases the capacity gate,
+        // job-2 arrives on HTTP POST, acquires the gate, and publishes REFUSING_TRAFFIC.
+        Mockito.doAnswer(inv -> {
+            inv.callRealMethod();
+            ResponseEntity<TerraformJob> secondResponse = controller.terraformJob(secondJob);
+            assertEquals(HttpStatus.ACCEPTED, secondResponse.getStatusCode());
+            return null;
+        }).when(spyGate).release();
+
+        finishingRunner.createJob(firstJob);
+
+        // Because ACCEPTING_TRAFFIC must be published before releasing the gate, job-2's
+        // REFUSING_TRAFFIC must be the final readiness state of the now-busy pod.
+        assertEquals(ReadinessState.REFUSING_TRAFFIC, liveReadiness.get(),
+                "Busy pod running job-2 must not have REFUSING_TRAFFIC overwritten by job-1's ACCEPTING_TRAFFIC");
+        Mockito.verify(nextJobRunner, Mockito.times(1)).createJob(secondJob);
     }
 
     private static ResponseWithInclude<Job, Step> jobResponse(String orgId, String workspaceId, String jobId) {

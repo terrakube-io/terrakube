@@ -136,9 +136,13 @@ class ExecutorJobImplTest {
         result.setSuccessfulExecution(true);
         when(terraformExecutor.plan(eq(job), eq(workDir), eq(false))).thenReturn(result);
 
-        subject(eventPublisher).createJob(job);
+        ApplicationEventPublisher orderingPublisher = Mockito.mock(ApplicationEventPublisher.class);
+        subject(orderingPublisher).createJob(job);
 
-        verify(redisTemplate).convertAndSend("terrakube:executor-available", "");
+        InOrder inOrder = inOrder(orderingPublisher, executorCapacityGate, redisTemplate);
+        inOrder.verify(orderingPublisher).publishEvent(any(AvailabilityChangeEvent.class));
+        inOrder.verify(executorCapacityGate).release();
+        inOrder.verify(redisTemplate).convertAndSend("terrakube:executor-available", "");
     }
 
     @Test
