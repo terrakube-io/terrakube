@@ -79,7 +79,6 @@ class WebhookJobAuditIntegrationTest extends ServerApplicationTests {
         event.setPath(".*");
         event.setTemplateId("audit-test-template");
         when(webhookRepository.findById(webhookId)).thenReturn(java.util.Optional.of(webhook));
-        when(webhookRepository.getReferenceById(webhookId)).thenReturn(webhook);
         when(eventRepository.findByWebhookAndEventOrderByPriorityAsc(webhook, WebhookEventType.PUSH))
                 .thenReturn(List.of(event));
         committedOutsideActorScope = false;
@@ -145,7 +144,7 @@ class WebhookJobAuditIntegrationTest extends ServerApplicationTests {
         if (anonymous) {
             SecurityContextHolder.getContext().setAuthentication(new AnonymousAuthenticationToken(
                     "test", "anonymousUser", List.of(new SimpleGrantedAuthority("ROLE_ANONYMOUS"))));
-            when(gitHubWebhookService.processWebhook(any(), any(), any(), any())).thenReturn(result);
+            when(gitHubWebhookService.processWebhook(any(), any(), any(), any(), any())).thenReturn(result);
             webhookService.processWebhook(webhookId.toString(), "payload", Map.of());
         } else {
             assertThat(webhookService.triggerPolledPush(webhookId, result)).isTrue();

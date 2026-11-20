@@ -1,10 +1,17 @@
 package io.terrakube.api.plugin.vcs;
 
+import java.net.URI;
+import java.net.URISyntaxException;
+
 import org.apache.hc.client5.http.config.ConnectionConfig;
 import org.apache.hc.client5.http.config.RequestConfig;
+import org.apache.hc.client5.http.impl.DefaultRedirectStrategy;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.apache.hc.client5.http.impl.classic.HttpClients;
 import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManager;
+import org.apache.hc.core5.http.HttpHost;
+import org.apache.hc.core5.http.HttpRequest;
+import org.apache.hc.core5.http.protocol.HttpContext;
 import org.apache.hc.core5.util.Timeout;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -14,7 +21,9 @@ import org.springframework.web.client.RestTemplate;
 
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
+import lombok.extern.slf4j.Slf4j;
 
+@Slf4j
 @Configuration
 public class WebhookHttpClientConfig {
 
@@ -49,9 +58,53 @@ public class WebhookHttpClientConfig {
         CloseableHttpClient httpClient = HttpClients.custom()
                 .setConnectionManager(connectionManager)
                 .setDefaultRequestConfig(requestConfig)
+                .setRedirectStrategy(new SameOriginRedirectStrategy())
                 .build();
 
         return new RestTemplate(new HttpComponentsClientHttpRequestFactory(httpClient));
+    }
+
+    /**
+     * Redirect strategy that allows same-origin redirects and same-host http-to-https
+     * upgrades, while refusing cross-host redirects and https-to-http downgrades.
+     */
+    public static class SameOriginRedirectStrategy extends DefaultRedirectStrategy {
+
+        @Override
+        public boolean isRedirectAllowed(HttpHost currentTarget, HttpHost newTarget, HttpRequest request,
+                HttpContext context) {
+            if (currentTarget == null || newTarget == null) {
+                return false;
+            }
+            try {
+                URI currentUri = new URI(currentTarget.toURI());
+                URI newUri = new URI(newTarget.toURI());
+                if (VcsApiUrlValidator.isSameOrigin(currentUri, newUri)) {
+                    return super.isRedirectAllowed(currentTarget, newTarget, request, context);
+                }
+                if (isSameHostHttpsUpgrade(currentUri, newUri)) {
+                    return true;
+                }
+                log.warn("Blocked cross-origin redirect from {} to {}",
+                        currentTarget.getHostName(), newTarget.getHostName());
+                return false;
+            } catch (URISyntaxException _) {
+                return false;
+            }
+        }
+
+        private static boolean isSameHostHttpsUpgrade(URI currentUri, URI newUri) {
+            if (!"http".equalsIgnoreCase(currentUri.getScheme())
+                    || !"https".equalsIgnoreCase(newUri.getScheme())) {
+                return false;
+            }
+            if (currentUri.getHost() == null || newUri.getHost() == null
+                    || !currentUri.getHost().equalsIgnoreCase(newUri.getHost())) {
+                return false;
+            }
+            return VcsApiUrlValidator.effectivePort(currentUri) == 80
+                    && VcsApiUrlValidator.effectivePort(newUri) == 443;
+        }
     }
 
     @Bean
