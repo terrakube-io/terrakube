@@ -72,7 +72,6 @@ function useApiRequest<TResponse, TRequest>({
         };
         processError(err);
       } catch (error: unknown) {
-        // eslint-disable-next-line no-console
         console.error(error);
         const err: ErrorInformation = {
           title: errorInfo?.title ?? "Operation failed",

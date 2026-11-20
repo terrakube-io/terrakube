@@ -90,8 +90,6 @@ export function useStepLog({
           if (cancelled || isAbortError(error)) {
             return;
           }
-          console.warn("[stepLog]", stepId, error);
-
           if (error instanceof StepLogNotFoundError) {
             // A step that hasn't finished may simply have no archived log yet.
             setState(isTerminal ? "error" : "empty");
@@ -101,6 +99,8 @@ export function useStepLog({
             retryTimer = setTimeout(() => attemptFetch(tries + 1), RETRY_DELAYS_MS[tries]);
             return;
           }
+          // Only the final failure is logged: not-found and retried fetches are expected and handled above.
+          console.error("[stepLog]", stepId, error);
           setState("error");
         });
     };
