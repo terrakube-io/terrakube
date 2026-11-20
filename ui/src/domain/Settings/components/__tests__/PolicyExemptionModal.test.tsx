@@ -71,7 +71,7 @@ describe("PolicyExemptionModal", () => {
 
     await waitFor(() => {
       expect(axiosInstance.get).toHaveBeenCalledWith("organization/org-1/policySet");
-      expect(axiosInstance.get).toHaveBeenCalledWith("organization/org-1/workspace");
+      expect(axiosInstance.get).toHaveBeenCalledWith("organization/org-1/workspace?fields[workspace]=name");
       expect(axiosInstance.get).toHaveBeenCalledWith("organization/org-1/project");
     });
   });

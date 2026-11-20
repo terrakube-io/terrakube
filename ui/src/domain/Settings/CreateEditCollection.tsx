@@ -59,7 +59,7 @@ export const CreateEditCollection = ({
     if (mode === "edit" && collectionid) {
       // Parallel load: workspaces, collection data, collection items, and collection references
       Promise.all([
-        axiosInstance.get(`organization/${orgid}/workspace`),
+        axiosInstance.get(`organization/${orgid}/workspace?fields[workspace]=name`),
         axiosInstance.get(`organization/${orgid}/collection/${collectionid}`),
         axiosInstance.get(`organization/${orgid}/collection/${collectionid}/item`),
         axiosInstance.get(`organization/${orgid}/collection/${collectionid}/reference`),
@@ -91,7 +91,7 @@ export const CreateEditCollection = ({
     } else {
       // For create mode, just load workspaces
       axiosInstance
-        .get(`organization/${orgid}/workspace`)
+        .get(`organization/${orgid}/workspace?fields[workspace]=name`)
         .then((response) => {
           setWorkspaces(response.data.data);
           setVariables([]);
