@@ -16,6 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.jpa.repository.QueryHints;
 import org.springframework.data.repository.query.Param;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Date;
 import java.util.List;
@@ -28,6 +29,20 @@ public interface WorkspaceRepository extends JpaRepository<Workspace, UUID> {
     @Query(value = "select count(w.id) from workspace w where w.project_id = :projectId and w.deleted = false",
             nativeQuery = true)
     long countLiveByProject(@Param("projectId") String projectId);
+
+    /**
+     * Records a drift check on its own columns, so it cannot write back what a concurrent save of the entity changed,
+     * and only when no newer check is recorded: a late write of an older run must not replace a newer result.
+     *
+     * @return 1 when recorded, 0 when a newer check is already there
+     */
+    @Transactional
+    @Modifying
+    @Query("update workspace w set w.driftStatus = :status, w.driftFirstSeen = :firstSeen, "
+            + "w.driftLastChecked = :checked, w.driftJobId = :jobId where w.id = :id "
+            + "and (w.driftJobId is null or w.driftJobId <= :jobId)")
+    int updateDrift(@Param("id") UUID id, @Param("status") String status, @Param("firstSeen") Date firstSeen,
+                    @Param("checked") Date checked, @Param("jobId") Integer jobId);
 
     /** A page of the ids of the project's workspaces, without a count query. Soft deleted ones are excluded. */
     @Query("select w.id from workspace w where w.project = :project order by w.id")

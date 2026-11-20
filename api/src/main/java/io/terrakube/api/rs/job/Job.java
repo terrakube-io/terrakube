@@ -128,7 +128,7 @@ public class Job extends GenericAuditFields {
     @Column(name = "approved_at")
     private Date approvedAt;
 
-    // Set once when the job is first persisted, whichever path creates it. Read-only through the API.
+    // Set once when the job is first persisted, whichever path creates it.
     @CreatePermission(expression = "NONE")
     @UpdatePermission(expression = "NONE")
     @Column(name = "queued_at")
@@ -204,6 +204,29 @@ public class Job extends GenericAuditFields {
 
     @Column(name = "plan_changes")
     private boolean planChanges = true;
+
+    // What the plan adds, changes and destroys (a replacement is one of each), for run lists. Null without a summary.
+    // Written by PlanSummaryRecorder, never through a request: updating a job wakes the scheduler.
+    @CreatePermission(expression = "NONE")
+    @UpdatePermission(expression = "NONE")
+    @Column(name = "plan_add")
+    private Integer planAdd;
+
+    @CreatePermission(expression = "NONE")
+    @UpdatePermission(expression = "NONE")
+    @Column(name = "plan_change")
+    private Integer planChange;
+
+    @CreatePermission(expression = "NONE")
+    @UpdatePermission(expression = "NONE")
+    @Column(name = "plan_destroy")
+    private Integer planDestroy;
+
+    // "drift" or "clean" for a drift check run, null for every other run. Written by DriftCheckService.
+    @CreatePermission(expression = "NONE")
+    @UpdatePermission(expression = "NONE")
+    @Column(name = "drift_result")
+    private String driftResult;
 
     @Column(name = "refresh_only")
     private boolean refreshOnly = false;

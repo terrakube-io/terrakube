@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+
+    <!-- Drift state on the workspace and the result of each check on the job. Nullable, not backfilled. The index serves the drifted counts and filter per organization. -->
+    <changeSet id="2-35-0-drift" author="terrakube">
+        <addColumn tableName="workspace">
+            <column name="drift_status" type="varchar(8)"/>
+            <column name="drift_first_seen" type="datetime"/>
+            <column name="drift_last_checked" type="datetime"/>
+            <column name="drift_job_id" type="int"/>
+        </addColumn>
+        <addColumn tableName="job">
+            <column name="drift_result" type="varchar(8)"/>
+        </addColumn>
+        <createIndex tableName="workspace" indexName="idx_workspace_org_drift">
+            <column name="organization_id"/>
+            <column name="deleted"/>
+            <column name="drift_status"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>
