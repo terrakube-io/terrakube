@@ -1,50 +1,193 @@
-.inbox-section,
 .inbox-alert {
   margin-bottom: 16px;
 }
 
-.inbox-list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
+.inbox-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin: 8px 0 20px;
 }
 
-.inbox-row {
+.inbox-organization {
+  min-width: 220px;
+}
+
+.inbox-search {
+  width: 260px;
+}
+
+/* The scope sits at the far end, away from the controls that pick what is listed. */
+.inbox-scope {
+  margin-left: auto;
+}
+
+.inbox-layout {
+  display: grid;
+  grid-template-columns: 250px minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+
+.inbox-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  position: sticky;
+  top: 16px;
+}
+
+.inbox-rail-item {
+  display: grid;
+  grid-template-columns: 22px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--tk-text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.inbox-rail-item:hover {
+  background: var(--tk-fill-secondary, #f5f5f5);
+}
+
+.inbox-rail-item:focus-visible {
+  outline: 2px solid var(--tk-primary, #722ed1);
+  outline-offset: 1px;
+}
+
+.inbox-rail-active {
+  background: var(--tk-fill-secondary, #f5f5f5);
+  font-weight: 600;
+}
+
+.inbox-rail-icon {
+  font-size: 15px;
+}
+
+.inbox-rail-waiting .inbox-rail-icon {
+  color: var(--tk-status-warning, #d48806);
+}
+
+.inbox-rail-failed .inbox-rail-icon {
+  color: var(--tk-status-error, #cf1322);
+}
+
+.inbox-rail-drifted .inbox-rail-icon {
+  color: var(--tk-status-info, #1677ff);
+}
+
+.inbox-rail-policy .inbox-rail-icon {
+  color: var(--tk-primary, #722ed1);
+}
+
+.inbox-rail-count {
+  min-width: 24px;
+  padding: 0 7px;
+  border-radius: 10px;
+  background: var(--tk-border-secondary, #f0f0f0);
+  color: var(--tk-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 20px;
+  text-align: center;
+}
+
+.inbox-rail-active .inbox-rail-count {
+  background: var(--tk-primary, #722ed1);
+  color: #fff;
+}
+
+.inbox-bulk {
+  position: sticky;
+  top: 0;
+  z-index: 2;
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 12px;
-  padding: 8px 0;
-  border-bottom: 1px solid var(--tk-border-secondary, #f0f0f0);
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--tk-border-secondary, #f0f0f0);
+  border-radius: 8px;
+  background: var(--tk-bg-container, #fff);
+  box-shadow: var(--tk-shadow-sm);
 }
 
-.inbox-row:last-child {
-  border-bottom: 0;
-}
-
-.inbox-row-main {
+.inbox-cell {
   display: flex;
   flex-direction: column;
   min-width: 0;
 }
 
-.inbox-row-where {
+.inbox-name {
+  font-weight: 600;
+}
+
+.inbox-where {
   font-size: 12px;
 }
 
-.inbox-row-actions {
-  display: flex;
+.inbox-actions {
+  display: inline-flex;
   align-items: center;
-  flex-shrink: 0;
-  gap: 12px;
+  gap: 16px;
+}
+
+.inbox-org-link {
+  padding: 0;
+  height: auto;
+  font-weight: 600;
 }
 
 .inbox-more {
   display: block;
-  margin-top: 8px;
+  margin-top: 12px;
   font-size: 12px;
 }
 
-.inbox-scope {
-  margin-bottom: 16px;
+/* Narrow screens put the rail above the list, as a row. */
+@media (max-width: 860px) {
+  .inbox-layout {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .inbox-rail {
+    position: static;
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .inbox-rail-item {
+    width: auto;
+  }
+
+  .inbox-scope {
+    margin-left: 0;
+  }
+}
+
+.inbox-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.inbox-rail-label {
+  white-space: nowrap;
+}
+
+/* The header cells of the table are not columns of data to resize, so no divider between them. */
+.inbox-table .ant-table-thead > tr > th::before {
+  display: none !important;
 }

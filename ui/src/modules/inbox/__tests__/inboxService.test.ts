@@ -1,5 +1,5 @@
 import { apiPost } from "@/modules/api/apiWrapper";
-import { loadInbox } from "../inboxService";
+import { loadInbox, loadInboxCounts, loadInboxPage, loadOrganizationCounts } from "../inboxService";
 
 jest.mock("@/modules/api/apiWrapper", () => ({ apiPost: jest.fn() }));
 const post = apiPost as jest.Mock;
@@ -153,5 +153,142 @@ describe("loadInbox", () => {
 
     expect(data.items).toEqual([]);
     expect(post).not.toHaveBeenCalled();
+  });
+});
+
+const single = (workspace: any) => ({
+  isError: false,
+  data: { organization: { edges: [{ node: { workspace } }] } },
+});
+
+describe("loadInboxPage", () => {
+  beforeEach(() => jest.resetAllMocks());
+
+  it("reads one page of one kind, from the offset of that page, with the total", async () => {
+    post.mockResolvedValue(single(rows(63, ws("w1", "gateway", "2026-11-20T10:00:00Z", "payments"))));
+
+    const result = await loadInboxPage({ id: "a", name: "JXP" }, { kind: "failed", page: 3, pageSize: 25 });
+
+    const { variables, query } = post.mock.calls[0][1];
+    expect(variables).toEqual({
+      orgId: "a",
+      first: "25",
+      after: "50",
+      sort: "-lastJobDate,+name",
+      filter: "lastJobStatus=='failed'",
+    });
+    expect(query).toContain("totalRecords");
+    expect(result.total).toBe(63);
+    expect(result.items).toEqual([
+      expect.objectContaining({
+        key: "failed:w1",
+        kind: "failed",
+        orgName: "JXP",
+        name: "gateway",
+        projectName: "payments",
+      }),
+    ]);
+  });
+
+  it("orders each kind the way the lists do, with the name last so a page boundary never reorders equal times", async () => {
+    post.mockResolvedValue(single(rows(0)));
+    const org = { id: "a", name: "JXP" };
+
+    await loadInboxPage(org, { kind: "waiting", page: 1, pageSize: 25 });
+    await loadInboxPage(org, { kind: "drifted", page: 1, pageSize: 25 });
+
+    expect(post.mock.calls[0][1].variables.sort).toBe("+lastJobDate,+name");
+    expect(post.mock.calls[1][1].variables.sort).toBe("+driftFirstSeen,+name");
+  });
+
+  it("narrows to names containing the text, and drops the characters that mean something to a filter", async () => {
+    post.mockResolvedValue(single(rows(0)));
+
+    await loadInboxPage({ id: "a", name: "JXP" }, { kind: "failed", page: 1, pageSize: 25, search: "gate;way*'" });
+
+    expect(post.mock.calls[0][1].variables.filter).toBe("lastJobStatus=='failed';name=ini=*gate way*");
+  });
+
+  it("keeps to the projects the given teams own, and asks for nothing when there are none", async () => {
+    post.mockResolvedValue(single(rows(0)));
+    const org = { id: "a", name: "JXP" };
+
+    await loadInboxPage(org, { kind: "failed", page: 1, pageSize: 25, scope: { ownerTeams: ["payments-devs"] } });
+    expect(post.mock.calls[0][1].variables.filter).toBe(
+      "lastJobStatus=='failed';project.ownerTeam=in=(\"payments-devs\")"
+    );
+
+    post.mockClear();
+    const none = await loadInboxPage(org, { kind: "failed", page: 1, pageSize: 25, scope: { ownerTeams: [] } });
+    expect(post).not.toHaveBeenCalled();
+    expect(none).toEqual({ items: [], total: 0 });
+  });
+
+  it("fails the way the rest of the inbox does when the request fails", async () => {
+    post.mockResolvedValue({ isError: true, error: { message: "down" } });
+
+    await expect(loadInboxPage({ id: "a", name: "JXP" }, { kind: "failed", page: 1, pageSize: 25 })).rejects.toThrow(
+      "down"
+    );
+  });
+});
+
+describe("loadInboxCounts", () => {
+  beforeEach(() => jest.resetAllMocks());
+
+  it("asks for totals only, one row at most of each kind", async () => {
+    post.mockResolvedValue(answer(rows(2), rows(10), rows(1), rows(4)));
+
+    const counts = await loadInboxCounts({ id: "a", name: "JXP" });
+
+    expect(counts).toEqual({ waiting: 2, failed: 10, drifted: 4, policy: 1 });
+    const { query, variables } = post.mock.calls[0][1];
+    expect(query).not.toContain("lastJobDate");
+    expect(query).toContain('first: "1"');
+    expect(variables.failedFilter).toBe("lastJobStatus=='failed'");
+  });
+
+  it("counts only what matches the search, so the numbers on the tabs agree with the list", async () => {
+    post.mockResolvedValue(answer(rows(0), rows(0), rows(0)));
+
+    await loadInboxCounts({ id: "a", name: "JXP" }, null, "gate");
+
+    expect(post.mock.calls[0][1].variables.waitingFilter).toBe("lastJobStatus=='waitingApproval';name=ini=*gate*");
+  });
+});
+
+describe("loadOrganizationCounts", () => {
+  beforeEach(() => jest.resetAllMocks());
+
+  it("counts each organization, and names the ones it could not read instead of treating them as quiet", async () => {
+    post
+      .mockResolvedValueOnce(answer(rows(1), rows(0), rows(0)))
+      .mockResolvedValueOnce({ isError: true, error: { message: "down" } });
+
+    const result = await loadOrganizationCounts([
+      { id: "a", name: "JXP" },
+      { id: "b", name: "Acme" },
+    ]);
+
+    expect(result.rows).toEqual([
+      { org: { id: "a", name: "JXP" }, counts: { waiting: 1, failed: 0, drifted: 0, policy: 0 } },
+    ]);
+    expect(result.failedOrganizations).toEqual(["Acme"]);
+  });
+
+  it("never has more than a few requests in flight, so a person in many organizations does not start them all", async () => {
+    let inFlight = 0;
+    let peak = 0;
+    post.mockImplementation(async () => {
+      inFlight++;
+      peak = Math.max(peak, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      inFlight--;
+      return answer(rows(0), rows(0), rows(0));
+    });
+
+    await loadOrganizationCounts(Array.from({ length: 20 }, (_, index) => ({ id: `o${index}`, name: `Org ${index}` })));
+
+    expect(peak).toBeLessThanOrEqual(5);
   });
 });

@@ -1,5 +1,6 @@
 import { act, render, screen, fireEvent } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
+import { openCommandPalette } from "@/modules/navigation/openPalette";
 import AppSidebar from "../AppSidebar";
 import * as sidebarPreference from "../sidebarPreference";
 import { FlatOrganization } from "@/domain/types";
@@ -16,6 +17,8 @@ jest.mock("@/modules/projects/projectService", () => ({
   __esModule: true,
   default: { getProjectSummary: jest.fn().mockResolvedValue({ isError: false, data: { workspaceCount: 18 } }) },
 }));
+
+jest.mock("@/modules/navigation/openPalette", () => ({ openCommandPalette: jest.fn() }));
 
 jest.mock("@/components/layout/HelpMenu", () => ({
   HelpMenu: () => <div data-testid="help-menu" />,
@@ -52,6 +55,17 @@ function renderSidebar(path: string, overrides: Partial<Parameters<typeof AppSid
 }
 
 describe("AppSidebar", () => {
+  it("offers search as a field with its shortcut, and opens the palette from it", () => {
+    renderSidebar(orgPath);
+
+    const search = screen.getByRole("button", { name: /Search organizations, projects and workspaces/ });
+    expect(search).toHaveTextContent("Search");
+    expect(search.querySelector("kbd")).not.toBeNull();
+    fireEvent.click(search);
+
+    expect(openCommandPalette).toHaveBeenCalled();
+  });
+
   beforeEach(() => {
     sessionStorage.clear();
   });

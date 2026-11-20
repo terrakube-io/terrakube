@@ -1,11 +1,14 @@
 import { BellOutlined } from "@ant-design/icons";
 import { Badge, Button, Popover, Typography } from "antd";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
+import { ORGANIZATION_ARCHIVE } from "@/config/actionTypes";
+import { getOrgIdFromPathname, isOrgId } from "@/config/orgId";
 import { usePolling } from "@/hooks";
+import { useOrganizationName } from "@/hooks/useOrganizationName";
 import { confirmApprove } from "@/modules/inbox/confirmApprove";
 import { InboxData, InboxItem, InboxKind, totalCount } from "@/modules/inbox/inboxModel";
-import { loadInbox } from "@/modules/inbox/inboxService";
+import { loadInbox, loadOrganizationCounts } from "@/modules/inbox/inboxService";
 import { listOrganizationNames } from "@/modules/navigation/navigationService";
 import { shortAgo } from "@/modules/projects/projectHealth";
 import { inboxOrigin, rememberWorkspaceOrigin } from "@/modules/workspaces/workspaceOrigin";
@@ -13,6 +16,11 @@ import "./InboxBell.css";
 
 const POLL_MS = 60000;
 const SHOWN = 6;
+// Counting the other organizations is a request each, so a person in more of them than this is sent to the inbox
+// without the numbers.
+const MAX_OTHER_ORGANIZATIONS = 20;
+
+type Others = { organizations: number; total: number | null };
 
 const KIND_LABEL: Record<InboxKind, string> = {
   waiting: "Waiting for approval",
@@ -52,11 +60,18 @@ function Item({ item, onApprove, onNavigate }: { item: InboxItem; onApprove: () 
 }
 
 /**
- * What needs a person, one click from any page: the count of items across the organizations they can see, and the
- * first few of them with the approval a click away. The full page stays at /inbox.
+ * What needs a person, one click from any page: the count for the organization they are working in, and the first few
+ * of them with the approval a click away. Only that organization is polled. The others are counted when the panel is
+ * opened, so a person in many organizations does not cost the server a request each for every minute the tab is open.
+ * The full page stays at /inbox.
  */
 export const InboxBell = () => {
+  const location = useLocation();
+  const stored = sessionStorage.getItem(ORGANIZATION_ARCHIVE);
+  const organizationId = getOrgIdFromPathname(location.pathname) ?? (isOrgId(stored) ? stored : null);
+  const organizationName = useOrganizationName(organizationId ?? "");
   const [data, setData] = useState<InboxData | null>(null);
+  const [others, setOthers] = useState<Others | null>(null);
   const [failed, setFailed] = useState(false);
   const [open, setOpen] = useState(false);
   const [shift, setShift] = useState(0);
@@ -64,16 +79,23 @@ export const InboxBell = () => {
   const buttonRef = useRef<HTMLButtonElement>(null);
 
   const load = useCallback(async () => {
+    if (!organizationId || !organizationName) return;
     try {
-      const orgs = await listOrganizationNames();
-      const next = await loadInbox(orgs);
+      const next = await loadInbox([{ id: organizationId, name: organizationName }]);
       if (!alive.current) return;
       setData(next);
       setFailed(false);
     } catch {
       if (alive.current) setFailed(true);
     }
-  }, []);
+  }, [organizationId, organizationName]);
+
+  // Another organization starts from nothing: the numbers of the last one are not this one's.
+  useEffect(() => {
+    setData(null);
+    setOthers(null);
+    setFailed(false);
+  }, [organizationId]);
 
   useEffect(() => {
     alive.current = true;
@@ -85,6 +107,27 @@ export const InboxBell = () => {
 
   usePolling(load, { interval: POLL_MS, immediate: false });
 
+  const loadOthers = useCallback(async () => {
+    try {
+      const everyone = await listOrganizationNames();
+      const rest = everyone.filter((organization) => organization.id !== organizationId);
+      if (!alive.current) return;
+      if (rest.length > MAX_OTHER_ORGANIZATIONS) {
+        setOthers({ organizations: rest.length, total: null });
+        return;
+      }
+      const result = await loadOrganizationCounts(rest);
+      if (!alive.current) return;
+      const withWork = result.rows.filter((row) => totalCount(row.counts) > 0);
+      setOthers({
+        organizations: withWork.length,
+        total: withWork.reduce((sum, row) => sum + totalCount(row.counts), 0),
+      });
+    } catch {
+      // The other organizations are an extra: the panel stays useful without them.
+    }
+  }, [organizationId]);
+
   const total = data ? totalCount(data.counts) : 0;
   const shown = data?.items.slice(0, SHOWN) ?? [];
   const unreadable = failed || (data?.failedOrganizations.length ?? 0) > 0;
@@ -92,8 +135,8 @@ export const InboxBell = () => {
   const content = (
     <div className="inbox-bell-panel">
       <div className="inbox-bell-head">
-        <strong>Needs attention</strong>
-        <Link to="/inbox" onClick={() => setOpen(false)}>
+        <strong>{organizationName ? `Needs attention in ${organizationName}` : "Needs attention"}</strong>
+        <Link to={organizationId ? `/inbox?org=${organizationId}` : "/inbox"} onClick={() => setOpen(false)}>
           View all{total > shown.length ? ` ${total}` : ""}
         </Link>
       </div>
@@ -102,8 +145,8 @@ export const InboxBell = () => {
           {data ? "Some organizations could not be read." : "Could not load what needs attention."}
         </Typography.Text>
       )}
-      {data && shown.length === 0 && !unreadable && (
-        <Typography.Text type="secondary">Nothing needs attention.</Typography.Text>
+      {organizationId && data && shown.length === 0 && !unreadable && (
+        <Typography.Text type="secondary">Nothing needs attention here.</Typography.Text>
       )}
       {shown.length > 0 && (
         <ul className="inbox-bell-list">
@@ -119,6 +162,13 @@ export const InboxBell = () => {
             />
           ))}
         </ul>
+      )}
+      {others && (others.total === null || others.total > 0) && (
+        <Link to="/inbox?org=all" className="inbox-bell-others" onClick={() => setOpen(false)}>
+          {others.total === null
+            ? "Other organizations"
+            : `${others.total} more in ${others.organizations} other organization${others.organizations === 1 ? "" : "s"}`}
+        </Link>
       )}
     </div>
   );
@@ -138,7 +188,10 @@ export const InboxBell = () => {
           setShift(Math.max(0, sidebar.getBoundingClientRect().right - button.getBoundingClientRect().left + 8));
         }
         setOpen(next);
-        if (next) load();
+        if (next) {
+          load();
+          loadOthers();
+        }
       }}
       content={content}
     >

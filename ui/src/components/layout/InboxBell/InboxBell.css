@@ -66,3 +66,10 @@
   white-space: nowrap;
   font-size: 12px;
 }
+
+.inbox-bell-others {
+  display: block;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--tk-border-secondary);
+}

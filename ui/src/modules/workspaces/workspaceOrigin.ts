@@ -51,4 +51,5 @@ export const projectOrigin = (organizationId: string, projectId: string): Worksp
   path: `/organizations/${organizationId}/projects/${projectId}`,
 });
 
-export const inboxOrigin = (): WorkspaceOrigin => ({ kind: "inbox", path: "/inbox" });
+/** The inbox, with the filters it had, so going back lands on the same list. */
+export const inboxOrigin = (search = ""): WorkspaceOrigin => ({ kind: "inbox", path: `/inbox${search}` });

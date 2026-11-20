@@ -89,7 +89,7 @@ export default function OrgOverviewPage() {
           count: counts.failed,
           label: "Failed runs",
           cta: "Review",
-          to: "/inbox",
+          to: `/inbox?org=${orgId}&kind=failed`,
         },
         {
           key: "waiting",
@@ -98,7 +98,7 @@ export default function OrgOverviewPage() {
           count: counts.waiting,
           label: "Waiting approval",
           cta: "Approve",
-          to: "/inbox",
+          to: `/inbox?org=${orgId}&kind=waiting`,
         },
         {
           key: "drifted",
@@ -107,7 +107,7 @@ export default function OrgOverviewPage() {
           count: counts.drifted,
           label: "Drifted",
           cta: "View plans",
-          to: "/inbox",
+          to: `/inbox?org=${orgId}&kind=drifted`,
         },
       ]
     : [];
@@ -170,7 +170,7 @@ export default function OrgOverviewPage() {
             <Card className="overview-card" aria-label="Needs you">
               <div className="overview-card-head">
                 <h3 className="overview-card-title">Needs you</h3>
-                <Link to="/inbox">Open inbox</Link>
+                <Link to={`/inbox?org=${orgId}`}>Open inbox</Link>
               </div>
               {needsYou.length === 0 ? (
                 <EmptyState description="Nothing needs you." />
