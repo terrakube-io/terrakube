@@ -96,7 +96,7 @@ public class PrApplyAuthorizationService {
     }
 
     private static String cannotCheck(String author) {
-        return "Could not check whether `%s` may apply from a comment, so the apply was not started. Apply this plan from the Terrakube UI."
+        return "Could not check whether `%s` may apply from a comment, so the apply was not started. If this was a temporary error, comment again; otherwise apply this plan from the Terrakube UI."
                 .formatted(author);
     }
 }

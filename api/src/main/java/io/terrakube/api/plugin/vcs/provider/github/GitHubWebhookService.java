@@ -517,8 +517,12 @@ public class GitHubWebhookService extends WebhookServiceBase {
         }
     }
 
-    /** GitHub logins: alphanumerics and single hyphens, plus the "[bot]" suffix of app accounts. */
-    private static final Pattern GITHUB_LOGIN = Pattern.compile("^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})(\\[bot])?$");
+    /**
+     * GitHub logins, checked before one goes into the API path: alphanumerics and hyphens, the underscore
+     * and enterprise shortcode of Enterprise Managed Users ("alice_acme"), and the "[bot]" suffix of app
+     * accounts. None of these characters can change the path.
+     */
+    static final Pattern GITHUB_LOGIN = Pattern.compile("^[A-Za-z0-9][A-Za-z0-9_-]{0,99}(\\[bot])?$");
 
     /**
      * The user's permission on the workspace repository, as GitHub's legacy "permission" field reports it

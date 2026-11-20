@@ -11,6 +11,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.urlPathMatching;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.options;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -37,6 +38,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
@@ -664,6 +666,24 @@ public class GitHubWebhookServiceTest {
             assertTrue(result.isRelease());
             assertEquals("v3.1.0", result.getTag());
             assertEquals("v3.1.0", result.getBranch());
+        }
+    }
+
+    @Nested
+    class LoginPattern {
+
+        @ParameterizedTest
+        @ValueSource(strings = {"alice", "alice-smith", "a", "alice_acme", "alice-smith_acme", "github-actions[bot]",
+                "abcdefghijklmnopqrstuvwxyzabcdefghijklm_shortcode"})
+        void acceptsGitHubLogins(String login) {
+            assertTrue(GitHubWebhookService.GITHUB_LOGIN.matcher(login).matches(), login);
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = {"", "-alice", "_alice", "alice/../admin", "..", "alice?x=1", "alice#x", "alice%2F",
+                "alice acme", "alice.acme", "alice[bot]x"})
+        void rejectsAnythingThatCouldChangeThePath(String login) {
+            assertFalse(GitHubWebhookService.GITHUB_LOGIN.matcher(login).matches(), login);
         }
     }
 }
