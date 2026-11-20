@@ -47,7 +47,9 @@ export const CreateEditPolicySet: React.FC<Props> = ({ mode, policySetId, manage
         setLoadingTeams(true);
         const [vcsRes, wsRes, projRes, tagsRes, notifRes, teamsRes] = await Promise.all([
           axiosInstance.get(`organization/${orgid}/vcs`).catch(() => ({ data: { data: [] } })),
-          axiosInstance.get(`organization/${orgid}/workspace`).catch(() => ({ data: { data: [] } })),
+          axiosInstance
+            .get(`organization/${orgid}/workspace?fields[workspace]=name`)
+            .catch(() => ({ data: { data: [] } })),
           axiosInstance.get(`organization/${orgid}/project`).catch(() => ({ data: { data: [] } })),
           axiosInstance.get(`organization/${orgid}/tag`).catch(() => ({ data: { data: [] } })),
           axiosInstance.get(`organization/${orgid}/notificationConfiguration`).catch(() => ({ data: { data: [] } })),
