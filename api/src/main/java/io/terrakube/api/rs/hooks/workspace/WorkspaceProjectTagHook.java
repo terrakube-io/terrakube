@@ -64,12 +64,8 @@ public class WorkspaceProjectTagHook implements LifeCycleHook<Workspace> {
             if (existing.contains(projectTag.getTagId())) {
                 continue;
             }
-            WorkspaceTag copy = new WorkspaceTag();
-            copy.setWorkspace(workspace);
-            copy.setTagId(projectTag.getTagId());
-            copy.setValue(projectTag.getValue());
-            workspaceTagRepository.save(copy);
-            log.info("Copied tag {} from project {} onto workspace {}", projectTag.getTagId(), project.getName(),
+            workspaceTagRepository.save(projectTag.copyTo(workspace));
+            log.debug("Copied tag {} from project {} onto workspace {}", projectTag.getTagId(), project.getName(),
                     workspace.getName());
         }
     }

@@ -6,7 +6,7 @@ import java.util.Set;
 import java.util.UUID;
 
 import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Slice;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -15,8 +15,6 @@ import io.terrakube.api.repository.WorkspaceRepository;
 import io.terrakube.api.repository.WorkspaceTagRepository;
 import io.terrakube.api.rs.project.Project;
 import io.terrakube.api.rs.project.tag.ProjectTag;
-import io.terrakube.api.rs.workspace.Workspace;
-import io.terrakube.api.rs.workspace.tag.WorkspaceTag;
 import lombok.AllArgsConstructor;
 
 /**
@@ -46,7 +44,7 @@ public class ProjectDefaultTagService {
         long added = 0;
 
         int page = 0;
-        Page<UUID> ids;
+        Slice<UUID> ids;
         do {
             ids = workspaceRepository.findIdsByProject(project, PageRequest.of(page++, PAGE_SIZE));
             workspaces += ids.getNumberOfElements();
@@ -66,12 +64,7 @@ public class ProjectDefaultTagService {
                     added++;
                     touched = true;
                     if (!dryRun) {
-                        Workspace reference = workspaceRepository.getReferenceById(workspaceId);
-                        WorkspaceTag copy = new WorkspaceTag();
-                        copy.setWorkspace(reference);
-                        copy.setTagId(projectTag.getTagId());
-                        copy.setValue(projectTag.getValue());
-                        workspaceTagRepository.save(copy);
+                        workspaceTagRepository.save(projectTag.copyTo(workspaceRepository.getReferenceById(workspaceId)));
                     }
                 }
                 if (touched) {

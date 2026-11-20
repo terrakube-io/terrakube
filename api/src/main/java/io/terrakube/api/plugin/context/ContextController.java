@@ -1,6 +1,7 @@
 package io.terrakube.api.plugin.context;
 
 import com.fasterxml.jackson.core.JacksonException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.yahoo.elide.core.security.User;
@@ -47,6 +48,8 @@ public class ContextController {
 
     private final ObjectMapper objectMapper;
 
+    private final PlanSummaryRecorder planSummaryRecorder;
+
     @Autowired
     public ContextController(
             ContextSanitizer contextSanitizer,
@@ -57,7 +60,8 @@ public class ContextController {
             io.terrakube.api.plugin.policy.PolicyEvaluationService policyEvaluationService,
             JobLogAccessService jobLogAccessService,
             AuthenticatedUser authenticatedUser,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            PlanSummaryRecorder planSummaryRecorder) {
         this.contextSanitizer = contextSanitizer;
         this.streamingService = streamingService;
         this.contextReadService = contextReadService;
@@ -67,6 +71,7 @@ public class ContextController {
         this.jobLogAccessService = jobLogAccessService;
         this.authenticatedUser = authenticatedUser;
         this.objectMapper = objectMapper;
+        this.planSummaryRecorder = planSummaryRecorder;
     }
 
     public ResponseEntity<String> getContext(int jobId) {
@@ -174,8 +179,10 @@ public class ContextController {
 
         // Validated before the write lock is taken.
         ContextPatchApplier.Patch parsed;
+        JsonNode body;
         try {
-            parsed = ContextPatchApplier.parse(objectMapper.readTree(patch), System.currentTimeMillis());
+            body = objectMapper.readTree(patch);
+            parsed = ContextPatchApplier.parse(body, System.currentTimeMillis());
         } catch (JacksonException | InvalidContextPatchException e) {
             log.warn("Invalid context patch for job {}", jobId);
             return new ResponseEntity<>("{}", HttpStatus.BAD_REQUEST);
@@ -192,6 +199,15 @@ public class ContextController {
         }
         if (policyEvaluationService != null && result.applied().contains("policyEvaluation")) {
             policyEvaluationService.processPolicyEvaluationContext(jobId, result.context());
+        }
+        // Only when the plan was stored by this patch, so a retried or reordered write does not count twice.
+        if (planSummaryRecorder != null && result.applied().stream().anyMatch(key -> key.startsWith("planStructuredOutput/"))) {
+            try {
+                planSummaryRecorder.recordFromPatch(jobId, body);
+            } catch (RuntimeException e) {
+                // A summary is a convenience for the run list and must never fail the executor's write.
+                log.warn("Could not record the plan summary of job {}: {}", jobId, e.getMessage());
+            }
         }
         return new ResponseEntity<>("{\"applied\":" + result.applied().size() + ",\"skipped\":" + result.skipped() + "}", HttpStatus.OK);
     }

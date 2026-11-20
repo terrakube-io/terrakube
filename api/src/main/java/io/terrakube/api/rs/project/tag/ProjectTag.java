@@ -14,6 +14,8 @@ import com.yahoo.elide.annotation.UpdatePermission;
 
 import io.terrakube.api.plugin.security.audit.GenericAuditFields;
 import io.terrakube.api.rs.project.Project;
+import io.terrakube.api.rs.workspace.Workspace;
+import io.terrakube.api.rs.workspace.tag.WorkspaceTag;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -53,4 +55,13 @@ public class ProjectTag extends GenericAuditFields {
     @ManyToOne
     @JoinColumn(name = "project_id")
     private Project project;
+
+    /** The workspace tag this default becomes on a workspace of the project. */
+    public WorkspaceTag copyTo(Workspace workspace) {
+        WorkspaceTag copy = new WorkspaceTag();
+        copy.setWorkspace(workspace);
+        copy.setTagId(tagId);
+        copy.setValue(value);
+        return copy;
+    }
 }
