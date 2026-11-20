@@ -18,7 +18,7 @@
         <azure.version>6.5.0</azure.version>
         <msal4j.version>1.26.1</msal4j.version>
         <lombok.version>1.18.48</lombok.version>
-        <terrakube-client-starter.version>1.11.0</terrakube-client-starter.version>
+        <terrakube-client-starter.version>1.12.0</terrakube-client-starter.version>
         <jgit.version>7.8.1.202611041320-r</jgit.version>
         <bouncy.castle>1.87</bouncy.castle>
         <commons-io.version>2.22.0</commons-io.version>
@@ -31,9 +31,9 @@
         <sonar.coverage.jacoco.xmlReportPaths>${basedir}/../${aggregate.report.dir}
         </sonar.coverage.jacoco.xmlReportPaths>
         <!--BUILDPACK DATA-->
-        <buildpack.builder>paketobuildpacks/builder-jammy-java-tiny:0.1.93</buildpack.builder>
-        <buildpack.java>paketobuildpacks/java:22.7.3</buildpack.java>
-        <buildpack.telemetry>paketobuildpacks/opentelemetry:2.32.0</buildpack.telemetry>
+        <buildpack.builder>paketobuildpacks/builder-jammy-java-tiny:0.1.104</buildpack.builder>
+        <buildpack.java>paketobuildpacks/java:22.9.1</buildpack.java>
+        <buildpack.telemetry>paketobuildpacks/opentelemetry:2.32.3</buildpack.telemetry>
     </properties>
     <build>
         <plugins>

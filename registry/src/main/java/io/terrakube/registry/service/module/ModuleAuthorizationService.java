@@ -1,105 +1,94 @@
 package io.terrakube.registry.service.module;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
-import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.io.Decoders;
-import io.jsonwebtoken.security.Keys;
+import io.terrakube.client.TerrakubeClient;
+import io.terrakube.client.model.federated.Federated;
+import io.terrakube.client.model.federated.claim.FederatedClaim;
+import io.terrakube.client.model.organization.team.Team;
+import io.terrakube.client.model.organization.workspace.Workspace;
+import io.terrakube.client.model.organization.workspace.access.Access;
+import io.terrakube.client.model.response.Response;
+import io.terrakube.client.model.response.ResponseWithInclude;
+import io.terrakube.client.security.CallerClassification;
+import io.terrakube.client.security.CallerType;
+import io.terrakube.client.security.TerrakubeCallerClassifier;
 import io.terrakube.registry.service.search.CommonSearchService;
-import io.terrakube.registry.service.token.RegistryTokenService;
+import io.terrakube.registry.service.search.RegistryPathValidator;
+import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpMethod;
-import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestTemplate;
 
-import javax.crypto.SecretKey;
-import java.nio.charset.StandardCharsets;
-import java.time.Instant;
-import java.time.temporal.ChronoUnit;
-import java.util.*;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Proxy;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @Service
 public class ModuleAuthorizationService {
 
-    private static final String ISSUER = "TerrakubeInternal";
-    private static final String SUBJECT = "TerrakubeInternal (REGISTRY)";
-    private static final String EMAIL = "no-reply@terrakube.io";
-    private static final String NAME = "TerrakubeInternal Client";
+    private static final long CACHE_TTL_SECONDS = 60;
 
     private final CommonSearchService commonSearchService;
-    private final RegistryTokenService registryTokenService;
-    private final RestTemplate restTemplate;
-    private final ObjectMapper objectMapper;
-    private final String apiUrl;
-    private final String internalSecret;
+    private final TerrakubeClient terrakubeClient;
+    private final TerrakubeClient cachedLookupClient;
+    private final String issuerUri;
     private final String instanceOwner;
     private final String authType;
 
-    private final Cache<String, Set<String>> orgTeamsCache;
+    private final Cache<String, Optional<String>> orgIdCache;
+    private final Cache<String, Response<List<Team>>> teamsCache;
+    private final Cache<String, ResponseWithInclude<List<Workspace>, Access>> workspacesAccessCache;
+    private final Cache<String, ResponseWithInclude<List<Federated>, FederatedClaim>> federatedCache;
 
-    @org.springframework.beans.factory.annotation.Autowired
+    @Autowired
     public ModuleAuthorizationService(
             CommonSearchService commonSearchService,
-            RegistryTokenService registryTokenService,
-            @Value("${io.terrakube.client.url:}") String apiUrl,
-            @Value("${io.terrakube.token.internal:}") String internalSecret,
+            TerrakubeClient terrakubeClient,
+            @Value("${io.terrakube.token.issuer-uri:}") String issuerUri,
             @Value("${io.terrakube.owner:}") String instanceOwner,
             @Value("${io.terrakube.registry.authentication.type:DEX}") String authType) {
-        this(commonSearchService, registryTokenService, new RestTemplate(), new ObjectMapper(), apiUrl, internalSecret, instanceOwner, authType);
-    }
-
-    public ModuleAuthorizationService(
-            CommonSearchService commonSearchService,
-            String apiUrl,
-            String internalSecret,
-            String instanceOwner,
-            String authType) {
-        this(commonSearchService, new RegistryTokenService(internalSecret), new RestTemplate(), new ObjectMapper(), apiUrl, internalSecret, instanceOwner, authType);
-    }
-
-    public ModuleAuthorizationService(
-            CommonSearchService commonSearchService,
-            RestTemplate restTemplate,
-            ObjectMapper objectMapper,
-            String apiUrl,
-            String internalSecret,
-            String instanceOwner,
-            String authType) {
-        this(commonSearchService, new RegistryTokenService(internalSecret), restTemplate, objectMapper, apiUrl, internalSecret, instanceOwner, authType);
-    }
-
-    public ModuleAuthorizationService(
-            CommonSearchService commonSearchService,
-            RegistryTokenService registryTokenService,
-            RestTemplate restTemplate,
-            ObjectMapper objectMapper,
-            String apiUrl,
-            String internalSecret,
-            String instanceOwner,
-            String authType) {
         this.commonSearchService = commonSearchService;
-        this.registryTokenService = registryTokenService;
-        this.restTemplate = restTemplate;
-        this.objectMapper = objectMapper;
-        this.apiUrl = apiUrl;
-        this.internalSecret = internalSecret;
+        this.terrakubeClient = terrakubeClient;
+        this.issuerUri = issuerUri;
         this.instanceOwner = instanceOwner;
         this.authType = authType;
-        this.orgTeamsCache = Caffeine.newBuilder()
-                .expireAfterWrite(5, TimeUnit.MINUTES)
+        this.orgIdCache = Caffeine.newBuilder()
+                .expireAfterWrite(CACHE_TTL_SECONDS, TimeUnit.SECONDS)
                 .maximumSize(1000)
                 .build();
+        this.teamsCache = Caffeine.newBuilder()
+                .expireAfterWrite(CACHE_TTL_SECONDS, TimeUnit.SECONDS)
+                .maximumSize(1000)
+                .build();
+        this.workspacesAccessCache = Caffeine.newBuilder()
+                .expireAfterWrite(CACHE_TTL_SECONDS, TimeUnit.SECONDS)
+                .maximumSize(1000)
+                .build();
+        this.federatedCache = Caffeine.newBuilder()
+                .expireAfterWrite(CACHE_TTL_SECONDS, TimeUnit.SECONDS)
+                .maximumSize(1000)
+                .build();
+        this.cachedLookupClient = buildCachedLookupClient();
+    }
+
+    @PostConstruct
+    void validateConfiguration() {
+        if ("LOCAL".equalsIgnoreCase(authType)) {
+            log.warn("Registry authorization is running with authentication type LOCAL; all requests are permitted.");
+            return;
+        }
+        if (issuerUri == null || issuerUri.isBlank()) {
+            throw new IllegalStateException(
+                    "io.terrakube.token.issuer-uri (DexIssuerUri) must be configured when io.terrakube.registry.authentication.type=" + authType);
+        }
     }
 
     public boolean isAuthorized(Authentication authentication, String organizationName) {
@@ -107,117 +96,111 @@ public class ModuleAuthorizationService {
             return true;
         }
 
-        if (authentication == null) {
+        if (!(authentication instanceof JwtAuthenticationToken jwt)
+                || !RegistryPathValidator.isValidIdentifier(organizationName)) {
             return false;
         }
 
-        if (authentication instanceof JwtAuthenticationToken jwt) {
-            String iss = (String) jwt.getTokenAttributes().get("iss");
-            if (ISSUER.equals(iss)) {
-                return true;
-            }
+        Map<String, Object> tokenClaims = jwt.getTokenAttributes();
+        CallerClassification caller = TerrakubeCallerClassifier.classify(
+                tokenClaims, issuerUri, cachedLookupClient);
 
-            List<String> groups = extractGroups(jwt);
-
-            // Check instance owner
-            if (instanceOwner != null && !instanceOwner.isBlank()) {
-                Object email = jwt.getTokenAttributes().get("email");
-                if (instanceOwner.equals(email) || groups.contains(instanceOwner)) {
-                    return true;
-                }
-            }
-
-            // Check organization teams
-            Set<String> orgTeams = getOrganizationTeams(organizationName);
-            for (String group : groups) {
-                if (orgTeams.contains(group)) {
-                    return true;
-                }
-            }
+        if (caller.getCallerType() == CallerType.REGISTRY_SERVICE) {
+            return true;
+        }
+        if (caller.getCallerType() == CallerType.EXECUTOR_SERVICE
+                || caller.getCallerType() == CallerType.UNKNOWN_INTERNAL) {
+            log.debug("Rejected internal caller type {} for organization {}", caller.getCallerType(), organizationName);
             return false;
         }
 
-        return false;
+        String targetOrgId = resolveOrganizationId(organizationName);
+        if (targetOrgId == null) {
+            return false;
+        }
+
+        return TerrakubeCallerClassifier.isAuthorizedForOrganization(
+                caller, targetOrgId, instanceOwner, cachedLookupClient);
     }
 
-    public Set<String> getOrganizationTeams(String organizationName) {
-        if (commonSearchService == null || organizationName == null || organizationName.isBlank()) {
-            return Collections.emptySet();
+    private String resolveOrganizationId(String organizationName) {
+        if (commonSearchService == null || !RegistryPathValidator.isValidIdentifier(organizationName)) {
+            return null;
         }
-
+        Optional<String> cached = orgIdCache.getIfPresent(organizationName);
+        if (cached != null) {
+            return cached.orElse(null);
+        }
         try {
             String orgId = commonSearchService.getOrganizationId(organizationName);
-            if (orgId == null || orgId.isBlank()) {
-                return Collections.emptySet();
+            if (orgId != null && !orgId.isBlank()) {
+                orgIdCache.put(organizationName, Optional.of(orgId));
+                return orgId;
             }
-
-            return orgTeamsCache.get(orgId, this::fetchTeamsFromApi);
+            return null;
         } catch (Exception e) {
             log.warn("Error resolving organization ID for {}: {}", organizationName, e.getMessage());
-            return Collections.emptySet();
+            return null;
         }
     }
 
-    public void setCachedTeams(String orgId, Set<String> teams) {
-        orgTeamsCache.put(orgId, teams);
-    }
-
-    protected Set<String> fetchTeamsFromApi(String orgId) {
-        if (apiUrl == null || apiUrl.isBlank() || internalSecret == null || internalSecret.isBlank()) {
-            log.warn("Cannot fetch teams from API: apiUrl or internalSecret is not configured");
-            return Collections.emptySet();
+    private TerrakubeClient buildCachedLookupClient() {
+        if (terrakubeClient == null) {
+            return null;
         }
-
-        try {
-            HttpHeaders headers = new HttpHeaders();
-            headers.setBearerAuth(generateInternalToken());
-            headers.setAccept(List.of(
-                    MediaType.parseMediaType("application/vnd.api+json"),
-                    MediaType.APPLICATION_JSON));
-            HttpEntity<Void> entity = new HttpEntity<>(headers);
-
-            String requestUrl = apiUrl + "/api/v1/organization/" + orgId + "/team";
-            ResponseEntity<String> response = restTemplate.exchange(
-                    requestUrl,
-                    HttpMethod.GET,
-                    entity,
-                    String.class
-            );
-
-            if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
-                JsonNode root = objectMapper.readTree(response.getBody());
-                JsonNode data = root.path("data");
-                Set<String> teams = new HashSet<>();
-                if (data.isArray()) {
-                    for (JsonNode teamNode : data) {
-                        String teamName = teamNode.path("attributes").path("name").asText(null);
-                        if (teamName != null && !teamName.isBlank()) {
-                            teams.add(teamName);
+        return (TerrakubeClient) Proxy.newProxyInstance(
+                TerrakubeClient.class.getClassLoader(),
+                new Class<?>[]{TerrakubeClient.class},
+                (proxy, method, args) -> {
+                    switch (method.getName()) {
+                        case "getAllTeams" -> {
+                            String orgId = (String) args[0];
+                            Response<List<Team>> cached = teamsCache.getIfPresent(orgId);
+                            if (cached != null) {
+                                return cached;
+                            }
+                            Response<List<Team>> fresh = terrakubeClient.getAllTeams(orgId);
+                            if (fresh != null && fresh.getData() != null) {
+                                teamsCache.put(orgId, fresh);
+                            }
+                            return fresh;
+                        }
+                        case "getWorkspacesWithAccess" -> {
+                            String orgId = (String) args[0];
+                            ResponseWithInclude<List<Workspace>, Access> cached = workspacesAccessCache.getIfPresent(orgId);
+                            if (cached != null) {
+                                return cached;
+                            }
+                            ResponseWithInclude<List<Workspace>, Access> fresh = terrakubeClient.getWorkspacesWithAccess(orgId);
+                            if (fresh != null && fresh.getData() != null) {
+                                workspacesAccessCache.put(orgId, fresh);
+                            }
+                            return fresh;
+                        }
+                        case "getFederatedByIssuerUrlAndAudienceWithClaims" -> {
+                            String issuer = (String) args[0];
+                            String audience = (String) args[1];
+                            String key = issuer + "\0" + audience;
+                            ResponseWithInclude<List<Federated>, FederatedClaim> cached = federatedCache.getIfPresent(key);
+                            if (cached != null) {
+                                return cached;
+                            }
+                            ResponseWithInclude<List<Federated>, FederatedClaim> fresh =
+                                    terrakubeClient.getFederatedByIssuerUrlAndAudienceWithClaims(issuer, audience);
+                            if (fresh != null && fresh.getData() != null) {
+                                federatedCache.put(key, fresh);
+                            }
+                            return fresh;
+                        }
+                        default -> {
+                            try {
+                                return method.invoke(terrakubeClient, args);
+                            } catch (InvocationTargetException e) {
+                                throw e.getTargetException();
+                            }
                         }
                     }
                 }
-                log.info("Fetched {} teams from API for orgId {}", teams.size(), orgId);
-                return teams;
-            }
-        } catch (Exception e) {
-            log.warn("Failed to fetch teams from API for orgId {}: {}", orgId, e.getMessage());
-        }
-
-        return Collections.emptySet();
-    }
-
-    public String generateInternalToken() {
-        return registryTokenService != null ? registryTokenService.generateInternalToken() : "";
-    }
-
-    @SuppressWarnings("unchecked")
-    private List<String> extractGroups(JwtAuthenticationToken jwt) {
-        Object groupsObj = jwt.getTokenAttributes().get("groups");
-        if (groupsObj instanceof List<?>) {
-            return (List<String>) groupsObj;
-        } else if (groupsObj instanceof String groupStr) {
-            return List.of(groupStr);
-        }
-        return Collections.emptyList();
+        );
     }
 }
