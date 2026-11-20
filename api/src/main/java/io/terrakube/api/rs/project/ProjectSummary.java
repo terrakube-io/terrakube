@@ -30,18 +30,15 @@ import java.util.UUID;
 
 /**
  * Read-only catalogue row for a project: its identity plus a roll-up of its workspaces, computed on read from the
- * status columns that already live on {@code workspace}. Nothing is stored, so it cannot drift from the workspaces.
+ * status columns on {@code workspace}, so it cannot drift from them.
  *
- * <p>It is a separate entity, with the name and organization repeated as own columns, because Elide rejects sorting
- * over a relationship whenever the read filter also filters over a to-many relationship. Every sort key here
- * ({@code name}, {@code attentionCount}, {@code lastRunAt}, ...) is an own column, so the list can be paged and sorted
- * on the server for any number of projects.
+ * <p>It is a separate entity, with name and organization as own columns, because Elide rejects sorting over a
+ * relationship when the read filter also filters over a to-many one. Every sort key here is an own column, so the
+ * list pages and sorts on the server. A project the caller can see has all its workspaces readable by them (see
+ * {@code ProjectVisibility}), so the counts never include one they cannot read.
  *
- * <p>A project the caller can see has every one of its workspaces readable by them, so the counts never include a
- * workspace the caller cannot read (see {@code ProjectVisibility}).
- *
- * <p>The SQL avoids boolean literals and dialect functions so it runs unchanged on H2, PostgreSQL, MySQL,
- * SQL Server and Oracle. Soft-deleted workspaces are excluded, matching {@code Workspace}.
+ * <p>Queued jobs are counted once for all projects in a grouped join, not per project in a subquery. The SQL avoids
+ * boolean literals and dialect functions so it runs on H2, PostgreSQL, MySQL, SQL Server and Oracle.
  */
 @Include
 @Entity(name = "project_summary")
@@ -70,25 +67,29 @@ import java.util.UUID;
                coalesce(sum(case when cast(w.locked as integer) = 1 then 1 else 0 end), 0) as locked_count,
                coalesce(sum(case when w.last_job_status in ('failed', 'waitingApproval')
                                    or w.policy_compliance_status = 'NON_COMPLIANT' then 1 else 0 end), 0) as attention_count,
+               coalesce(sum(case when w.source = 'empty' and w.branch = 'remote-content' then 1 else 0 end), 0) as cli_driven_count,
+               count(w.id) - coalesce(sum(case when w.source = 'empty' and w.branch = 'remote-content' then 1 else 0 end), 0) as vcs_driven_count,
+               coalesce(sum(case when w.source = 'empty' and w.branch = 'remote-content' and w.execution_mode = 'local'
+                                   and w.last_job_status = 'NeverExecuted' then 1 else 0 end), 0) as no_run_status_count,
                max(w.last_job_date) as last_run_at,
-               (select count(*)
-                  from job qj join workspace qw on qw.id = qj.workspace_id
-                 where qw.project_id = p.id and cast(qw.deleted as integer) = 0
-                   and qj.status in ('pending', 'approved')) as queued_job_count,
-               (select min(coalesce(j.queued_at, j.created_date))
-                  from job j join workspace jw on jw.id = j.workspace_id
-                 where jw.project_id = p.id and cast(jw.deleted as integer) = 0
-                   and j.status in ('pending', 'approved')) as queued_since,
+               coalesce(max(q.queued_job_count), 0) as queued_job_count,
+               max(q.queued_since) as queued_since,
                (select count(*) from project_access pa where pa.project_id = p.id) as team_count
         from project p
         left join workspace w on w.organization_id = p.organization_id and w.project_id = p.id
                                  and cast(w.deleted as integer) = 0
+        left join (select qw.project_id as project_id,
+                          count(*) as queued_job_count,
+                          min(coalesce(qj.queued_at, qj.created_date)) as queued_since
+                     from job qj join workspace qw on qw.id = qj.workspace_id
+                    where cast(qw.deleted as integer) = 0 and qj.status in ('pending', 'approved')
+                    group by qw.project_id) q on q.project_id = p.id
         group by p.id, p.name, p.description, p.owner_team, p.organization_id
         """)
 @ReadPermission(expression = "user is a superuser OR project summary read filter")
-@CreatePermission(expression = "Prefab.Role.None")
-@UpdatePermission(expression = "Prefab.Role.None")
-@DeletePermission(expression = "Prefab.Role.None")
+@CreatePermission(expression = "NONE")
+@UpdatePermission(expression = "NONE")
+@DeletePermission(expression = "NONE")
 @Getter
 @Setter
 public class ProjectSummary {
@@ -104,11 +105,11 @@ public class ProjectSummary {
     @Column(name = "description")
     private String description;
 
-    /** The team that owns the project, as set on {@link Project#getOwnerTeam()}. Empty for a project nobody owns. */
+    /** See {@link Project#getOwnerTeam()}. */
     @Column(name = "owner_team")
     private String ownerTeam;
 
-    /** The owning organization's id as a plain column, so callers can filter by organization without reading it. */
+    /** The organization's id as a plain column, to filter by organization without reading it. */
     @JdbcTypeCode(Types.VARCHAR)
     @Column(name = "organization_id", insertable = false, updatable = false)
     private UUID organizationId;
@@ -117,7 +118,7 @@ public class ProjectSummary {
     @JoinColumn(name = "organization_id", insertable = false, updatable = false)
     private Organization organization;
 
-    /** Read-only mapping onto the same rows as {@link Project#getProjectAccess()}, used by the read filter. */
+    /** The same rows as {@link Project#getProjectAccess()}, for the read filter. */
     @BatchSize(size = 100)
     @OneToMany
     @JoinColumn(name = "project_id", referencedColumnName = "id", insertable = false, updatable = false)
@@ -154,7 +155,7 @@ public class ProjectSummary {
     @Column(name = "soft_violation_count")
     private Long softViolationCount;
 
-    /** Workspaces whose last policy evaluation passed, and ones where the workspace is exempted. */
+    /** Workspaces whose last policy evaluation passed, and exempted ones. */
     @Column(name = "compliant_count")
     private Long compliantCount;
 
@@ -163,6 +164,21 @@ public class ProjectSummary {
 
     @Column(name = "locked_count")
     private Long lockedCount;
+
+    /** Workspaces with no repository (source "empty", branch "remote-content"): driven from the CLI or the API. */
+    @Column(name = "cli_driven_count")
+    private Long cliDrivenCount;
+
+    /** The other workspaces: they run from a repository. */
+    @Column(name = "vcs_driven_count")
+    private Long vcsDrivenCount;
+
+    /**
+     * CLI-driven workspaces on local execution that never ran in Terrakube: they only upload state, so they will never
+     * have a run status. Also counted in {@code neverRunCount}, for clients that do not know this field.
+     */
+    @Column(name = "no_run_status_count")
+    private Long noRunStatusCount;
 
     /** Failed, waiting for approval or non-compliant. Locked workspaces are deliberate and counted separately. */
     @Column(name = "attention_count")
@@ -175,7 +191,7 @@ public class ProjectSummary {
     @Column(name = "queued_job_count")
     private Long queuedJobCount;
 
-    /** When the oldest job still waiting to run entered the queue (its queued_at, or created_date for old rows). */
+    /** When the oldest job still waiting entered the queue (queued_at, or created_date for old rows). */
     @Column(name = "queued_since")
     private Date queuedSince;
 

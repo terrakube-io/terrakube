@@ -51,7 +51,7 @@ export default function ProjectCard({ orgid, project, unassigned = false, canSee
       <footer className="project-card-footer">
         <span>{neverRan ? "0 runs yet" : plural(project.workspaceCount, "workspace")}</span>
         {unassigned ? (
-          <Link to={`/organizations/${orgid}/workspaces`}>Move them to a project</Link>
+          <Link to={`/organizations/${orgid}/workspaces`}>List all workspaces</Link>
         ) : (
           <>
             {canSeeTeams ? (

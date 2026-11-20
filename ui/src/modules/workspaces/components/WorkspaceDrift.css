@@ -2,6 +2,11 @@
   margin-bottom: 16px;
 }
 
+/* In the row of state cards the grid sets the gap, and a margin would make this card shorter than its neighbours. */
+.overview-states .workspace-drift {
+  margin-bottom: 0;
+}
+
 .workspace-drift-line {
   display: flex;
   align-items: center;
