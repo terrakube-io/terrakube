@@ -13,6 +13,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.MockitoAnnotations;
+import org.quartz.SchedulerException;
 
 import io.restassured.response.Response;
 import io.terrakube.api.rs.Organization;
@@ -50,7 +51,10 @@ class WorkspaceWaitingApprovalFilterTest extends ServerApplicationTests {
     private final List<Job> jobs = new ArrayList<>();
 
     @BeforeEach
-    void setupWorkspaces() {
+    void setupWorkspaces() throws SchedulerException {
+        // wa-filter-3-last-only (lastJobStatus waitingApproval, no job row) is the stale shape
+        // JobReconciliationSweep repairs every 30 seconds, so keep the sweep from running mid-test.
+        pauseScheduler();
         MockitoAnnotations.openMocks(this);
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
         Organization organization = organizationRepository.findById(ORGANIZATION_ID).orElseThrow();
@@ -76,12 +80,16 @@ class WorkspaceWaitingApprovalFilterTest extends ServerApplicationTests {
     }
 
     @AfterEach
-    void cleanUp() {
-        jobRepository.deleteAll(jobs);
-        workspaceRepository.deleteAll(workspaces);
-        workspaceRepository.flush();
-        jobs.clear();
-        workspaces.clear();
+    void cleanUp() throws SchedulerException {
+        try {
+            jobRepository.deleteAll(jobs);
+            workspaceRepository.deleteAll(workspaces);
+            workspaceRepository.flush();
+            jobs.clear();
+            workspaces.clear();
+        } finally {
+            resumeScheduler();
+        }
     }
 
     @Test
