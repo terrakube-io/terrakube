@@ -21,10 +21,23 @@ describe("matchesQuery", () => {
 });
 
 describe("rank", () => {
-  it("puts names that start with the query first and otherwise keeps the order", () => {
+  it("puts the closest matches first and otherwise keeps the order", () => {
     const ranked = rank([item("my-ledger"), item("ledger-db"), item("ledger-api")], "ledger");
 
     expect(ranked.map((entry) => entry.title)).toEqual(["ledger-db", "ledger-api", "my-ledger"]);
+  });
+
+  it("puts an exact name before one that only starts with the query", () => {
+    const ranked = rank([item("ledger-db"), item("ledger")], "ledger");
+
+    expect(ranked.map((entry) => entry.title)).toEqual(["ledger", "ledger-db"]);
+  });
+
+  it("needs every word, in any order, across the title and the subtitle", () => {
+    const items = [item("ledger-db", "JXP"), item("gateway", "JXP")];
+
+    expect(rank(items, "jxp ledger").map((entry) => entry.title)).toEqual(["ledger-db"]);
+    expect(rank(items, "ledger gateway")).toEqual([]);
   });
 
   it("leaves the order alone for an empty query", () => {

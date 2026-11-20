@@ -32,6 +32,7 @@ import {
   TeamOutlined,
   ThunderboltOutlined,
 } from "@ant-design/icons";
+import { useWorkspaceOrigin } from "@/modules/workspaces/workspaceOrigin";
 import { Button, Layout, Menu, Tag } from "antd";
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
@@ -188,6 +189,8 @@ export default function AppSidebar({
       setDefaultSelected([params[5] || "overview"]);
     } else if (location.pathname.startsWith("/inbox")) {
       setDefaultSelected(["inbox"]);
+    } else if (location.pathname.endsWith("/overview")) {
+      setDefaultSelected(["overview"]);
     } else if (location.pathname.includes("registry")) {
       setDefaultSelected(["registry"]);
     } else if (location.pathname.includes("projects")) {
@@ -234,6 +237,13 @@ export default function AppSidebar({
   const orgBasePath = `/organizations/${orgIdFromUrl}`;
   const workspaceBasePath = `${orgBasePath}/workspaces/${params[4]}`;
   const projectBasePath = `${orgBasePath}/projects/${params[4]}`;
+  const workspaceOrigin = useWorkspaceOrigin(params[4]);
+  const workspaceBack = workspaceOrigin
+    ? {
+        path: workspaceOrigin.path,
+        label: { list: "Workspaces", project: "Project", inbox: "Inbox" }[workspaceOrigin.kind],
+      }
+    : { path: `${orgBasePath}/workspaces`, label: "Workspaces" };
 
   const settingsGroups = [
     {
@@ -465,8 +475,8 @@ export default function AppSidebar({
             ? [
                 {
                   label: (
-                    <Link to={`${orgBasePath}/workspaces`} onClick={() => handleOrgMenuClick("workspaces")}>
-                      Workspaces
+                    <Link to={workspaceBack.path} onClick={() => handleOrgMenuClick("workspaces")}>
+                      {workspaceBack.label}
                     </Link>
                   ),
                   key: "__back__",
@@ -541,6 +551,7 @@ export default function AppSidebar({
               ]
             : orgIdFromUrl
               ? [
+                  { key: "overview", name: "Overview", icon: <DashboardOutlined /> },
                   { key: "projects", name: "Projects", icon: <ProjectOutlined /> },
                   { key: "workspaces", name: "Workspaces", icon: <AppstoreOutlined /> },
                   { key: "registry", name: "Registry", icon: <CloudOutlined /> },

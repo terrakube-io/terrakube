@@ -1,14 +1,25 @@
 import { Alert, Button, Card, Select, Skeleton, Tooltip, Typography } from "antd";
+import { projectOrigin, rememberWorkspaceOrigin } from "@/modules/workspaces/workspaceOrigin";
 import { useEffect, useState } from "react";
+import { ClockCircleOutlined, CloseCircleOutlined, SafetyOutlined } from "@ant-design/icons";
+import {
+  Action,
+  ActionCard,
+  HealthRing,
+  StatusBadge,
+  Tone,
+  badgeForStatusTone,
+} from "@/components/display/OverviewCards/OverviewCards";
+import { RingSegment } from "@/components/display/OverviewCards/overviewModel";
 import { Link, useNavigate } from "react-router-dom";
 import { EmptyState } from "@/components/feedback/EmptyState";
 import { ProjectSummaryModel } from "@/domain/types";
 import projectService, { ProjectWorkspaceBrief } from "./projectService";
-import { ProjectHealthBar } from "./ProjectHealthBar";
 import { PROJECT_TAB_LABELS, ProjectTab, getStoredLandingTab, setLandingTab } from "./projectLandingTab";
-import { shortAgo, shortDuration } from "./projectHealth";
+import { HealthKey, shortAgo, shortDuration } from "./projectHealth";
 import { describeWorkspace } from "./projectStatus";
-import { attentionFilter, projectWorkspacesLink, statusForHealth } from "./projectLinks";
+import { projectWorkspacesLink, statusForHealth } from "./projectLinks";
+import ProjectDelivery from "./ProjectDelivery";
 
 type Props = {
   orgid: string;
@@ -20,41 +31,49 @@ type Props = {
   onOpenTab: (tab: ProjectTab) => void;
 };
 
-function Tile({ value, label, tone, to }: { value: number | string; label: string; tone?: "danger"; to?: string }) {
-  const card = (
-    <Card size="small" hoverable={Boolean(to)}>
-      <div className={`project-tile-number${tone ? ` project-tile-number-${tone}` : ""}`}>{value}</div>
-      <Typography.Text type="secondary">{label}</Typography.Text>
-    </Card>
-  );
-  // A tile with something behind it links to it; an empty one stays plain.
-  return to ? (
-    <Link to={to} className="project-tile-link" aria-label={`${value} ${label}, show them`}>
-      {card}
-    </Link>
-  ) : (
-    card
-  );
-}
+// Which part of the health bar a state of the ring is. Running and queued workspaces are one wedge and have no list.
+const RING_TO_HEALTH: Partial<Record<RingSegment["key"], HealthKey>> = {
+  completed: "completed",
+  failed: "failed",
+  waiting: "waiting",
+  never: "never",
+};
 
-function StatusLine({ orgid, workspace }: { orgid: string; workspace: ProjectWorkspaceBrief }) {
+function StatusLine({
+  orgid,
+  projectId,
+  workspace,
+}: {
+  orgid: string;
+  projectId: string;
+  workspace: ProjectWorkspaceBrief;
+}) {
   const { label, tone } = describeWorkspace(workspace.lastJobStatus, workspace.policyComplianceStatus);
+  // A policy violation is the one amber state that is not a clock: nothing is waiting, a rule is broken.
+  const badge =
+    label === "Non-compliant" ? { tone: "warning" as Tone, icon: <SafetyOutlined /> } : badgeForStatusTone(tone);
+  const remember = () => rememberWorkspaceOrigin(workspace.id, projectOrigin(orgid, projectId));
   return (
-    <li>
-      <span>
-        <Link to={`/organizations/${orgid}/workspaces/${workspace.id}`}>{workspace.name}</Link>{" "}
-        {/* The status leads to the runs, which is where a failure or a pending approval is read. */}
-        <Link
-          to={`/organizations/${orgid}/workspaces/${workspace.id}/runs`}
-          className={`project-status project-status-${tone}`}
-          aria-label={`${label}, open the runs of ${workspace.name}`}
-        >
-          {label}
+    <li className="overview-row">
+      <StatusBadge tone={badge.tone}>{badge.icon}</StatusBadge>
+      <span className="overview-row-main">
+        <Link to={`/organizations/${orgid}/workspaces/${workspace.id}`} onClick={remember}>
+          <strong>{workspace.name}</strong>
         </Link>
+        <Tooltip title={workspace.lastJobDate ? new Date(workspace.lastJobDate).toLocaleString() : "No runs yet"}>
+          <Typography.Text type="secondary" className="overview-row-sub">
+            {label} · {shortAgo(workspace.lastJobDate)}
+          </Typography.Text>
+        </Tooltip>
       </span>
-      <Tooltip title={workspace.lastJobDate ? new Date(workspace.lastJobDate).toLocaleString() : "No runs yet"}>
-        <Typography.Text type="secondary">{shortAgo(workspace.lastJobDate)}</Typography.Text>
-      </Tooltip>
+      {/* The status leads to the runs, which is where a failure or a pending approval is read. */}
+      <Link
+        to={`/organizations/${orgid}/workspaces/${workspace.id}/runs`}
+        onClick={remember}
+        aria-label={`${label}, open the runs of ${workspace.name}`}
+      >
+        Open
+      </Link>
     </li>
   );
 }
@@ -108,6 +127,36 @@ export default function ProjectOverview({ orgid, summary, loading, failed = fals
   const queuedLabel =
     summary.queuedJobCount > 0 && wait && wait !== "now" ? `queued now (longest wait ${wait})` : "queued now";
 
+  const actions: Action[] = [
+    {
+      key: "failed",
+      icon: <CloseCircleOutlined />,
+      tone: "error",
+      count: summary.failedCount,
+      label: "Failed runs",
+      cta: "Review",
+      to: projectWorkspacesLink(orgid, summary.id, { status: "failed" }),
+    },
+    {
+      key: "waiting",
+      icon: <ClockCircleOutlined />,
+      tone: "warning",
+      count: summary.waitingApprovalCount,
+      label: "Waiting approval",
+      cta: "Approve",
+      to: projectWorkspacesLink(orgid, summary.id, { status: "waitingApproval" }),
+    },
+    {
+      key: "policy",
+      icon: <SafetyOutlined />,
+      tone: "accent",
+      count: summary.nonCompliantCount,
+      label: "Policy violations",
+      cta: "View",
+      to: projectWorkspacesLink(orgid, summary.id, { policy: "NON_COMPLIANT" }),
+    },
+  ];
+
   return (
     <div className="project-overview">
       {summary.workspaceCount === 0 && (
@@ -123,57 +172,53 @@ export default function ProjectOverview({ orgid, summary, loading, failed = fals
           </EmptyState>
         </Card>
       )}
-      <div className="project-tiles">
-        <Tile value={summary.workspaceCount} label="workspaces" to={projectWorkspacesLink(orgid, summary.id)} />
-        <Tile
-          value={summary.attentionCount}
-          label="need attention"
-          tone={summary.attentionCount > 0 ? "danger" : undefined}
-          to={
-            summary.attentionCount > 0 ? projectWorkspacesLink(orgid, summary.id, attentionFilter(summary)) : undefined
+      <div className="overview-top">
+        <HealthRing
+          title="Project health"
+          total={summary.workspaceCount}
+          status={{
+            completed: summary.completedCount,
+            failed: summary.failedCount,
+            waiting: summary.waitingApprovalCount,
+            never: summary.neverRunCount,
+          }}
+          hrefFor={(key) => {
+            const health = RING_TO_HEALTH[key];
+            return health ? projectWorkspacesLink(orgid, summary.id, { status: statusForHealth(health) }) : undefined;
+          }}
+          note={
+            <>
+              <Link to={projectWorkspacesLink(orgid, summary.id)}>
+                {summary.workspaceCount} workspace{summary.workspaceCount === 1 ? "" : "s"}
+              </Link>
+              {summary.queuedJobCount > 0 && (
+                <>
+                  {" · "}
+                  <Link to={projectWorkspacesLink(orgid, summary.id, { status: "pending" })}>{queuedLabel}</Link>
+                </>
+              )}
+              {summary.lockedCount > 0 && ` · ${summary.lockedCount} locked`}
+              {" · Last run: "}
+              {summary.lastRunAt ? (
+                <span title={new Date(summary.lastRunAt).toLocaleString()}>{shortAgo(summary.lastRunAt)}</span>
+              ) : (
+                "Never"
+              )}
+            </>
           }
         />
-        <Tile
-          value={summary.queuedJobCount}
-          label={queuedLabel}
-          to={summary.queuedJobCount > 0 ? projectWorkspacesLink(orgid, summary.id, { status: "pending" }) : undefined}
-        />
-        <Tile
-          value={summary.teamCount}
-          label="teams with project access"
-          to={`/organizations/${orgid}/projects/${summary.id}/teams`}
-        />
+        <div className="overview-actions">
+          {actions.map((action) => (
+            <ActionCard key={action.key} action={action} />
+          ))}
+        </div>
       </div>
 
-      <Card size="small" title="Health">
-        <ProjectHealthBar
-          summary={summary}
-          legend="counts"
-          size="large"
-          hrefFor={(key) => projectWorkspacesLink(orgid, summary.id, { status: statusForHealth(key) })}
-        />
-        <Typography.Paragraph type="secondary" className="project-overview-meta">
-          Last run:{" "}
-          {summary.lastRunAt ? (
-            <span title={new Date(summary.lastRunAt).toLocaleString()}>{shortAgo(summary.lastRunAt)}</span>
-          ) : (
-            "Never"
-          )}
-          {summary.lockedCount > 0 && ` · ${summary.lockedCount} locked`}
-        </Typography.Paragraph>
-      </Card>
-
-      <div className="project-overview-columns">
-        <Card size="small" title="Needs attention">
-          {attention.length === 0 ? (
-            <Typography.Text type="secondary">Nothing needs attention.</Typography.Text>
-          ) : (
-            <>
-              <ul className="project-activity-list">
-                {attention.map((workspace) => (
-                  <StatusLine key={workspace.id} orgid={orgid} workspace={workspace} />
-                ))}
-              </ul>
+      <div className="overview-columns">
+        <Card className="overview-card" aria-label="Needs attention">
+          <div className="overview-card-head">
+            <h3 className="overview-card-title">Needs attention</h3>
+            {attention.length > 0 && (
               <Button
                 type="link"
                 size="small"
@@ -182,37 +227,65 @@ export default function ProjectOverview({ orgid, summary, loading, failed = fals
               >
                 View all {summary.attentionCount} in Workspaces →
               </Button>
-            </>
+            )}
+          </div>
+          {attention.length === 0 ? (
+            <Typography.Text type="secondary">Nothing needs attention.</Typography.Text>
+          ) : (
+            <ul className="overview-list">
+              {attention.map((workspace) => (
+                <StatusLine key={workspace.id} orgid={orgid} projectId={summary.id} workspace={workspace} />
+              ))}
+            </ul>
           )}
         </Card>
-        <Card size="small" title="Recent activity">
+        <Card className="overview-card" aria-label="Recent activity">
+          <div className="overview-card-head">
+            <h3 className="overview-card-title">Recent activity</h3>
+          </div>
           {recent.length === 0 ? (
             <Typography.Text type="secondary">No runs yet.</Typography.Text>
           ) : (
-            <ul className="project-activity-list">
+            <ul className="overview-list">
               {recent.map((workspace) => (
-                <StatusLine key={workspace.id} orgid={orgid} workspace={workspace} />
+                <StatusLine key={workspace.id} orgid={orgid} projectId={summary.id} workspace={workspace} />
               ))}
             </ul>
           )}
         </Card>
       </div>
 
-      <div className="project-overview-landing">
-        <Typography.Text type="secondary">Open this project on: </Typography.Text>
-        <Select
-          size="small"
-          aria-label="Default project tab"
-          value={landing}
-          options={[
-            { value: "default", label: "Project default" },
-            ...Object.entries(PROJECT_TAB_LABELS).map(([value, label]) => ({ value, label })),
-          ]}
-          onChange={(value: ProjectTab | "default") => {
-            setLanding(value);
-            setLandingTab(value === "default" ? null : value);
-          }}
-        />
+      <div className="overview-columns">
+        <ProjectDelivery orgid={orgid} projectId={summary.id} />
+        <Card className="overview-card" aria-label="Details">
+          <h3 className="overview-card-title">Details</h3>
+          <dl className="project-overview-details">
+            <div>
+              <dt>Teams</dt>
+              <dd>
+                <Link to={`/organizations/${orgid}/projects/${summary.id}/teams`}>{summary.teamCount} with access</Link>
+              </dd>
+            </div>
+            <div>
+              <dt>Opens on</dt>
+              <dd>
+                <Select
+                  size="small"
+                  aria-label="Default project tab"
+                  value={landing}
+                  options={[
+                    { value: "default", label: "Project default" },
+                    ...Object.entries(PROJECT_TAB_LABELS).map(([value, label]) => ({ value, label })),
+                  ]}
+                  onChange={(value: ProjectTab | "default") => {
+                    setLanding(value);
+                    setLandingTab(value === "default" ? null : value);
+                  }}
+                />
+              </dd>
+            </div>
+          </dl>
+        </Card>
       </div>
     </div>
   );

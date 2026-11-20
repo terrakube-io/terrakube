@@ -3,8 +3,10 @@ import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import CommandPalette from "../CommandPalette";
 import { openCommandPalette } from "../openPalette";
 import * as service from "../navigationService";
+import { approveRuns, findWaitingRuns } from "@/modules/projects/bulkWorkspaceActions";
 
 jest.mock("../navigationService");
+jest.mock("@/modules/projects/bulkWorkspaceActions");
 const mocked = service as jest.Mocked<typeof service>;
 
 const ORG_A = "3fa85f64-5717-4562-b3fc-2c963f66afa6";
@@ -29,13 +31,89 @@ function renderPalette(path = `/organizations/${ORG_A}/projects`, organizations 
   );
 }
 
-const openWithKeyboard = () => fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+const openWithKeyboard = () => fireEvent.keyDown(window, { key: "k", code: "KeyK", ctrlKey: true });
+
+// A real key press always has a code, and tinykeys ignores an event without one.
+const press = (key: string, target: Window | Node = window) =>
+  fireEvent.keyDown(target, { key, code: `Key${key.toUpperCase()}` });
 
 describe("CommandPalette", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     localStorage.clear();
     mocked.searchOrganization.mockResolvedValue({ projects: [], workspaces: [] });
+  });
+
+  describe("approving the waiting run of a workspace", () => {
+    const search = () =>
+      mocked.searchOrganization.mockResolvedValue({
+        projects: [],
+        workspaces: [{ id: "ws-1", name: "ledger-db" }],
+      } as never);
+
+    it("offers it under the results when the selected workspace has one, and approves it with Enter", async () => {
+      search();
+      (findWaitingRuns as jest.Mock).mockResolvedValue([{ jobId: "412", workspaceId: "ws-1" }]);
+      (approveRuns as jest.Mock).mockResolvedValue({ succeeded: ["412"], failed: [] });
+      renderPalette();
+      openWithKeyboard();
+      const input = await screen.findByRole("combobox", { name: "Search" });
+      fireEvent.change(input, { target: { value: "ledger" } });
+
+      const workspaceRow = await screen.findByRole("option", { name: /^ledger-db/ });
+      expect(workspaceRow).toBeInTheDocument();
+      fireEvent.keyDown(input, { key: "ArrowDown" });
+      fireEvent.keyDown(input, { key: "ArrowUp" });
+      const action = await screen.findByRole("option", { name: /Approve run #412/ });
+      expect(action).toHaveTextContent("ledger-db");
+
+      fireEvent.keyDown(input, { key: "ArrowDown" });
+      await waitFor(() =>
+        expect(screen.getByRole("option", { name: /Approve run #412/ })).toHaveAttribute("aria-selected", "true")
+      );
+      fireEvent.keyDown(input, { key: "Enter" });
+
+      await waitFor(() => expect(approveRuns).toHaveBeenCalledWith(ORG_A, ["412"]));
+      expect(screen.getByTestId("where")).toHaveTextContent(`/organizations/${ORG_A}/projects`);
+    });
+
+    it("offers nothing when the workspace has no run waiting, and nothing for a failed lookup", async () => {
+      search();
+      (findWaitingRuns as jest.Mock).mockResolvedValueOnce([]);
+      renderPalette();
+      openWithKeyboard();
+      const input = await screen.findByRole("combobox", { name: "Search" });
+      fireEvent.change(input, { target: { value: "ledger" } });
+      await screen.findByRole("option", { name: /^ledger-db/ });
+
+      await waitFor(() => expect(findWaitingRuns).toHaveBeenCalled());
+      expect(screen.queryByRole("option", { name: /Approve run/ })).not.toBeInTheDocument();
+    });
+  });
+
+  it.each([
+    ["i", "/inbox"],
+    ["p", `/organizations/${ORG_A}/projects`],
+    ["w", `/organizations/${ORG_A}/workspaces`],
+  ])("goes to the right page with g then %s", (second, expected) => {
+    renderPalette(`/organizations/${ORG_A}/settings`);
+
+    press("g");
+    press(second);
+
+    expect(screen.getByTestId("where")).toHaveTextContent(expected);
+  });
+
+  it("does not move on while someone is typing in a field", () => {
+    renderPalette();
+    const field = document.createElement("input");
+    document.body.appendChild(field);
+
+    press("g", field);
+    press("i", field);
+
+    expect(screen.getByTestId("where")).toHaveTextContent(`/organizations/${ORG_A}/projects`);
+    field.remove();
   });
 
   it("opens with Ctrl+K and closes with the same key, and lists pages and organizations", async () => {

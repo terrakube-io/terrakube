@@ -109,21 +109,22 @@ describe("ProjectWorkspaces", () => {
   it("shows the name link, status, last run and repository", async () => {
     renderTab();
 
-    const link = await screen.findByRole("link", { name: "network-production" });
+    const link = await screen.findByRole("link", { name: "Open workspace network-production" });
     expect(link).toHaveAttribute("href", "/organizations/org-1/workspaces/ws-1");
-    const row = link.closest("tr")!;
+    const row = link.closest(".workspace-row") as HTMLElement;
     expect(within(row).getByText("2 hours ago")).toBeInTheDocument();
     const repository = within(row).getByRole("link", { name: "acme/network" });
     expect(repository).toHaveAttribute("href", "https://github.com/acme/network");
     expect(repository).toHaveAttribute("target", "_blank");
-    expect(repository).toHaveAttribute("title", "https://github.com/acme/network");
-    expect(screen.getAllByRole("columnheader").map((header) => header.textContent)).toEqual([
-      "Workspace",
-      "Status",
-      "Policy",
-      "Tags",
-      "Last run",
-    ]);
+  });
+
+  it("uses the columns of the organization list, without the project", async () => {
+    renderTab();
+    await screen.findByText("network-production");
+
+    const header = document.querySelector(".workspace-list-header") as HTMLElement;
+    expect(header.textContent).toBe("NameStatusPolicyLast runVersionSource");
+    expect(screen.queryByText("Payments")).not.toBeInTheDocument();
   });
 
   it("shows the workflow instead of a repository for CLI and API driven workspaces", async () => {
@@ -162,23 +163,22 @@ describe("ProjectWorkspaces", () => {
     await userEvent.click(screen.getByRole("button", { name: "Page 2" }));
     await waitFor(() => expect(lastRequest()).toEqual(expect.objectContaining({ after: 10, sort: "name_asc" })));
 
-    await userEvent.click(screen.getByText("Last run"));
+    const header = () => within(document.querySelector(".workspace-list-header") as HTMLElement);
+    await userEvent.click(header().getByText("Last run"));
     await waitFor(() => expect(lastRequest()).toEqual(expect.objectContaining({ after: 0, sort: "lastRun_desc" })));
 
-    await userEvent.click(screen.getByText("Last run"));
+    await userEvent.click(header().getByText("Last run"));
     await waitFor(() => expect(lastRequest()).toEqual(expect.objectContaining({ sort: "lastRun_asc" })));
-
-    await userEvent.click(screen.getByText("Last run"));
-    await waitFor(() => expect(lastRequest()).toEqual(expect.objectContaining({ sort: "name_asc" })));
   });
 
   it("toggles the name order without a way to clear it", async () => {
     renderTab();
     await screen.findByText("network-production");
 
-    await userEvent.click(screen.getByText("Workspace"));
+    const name = () => within(document.querySelector(".workspace-list-header") as HTMLElement).getByText("Name");
+    await userEvent.click(name());
     await waitFor(() => expect(lastRequest().sort).toBe("name_desc"));
-    await userEvent.click(screen.getByText("Workspace"));
+    await userEvent.click(name());
     await waitFor(() => expect(lastRequest().sort).toBe("name_asc"));
   });
 

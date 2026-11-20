@@ -1,6 +1,7 @@
 import { Tooltip } from "antd";
 import { Link } from "react-router-dom";
 import { ProjectSummaryModel } from "@/domain/types";
+import StatusPill from "./StatusPill";
 import { ProjectHealthBar } from "./ProjectHealthBar";
 import { attentionBadge, shortAgo } from "./projectHealth";
 import { attentionFilter, projectWorkspacesLink } from "./projectLinks";
@@ -34,14 +35,14 @@ export default function ProjectCard({ orgid, project, unassigned = false, canSee
         )}
         {badge &&
           (unassigned ? (
-            <span className={`project-badge project-badge-${badge.tone}`}>{badge.text}</span>
+            <StatusPill tone={badge.tone}>{badge.text}</StatusPill>
           ) : (
             <Link
               to={projectWorkspacesLink(orgid, project.id, attentionFilter(project))}
-              className={`project-badge project-badge-${badge.tone}`}
+              className="project-card-badge-link"
               aria-label={`${badge.text} in ${project.name}, show them`}
             >
-              {badge.text}
+              <StatusPill tone={badge.tone}>{badge.text}</StatusPill>
             </Link>
           ))}
       </header>

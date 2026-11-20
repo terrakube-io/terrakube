@@ -1,8 +1,10 @@
-import { Input, Modal, Typography } from "antd";
+import { Input, Modal, Typography, message } from "antd";
+import { tinykeys } from "tinykeys";
 import type { InputRef } from "antd";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { getOrgIdFromPathname } from "@/config/orgId";
+import { approveRuns, findWaitingRuns } from "@/modules/projects/bulkWorkspaceActions";
 import { searchOrganization } from "./navigationService";
 import { OPEN_PALETTE_EVENT } from "./openPalette";
 import { PaletteItem, loadRecents, matchesQuery, pageItems, rank, rememberRecent } from "./paletteModel";
@@ -23,6 +25,7 @@ const KIND_LABEL: Record<PaletteItem["kind"], string> = {
   organization: "Organization",
   project: "Project",
   workspace: "Workspace",
+  action: "Action",
 };
 
 /** Cmd+K or Ctrl+K: jump to a page, organization, project or workspace by typing part of its name. */
@@ -48,20 +51,34 @@ export default function CommandPalette({ organizations }: Props) {
   }, []);
 
   useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key.toLowerCase() === "k" && (event.metaKey || event.ctrlKey) && !event.altKey) {
-        event.preventDefault();
-        setOpen((current) => !current);
-      }
+    // Ctrl+K opens the palette from anywhere, even from a field. The sequences are for moving about, so tinykeys'
+    // default applies to them: they do nothing while someone types in a field.
+    const stopOpen = tinykeys(
+      window,
+      {
+        "$mod+k": (event) => {
+          event.preventDefault();
+          setOpen((current) => !current);
+        },
+      },
+      { ignore: (event) => event.repeat || event.isComposing }
+    );
+    const go = (to: string | null) => () => {
+      if (to) navigate(to);
     };
+    const stopGo = tinykeys(window, {
+      "g i": go("/inbox"),
+      "g p": go(currentOrgId ? `/organizations/${currentOrgId}/projects` : null),
+      "g w": go(currentOrgId ? `/organizations/${currentOrgId}/workspaces` : null),
+    });
     const onOpen = () => setOpen(true);
-    window.addEventListener("keydown", onKeyDown);
     window.addEventListener(OPEN_PALETTE_EVENT, onOpen);
     return () => {
-      window.removeEventListener("keydown", onKeyDown);
+      stopOpen();
+      stopGo();
       window.removeEventListener(OPEN_PALETTE_EVENT, onOpen);
     };
-  }, []);
+  }, [navigate, currentOrgId]);
 
   useEffect(() => {
     const text = query.trim();
@@ -130,24 +147,87 @@ export default function CommandPalette({ organizations }: Props) {
     // loadRecents reads storage, so it is re-read each time the palette opens.
   }, [query, remote, organizations, currentOrgId, currentOrg, open]);
 
+  // The run waiting for approval on the workspace the selection is on, offered as an action under the results. The
+  // lookup is per workspace and remembered, so moving along a list does not ask again for one already seen.
+  const [focused, setFocused] = useState<PaletteItem | null>(null);
+  const [waiting, setWaiting] = useState<Record<string, string | null>>({});
+
+  const shown = useMemo<PaletteItem[]>(() => {
+    const jobId = focused ? waiting[focused.key] : null;
+    const match = focused?.to.match(/^\/organizations\/([^/]+)\/workspaces\/([^/]+)/);
+    if (!focused || !jobId || !match) return items;
+    const orgId = match[1];
+    const action: PaletteItem = {
+      key: `action:approve:${jobId}`,
+      kind: "action",
+      title: `Approve run #${jobId}`,
+      subtitle: focused.title,
+      to: "",
+      run: async () => {
+        try {
+          const outcome = await approveRuns(orgId, [jobId]);
+          if (outcome.failed.length) message.error(outcome.failed[0].reason);
+          else message.success(`Approved run #${jobId} on ${focused.title}`);
+        } catch (err: any) {
+          message.error(err?.message ?? "The run could not be approved");
+        }
+      },
+    };
+    return [...items, action];
+  }, [items, focused, waiting]);
+
+  useEffect(() => {
+    const current = shown[active];
+    if (current?.kind === "workspace") setFocused(current);
+    else if (current?.kind !== "action") setFocused(null);
+  }, [shown, active]);
+
+  useEffect(() => {
+    if (!open || !focused || focused.key in waiting) return;
+    const match = focused.to.match(/^\/organizations\/([^/]+)\/workspaces\/([^/]+)/);
+    if (!match) return;
+    let alive = true;
+    (async () => {
+      let jobId: string | null = null;
+      try {
+        const runs = (await findWaitingRuns(match[1], [match[2]])) ?? [];
+        jobId = runs[0]?.jobId ?? null;
+      } catch {
+        jobId = null;
+      }
+      if (alive) setWaiting((known) => ({ ...known, [focused.key]: jobId }));
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [open, focused, waiting]);
+
+  useEffect(() => {
+    if (!open) setWaiting({});
+  }, [open]);
+
   useEffect(() => setActive(0), [query]);
 
   const choose = (item: PaletteItem) => {
     if (item.kind === "project" || item.kind === "workspace") rememberRecent(item);
     close();
+    if (item.run) {
+      item.run();
+      return;
+    }
     navigate(item.to);
   };
 
   const onKeyDown = (event: React.KeyboardEvent) => {
     if (event.key === "ArrowDown") {
       event.preventDefault();
-      setActive((index) => Math.min(index + 1, items.length - 1));
+      setActive((index) => Math.min(index + 1, shown.length - 1));
     } else if (event.key === "ArrowUp") {
       event.preventDefault();
       setActive((index) => Math.max(index - 1, 0));
-    } else if (event.key === "Enter" && items[active]) {
+    } else if (event.key === "Enter" && shown[active]) {
       event.preventDefault();
-      choose(items[active]);
+      choose(shown[active]);
     }
   };
 
@@ -171,14 +251,14 @@ export default function CommandPalette({ organizations }: Props) {
         placeholder="Jump to a project, workspace or page"
         aria-label="Search"
         aria-controls="command-palette-results"
-        aria-activedescendant={items[active] ? optionId(items[active].key) : undefined}
+        aria-activedescendant={shown[active] ? optionId(shown[active].key) : undefined}
         role="combobox"
         aria-expanded
         variant="borderless"
         size="large"
       />
       <ul id="command-palette-results" role="listbox" className="command-palette-results">
-        {items.map((item, index) => (
+        {shown.map((item, index) => (
           // The options are driven by the key handler on the combobox input (arrows and Enter), as in the ARIA
           // combobox pattern, so each option itself needs no key handler.
           // eslint-disable-next-line jsx-a11y/click-events-have-key-events
@@ -206,7 +286,7 @@ export default function CommandPalette({ organizations }: Props) {
           ? "Search is unavailable right now."
           : searching
             ? "Searching..."
-            : query.trim() && items.length === 0
+            : query.trim() && shown.length === 0
               ? `Nothing matches "${query.trim()}".`
               : ""}
       </div>

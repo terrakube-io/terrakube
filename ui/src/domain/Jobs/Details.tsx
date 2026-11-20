@@ -869,6 +869,14 @@ export const DetailsJob = ({ jobId, workspaceName, canApprove = false }: Props) 
     setConfirmAction(null);
   }, [jobId]);
 
+  const policyVerdict = !policyEvaluation
+    ? null
+    : (policyEvaluation.hardMandatoryViolations ?? 0) > 0
+      ? { color: "error", text: "Failed" }
+      : (policyEvaluation.softMandatoryViolations ?? 0) > 0
+        ? { color: "warning", text: "Action required" }
+        : { color: "success", text: "Compliant" };
+
   const renderActionBar = () => {
     const status = job?.data?.attributes.status;
     const approvalTeam = job?.data?.attributes.approvalTeam;
@@ -882,6 +890,11 @@ export const DetailsJob = ({ jobId, workspaceName, canApprove = false }: Props) 
               <span className="job-action-bar-summary">{planSummary}.</span>
             ) : (
               "The plan is ready to review."
+            )}{" "}
+            {policyVerdict && (
+              <span className="job-action-bar-policy">
+                Policy <Tag color={policyVerdict.color}>{policyVerdict.text}</Tag>
+              </span>
             )}{" "}
             {approvalTeam ? (
               <>
@@ -971,14 +984,6 @@ export const DetailsJob = ({ jobId, workspaceName, canApprove = false }: Props) 
       </dl>
     );
   };
-
-  const policyVerdict = !policyEvaluation
-    ? null
-    : (policyEvaluation.hardMandatoryViolations ?? 0) > 0
-      ? { color: "error", text: "Failed" }
-      : (policyEvaluation.softMandatoryViolations ?? 0) > 0
-        ? { color: "warning", text: "Action required" }
-        : { color: "success", text: "Compliant" };
 
   if (loading || !job?.data || !steps) {
     return (
