@@ -59,11 +59,39 @@ export const include = {
   HISTORY: "history",
   SCHEDULE: "schedule",
   VCS: "vcs",
-  AGENT: "agent",
-  WEBHOOK: "webhook",
   REFERENCE: "reference",
   ORGANIZATION: "organization",
 };
+
+// Action scripts get the whole workspace object and may read any of it, so every attribute and relationship stays.
+const WORKSPACE_FIELDS =
+  "fields[workspace]=allowRemoteApply,branch,createdBy,createdDate,defaultTemplate,deleted,description,executionMode," +
+  "folder,globalRemoteState,iacType,lastJobDate,lastJobStatus,lockDescription,locked,moduleSshKey,name," +
+  "policyComplianceStatus,requireApproveToApply,restrictApplyToConfiguredBranch,sharedIds,source,terraformVersion," +
+  "updatedBy,updatedDate,access,agent,history,job,notificationConfiguration,organization,project,reference," +
+  "runTriggers,schedule,sourceRunTriggers,ssh,variable,vcs,webhook,workspaceTag";
+
+// Without planDurationMs/applyDurationMs, which would load every job's steps.
+const JOB_FIELDS =
+  "fields[job]=status,via,comments,createdBy,createdDate,updatedDate,commitId,templateReference,approvedBy,approvedAt," +
+  "approvalTeam,prCommentError";
+
+/**
+ * Query string of the workspace page request. Elide returns bare {id, type} for an included type without its own
+ * fields[] entry, so every include needs one; the page only reads a reference's id.
+ */
+export const WORKSPACE_PAGE_QUERY = [
+  "include=job,variable,history,schedule,vcs,organization,reference,project",
+  WORKSPACE_FIELDS,
+  JOB_FIELDS,
+  "fields[variable]=key,value,category,hcl,sensitive,incomplete,description",
+  "fields[history]=jobReference,output,createdBy,createdDate",
+  "fields[schedule]=cron,templateReference",
+  "fields[vcs]=vcsType",
+  "fields[organization]=name",
+  "fields[project]=name",
+  "fields[reference]=",
+].join("&");
 
 export async function setupWorkspaceIncludes(
   data: any,
@@ -80,8 +108,6 @@ export async function setupWorkspaceIncludes(
   axiosInstance: any,
   setResources: (val: any[]) => void,
   setOutputs: (val: any[]) => void,
-  setAgent: (val: any) => void,
-  _loadWebhook: boolean,
   setContextState: (val: any) => void,
   setCollectionVariables: (val: any[]) => void,
   setCollectionEnvVariables: (val: any[]) => void,
@@ -90,7 +116,6 @@ export async function setupWorkspaceIncludes(
 ): Promise<void> {
   const variables: FlatVariable[] = [];
   const jobs: FlatJob[] = [];
-  const webhooks: any = {};
   const envVariables: FlatVariable[] = [];
   const history: FlatJobHistory[] = [];
   const schedule: Schedule[] = [];
@@ -172,9 +197,6 @@ export async function setupWorkspaceIncludes(
       case include.VCS:
         setVCSProvider(element.attributes.vcsType);
         break;
-      case include.AGENT:
-        setAgent(element.id);
-        break;
       case include.VARIABLE:
         if (element.attributes.category == "ENV") {
           envVariables.push({
@@ -189,13 +211,6 @@ export async function setupWorkspaceIncludes(
             ...element.attributes,
           });
         }
-        break;
-      case include.WEBHOOK:
-        webhooks[element.attributes.event] = {
-          id: element.id,
-          type: element.type,
-          ...element.attributes,
-        };
         break;
       case include.REFERENCE:
         asyncPromises.push(
