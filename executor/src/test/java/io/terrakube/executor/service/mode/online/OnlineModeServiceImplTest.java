@@ -31,6 +31,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -288,5 +289,59 @@ class OnlineModeServiceImplTest {
 
         assertEquals(HttpStatus.ACCEPTED, response.getStatusCode());
         verify(executorJob, times(1)).createJob(job);
+    }
+
+    @Test
+    void publishesAcceptingTrafficBeforeReleasingGateOnRejection() {
+        ExecutorCapacityGate spyGate = Mockito.spy(new ExecutorCapacityGate());
+        ApplicationEventPublisher mockPublisher = mock(ApplicationEventPublisher.class);
+        OnlineModeServiceImpl subject = new OnlineModeServiceImpl(executorJob, spyGate, mockPublisher, terrakubeClient);
+        when(terrakubeClient.getJobById("org", "job-1"))
+                .thenReturn(jobResponse("org", "workspace", "job-1", "completed"));
+
+        assertEquals(HttpStatus.FORBIDDEN, subject.terraformJob(job()).getStatusCode());
+
+        var inOrder = Mockito.inOrder(mockPublisher, spyGate);
+        inOrder.verify(mockPublisher, times(2)).publishEvent(Mockito.any(AvailabilityChangeEvent.class));
+        inOrder.verify(spyGate).release();
+    }
+
+    @Test
+    void concurrentAdmissionAfterRejectedRequestNeverHasRefusingTrafficOverwrittenByAcceptingTraffic() {
+        AtomicReference<ReadinessState> liveReadiness = new AtomicReference<>(ReadinessState.ACCEPTING_TRAFFIC);
+        ApplicationEventPublisher livePublisher = event -> {
+            if (event instanceof AvailabilityChangeEvent<?> ace && ace.getState() instanceof ReadinessState state) {
+                liveReadiness.set(state);
+            }
+        };
+
+        ExecutorCapacityGate spyGate = Mockito.spy(new ExecutorCapacityGate());
+        OnlineModeServiceImpl subject = new OnlineModeServiceImpl(executorJob, spyGate, livePublisher, terrakubeClient);
+
+        when(terrakubeClient.getJobById("org", "job-rejected"))
+                .thenReturn(jobResponse("org", "workspace", "job-rejected", "completed"));
+        when(terrakubeClient.getJobById("org", "job-admitted"))
+                .thenReturn(jobResponse("org", "workspace", "job-admitted", "pending"));
+
+        TerraformJob admittedJob = job();
+        admittedJob.setJobId("job-admitted");
+
+        // The moment the rejected request releases the gate, a newly arriving valid job wins
+        // the gate and sets REFUSING_TRAFFIC. If release() ran before publishReadiness(ACCEPTING_TRAFFIC),
+        // the rejected request would overwrite the busy pod's state back to ACCEPTING_TRAFFIC.
+        Mockito.doAnswer(inv -> {
+            inv.callRealMethod();
+            ResponseEntity<TerraformJob> admittedResponse = subject.terraformJob(admittedJob);
+            assertEquals(HttpStatus.ACCEPTED, admittedResponse.getStatusCode());
+            return null;
+        }).when(spyGate).release();
+
+        TerraformJob rejectedJob = job();
+        rejectedJob.setJobId("job-rejected");
+        assertEquals(HttpStatus.FORBIDDEN, subject.terraformJob(rejectedJob).getStatusCode());
+
+        assertEquals(ReadinessState.REFUSING_TRAFFIC, liveReadiness.get(),
+                "Busy pod must remain REFUSING_TRAFFIC after admitting a concurrent job");
+        verify(executorJob, times(1)).createJob(admittedJob);
     }
 }
