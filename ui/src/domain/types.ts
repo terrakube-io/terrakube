@@ -664,6 +664,7 @@ export type WorkspaceAttributes = {
   driftLastChecked?: string | null;
   /** The run of the last drift check, so its plan can be opened. */
   driftJobId?: number | null;
+  lastJobDate?: string;
   /** Only plan-only runs may use a branch other than the workspace branch. */
   restrictApplyToConfiguredBranch?: boolean;
   requireApproveToApply?: boolean;
