@@ -284,6 +284,52 @@ public class WebhookServiceTest {
     }
 
     @Test
+    public void applyCommentIsCheckedAgainstTheStrictestApplyTriggerOfTheWorkspace() throws Exception {
+        // The comment matches pullRequestEvent (WRITE), but another trigger that allows apply requires approval:
+        // which trigger matches depends on the pull request's branch and files, so it must not lower the bar.
+        pullRequestEvent.setPrWorkflowEnabled(true);
+        pullRequestEvent.setPrApplyEnabled(true);
+        WebhookEvent stricter = new WebhookEvent();
+        stricter.setEvent(WebhookEventType.PULL_REQUEST);
+        stricter.setBranch("release/.*");
+        stricter.setPath("*");
+        stricter.setPathType(WebhookEventPathType.PATTERN);
+        stricter.setTemplateId("release-template-id");
+        stricter.setPrWorkflowEnabled(true);
+        stricter.setPrApplyEnabled(true);
+        stricter.setPrApplyRequirement(PrApplyRequirement.APPROVED);
+        WebhookEvent approvedWithoutApply = new WebhookEvent();
+        approvedWithoutApply.setEvent(WebhookEventType.PULL_REQUEST);
+        approvedWithoutApply.setPrApplyRequirement(PrApplyRequirement.APPROVED);
+        doReturn(List.of(pullRequestEvent, stricter, approvedWithoutApply))
+                .when(webhookEventRepository)
+                .findByWebhookAndEventOrderByPriorityAsc(webhook, WebhookEventType.PULL_REQUEST);
+        WebhookResult result = createCommentResult("apply", 9);
+        result.setCommentId("comment-9");
+        doReturn(Optional.of("not approved")).when(prApplyAuthorizationService)
+                .refusalReason(workspace, result, PrApplyRequirement.APPROVED);
+
+        subject.handlePrCommentCommand(result, webhook, workspace);
+
+        verify(prCommentService).postApplyNotAuthorizedNotice(workspace, 9, "not approved");
+        verify(scheduleJobService, never()).createJobContext(any());
+    }
+
+    @Test
+    public void applyRequirementOfATriggerWithoutApplyDoesNotCount() {
+        WebhookEvent approvedWithoutApply = new WebhookEvent();
+        approvedWithoutApply.setEvent(WebhookEventType.PULL_REQUEST);
+        approvedWithoutApply.setPrApplyRequirement(PrApplyRequirement.APPROVED);
+        pullRequestEvent.setPrApplyEnabled(true);
+        doReturn(List.of(pullRequestEvent, approvedWithoutApply))
+                .when(webhookEventRepository)
+                .findByWebhookAndEventOrderByPriorityAsc(webhook, WebhookEventType.PULL_REQUEST);
+
+        assertEquals(PrApplyRequirement.WRITE,
+                WebhookEventMatcher.strictestPrApplyRequirement(webhook, webhookEventRepository));
+    }
+
+    @Test
     public void planCommentDoesNotCheckWhetherTheAuthorMayApply() throws Exception {
         pullRequestEvent.setPrWorkflowEnabled(true);
         WebhookResult result = createCommentResult("plan", 5);
