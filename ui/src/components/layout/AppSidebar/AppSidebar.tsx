@@ -24,6 +24,7 @@ import {
   RobotOutlined,
   SafetyCertificateOutlined,
   ScheduleOutlined,
+  SearchOutlined,
   SecurityScanOutlined,
   SettingOutlined,
   ShareAltOutlined,
@@ -31,7 +32,7 @@ import {
   TeamOutlined,
   ThunderboltOutlined,
 } from "@ant-design/icons";
-import { Layout, Menu, Tag } from "antd";
+import { Button, Layout, Menu, Tag } from "antd";
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { ORGANIZATION_ARCHIVE, ORGANIZATION_NAME } from "@/config/actionTypes";
@@ -41,6 +42,7 @@ import { getOrgIdFromPathname, isOrgId } from "@/config/orgId";
 import { FlatOrganization } from "@/domain/types";
 import { OrganizationSelector } from "@/components/layout/OrganizationSelector";
 import { HelpMenu } from "@/components/layout/HelpMenu";
+import { openCommandPalette } from "@/modules/navigation/openPalette";
 import { UserMenu } from "@/components/layout/UserMenu";
 import { getStoredSidebarCollapsed, setStoredSidebarCollapsed } from "./sidebarPreference";
 import logo from "@/domain/Home/white_logo.png";
@@ -184,6 +186,8 @@ export default function AppSidebar({
       setDefaultSelected([params[5] || "overview"]);
     } else if (isProjectDetailContext) {
       setDefaultSelected([params[5] || "overview"]);
+    } else if (location.pathname.startsWith("/inbox")) {
+      setDefaultSelected(["inbox"]);
     } else if (location.pathname.includes("registry")) {
       setDefaultSelected(["registry"]);
     } else if (location.pathname.includes("projects")) {
@@ -547,6 +551,11 @@ export default function AppSidebar({
                     key: "organizations",
                     icon: <BankOutlined />,
                   },
+                  {
+                    label: <Link to="/inbox">Needs attention</Link>,
+                    key: "inbox",
+                    icon: <BellOutlined />,
+                  },
                 ];
 
   const handleToggleCollapsed = () => {
@@ -596,6 +605,15 @@ export default function AppSidebar({
             <div className="app-sidebar-header-actions">
               {!effectiveCollapsed && (
                 <div className="app-sidebar-utility">
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<SearchOutlined />}
+                    aria-label="Search organizations, projects and workspaces (Ctrl or Cmd plus K)"
+                    title="Search (Ctrl/Cmd+K)"
+                    onClick={openCommandPalette}
+                    className="app-sidebar-search"
+                  />
                   <HelpMenu />
                   <UserMenu />
                 </div>

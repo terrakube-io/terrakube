@@ -516,6 +516,19 @@ describe("active settings item", () => {
     expect(document.querySelectorAll('[aria-current="page"]')).toHaveLength(1);
   });
 
+  it("offers the cross-organization inbox next to the organization list", async () => {
+    renderSidebar("/organizations");
+
+    expect(await screen.findByRole("link", { name: "Needs attention" })).toHaveAttribute("href", "/inbox");
+  });
+
+  it("marks the inbox as the current page", async () => {
+    renderSidebar("/inbox");
+
+    const link = await screen.findByRole("link", { name: "Needs attention" });
+    expect(link.closest("li")).toHaveClass("ant-menu-item-selected");
+  });
+
   describe("inside a project", () => {
     const projectId = "9b2c6679-7425-40de-944b-e07fc1f90ae7";
     const projectPath = `${orgPath}/projects/${projectId}`;
