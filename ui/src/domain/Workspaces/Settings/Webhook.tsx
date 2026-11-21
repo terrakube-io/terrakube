@@ -121,6 +121,7 @@ const REQUIRE_APPROVAL_LABEL = "Require an approved pull request";
 // The API checks a comment against the strictest pull request trigger that can start an apply, not only the one it
 // matched: which trigger matches depends on the pull request's branch and files, which its author controls.
 const WORKSPACE_NOTE = "It applies to every pull request trigger of this workspace that allows apply from a comment.";
+const APPROVAL_VCS = [VcsType.GITHUB, VcsType.GITLAB];
 const OTHER_TRIGGER_NOTE =
   "Another pull request trigger of this workspace requires it, so comments on this one need an approved pull request too.";
 const ORG_NOTE: Record<PrApplyRequirement | "unknown", string> = {
@@ -182,6 +183,8 @@ export const WorkspaceWebhook = ({
     (t) => t.event === "pull_request" && t.prWorkflowEnabled && t.prApplyEnabled && t.prApplyRequireApproval
   );
   const workspaceRequiresApproval = orgRequiresApproval || anyTriggerRequiresApproval;
+  // Approvals are only read from GitHub and GitLab: elsewhere an approval-required comment is always refused.
+  const approvalsUncheckable = Boolean(vcsProvider && !APPROVAL_VCS.includes(vcsProvider));
 
   useEffect(() => {
     if (!hasVcs) {
@@ -542,7 +545,11 @@ export const WorkspaceWebhook = ({
                             trigger.event === "pull_request" && trigger.prWorkflowEnabled && "Plan posted on PRs",
                             trigger.event === "pull_request" &&
                               trigger.prApplyEnabled &&
-                              (workspaceRequiresApproval ? "Apply by comment once approved" : "Apply by comment"),
+                              (!workspaceRequiresApproval
+                                ? "Apply by comment"
+                                : approvalsUncheckable
+                                  ? "Apply from the UI only: approvals cannot be checked"
+                                  : "Apply by comment once approved"),
                             !trigger.created && "Not saved",
                           ].filter(Boolean);
                           return (

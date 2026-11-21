@@ -480,6 +480,35 @@ describe("WorkspaceWebhook", () => {
       expect(savedOps()[1].data.attributes).toMatchObject({ prApplyEnabled: false, prApplyRequirement: "WRITE" });
     });
 
+    it("says apply works from the UI only when the VCS provider's approvals cannot be checked", async () => {
+      loadEvents([
+        {
+          ...base,
+          event: "PULL_REQUEST",
+          priority: 0,
+          branch: "main",
+          path: "**",
+          pathType: "PATTERN",
+          prWorkflowEnabled: true,
+          prApplyEnabled: true,
+          prApplyRequirement: "APPROVED",
+        },
+      ]);
+      render(
+        <MemoryRouter>
+          <WorkspaceWebhook
+            workspace={withVcs}
+            vcsProvider={VcsType.BITBUCKET}
+            orgTemplates={templates}
+            manageWorkspace
+          />
+        </MemoryRouter>
+      );
+
+      expect(await screen.findByText(/Apply from the UI only: approvals cannot be checked/)).toBeInTheDocument();
+      expect(screen.queryByText(/Apply by comment once approved/)).not.toBeInTheDocument();
+    });
+
     it("only offers the approved pull request requirement when apply by comment is on", async () => {
       loadEvents([{ ...base, event: "PULL_REQUEST", priority: 0, branch: "main", path: "*", prWorkflowEnabled: true }]);
       renderWebhook();
