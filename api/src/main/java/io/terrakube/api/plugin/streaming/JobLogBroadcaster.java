@@ -81,14 +81,14 @@ public class JobLogBroadcaster {
         private volatile boolean closed;
         private volatile boolean slow;
         private volatile String endReason;
-        private volatile RecordId cursor;
+        private final AtomicReference<RecordId> cursor = new AtomicReference<>();
         private long lastSendNanos = System.nanoTime();
 
         private Subscription(String stepId, SseEmitter emitter, RecordId resumeFrom) {
             this.stepId = stepId;
             this.emitter = emitter;
             this.resumeFrom = resumeFrom;
-            this.cursor = resumeFrom;
+            this.cursor.set(resumeFrom);
         }
 
         public void close() {
@@ -114,7 +114,7 @@ public class JobLogBroadcaster {
                     if (live) {
                         slowViewersDisconnected.incrementAndGet();
                         log.warn("Disconnecting slow log viewer of job {} step {} (more than {} bytes behind); it resumes from {}",
-                                jobId, stepId, properties.getSseSubscriberMaxQueuedBytes(), cursor);
+                                jobId, stepId, properties.getSseSubscriberMaxQueuedBytes(), cursor.get());
                         closed = true;
                         slow = true;
                         queue.clear();
@@ -222,7 +222,7 @@ public class JobLogBroadcaster {
         private List<MapRecord> readReplayPage(int pageSize) {
             replayReadPermits.acquireUninterruptibly();
             try {
-                return reader.readAfterPage(jobId, cursor, pageSize);
+                return reader.readAfterPage(jobId, cursor.get(), pageSize);
             } finally {
                 replayReadPermits.release();
             }
@@ -264,10 +264,10 @@ public class JobLogBroadcaster {
 
         /** Sends a record unless this viewer was already sent it or a later one. */
         private void send(MapRecord record) throws IOException {
-            if (StreamIds.compare(record.getId(), cursor) <= 0) {
+            if (StreamIds.compare(record.getId(), cursor.get()) <= 0) {
                 return;
             }
-            cursor = record.getId();
+            cursor.set(record.getId());
             if (!stepId.equals(stepOf(record))) {
                 return;
             }
@@ -423,6 +423,6 @@ public class JobLogBroadcaster {
     }
 
     private static long sizeOf(String output) {
-        return PER_RECORD_OVERHEAD_BYTES + (output == null ? 0 : output.length());
+        return (long) PER_RECORD_OVERHEAD_BYTES + (output == null ? 0 : output.length());
     }
 }
