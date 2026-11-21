@@ -126,17 +126,19 @@ There is no total size limit for `mirror/`. With pull-through on, any member of 
 
 ## Using the mirror from Terrakube runs
 
-Terrakube executors can install providers through the organization's mirror without any change to the workspace code. When enabled, the executor adds a `provider_installation` block to the `~/.terraformrc` it already writes for the job, next to the registry credentials, and deletes the file when the job ends. Terraform and OpenTofu both read it.
+Executors can install providers through the organization's mirror with no change to the workspace code. When enabled, the executor adds a `provider_installation` block to the `~/.terraformrc` it writes for the job and deletes it when the job ends. Terraform and OpenTofu both read it.
 
 | Setting (executor) | Property | Default | Meaning |
 | --- | --- | --- | --- |
 | `TerrakubeProviderMirrorEnabled` | `io.terrakube.provider-mirror.enabled` | `false` | Write the mirror block for every run. |
 | `TerrakubeProviderMirrorOnly` | `io.terrakube.provider-mirror.only` | `false` | Leave out the `direct {}` fallback, so a provider that is not in the mirror fails `init`. |
-| `TerrakubeProviderMirrorRegistryUrl` | `io.terrakube.provider-mirror.registry-url` | derived | Registry base URL. Defaults to `https://<TerrakubeRegistryDomain>`, or `<TerrakubePublicUrl>/api/private-registry` when no registry domain is set. |
+| `TerrakubeProviderMirrorRegistryUrl` | `io.terrakube.provider-mirror.registry-url` | derived | Registry base URL: `https://<TerrakubeRegistryDomain>`, or `<TerrakubePublicUrl>/api/private-registry` when no registry domain is set. |
 
-The run uses the token the executor already sends to the registry. The mirror URL names the run's own organization, and the API sends the organization name with the job. An API that is too old to send it leaves the mirror off and the run installs providers from their origin.
+The run uses the token the executor already sends to the registry. The mirror URL names the run's organization, which the API sends with the job. With an older API that does not send it, the mirror stays off and providers install from their origin.
 
-By default the block ends with `direct {}`. The CLI uses it for a provider the mirror answers that it does not have, so an empty mirror breaks nothing. It is not a fallback for an unreachable mirror: if the registry cannot be reached, `init` fails with the CLI's "Failed to query available provider packages" error (checked with Terraform 1.16.6 and OpenTofu). Ephemeral executor pods read the same settings from their environment, so put them in the ConfigMap or Secret that the ephemeral configuration already passes to the pod (the one that carries `TerrakubeRegistryDomain`), or in the workspace's `EPHEMERAL_JOB_ENV_VARS`. Use the "only" setting for installs that cannot reach the internet. Lock files behave as described under "Client configuration": a mirror records only the current platform's hashes, so keep committing a `.terraform.lock.hcl` generated with `providers lock` for every platform you use.
+- The block ends with `direct {}` by default, which the CLI uses for a provider the mirror does not have. It does not cover an unreachable mirror: `init` then fails with "Failed to query available provider packages". Set `TerrakubeProviderMirrorOnly` for installs without internet access.
+- Ephemeral executor pods read the same settings from their environment. Add them to the ConfigMap or Secret that carries `TerrakubeRegistryDomain`, or to the workspace's `EPHEMERAL_JOB_ENV_VARS`.
+- A mirror records only the current platform's hashes (see "Client configuration"), so keep committing a `.terraform.lock.hcl` made with `providers lock` for every platform you use.
 
 ## Manual verification
 
