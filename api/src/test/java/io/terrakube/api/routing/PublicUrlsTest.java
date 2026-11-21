@@ -39,10 +39,20 @@ class PublicUrlsTest {
     }
 
     @Test
-    void issuerHostPrefersExplicitHostnameThenPublicHost() {
-        assertEquals("api.example.com", new PublicUrls("https://app.example.com", "api.example.com").issuerHost());
-        assertEquals("app.example.com", new PublicUrls("https://app.example.com", "").issuerHost());
-        assertEquals("api.example.com", new PublicUrls("", "api.example.com").issuerHost());
+    void issuerKeepsHttpsForAnExplicitHostnameThenFollowsThePublicUrl() {
+        assertEquals("https://api.example.com", new PublicUrls("https://app.example.com", "api.example.com").issuerBaseUrl());
+        assertEquals("https://api.example.com", new PublicUrls("", "api.example.com").issuerBaseUrl());
+        assertEquals("https://app.example.com", new PublicUrls("https://app.example.com", "").issuerBaseUrl());
+        // #3853: an installation served over plain HTTP advertises an http issuer.
+        assertEquals("http://terrakube.test:8081", new PublicUrls("http://terrakube.test:8081", "").issuerBaseUrl());
+    }
+
+    @Test
+    void explicitIssuerOverrideAcceptsAFullUrlOrABareHost() {
+        assertEquals("https://custom.terrakube.io", PublicUrls.issuerUrl("custom.terrakube.io"));
+        assertEquals("http://localhost:8080", PublicUrls.issuerUrl("http://localhost:8080/"));
+        assertEquals("https://id.example.com", PublicUrls.issuerUrl(" https://id.example.com "));
+        assertThrows(IllegalStateException.class, () -> PublicUrls.issuerUrl("ftp://id.example.com"));
     }
 
     @Test

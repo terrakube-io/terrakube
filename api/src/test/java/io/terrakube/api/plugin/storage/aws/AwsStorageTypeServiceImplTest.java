@@ -6,6 +6,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import io.terrakube.api.plugin.storage.StorageUnavailableException;
 import io.terrakube.api.plugin.storage.model.ByteRange;
 import io.terrakube.api.plugin.storage.model.StepOutputStream;
 import software.amazon.awssdk.core.ResponseBytes;
@@ -202,14 +203,42 @@ class AwsStorageTypeServiceImplTest {
     }
 
     @Test
-    void testCreateContentFile() throws IOException {
-        InputStream is = new ByteArrayInputStream("content".getBytes());
-        awsStorageTypeService.createContentFile("content1", is);
+    void createContentFileUploadsFromATempFileAndDeletesIt() throws IOException {
+        byte[] data = "content".getBytes(StandardCharsets.UTF_8);
+        RequestBody[] uploaded = new RequestBody[1];
+        when(s3Client.putObject(any(PutObjectRequest.class), any(RequestBody.class))).thenAnswer(invocation -> {
+            uploaded[0] = invocation.getArgument(1);
+            try (InputStream in = uploaded[0].contentStreamProvider().newStream()) {
+                assertArrayEquals(data, in.readAllBytes());
+            }
+            return PutObjectResponse.builder().build();
+        });
+
+        awsStorageTypeService.createContentFile("content1", new ByteArrayInputStream(data));
 
         verify(s3Client).putObject(argThat((PutObjectRequest request) ->
+                request.bucket().equals(bucketName) &&
                 request.key().equals("content/content1/terraformContent.tar.gz") &&
                 request.contentType().equals("application/gzip")
         ), any(RequestBody.class));
+        // The body was backed by the temp file, which is gone now.
+        assertThrows(Exception.class, () -> uploaded[0].contentStreamProvider().newStream().close());
+    }
+
+    @Test
+    void createContentFileFailsWithoutUploadingWhenTheRequestBodyCannotBeRead() {
+        InputStream failing = new InputStream() {
+            @Override
+            public int read() throws IOException {
+                throw new IOException("connection reset");
+            }
+        };
+
+        StorageUnavailableException e = assertThrows(StorageUnavailableException.class,
+                () -> awsStorageTypeService.createContentFile("content1", failing));
+
+        assertEquals("Unable to read uploaded content for content1", e.getMessage());
+        verifyNoInteractions(s3Client);
     }
 
     @Test

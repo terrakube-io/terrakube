@@ -9,7 +9,7 @@ import lombok.extern.slf4j.Slf4j;
 import io.terrakube.api.plugin.storage.StepOutputPartsReader;
 import io.terrakube.api.plugin.storage.StorageRetryMetrics;
 import io.terrakube.api.plugin.storage.StorageTypeService;
-import io.terrakube.api.plugin.storage.StorageUnavailableException;
+import io.terrakube.api.plugin.storage.UploadSpool;
 import io.terrakube.api.plugin.storage.model.ByteRange;
 import io.terrakube.api.plugin.storage.model.StepOutputPart;
 import io.terrakube.api.plugin.storage.model.StepOutputStream;
@@ -20,6 +20,7 @@ import java.nio.ByteBuffer;
 import java.nio.channels.Channels;
 import java.nio.channels.WritableByteChannel;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.util.List;
 
 @Slf4j
@@ -217,16 +218,18 @@ public class GcpStorageTypeServiceImpl implements StorageTypeService {
         String blobKey = String.format(TERRAFORM_TAR_GZ, contentId);
         log.info("context file: {}", blobKey);
 
-        byte[] content;
+        Path spooled = UploadSpool.spool(contentId, inputStream, null);
         try {
-            content = inputStream.readAllBytes();
-        } catch (IOException e) {
-            // Reading the upload's own request body failed - can't be retried (it's a one-shot
-            // stream), so fail the upload instead of silently marking it uploaded (#3671).
-            throw new StorageUnavailableException("Unable to read uploaded content for " + contentId, e);
+            // Same retry/metrics as uploadBlob, but from the file: the request stream can't be re-read.
+            storageRetryMetrics.withRetry("gcp", "write", () -> {
+                BlobInfo blobInfo = BlobInfo.newBuilder(BlobId.of(bucketName, blobKey)).setContentType("application/gzip").build();
+                storage.createFrom(blobInfo, spooled);
+                log.info("Upload Object {} completed", blobKey);
+                return null;
+            });
+        } finally {
+            UploadSpool.delete(spooled);
         }
-
-        uploadBlob(blobKey, content, "application/gzip");
     }
 
     @Override
