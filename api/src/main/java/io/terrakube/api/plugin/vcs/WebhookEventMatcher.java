@@ -165,7 +165,8 @@ public final class WebhookEventMatcher {
         return webhookEventRepository
                 .findByWebhookAndEventOrderByPriorityAsc(webhook, WebhookEventType.PULL_REQUEST)
                 .stream()
-                .filter(WebhookEvent::isPrApplyEnabled)
+                // The same two settings an apply from a comment needs (WebhookService, RepoWebhookService).
+                .filter(event -> event.isPrWorkflowEnabled() && event.isPrApplyEnabled())
                 .map(WebhookEvent::getPrApplyRequirement)
                 .reduce(PrApplyRequirement.WRITE, PrApplyRequirement::strictest);
     }

@@ -320,8 +320,14 @@ public class WebhookServiceTest {
         WebhookEvent approvedWithoutApply = new WebhookEvent();
         approvedWithoutApply.setEvent(WebhookEventType.PULL_REQUEST);
         approvedWithoutApply.setPrApplyRequirement(PrApplyRequirement.APPROVED);
+        // Apply on but the PR workflow off: an apply comment could not match it either.
+        WebhookEvent approvedWithoutWorkflow = new WebhookEvent();
+        approvedWithoutWorkflow.setEvent(WebhookEventType.PULL_REQUEST);
+        approvedWithoutWorkflow.setPrApplyEnabled(true);
+        approvedWithoutWorkflow.setPrApplyRequirement(PrApplyRequirement.APPROVED);
+        pullRequestEvent.setPrWorkflowEnabled(true);
         pullRequestEvent.setPrApplyEnabled(true);
-        doReturn(List.of(pullRequestEvent, approvedWithoutApply))
+        doReturn(List.of(pullRequestEvent, approvedWithoutApply, approvedWithoutWorkflow))
                 .when(webhookEventRepository)
                 .findByWebhookAndEventOrderByPriorityAsc(webhook, WebhookEventType.PULL_REQUEST);
 
