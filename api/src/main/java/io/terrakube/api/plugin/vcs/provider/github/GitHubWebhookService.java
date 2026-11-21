@@ -653,7 +653,7 @@ public class GitHubWebhookService extends WebhookServiceBase {
             String decision = pullRequest.path("reviewDecision").asText("");
             String headSha = pullRequest.path("headRefOid").asText(null);
             return Optional.of(new PullRequestApproval("APPROVED".equals(decision),
-                    decision.isEmpty() ? "no review required" : decision, headSha));
+                    decision.isEmpty() ? PullRequestApproval.NO_REVIEW_REQUIRED : decision, headSha));
         } catch (Exception e) {
             log.error("Could not read the review decision of pull request {} on {}: {}", prNumber, repository,
                     e.getMessage());

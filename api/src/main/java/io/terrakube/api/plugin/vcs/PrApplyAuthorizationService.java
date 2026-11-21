@@ -137,6 +137,10 @@ public class PrApplyAuthorizationService {
         if (!approval.get().approved()) {
             log.info("Refusing PR apply comment by {} on workspace {}: pull request is not approved ({})", who,
                     workspace.getName(), approval.get().decision());
+            if (PullRequestApproval.NO_REVIEW_REQUIRED.equals(approval.get().decision())) {
+                // Commenting again after an approval would not help: the repository must require a review first.
+                return Optional.of(noReviewRequired(who));
+            }
             return Optional.of(notApproved(who, approval.get().decision()));
         }
         return Optional.empty();
@@ -203,6 +207,11 @@ public class PrApplyAuthorizationService {
     private static String notApproved(String author, String decision) {
         return "%s cannot apply from a comment: this workspace requires the pull request to be approved first (current state: %s). Comment again once it is approved, or apply this plan from the Terrakube UI."
                 .formatted(mention(author), decision);
+    }
+
+    private static String noReviewRequired(String author) {
+        return "%s cannot apply from a comment: this workspace requires an approved pull request, but the repository's branch protection does not require a review, so GitHub never reports the pull request as approved. Require a pull request review in the branch protection of the base branch, or apply this plan from the Terrakube UI."
+                .formatted(mention(author));
     }
 
     private static String approvalNotSupported(String quotedAuthor) {

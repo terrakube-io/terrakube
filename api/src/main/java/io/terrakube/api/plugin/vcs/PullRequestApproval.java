@@ -10,4 +10,10 @@ package io.terrakube.api.plugin.vcs;
  * @param headSha  the head commit of the pull request when the decision was read, or null if unknown
  */
 public record PullRequestApproval(boolean approved, String decision, String headSha) {
+
+    /**
+     * GitHub's decision when no branch protection requires a review ({@code reviewDecision} is null): the
+     * pull request can never read as approved, however many reviews approve it.
+     */
+    public static final String NO_REVIEW_REQUIRED = "no review required";
 }

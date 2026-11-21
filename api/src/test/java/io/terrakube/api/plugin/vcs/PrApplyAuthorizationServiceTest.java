@@ -195,8 +195,21 @@ class PrApplyAuthorizationServiceTest {
                     PrApplyRequirement.APPROVED)).isEmpty();
         }
 
+        @Test
+        void gitHubWithoutARequiredReviewSaysBranchProtectionIsNeeded() {
+            Workspace workspace = gitHubWriter();
+            when(gitHub.getPullRequestApproval(workspace.getVcs(), SOURCE, 12)).thenReturn(Optional.of(
+                    new PullRequestApproval(false, PullRequestApproval.NO_REVIEW_REQUIRED, HEAD)));
+
+            assertThat(subject.refusalReason(workspace, approvedComment("maintainer", null),
+                    PrApplyRequirement.APPROVED))
+                    .hasValueSatisfying(reason -> assertThat(reason)
+                            .contains("branch protection does not require a review")
+                            .doesNotContain("Comment again once it is approved"));
+        }
+
         @ParameterizedTest
-        @ValueSource(strings = {"REVIEW_REQUIRED", "CHANGES_REQUESTED", "no review required"})
+        @ValueSource(strings = {"REVIEW_REQUIRED", "CHANGES_REQUESTED"})
         void gitHubPullRequestThatIsNotApprovedIsRefused(String decision) {
             Workspace workspace = gitHubWriter();
             when(gitHub.getPullRequestApproval(workspace.getVcs(), SOURCE, 12))
