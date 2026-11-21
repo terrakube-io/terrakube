@@ -4,6 +4,7 @@ import {
   parseState,
   parseOldState,
   setupWorkspaceIncludes,
+  WORKSPACE_PAGE_QUERY,
 } from "../workspaceDataUtils";
 import { Resource } from "../../types";
 
@@ -202,8 +203,6 @@ describe("setupWorkspaceIncludes job and history titles", () => {
       () => {},
       () => {},
       () => {},
-      false,
-      () => {},
       () => {},
       () => {},
       () => {},
@@ -265,5 +264,30 @@ describe("setupWorkspaceIncludes job and history titles", () => {
     Object.assign(payload.included[0].attributes, { comments: "Deploy release 2.4" });
     const { jobs } = await runSetup(payload);
     expect(jobs[0].title).toBe("Deploy release 2.4");
+  });
+});
+
+describe("WORKSPACE_PAGE_QUERY", () => {
+  const params = new URLSearchParams(WORKSPACE_PAGE_QUERY);
+
+  it("names fields for every included type so none comes back as a bare identifier", () => {
+    const included = params.get("include")!.split(",");
+    expect(included).toEqual(["job", "variable", "history", "schedule", "vcs", "organization", "reference", "project"]);
+    included.forEach((type) => expect(params.has(`fields[${type}]`)).toBe(true));
+  });
+
+  it("keeps the linkage of every included relationship on the workspace", () => {
+    const workspaceFields = params.get("fields[workspace]")!.split(",");
+    params
+      .get("include")!
+      .split(",")
+      .forEach((relationship) => expect(workspaceFields).toContain(relationship));
+  });
+
+  it("never asks for the job fields computed from every step", () => {
+    const jobFields = params.get("fields[job]")!.split(",");
+    expect(jobFields).not.toContain("planDurationMs");
+    expect(jobFields).not.toContain("applyDurationMs");
+    expect(jobFields).toContain("comments");
   });
 });
