@@ -43,6 +43,7 @@ import { getOrgIdFromPathname, isOrgId } from "@/config/orgId";
 import { FlatOrganization } from "@/domain/types";
 import { OrganizationSelector } from "@/components/layout/OrganizationSelector";
 import { HelpMenu } from "@/components/layout/HelpMenu";
+import { InboxBell } from "@/components/layout/InboxBell";
 import { openCommandPalette } from "@/modules/navigation/openPalette";
 import { UserMenu } from "@/components/layout/UserMenu";
 import { getStoredSidebarCollapsed, setStoredSidebarCollapsed } from "./sidebarPreference";
@@ -634,6 +635,7 @@ export default function AppSidebar({
                     onClick={openCommandPalette}
                     className="app-sidebar-search"
                   />
+                  <InboxBell />
                   <HelpMenu />
                   <UserMenu />
                 </div>

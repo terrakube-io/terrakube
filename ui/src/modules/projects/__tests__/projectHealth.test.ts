@@ -1,4 +1,4 @@
-import { DateTime } from "luxon";
+import dayjs from "dayjs";
 import { ProjectSummaryModel } from "@/domain/types";
 import {
   attentionBadge,
@@ -27,6 +27,9 @@ const base: ProjectSummaryModel = {
   exemptedCount: 0,
   queuedJobCount: 0,
   lockedCount: 0,
+  cliDrivenCount: 0,
+  vcsDrivenCount: 0,
+  noRunStatusCount: 0,
   attentionCount: 0,
   teamCount: 0,
 };
@@ -42,8 +45,22 @@ describe("healthSegments", () => {
       "queued",
       "waiting",
       "never",
+      "noStatus",
     ]);
     expect(segments.find((segment) => segment.key === "queued")?.count).toBe(3);
+  });
+
+  it("takes the workspaces that will never have a run status out of the never executed ones", () => {
+    const segments = healthSegments({ ...base, neverRunCount: 4, noRunStatusCount: 3 });
+
+    expect(segments.find((segment) => segment.key === "never")?.count).toBe(1);
+    expect(segments.find((segment) => segment.key === "noStatus")?.count).toBe(3);
+  });
+
+  it("never reports a negative never executed count", () => {
+    const segments = healthSegments({ ...base, neverRunCount: 1, noRunStatusCount: 2 });
+
+    expect(segments.find((segment) => segment.key === "never")?.count).toBe(0);
   });
 });
 
@@ -104,7 +121,7 @@ describe("policyRollup", () => {
 });
 
 describe("relative times", () => {
-  const now = DateTime.fromISO("2026-11-08T12:00:00Z");
+  const now = dayjs("2026-11-08T12:00:00Z");
 
   it("uses the compact forms of the design", () => {
     expect(shortAgo("2026-11-08T11:55:30Z", now)).toBe("4m ago");

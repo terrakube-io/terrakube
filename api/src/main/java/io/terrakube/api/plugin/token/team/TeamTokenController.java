@@ -1,11 +1,13 @@
 package io.terrakube.api.plugin.token.team;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+import io.terrakube.api.plugin.project.ProjectAccessResolver;
 import io.terrakube.api.plugin.security.rbac.RbacService;
 import io.terrakube.api.plugin.token.TokenIssuancePolicy;
 import io.terrakube.api.repository.AccessRepository;
-import io.terrakube.api.repository.ProjectRepository;
 import io.terrakube.api.repository.TeamRepository;
 import io.terrakube.api.repository.WorkspaceRepository;
+import io.terrakube.api.rs.project.access.ProjectAccess;
 import io.terrakube.api.rs.token.group.Group;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -23,6 +25,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.security.Principal;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 
 @Slf4j
@@ -31,16 +34,16 @@ import java.util.UUID;
 public class TeamTokenController {
 
     private final WorkspaceRepository workspaceRepository;
-    private final ProjectRepository projectRepository;
+    private final ProjectAccessResolver projectAccessResolver;
     private final RbacService rbacService;
     private final TeamTokenService teamTokenService;
     private final TeamRepository teamRepository;
     private final String instanceOwner;
     private final TokenIssuancePolicy tokenIssuancePolicy;
 
-    public TeamTokenController(WorkspaceRepository workspaceRepository, ProjectRepository projectRepository, RbacService rbacService, TeamTokenService teamTokenService, TeamRepository teamRepository, @Value("${io.terrakube.owner}") String instanceOwner, TokenIssuancePolicy tokenIssuancePolicy) {
+    public TeamTokenController(WorkspaceRepository workspaceRepository, ProjectAccessResolver projectAccessResolver, RbacService rbacService, TeamTokenService teamTokenService, TeamRepository teamRepository, @Value("${io.terrakube.owner}") String instanceOwner, TokenIssuancePolicy tokenIssuancePolicy) {
         this.workspaceRepository = workspaceRepository;
-        this.projectRepository = projectRepository;
+        this.projectAccessResolver = projectAccessResolver;
         this.rbacService = rbacService;
         this.teamTokenService = teamTokenService;
         this.teamRepository = teamRepository;
@@ -87,25 +90,7 @@ public class TeamTokenController {
         JwtAuthenticationToken principalJwt = ((JwtAuthenticationToken) principal);
         PermissionSet permissions = new PermissionSet();
         List<String> groups = teamTokenService.getCurrentGroups(principalJwt);
-        teamRepository.findAllByOrganizationIdAndNameIn(UUID.fromString(organizationId), groups).forEach(group -> {
-            permissions.setManageState(permissions.manageState || rbacService.canManageState(group));
-            permissions.setManageWorkspace(permissions.manageWorkspace || rbacService.canManageWorkspace(group));
-            permissions.setManageModule(permissions.manageModule || rbacService.canManageModule(group));
-            permissions.setManageProvider(permissions.manageProvider || rbacService.canManageProvider(group));
-            permissions.setManageTemplate(permissions.manageTemplate || rbacService.canManageTemplate(group));
-            permissions.setManageVcs(permissions.manageVcs || rbacService.canManageVcs(group));
-            permissions.setManageCollection(permissions.manageCollection || rbacService.canManageCollection(group));
-            permissions.setManageJob(permissions.manageJob || rbacService.canManageJob(group));
-            permissions.setPlanJob(permissions.planJob || rbacService.canPlanJob(group));
-            permissions.setApproveJob(permissions.approveJob || rbacService.canApproveJob(group));
-            permissions.setManagePermission(permissions.managePermission || rbacService.canManageWorkspace(group));
-            permissions.setManagePolicies(permissions.managePolicies || rbacService.canManagePolicies(group));
-        });
-
-        if (groups.contains(instanceOwner)) {
-            permissions.setManagePermission(true);
-            permissions.setManagePolicies(true);
-        }
+        mergeOrganizationGrants(permissions, UUID.fromString(organizationId), groups);
 
         log.debug("Permissions: {}", permissions);
         return new ResponseEntity<>(permissions, HttpStatus.ACCEPTED);
@@ -118,28 +103,11 @@ public class TeamTokenController {
         JwtAuthenticationToken principalJwt = ((JwtAuthenticationToken) principal);
         PermissionSet permissions = new PermissionSet();
         List<String> groups = teamTokenService.getCurrentGroups(principalJwt);
-        teamRepository.findAllByOrganizationIdAndNameIn(UUID.fromString(organizationId), groups).forEach(group -> {
-            permissions.setManageState(permissions.manageState || rbacService.canManageState(group));
-            permissions.setManageWorkspace(permissions.manageWorkspace || rbacService.canManageWorkspace(group));
-            permissions.setManageModule(permissions.manageModule || rbacService.canManageModule(group));
-            permissions.setManageProvider(permissions.manageProvider || rbacService.canManageProvider(group));
-            permissions.setManageTemplate(permissions.manageTemplate || rbacService.canManageTemplate(group));
-            permissions.setManageVcs(permissions.manageVcs || rbacService.canManageVcs(group));
-            permissions.setManageCollection(permissions.manageCollection || rbacService.canManageCollection(group));
-            permissions.setManageJob(permissions.manageJob || rbacService.canManageJob(group));
-            permissions.setPlanJob(permissions.planJob || rbacService.canPlanJob(group));
-            permissions.setApproveJob(permissions.approveJob || rbacService.canApproveJob(group));
-            permissions.setManagePermission(permissions.managePermission || rbacService.canManageWorkspace(group));
-            permissions.setManagePolicies(permissions.managePolicies || rbacService.canManagePolicies(group));
-        });
-
-        if (groups.contains(instanceOwner)) {
-            permissions.setManagePermission(true);
-            permissions.setManagePolicies(true);
-        }
+        mergeOrganizationGrants(permissions, UUID.fromString(organizationId), groups);
 
         workspaceRepository.findById(UUID.fromString(workspaceId)).ifPresent(workspace -> {
             workspace.getAccess().forEach(access -> {
+               permissions.addGrant(access.getName(), access.getRole());
                permissions.setManageState(permissions.manageState || rbacService.canManageState(access));
                permissions.setManageJob(permissions.manageJob || rbacService.canManageJob(access));
                permissions.setManageWorkspace(permissions.manageWorkspace || rbacService.canManageWorkspace(access));
@@ -149,13 +117,7 @@ public class TeamTokenController {
             if (workspace.getProject() != null) {
                 workspace.getProject().getProjectAccess().stream()
                         .filter(pa -> groups.contains(pa.getName()))
-                        .forEach(pa -> {
-                            permissions.setManageState(permissions.manageState || rbacService.canManageState(pa));
-                            permissions.setManageWorkspace(permissions.manageWorkspace || rbacService.canManageWorkspace(pa));
-                            permissions.setManageJob(permissions.manageJob || rbacService.canManageJob(pa));
-                            permissions.setPlanJob(permissions.planJob || rbacService.canPlanJob(pa));
-                            permissions.setApproveJob(permissions.approveJob || rbacService.canApproveJob(pa));
-                        });
+                        .forEach(pa -> mergeProjectAccess(permissions, pa));
             }
         });
 
@@ -175,48 +137,49 @@ public class TeamTokenController {
         if (!(principal instanceof JwtAuthenticationToken principalJwt)) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Authentication required");
         }
-        UUID organizationUuid;
-        UUID projectUuid;
-        try {
-            organizationUuid = UUID.fromString(organizationId);
-            projectUuid = UUID.fromString(projectId);
-        } catch (IllegalArgumentException e) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Project not found");
-        }
-        var project = projectRepository.findById(projectUuid)
-                .filter(found -> found.getOrganization() != null && organizationUuid.equals(found.getOrganization().getId()))
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Project not found"));
+        var project = projectAccessResolver.find(organizationId, projectId);
 
         PermissionSet permissions = new PermissionSet();
         List<String> groups = teamTokenService.getCurrentGroups(principalJwt);
-        teamRepository.findAllByOrganizationIdAndNameIn(organizationUuid, groups).forEach(team -> {
-            permissions.addGrant(team.getName(), team.getRole());
-            permissions.setManageState(permissions.manageState || rbacService.canManageState(team));
-            permissions.setManageWorkspace(permissions.manageWorkspace || rbacService.canManageWorkspace(team));
-            permissions.setManageJob(permissions.manageJob || rbacService.canManageJob(team));
-            permissions.setPlanJob(permissions.planJob || rbacService.canPlanJob(team));
-            permissions.setApproveJob(permissions.approveJob || rbacService.canApproveJob(team));
-            permissions.setManagePolicies(permissions.managePolicies || rbacService.canManagePolicies(team));
-            permissions.setManagePermission(permissions.managePermission || rbacService.canManageWorkspace(team));
-            permissions.setManageProject(permissions.manageProject || rbacService.canManageWorkspace(team));
-        });
+        mergeOrganizationGrants(permissions, project.getOrganization().getId(), groups);
         project.getProjectAccess().stream()
                 .filter(access -> groups.contains(access.getName()))
-                .forEach(access -> {
-                    permissions.addGrant(access.getName(), access.getRole());
-                    permissions.setManageState(permissions.manageState || rbacService.canManageState(access));
-                    permissions.setManageWorkspace(permissions.manageWorkspace || rbacService.canManageWorkspace(access));
-                    permissions.setManageJob(permissions.manageJob || rbacService.canManageJob(access));
-                    permissions.setPlanJob(permissions.planJob || rbacService.canPlanJob(access));
-                    permissions.setApproveJob(permissions.approveJob || rbacService.canApproveJob(access));
-                    permissions.setManageProject(permissions.manageProject || rbacService.canManageProject(access));
-                });
+                .forEach(access -> mergeProjectAccess(permissions, access));
+        permissions.setManageProject(projectAccessResolver.canManage(project, groups));
+        return new ResponseEntity<>(permissions, HttpStatus.ACCEPTED);
+    }
+
+    private void mergeOrganizationGrants(PermissionSet permissions, UUID organizationId, List<String> groups) {
+        teamRepository.findAllByOrganizationIdAndNameIn(organizationId, groups).forEach(group -> {
+            permissions.addGrant(group.getName(), group.getRole());
+            permissions.setManageState(permissions.manageState || rbacService.canManageState(group));
+            permissions.setManageWorkspace(permissions.manageWorkspace || rbacService.canManageWorkspace(group));
+            permissions.setManageModule(permissions.manageModule || rbacService.canManageModule(group));
+            permissions.setManageProvider(permissions.manageProvider || rbacService.canManageProvider(group));
+            permissions.setManageTemplate(permissions.manageTemplate || rbacService.canManageTemplate(group));
+            permissions.setManageVcs(permissions.manageVcs || rbacService.canManageVcs(group));
+            permissions.setManageCollection(permissions.manageCollection || rbacService.canManageCollection(group));
+            permissions.setManageJob(permissions.manageJob || rbacService.canManageJob(group));
+            permissions.setPlanJob(permissions.planJob || rbacService.canPlanJob(group));
+            permissions.setApproveJob(permissions.approveJob || rbacService.canApproveJob(group));
+            permissions.setManagePermission(permissions.managePermission || rbacService.canManageWorkspace(group));
+            permissions.setManagePolicies(permissions.managePolicies || rbacService.canManagePolicies(group));
+        });
+
         if (groups.contains(instanceOwner)) {
+            permissions.addGrant(instanceOwner, "admin");
             permissions.setManagePermission(true);
             permissions.setManagePolicies(true);
-            permissions.setManageProject(true);
         }
-        return new ResponseEntity<>(permissions, HttpStatus.ACCEPTED);
+    }
+
+    private void mergeProjectAccess(PermissionSet permissions, ProjectAccess access) {
+        permissions.addGrant(access.getName(), access.getRole());
+        permissions.setManageState(permissions.manageState || rbacService.canManageState(access));
+        permissions.setManageWorkspace(permissions.manageWorkspace || rbacService.canManageWorkspace(access));
+        permissions.setManageJob(permissions.manageJob || rbacService.canManageJob(access));
+        permissions.setPlanJob(permissions.planJob || rbacService.canPlanJob(access));
+        permissions.setApproveJob(permissions.approveJob || rbacService.canApproveJob(access));
     }
 
     @Transactional
@@ -277,11 +240,11 @@ public class TeamTokenController {
         private boolean managePolicies;
         private boolean manageProject;
 
-        // Which teams grant the access and the highest role among them. Only filled in by the project endpoint, and
-        // left out of the JSON elsewhere so the other permission responses keep their shape.
-        @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_EMPTY)
+        // Which teams grant the access and the highest role among them. Left out of the JSON when empty, so a response
+        // for a caller in no team keeps its old shape.
+        @JsonInclude(JsonInclude.Include.NON_EMPTY)
         private List<String> grantedThrough = new ArrayList<>();
-        @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+        @JsonInclude(JsonInclude.Include.NON_NULL)
         private String accessLevel;
 
         private static final List<String> ROLE_ORDER = List.of("read", "plan", "write", "admin");
@@ -290,7 +253,7 @@ public class TeamTokenController {
             if (!grantedThrough.contains(team)) {
                 grantedThrough.add(team);
             }
-            String normalized = role == null ? "custom" : role.toLowerCase(java.util.Locale.ROOT);
+            String normalized = role == null ? "custom" : role.toLowerCase(Locale.ROOT);
             int candidate = ROLE_ORDER.indexOf(normalized);
             int current = accessLevel == null ? -2 : ROLE_ORDER.indexOf(accessLevel);
             if (accessLevel == null || candidate > current) {

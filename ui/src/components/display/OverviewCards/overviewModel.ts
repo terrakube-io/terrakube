@@ -1,17 +1,30 @@
 /** How many workspaces last ended in each state. The rest (running, queued, pending) is what is left over. */
-export type StatusCounts = { completed: number; failed: number; waiting: number; never: number };
+export type StatusCounts = {
+  completed: number;
+  failed: number;
+  waiting: number;
+  never: number;
+  /** Workspaces that run on someone's machine and only upload state: no run status will ever exist. */
+  noStatus?: number;
+};
 
-export type RingSegment = { key: "completed" | "failed" | "waiting" | "other" | "never"; label: string; count: number };
+export type RingSegment = {
+  key: "completed" | "failed" | "waiting" | "other" | "never" | "noStatus";
+  label: string;
+  count: number;
+};
 
 /** The workspaces by state, in the order of the legend. Running and queued ones are what the four counts leave over. */
 export function ringSegments(total: number, status: StatusCounts): RingSegment[] {
-  const other = Math.max(0, total - status.completed - status.failed - status.waiting - status.never);
+  const noStatus = status.noStatus ?? 0;
+  const other = Math.max(0, total - status.completed - status.failed - status.waiting - status.never - noStatus);
   return [
     { key: "completed", label: "completed", count: status.completed },
     { key: "failed", label: "failed", count: status.failed },
     { key: "waiting", label: "waiting approval", count: status.waiting },
     { key: "other", label: "running or queued", count: other },
     { key: "never", label: "never executed", count: status.never },
+    { key: "noStatus", label: "no run status", count: noStatus },
   ];
 }
 
@@ -21,6 +34,7 @@ const COLORS: Record<RingSegment["key"], string> = {
   waiting: "var(--ant-color-warning, #faad14)",
   other: "var(--ant-color-info, #1677ff)",
   never: "var(--tk-text-quaternary, #bfbfbf)",
+  noStatus: "var(--tk-border-secondary, #e4e4e4)",
 };
 
 export const segmentColor = (key: RingSegment["key"]) => COLORS[key];

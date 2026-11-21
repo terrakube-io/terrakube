@@ -1,0 +1,48 @@
+.source-mix {
+  display: grid;
+  gap: 8px;
+}
+
+.source-mix-title {
+  color: var(--tk-text-secondary);
+  font-size: 12px;
+}
+
+.source-mix-bar {
+  display: flex;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: var(--tk-border-secondary, #e4e4e4);
+}
+
+.source-mix-vcs {
+  background: var(--ant-color-primary, #6d28d9);
+}
+
+.source-mix-cli {
+  background: var(--tk-text-quaternary, #bfbfbf);
+}
+
+.source-mix-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 0;
+  padding: 0;
+  color: var(--tk-text-secondary);
+  font-size: 13px;
+  list-style: none;
+}
+
+.source-mix-swatch {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 7px;
+  border-radius: 3px;
+}
+
+.source-mix-locked {
+  margin-left: auto;
+}

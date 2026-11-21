@@ -614,6 +614,11 @@ export type ProjectSummaryModel = {
   exemptedCount: number;
   lockedCount: number;
   attentionCount: number;
+  // Workspaces driven from the CLI or API (no repository), and the ones that run from a repository.
+  cliDrivenCount: number;
+  vcsDrivenCount: number;
+  // CLI workspaces on local execution that never ran in Terrakube (included in neverRunCount): they have no run status.
+  noRunStatusCount: number;
   lastRunAt?: string;
   // Jobs still waiting to run, and when the oldest of them entered the queue.
   queuedJobCount: number;

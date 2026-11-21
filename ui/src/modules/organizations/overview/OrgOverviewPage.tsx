@@ -1,9 +1,12 @@
-import { Alert, Button, Card, Skeleton, Tag, Typography } from "antd";
+import { Alert, Button, Card, Skeleton, Space, Tag, Typography } from "antd";
 import { ClockCircleOutlined, CloseCircleOutlined, SafetyOutlined, SwapOutlined } from "@ant-design/icons";
 import { ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { EmptyState } from "@/components/feedback/EmptyState";
+import AccessChip from "@/components/display/AccessChip/AccessChip";
 import PageWrapper from "@/components/layout/PageWrapper/PageWrapper";
+import { organizationCapabilities } from "@/modules/permissions/accessModel";
+import { useOrgPermissions } from "@/modules/permissions/useOrgPermissions";
 import WorkspaceStatusTag from "@/components/display/WorkspaceStatusTag/WorkspaceStatusTag";
 import { usePolling } from "@/hooks";
 import { useOrganizationName } from "@/hooks/useOrganizationName";
@@ -28,6 +31,7 @@ const WORST_FIRST = "-attentionCount,+name";
 export default function OrgOverviewPage() {
   const { id: orgId = "" } = useParams();
   const navigate = useNavigate();
+  const { permissions } = useOrgPermissions(orgId);
   const name = useOrganizationName(orgId) ?? "";
   const [overview, setOverview] = useState<OrgOverview | null>(null);
   const [inbox, setInbox] = useState<InboxData | null>(null);
@@ -67,6 +71,7 @@ export default function OrgOverviewPage() {
   const rate = overview ? complianceRate(overview.counts) : null;
   const needsYou: InboxItem[] = inbox ? inbox.items.slice(0, NEEDS_YOU_ROWS) : [];
   const loading = !error && (!overview || !inbox || !projects);
+  const hiddenProjects = overview && projects ? Math.max(0, overview.counts.projects - projects.length) : 0;
 
   const KIND_BADGE: Record<InboxItem["kind"], { icon: ReactNode; tone: Tone; text: string }> = {
     waiting: { icon: <ClockCircleOutlined />, tone: "warning", text: "Waiting for approval" },
@@ -118,12 +123,18 @@ export default function OrgOverviewPage() {
       loadingText="Loading..."
       breadcrumbs={[{ label: "Overview", path: `${base}/overview` }]}
       actions={
-        <>
+        <Space>
+          <AccessChip
+            scope="organization"
+            level={permissions.accessLevel}
+            teams={permissions.grantedThrough ?? []}
+            items={organizationCapabilities(permissions)}
+          />
           <Button onClick={() => navigate(`${base}/workspaces/import`)}>Import</Button>
           <Button type="primary" onClick={() => navigate(`${base}/workspaces/create`)}>
             New workspace
           </Button>
-        </>
+        </Space>
       }
     >
       {error && !overview && (
@@ -146,7 +157,7 @@ export default function OrgOverviewPage() {
               title="Workspace health"
               total={overview.counts.workspaces}
               status={overview.counts.status}
-              note={rate !== null ? `${rate}% of checked workspaces are compliant` : undefined}
+              note={rate !== null ? `${rate}% compliant` : undefined}
             />
             <div className="overview-actions">
               {actionCards.map((action) => (
@@ -230,8 +241,20 @@ export default function OrgOverviewPage() {
 
           <Card className="overview-card" aria-label="Projects">
             <div className="overview-card-head">
-              <h3 className="overview-card-title">Projects</h3>
-              <Link to={`${base}/projects`}>All projects</Link>
+              <h3 className="overview-card-title">
+                Projects
+                {hiddenProjects > 0 && (
+                  <Typography.Text type="secondary" className="overview-card-subtitle">
+                    {" "}
+                    {projects.length} of {overview.counts.projects}, the ones that need attention most
+                  </Typography.Text>
+                )}
+              </h3>
+              <Link to={`${base}/projects`}>
+                {overview.counts.projects > projects.length
+                  ? `All ${overview.counts.projects} projects`
+                  : "All projects"}
+              </Link>
             </div>
             {projects.length === 0 ? (
               <EmptyState description="No projects yet." />
@@ -267,6 +290,12 @@ export default function OrgOverviewPage() {
                     </div>
                   );
                 })}
+                {hiddenProjects > 0 && (
+                  <Link to={`${base}/projects`} className="overview-project overview-project-more">
+                    <strong>+{hiddenProjects} more</strong>
+                    <span>project{hiddenProjects === 1 ? "" : "s"}, listed by what needs attention &rarr;</span>
+                  </Link>
+                )}
               </div>
             )}
           </Card>

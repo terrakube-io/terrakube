@@ -18,6 +18,7 @@ import projectService, { ProjectWorkspaceBrief } from "./projectService";
 import { PROJECT_TAB_LABELS, ProjectTab, getStoredLandingTab, setLandingTab } from "./projectLandingTab";
 import { HealthKey, shortAgo, shortDuration } from "./projectHealth";
 import { describeWorkspace } from "./projectStatus";
+import { SourceMix } from "./SourceMix";
 import { projectWorkspacesLink, statusForHealth } from "./projectLinks";
 import ProjectDelivery from "./ProjectDelivery";
 
@@ -62,7 +63,8 @@ function StatusLine({
         </Link>
         <Tooltip title={workspace.lastJobDate ? new Date(workspace.lastJobDate).toLocaleString() : "No runs yet"}>
           <Typography.Text type="secondary" className="overview-row-sub">
-            {label} · {shortAgo(workspace.lastJobDate)}
+            {label}
+            {workspace.lastJobDate ? ` · ${shortAgo(workspace.lastJobDate)}` : ""}
           </Typography.Text>
         </Tooltip>
       </span>
@@ -180,12 +182,18 @@ export default function ProjectOverview({ orgid, summary, loading, failed = fals
             completed: summary.completedCount,
             failed: summary.failedCount,
             waiting: summary.waitingApprovalCount,
-            never: summary.neverRunCount,
+            never: Math.max(0, summary.neverRunCount - summary.noRunStatusCount),
+            noStatus: summary.noRunStatusCount,
           }}
           hrefFor={(key) => {
             const health = RING_TO_HEALTH[key];
             return health ? projectWorkspacesLink(orgid, summary.id, { status: statusForHealth(health) }) : undefined;
           }}
+          footer={
+            summary.workspaceCount > 0 ? (
+              <SourceMix vcs={summary.vcsDrivenCount} cli={summary.cliDrivenCount} locked={summary.lockedCount} />
+            ) : undefined
+          }
           note={
             <>
               <Link to={projectWorkspacesLink(orgid, summary.id)}>
@@ -197,7 +205,6 @@ export default function ProjectOverview({ orgid, summary, loading, failed = fals
                   <Link to={projectWorkspacesLink(orgid, summary.id, { status: "pending" })}>{queuedLabel}</Link>
                 </>
               )}
-              {summary.lockedCount > 0 && ` · ${summary.lockedCount} locked`}
               {" · Last run: "}
               {summary.lastRunAt ? (
                 <span title={new Date(summary.lastRunAt).toLocaleString()}>{shortAgo(summary.lastRunAt)}</span>

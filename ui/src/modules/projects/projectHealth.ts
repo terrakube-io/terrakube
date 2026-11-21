@@ -1,7 +1,7 @@
-import { DateTime } from "luxon";
+import dayjs, { type Dayjs } from "dayjs";
 import { ProjectSummaryModel } from "@/domain/types";
 
-export type HealthKey = "completed" | "failed" | "running" | "queued" | "waiting" | "never";
+export type HealthKey = "completed" | "failed" | "running" | "queued" | "waiting" | "never" | "noStatus";
 
 export type HealthSegment = { key: HealthKey; label: string; count: number };
 
@@ -13,7 +13,9 @@ export function healthSegments(summary: ProjectSummaryModel): HealthSegment[] {
     { key: "running", label: "Running", count: summary.runningCount },
     { key: "queued", label: "Queued", count: summary.queuedCount },
     { key: "waiting", label: "Waiting approval", count: summary.waitingApprovalCount },
-    { key: "never", label: "Never executed", count: summary.neverRunCount },
+    // A CLI workspace on local execution is never run by Terrakube, so it is not "waiting to be run" like the rest.
+    { key: "never", label: "Never executed", count: Math.max(0, summary.neverRunCount - summary.noRunStatusCount) },
+    { key: "noStatus", label: "No run status", count: summary.noRunStatusCount },
   ];
 }
 
@@ -47,18 +49,18 @@ export function policyRollup(summary: ProjectSummaryModel): PolicyRollup {
 }
 
 // "just now", "4m ago", "3h ago", "2d ago": compact enough for a card footer or a table cell.
-export function shortAgo(iso?: string | null, now: DateTime = DateTime.now()): string {
+export function shortAgo(iso?: string | null, now: Dayjs = dayjs()): string {
   const duration = shortDuration(iso, now);
   if (duration === null) return "-";
   return duration === "now" ? "just now" : `${duration} ago`;
 }
 
 // "6m", "3h", "2d": how long since a moment, or null without one.
-export function shortDuration(iso?: string | null, now: DateTime = DateTime.now()): string | null {
+export function shortDuration(iso?: string | null, now: Dayjs = dayjs()): string | null {
   if (!iso) return null;
-  const then = DateTime.fromISO(iso);
-  if (!then.isValid) return null;
-  const seconds = Math.max(0, Math.round(now.diff(then, "seconds").seconds));
+  const then = dayjs(iso);
+  if (!then.isValid()) return null;
+  const seconds = Math.max(0, Math.round(now.diff(then, "second", true)));
   if (seconds < 60) return "now";
   const minutes = Math.floor(seconds / 60);
   if (minutes < 60) return `${minutes}m`;

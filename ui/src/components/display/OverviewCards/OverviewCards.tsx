@@ -1,4 +1,4 @@
-import { Card, Typography } from "antd";
+import { Card } from "antd";
 import { ReactNode } from "react";
 import {
   CheckCircleOutlined,
@@ -47,19 +47,25 @@ export function HealthRing({
   total,
   status,
   note,
+  footer,
   hrefFor,
 }: {
   title: string;
   total: number;
   status: StatusCounts;
   note?: ReactNode;
+  /** Something that belongs to the whole card rather than to a state: shown as a column beside the legend, behind a thin rule. */
+  footer?: ReactNode;
   /** Where the workspaces in a state are listed, when they are. A state without a link is plain text. */
   hrefFor?: (key: RingSegment["key"]) => string | undefined;
 }) {
   const segments = ringSegments(total, status).filter((segment) => segment.count > 0);
   return (
     <Card className="overview-card" aria-label={title}>
-      <h3 className="overview-card-title">{title}</h3>
+      <div className="overview-card-head">
+        <h3 className="overview-card-title">{title}</h3>
+        {note && <span className="overview-health-note">{note}</span>}
+      </div>
       <div className="overview-health">
         <div
           className="overview-ring"
@@ -69,7 +75,7 @@ export function HealthRing({
         >
           <div>
             <strong>{total}</strong>
-            <span>workspaces</span>
+            <span>{total === 1 ? "workspace" : "workspaces"}</span>
           </div>
         </div>
         <ul className="overview-legend">
@@ -84,8 +90,8 @@ export function HealthRing({
             </li>
           ))}
         </ul>
+        {footer && <div className="overview-health-footer">{footer}</div>}
       </div>
-      {note && <Typography.Text type="secondary">{note}</Typography.Text>}
     </Card>
   );
 }

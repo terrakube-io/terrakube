@@ -54,7 +54,7 @@ export const findProjectByName = (orgId: string, name: string) => findByName(org
 export type SearchHits = { projects: NamedItem[]; workspaces: NamedItem[] };
 
 /** Terms go into a filter as a wildcard, so the characters that mean something to the filter are dropped. */
-function wildcardTerm(text: string): string {
+export function wildcardTerm(text: string): string {
   return text.replace(/[*\\'"(),;=!<>~]/g, " ").trim();
 }
 

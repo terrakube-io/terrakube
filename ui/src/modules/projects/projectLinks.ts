@@ -5,7 +5,7 @@ export type WorkspaceListFilter = { status?: string; policy?: string };
 
 // The workspace statuses the list filters on, for each part of the health bar. Queued maps to "pending" because that
 // is the status a run has while it waits.
-const STATUS_FOR_HEALTH: Record<HealthKey, string> = {
+const STATUS_FOR_HEALTH: Record<Exclude<HealthKey, "noStatus">, string> = {
   completed: "completed",
   failed: "failed",
   running: "running",
@@ -14,8 +14,9 @@ const STATUS_FOR_HEALTH: Record<HealthKey, string> = {
   never: "NeverExecuted",
 };
 
-export function statusForHealth(key: HealthKey): string {
-  return STATUS_FOR_HEALTH[key];
+/** The workspace status a part of the health bar filters on. A workspace with no run status has none to filter on. */
+export function statusForHealth(key: HealthKey): string | undefined {
+  return key === "noStatus" ? undefined : STATUS_FOR_HEALTH[key];
 }
 
 /** The workspaces tab of a project, optionally already filtered, so a number can link to the rows behind it. */
