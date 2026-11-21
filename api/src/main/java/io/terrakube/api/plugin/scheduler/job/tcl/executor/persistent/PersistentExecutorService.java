@@ -1,11 +1,16 @@
 package io.terrakube.api.plugin.scheduler.job.tcl.executor.persistent;
 
+import java.net.ConnectException;
+import java.net.NoRouteToHostException;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.net.UnknownHostException;
+import java.nio.channels.UnresolvedAddressException;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
+import java.util.concurrent.TimeoutException;
 
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.io.Decoders;
@@ -69,11 +74,15 @@ public class PersistentExecutorService {
     }
 
     private static final Duration RESPONSE_TIMEOUT = Duration.ofSeconds(60);
+    private static final Duration OUTER_BLOCK_SLACK = Duration.ofSeconds(10);
+
+    private Duration responseTimeout = RESPONSE_TIMEOUT;
+    private Duration blockSlackTimeout = OUTER_BLOCK_SLACK;
 
     public void send(Job job, ExecutorContext executorContext) throws ExecutionException {
         WebClient webClient = webClientBuilder
                 .clone()
-                .clientConnector(ReactorNettyWebClientFactory.connector(RESPONSE_TIMEOUT))
+                .clientConnector(ReactorNettyWebClientFactory.connector(responseTimeout))
                 .build();
 
         String executorUrlForRequest;
@@ -88,6 +97,9 @@ public class PersistentExecutorService {
         // compatibility contract - deserializing it as ExecutorContext once meant a completed
         // run could be marked failed just because the acknowledgement body was shaped for a
         // different executor version. Read a bodyless entity: dispatch success is the 202 alone.
+        // Keep an outer block deadline (responseTimeout + 10s) so Netty's per-phase handlers fire
+        // first on connected sockets while still bounding stuck pool-acquire or DNS calls under
+        // ExecutionLease.
         ResponseEntity<Void> response = null;
         try {
             response = webClient.post()
@@ -97,30 +109,35 @@ public class PersistentExecutorService {
                     .bodyValue(executorContext)
                     .retrieve()
                     .toBodilessEntity()
-                    .block(RESPONSE_TIMEOUT);
+                    .block(responseTimeout.plus(blockSlackTimeout));
         } catch (Exception ex) {
-            if (ex instanceof WebClientRequestException) {
-                // No response was ever received: connection refused, timed out, or (in Kubernetes,
-                // when every replica is mid-job and REFUSING_TRAFFIC) the Service has no ready
-                // endpoints. This is a capacity problem, not a broken job, so it's retryable.
-                String hint = String.format(
-                        " Cannot connect to executor at %s. Check that the executor is running and reachable (io.terrakube.executor.url / AzBuilderExecutorUrl).",
-                        executorUrlForRequest);
-                throw new ExecutorUnavailableException(new Throwable(ex.getMessage() + hint, ex));
+            if (isBlockingTimeout(ex)) {
+                throw new ExecutorUnavailableException(
+                        ex.getMessage() + String.format(" (awaiting acknowledgement from %s; request may have been accepted)", executorUrlForRequest),
+                        ex, true);
+            }
+            if (ex instanceof WebClientRequestException wcreq) {
+                boolean preConnect = isPreConnectFailure(wcreq);
+                String detail = preConnect
+                        ? String.format(" Cannot connect to executor at %s. Check that the executor is running and reachable (io.terrakube.executor.url / AzBuilderExecutorUrl).", executorUrlForRequest)
+                        : String.format(" (awaiting acknowledgement from %s; request may have been accepted)", executorUrlForRequest);
+                throw new ExecutorUnavailableException(wcreq.getMessage() + detail, wcreq, !preConnect);
+            }
+            if (ex instanceof WebClientResponseException wcre && wcre.getStatusCode().equals(HttpStatus.ACCEPTED)) {
+                // Status 202 already arrived; only draining the ignored response body failed.
+                log.warn("Executor at {} returned 202 Accepted before closing response body ({}); treating dispatch as accepted",
+                        executorUrlForRequest, wcre.getMessage());
+                return;
             }
             if (ex instanceof WebClientResponseException wcre && isRetryableGatewayStatus(wcre.getStatusCode())) {
-                // 503: the executor pod's per-pod capacity gate was already held by another job
-                // (persistent-executor-admission-control). 502/504: a proxy/ingress between the
-                // API and the executor dropped or timed out the upstream connection - which can
-                // happen *after* the executor already accepted the job (its response, not the
-                // request, was lost). None of these mean the job is broken, and failing it here
-                // fires a spurious "failed" notification for a run the executor goes on to
-                // finish - so treat them all as retryable capacity/transport problems.
-                throw new ExecutorUnavailableException(new Throwable(
-                        "Executor at " + executorUrlForRequest + " returned " + wcre.getStatusCode().value()
-                                + ", will retry", ex));
+                // 503 rejects admission before creating a job; 502/504 can happen after the
+                // executor already accepted the POST and only the upstream response was lost.
+                boolean mayHaveBeenAccepted = !wcre.getStatusCode().equals(HttpStatus.SERVICE_UNAVAILABLE);
+                throw new ExecutorUnavailableException(
+                        "Executor at " + executorUrlForRequest + " returned " + wcre.getStatusCode().value() + ", will retry",
+                        wcre, mayHaveBeenAccepted);
             }
-            throw new ExecutionException(new Throwable(ex.getMessage(), ex));
+            throw new ExecutionException(ex.getMessage(), ex);
         }
 
         log.debug("Sending Job: /n {}", executorContext.toBuilder()
@@ -130,8 +147,7 @@ public class PersistentExecutorService {
         log.info("Response Status: {}", response.getStatusCode().value());
 
         if (!response.getStatusCode().equals(HttpStatus.ACCEPTED)) {
-            String message = String.format("Executor error status %s", response.getStatusCode());
-            throw new ExecutionException(new Throwable(message));
+            throw new ExecutionException(String.format("Executor error status %s", response.getStatusCode()));
         }
     }
 
@@ -142,6 +158,20 @@ public class PersistentExecutorService {
         return status.equals(HttpStatus.SERVICE_UNAVAILABLE)
                 || status.equals(HttpStatus.BAD_GATEWAY)
                 || status.equals(HttpStatus.GATEWAY_TIMEOUT);
+    }
+
+    static boolean isPreConnectFailure(Throwable throwable) {
+        for (Throwable c = throwable; c != null; c = c.getCause()) {
+            if (c instanceof ConnectException || c instanceof UnknownHostException
+                    || c instanceof NoRouteToHostException || c instanceof UnresolvedAddressException) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    static boolean isBlockingTimeout(Throwable throwable) {
+        return throwable instanceof IllegalStateException && throwable.getCause() instanceof TimeoutException;
     }
 
     /**

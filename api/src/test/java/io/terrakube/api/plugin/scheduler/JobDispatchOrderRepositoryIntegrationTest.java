@@ -671,4 +671,28 @@ class JobDispatchOrderRepositoryIntegrationTest {
         assertThat(ids.stream().map(UUID::toString).toList()).isSorted();
         assertThat(ids).contains(a.getId(), b.getId());
     }
+
+    @Test
+    void atomicPostDispatchCasRequiresBothPendingJobAndPendingTargetStep() {
+        Workspace workspace = newWorkspace();
+        Job job = newJob(workspace, JobStatus.pending);
+        job.setOutput("step 1 output");
+        job = jobRepository.save(job);
+        Step finishedStep = newStep(job, 100, JobStatus.completed);
+        Step nextPendingStep = newStep(job, 200, JobStatus.pending);
+        Date now = new Date();
+
+        // Step 1 already completed and reset job.status to pending for step 2: late CAS for step 1 must reject.
+        assertThat(jobRepository.markDispatched(job.getId(), finishedStep.getId(), now)).isZero();
+        assertThat(jobRepository.failDispatched(job.getId(), finishedStep.getId(), now)).isZero();
+        Job unchanged = jobRepository.findById(job.getId()).orElseThrow();
+        assertThat(unchanged.getStatus()).isEqualTo(JobStatus.pending);
+        assertThat(unchanged.getOutput()).isEqualTo("step 1 output");
+
+        // Step 2 is still pending while job is pending: CAS succeeds and preserves output.
+        assertThat(jobRepository.markDispatched(job.getId(), nextPendingStep.getId(), now)).isEqualTo(1);
+        Job queued = jobRepository.findById(job.getId()).orElseThrow();
+        assertThat(queued.getStatus()).isEqualTo(JobStatus.queue);
+        assertThat(queued.getOutput()).isEqualTo("step 1 output");
+    }
 }
