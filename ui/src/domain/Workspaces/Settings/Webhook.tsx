@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import axiosInstance, { getErrorMessage } from "../../../config/axiosConfig";
 import { configuredBranch, isPlanOnlyTemplate } from "../../Jobs/planOnlyTemplate";
-import { Template, VcsType, WebhookEvent, WebhookEventPathType, Workspace } from "../../types";
+import { PrApplyRequirement, Template, VcsType, WebhookEvent, WebhookEventPathType, Workspace } from "../../types";
 import { atomicHeader } from "../Workspaces";
 import DeleteConfirmationModal from "@/components/modals/DeleteConfirmationModal/DeleteConfirmationModal";
 import SettingsSection from "@/components/settings/SettingsSection/SettingsSection";
@@ -99,6 +99,13 @@ const APPROVAL_HELP =
   "Turn on dismissing stale approvals (GitHub) or resetting approvals on push (GitLab) so a new commit needs a new approval. " +
   "Bitbucket and Azure DevOps cannot be checked yet, so their comments are refused.";
 
+const REQUIRE_APPROVAL_LABEL = "Require an approved pull request";
+const ORG_NOTE: Record<PrApplyRequirement | "unknown", string> = {
+  WRITE: "The organization settings can require this for every workspace.",
+  APPROVED: "Required by the organization settings for every workspace.",
+  unknown: "Couldn't read the organization setting, which can require this for every workspace.",
+};
+
 const EVENT_LABELS: Record<string, string> = { push: "Push", pull_request: "Pull request", release: "Release" };
 const SHARED_WEBHOOK_VCS = [VcsType.GITHUB, VcsType.GITLAB, VcsType.AZURE_SP_MI, VcsType.AZURE_DEVOPS];
 // Explicitly drop Content-Type: Elide's Spring routing maps DELETE requests carrying
@@ -143,8 +150,10 @@ export const WorkspaceWebhook = ({
   const [deletedIds, setDeletedIds] = useState<string[]>([]);
   const [pendingDelete, setPendingDelete] = useState<Trigger | null>(null);
   const [confirmDisable, setConfirmDisable] = useState(false);
-  // The organization minimum: when it requires an approved pull request, every trigger does.
-  const [orgRequiresApproval, setOrgRequiresApproval] = useState(false);
+  // The organization minimum: when it requires an approved pull request, every trigger does. "unknown" when it
+  // could not be read; the API applies it either way, so the page says so instead of guessing.
+  const [orgMinimum, setOrgMinimum] = useState<PrApplyRequirement | "unknown">("WRITE");
+  const orgRequiresApproval = orgMinimum === "APPROVED";
 
   useEffect(() => {
     if (!hasVcs) {
@@ -152,9 +161,8 @@ export const WorkspaceWebhook = ({
     }
     axiosInstance
       .get(`organization/${organizationId}?fields[organization]=prApplyMinRequirement`)
-      .then((response) => setOrgRequiresApproval(response.data?.data?.attributes?.prApplyMinRequirement === "APPROVED"))
-      // The API applies the minimum either way; without it the page only shows the trigger's own setting.
-      .catch(() => setOrgRequiresApproval(false));
+      .then((response) => setOrgMinimum(response.data?.data?.attributes?.prApplyMinRequirement ?? "WRITE"))
+      .catch(() => setOrgMinimum("unknown"));
   }, [organizationId, hasVcs]);
 
   useEffect(() => {
@@ -794,33 +802,23 @@ export const WorkspaceWebhook = ({
                                             </Checkbox>
                                           </Form.Item>
                                           {orgRequiresApproval ? (
-                                            <Form.Item
-                                              extra={
-                                                <>
-                                                  Required by the organization settings for every workspace.{" "}
-                                                  {APPROVAL_HELP}
-                                                </>
-                                              }
-                                            >
-                                              <Checkbox checked disabled>
-                                                Require an approved pull request
+                                            // Not bound to the form: the trigger keeps its own value, the API
+                                            // applies the stricter of the two.
+                                            <Form.Item extra={`${ORG_NOTE.APPROVED} ${APPROVAL_HELP}`}>
+                                              <Checkbox checked={trigger.prApplyEnabled} disabled>
+                                                {REQUIRE_APPROVAL_LABEL}
                                               </Checkbox>
                                             </Form.Item>
                                           ) : (
                                             <Form.Item
                                               name={[name, "prApplyRequireApproval"]}
                                               valuePropName="checked"
-                                              extra={
-                                                <>
-                                                  {APPROVAL_HELP} The organization settings can require this for every
-                                                  workspace.
-                                                </>
-                                              }
+                                              extra={`${APPROVAL_HELP} ${ORG_NOTE[orgMinimum]}`}
                                             >
                                               <Checkbox
                                                 disabled={!manageWorkspace || !trigger.prApplyEnabled || restrictApply}
                                               >
-                                                Require an approved pull request
+                                                {REQUIRE_APPROVAL_LABEL}
                                               </Checkbox>
                                             </Form.Item>
                                           )}

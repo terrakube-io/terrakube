@@ -397,6 +397,42 @@ describe("WorkspaceWebhook", () => {
       expect(savedOps()[1].data.attributes).toMatchObject({ prApplyRequirement: "WRITE" });
     });
 
+    it("says so when the organization setting cannot be read", async () => {
+      (axiosInstance.get as jest.Mock).mockImplementation((url: string) =>
+        url.startsWith("organization/org-1?")
+          ? Promise.reject(new Error("forbidden"))
+          : Promise.resolve(
+              url.endsWith("/events")
+                ? {
+                    data: {
+                      data: [
+                        {
+                          id: "ev-1",
+                          attributes: {
+                            ...base,
+                            event: "PULL_REQUEST",
+                            priority: 0,
+                            branch: "main",
+                            path: "**",
+                            pathType: "PATTERN",
+                            prWorkflowEnabled: true,
+                            prApplyEnabled: true,
+                          },
+                        },
+                      ],
+                    },
+                  }
+                : { data: { data: { attributes: { remoteHookId: "4242" } } } }
+            )
+      );
+      renderWebhook();
+      await screen.findByText("Triggers (1)");
+
+      fireEvent.click(screen.getByRole("button", { name: "Edit trigger 1" }));
+      expect(await screen.findByText(/Couldn't read the organization setting/)).toBeInTheDocument();
+      expect(screen.getByRole("checkbox", { name: /Require an approved pull request/ })).toBeEnabled();
+    });
+
     it("only offers the approved pull request requirement when apply by comment is on", async () => {
       loadEvents([{ ...base, event: "PULL_REQUEST", priority: 0, branch: "main", path: "*", prWorkflowEnabled: true }]);
       renderWebhook();
