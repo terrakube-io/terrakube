@@ -1,0 +1,97 @@
+.login-announcements {
+  width: 100%;
+  max-width: 400px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.login-announcement-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--tk-border-secondary);
+  border-left: 4px solid var(--tk-login-banner-accent);
+  background-color: var(--tk-login-banner-bg);
+  color: var(--tk-login-banner-text);
+  font-size: 13px;
+  line-height: 1.45;
+  text-align: left;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.login-announcement-card--info {
+  --tk-login-banner-bg: #eef5ff;
+  --tk-login-banner-accent: #0958d9;
+  --tk-login-banner-text: #102a43;
+  --tk-banner-link: #0958d9;
+}
+
+.login-announcement-card--warning {
+  --tk-login-banner-bg: #fff8e6;
+  --tk-login-banner-accent: #b76e00;
+  --tk-login-banner-text: #3d2800;
+  --tk-banner-link: #874d00;
+}
+
+.login-announcement-card--critical {
+  --tk-login-banner-bg: #fff1f0;
+  --tk-login-banner-accent: #cf1322;
+  --tk-login-banner-text: #43080d;
+  --tk-banner-link: #a8071a;
+}
+
+[data-theme="dark"] .login-announcement-card--info {
+  --tk-login-banner-bg: #0f2137;
+  --tk-login-banner-accent: #58a6ff;
+  --tk-login-banner-text: #e6edf3;
+  --tk-banner-link: #79c0ff;
+}
+
+[data-theme="dark"] .login-announcement-card--warning {
+  --tk-login-banner-bg: #2b2009;
+  --tk-login-banner-accent: #d89614;
+  --tk-login-banner-text: #f3e5c0;
+  --tk-banner-link: #f5c451;
+}
+
+[data-theme="dark"] .login-announcement-card--critical {
+  --tk-login-banner-bg: #321216;
+  --tk-login-banner-accent: #ff7875;
+  --tk-login-banner-text: #ffd6d6;
+  --tk-banner-link: #ffa39e;
+}
+
+.login-announcement-icon {
+  margin-top: 3px;
+  font-size: 15px;
+  color: var(--tk-login-banner-accent);
+  flex-shrink: 0;
+}
+
+.login-announcement-body {
+  min-width: 0;
+  flex: 1;
+}
+
+.login-announcement-header {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.login-announcement-title {
+  font-weight: 600;
+  color: var(--tk-login-banner-text);
+}
+
+.login-announcement-timing {
+  font-size: 12px;
+  opacity: 0.88;
+}
+
+.login-announcement-message p {
+  margin: 4px 0 0;
+}

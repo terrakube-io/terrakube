@@ -20,6 +20,7 @@ import {
   LockOutlined,
   MenuOutlined,
   NodeIndexOutlined,
+  NotificationOutlined,
   ProjectOutlined,
   RobotOutlined,
   SafetyCertificateOutlined,
@@ -42,6 +43,7 @@ import { OrganizationSelector } from "@/components/layout/OrganizationSelector";
 import { HelpMenu } from "@/components/layout/HelpMenu";
 import { UserMenu } from "@/components/layout/UserMenu";
 import { getStoredSidebarCollapsed, setStoredSidebarCollapsed } from "./sidebarPreference";
+import { useSuperUser } from "@/modules/permissions/useSuperUser";
 import logo from "@/domain/Home/white_logo.png";
 import "./AppSidebar.css";
 
@@ -109,7 +111,9 @@ export default function AppSidebar({
   const isSettingsContext = orgIdFromUrl !== null && params[3] === "settings";
   const isWorkspaceDetailContext = orgIdFromUrl !== null && params[3] === "workspaces" && isOrgId(params[4]);
   const isWorkspaceSettingsContext = isWorkspaceDetailContext && params[5] === "settings";
-  const isUserSettingsContext = params[1] === "settings" && Boolean(params[2]);
+  const isPlatformAnnouncementsContext = params[1] === "settings" && params[2] === "announcements";
+  const isUserSettingsContext = params[1] === "settings" && Boolean(params[2]) && !isPlatformAnnouncementsContext;
+  const { isSuperUser } = useSuperUser();
   // Below md the sidebar is an off-canvas drawer, always shown expanded; elsewhere it collapses on every page.
   const canCollapse = !isMobile;
   const effectiveCollapsed = canCollapse ? collapsed : false;
@@ -171,7 +175,9 @@ export default function AppSidebar({
       setOrganizationName(sessionStorage.getItem(ORGANIZATION_NAME) || "");
     }
 
-    if (isUserSettingsContext) {
+    if (isPlatformAnnouncementsContext) {
+      setDefaultSelected(["platform-announcements"]);
+    } else if (isUserSettingsContext) {
       setDefaultSelected([params[2]]);
     } else if (isWorkspaceSettingsContext) {
       setDefaultSelected([params[6] || "general"]);
@@ -196,6 +202,7 @@ export default function AppSidebar({
     isWorkspaceDetailContext,
     isWorkspaceSettingsContext,
     isUserSettingsContext,
+    isPlatformAnnouncementsContext,
     organizations,
   ]);
 
@@ -218,6 +225,7 @@ export default function AppSidebar({
         { key: "tags", label: "Tags", path: "tags", icon: <TagsOutlined /> },
         { key: "variables", label: "Global variables", path: "variables", icon: <CodeOutlined /> },
         { key: "collection", label: "Variable collections", path: "collection", icon: <FolderOutlined /> },
+        { key: "announcements", label: "Announcements", path: "announcements", icon: <NotificationOutlined /> },
       ],
     },
     {
@@ -467,6 +475,23 @@ export default function AppSidebar({
                   key: "organizations",
                   icon: <BankOutlined />,
                 },
+                ...(isSuperUser
+                  ? [
+                      {
+                        label: (
+                          <Link
+                            to="/settings/announcements"
+                            onClick={() => setDefaultSelected(["platform-announcements"])}
+                            aria-current={defaultSelected.includes("platform-announcements") ? "page" : undefined}
+                          >
+                            Announcements
+                          </Link>
+                        ),
+                        key: "platform-announcements",
+                        icon: <NotificationOutlined />,
+                      },
+                    ]
+                  : []),
               ];
 
   const handleToggleCollapsed = () => {

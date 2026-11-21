@@ -1,6 +1,8 @@
 package io.terrakube.api.plugin.token.team;
 
 import io.terrakube.api.plugin.security.rbac.RbacService;
+import io.terrakube.api.plugin.security.token.InternalTokenClassifier;
+import io.terrakube.api.plugin.security.token.InternalTokenType;
 import io.terrakube.api.plugin.token.TokenIssuancePolicy;
 import io.terrakube.api.repository.AccessRepository;
 import io.terrakube.api.repository.TeamRepository;
@@ -69,12 +71,15 @@ public class TeamTokenController {
 
     @GetMapping("/current-teams")
     public ResponseEntity<CurrentGroupsResponse> SearchTeams(Principal principal) {
-        JwtAuthenticationToken principalJwt = ((JwtAuthenticationToken) principal);
         CurrentGroupsResponse groupList = new CurrentGroupsResponse();
         groupList.setGroups(new ArrayList<String>());
-        teamTokenService.getCurrentGroups(principalJwt).forEach(group -> {
-            groupList.getGroups().add(group);
-        });
+        if (!(principal instanceof JwtAuthenticationToken principalJwt)) {
+            groupList.setSuperUser(false);
+            return new ResponseEntity<>(groupList, HttpStatus.ACCEPTED);
+        }
+        List<String> groups = teamTokenService.getCurrentGroups(principalJwt);
+        groups.forEach(group -> groupList.getGroups().add(group));
+        groupList.setSuperUser(isSuperUser(principalJwt, groups));
         return new ResponseEntity<>(groupList, HttpStatus.ACCEPTED);
     }
 
@@ -84,25 +89,7 @@ public class TeamTokenController {
         JwtAuthenticationToken principalJwt = ((JwtAuthenticationToken) principal);
         PermissionSet permissions = new PermissionSet();
         List<String> groups = teamTokenService.getCurrentGroups(principalJwt);
-        teamRepository.findAllByOrganizationIdAndNameIn(UUID.fromString(organizationId), groups).forEach(group -> {
-            permissions.setManageState(permissions.manageState || rbacService.canManageState(group));
-            permissions.setManageWorkspace(permissions.manageWorkspace || rbacService.canManageWorkspace(group));
-            permissions.setManageModule(permissions.manageModule || rbacService.canManageModule(group));
-            permissions.setManageProvider(permissions.manageProvider || rbacService.canManageProvider(group));
-            permissions.setManageTemplate(permissions.manageTemplate || rbacService.canManageTemplate(group));
-            permissions.setManageVcs(permissions.manageVcs || rbacService.canManageVcs(group));
-            permissions.setManageCollection(permissions.manageCollection || rbacService.canManageCollection(group));
-            permissions.setManageJob(permissions.manageJob || rbacService.canManageJob(group));
-            permissions.setPlanJob(permissions.planJob || rbacService.canPlanJob(group));
-            permissions.setApproveJob(permissions.approveJob || rbacService.canApproveJob(group));
-            permissions.setManagePermission(permissions.managePermission || rbacService.canManageWorkspace(group));
-            permissions.setManagePolicies(permissions.managePolicies || rbacService.canManagePolicies(group));
-        });
-
-        if (groups.contains(instanceOwner)) {
-            permissions.setManagePermission(true);
-            permissions.setManagePolicies(true);
-        }
+        populateOrgPermissions(permissions, organizationId, groups, principalJwt);
 
         log.debug("Permissions: {}", permissions);
         return new ResponseEntity<>(permissions, HttpStatus.ACCEPTED);
@@ -115,25 +102,7 @@ public class TeamTokenController {
         JwtAuthenticationToken principalJwt = ((JwtAuthenticationToken) principal);
         PermissionSet permissions = new PermissionSet();
         List<String> groups = teamTokenService.getCurrentGroups(principalJwt);
-        teamRepository.findAllByOrganizationIdAndNameIn(UUID.fromString(organizationId), groups).forEach(group -> {
-            permissions.setManageState(permissions.manageState || rbacService.canManageState(group));
-            permissions.setManageWorkspace(permissions.manageWorkspace || rbacService.canManageWorkspace(group));
-            permissions.setManageModule(permissions.manageModule || rbacService.canManageModule(group));
-            permissions.setManageProvider(permissions.manageProvider || rbacService.canManageProvider(group));
-            permissions.setManageTemplate(permissions.manageTemplate || rbacService.canManageTemplate(group));
-            permissions.setManageVcs(permissions.manageVcs || rbacService.canManageVcs(group));
-            permissions.setManageCollection(permissions.manageCollection || rbacService.canManageCollection(group));
-            permissions.setManageJob(permissions.manageJob || rbacService.canManageJob(group));
-            permissions.setPlanJob(permissions.planJob || rbacService.canPlanJob(group));
-            permissions.setApproveJob(permissions.approveJob || rbacService.canApproveJob(group));
-            permissions.setManagePermission(permissions.managePermission || rbacService.canManageWorkspace(group));
-            permissions.setManagePolicies(permissions.managePolicies || rbacService.canManagePolicies(group));
-        });
-
-        if (groups.contains(instanceOwner)) {
-            permissions.setManagePermission(true);
-            permissions.setManagePolicies(true);
-        }
+        populateOrgPermissions(permissions, organizationId, groups, principalJwt);
 
         workspaceRepository.findById(UUID.fromString(workspaceId)).ifPresent(workspace -> {
             workspace.getAccess().forEach(access -> {
@@ -178,10 +147,48 @@ public class TeamTokenController {
                 HttpStatus.ACCEPTED);
     }
 
+    private void populateOrgPermissions(
+            PermissionSet permissions,
+            String organizationId,
+            List<String> groups,
+            JwtAuthenticationToken principalJwt) {
+        teamRepository.findAllByOrganizationIdAndNameIn(UUID.fromString(organizationId), groups).forEach(group -> {
+            permissions.setManageState(permissions.manageState || rbacService.canManageState(group));
+            permissions.setManageWorkspace(permissions.manageWorkspace || rbacService.canManageWorkspace(group));
+            permissions.setManageModule(permissions.manageModule || rbacService.canManageModule(group));
+            permissions.setManageProvider(permissions.manageProvider || rbacService.canManageProvider(group));
+            permissions.setManageTemplate(permissions.manageTemplate || rbacService.canManageTemplate(group));
+            permissions.setManageVcs(permissions.manageVcs || rbacService.canManageVcs(group));
+            permissions.setManageCollection(permissions.manageCollection || rbacService.canManageCollection(group));
+            permissions.setManageJob(permissions.manageJob || rbacService.canManageJob(group));
+            permissions.setPlanJob(permissions.planJob || rbacService.canPlanJob(group));
+            permissions.setApproveJob(permissions.approveJob || rbacService.canApproveJob(group));
+            permissions.setManagePermission(permissions.managePermission || rbacService.canManageWorkspace(group));
+            permissions.setManagePolicies(permissions.managePolicies || rbacService.canManagePolicies(group));
+            permissions.setManageAnnouncements(permissions.manageAnnouncements || rbacService.canManageAnnouncements(group));
+        });
+
+        if (isSuperUser(principalJwt, groups)) {
+            permissions.setSuperUser(true);
+            permissions.setManagePermission(true);
+            permissions.setManagePolicies(true);
+            permissions.setManageAnnouncements(true);
+        }
+    }
+
+    private boolean isSuperUser(JwtAuthenticationToken principalJwt, List<String> groups) {
+        if (principalJwt == null
+                || InternalTokenClassifier.classify(principalJwt.getTokenAttributes()) != InternalTokenType.NOT_INTERNAL) {
+            return false;
+        }
+        return instanceOwner != null && !instanceOwner.isBlank() && groups.contains(instanceOwner);
+    }
+
     @Getter
     @Setter
     private class CurrentGroupsResponse {
         private List<String> groups;
+        private boolean superUser;
     }
 
     @Getter
@@ -216,5 +223,7 @@ public class TeamTokenController {
         private boolean approveJob;
         private boolean managePermission;
         private boolean managePolicies;
+        private boolean manageAnnouncements;
+        private boolean superUser;
     }
 }

@@ -20,6 +20,11 @@ jest.mock("@/components/layout/UserMenu", () => ({
   UserMenu: () => <div data-testid="user-menu" />,
 }));
 
+const mockUseSuperUser = jest.fn(() => ({ isSuperUser: false, loading: false }));
+jest.mock("@/modules/permissions/useSuperUser", () => ({
+  useSuperUser: () => mockUseSuperUser(),
+}));
+
 const orgId = "3fa85f64-5717-4562-b3fc-2c963f66afa6";
 const workspaceId = "7c9e6679-7425-40de-944b-e07fc1f90ae7";
 const orgPath = `/organizations/${orgId}`;
@@ -45,6 +50,7 @@ function renderSidebar(path: string, overrides: Partial<Parameters<typeof AppSid
 describe("AppSidebar", () => {
   beforeEach(() => {
     sessionStorage.clear();
+    mockUseSuperUser.mockReturnValue({ isSuperUser: false, loading: false });
   });
 
   it("shows a single Organizations item when there is no organization in the URL", async () => {
@@ -52,6 +58,17 @@ describe("AppSidebar", () => {
 
     expect(await screen.findByText("Organizations")).toBeInTheDocument();
     expect(screen.queryByText("Workspaces")).not.toBeInTheDocument();
+    expect(screen.queryByText("Announcements")).not.toBeInTheDocument();
+  });
+
+  it("shows Platform Announcements link in root sidebar when user is a superuser", async () => {
+    mockUseSuperUser.mockReturnValue({ isSuperUser: true, loading: false });
+    renderSidebar("/settings/announcements");
+
+    const link = (await screen.findByText("Announcements")).closest("a");
+    expect(link).toHaveAttribute("href", "/settings/announcements");
+    expect(link).toHaveAttribute("aria-current", "page");
+    expect(screen.getByText("Organizations")).toBeInTheDocument();
   });
 
   it("shows Projects/Workspaces/Registry/Settings inside an organization", async () => {
@@ -133,6 +150,7 @@ describe("settings context", () => {
     expect(screen.getByText("Tags")).toBeInTheDocument();
     expect(screen.getByText("Global variables")).toBeInTheDocument();
     expect(screen.getByText("Variable collections")).toBeInTheDocument();
+    expect(screen.getByText("Announcements")).toBeInTheDocument();
     expect(screen.getByText("VCS providers")).toBeInTheDocument();
     expect(screen.getByText("SSH keys")).toBeInTheDocument();
     expect(screen.getByText("Agents")).toBeInTheDocument();

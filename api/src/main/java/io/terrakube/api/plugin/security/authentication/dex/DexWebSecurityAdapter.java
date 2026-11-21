@@ -1,5 +1,6 @@
 package io.terrakube.api.plugin.security.authentication.dex;
 
+import io.terrakube.api.plugin.announcement.ServerTimeResponseFilter;
 import io.terrakube.api.plugin.logs.StepLogResponses;
 import io.terrakube.api.plugin.token.login.TerraformLoginProperties;
 import io.terrakube.api.repository.FederatedRepository;
@@ -121,6 +122,7 @@ public class DexWebSecurityAdapter {
                                                         .requestMatchers("/subscriptions").permitAll()
                                         .requestMatchers("/tofu/index.json").permitAll()
                                         .requestMatchers("/terraform/index.json").permitAll()
+                                        .requestMatchers(HttpMethod.GET, "/public/v1/announcements").permitAll()
                                         .anyRequest().authenticated();
                                 })
                                 .oauth2ResourceServer(oauth2 -> {
@@ -164,8 +166,11 @@ public class DexWebSecurityAdapter {
                                                 "Origin", "Cache-Control",
                                                 "Content-Type", "Accept", "Authorization", "X-TFC-Token", "X-TFC-Url"));
                 configuration.setAllowedMethods(Arrays.asList("DELETE", "GET", "POST", "PATCH", "PUT", "OPTIONS"));
-                // The UI reads this header to tell that a step log is only the part that was saved.
-                configuration.setExposedHeaders(List.of(StepLogResponses.INCOMPLETE_HEADER));
+                // The UI reads this header to tell that a step log is only the part that was saved,
+                // and X-Server-Time for announcement schedule windows.
+                configuration.setExposedHeaders(List.of(
+                                StepLogResponses.INCOMPLETE_HEADER,
+                                ServerTimeResponseFilter.SERVER_TIME_HEADER));
                 UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
                 source.registerCorsConfiguration("/**", configuration);
                 return source;

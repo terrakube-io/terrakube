@@ -122,4 +122,19 @@ class RbacV2ServiceTest {
         project.setDestroyJob(false);
         assertFalse(rbacService.canDestroyJob(project));
     }
+
+    @Test
+    void canManageAnnouncements_onlyAdminRoleAllowed() {
+        Team admin = new Team();
+        admin.setRole("admin");
+        assertTrue(rbacService.canManageAnnouncements(admin));
+
+        for (String role : new String[] {"write", "plan", "read", "custom", null, ""}) {
+            Team team = new Team();
+            team.setRole(role);
+            team.setManageWorkspace(true);
+            team.setManagePolicies(true);
+            assertFalse(rbacService.canManageAnnouncements(team), "Role " + role + " must not manage announcements");
+        }
+    }
 }

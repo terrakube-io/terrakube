@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+            http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+
+    <changeSet id="2-35-0-announcements" author="terrakube">
+        <createTable tableName="announcement">
+            <column name="id" type="varchar(36)">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="title" type="varchar(120)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="message" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="severity" type="varchar(32)" defaultValue="INFO">
+                <constraints nullable="false"/>
+            </column>
+            <column name="scope" type="varchar(32)" defaultValue="ORGANIZATION">
+                <constraints nullable="false"/>
+            </column>
+            <column name="schedule_type" type="varchar(32)" defaultValue="IMMEDIATE">
+                <constraints nullable="false"/>
+            </column>
+            <column name="organization_id" type="varchar(36)"/>
+            <column name="starts_at" type="datetime"/>
+            <column name="ends_at" type="datetime"/>
+            <column name="is_active" type="boolean" defaultValueBoolean="true">
+                <constraints nullable="false"/>
+            </column>
+            <column name="is_dismissible" type="boolean" defaultValueBoolean="true">
+                <constraints nullable="false"/>
+            </column>
+            <column name="display_on_login" type="boolean" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_date" type="datetime"/>
+            <column name="created_by" type="varchar(255)"/>
+            <column name="updated_date" type="datetime"/>
+            <column name="updated_by" type="varchar(255)"/>
+        </createTable>
+
+        <addForeignKeyConstraint
+                baseTableName="announcement"
+                baseColumnNames="organization_id"
+                constraintName="fk_announcement_organization"
+                referencedTableName="organization"
+                referencedColumnNames="id"
+                onDelete="CASCADE"/>
+
+        <createIndex tableName="announcement" indexName="idx_announcement_scope_active_window">
+            <column name="scope"/>
+            <column name="is_active"/>
+            <column name="starts_at"/>
+            <column name="ends_at"/>
+        </createIndex>
+
+        <createIndex tableName="announcement" indexName="idx_announcement_organization">
+            <column name="organization_id"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>

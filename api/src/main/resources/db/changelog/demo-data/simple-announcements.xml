@@ -1,0 +1,191 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                   http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+    <changeSet author="demo-data" id="demo-simple-announcements">
+
+        <!--
+        ********************
+        *** ORGANIZATION ***
+        ********************
+        -->
+        <insert tableName="organization">
+            <column name="id"          value="80000000-0000-0000-0000-000000000001" />
+            <column name="name"        value="simple-announcements" />
+            <column name="description" value="Demo organization showcasing global and organization-scoped operational announcements and maintenance banners" />
+        </insert>
+
+        <!--
+        *************
+        *** TEAMS ***
+        *************
+        -->
+        <insert tableName="team">
+            <column name="id"                value="80000000-0000-0000-0000-000000000010" />
+            <column name="name"              value="TERRAKUBE_ADMIN" />
+            <column name="role"              value="admin" />
+            <column name="manage_state"      valueBoolean="true" />
+            <column name="manage_collection" valueBoolean="true" />
+            <column name="manage_job"        valueBoolean="true" />
+            <column name="manage_workspace"  valueBoolean="true" />
+            <column name="manage_module"     valueBoolean="true" />
+            <column name="manage_provider"   valueBoolean="true" />
+            <column name="manage_vcs"        valueBoolean="true" />
+            <column name="manage_template"   valueBoolean="true" />
+            <column name="manage_policies"   valueBoolean="true" />
+            <column name="plan_job"          valueBoolean="true" />
+            <column name="approve_job"       valueBoolean="true" />
+            <column name="destroy_job"       valueBoolean="true" />
+            <column name="organization_id"   value="80000000-0000-0000-0000-000000000001" />
+        </insert>
+
+        <insert tableName="team">
+            <column name="id"                value="80000000-0000-0000-0000-000000000011" />
+            <column name="name"              value="TERRAKUBE_DEVELOPERS" />
+            <column name="role"              value="write" />
+            <column name="manage_state"      valueBoolean="true" />
+            <column name="manage_collection" valueBoolean="false" />
+            <column name="manage_job"        valueBoolean="true" />
+            <column name="manage_workspace"  valueBoolean="true" />
+            <column name="manage_module"     valueBoolean="false" />
+            <column name="manage_provider"   valueBoolean="false" />
+            <column name="manage_vcs"        valueBoolean="false" />
+            <column name="manage_template"   valueBoolean="false" />
+            <column name="manage_policies"   valueBoolean="false" />
+            <column name="plan_job"          valueBoolean="true" />
+            <column name="approve_job"       valueBoolean="true" />
+            <column name="destroy_job"       valueBoolean="true" />
+            <column name="organization_id"   value="80000000-0000-0000-0000-000000000001" />
+        </insert>
+
+        <insert tableName="team">
+            <column name="id"                value="80000000-0000-0000-0000-000000000012" />
+            <column name="name"              value="ANNOUNCEMENT_ORG_ADMIN" />
+            <column name="role"              value="admin" />
+            <column name="manage_state"      valueBoolean="true" />
+            <column name="manage_collection" valueBoolean="true" />
+            <column name="manage_job"        valueBoolean="true" />
+            <column name="manage_workspace"  valueBoolean="true" />
+            <column name="manage_module"     valueBoolean="true" />
+            <column name="manage_provider"   valueBoolean="true" />
+            <column name="manage_vcs"        valueBoolean="true" />
+            <column name="manage_template"   valueBoolean="true" />
+            <column name="manage_policies"   valueBoolean="true" />
+            <column name="plan_job"          valueBoolean="true" />
+            <column name="approve_job"       valueBoolean="true" />
+            <column name="destroy_job"       valueBoolean="true" />
+            <column name="organization_id"   value="80000000-0000-0000-0000-000000000001" />
+        </insert>
+
+        <!--
+        *****************
+        *** TEMPLATES ***
+        *****************
+        -->
+        <insert tableName="template">
+            <column name="id"              value="80000000-0000-0000-0000-000000000030" />
+            <column name="name"            value="Plan" />
+            <column name="description"     value="Running terraform plan" />
+            <column name="version"         value="1.0.0" />
+            <column name="tcl"             value="ZmxvdzoKICAtIHR5cGU6ICJ0ZXJyYWZvcm1QbGFuIgogICAgbmFtZTogIlBsYW4iCiAgICBzdGVwOiAxMDAK" />
+            <column name="organization_id" value="80000000-0000-0000-0000-000000000001" />
+        </insert>
+
+        <!--
+        *****************
+        *** WORKSPACE ***
+        *****************
+        -->
+        <insert tableName="workspace">
+            <column name="id"                value="80000000-0000-0000-0000-000000000020" />
+            <column name="name"              value="announcements-sandbox" />
+            <column name="description"       value="Sample workspace inside simple-announcements for verifying operational banners" />
+            <column name="source"            value="https://github.com/AzBuilder/terrakube-docker-compose.git" />
+            <column name="branch"            value="main" />
+            <column name="terraform_version" value="1.15.9" />
+            <column name="iac_type"          value="terraform" />
+            <column name="execution_mode"    value="remote" />
+            <column name="organization_id"   value="80000000-0000-0000-0000-000000000001" />
+        </insert>
+
+        <!--
+        *********************
+        *** ANNOUNCEMENTS ***
+        *********************
+        -->
+        <!-- 1. Global Info Announcement (also displayed on Login screen) -->
+        <insert tableName="announcement">
+            <column name="id"               value="80000000-0000-0000-0000-000000000101" />
+            <column name="title"            value="Platform Upgrade Notice: Terrakube 2.35" />
+            <column name="message"          value="Terrakube **2.35** is rolling out this week. Review the [release notes](https://docs.terrakube.io) for new features and API updates." />
+            <column name="severity"         value="INFO" />
+            <column name="scope"            value="GLOBAL" />
+            <column name="schedule_type"    value="IMMEDIATE" />
+            <column name="is_active"        valueBoolean="true" />
+            <column name="is_dismissible"   valueBoolean="true" />
+            <column name="display_on_login" valueBoolean="true" />
+            <column name="created_date"     valueDate="2026-01-01T00:00:00" />
+            <column name="created_by"       value="demo-data" />
+            <column name="updated_date"     valueDate="2026-01-01T00:00:00" />
+            <column name="updated_by"       value="demo-data" />
+        </insert>
+
+        <!-- 2. Org-Scoped Critical Non-Dismissible Announcement -->
+        <insert tableName="announcement">
+            <column name="id"               value="80000000-0000-0000-0000-000000000102" />
+            <column name="title"            value="Production AWS Credentials Rotation In Progress" />
+            <column name="message"          value="Org-wide **AWS IAM role credentials** are rotating today. Verify workspace variables before queueing applies — see [CHG-4012](https://status.terrakube.io)." />
+            <column name="severity"         value="CRITICAL" />
+            <column name="scope"            value="ORGANIZATION" />
+            <column name="schedule_type"    value="IMMEDIATE" />
+            <column name="organization_id"  value="80000000-0000-0000-0000-000000000001" />
+            <column name="is_active"        valueBoolean="true" />
+            <column name="is_dismissible"   valueBoolean="false" />
+            <column name="display_on_login" valueBoolean="false" />
+            <column name="created_date"     valueDate="2026-01-01T00:00:00" />
+            <column name="created_by"       value="demo-data" />
+            <column name="updated_date"     valueDate="2026-01-01T00:00:00" />
+            <column name="updated_by"       value="demo-data" />
+        </insert>
+
+        <!-- 3. Org-Scoped Scheduled Warning Announcement -->
+        <insert tableName="announcement">
+            <column name="id"               value="80000000-0000-0000-0000-000000000103" />
+            <column name="title"            value="Scheduled VCS Maintenance Window" />
+            <column name="message"          value="GitHub Enterprise webhook sync may experience brief latency during the maintenance window. Check [status updates](https://status.terrakube.io) for live progress." />
+            <column name="severity"         value="WARNING" />
+            <column name="scope"            value="ORGANIZATION" />
+            <column name="schedule_type"    value="SCHEDULED" />
+            <column name="organization_id"  value="80000000-0000-0000-0000-000000000001" />
+            <column name="starts_at"        valueDate="2025-01-01T00:00:00" />
+            <column name="ends_at"          valueDate="2030-12-31T23:59:59" />
+            <column name="is_active"        valueBoolean="true" />
+            <column name="is_dismissible"   valueBoolean="true" />
+            <column name="display_on_login" valueBoolean="false" />
+            <column name="created_date"     valueDate="2026-01-01T00:00:00" />
+            <column name="created_by"       value="demo-data" />
+            <column name="updated_date"     valueDate="2026-01-01T00:00:00" />
+            <column name="updated_by"       value="demo-data" />
+        </insert>
+
+        <!-- 4. Org-Scoped Info Announcement with Markdown Links & List -->
+        <insert tableName="announcement">
+            <column name="id"               value="80000000-0000-0000-0000-000000000104" />
+            <column name="title"            value="New Terraform 1.15 Modules Available" />
+            <column name="message"          value="Approved baseline modules are now published in the registry: [Network VPC](https://docs.terrakube.io) and [Cluster Baseline](https://docs.terrakube.io)." />
+            <column name="severity"         value="INFO" />
+            <column name="scope"            value="ORGANIZATION" />
+            <column name="schedule_type"    value="IMMEDIATE" />
+            <column name="organization_id"  value="80000000-0000-0000-0000-000000000001" />
+            <column name="is_active"        valueBoolean="true" />
+            <column name="is_dismissible"   valueBoolean="true" />
+            <column name="display_on_login" valueBoolean="false" />
+            <column name="created_date"     valueDate="2026-01-01T00:00:00" />
+            <column name="created_by"       value="demo-data" />
+            <column name="updated_date"     valueDate="2026-01-01T00:00:00" />
+            <column name="updated_by"       value="demo-data" />
+        </insert>
+
+    </changeSet>
+</databaseChangeLog>

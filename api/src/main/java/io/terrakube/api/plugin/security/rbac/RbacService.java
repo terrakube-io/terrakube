@@ -30,6 +30,8 @@ public interface RbacService {
 
     boolean canManagePolicies(Team team);
 
+    boolean canManageAnnouncements(Team team);
+
     /**
      * Whether the team can create/queue jobs (plans).
      * Maps to planJob flag or role-derived permission (admin/write/plan roles).

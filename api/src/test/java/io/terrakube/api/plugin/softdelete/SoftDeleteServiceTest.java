@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Test;
 
 import io.terrakube.api.plugin.scheduler.JobStatusChangeService;
 import io.terrakube.api.plugin.scheduler.ScheduleJobService;
+import io.terrakube.api.repository.AnnouncementRepository;
 import io.terrakube.api.repository.JobRepository;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
@@ -25,8 +26,9 @@ class SoftDeleteServiceTest {
     private final ScheduleJobService scheduleJobService = mock(ScheduleJobService.class);
     private final JobRepository jobRepository = mock(JobRepository.class);
     private final JobStatusChangeService jobStatusChangeService = mock(JobStatusChangeService.class);
+    private final AnnouncementRepository announcementRepository = mock(AnnouncementRepository.class);
     private final SoftDeleteService subject = new SoftDeleteService(scheduleJobService, null, null,
-            jobRepository, null, jobStatusChangeService);
+            jobRepository, null, jobStatusChangeService, announcementRepository);
 
     private Workspace workspace() {
         Workspace workspace = new Workspace();
