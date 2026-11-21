@@ -149,9 +149,17 @@ class ServerApplicationTests {
      * mock mid-stubbing steals or breaks the stub. Call from @BeforeEach, undo with {@link #resumeScheduler()}.
      */
     protected void pauseScheduler() throws SchedulerException {
-        resumeSchedulerAfterTest = scheduler.isStarted() && !scheduler.isInStandbyMode();
+        // |=: a second pause before resume must not forget that the first one owes a resume.
+        resumeSchedulerAfterTest |= scheduler.isStarted() && !scheduler.isInStandbyMode();
         scheduler.standby();
-        await().atMost(Duration.ofSeconds(10)).until(() -> scheduler.getCurrentlyExecutingJobs().isEmpty());
+        try {
+            await().atMost(Duration.ofSeconds(10)).until(() -> scheduler.getCurrentlyExecutingJobs().isEmpty());
+        } catch (RuntimeException e) {
+            // The Spring context is shared across classes: leaving Quartz in standby here would stall
+            // every later test that needs a job to progress, far from the cause.
+            resumeScheduler();
+            throw e;
+        }
     }
 
     protected void resumeScheduler() throws SchedulerException {
