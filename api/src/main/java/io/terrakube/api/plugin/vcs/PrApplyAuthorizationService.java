@@ -137,7 +137,7 @@ public class PrApplyAuthorizationService {
 
     private Optional<String> checkGitHub(Workspace workspace, Vcs vcs, String author) {
         if (author == null || author.isBlank()) {
-            return Optional.of(cannotCheck("unknown user"));
+            return Optional.of(cannotCheck(whoOf(author)));
         }
         Optional<String> permission = gitHubWebhookService.getRepositoryPermission(vcs, workspace.getSource(), author);
         if (permission.isEmpty()) {
@@ -168,9 +168,17 @@ public class PrApplyAuthorizationService {
         return Optional.empty();
     }
 
-    /** Mentions the comment author, so the notice reaches them; quotes what is not a plain username. */
+    /**
+     * Mentions the comment author, so the notice reaches them; quotes what is not a plain username.
+     * Backticks and line breaks are dropped from a quoted name, so it cannot end the code span and add
+     * its own markdown to the comment.
+     */
     static String mention(String author) {
-        return author != null && MENTIONABLE.matcher(author).matches() ? "@" + author : "`" + author + "`";
+        if (author != null && MENTIONABLE.matcher(author).matches()) {
+            return "@" + author;
+        }
+        String quoted = String.valueOf(author).replaceAll("[`\\r\\n]", "");
+        return "`" + quoted + "`";
     }
 
     private static String notAllowed(String author, String requirement) {

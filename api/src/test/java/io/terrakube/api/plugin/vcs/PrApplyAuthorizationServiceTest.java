@@ -347,8 +347,14 @@ class PrApplyAuthorizationServiceTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"unknown user", "github-actions[bot]", "-alice", "alice`x"})
+    @ValueSource(strings = {"unknown user", "github-actions[bot]", "-alice"})
     void quotesAnythingElse(String author) {
         assertThat(PrApplyAuthorizationService.mention(author)).isEqualTo("`" + author + "`");
+    }
+
+    @Test
+    void dropsBackticksAndLineBreaksFromAQuotedName() {
+        assertThat(PrApplyAuthorizationService.mention("a`b` @everyone\n# x"))
+                .isEqualTo("`ab @everyone# x`");
     }
 }
