@@ -688,9 +688,10 @@ public class GitLabWebhookService extends WebhookServiceBase {
      * Whether a merge request is approved under the project's approval rules (merge request approvals
      * API: {@code approved} with no {@code approvals_left}), with the head commit read after the
      * approvals. Reading the head second means a head that matches the comment's commit was also the
-     * head when the approvals were read. A merge request with no approval at all is not approved, even
-     * when no rule requires one. Empty when GitLab could not be asked, so a caller that gates on it can
-     * refuse.
+     * head when the approvals were read. It also needs an approval from someone other than the merge
+     * request's author, even when no rule requires one, since GitLab lets authors approve their own
+     * merge requests unless a rule prevents it. Empty when GitLab could not be asked, so a caller that
+     * gates on it can refuse.
      */
     public Optional<PullRequestApproval> getMergeRequestApproval(Workspace workspace, int mergeRequestIid) {
         if (mergeRequestIid <= 0) {
@@ -716,18 +717,41 @@ public class GitLabWebhookService extends WebhookServiceBase {
                         workspace.getName());
                 return Optional.empty();
             }
-            int approvalsLeft = approvals.path("approvals_left").asInt(0);
-            int approvedBy = approvals.path("approved_by").size();
-            boolean approved = approvals.path("approved").asBoolean() && approvalsLeft == 0 && approvedBy > 0;
-            String decision = approved ? "approved"
-                    : approvedBy == 0 ? "no approvals" : approvalsLeft + " approval(s) left";
 
             ResponseEntity<String> mergeRequestResponse = callGitlabApi(token, null, mergeRequestUrl, HttpMethod.GET);
             if (mergeRequestResponse == null || !mergeRequestResponse.getStatusCode().is2xxSuccessful()) {
                 log.error("Could not read merge request !{} on workspace {}", mergeRequestIid, workspace.getName());
                 return Optional.empty();
             }
-            String headSha = objectMapper.readTree(mergeRequestResponse.getBody()).path("sha").asText(null);
+            JsonNode mergeRequest = objectMapper.readTree(mergeRequestResponse.getBody());
+            String headSha = mergeRequest.path("sha").asText(null);
+            JsonNode authorId = mergeRequest.path("author").path("id");
+            if (!authorId.canConvertToLong()) {
+                log.error("Merge request !{} on workspace {} returned no author", mergeRequestIid, workspace.getName());
+                return Optional.empty();
+            }
+
+            boolean approvedByRules = approvals.path("approved").asBoolean()
+                    && approvals.path("approvals_left").asInt(0) == 0;
+            // The author's own approval does not count: without approval rules GitLab lets authors approve.
+            long otherApprovers = 0;
+            for (JsonNode approver : approvals.path("approved_by")) {
+                if (approver.path("user").path("id").asLong(-1) != authorId.asLong()) {
+                    otherApprovers++;
+                }
+            }
+            boolean approved = approvedByRules && otherApprovers > 0;
+            String decision;
+            if (approved) {
+                decision = "approved";
+            } else if (!approvedByRules) {
+                int approvalsLeft = approvals.path("approvals_left").asInt(0);
+                decision = approvalsLeft > 0 ? approvalsLeft + " approval(s) left" : "not approved";
+            } else if (approvals.path("approved_by").isEmpty()) {
+                decision = "no approvals";
+            } else {
+                decision = "only approved by its author";
+            }
             return Optional.of(new PullRequestApproval(approved, decision, headSha));
         } catch (Exception e) {
             if (e instanceof InterruptedException) {

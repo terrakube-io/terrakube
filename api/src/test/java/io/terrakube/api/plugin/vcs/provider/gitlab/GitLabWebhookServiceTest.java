@@ -442,7 +442,7 @@ public class GitLabWebhookServiceTest {
 
         private void stubHead(String sha) {
             wireMockServer.stubFor(get(urlEqualTo(MR)).willReturn(aResponse().withStatus(200)
-                    .withHeader("Content-Type", "application/json").withBody("{\"iid\":12,\"sha\":\"" + sha + "\"}")));
+                    .withHeader("Content-Type", "application/json").withBody("{\"iid\":12,\"sha\":\"" + sha + "\",\"author\":{\"id\":7}}")));
         }
 
         @Test
@@ -479,6 +479,36 @@ public class GitLabWebhookServiceTest {
             assertTrue(approval.isPresent());
             assertFalse(approval.get().approved());
             assertEquals("no approvals", approval.get().decision());
+        }
+
+        @Test
+        void theAuthorsOwnApprovalDoesNotCount() {
+            stubApprovals("{\"approved\":true,\"approvals_left\":0,\"approved_by\":[{\"user\":{\"id\":7}}]}");
+            stubHead("abc123");
+
+            var approval = subject.getMergeRequestApproval(workspace, 12);
+
+            assertTrue(approval.isPresent());
+            assertFalse(approval.get().approved());
+            assertEquals("only approved by its author", approval.get().decision());
+        }
+
+        @Test
+        void anotherApprovalCountsNextToTheAuthors() {
+            stubApprovals("{\"approved\":true,\"approvals_left\":0,"
+                    + "\"approved_by\":[{\"user\":{\"id\":7}},{\"user\":{\"id\":8}}]}");
+            stubHead("abc123");
+
+            assertTrue(subject.getMergeRequestApproval(workspace, 12).get().approved());
+        }
+
+        @Test
+        void isEmptyWhenTheMergeRequestHasNoAuthor() {
+            stubApprovals("{\"approved\":true,\"approvals_left\":0,\"approved_by\":[{\"user\":{\"id\":1}}]}");
+            wireMockServer.stubFor(get(urlEqualTo(MR)).willReturn(aResponse().withStatus(200)
+                    .withHeader("Content-Type", "application/json").withBody("{\"iid\":12,\"sha\":\"abc123\"}")));
+
+            assertTrue(subject.getMergeRequestApproval(workspace, 12).isEmpty());
         }
 
         @Test
