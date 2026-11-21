@@ -75,4 +75,13 @@ class TerraformJobTest {
         assertTrue(text.contains("policyName=policy"));
         assertFalse(text.contains("secret"), text);
     }
+
+    @Test
+    void readsTheOrganizationNameAndDefaultsItToNullForALegacyPayload() throws Exception {
+        ObjectMapper objectMapper = new ObjectMapper();
+
+        assertEquals(null, objectMapper.readValue("{\"type\":\"terraformPlan\"}", TerraformJob.class).getOrganizationName());
+        assertEquals("acme", objectMapper.readValue(
+                "{\"type\":\"terraformPlan\",\"organizationName\":\"acme\"}", TerraformJob.class).getOrganizationName());
+    }
 }

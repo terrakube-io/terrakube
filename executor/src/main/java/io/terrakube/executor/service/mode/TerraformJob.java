@@ -21,6 +21,8 @@ public class TerraformJob {
     private List<Command> onFailureList;
     private String type;
     private String organizationId;
+    // Used for the provider mirror URL; null when the API does not send it.
+    private String organizationName;
     private String workspaceId;
     private String jobId;
     private String stepId;

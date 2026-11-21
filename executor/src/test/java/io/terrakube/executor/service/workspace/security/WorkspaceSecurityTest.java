@@ -5,6 +5,8 @@ import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
 import io.terrakube.client.spring.autoconfigure.RestClientProperties;
+import io.terrakube.executor.configuration.ProviderMirrorProperties;
+import io.terrakube.executor.configuration.security.InternalSecretLoader;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.FilenameUtils;
 import org.junit.jupiter.api.AfterEach;
@@ -135,5 +137,82 @@ class WorkspaceSecurityTest {
         assertEquals("app.example.com", WorkspaceSecurityImpl.resolveRegistryDomain("", "https://app.example.com"));
         assertEquals("localhost:8443", WorkspaceSecurityImpl.resolveRegistryDomain(null, "https://localhost:8443"));
         assertThrows(IllegalStateException.class, () -> WorkspaceSecurityImpl.resolveRegistryDomain("", ""));
+    }
+
+    private WorkspaceSecurityImpl mirrorSecurity(String registryDomain, String publicUrl, boolean only, String registryUrl) {
+        ProviderMirrorProperties mirror = new ProviderMirrorProperties();
+        mirror.setEnabled(true);
+        mirror.setOnly(only);
+        mirror.setRegistryUrl(registryUrl);
+        return new WorkspaceSecurityImpl(new RestClientProperties(), registryDomain, "https://api.example.com", publicUrl,
+                new InternalSecretLoader(SECRET, null), mirror);
+    }
+
+    @Test
+    void writesNoMirrorBlockUnlessEnabled() throws Exception {
+        workspaceSecurity.addTerraformCredentials("org-1", "acme", "ws-1", "job-1", "step-1");
+        String content = FileUtils.readFileToString(terraformrcFile, StandardCharsets.UTF_8);
+        assertFalse(content.contains("provider_installation"), content);
+    }
+
+    @Test
+    void writesTheOrganizationMirrorWithADirectFallback() throws Exception {
+        mirrorSecurity("registry.example.com", "", false, "")
+                .addTerraformCredentials("org-1", "acme", "ws-1", "job-1", "step-1");
+        String content = FileUtils.readFileToString(terraformrcFile, StandardCharsets.UTF_8);
+        assertTrue(content.contains("credentials \"registry.example.com\""), content);
+        assertTrue(content.contains("url = \"https://registry.example.com/terraform/providers/mirror/v1/acme/\""), content);
+        assertTrue(content.contains("direct {"), content);
+    }
+
+    @Test
+    void mirrorOnlyModeLeavesOutTheDirectFallback() throws Exception {
+        mirrorSecurity("registry.example.com", "", true, "")
+                .addTerraformCredentials("org-1", "acme", "ws-1", "job-1", "step-1");
+        String content = FileUtils.readFileToString(terraformrcFile, StandardCharsets.UTF_8);
+        assertTrue(content.contains("network_mirror"), content);
+        assertFalse(content.contains("direct"), content);
+    }
+
+    @Test
+    void singleDomainMirrorUsesThePrivateRegistryPrefix() throws Exception {
+        mirrorSecurity("", "https://app.example.com", false, "")
+                .addTerraformCredentials("org-1", "acme", "ws-1", "job-1", "step-1");
+        String content = FileUtils.readFileToString(terraformrcFile, StandardCharsets.UTF_8);
+        assertTrue(content.contains("url = \"https://app.example.com/api/private-registry/terraform/providers/mirror/v1/acme/\""), content);
+    }
+
+    @Test
+    void explicitMirrorRegistryUrlWinsAndTrailingSlashesAreDropped() throws Exception {
+        mirrorSecurity("registry.example.com", "", false, "https://mirror.example.com/base//")
+                .addTerraformCredentials("org-1", "acme", "ws-1", "job-1", "step-1");
+        String content = FileUtils.readFileToString(terraformrcFile, StandardCharsets.UTF_8);
+        assertTrue(content.contains("url = \"https://mirror.example.com/base/terraform/providers/mirror/v1/acme/\""), content);
+    }
+
+    @Test
+    void organizationNameIsEncodedInTheMirrorUrl() throws Exception {
+        mirrorSecurity("registry.example.com", "", false, "")
+                .addTerraformCredentials("org-1", "a b\"c", "ws-1", "job-1", "step-1");
+        String content = FileUtils.readFileToString(terraformrcFile, StandardCharsets.UTF_8);
+        assertTrue(content.contains("/mirror/v1/a%20b%22c/"), content);
+    }
+
+    @Test
+    void anUnknownOrganizationNameWritesNoMirrorBlockAndStillWritesCredentials() throws Exception {
+        mirrorSecurity("registry.example.com", "", true, "")
+                .addTerraformCredentials("org-1", null, "ws-1", "job-1", "step-1");
+        String content = FileUtils.readFileToString(terraformrcFile, StandardCharsets.UTF_8);
+        assertTrue(content.contains("credentials \"registry.example.com\""), content);
+        assertFalse(content.contains("provider_installation"), content);
+    }
+
+    @Test
+    void cleanTerraformCredentialsAlsoRemovesTheMirrorConfiguration() {
+        mirrorSecurity("registry.example.com", "", false, "")
+                .addTerraformCredentials("org-1", "acme", "ws-1", "job-1", "step-1");
+        assertTrue(terraformrcFile.exists());
+        workspaceSecurity.cleanTerraformCredentials();
+        assertFalse(terraformrcFile.exists());
     }
 }

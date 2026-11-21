@@ -120,6 +120,7 @@ public class ExecutorService {
 
         ExecutorContext executorContext = ExecutorContext.builder().build();
         executorContext.setOrganizationId(job.getOrganization().getId().toString());
+        executorContext.setOrganizationName(job.getOrganization().getName());
         executorContext.setWorkspaceId(job.getWorkspace().getId().toString());
         executorContext.setJobId(String.valueOf(job.getId()));
         executorContext.setStepId(stepId);
