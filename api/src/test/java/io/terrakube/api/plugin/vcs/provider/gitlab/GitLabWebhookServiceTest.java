@@ -503,6 +503,18 @@ public class GitLabWebhookServiceTest {
         }
 
         @Test
+        void anApproverWithoutAUserIdDoesNotCount() {
+            stubApprovals("{\"approved\":true,\"approvals_left\":0,"
+                    + "\"approved_by\":[{\"user\":{\"id\":7}},{\"user\":{\"username\":\"ghost\"}}]}");
+            stubHead("abc123");
+
+            var approval = subject.getMergeRequestApproval(workspace, 12);
+
+            assertTrue(approval.isPresent());
+            assertFalse(approval.get().approved());
+        }
+
+        @Test
         void isEmptyWhenTheMergeRequestHasNoAuthor() {
             stubApprovals("{\"approved\":true,\"approvals_left\":0,\"approved_by\":[{\"user\":{\"id\":1}}]}");
             wireMockServer.stubFor(get(urlEqualTo(MR)).willReturn(aResponse().withStatus(200)

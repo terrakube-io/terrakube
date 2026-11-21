@@ -692,6 +692,10 @@ public class GitLabWebhookService extends WebhookServiceBase {
      * request's author, even when no rule requires one, since GitLab lets authors approve their own
      * merge requests unless a rule prevents it. Empty when GitLab could not be asked, so a caller that
      * gates on it can refuse.
+     *
+     * <p>The approvals API does not say which commit each approval was given on. With "Reset approvals
+     * on push", GitLab removes them in a background job after the push, so for a short while a new head
+     * can still read as approved.
      */
     public Optional<PullRequestApproval> getMergeRequestApproval(Workspace workspace, int mergeRequestIid) {
         if (mergeRequestIid <= 0) {
@@ -734,9 +738,12 @@ public class GitLabWebhookService extends WebhookServiceBase {
             boolean approvedByRules = approvals.path("approved").asBoolean()
                     && approvals.path("approvals_left").asInt(0) == 0;
             // The author's own approval does not count: without approval rules GitLab lets authors approve.
+            // An approver without a user id (a deleted user, for example) cannot be told apart from the
+            // author, so it does not count either.
             long otherApprovers = 0;
             for (JsonNode approver : approvals.path("approved_by")) {
-                if (approver.path("user").path("id").asLong(-1) != authorId.asLong()) {
+                JsonNode approverId = approver.path("user").path("id");
+                if (approverId.canConvertToLong() && approverId.asLong() != authorId.asLong()) {
                     otherApprovers++;
                 }
             }
