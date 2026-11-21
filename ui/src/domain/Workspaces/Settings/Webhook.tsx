@@ -100,6 +100,11 @@ const APPROVAL_HELP =
   "Bitbucket and Azure DevOps cannot be checked yet, so their comments are refused.";
 
 const REQUIRE_APPROVAL_LABEL = "Require an approved pull request";
+// The API checks a comment against the strictest pull request trigger that can start an apply, not only the one it
+// matched: which trigger matches depends on the pull request's branch and files, which its author controls.
+const WORKSPACE_NOTE = "It applies to every pull request trigger of this workspace that allows apply from a comment.";
+const OTHER_TRIGGER_NOTE =
+  "Another pull request trigger of this workspace requires it, so comments on this one need an approved pull request too.";
 const ORG_NOTE: Record<PrApplyRequirement | "unknown", string> = {
   WRITE: "The organization settings can require this for every workspace.",
   APPROVED: "Required by the organization settings for every workspace.",
@@ -154,6 +159,11 @@ export const WorkspaceWebhook = ({
   // could not be read; the API applies it either way, so the page says so instead of guessing.
   const [orgMinimum, setOrgMinimum] = useState<PrApplyRequirement | "unknown">("WRITE");
   const orgRequiresApproval = orgMinimum === "APPROVED";
+  // A trigger that can start an apply from a comment and requires approval raises it for the whole workspace.
+  const anyTriggerRequiresApproval = triggers.some(
+    (t) => t.event === "pull_request" && t.prWorkflowEnabled && t.prApplyEnabled && t.prApplyRequireApproval
+  );
+  const workspaceRequiresApproval = orgRequiresApproval || anyTriggerRequiresApproval;
 
   useEffect(() => {
     if (!hasVcs) {
@@ -514,9 +524,7 @@ export const WorkspaceWebhook = ({
                             trigger.event === "pull_request" && trigger.prWorkflowEnabled && "Plan posted on PRs",
                             trigger.event === "pull_request" &&
                               trigger.prApplyEnabled &&
-                              (trigger.prApplyRequireApproval || orgRequiresApproval
-                                ? "Apply by comment once approved"
-                                : "Apply by comment"),
+                              (workspaceRequiresApproval ? "Apply by comment once approved" : "Apply by comment"),
                             !trigger.created && "Not saved",
                           ].filter(Boolean);
                           return (
@@ -813,7 +821,13 @@ export const WorkspaceWebhook = ({
                                             <Form.Item
                                               name={[name, "prApplyRequireApproval"]}
                                               valuePropName="checked"
-                                              extra={`${APPROVAL_HELP} ${ORG_NOTE[orgMinimum]}`}
+                                              extra={[
+                                                APPROVAL_HELP,
+                                                WORKSPACE_NOTE,
+                                                workspaceRequiresApproval && !trigger.prApplyRequireApproval
+                                                  ? OTHER_TRIGGER_NOTE
+                                                  : ORG_NOTE[orgMinimum],
+                                              ].join(" ")}
                                             >
                                               <Checkbox
                                                 disabled={!manageWorkspace || !trigger.prApplyEnabled || restrictApply}
