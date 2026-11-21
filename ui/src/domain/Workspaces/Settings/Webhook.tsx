@@ -174,8 +174,8 @@ export const WorkspaceWebhook = ({
   const [pendingDelete, setPendingDelete] = useState<Trigger | null>(null);
   const [confirmDisable, setConfirmDisable] = useState(false);
   // The organization minimum: when it requires an approved pull request, every trigger does. "unknown" when it
-  // could not be read; the API applies it either way, so the page says so instead of guessing.
-  const [orgMinimum, setOrgMinimum] = useState<PrApplyRequirement | "unknown">("WRITE");
+  // could not be read and null while it loads; the API applies it either way, so the page does not guess.
+  const [orgMinimum, setOrgMinimum] = useState<PrApplyRequirement | "unknown" | null>(null);
   const orgRequiresApproval = orgMinimum === "APPROVED";
   // A trigger that can start an apply from a comment and requires approval raises it for the whole workspace.
   const anyTriggerRequiresApproval = triggers.some(
@@ -852,8 +852,8 @@ export const WorkspaceWebhook = ({
                                                     WORKSPACE_NOTE,
                                                     workspaceRequiresApproval && !trigger.prApplyRequireApproval
                                                       ? OTHER_TRIGGER_NOTE
-                                                      : ORG_NOTE[orgMinimum],
-                                                  ]}
+                                                      : orgMinimum && ORG_NOTE[orgMinimum],
+                                                  ].filter((note): note is string => Boolean(note))}
                                                 />
                                               }
                                             >
