@@ -9,6 +9,7 @@ import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Supplier;
@@ -129,6 +130,17 @@ public class PrApplyAuthorizationService {
                     workspace.getName());
             return Optional.of(cannotCheck(who));
         }
+        if (approval.get().state() == null) {
+            log.error("PR apply comment by {} on workspace {}: the provider returned no pull request state", who,
+                    workspace.getName());
+            return Optional.of(cannotCheck(who));
+        }
+        if (!approval.get().open()) {
+            // An approval does not survive the pull request being closed: a closed one was not accepted as it is.
+            log.info("Refusing PR apply comment by {} on workspace {}: pull request is {}", who, workspace.getName(),
+                    approval.get().state());
+            return Optional.of(notOpen(who, approval.get().state()));
+        }
         if (!commit.equals(approval.get().headSha())) {
             log.info("Refusing PR apply comment by {} on workspace {}: head moved from {} to {}", who,
                     workspace.getName(), commit, approval.get().headSha());
@@ -207,6 +219,11 @@ public class PrApplyAuthorizationService {
     private static String notApproved(String author, String decision) {
         return "%s cannot apply from a comment: this workspace requires the pull request to be approved first (current state: %s). Comment again once it is approved, or apply this plan from the Terrakube UI."
                 .formatted(mention(author), decision);
+    }
+
+    private static String notOpen(String author, String state) {
+        return "%s cannot apply from a comment: the pull request is not open (state: %s). Reopen it to apply from a comment, or apply this plan from the Terrakube UI."
+                .formatted(mention(author), state.toLowerCase(Locale.ROOT));
     }
 
     private static String noReviewRequired(String author) {

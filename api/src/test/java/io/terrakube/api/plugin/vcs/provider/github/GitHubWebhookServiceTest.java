@@ -720,7 +720,7 @@ public class GitHubWebhookServiceTest {
         @Test
         void readsTheReviewDecisionAndHeadOfThePullRequest() throws Exception {
             stubGraphql("{\"data\":{\"repository\":{\"pullRequest\":"
-                    + "{\"reviewDecision\":\"APPROVED\",\"headRefOid\":\"abc123\"}}}}");
+                    + "{\"reviewDecision\":\"APPROVED\",\"headRefOid\":\"abc123\",\"state\":\"OPEN\"}}}}");
 
             var approval = subjectWithRestTemplate.getPullRequestApproval(vcs, "https://github.com/owner/repo", 12);
 
@@ -728,11 +728,24 @@ public class GitHubWebhookServiceTest {
             assertTrue(approval.get().approved());
             assertEquals("APPROVED", approval.get().decision());
             assertEquals("abc123", approval.get().headSha());
+            assertTrue(approval.get().open());
             var request = new ObjectMapper().readTree(
                     wireMockServer.findAll(postRequestedFor(urlEqualTo("/graphql"))).getFirst().getBodyAsString());
             assertEquals("owner", request.path("variables").path("owner").asText());
             assertEquals("repo", request.path("variables").path("name").asText());
             assertEquals(12, request.path("variables").path("number").asInt());
+        }
+
+        @Test
+        void readsTheStateOfAClosedPullRequest() {
+            stubGraphql("{\"data\":{\"repository\":{\"pullRequest\":"
+                    + "{\"reviewDecision\":\"APPROVED\",\"headRefOid\":\"abc123\",\"state\":\"CLOSED\"}}}}");
+
+            var approval = subjectWithRestTemplate.getPullRequestApproval(vcs, "https://github.com/owner/repo", 12);
+
+            assertTrue(approval.isPresent());
+            assertEquals("CLOSED", approval.get().state());
+            assertFalse(approval.get().open());
         }
 
         @Test

@@ -616,7 +616,7 @@ public class GitHubWebhookService extends WebhookServiceBase {
     }
 
     static final String REVIEW_DECISION_QUERY = "query($owner: String!, $name: String!, $number: Int!) {"
-            + " repository(owner: $owner, name: $name) { pullRequest(number: $number) { reviewDecision headRefOid } } }";
+            + " repository(owner: $owner, name: $name) { pullRequest(number: $number) { reviewDecision headRefOid state } } }";
 
     /**
      * The review decision of a pull request (GraphQL {@code reviewDecision}), which applies branch
@@ -657,7 +657,8 @@ public class GitHubWebhookService extends WebhookServiceBase {
             String decision = pullRequest.path("reviewDecision").asText("");
             String headSha = pullRequest.path("headRefOid").asText(null);
             return Optional.of(new PullRequestApproval("APPROVED".equals(decision),
-                    decision.isEmpty() ? PullRequestApproval.NO_REVIEW_REQUIRED : decision, headSha));
+                    decision.isEmpty() ? PullRequestApproval.NO_REVIEW_REQUIRED : decision, headSha,
+                    pullRequest.path("state").asText(null)));
         } catch (HttpClientErrorException.Unauthorized | HttpClientErrorException.Forbidden e) {
             log.error(MISSING_PULL_REQUESTS_READ, prNumber, repository);
             return Optional.empty();

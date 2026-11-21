@@ -442,7 +442,7 @@ public class GitLabWebhookServiceTest {
 
         private void stubHead(String sha) {
             wireMockServer.stubFor(get(urlEqualTo(MR)).willReturn(aResponse().withStatus(200)
-                    .withHeader("Content-Type", "application/json").withBody("{\"iid\":12,\"sha\":\"" + sha + "\",\"author\":{\"id\":7}}")));
+                    .withHeader("Content-Type", "application/json").withBody("{\"iid\":12,\"sha\":\"" + sha + "\",\"state\":\"opened\",\"author\":{\"id\":7}}")));
         }
 
         @Test
@@ -455,6 +455,7 @@ public class GitLabWebhookServiceTest {
             assertTrue(approval.isPresent());
             assertTrue(approval.get().approved());
             assertEquals("abc123", approval.get().headSha());
+            assertTrue(approval.get().open());
         }
 
         @Test

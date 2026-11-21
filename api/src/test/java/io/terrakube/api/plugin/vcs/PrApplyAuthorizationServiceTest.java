@@ -234,6 +234,34 @@ class PrApplyAuthorizationServiceTest {
                     .hasValueSatisfying(reason -> assertThat(reason).contains("The pull request changed"));
         }
 
+        @ParameterizedTest
+        @ValueSource(strings = {"CLOSED", "MERGED", "closed", "merged", "locked"})
+        void anApprovedPullRequestThatIsNotOpenIsRefused(String state) {
+            Workspace workspace = gitHubWriter();
+            when(gitHub.getPullRequestApproval(workspace.getVcs(), SOURCE, 12))
+                    .thenReturn(Optional.of(new PullRequestApproval(true, "APPROVED", HEAD, state)));
+
+            assertThat(subject.refusalReason(workspace, approvedComment("maintainer", null),
+                    PrApplyRequirement.APPROVED))
+                    .hasValueSatisfying(reason -> assertThat(reason).contains("the pull request is not open"));
+        }
+
+        @Test
+        void aDecisionWithoutAStateCannotBeChecked() {
+            Workspace workspace = gitHubWriter();
+            when(gitHub.getPullRequestApproval(workspace.getVcs(), SOURCE, 12))
+                    .thenReturn(Optional.of(new PullRequestApproval(true, "APPROVED", HEAD, null)));
+
+            assertThat(subject.refusalReason(workspace, approvedComment("maintainer", null),
+                    PrApplyRequirement.APPROVED))
+                    .hasValueSatisfying(reason -> assertThat(reason).contains("Could not check whether @maintainer"));
+        }
+
+        @Test
+        void anOpenGitLabMergeRequestIsOpen() {
+            assertThat(new PullRequestApproval(true, "approved", HEAD, "opened").open()).isTrue();
+        }
+
         @Test
         void aDecisionWithoutAHeadCommitCannotBeChecked() {
             Workspace workspace = gitHubWriter();

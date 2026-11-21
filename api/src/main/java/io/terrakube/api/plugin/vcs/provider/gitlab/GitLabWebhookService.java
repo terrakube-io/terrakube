@@ -766,7 +766,8 @@ public class GitLabWebhookService extends WebhookServiceBase {
             } else {
                 decision = "only approved by its author";
             }
-            return Optional.of(new PullRequestApproval(approved, decision, headSha));
+            return Optional.of(new PullRequestApproval(approved, decision, headSha,
+                    mergeRequest.path("state").asText(null)));
         } catch (Exception e) {
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
