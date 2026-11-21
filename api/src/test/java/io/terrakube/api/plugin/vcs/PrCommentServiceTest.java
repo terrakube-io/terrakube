@@ -828,6 +828,25 @@ public class PrCommentServiceTest {
     }
 
     @Test
+    public void postPlanResultKeepsTheOrganizationMinimumWhenTheTriggersCannotBeRead() {
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
+        job.getWorkspace().setId(UUID.randomUUID());
+        job.getWorkspace().getOrganization().setPrApplyMinRequirement(PrApplyRequirement.APPROVED);
+        WebhookEventRepository webhookEventRepository = mock(WebhookEventRepository.class);
+        doThrow(new IllegalStateException("no session")).when(webhookEventRepository)
+                .findByWebhookWorkspaceIdAndEvent(any(), any());
+        subject.setWebhookEventRepository(webhookEventRepository);
+        stubStepOutput("Plan: 1 to add, 0 to change, 0 to destroy.");
+        doReturn("12345").when(gitHubWebhookService).postPrComment(any(), any());
+
+        subject.postPlanResult(job);
+
+        ArgumentCaptor<String> markdownCaptor = ArgumentCaptor.forClass(String.class);
+        verify(gitHubWebhookService, times(1)).postPrComment(eq(job), markdownCaptor.capture());
+        assertTrue(markdownCaptor.getValue().contains("requires an approved pull request. Once it is approved"));
+    }
+
+    @Test
     public void postPlanResultAsksForAnApprovalFirstWhenAnApplyTriggerRequiresIt() {
         Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
         job.getWorkspace().setId(UUID.randomUUID());

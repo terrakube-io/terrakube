@@ -684,26 +684,29 @@ public class PrCommentService {
     /**
      * Whether a "terrakube apply" comment on this job's workspace needs an approved pull request, as
      * PrApplyAuthorizationService decides it: the strictest apply trigger and the organization minimum.
-     * Only shapes the hint in the plan comment, so a failure to read it falls back to the plain hint.
+     * Only shapes the hint in the plan comment: if the triggers cannot be read, the organization minimum
+     * alone decides.
      */
     boolean requiresApprovedPullRequest(Job job) {
         Workspace workspace = job.getWorkspace();
         if (workspace == null) {
             return false;
         }
-        try {
-            PrApplyRequirement triggers = webhookEventRepository == null || workspace.getId() == null
-                    ? PrApplyRequirement.WRITE
-                    : WebhookEventMatcher.strictestPrApplyRequirement(webhookEventRepository
-                            .findByWebhookWorkspaceIdAndEvent(workspace.getId(), WebhookEventType.PULL_REQUEST));
-            PrApplyRequirement organization = workspace.getOrganization() != null
-                    ? workspace.getOrganization().getPrApplyMinRequirement()
-                    : null;
-            return PrApplyRequirement.strictest(triggers, organization) == PrApplyRequirement.APPROVED;
-        } catch (Exception e) {
-            log.warn("Could not read the apply requirement of workspace {}: {}", workspace.getName(), e.getMessage());
-            return false;
+        PrApplyRequirement organization = workspace.getOrganization() != null
+                ? workspace.getOrganization().getPrApplyMinRequirement()
+                : null;
+        PrApplyRequirement triggers = PrApplyRequirement.WRITE;
+        if (webhookEventRepository != null && workspace.getId() != null) {
+            try {
+                triggers = WebhookEventMatcher.strictestPrApplyRequirement(webhookEventRepository
+                        .findByWebhookWorkspaceIdAndEvent(workspace.getId(), WebhookEventType.PULL_REQUEST));
+            } catch (Exception e) {
+                // The organization minimum still counts; only the triggers' part is missing.
+                log.warn("Could not read the pull request triggers of workspace {}: {}", workspace.getName(),
+                        e.getMessage());
+            }
         }
+        return PrApplyRequirement.strictest(triggers, organization) == PrApplyRequirement.APPROVED;
     }
 
     /** Approvals are read from GitHub and GitLab only (PrApplyAuthorizationService). */
