@@ -645,8 +645,12 @@ public class GitHubWebhookService extends WebhookServiceBase {
             JsonNode root = objectMapper.readTree(response.getBody());
             JsonNode pullRequest = root.path("data").path("repository").path("pullRequest");
             if (root.hasNonNull("errors") || !pullRequest.isObject()) {
-                log.error("Could not read the review decision of pull request {} on {}: {}", prNumber, repository,
-                        root.path("errors"));
+                if (isForbidden(root.path("errors"))) {
+                    log.error(MISSING_PULL_REQUESTS_READ, prNumber, repository);
+                } else {
+                    log.error("Could not read the review decision of pull request {} on {}: {}", prNumber,
+                            repository, root.path("errors"));
+                }
                 return Optional.empty();
             }
             // Null when no branch protection requires a review: not approved under the repository's rules.
@@ -654,11 +658,28 @@ public class GitHubWebhookService extends WebhookServiceBase {
             String headSha = pullRequest.path("headRefOid").asText(null);
             return Optional.of(new PullRequestApproval("APPROVED".equals(decision),
                     decision.isEmpty() ? PullRequestApproval.NO_REVIEW_REQUIRED : decision, headSha));
+        } catch (HttpClientErrorException.Unauthorized | HttpClientErrorException.Forbidden e) {
+            log.error(MISSING_PULL_REQUESTS_READ, prNumber, repository);
+            return Optional.empty();
         } catch (Exception e) {
             log.error("Could not read the review decision of pull request {} on {}: {}", prNumber, repository,
                     e.getMessage());
             return Optional.empty();
         }
+    }
+
+    /** Not a temporary error: retrying the comment will not help until the permission is granted. */
+    private static final String MISSING_PULL_REQUESTS_READ = "GitHub refused to read the review decision of pull request {}"
+            + " on {}: the VCS connection needs the \"Pull requests: read\" permission for the \"approved\" level";
+
+    /** GraphQL reports a missing permission in the body, with a 200 status. */
+    private static boolean isForbidden(JsonNode errors) {
+        for (JsonNode error : errors) {
+            if ("FORBIDDEN".equals(error.path("type").asText())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
