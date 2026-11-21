@@ -61,42 +61,39 @@ function sizeLabel(files) {
   return 'size/XL';
 }
 
+const TYPE_BY_PREFIX = {
+  feat: 'type/feature', feature: 'type/feature',
+  fix: 'type/fix', hotfix: 'type/fix',
+  docs: 'type/docs',
+  deps: 'type/deps',
+  refactor: 'type/refactor', perf: 'type/refactor', style: 'type/refactor',
+  chore: 'type/chore', ci: 'type/chore', build: 'type/chore', test: 'type/chore', tests: 'type/chore',
+};
+
 function typeLabel(title, login) {
-  if (/^dependabot\[bot\]$|^renovate\[bot\]$/.test(login || '')) return 'type/deps';
+  if (/^(dependabot|renovate)\[bot\]$/.test(login || '')) return 'type/deps';
   const m = /^(\w+)(?:\([^)]*\))?!?:/.exec(title || '');
-  if (!m) return null;
-  switch (m[1].toLowerCase()) {
-    case 'feat': case 'feature': return 'type/feature';
-    case 'fix': case 'hotfix': return 'type/fix';
-    case 'docs': return 'type/docs';
-    case 'deps': return 'type/deps';
-    case 'refactor': case 'perf': case 'style': return 'type/refactor';
-    case 'chore': case 'ci': case 'build': case 'test': case 'tests': return 'type/chore';
-    default: return null;
-  }
+  return (m && TYPE_BY_PREFIX[m[1].toLowerCase()]) || null;
 }
 
 function isBreaking(title, body) {
   return /^\w+(\([^)]*\))?!:/.test(title || '') || /^BREAKING[ -]CHANGE:/m.test(body || '');
 }
 
+// True when the Testing section has no content (the untouched template counts as empty).
 function descriptionIsEmpty(body) {
   const text = (body || '').replace(/<!--[\s\S]*?-->/g, '');
   const testing = /^##\s*Testing\s*$([\s\S]*?)(?=^##\s|(?![\s\S]))/im.exec(text);
-  if (testing) {
-    const filled = testing[1].replace(/```\w*/g, '').replace(/^\s*(Ran|Checked):/gim, '').trim();
-    if (!filled) return true;
-  }
-  return text.replace(/^#+.*$/gm, '').replace(/```\w*/g, '').replace(/^\s*(Ran|Checked):/gim, '').trim().length < 20;
+  if (!testing) return text.trim().length < 20;
+  return !testing[1].replace(/```\w*/g, '').replace(/^\s*(Ran|Checked):/gim, '').trim();
 }
 
+const TEST_FILE = /\/src\/test\/|\.(test|spec)\.[jt]sx?$|(^|\/)__tests__\//;
+const SOURCE_FILE = /^(api|executor|registry)\/(.*\/)?src\/main\/java\/.*\.java$|^ui\/src\/.*\.[jt]sx?$/;
+
 function lacksTests(files) {
-  const isTest = (p) => /\/src\/test\//.test(p) || /\.(test|spec)\.[jt]sx?$/.test(p) || /(^|\/)__tests__\//.test(p);
-  const isSource = (p) =>
-    (/^(api|executor|registry)\/.*\/src\/main\/java\/.*\.java$/.test(p) || /^(api|executor|registry)\/src\/main\/java\/.*\.java$/.test(p)) ||
-    /^ui\/src\/.*\.[jt]sx?$/.test(p);
   const names = files.map((f) => f.filename);
-  return names.some(isSource) && !names.some(isTest);
+  return names.some((n) => SOURCE_FILE.test(n)) && !names.some((n) => TEST_FILE.test(n));
 }
 
 /**

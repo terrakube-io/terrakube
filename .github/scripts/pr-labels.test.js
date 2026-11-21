@@ -57,3 +57,12 @@ test('bots are labelled but not nagged', () => {
 test('breaking change', () => {
   assert.ok(computeLabels({ ...base, title: 'feat(api)!: drop x' }, [f('a.md')], []).add.includes('breaking-change'));
 });
+
+test('lacksTests recognises java and ui sources and their tests', () => {
+  const { lacksTests } = require('./pr-labels.js');
+  assert.equal(lacksTests([f('api/src/main/java/io/x/A.java')]), true);
+  assert.equal(lacksTests([f('ui/src/modules/A.tsx')]), true);
+  assert.equal(lacksTests([f('ui/src/modules/A.tsx'), f('ui/src/modules/A.test.tsx')]), false);
+  assert.equal(lacksTests([f('executor/src/main/java/A.java'), f('executor/src/test/java/ATest.java')]), false);
+  assert.equal(lacksTests([f('docs/a.md'), f('api/pom.xml')]), false);
+});
