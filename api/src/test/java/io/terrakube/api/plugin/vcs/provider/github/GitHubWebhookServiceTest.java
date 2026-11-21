@@ -781,6 +781,24 @@ public class GitHubWebhookServiceTest {
             assertEquals(expected, GitHubWebhookService.graphqlUrl(apiUrl));
         }
 
+        @ParameterizedTest
+        @ValueSource(strings = {"https://api.github.com", "https://ghe.example.com/api/v3/"})
+        void allowsTheGraphqlEndpointOfTheConfiguredOrigin(String apiUrl) {
+            assertTrue(GitHubWebhookService.isAllowedGraphqlUrl(apiUrl, GitHubWebhookService.graphqlUrl(apiUrl)));
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = {"https://api.github.com?x=1", "https://api.github.com/#frag",
+                "https://user@api.github.com", "https://api.github.com/../evil", "not a url"})
+        void blocksAGraphqlUrlThatIsNotAPlainEndpoint(String apiUrl) {
+            assertFalse(GitHubWebhookService.isAllowedGraphqlUrl(apiUrl, GitHubWebhookService.graphqlUrl(apiUrl)));
+        }
+
+        @Test
+        void blocksAGraphqlUrlOnAnotherOrigin() {
+            assertFalse(GitHubWebhookService.isAllowedGraphqlUrl("https://api.github.com", "https://evil.example/graphql"));
+        }
+
         static Stream<Arguments> graphqlUrls() {
             return Stream.of(
                     Arguments.of("https://api.github.com", "https://api.github.com/graphql"),

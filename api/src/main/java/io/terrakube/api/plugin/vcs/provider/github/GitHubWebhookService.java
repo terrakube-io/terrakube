@@ -676,6 +676,26 @@ public class GitHubWebhookService extends WebhookServiceBase {
         return base + "/graphql";
     }
 
+    /**
+     * The GraphQL URL sits outside the REST base path on GitHub Enterprise Server, so the REST check
+     * ({@link VcsApiUrlValidator#isAllowedForVcs}) cannot be used. It must still be on the same origin as the
+     * configured API URL, with no query, fragment or user info.
+     */
+    static boolean isAllowedGraphqlUrl(String apiUrl, String graphqlUrl) {
+        try {
+            URI base = new URI(apiUrl.trim());
+            URI candidate = new URI(graphqlUrl);
+            return VcsApiUrlValidator.isSameOrigin(base, candidate)
+                    && candidate.getRawQuery() == null
+                    && candidate.getRawFragment() == null
+                    && candidate.getRawPath() != null
+                    && candidate.getRawPath().endsWith("/graphql")
+                    && !candidate.getRawPath().contains("..");
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     public WebhookResult parseGitHubPayload(String jsonPayload, Map<String, String> headers, Vcs vcs) {
         WebhookResult result = new WebhookResult();
         result.setBranch("");
@@ -833,11 +853,16 @@ public class GitHubWebhookService extends WebhookServiceBase {
             log.warn("Blocked GitHub GraphQL request: no API URL or repository");
             return null;
         }
+        String url = graphqlUrl(vcs.getApiUrl());
+        if (!isAllowedGraphqlUrl(vcs.getApiUrl(), url)) {
+            log.warn("Blocked GitHub GraphQL request to a URL outside the configured VCS API origin");
+            return null;
+        }
         HttpHeaders headers = gitHubHeaders(vcs, ownerAndRepo);
         if (headers == null) {
             return null;
         }
-        return makeApiRequest(headers, body, graphqlUrl(vcs.getApiUrl()), HttpMethod.POST);
+        return makeApiRequest(headers, body, url, HttpMethod.POST);
     }
 
     private HttpHeaders gitHubHeaders(Vcs vcs, String[] ownerAndRepo) {
