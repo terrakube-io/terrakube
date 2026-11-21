@@ -524,6 +524,14 @@ public class GitLabWebhookServiceTest {
         }
 
         @Test
+        void isEmptyWithoutCallingGitLabWhenTheUrlLeavesTheApiPath() throws Exception {
+            doReturn("../../evil").when(subject).getGitlabProjectId(anyString(), anyString(), anyString());
+
+            assertTrue(subject.getMergeRequestApproval(workspace, 12).isEmpty());
+            wireMockServer.verify(0, getRequestedFor(urlPathMatching(".*")));
+        }
+
+        @Test
         void isEmptyWhenTheApprovalsCannotBeRead() {
             wireMockServer.stubFor(get(urlEqualTo(MR + "/approvals")).willReturn(aResponse().withStatus(403)));
             stubHead("abc123");

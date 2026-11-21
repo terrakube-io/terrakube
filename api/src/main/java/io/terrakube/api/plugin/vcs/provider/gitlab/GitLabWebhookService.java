@@ -32,6 +32,7 @@ import org.springframework.web.reactive.function.client.ExchangeFilterFunction;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.util.UriComponentsBuilder;
 import io.terrakube.api.plugin.vcs.PullRequestApproval;
+import io.terrakube.api.plugin.vcs.VcsApiUrlValidator;
 import io.terrakube.api.plugin.vcs.WebhookResult;
 import io.terrakube.api.plugin.vcs.WebhookServiceBase;
 import io.terrakube.api.rs.workspace.Workspace;
@@ -707,6 +708,12 @@ public class GitLabWebhookService extends WebhookServiceBase {
             String projectId = getGitlabProjectId(ownerAndRepo, token, workspace.getVcs().getApiUrl());
             String mergeRequestUrl = workspace.getVcs().getApiUrl() + "/projects/" + projectId + "/merge_requests/"
                     + mergeRequestIid;
+            // The token goes with these requests: they must stay on the connection's API origin and path.
+            if (!VcsApiUrlValidator.isAllowedForVcs(workspace.getVcs(), mergeRequestUrl)
+                    || !VcsApiUrlValidator.isAllowedForVcs(workspace.getVcs(), mergeRequestUrl + "/approvals")) {
+                log.warn("Blocked GitLab merge request approvals request outside the configured VCS API URL");
+                return Optional.empty();
+            }
 
             ResponseEntity<String> approvalsResponse = callGitlabApi(token, null, mergeRequestUrl + "/approvals",
                     HttpMethod.GET);
