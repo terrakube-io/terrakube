@@ -7,7 +7,10 @@ package io.terrakube.api.rs.webhook;
 public enum PrApplyRequirement {
     /** The comment author has write access to the repository (GitHub) or the Developer role (GitLab). */
     WRITE,
-    /** {@link #WRITE}, and the pull request is approved under the VCS's own rules on its current head commit. */
+    /**
+     * {@link #WRITE}, and the pull request is approved under the VCS's own rules, read for the head commit the
+     * apply runs on. Whether an approval of an earlier commit still counts is up to those rules.
+     */
     APPROVED;
 
     /** The stricter of the two; a null value counts as {@link #WRITE}, the default. */

@@ -21,13 +21,16 @@ import java.util.regex.Pattern;
  *
  * <p>The author is checked against the repository, since a VCS login does not map to a Terrakube
  * user: GitHub needs write access or more, GitLab the Developer role or more. When the provider
- * cannot be asked, the apply is refused. Bitbucket and Azure DevOps are not checked yet; their
- * comments keep working as before and are logged.
+ * cannot be asked, the apply is refused. Bitbucket and Azure DevOps are not checked yet; with the
+ * default {@link PrApplyRequirement#WRITE} their comments keep working as before and are logged, and
+ * when an approval is required they are refused, since nothing can confirm it.
  *
  * <p>With {@link PrApplyRequirement#APPROVED} (on the pull request trigger, or as the organization
  * minimum), the pull request must also be approved under the VCS's own rules. The decision is read
  * for the commit the apply will run on: the job checks out the head commit read when the comment
  * arrived, so if the head has moved since, the apply is refused and has to be asked for again.
+ * Whether an approval given on an earlier commit still counts is the VCS's rule (dismiss stale
+ * approvals on GitHub, reset approvals on push on GitLab).
  */
 @Slf4j
 @Service
@@ -58,6 +61,12 @@ public class PrApplyAuthorizationService {
         Vcs vcs = workspace.getVcs();
         String author = webhookResult.getCreatedBy();
         if (vcs == null || vcs.getVcsType() == null) {
+            if (requirement == PrApplyRequirement.APPROVED) {
+                // Fail closed: an approval was asked for and nothing can confirm it.
+                log.warn("Refusing PR apply comment by {} on workspace {}: approval required but no VCS connection",
+                        author, workspace.getName());
+                return Optional.of(cannotCheck(whoOf(author)));
+            }
             log.warn("PR apply comment on workspace {} has no VCS connection to check the author against",
                     workspace.getName());
             return Optional.empty();
@@ -72,11 +81,21 @@ public class PrApplyAuthorizationService {
                     .or(() -> checkApproval(requirement, workspace, webhookResult, author,
                             () -> gitLabWebhookService.getMergeRequestApproval(workspace, prNumber(webhookResult))));
             default -> {
+                if (requirement == PrApplyRequirement.APPROVED) {
+                    // Fail closed: approvals cannot be read from this provider yet.
+                    log.warn("Refusing PR apply comment by {} on workspace {}: approval required, not checked for {}",
+                            author, workspace.getName(), vcs.getVcsType());
+                    yield Optional.of(approvalNotSupported(whoOf(author)));
+                }
                 log.warn("PR apply comment by {} on workspace {} is not checked: no permission check for {}",
                         author, workspace.getName(), vcs.getVcsType());
                 yield Optional.empty();
             }
         };
+    }
+
+    private static String whoOf(String author) {
+        return author == null || author.isBlank() ? "unknown user" : author;
     }
 
     private static int prNumber(WebhookResult webhookResult) {
@@ -92,7 +111,7 @@ public class PrApplyAuthorizationService {
         if (requirement != PrApplyRequirement.APPROVED) {
             return Optional.empty();
         }
-        String who = author == null || author.isBlank() ? "unknown user" : author;
+        String who = whoOf(author);
         String commit = webhookResult.getCommit();
         if (prNumber(webhookResult) <= 0 || commit == null || commit.isBlank()) {
             log.error("PR apply comment by {} on workspace {} has no pull request number or commit to check", who,
@@ -133,7 +152,7 @@ public class PrApplyAuthorizationService {
     }
 
     private Optional<String> checkGitLab(Workspace workspace, String author, String authorId) {
-        String who = author == null || author.isBlank() ? "unknown user" : author;
+        String who = whoOf(author);
         if (authorId == null || authorId.isBlank()) {
             return Optional.of(cannotCheck(who));
         }
@@ -162,6 +181,11 @@ public class PrApplyAuthorizationService {
     private static String notApproved(String author, String decision) {
         return "%s cannot apply from a comment: this workspace requires the pull request to be approved first (current state: %s). Comment again once it is approved, or apply this plan from the Terrakube UI."
                 .formatted(mention(author), decision);
+    }
+
+    private static String approvalNotSupported(String author) {
+        return "%s cannot apply from a comment: this workspace requires an approved pull request, and Terrakube cannot check approvals on this VCS provider yet. Apply this plan from the Terrakube UI."
+                .formatted(mention(author));
     }
 
     private static String headMoved(String author) {

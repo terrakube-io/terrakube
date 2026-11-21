@@ -307,10 +307,35 @@ class PrApplyAuthorizationServiceTest {
         }
 
         @ParameterizedTest
-        @EnumSource(value = VcsType.class, names = {"BITBUCKET", "AZURE_DEVOPS"})
-        void providersWithoutACheckKeepApplying(VcsType type) {
+        @EnumSource(value = VcsType.class, names = {"BITBUCKET", "AZURE_DEVOPS", "AZURE_SP_MI"})
+        void providersThatCannotCheckApprovalsAreRefused(VcsType type) {
             assertThat(subject.refusalReason(workspace(type), approvedComment("anyone", null),
-                    PrApplyRequirement.APPROVED)).isEmpty();
+                    PrApplyRequirement.APPROVED))
+                    .hasValueSatisfying(reason -> assertThat(reason)
+                            .contains("@anyone cannot apply")
+                            .contains("cannot check approvals on this VCS provider"));
+            verifyNoInteractions(gitHub, gitLab);
+        }
+
+        @Test
+        void providersThatCannotCheckApprovalsAreRefusedByTheOrganizationMinimum() {
+            Workspace workspace = workspace(VcsType.BITBUCKET);
+            Organization organization = new Organization();
+            organization.setPrApplyMinRequirement(PrApplyRequirement.APPROVED);
+            workspace.setOrganization(organization);
+
+            assertThat(subject.refusalReason(workspace, approvedComment("anyone", null), PrApplyRequirement.WRITE))
+                    .isPresent();
+        }
+
+        @Test
+        void aWorkspaceWithoutAVcsConnectionIsRefused() {
+            Workspace workspace = workspace(VcsType.GITHUB);
+            workspace.setVcs(null);
+
+            assertThat(subject.refusalReason(workspace, approvedComment("anyone", null),
+                    PrApplyRequirement.APPROVED))
+                    .hasValueSatisfying(reason -> assertThat(reason).contains("Could not check whether @anyone"));
             verifyNoInteractions(gitHub, gitLab);
         }
     }
