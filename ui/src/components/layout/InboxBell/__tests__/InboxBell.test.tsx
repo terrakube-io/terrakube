@@ -2,21 +2,25 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { InboxBell } from "../InboxBell";
 import { emptyCounts, InboxData, InboxItem } from "@/modules/inbox/inboxModel";
-import { loadInbox } from "@/modules/inbox/inboxService";
+import { loadInbox, loadOrganizationCounts } from "@/modules/inbox/inboxService";
+import { listOrganizationNames } from "@/modules/navigation/navigationService";
 import { confirmApprove } from "@/modules/inbox/confirmApprove";
 
-jest.mock("@/modules/navigation/navigationService", () => ({
-  listOrganizationNames: jest.fn().mockResolvedValue([{ id: "org", name: "aws" }]),
-}));
-jest.mock("@/modules/inbox/inboxService", () => ({ loadInbox: jest.fn() }));
+jest.mock("@/modules/navigation/navigationService", () => ({ listOrganizationNames: jest.fn() }));
+jest.mock("@/modules/inbox/inboxService", () => ({ loadInbox: jest.fn(), loadOrganizationCounts: jest.fn() }));
+jest.mock("@/hooks/useOrganizationName", () => ({ useOrganizationName: (id: string) => (id ? "aws" : undefined) }));
 jest.mock("@/modules/inbox/confirmApprove", () => ({ confirmApprove: jest.fn() }));
 
 const load = loadInbox as jest.Mock;
+const others = loadOrganizationCounts as jest.Mock;
+const organizations = listOrganizationNames as jest.Mock;
+
+const ORG = "3a130a1c-d96f-4f99-83b8-58d472567e3a";
 
 const item = (kind: InboxItem["kind"], name: string): InboxItem => ({
   key: `${kind}:${name}`,
   kind,
-  orgId: "org",
+  orgId: ORG,
   orgName: "aws",
   workspaceId: name,
   name,
@@ -29,15 +33,20 @@ const data = (items: InboxItem[], counts: Partial<InboxData["counts"]> = {}): In
   failedOrganizations: [],
 });
 
-const renderBell = () =>
+const renderBell = (path = `/organizations/${ORG}/overview`) =>
   render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[path]}>
       <InboxBell />
     </MemoryRouter>
   );
 
 describe("InboxBell", () => {
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => {
+    jest.resetAllMocks();
+    sessionStorage.clear();
+    organizations.mockResolvedValue([{ id: ORG, name: "aws" }]);
+    others.mockResolvedValue({ rows: [], failedOrganizations: [] });
+  });
 
   it("shows how many things need attention without being opened", async () => {
     load.mockResolvedValue(data([item("waiting", "ws-1"), item("failed", "ws-2")], { waiting: 1, failed: 1 }));
@@ -52,7 +61,7 @@ describe("InboxBell", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "Needs attention" }));
 
-    expect(await screen.findByText("Nothing needs attention.")).toBeInTheDocument();
+    expect(await screen.findByText("Nothing needs attention here.")).toBeInTheDocument();
   });
 
   it("lists the first items, approvals first, and links to the full page with the real total", async () => {
@@ -68,7 +77,7 @@ describe("InboxBell", () => {
     expect(await screen.findByText("ws-wait")).toBeInTheDocument();
     expect(screen.getByText("ws-failed-4")).toBeInTheDocument();
     expect(screen.queryByText("ws-failed-5")).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "View all 8" })).toHaveAttribute("href", "/inbox");
+    expect(screen.getByRole("link", { name: "View all 8" })).toHaveAttribute("href", `/inbox?org=${ORG}`);
   });
 
   it("approves a waiting run from the list and reloads afterwards", async () => {
@@ -99,5 +108,76 @@ describe("InboxBell", () => {
 
     await waitFor(() => expect(screen.getByText("Could not load what needs attention.")).toBeInTheDocument());
     expect(screen.queryByText("Nothing needs attention.")).not.toBeInTheDocument();
+  });
+
+  it("only reads the organization the person is working in", async () => {
+    load.mockResolvedValue(data([item("failed", "ws-1")], { failed: 1 }));
+    renderBell();
+
+    await screen.findByRole("button", { name: "Needs attention, 1 item" });
+
+    expect(load).toHaveBeenCalledTimes(1);
+    expect(load).toHaveBeenCalledWith([{ id: ORG, name: "aws" }]);
+    expect(organizations).not.toHaveBeenCalled();
+    expect(others).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the organization the person was last in when the address has none", async () => {
+    sessionStorage.setItem("ORGANIZATION_ARCHIVE", ORG);
+    load.mockResolvedValue(data([], {}));
+    renderBell("/inbox");
+
+    await waitFor(() => expect(load).toHaveBeenCalledWith([{ id: ORG, name: "aws" }]));
+  });
+
+  it("reads nothing at all with no organization to work in", async () => {
+    renderBell("/organizations");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Needs attention" }));
+
+    await waitFor(() => expect(organizations).toHaveBeenCalled());
+    expect(load).not.toHaveBeenCalled();
+  });
+
+  it("counts the other organizations only when the panel is opened, and says where the rest are", async () => {
+    load.mockResolvedValue(data([item("failed", "ws-1")], { failed: 1 }));
+    organizations.mockResolvedValue([
+      { id: ORG, name: "aws" },
+      { id: "b", name: "Acme" },
+      { id: "c", name: "Initech" },
+    ]);
+    others.mockResolvedValue({
+      rows: [
+        { org: { id: "b", name: "Acme" }, counts: { waiting: 2, failed: 3, drifted: 0, policy: 0 } },
+        { org: { id: "c", name: "Initech" }, counts: { waiting: 0, failed: 0, drifted: 0, policy: 0 } },
+      ],
+      failedOrganizations: [],
+    });
+    renderBell();
+    await screen.findByRole("button", { name: "Needs attention, 1 item" });
+    expect(others).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Needs attention, 1 item" }));
+
+    const link = await screen.findByRole("link", { name: "5 more in 1 other organization" });
+    expect(link).toHaveAttribute("href", "/inbox?org=all");
+    // The organization the person is in is not counted twice.
+    expect(others).toHaveBeenCalledWith([
+      { id: "b", name: "Acme" },
+      { id: "c", name: "Initech" },
+    ]);
+  });
+
+  it("does not count a long list of organizations, and sends the person to the inbox instead", async () => {
+    load.mockResolvedValue(data([], {}));
+    organizations.mockResolvedValue(
+      Array.from({ length: 30 }, (_, index) => ({ id: `o${index}`, name: `Org ${index}` }))
+    );
+    renderBell();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Needs attention" }));
+
+    expect(await screen.findByRole("link", { name: "Other organizations" })).toHaveAttribute("href", "/inbox?org=all");
+    expect(others).not.toHaveBeenCalled();
   });
 });

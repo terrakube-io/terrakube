@@ -33,7 +33,7 @@ import {
   ThunderboltOutlined,
 } from "@ant-design/icons";
 import { useWorkspaceOrigin } from "@/modules/workspaces/workspaceOrigin";
-import { Button, Layout, Menu, Tag } from "antd";
+import { Layout, Menu, Tag } from "antd";
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { ORGANIZATION_ARCHIVE, ORGANIZATION_NAME } from "@/config/actionTypes";
@@ -55,6 +55,9 @@ const { Sider } = Layout;
 // Same query antd's Sider uses for breakpoint="md"; read synchronously so a phone
 // never paints the desktop sidebar first.
 const MOBILE_QUERY = "(max-width: 767.98px)";
+
+// The key the palette opens on, as the person's keyboard names it.
+const SHORTCUT = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform) ? "\u2318K" : "Ctrl K";
 
 type Props = {
   organizationName: string;
@@ -626,15 +629,6 @@ export default function AppSidebar({
             <div className="app-sidebar-header-actions">
               {!effectiveCollapsed && (
                 <div className="app-sidebar-utility">
-                  <Button
-                    type="text"
-                    size="small"
-                    icon={<SearchOutlined />}
-                    aria-label="Search organizations, projects and workspaces (Ctrl or Cmd plus K)"
-                    title="Search (Ctrl/Cmd+K)"
-                    onClick={openCommandPalette}
-                    className="app-sidebar-search"
-                  />
                   <InboxBell />
                   <HelpMenu />
                   <UserMenu />
@@ -653,6 +647,21 @@ export default function AppSidebar({
               )}
             </div>
           </div>
+          {!effectiveCollapsed && (
+            // A field to look at, not an icon to find: search is the quickest way to anywhere in the application.
+            <div className="app-sidebar-search-row">
+              <button
+                type="button"
+                className="app-sidebar-search-box"
+                aria-label="Search organizations, projects and workspaces (Ctrl or Cmd plus K)"
+                onClick={openCommandPalette}
+              >
+                <SearchOutlined />
+                <span className="app-sidebar-search-text">Search</span>
+                <kbd className="app-sidebar-search-key">{SHORTCUT}</kbd>
+              </button>
+            </div>
+          )}
           {canCollapse && (
             // A tab on the sidebar's edge: always in the same place, collapsed or not.
             <button
