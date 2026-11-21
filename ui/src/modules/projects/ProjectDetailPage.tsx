@@ -24,6 +24,9 @@ import { PermissionErrorMessage } from "@/components/feedback/PermissionErrorMes
 import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
 import "./Projects.css";
 
+// The banner explains what the person may do here, so it belongs where they act on access: not on every list.
+const SECTIONS_WITH_ACCESS_BANNER: string[] = ["overview", "teams", "settings"];
+
 type Props = {
   organizationName: string;
   setOrganizationName: React.Dispatch<React.SetStateAction<string>>;
@@ -45,7 +48,6 @@ type GeneralProps = {
   assignedWorkspacesCount: number;
   manageWorkspace: boolean;
   canUpdateProject: boolean;
-  canManageCollection: boolean;
   onSaved: () => void;
 };
 
@@ -56,7 +58,6 @@ function ProjectGeneralSettings({
   assignedWorkspacesCount,
   manageWorkspace,
   canUpdateProject,
-  canManageCollection,
   onSaved,
 }: GeneralProps) {
   const [waiting, setWaiting] = useState(false);
@@ -201,10 +202,6 @@ function ProjectGeneralSettings({
         </Form>
       </Spin>
 
-      <ProjectVariablesTab orgid={orgid} projectId={projectId} canManage={canManageCollection} />
-
-      <ProjectEffectiveVariables orgid={orgid} projectId={projectId} />
-
       <ProjectDefaultTags orgid={orgid} projectId={projectId} canManage={canUpdateProject} />
 
       <div className="project-delete-section">
@@ -316,6 +313,13 @@ export default function ProjectDetailPage({ organizationName, setOrganizationNam
         return <ProjectPoliciesTab orgid={orgid!} projectId={id!} />;
       case "teams":
         return <ProjectAccessTab orgid={orgid!} projectId={id!} canManage={canManageProject} />;
+      case "variables":
+        return (
+          <>
+            <ProjectVariablesTab orgid={orgid!} projectId={id!} canManage={permissions.manageCollection} />
+            <ProjectEffectiveVariables orgid={orgid!} projectId={id!} />
+          </>
+        );
       case "settings":
         return (
           <ProjectGeneralSettings
@@ -325,7 +329,6 @@ export default function ProjectDetailPage({ organizationName, setOrganizationNam
             assignedWorkspacesCount={summary?.workspaceCount ?? 0}
             manageWorkspace={permissions.manageWorkspace}
             canUpdateProject={canManageProject}
-            canManageCollection={permissions.manageCollection}
             onSaved={execute}
           />
         );
@@ -345,10 +348,13 @@ export default function ProjectDetailPage({ organizationName, setOrganizationNam
   };
 
   const level = projectPermissions.accessLevel;
+  const accessLevelLabel = (value: string) =>
+    value === "custom" ? "Custom permissions" : value.charAt(0).toUpperCase() + value.slice(1);
   const through = projectPermissions.grantedThrough;
 
   return (
     <PageWrapper
+      width="full"
       title={project?.name ?? "Project"}
       subTitle={project?.description || `Project in the ${organizationName} organization`}
       loadingText="Loading project..."
@@ -387,14 +393,14 @@ export default function ProjectDetailPage({ organizationName, setOrganizationNam
         </Space>
       }
     >
-      {level && (
+      {level && SECTIONS_WITH_ACCESS_BANNER.includes(section) && (
         <Alert
           type="info"
           showIcon={false}
           className="project-access-banner"
           message={
             <>
-              Your access in this project: <strong>{level.charAt(0).toUpperCase() + level.slice(1)}</strong>
+              Your access in this project: <strong>{accessLevelLabel(level)}</strong>
               {through.length > 0 && (
                 <>
                   , through {through.length === 1 ? "team" : "teams"} <strong>{through.join(", ")}</strong>

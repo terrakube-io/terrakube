@@ -1,6 +1,7 @@
 import { Alert, Button, Card, Select, Skeleton, Tooltip, Typography } from "antd";
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
+import { EmptyState } from "@/components/feedback/EmptyState";
 import { ProjectSummaryModel } from "@/domain/types";
 import projectService, { ProjectWorkspaceBrief } from "./projectService";
 import { ProjectHealthBar } from "./ProjectHealthBar";
@@ -62,6 +63,7 @@ export default function ProjectOverview({ orgid, summary, loading, failed = fals
   const [landing, setLanding] = useState<ProjectTab | "default">(() => getStoredLandingTab() ?? "default");
   const [attention, setAttention] = useState<ProjectWorkspaceBrief[]>([]);
   const [recent, setRecent] = useState<ProjectWorkspaceBrief[]>([]);
+  const navigate = useNavigate();
   const projectId = summary?.id;
   const attentionCount = summary?.attentionCount ?? 0;
   const workspaceCount = summary?.workspaceCount ?? 0;
@@ -108,6 +110,19 @@ export default function ProjectOverview({ orgid, summary, loading, failed = fals
 
   return (
     <div className="project-overview">
+      {summary.workspaceCount === 0 && (
+        <Card size="small">
+          <EmptyState description="No workspaces in this project yet.">
+            <Button
+              type="primary"
+              onClick={() => navigate(`/organizations/${orgid}/workspaces/create?projectId=${summary.id}`)}
+            >
+              New workspace
+            </Button>
+            <Button onClick={() => onOpenTab("workspaces")}>Move existing</Button>
+          </EmptyState>
+        </Card>
+      )}
       <div className="project-tiles">
         <Tile value={summary.workspaceCount} label="workspaces" to={projectWorkspacesLink(orgid, summary.id)} />
         <Tile
@@ -125,7 +140,7 @@ export default function ProjectOverview({ orgid, summary, loading, failed = fals
         />
         <Tile
           value={summary.teamCount}
-          label="teams with access"
+          label="teams with project access"
           to={`/organizations/${orgid}/projects/${summary.id}/teams`}
         />
       </div>
@@ -138,7 +153,12 @@ export default function ProjectOverview({ orgid, summary, loading, failed = fals
           hrefFor={(key) => projectWorkspacesLink(orgid, summary.id, { status: statusForHealth(key) })}
         />
         <Typography.Paragraph type="secondary" className="project-overview-meta">
-          Last run: {summary.lastRunAt ? new Date(summary.lastRunAt).toLocaleString() : "Never"}
+          Last run:{" "}
+          {summary.lastRunAt ? (
+            <span title={new Date(summary.lastRunAt).toLocaleString()}>{shortAgo(summary.lastRunAt)}</span>
+          ) : (
+            "Never"
+          )}
           {summary.lockedCount > 0 && ` · ${summary.lockedCount} locked`}
         </Typography.Paragraph>
       </Card>
