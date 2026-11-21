@@ -1,7 +1,7 @@
 import dayjs, { type Dayjs } from "dayjs";
 import { ProjectSummaryModel } from "@/domain/types";
 
-export type HealthKey = "completed" | "failed" | "running" | "queued" | "waiting" | "never";
+export type HealthKey = "completed" | "failed" | "running" | "queued" | "waiting" | "never" | "noStatus";
 
 export type HealthSegment = { key: HealthKey; label: string; count: number };
 
@@ -13,7 +13,9 @@ export function healthSegments(summary: ProjectSummaryModel): HealthSegment[] {
     { key: "running", label: "Running", count: summary.runningCount },
     { key: "queued", label: "Queued", count: summary.queuedCount },
     { key: "waiting", label: "Waiting approval", count: summary.waitingApprovalCount },
-    { key: "never", label: "Never executed", count: summary.neverRunCount },
+    // A CLI workspace on local execution is never run by Terrakube, so it is not "waiting to be run" like the rest.
+    { key: "never", label: "Never executed", count: Math.max(0, summary.neverRunCount - summary.noRunStatusCount) },
+    { key: "noStatus", label: "No run status", count: summary.noRunStatusCount },
   ];
 }
 

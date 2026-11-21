@@ -1,0 +1,75 @@
+.inbox-bell-badge {
+  /* The count hangs off the right of the icon, so keep it clear of the help button next to it. */
+  margin-right: 10px;
+}
+
+.inbox-bell-badge .ant-badge-count {
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.inbox-bell {
+  color: var(--tk-sidebar-text);
+}
+
+.inbox-bell-panel {
+  width: 360px;
+  max-width: calc(100vw - 48px);
+}
+
+.inbox-bell-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.inbox-bell-warning {
+  display: block;
+  margin-bottom: 8px;
+}
+
+.inbox-bell-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.inbox-bell-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-top: 1px solid var(--tk-border-secondary);
+}
+
+.inbox-bell-item-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.inbox-bell-item-main a {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.inbox-bell-item-sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.inbox-bell-others {
+  display: block;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--tk-border-secondary);
+}

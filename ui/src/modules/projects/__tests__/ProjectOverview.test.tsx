@@ -36,6 +36,9 @@ const summary = {
   exemptedCount: 0,
   queuedJobCount: 0,
   lockedCount: 2,
+  cliDrivenCount: 2,
+  vcsDrivenCount: 3,
+  noRunStatusCount: 0,
   attentionCount: 1,
   teamCount: 2,
 };
@@ -107,6 +110,37 @@ describe("ProjectOverview", () => {
     expect(screen.getByRole("link", { name: "5 workspaces" })).toBeInTheDocument();
     expect(screen.getByText(/2 locked/)).toBeInTheDocument();
     expect(screen.queryByText(/queued now/)).not.toBeInTheDocument();
+  });
+
+  it("says how many workspaces run from a repository and how many are driven from the CLI", () => {
+    renderOverview({ summary, loading: false, onOpenTab: jest.fn() });
+
+    expect(screen.getByText(/3 VCS/)).toBeInTheDocument();
+    expect(screen.getByText("2 CLI")).toBeInTheDocument();
+  });
+
+  it("shows the workspaces that will never have a run status apart from the ones not run yet", () => {
+    renderOverview({
+      summary: { ...summary, workspaceCount: 5, completedCount: 1, neverRunCount: 4, noRunStatusCount: 3 },
+      loading: false,
+      onOpenTab: jest.fn(),
+    });
+
+    expect(screen.getByText("3 no run status")).toBeInTheDocument();
+    expect(screen.getByText("1 never executed")).toBeInTheDocument();
+    // Nothing is listed for a workspace that has no status, so it is plain text rather than a link.
+    expect(screen.queryByRole("link", { name: "3 no run status" })).not.toBeInTheDocument();
+  });
+
+  it("leaves the CLI and repository counts out of an empty project", () => {
+    renderOverview({
+      summary: { ...summary, workspaceCount: 0, cliDrivenCount: 0, vcsDrivenCount: 0 },
+      loading: false,
+      onOpenTab: jest.fn(),
+    });
+
+    expect(screen.queryByText(/VCS/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/ CLI/)).not.toBeInTheDocument();
   });
 
   it("adds the longest wait to the queue, which links to the pending workspaces", () => {

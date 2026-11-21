@@ -24,6 +24,10 @@ jest.mock("@/components/layout/HelpMenu", () => ({
   HelpMenu: () => <div data-testid="help-menu" />,
 }));
 
+jest.mock("@/components/layout/InboxBell", () => ({
+  InboxBell: () => <div data-testid="inbox-bell" />,
+}));
+
 jest.mock("@/components/layout/UserMenu", () => ({
   UserMenu: () => <div data-testid="user-menu" />,
 }));

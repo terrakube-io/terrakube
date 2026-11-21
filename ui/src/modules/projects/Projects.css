@@ -151,6 +151,13 @@
   background: var(--tk-border-secondary, #d9d9d9);
 }
 
+/* Dotted, so "no run status" does not rely on being a lighter grey than "never executed". */
+.project-health-segment.health-noStatus,
+.health-noStatus {
+  background: radial-gradient(circle, var(--tk-text-quaternary, #bfbfbf) 1px, var(--tk-bg-container, #fff) 1.5px) 0 0 /
+    4px 4px;
+}
+
 .project-health-empty {
   color: var(--tk-text-secondary, #8c8c8c);
   font-size: 12px;

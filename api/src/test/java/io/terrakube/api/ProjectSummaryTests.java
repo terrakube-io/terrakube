@@ -77,6 +77,49 @@ class ProjectSummaryTests extends ServerApplicationTests {
     }
 
     @Test
+    void summaryCountsCliWorkspacesOnLocalExecutionThatNeverRanApartFromOtherNeverRunOnes() {
+        // b7 never ran. On local execution with no repository it never will, so it has no run status to show.
+        jdbcTemplate.update("update workspace set execution_mode = 'local' where project_id = ? and name like 'health-b7-%'",
+                busy.getId().toString());
+        // A local workspace that did run (b1) is not counted, and neither is a remote one that never ran.
+        jdbcTemplate.update("update workspace set execution_mode = 'local' where project_id = ? and name like 'health-b1-%'",
+                busy.getId().toString());
+
+        Map<String, Object> node = firstNode(summaries("name==health-busy", null, 10,
+                "neverRunCount noRunStatusCount"));
+
+        org.junit.jupiter.api.Assertions.assertEquals(1, ((Number) node.get("neverRunCount")).intValue());
+        org.junit.jupiter.api.Assertions.assertEquals(1, ((Number) node.get("noRunStatusCount")).intValue());
+
+        // The same workspace on remote execution can still be run, so it is only never run.
+        jdbcTemplate.update("update workspace set execution_mode = 'remote' where project_id = ? and name like 'health-b7-%'",
+                busy.getId().toString());
+        Map<String, Object> remote = firstNode(summaries("name==health-busy", null, 10,
+                "neverRunCount noRunStatusCount"));
+        org.junit.jupiter.api.Assertions.assertEquals(1, ((Number) remote.get("neverRunCount")).intValue());
+        org.junit.jupiter.api.Assertions.assertEquals(0, ((Number) remote.get("noRunStatusCount")).intValue());
+    }
+
+    @Test
+    void summarySeparatesCliDrivenFromRepositoryDrivenWorkspaces() {
+        // Every seeded workspace is CLI driven (no repository); give two of the live ones a repository.
+        jdbcTemplate.update("update workspace set source = 'https://example.com/r.git', branch = 'main' "
+                + "where project_id = ? and (name like 'health-b1-%' or name like 'health-b2-%')", busy.getId().toString());
+
+        Map<String, Object> node = firstNode(summaries("name==health-busy", null, 10,
+                "workspaceCount cliDrivenCount vcsDrivenCount"));
+
+        org.junit.jupiter.api.Assertions.assertEquals(7, ((Number) node.get("workspaceCount")).intValue());
+        org.junit.jupiter.api.Assertions.assertEquals(5, ((Number) node.get("cliDrivenCount")).intValue());
+        org.junit.jupiter.api.Assertions.assertEquals(2, ((Number) node.get("vcsDrivenCount")).intValue());
+
+        Map<String, Object> none = firstNode(summaries("name==health-empty", null, 10,
+                "workspaceCount cliDrivenCount vcsDrivenCount"));
+        org.junit.jupiter.api.Assertions.assertEquals(0, ((Number) none.get("cliDrivenCount")).intValue());
+        org.junit.jupiter.api.Assertions.assertEquals(0, ((Number) none.get("vcsDrivenCount")).intValue());
+    }
+
+    @Test
     void summaryCountsWorkspacesByStatusAndIgnoresDeletedOnes() {
         Map<String, Object> node = firstNode(summaries("name==health-busy", null, 10,
                 "workspaceCount completedCount failedCount runningCount queuedCount waitingApprovalCount "
