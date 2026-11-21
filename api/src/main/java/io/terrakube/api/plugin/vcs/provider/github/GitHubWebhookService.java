@@ -21,6 +21,7 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.stereotype.Service;
+import io.terrakube.api.plugin.vcs.PullRequestApproval;
 import io.terrakube.api.plugin.vcs.TokenService;
 import io.terrakube.api.plugin.vcs.VcsApiUrlValidator;
 import io.terrakube.api.plugin.vcs.WebhookResult;
@@ -38,6 +39,7 @@ import io.terrakube.api.rs.workspace.Workspace;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -613,6 +615,67 @@ public class GitHubWebhookService extends WebhookServiceBase {
         }
     }
 
+    static final String REVIEW_DECISION_QUERY = "query($owner: String!, $name: String!, $number: Int!) {"
+            + " repository(owner: $owner, name: $name) { pullRequest(number: $number) { reviewDecision headRefOid } } }";
+
+    /**
+     * The review decision of a pull request (GraphQL {@code reviewDecision}), which applies branch
+     * protection, dismissed and stale reviews and required code owner review. Needs the "Pull requests:
+     * read" permission. Empty when GitHub could not be asked, so a caller that gates on it can refuse.
+     */
+    public Optional<PullRequestApproval> getPullRequestApproval(Vcs vcs, String source, int prNumber) {
+        String[] ownerAndRepo = extractOwnerAndRepo(source);
+        if (prNumber <= 0 || ownerAndRepo == null || ownerAndRepo.length < 2) {
+            return Optional.empty();
+        }
+        String repository = String.join("/", ownerAndRepo);
+        try {
+            ObjectNode variables = objectMapper.createObjectNode()
+                    .put("owner", ownerAndRepo[0])
+                    .put("name", ownerAndRepo[1])
+                    .put("number", prNumber);
+            ObjectNode query = objectMapper.createObjectNode().put("query", REVIEW_DECISION_QUERY);
+            query.set("variables", variables);
+            ResponseEntity<String> response = callGitHubGraphql(vcs, ownerAndRepo,
+                    objectMapper.writeValueAsString(query));
+            if (response == null || !response.getStatusCode().is2xxSuccessful()) {
+                log.error("Could not read the review decision of pull request {} on {}", prNumber, repository);
+                return Optional.empty();
+            }
+            JsonNode root = objectMapper.readTree(response.getBody());
+            JsonNode pullRequest = root.path("data").path("repository").path("pullRequest");
+            if (root.hasNonNull("errors") || !pullRequest.isObject()) {
+                log.error("Could not read the review decision of pull request {} on {}: {}", prNumber, repository,
+                        root.path("errors"));
+                return Optional.empty();
+            }
+            // Null when no branch protection requires a review: not approved under the repository's rules.
+            String decision = pullRequest.path("reviewDecision").asText("");
+            String headSha = pullRequest.path("headRefOid").asText(null);
+            return Optional.of(new PullRequestApproval("APPROVED".equals(decision),
+                    decision.isEmpty() ? "no review required" : decision, headSha));
+        } catch (Exception e) {
+            log.error("Could not read the review decision of pull request {} on {}: {}", prNumber, repository,
+                    e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * The GraphQL endpoint for a REST API URL: {@code https://api.github.com/graphql} on github.com,
+     * {@code https://HOST/api/graphql} on GitHub Enterprise Server ({@code https://HOST/api/v3}).
+     */
+    static String graphqlUrl(String apiUrl) {
+        String base = apiUrl.trim();
+        while (base.endsWith("/")) {
+            base = base.substring(0, base.length() - 1);
+        }
+        if (base.endsWith("/api/v3")) {
+            return base.substring(0, base.length() - "/v3".length()) + "/graphql";
+        }
+        return base + "/graphql";
+    }
+
     public WebhookResult parseGitHubPayload(String jsonPayload, Map<String, String> headers, Vcs vcs) {
         WebhookResult result = new WebhookResult();
         result.setBranch("");
@@ -751,7 +814,34 @@ public class GitHubWebhookService extends WebhookServiceBase {
             return null;
         }
 
-        String token = "";
+        HttpHeaders headers = gitHubHeaders(vcs, ownerAndRepo);
+        if (headers == null) {
+            return null;
+        }
+        return makeApiRequest(headers, body, apiUrl, httpMethod);
+    }
+
+    /**
+     * POSTs a GraphQL query. The URL comes from the configured API URL, never from a payload; on GitHub
+     * Enterprise Server it sits outside the REST base path, so it does not go through the REST URL check.
+     */
+    private ResponseEntity<String> callGitHubGraphql(Vcs vcs, String[] ownerAndRepo, String body) {
+        if (vcs == null || vcs.getApiUrl() == null || vcs.getApiUrl().isBlank()
+                || ownerAndRepo == null || ownerAndRepo.length < 2
+                || ownerAndRepo[0] == null || ownerAndRepo[0].isBlank()
+                || ownerAndRepo[1] == null || ownerAndRepo[1].isBlank()) {
+            log.warn("Blocked GitHub GraphQL request: no API URL or repository");
+            return null;
+        }
+        HttpHeaders headers = gitHubHeaders(vcs, ownerAndRepo);
+        if (headers == null) {
+            return null;
+        }
+        return makeApiRequest(headers, body, graphqlUrl(vcs.getApiUrl()), HttpMethod.POST);
+    }
+
+    private HttpHeaders gitHubHeaders(Vcs vcs, String[] ownerAndRepo) {
+        String token;
         try {
             token = tokenService.getAccessToken(ownerAndRepo, vcs);
         } catch (JsonProcessingException | NoSuchAlgorithmException | InvalidKeySpecException
@@ -764,9 +854,6 @@ public class GitHubWebhookService extends WebhookServiceBase {
         headers.set("Accept", "application/vnd.github+json");
         headers.set("Authorization", "Bearer " + token);
         headers.set("X-GitHub-Api-Version", "2022-11-28");
-
-        ResponseEntity<String> response = makeApiRequest(headers, body, apiUrl, httpMethod);
-
-        return response;
+        return headers;
     }
 }

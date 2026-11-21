@@ -403,4 +403,98 @@ public class GitLabWebhookServiceTest {
             assertTrue(body.path("push_events").asBoolean());
         }
     }
+
+    @org.junit.jupiter.api.Nested
+    class MergeRequestApproval {
+
+        static final String MR = "/projects/42/merge_requests/12";
+
+        WireMockServer wireMockServer;
+        GitLabWebhookService subject;
+        io.terrakube.api.rs.workspace.Workspace workspace;
+
+        @org.junit.jupiter.api.BeforeEach
+        void setUp() throws Exception {
+            wireMockServer = new WireMockServer(options().dynamicPort());
+            wireMockServer.start();
+            subject = spy(newService());
+            subject.setWebhookRestTemplate(new RestTemplate(new HttpComponentsClientHttpRequestFactory()));
+            doReturn("42").when(subject).getGitlabProjectId(anyString(), anyString(), anyString());
+
+            Vcs vcs = new Vcs();
+            vcs.setApiUrl("http://localhost:" + wireMockServer.port());
+            vcs.setAccessToken("token");
+            workspace = new io.terrakube.api.rs.workspace.Workspace();
+            workspace.setName("network");
+            workspace.setSource("https://gitlab.com/group/repo");
+            workspace.setVcs(vcs);
+        }
+
+        @org.junit.jupiter.api.AfterEach
+        void tearDown() {
+            wireMockServer.stop();
+        }
+
+        private void stubApprovals(String body) {
+            wireMockServer.stubFor(get(urlEqualTo(MR + "/approvals")).willReturn(aResponse().withStatus(200)
+                    .withHeader("Content-Type", "application/json").withBody(body)));
+        }
+
+        private void stubHead(String sha) {
+            wireMockServer.stubFor(get(urlEqualTo(MR)).willReturn(aResponse().withStatus(200)
+                    .withHeader("Content-Type", "application/json").withBody("{\"iid\":12,\"sha\":\"" + sha + "\"}")));
+        }
+
+        @Test
+        void approvedWithNoApprovalsLeftIsApproved() {
+            stubApprovals("{\"approved\":true,\"approvals_left\":0,\"approved_by\":[{\"user\":{\"id\":1}}]}");
+            stubHead("abc123");
+
+            var approval = subject.getMergeRequestApproval(workspace, 12);
+
+            assertTrue(approval.isPresent());
+            assertTrue(approval.get().approved());
+            assertEquals("abc123", approval.get().headSha());
+        }
+
+        @Test
+        void approvalsLeftIsNotApproved() {
+            stubApprovals("{\"approved\":false,\"approvals_left\":1,\"approved_by\":[{\"user\":{\"id\":1}}]}");
+            stubHead("abc123");
+
+            var approval = subject.getMergeRequestApproval(workspace, 12);
+
+            assertTrue(approval.isPresent());
+            assertFalse(approval.get().approved());
+            assertEquals("1 approval(s) left", approval.get().decision());
+        }
+
+        @Test
+        void noApprovalIsNotApprovedEvenWhenNoRuleRequiresOne() {
+            stubApprovals("{\"approved\":true,\"approvals_left\":0,\"approved_by\":[]}");
+            stubHead("abc123");
+
+            var approval = subject.getMergeRequestApproval(workspace, 12);
+
+            assertTrue(approval.isPresent());
+            assertFalse(approval.get().approved());
+            assertEquals("no approvals", approval.get().decision());
+        }
+
+        @Test
+        void isEmptyWhenTheApprovalsCannotBeRead() {
+            wireMockServer.stubFor(get(urlEqualTo(MR + "/approvals")).willReturn(aResponse().withStatus(403)));
+            stubHead("abc123");
+
+            assertTrue(subject.getMergeRequestApproval(workspace, 12).isEmpty());
+        }
+
+        @Test
+        void isEmptyWhenTheHeadCannotBeRead() {
+            stubApprovals("{\"approved\":true,\"approvals_left\":0,\"approved_by\":[{\"user\":{\"id\":1}}]}");
+            wireMockServer.stubFor(get(urlEqualTo(MR)).willReturn(aResponse().withStatus(500)));
+
+            assertTrue(subject.getMergeRequestApproval(workspace, 12).isEmpty());
+        }
+    }
 }

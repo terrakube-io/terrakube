@@ -39,6 +39,7 @@ import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobVia;
 import io.terrakube.api.rs.vcs.Vcs;
 import io.terrakube.api.rs.vcs.VcsType;
+import io.terrakube.api.rs.webhook.PrApplyRequirement;
 import io.terrakube.api.rs.webhook.Webhook;
 import io.terrakube.api.rs.webhook.WebhookEvent;
 import io.terrakube.api.rs.webhook.WebhookEventPathType;
@@ -253,7 +254,7 @@ public class WebhookServiceTest {
         WebhookResult result = createCommentResult("apply", 7);
         result.setCommentId("comment-7");
         doReturn(Optional.of("`reader` cannot apply")).when(prApplyAuthorizationService)
-                .refusalReason(workspace, result);
+                .refusalReason(workspace, result, PrApplyRequirement.WRITE);
 
         subject.handlePrCommentCommand(result, webhook, workspace);
 
@@ -266,6 +267,23 @@ public class WebhookServiceTest {
     }
 
     @Test
+    public void applyCommentIsCheckedAgainstTheTriggersApplyRequirement() throws Exception {
+        pullRequestEvent.setPrWorkflowEnabled(true);
+        pullRequestEvent.setPrApplyEnabled(true);
+        pullRequestEvent.setPrApplyRequirement(PrApplyRequirement.APPROVED);
+        WebhookResult result = createCommentResult("apply", 8);
+        result.setCommentId("comment-8");
+        doReturn(Optional.of("not approved")).when(prApplyAuthorizationService)
+                .refusalReason(workspace, result, PrApplyRequirement.APPROVED);
+
+        subject.handlePrCommentCommand(result, webhook, workspace);
+
+        assertFalse(workspace.isLocked());
+        verify(scheduleJobService, never()).createJobContext(any());
+        verify(prCommentService).postApplyNotAuthorizedNotice(workspace, 8, "not approved");
+    }
+
+    @Test
     public void planCommentDoesNotCheckWhetherTheAuthorMayApply() throws Exception {
         pullRequestEvent.setPrWorkflowEnabled(true);
         WebhookResult result = createCommentResult("plan", 5);
@@ -275,7 +293,7 @@ public class WebhookServiceTest {
 
         subject.handlePrCommentCommand(result, webhook, workspace);
 
-        verify(prApplyAuthorizationService, never()).refusalReason(any(), any());
+        verify(prApplyAuthorizationService, never()).refusalReason(any(), any(), any());
         verify(scheduleJobService).createJobContext(any());
     }
 

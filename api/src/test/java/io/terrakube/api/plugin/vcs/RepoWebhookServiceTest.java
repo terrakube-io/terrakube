@@ -57,6 +57,7 @@ import io.terrakube.api.rs.module.Module;
 import io.terrakube.api.rs.vcs.Vcs;
 import io.terrakube.api.rs.vcs.VcsType;
 import io.terrakube.api.rs.webhook.RepoWebhook;
+import io.terrakube.api.rs.webhook.PrApplyRequirement;
 import io.terrakube.api.rs.webhook.Webhook;
 import io.terrakube.api.rs.webhook.WebhookEvent;
 import io.terrakube.api.rs.webhook.WebhookEventPathType;
@@ -999,7 +1000,8 @@ class RepoWebhookServiceTest {
             when(gitHubWebhookService.parseGitHubPayload(eq(payload), any())).thenReturn(commentResult);
             // The v2 path hands each workspace a copy of the result, so match it by comment id.
             when(prApplyAuthorizationService.refusalReason(eq(ws),
-                    argThat(result -> "comment-apply-3".equals(result.getCommentId()))))
+                    argThat(result -> "comment-apply-3".equals(result.getCommentId())),
+                    eq(PrApplyRequirement.WRITE)))
                     .thenReturn(Optional.of("`reader` cannot apply"));
 
             Map<String, String> headers = Map.of("x-github-event", "issue_comment");

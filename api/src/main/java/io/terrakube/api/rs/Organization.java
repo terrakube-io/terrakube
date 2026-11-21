@@ -15,6 +15,7 @@ import io.terrakube.api.rs.tag.Tag;
 import io.terrakube.api.rs.team.Team;
 import io.terrakube.api.rs.template.Template;
 import io.terrakube.api.rs.vcs.Vcs;
+import io.terrakube.api.rs.webhook.PrApplyRequirement;
 import io.terrakube.api.rs.workspace.Workspace;
 import jakarta.persistence.*;
 import lombok.Getter;
@@ -109,6 +110,14 @@ public class Organization {
 
     @Column(name = "icon")
     private String icon;
+
+    /**
+     * The least a workspace may require before applying from a "terrakube apply" pull request comment.
+     * A workspace can raise it but not lower it.
+     */
+    @Column(name = "pr_apply_min_requirement")
+    @Enumerated(EnumType.STRING)
+    private PrApplyRequirement prApplyMinRequirement = PrApplyRequirement.WRITE;
 
     @UpdatePermission(expression = "user belongs organization")
     @OneToMany(mappedBy = "organization")

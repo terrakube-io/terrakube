@@ -151,4 +151,5 @@
     <include file="/db/changelog/local/changelog-2.35.0-registry-lookup-indexes.xml"/>
     <include file="/db/changelog/local/changelog-2.35.0-step-execution-duration.xml"/>
     <include file="/db/changelog/local/changelog-2.35.0-pr-comment-interim.xml"/>
+    <include file="/db/changelog/local/changelog-2.35.0-pr-apply-requirement.xml"/>
 </databaseChangeLog>

@@ -3,7 +3,7 @@ import { Loading } from "@/components/feedback/Loading";
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
-import { Organization, sparseFields, SparseOf } from "../types";
+import { Organization, PrApplyRequirement, sparseFields, SparseOf } from "../types";
 import { IconSelector } from "../Organizations/IconSelector";
 import { organizationNameRules } from "../../config/validation";
 import "./Settings.css";
@@ -19,7 +19,13 @@ import { cacheOrganizationName } from "@/hooks/useOrganizationName";
 const DEFAULT_ICON = "FaBuilding";
 const DEFAULT_COLOR = "#000000";
 
-const ORGANIZATION_FIELDS = sparseFields<Organization>("organization")("name", "description", "executionMode", "icon");
+const ORGANIZATION_FIELDS = sparseFields<Organization>("organization")(
+  "name",
+  "description",
+  "executionMode",
+  "icon",
+  "prApplyMinRequirement"
+);
 type SparseOrganization = SparseOf<typeof ORGANIZATION_FIELDS>;
 
 type GeneralSettingsForm = {
@@ -27,6 +33,7 @@ type GeneralSettingsForm = {
   description: string;
   executionMode: "remote" | "local";
   icon?: string;
+  prApplyMinRequirement: PrApplyRequirement;
 };
 
 type Props = {
@@ -56,6 +63,7 @@ export const GeneralSettings = ({ managePermission = true }: Props) => {
           description: values.description,
           executionMode: values.executionMode,
           icon: iconField,
+          prApplyMinRequirement: values.prApplyMinRequirement,
         },
       },
     };
@@ -135,6 +143,7 @@ export const GeneralSettings = ({ managePermission = true }: Props) => {
           name: response.data.data.attributes.name,
           description: response.data.data.attributes.description,
           executionMode: response.data.data.attributes.executionMode,
+          prApplyMinRequirement: response.data.data.attributes.prApplyMinRequirement ?? "WRITE",
         });
         setLoading(false);
       })
@@ -168,6 +177,7 @@ export const GeneralSettings = ({ managePermission = true }: Props) => {
                 name: organization?.attributes.name,
                 description: organization?.attributes.description,
                 executionMode: organization?.attributes.executionMode,
+                prApplyMinRequirement: organization?.attributes.prApplyMinRequirement ?? "WRITE",
               }}
               saveLabel="Update organization"
               saveDisabled={!managePermission}
@@ -213,6 +223,30 @@ export const GeneralSettings = ({ managePermission = true }: Props) => {
                       value: "local",
                       label: "Local",
                       help: "Your planning and applying jobs are performed on your own machines. Terrakube is used just for storing and syncing the state.",
+                    },
+                  ]}
+                />
+              </Form.Item>
+
+              <Typography.Title level={4} className="general-settings-subtitle">
+                Apply from a pull request comment
+              </Typography.Title>
+              <Typography.Paragraph type="secondary">
+                The least every workspace requires before <code>terrakube apply</code> on a pull request starts an
+                apply. A workspace can require more, but not less. Checked on GitHub and GitLab.
+              </Typography.Paragraph>
+              <Form.Item name="prApplyMinRequirement" label="Minimum">
+                <RadioChoices
+                  options={[
+                    {
+                      value: "WRITE",
+                      label: "Write access",
+                      help: "The comment author needs write access to the repository (GitHub) or the Developer role (GitLab).",
+                    },
+                    {
+                      value: "APPROVED",
+                      label: "Approved pull request",
+                      help: "Write access, and the pull request must be approved under the repository's own rules on its latest commit.",
                     },
                   ]}
                 />

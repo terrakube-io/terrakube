@@ -31,6 +31,7 @@ import org.springframework.web.client.RestTemplate;
 import org.springframework.web.reactive.function.client.ExchangeFilterFunction;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.util.UriComponentsBuilder;
+import io.terrakube.api.plugin.vcs.PullRequestApproval;
 import io.terrakube.api.plugin.vcs.WebhookResult;
 import io.terrakube.api.plugin.vcs.WebhookServiceBase;
 import io.terrakube.api.rs.workspace.Workspace;
@@ -679,6 +680,61 @@ public class GitLabWebhookService extends WebhookServiceBase {
             }
             log.error("Could not read the access level of user {} on workspace {}: {}", userId, workspace.getName(),
                     e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * Whether a merge request is approved under the project's approval rules (merge request approvals
+     * API: {@code approved} with no {@code approvals_left}), with the head commit read after the
+     * approvals. Reading the head second means a head that matches the comment's commit was also the
+     * head when the approvals were read. A merge request with no approval at all is not approved, even
+     * when no rule requires one. Empty when GitLab could not be asked, so a caller that gates on it can
+     * refuse.
+     */
+    public Optional<PullRequestApproval> getMergeRequestApproval(Workspace workspace, int mergeRequestIid) {
+        if (mergeRequestIid <= 0) {
+            return Optional.empty();
+        }
+        try {
+            String ownerAndRepo = extractOwnerAndRepoGitlab(workspace.getSource());
+            String token = workspace.getVcs().getAccessToken();
+            String projectId = getGitlabProjectId(ownerAndRepo, token, workspace.getVcs().getApiUrl());
+            String mergeRequestUrl = workspace.getVcs().getApiUrl() + "/projects/" + projectId + "/merge_requests/"
+                    + mergeRequestIid;
+
+            ResponseEntity<String> approvalsResponse = callGitlabApi(token, null, mergeRequestUrl + "/approvals",
+                    HttpMethod.GET);
+            if (approvalsResponse == null || !approvalsResponse.getStatusCode().is2xxSuccessful()) {
+                log.error("Could not read the approvals of merge request !{} on workspace {}", mergeRequestIid,
+                        workspace.getName());
+                return Optional.empty();
+            }
+            JsonNode approvals = objectMapper.readTree(approvalsResponse.getBody());
+            if (!approvals.path("approved").isBoolean()) {
+                log.error("Merge request !{} on workspace {} returned no approval state", mergeRequestIid,
+                        workspace.getName());
+                return Optional.empty();
+            }
+            int approvalsLeft = approvals.path("approvals_left").asInt(0);
+            int approvedBy = approvals.path("approved_by").size();
+            boolean approved = approvals.path("approved").asBoolean() && approvalsLeft == 0 && approvedBy > 0;
+            String decision = approved ? "approved"
+                    : approvedBy == 0 ? "no approvals" : approvalsLeft + " approval(s) left";
+
+            ResponseEntity<String> mergeRequestResponse = callGitlabApi(token, null, mergeRequestUrl, HttpMethod.GET);
+            if (mergeRequestResponse == null || !mergeRequestResponse.getStatusCode().is2xxSuccessful()) {
+                log.error("Could not read merge request !{} on workspace {}", mergeRequestIid, workspace.getName());
+                return Optional.empty();
+            }
+            String headSha = objectMapper.readTree(mergeRequestResponse.getBody()).path("sha").asText(null);
+            return Optional.of(new PullRequestApproval(approved, decision, headSha));
+        } catch (Exception e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            log.error("Could not read the approvals of merge request !{} on workspace {}: {}", mergeRequestIid,
+                    workspace.getName(), e.getMessage());
             return Optional.empty();
         }
     }

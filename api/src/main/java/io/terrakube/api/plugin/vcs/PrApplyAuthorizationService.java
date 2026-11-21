@@ -3,6 +3,7 @@ package io.terrakube.api.plugin.vcs;
 import io.terrakube.api.plugin.vcs.provider.github.GitHubWebhookService;
 import io.terrakube.api.plugin.vcs.provider.gitlab.GitLabWebhookService;
 import io.terrakube.api.rs.vcs.Vcs;
+import io.terrakube.api.rs.webhook.PrApplyRequirement;
 import io.terrakube.api.rs.workspace.Workspace;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -10,6 +11,8 @@ import org.springframework.stereotype.Service;
 
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Supplier;
+import java.util.regex.Pattern;
 
 /**
  * Decides whether the author of a "terrakube apply" comment may apply. The job that comment creates
@@ -20,6 +23,11 @@ import java.util.Set;
  * user: GitHub needs write access or more, GitLab the Developer role or more. When the provider
  * cannot be asked, the apply is refused. Bitbucket and Azure DevOps are not checked yet; their
  * comments keep working as before and are logged.
+ *
+ * <p>With {@link PrApplyRequirement#APPROVED} (on the pull request trigger, or as the organization
+ * minimum), the pull request must also be approved under the VCS's own rules. The decision is read
+ * for the commit the apply will run on: the job checks out the head commit read when the comment
+ * arrived, so if the head has moved since, the apply is refused and has to be asked for again.
  */
 @Slf4j
 @Service
@@ -31,13 +39,22 @@ public class PrApplyAuthorizationService {
 
     static final int GITLAB_DEVELOPER_ACCESS_LEVEL = 30;
 
+    /**
+     * A GitHub or GitLab username that can be @-mentioned in the notice. Anything else, such as the
+     * "unknown user" placeholder or a bot login, is quoted as code instead.
+     */
+    static final Pattern MENTIONABLE = Pattern.compile("^[A-Za-z0-9][A-Za-z0-9_.-]{0,254}$");
+
     GitHubWebhookService gitHubWebhookService;
     GitLabWebhookService gitLabWebhookService;
 
     /**
      * @return why the comment author may not apply, or empty when the apply can go ahead
      */
-    public Optional<String> refusalReason(Workspace workspace, WebhookResult webhookResult) {
+    public Optional<String> refusalReason(Workspace workspace, WebhookResult webhookResult,
+            PrApplyRequirement triggerRequirement) {
+        PrApplyRequirement requirement = PrApplyRequirement.strictest(triggerRequirement,
+                workspace.getOrganization() != null ? workspace.getOrganization().getPrApplyMinRequirement() : null);
         Vcs vcs = workspace.getVcs();
         String author = webhookResult.getCreatedBy();
         if (vcs == null || vcs.getVcsType() == null) {
@@ -47,14 +64,56 @@ public class PrApplyAuthorizationService {
         }
 
         return switch (vcs.getVcsType()) {
-            case GITHUB -> checkGitHub(workspace, vcs, author);
-            case GITLAB -> checkGitLab(workspace, author, webhookResult.getCommentAuthorId());
+            case GITHUB -> checkGitHub(workspace, vcs, author)
+                    .or(() -> checkApproval(requirement, workspace, webhookResult, author,
+                            () -> gitHubWebhookService.getPullRequestApproval(vcs, workspace.getSource(),
+                                    prNumber(webhookResult))));
+            case GITLAB -> checkGitLab(workspace, author, webhookResult.getCommentAuthorId())
+                    .or(() -> checkApproval(requirement, workspace, webhookResult, author,
+                            () -> gitLabWebhookService.getMergeRequestApproval(workspace, prNumber(webhookResult))));
             default -> {
                 log.warn("PR apply comment by {} on workspace {} is not checked: no permission check for {}",
                         author, workspace.getName(), vcs.getVcsType());
                 yield Optional.empty();
             }
         };
+    }
+
+    private static int prNumber(WebhookResult webhookResult) {
+        return webhookResult.getPrNumber() != null ? webhookResult.getPrNumber().intValue() : 0;
+    }
+
+    /**
+     * The pull request must be approved, and the decision must be for the commit the job will check out
+     * (the comment's commit): an approval of an earlier head does not let a later head be applied.
+     */
+    private Optional<String> checkApproval(PrApplyRequirement requirement, Workspace workspace,
+            WebhookResult webhookResult, String author, Supplier<Optional<PullRequestApproval>> approvalLookup) {
+        if (requirement != PrApplyRequirement.APPROVED) {
+            return Optional.empty();
+        }
+        String who = author == null || author.isBlank() ? "unknown user" : author;
+        String commit = webhookResult.getCommit();
+        if (prNumber(webhookResult) <= 0 || commit == null || commit.isBlank()) {
+            log.error("PR apply comment by {} on workspace {} has no pull request number or commit to check", who,
+                    workspace.getName());
+            return Optional.of(cannotCheck(who));
+        }
+        Optional<PullRequestApproval> approval = approvalLookup.get();
+        if (approval.isEmpty()) {
+            return Optional.of(cannotCheck(who));
+        }
+        if (!commit.equals(approval.get().headSha())) {
+            log.info("Refusing PR apply comment by {} on workspace {}: head moved from {} to {}", who,
+                    workspace.getName(), commit, approval.get().headSha());
+            return Optional.of(headMoved(who));
+        }
+        if (!approval.get().approved()) {
+            log.info("Refusing PR apply comment by {} on workspace {}: pull request is not approved ({})", who,
+                    workspace.getName(), approval.get().decision());
+            return Optional.of(notApproved(who, approval.get().decision()));
+        }
+        return Optional.empty();
     }
 
     private Optional<String> checkGitHub(Workspace workspace, Vcs vcs, String author) {
@@ -90,13 +149,28 @@ public class PrApplyAuthorizationService {
         return Optional.empty();
     }
 
+    /** Mentions the comment author, so the notice reaches them; quotes what is not a plain username. */
+    static String mention(String author) {
+        return author != null && MENTIONABLE.matcher(author).matches() ? "@" + author : "`" + author + "`";
+    }
+
     private static String notAllowed(String author, String requirement) {
-        return "`%s` cannot apply from a comment: it needs %s. Apply this plan from the Terrakube UI, or ask someone who has it."
-                .formatted(author, requirement);
+        return "%s cannot apply from a comment: it needs %s. Apply this plan from the Terrakube UI, or ask someone who has it."
+                .formatted(mention(author), requirement);
+    }
+
+    private static String notApproved(String author, String decision) {
+        return "%s cannot apply from a comment: this workspace requires the pull request to be approved first (current state: %s). Comment again once it is approved, or apply this plan from the Terrakube UI."
+                .formatted(mention(author), decision);
+    }
+
+    private static String headMoved(String author) {
+        return "The pull request changed while the apply requested by %s was being checked, so it was not started. Review the latest commit and comment again."
+                .formatted(mention(author));
     }
 
     private static String cannotCheck(String author) {
-        return "Could not check whether `%s` may apply from a comment, so the apply was not started. If this was a temporary error, comment again; otherwise apply this plan from the Terrakube UI."
-                .formatted(author);
+        return "Could not check whether %s may apply from a comment, so the apply was not started. If this was a temporary error, comment again; otherwise apply this plan from the Terrakube UI."
+                .formatted(mention(author));
     }
 }

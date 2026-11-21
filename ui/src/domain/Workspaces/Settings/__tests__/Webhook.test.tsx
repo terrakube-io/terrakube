@@ -333,6 +333,43 @@ describe("WorkspaceWebhook", () => {
       });
     });
 
+    it("loads and saves the approved pull request requirement of apply by comment", async () => {
+      loadEvents([
+        {
+          ...base,
+          event: "PULL_REQUEST",
+          priority: 0,
+          branch: "main",
+          path: "**",
+          pathType: "PATTERN",
+          prWorkflowEnabled: true,
+          prApplyEnabled: true,
+          prApplyRequirement: "APPROVED",
+        },
+      ]);
+      renderWebhook();
+      await screen.findByText("Triggers (1)");
+      expect(screen.getByText(/Apply by comment once approved/)).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole("button", { name: "Edit trigger 1" }));
+      const requireApproval = screen.getByRole("checkbox", { name: /Require an approved pull request/ });
+      expect(requireApproval).toBeChecked();
+      fireEvent.click(requireApproval);
+
+      fireEvent.click(screen.getByRole("button", { name: "Save webhook" }));
+      await waitFor(() => expect(axiosInstance.post).toHaveBeenCalledTimes(1));
+      expect(savedOps()[1].data.attributes).toMatchObject({ prApplyEnabled: true, prApplyRequirement: "WRITE" });
+    });
+
+    it("only offers the approved pull request requirement when apply by comment is on", async () => {
+      loadEvents([{ ...base, event: "PULL_REQUEST", priority: 0, branch: "main", path: "*", prWorkflowEnabled: true }]);
+      renderWebhook();
+      await screen.findByText("Triggers (1)");
+
+      fireEvent.click(screen.getByRole("button", { name: "Edit trigger 1" }));
+      expect(screen.getByRole("checkbox", { name: /Require an approved pull request/ })).toBeDisabled();
+    });
+
     it("rejects an invalid regex and says which one", async () => {
       loadEvents([{ ...base, priority: 0, branch: "main", path: "terraform/(" }]);
       renderWebhook();

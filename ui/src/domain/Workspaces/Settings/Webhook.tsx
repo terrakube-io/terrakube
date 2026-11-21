@@ -30,6 +30,8 @@ type Trigger = {
   template?: string;
   prWorkflowEnabled: boolean;
   prApplyEnabled: boolean;
+  // Stored as prApplyRequirement: APPROVED when checked, WRITE otherwise.
+  prApplyRequireApproval: boolean;
   created?: boolean;
 };
 
@@ -51,6 +53,7 @@ const newTrigger = (overrides: Partial<Trigger> = {}): Trigger => ({
   paths: [],
   prWorkflowEnabled: false,
   prApplyEnabled: false,
+  prApplyRequireApproval: false,
   ...overrides,
 });
 
@@ -68,6 +71,7 @@ const fromEvent = (event: WebhookEvent): Trigger => {
     template: event.attributes.templateId,
     prWorkflowEnabled: event.attributes.prWorkflowEnabled || false,
     prApplyEnabled: event.attributes.prApplyEnabled || false,
+    prApplyRequireApproval: event.attributes.prApplyRequirement === "APPROVED",
     created: true,
   };
 };
@@ -85,6 +89,7 @@ const toAttributes = (trigger: Trigger, position: number) => ({
   templateId: trigger.template,
   prWorkflowEnabled: trigger.prWorkflowEnabled || false,
   prApplyEnabled: trigger.prApplyEnabled || false,
+  prApplyRequirement: trigger.prApplyRequireApproval ? "APPROVED" : "WRITE",
 });
 
 const EVENT_LABELS: Record<string, string> = { push: "Push", pull_request: "Pull request", release: "Release" };
@@ -479,7 +484,9 @@ export const WorkspaceWebhook = ({
                             !isRelease && trigger.pathMode === WebhookEventPathType.REGEX && "Regex paths",
                             !isRelease && trigger.pathMode === WebhookEventPathType.PATTERN && "Wildcard paths",
                             trigger.event === "pull_request" && trigger.prWorkflowEnabled && "Plan posted on PRs",
-                            trigger.event === "pull_request" && trigger.prApplyEnabled && "Apply by comment",
+                            trigger.event === "pull_request" &&
+                              trigger.prApplyEnabled &&
+                              (trigger.prApplyRequireApproval ? "Apply by comment once approved" : "Apply by comment"),
                             !trigger.created && "Not saved",
                           ].filter(Boolean);
                           return (
@@ -762,6 +769,24 @@ export const WorkspaceWebhook = ({
                                               disabled={!manageWorkspace || !trigger.prWorkflowEnabled || restrictApply}
                                             >
                                               Allow apply from a pull request comment
+                                            </Checkbox>
+                                          </Form.Item>
+                                          <Form.Item
+                                            name={[name, "prApplyRequireApproval"]}
+                                            valuePropName="checked"
+                                            extra={
+                                              <>
+                                                The pull request must also be approved under the repository&apos;s own
+                                                rules (branch protection on GitHub, approval rules on GitLab) on its
+                                                latest commit. The organization settings can require this for every
+                                                workspace.
+                                              </>
+                                            }
+                                          >
+                                            <Checkbox
+                                              disabled={!manageWorkspace || !trigger.prApplyEnabled || restrictApply}
+                                            >
+                                              Require an approved pull request
                                             </Checkbox>
                                           </Form.Item>
                                         </>

@@ -73,6 +73,7 @@ export type OrganizationAttributes = {
   name: string;
   executionMode?: string;
   icon?: string;
+  prApplyMinRequirement?: PrApplyRequirement;
   workspaceCount?: number;
   workspaceStatusCounts?: Record<string, number>;
 };
@@ -639,7 +640,11 @@ export type WebhookEventAttributes = {
   event: WebhookEventType;
   prWorkflowEnabled: boolean;
   prApplyEnabled: boolean;
+  prApplyRequirement?: PrApplyRequirement;
 };
+
+/** Who may apply from a "terrakube apply" pull request comment, from the least to the most strict. */
+export type PrApplyRequirement = "WRITE" | "APPROVED";
 
 // Agent
 export type Agent = {
