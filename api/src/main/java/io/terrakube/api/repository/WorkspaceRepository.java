@@ -22,6 +22,14 @@ import java.util.UUID;
 public interface WorkspaceRepository extends JpaRepository<Workspace, UUID> {
 
     /**
+     * Counts workspaces pointing at a project including soft deleted ones, which still hold the
+     * {@code fk_workspace_project} reference. Native so the entity soft delete restriction does not apply.
+     */
+    @Query(value = "select count(w.id) from workspace w where w.project_id = :projectId", nativeQuery = true)
+    long countAllByProjectIncludingDeleted(@Param("projectId") String projectId);
+
+
+    /**
      * Returns a page of workspaces for drift-scan use; generates a paginated SELECT
      * rather than an unguarded findAll() that loads the entire table into memory.
      */
