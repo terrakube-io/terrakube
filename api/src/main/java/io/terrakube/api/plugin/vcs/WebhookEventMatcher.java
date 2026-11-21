@@ -162,9 +162,13 @@ public final class WebhookEventMatcher {
      */
     public static PrApplyRequirement strictestPrApplyRequirement(Webhook webhook,
             WebhookEventRepository webhookEventRepository) {
-        return webhookEventRepository
-                .findByWebhookAndEventOrderByPriorityAsc(webhook, WebhookEventType.PULL_REQUEST)
-                .stream()
+        return strictestPrApplyRequirement(
+                webhookEventRepository.findByWebhookAndEventOrderByPriorityAsc(webhook, WebhookEventType.PULL_REQUEST));
+    }
+
+    /** {@link #strictestPrApplyRequirement(Webhook, WebhookEventRepository)} over triggers already read. */
+    public static PrApplyRequirement strictestPrApplyRequirement(List<WebhookEvent> pullRequestTriggers) {
+        return pullRequestTriggers.stream()
                 // The same two settings an apply from a comment needs (WebhookService, RepoWebhookService).
                 .filter(event -> event.isPrWorkflowEnabled() && event.isPrApplyEnabled())
                 .map(WebhookEvent::getPrApplyRequirement)
