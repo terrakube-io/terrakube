@@ -327,6 +327,8 @@ public class VcsBitbucketTests extends ServerApplicationTests{
         vcs.setName("bitbucket");
         vcs.setDescription("1234");
         vcs.setVcsType(VcsType.BITBUCKET);
+        // The webhook service only follows diff links on the configured VCS API origin, which here is the WireMock server.
+        vcs.setApiUrl("http://localhost:" + wireMockServer.port());
         vcs.setOrganization(organizationRepository.findById(UUID.fromString("d9b58bd3-f3fc-4056-a026-1163297e80a8")).get());
         vcs = vcsRepository.save(vcs);
 
@@ -557,6 +559,8 @@ public class VcsBitbucketTests extends ServerApplicationTests{
         vcs.setName("bitbucket");
         vcs.setDescription("1234");
         vcs.setVcsType(VcsType.BITBUCKET);
+        // The webhook service only follows diff links on the configured VCS API origin, which here is the WireMock server.
+        vcs.setApiUrl("http://localhost:" + wireMockServer.port());
         vcs.setOrganization(organizationRepository.findById(UUID.fromString("d9b58bd3-f3fc-4056-a026-1163297e80a8")).get());
         vcs = vcsRepository.save(vcs);
 
@@ -1004,6 +1008,8 @@ public class VcsBitbucketTests extends ServerApplicationTests{
         vcs.setName("bitbucket");
         vcs.setDescription("1234");
         vcs.setVcsType(VcsType.BITBUCKET);
+        // The webhook service only follows diff links on the configured VCS API origin, which here is the WireMock server.
+        vcs.setApiUrl("http://localhost:" + wireMockServer.port());
         vcs.setOrganization(organizationRepository.findById(UUID.fromString("d9b58bd3-f3fc-4056-a026-1163297e80a8")).get());
         vcs = vcsRepository.save(vcs);
 
