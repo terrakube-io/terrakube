@@ -11,6 +11,18 @@ import { formatDateTimeWithZone } from "@/modules/utils/dates";
 
 jest.mock("@/hooks", () => ({ usePolling: jest.fn() }));
 jest.mock("@/modules/workspaces/workspaceService", () => ({ listWorkspacePage: jest.fn(), listWorkspaces: jest.fn() }));
+let mockFilterProps: any;
+jest.mock("@/modules/workspaces/components/WorkspaceFilter", () => ({
+  __esModule: true,
+  default: (props: unknown) => {
+    mockFilterProps = props;
+    return null;
+  },
+}));
+jest.mock("../projectService", () => ({
+  __esModule: true,
+  default: { listProjectDefaultTags: jest.fn().mockResolvedValue([{ id: "d1", tagId: "t-env", value: "prod" }]) },
+}));
 jest.mock("antd", () => ({ ...jest.requireActual("antd"), message: { error: jest.fn() } }));
 
 const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
@@ -48,16 +60,17 @@ const failure = (status = "Failed to load workspaces", errorMessage = "The API i
 
 const listWorkspacePage = workspaceService.listWorkspacePage as jest.Mock;
 
-function renderTab(projectId = "proj-1") {
+function renderTab(projectId = "proj-1", canManage = false) {
   return render(
     <MemoryRouter>
-      <ProjectWorkspaces orgid="org-1" projectId={projectId} />
+      <ProjectWorkspaces orgid="org-1" projectId={projectId} canManage={canManage} />
     </MemoryRouter>
   );
 }
 
-const lastRequest = () => listWorkspacePage.mock.calls.at(-1)![0];
-const poll = () => act(async () => (usePolling as jest.Mock).mock.calls.at(-1)![0]());
+const lastRequest = () => listWorkspacePage.mock.calls[listWorkspacePage.mock.calls.length - 1]![0];
+const poll = () =>
+  act(async () => (usePolling as jest.Mock).mock.calls[(usePolling as jest.Mock).mock.calls.length - 1]![0]());
 
 describe("ProjectWorkspaces", () => {
   beforeEach(() => {
@@ -71,8 +84,18 @@ describe("ProjectWorkspaces", () => {
     expect(await screen.findByText("network-production")).toBeInTheDocument();
     expect(listWorkspacePage).toHaveBeenCalledTimes(1);
     expect(listWorkspacePage).toHaveBeenCalledWith(
-      { organizationId: "org-1", first: 10, after: 0, projectId: "proj-1", sort: "name_asc" },
-      false
+      {
+        organizationId: "org-1",
+        first: 10,
+        after: 0,
+        projectId: "proj-1",
+        sort: "name_asc",
+        search: undefined,
+        status: "All",
+        policyStatus: "All",
+        tagFilters: [],
+      },
+      true
     );
     expect(workspaceService.listWorkspaces).not.toHaveBeenCalled();
   });
@@ -89,10 +112,11 @@ describe("ProjectWorkspaces", () => {
     expect(repository).toHaveAttribute("target", "_blank");
     expect(repository).toHaveAttribute("title", "https://github.com/acme/network");
     expect(screen.getAllByRole("columnheader").map((header) => header.textContent)).toEqual([
-      "Name",
+      "Workspace",
       "Status",
+      "Policy",
+      "Tags",
       "Last run",
-      "Repository",
     ]);
   });
 
@@ -114,7 +138,7 @@ describe("ProjectWorkspaces", () => {
     listWorkspacePage.mockResolvedValue(page([workspace({ lastRun: undefined, lastStatus: undefined })]));
     renderTab();
 
-    expect(await screen.findByText("Never executed")).toBeInTheDocument();
+    expect((await screen.findAllByText("Never executed")).length).toBeGreaterThan(0);
   });
 
   it("shows the exact time with the timezone when the last run is focused", async () => {
@@ -146,9 +170,9 @@ describe("ProjectWorkspaces", () => {
     renderTab();
     await screen.findByText("network-production");
 
-    await userEvent.click(screen.getByText("Name"));
+    await userEvent.click(screen.getByText("Workspace"));
     await waitFor(() => expect(lastRequest().sort).toBe("name_desc"));
-    await userEvent.click(screen.getByText("Name"));
+    await userEvent.click(screen.getByText("Workspace"));
     await waitFor(() => expect(lastRequest().sort).toBe("name_asc"));
   });
 
@@ -175,7 +199,9 @@ describe("ProjectWorkspaces", () => {
     listWorkspacePage.mockResolvedValue(page([]));
     renderTab();
 
-    expect(await screen.findByText("No workspaces assigned to this project yet.")).toBeInTheDocument();
+    expect(await screen.findByText("No workspaces in this project.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "New workspace" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Move existing" })).toBeInTheDocument();
   });
 
   it("shows a failed first load as an error with a retry, not as an empty project", async () => {
@@ -229,5 +255,77 @@ describe("ProjectWorkspaces", () => {
     await act(async () => resolveFirst(page([workspace({ name: "stale-result" })])));
     expect(screen.queryByText("stale-result")).not.toBeInTheDocument();
     expect(screen.getByText("newer-result")).toBeInTheDocument();
+  });
+
+  describe("filters", () => {
+    it("sends the status, policy, search and tag filters to the server and starts again at the first page", async () => {
+      listWorkspacePage.mockResolvedValue(page([workspace()], 45));
+      renderTab();
+      await screen.findByText("network-production");
+
+      act(() => mockFilterProps.onStatusChange("failed"));
+      await waitFor(() => expect(lastRequest()).toEqual(expect.objectContaining({ status: "failed", after: 0 })));
+      act(() => mockFilterProps.onPolicyStatusChange("NON_COMPLIANT"));
+      await waitFor(() => expect(lastRequest()).toEqual(expect.objectContaining({ policyStatus: "NON_COMPLIANT" })));
+      act(() => mockFilterProps.onTagFiltersChange([{ tagId: "t1", value: "prod" }]));
+      await waitFor(() =>
+        expect(lastRequest()).toEqual(expect.objectContaining({ tagFilters: [{ tagId: "t1", value: "prod" }] }))
+      );
+    });
+
+    it("says no workspaces match when filters hide every row, not that the project is empty", async () => {
+      renderTab();
+      await screen.findByText("network-production");
+      listWorkspacePage.mockResolvedValue(page([]));
+
+      act(() => mockFilterProps.onStatusChange("failed"));
+
+      expect(await screen.findByText("No workspaces match these filters.")).toBeInTheDocument();
+      expect(screen.queryByText("No workspaces in this project.")).not.toBeInTheDocument();
+    });
+  });
+
+  it("marks tags that came from the project", async () => {
+    listWorkspacePage.mockResolvedValue(
+      page([workspace({ tags: [{ tagId: "t-env", value: "prod" }, { tagId: "t-own" }] })])
+    );
+    renderTab();
+
+    await screen.findByText("network-production");
+    expect(await screen.findAllByText("from project")).toHaveLength(1);
+  });
+
+  describe("bulk selection", () => {
+    it("is not offered without permission", async () => {
+      renderTab("proj-1", false);
+      await screen.findByText("network-production");
+
+      expect(screen.queryAllByRole("checkbox")).toHaveLength(0);
+    });
+
+    it("shows the bulk bar for ticked rows and covers this page only", async () => {
+      listWorkspacePage.mockResolvedValue(
+        page([workspace({ id: "a", name: "alpha" }), workspace({ id: "b", name: "beta" })], 18)
+      );
+      renderTab("proj-1", true);
+      await screen.findByText("alpha");
+
+      const boxes = screen.getAllByRole("checkbox");
+      await userEvent.click(boxes[1]);
+      await userEvent.click(boxes[2]);
+
+      expect(screen.getByText("2 of 18 selected")).toBeInTheDocument();
+      expect(screen.getByText("(this page only)")).toBeInTheDocument();
+    });
+  });
+
+  it("switches to cards", async () => {
+    renderTab();
+    await screen.findByText("network-production");
+
+    await userEvent.click(screen.getByText("Cards"));
+
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    expect(screen.getByText("network-production")).toBeInTheDocument();
   });
 });

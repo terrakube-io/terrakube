@@ -3,7 +3,11 @@ import { MemoryRouter } from "react-router-dom";
 import projectService from "../projectService";
 import ProjectOverview from "../ProjectOverview";
 
-jest.mock("../projectService", () => ({ __esModule: true, default: { listAttentionWorkspaces: jest.fn() } }));
+jest.mock("../projectService", () => ({
+  __esModule: true,
+  default: { listAttentionWorkspaces: jest.fn(), listRecentWorkspaces: jest.fn() },
+}));
+const recentList = projectService.listRecentWorkspaces as jest.Mock;
 const attentionList = projectService.listAttentionWorkspaces as jest.Mock;
 
 const renderOverview = (props: any) =>
@@ -25,6 +29,9 @@ const summary = {
   waitingApprovalCount: 0,
   neverRunCount: 0,
   nonCompliantCount: 0,
+  compliantCount: 0,
+  exemptedCount: 0,
+  queuedJobCount: 0,
   lockedCount: 2,
   attentionCount: 1,
   teamCount: 2,
@@ -72,57 +79,94 @@ describe("resolveLandingTab", () => {
 describe("ProjectOverview", () => {
   beforeEach(() => {
     localStorage.clear();
-    attentionList.mockResolvedValue({ isError: false, data: [] });
-  });
-
-  it("shows the counts, the attention alert and a link to the workspaces", () => {
-    const onOpenTab = jest.fn();
-    renderOverview({ summary, loading: false, onOpenTab });
-
-    expect(screen.getByText("1 workspace needs attention")).toBeInTheDocument();
-    expect(screen.getByText("Running or queued").closest(".ant-statistic")).toHaveTextContent("2");
-    expect(screen.getByText("Locked").closest(".ant-statistic")).toHaveTextContent("2");
-    fireEvent.click(screen.getByText("View workspaces"));
-    expect(onOpenTab).toHaveBeenCalledWith("workspaces");
-  });
-
-  it("does not raise an alert for a healthy project", () => {
-    renderOverview({ summary: { ...summary, attentionCount: 0 }, loading: false, onOpenTab: jest.fn() });
-
-    expect(screen.queryByText(/need.* attention/)).not.toBeInTheDocument();
-  });
-
-  it("explains when the summary could not be loaded", () => {
-    renderOverview({ summary: null, loading: false, onOpenTab: jest.fn() });
-
-    expect(screen.getByText("Project summary is not available")).toBeInTheDocument();
-  });
-});
-
-describe("ProjectOverview attention list", () => {
-  beforeEach(() => {
-    localStorage.clear();
     attentionList.mockReset();
+    recentList.mockReset();
+    attentionList.mockResolvedValue({ isError: false, data: [] });
+    recentList.mockResolvedValue({ isError: false, data: [] });
   });
 
-  it("lists the workspaces that need attention", async () => {
+  it("shows the four tiles of the design", () => {
+    renderOverview({ summary: { ...summary, teamCount: 3 }, loading: false, onOpenTab: jest.fn() });
+
+    expect(screen.getByText("workspaces").previousSibling).toHaveTextContent("5");
+    expect(screen.getByText("need attention").previousSibling).toHaveTextContent("1");
+    expect(screen.getByText("teams with access").previousSibling).toHaveTextContent("3");
+    expect(screen.getByText(/^queued now/).previousSibling).toHaveTextContent("0");
+  });
+
+  it("adds the longest wait to the queued tile", () => {
+    const queuedSince = new Date(Date.now() - 6 * 60 * 1000).toISOString();
+
+    renderOverview({
+      summary: { ...summary, queuedJobCount: 2, queuedSince },
+      loading: false,
+      onOpenTab: jest.fn(),
+    });
+
+    expect(screen.getByText("queued now (longest wait 6m)")).toBeInTheDocument();
+  });
+
+  it("lists the health counts under the bar", () => {
+    renderOverview({ summary, loading: false, onOpenTab: jest.fn() });
+
+    expect(screen.getByText("3 completed")).toBeInTheDocument();
+    expect(screen.getByText("1 failed")).toBeInTheDocument();
+  });
+
+  it("lists the workspaces that need attention and links to the full list", async () => {
+    const onOpenTab = jest.fn();
     attentionList.mockResolvedValue({
       isError: false,
       data: [
-        { id: "w1", name: "network", lastJobStatus: "failed" },
+        { id: "w1", name: "network", lastJobStatus: "failed", lastJobDate: new Date().toISOString() },
         { id: "w2", name: "database", lastJobStatus: "completed", policyComplianceStatus: "NON_COMPLIANT" },
+      ],
+    });
+
+    renderOverview({ summary: { ...summary, attentionCount: 2 }, loading: false, onOpenTab });
+
+    expect(await screen.findByText("network")).toHaveAttribute("href", "/organizations/org/workspaces/w1");
+    expect(screen.getByText("Non-compliant")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /View all 2 in Workspaces/ }));
+    expect(onOpenTab).toHaveBeenCalledWith("workspaces");
+  });
+
+  it("says nothing needs attention, and does not ask for the list", () => {
+    renderOverview({ summary: { ...summary, attentionCount: 0 }, loading: false, onOpenTab: jest.fn() });
+
+    expect(screen.getByText("Nothing needs attention.")).toBeInTheDocument();
+    expect(attentionList).not.toHaveBeenCalled();
+  });
+
+  it("shows recent activity with friendly status names", async () => {
+    recentList.mockResolvedValue({
+      isError: false,
+      data: [
+        { id: "w3", name: "gateway-us", lastJobStatus: "completed", lastJobDate: new Date().toISOString() },
+        { id: "w4", name: "fraud-rules", lastJobStatus: "waitingApproval" },
       ],
     });
 
     renderOverview({ summary, loading: false, onOpenTab: jest.fn() });
 
-    expect(await screen.findByText("network")).toHaveAttribute("href", "/organizations/org/workspaces/w1");
-    expect(screen.getByText("Non-compliant")).toBeInTheDocument();
+    expect(await screen.findByText("gateway-us")).toBeInTheDocument();
+    expect(screen.getByText("Applied")).toBeInTheDocument();
+    expect(screen.getByText("Waiting approval")).toBeInTheDocument();
   });
 
-  it("does not ask for the list when nothing needs attention", () => {
-    renderOverview({ summary: { ...summary, attentionCount: 0 }, loading: false, onOpenTab: jest.fn() });
+  it("never draws counts that could not be loaded, and offers a retry", () => {
+    const onRetry = jest.fn();
+    renderOverview({ summary: null, loading: false, failed: true, onRetry, onOpenTab: jest.fn() });
 
-    expect(attentionList).not.toHaveBeenCalled();
+    expect(screen.getByText("Counts unavailable.")).toBeInTheDocument();
+    expect(screen.queryByText("workspaces")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(onRetry).toHaveBeenCalled();
+  });
+
+  it("explains when there is no summary", () => {
+    renderOverview({ summary: null, loading: false, onOpenTab: jest.fn() });
+
+    expect(screen.getByText("Project summary is not available")).toBeInTheDocument();
   });
 });

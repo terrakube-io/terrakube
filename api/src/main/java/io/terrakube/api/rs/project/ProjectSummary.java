@@ -46,7 +46,7 @@ import java.util.UUID;
 @Include
 @Entity(name = "project_summary")
 @Immutable
-@Synchronize({"project", "workspace", "project_access"})
+@Synchronize({"project", "workspace", "project_access", "job"})
 @Subselect("""
         select p.id as id,
                p.name as name,
@@ -60,10 +60,20 @@ import java.util.UUID;
                coalesce(sum(case when w.last_job_status = 'waitingApproval' then 1 else 0 end), 0) as waiting_approval_count,
                coalesce(sum(case when w.last_job_status = 'NeverExecuted' then 1 else 0 end), 0) as never_run_count,
                coalesce(sum(case when w.policy_compliance_status = 'NON_COMPLIANT' then 1 else 0 end), 0) as non_compliant_count,
+               coalesce(sum(case when w.policy_compliance_status = 'COMPLIANT' then 1 else 0 end), 0) as compliant_count,
+               coalesce(sum(case when w.policy_compliance_status = 'EXEMPTED' then 1 else 0 end), 0) as exempted_count,
                coalesce(sum(case when cast(w.locked as integer) = 1 then 1 else 0 end), 0) as locked_count,
                coalesce(sum(case when w.last_job_status in ('failed', 'waitingApproval')
                                    or w.policy_compliance_status = 'NON_COMPLIANT' then 1 else 0 end), 0) as attention_count,
                max(w.last_job_date) as last_run_at,
+               (select count(*)
+                  from job qj join workspace qw on qw.id = qj.workspace_id
+                 where qw.project_id = p.id and cast(qw.deleted as integer) = 0
+                   and qj.status in ('pending', 'approved')) as queued_job_count,
+               (select min(coalesce(j.queued_at, j.created_date))
+                  from job j join workspace jw on jw.id = j.workspace_id
+                 where jw.project_id = p.id and cast(jw.deleted as integer) = 0
+                   and j.status in ('pending', 'approved')) as queued_since,
                (select count(*) from project_access pa where pa.project_id = p.id) as team_count
         from project p
         left join workspace w on w.organization_id = p.organization_id and w.project_id = p.id
@@ -128,6 +138,13 @@ public class ProjectSummary {
     @Column(name = "non_compliant_count")
     private Long nonCompliantCount;
 
+    /** Workspaces whose last policy evaluation passed, and ones where the workspace is exempted. */
+    @Column(name = "compliant_count")
+    private Long compliantCount;
+
+    @Column(name = "exempted_count")
+    private Long exemptedCount;
+
     @Column(name = "locked_count")
     private Long lockedCount;
 
@@ -137,6 +154,14 @@ public class ProjectSummary {
 
     @Column(name = "last_run_at")
     private Date lastRunAt;
+
+    /** Jobs still waiting to run, across the project's workspaces. */
+    @Column(name = "queued_job_count")
+    private Long queuedJobCount;
+
+    /** When the oldest job still waiting to run entered the queue (its queued_at, or created_date for old rows). */
+    @Column(name = "queued_since")
+    private Date queuedSince;
 
     @Column(name = "team_count")
     private Long teamCount;
