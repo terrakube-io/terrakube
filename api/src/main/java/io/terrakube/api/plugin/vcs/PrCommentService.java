@@ -3,6 +3,8 @@ package io.terrakube.api.plugin.vcs;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.terrakube.api.plugin.cost.InfracostContextExtractor;
+import io.terrakube.api.plugin.cost.InfracostSummary;
 import io.terrakube.api.plugin.context.ContextPatchApplier;
 import io.terrakube.api.plugin.logs.StepOutputReader;
 import io.terrakube.api.plugin.storage.StorageTypeService;
@@ -625,6 +627,7 @@ public class PrCommentService {
             }
 
             renderStructuredChangesTable(job, false).ifPresent(table -> sb.append(table).append("\n"));
+            renderCostEstimationSummary(job).ifPresent(cSummary -> sb.append(cSummary).append("\n\n"));
             renderPolicyGuardrailsSummary(job).ifPresent(pSummary -> sb.append(pSummary).append("\n\n"));
 
             String content = planOutput;
@@ -638,12 +641,15 @@ public class PrCommentService {
             sb.append("\n```\n\n</details>\n\n");
         } else if (job.getStatus() == JobStatus.waitingApproval) {
             sb.append(icon).append(" See the plan in the Terrakube UI.\n\n");
+            renderCostEstimationSummary(job).ifPresent(cSummary -> sb.append(cSummary).append("\n\n"));
             renderPolicyGuardrailsSummary(job).ifPresent(pSummary -> sb.append(pSummary).append("\n\n"));
         } else if (job.getStatus() == JobStatus.completed) {
             sb.append(icon).append(" No changes detected.\n\n");
+            renderCostEstimationSummary(job).ifPresent(cSummary -> sb.append(cSummary).append("\n\n"));
             renderPolicyGuardrailsSummary(job).ifPresent(pSummary -> sb.append(pSummary).append("\n\n"));
         } else {
             sb.append(icon).append(" Plan failed. Check the Terrakube UI for details.\n\n");
+            renderCostEstimationSummary(job).ifPresent(cSummary -> sb.append(cSummary).append("\n\n"));
             renderPolicyGuardrailsSummary(job).ifPresent(pSummary -> sb.append(pSummary).append("\n\n"));
         }
 
@@ -827,6 +833,69 @@ public class PrCommentService {
             return Optional.of(sb.toString());
         } catch (Exception e) {
             log.warn("Unable to render policy guardrails summary for job {}: {}", job.getId(), e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    public Optional<String> renderCostEstimationSummary(Job job) {
+        if (job == null || storageTypeService == null || objectMapper == null) {
+            return Optional.empty();
+        }
+        try {
+            InfracostContextExtractor extractor = new InfracostContextExtractor(storageTypeService, objectMapper);
+            Optional<InfracostSummary> summaryOpt = extractor.extract(job.getId());
+            if (summaryOpt.isEmpty()) {
+                return Optional.empty();
+            }
+            InfracostSummary summary = summaryOpt.get();
+            StringBuilder sb = new StringBuilder();
+            sb.append("### 💰 Cost Estimation (Infracost)\n\n");
+            if (summary.isError()) {
+                sb.append("> ℹ️ Pre-deployment cost estimation was unavailable for this plan");
+                if (summary.errorMessage() != null && !summary.errorMessage().isBlank()) {
+                    sb.append(": ").append(summary.errorMessage());
+                }
+                sb.append("\n");
+                return Optional.of(sb.toString());
+            }
+
+            String arrow = "";
+            if (summary.diffTotalMonthlyCost() != null) {
+                int sign = summary.diffTotalMonthlyCost().signum();
+                if (sign > 0) {
+                    arrow = " ↗️";
+                } else if (sign < 0) {
+                    arrow = " ↘️";
+                }
+            }
+
+            sb.append("| Est. Previous Monthly | Est. New Monthly | Est. Monthly Delta |\n");
+            sb.append("| :--- | :--- | :--- |\n");
+            sb.append(String.format("| **%s** | **%s** | **%s**%s |\n\n",
+                    summary.formatPastMonthlyCost(),
+                    summary.formatTotalMonthlyCost(),
+                    summary.formatMonthlyDelta(),
+                    arrow));
+
+            if (summary.totalDetectedResources() > 0) {
+                sb.append(String.format("Resources priced: **%d / %d**",
+                        summary.totalSupportedResources(), summary.totalDetectedResources()));
+                int unpriced = summary.unpricedResourceCount();
+                if (unpriced > 0) {
+                    sb.append(String.format(" _(%d unpriced/unsupported)_", unpriced));
+                }
+                sb.append("\n\n");
+            }
+
+            sb.append("> ℹ️ **Disclaimer**: *All cost figures are pre-deployment estimates based on declared resources and public list pricing. Actual cloud billing may vary based on dynamic usage, traffic, and provider discounting.*\n");
+            if (summary.shareUrl() != null && !summary.shareUrl().isBlank()) {
+                sb.append(">\n> 📊 [View Detailed Breakdown in Infracost Dashboard](")
+                        .append(summary.shareUrl())
+                        .append(")\n");
+            }
+            return Optional.of(sb.toString());
+        } catch (Exception e) {
+            log.warn("Unable to render cost estimation summary for job {}: {}", job.getId(), e.getMessage());
             return Optional.empty();
         }
     }

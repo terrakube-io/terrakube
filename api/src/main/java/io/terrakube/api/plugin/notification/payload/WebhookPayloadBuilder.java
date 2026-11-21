@@ -35,6 +35,33 @@ public class WebhookPayloadBuilder implements NotificationPayloadBuilder {
         body.put("commitId", context.commitId());
         body.put("failureReason", context.failureReason());
         body.put("configurationName", context.configurationName());
+        if (context.costSummary() != null) {
+            var cost = context.costSummary();
+            Map<String, Object> costNode = new java.util.LinkedHashMap<>();
+            costNode.put("status", cost.status());
+            costNode.put("currency", cost.currencyOrDefault());
+            costNode.put("estimated", true);
+            if (cost.totalMonthlyCost() != null) {
+                costNode.put("total_monthly_cost", cost.totalMonthlyCost().toPlainString());
+            }
+            if (cost.pastTotalMonthlyCost() != null) {
+                costNode.put("past_monthly_cost", cost.pastTotalMonthlyCost().toPlainString());
+            }
+            if (cost.diffTotalMonthlyCost() != null) {
+                costNode.put("diff_monthly_cost", cost.diffTotalMonthlyCost().toPlainString());
+            }
+            costNode.put("detected_resources", cost.totalDetectedResources());
+            costNode.put("supported_resources", cost.totalSupportedResources());
+            costNode.put("unsupported_resources", cost.totalUnsupportedResources());
+            costNode.put("no_price_resources", cost.totalNoPriceResources());
+            if (cost.shareUrl() != null) {
+                costNode.put("share_url", cost.shareUrl());
+            }
+            if (cost.errorMessage() != null) {
+                costNode.put("error_message", cost.errorMessage());
+            }
+            body.put("cost_estimation", costNode);
+        }
         try {
             return objectMapper.writeValueAsString(body);
         } catch (Exception e) {

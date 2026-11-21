@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+            http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+    <changeSet id="changelog-2.35.0-workspace-cost-tracking" author="terrakube">
+        <addColumn tableName="workspace">
+            <column name="current_monthly_cost" type="decimal(19, 4)"/>
+            <column name="cost_currency" type="varchar(10)" defaultValue="USD"/>
+            <column name="cost_updated_at" type="datetime"/>
+        </addColumn>
+    </changeSet>
+</databaseChangeLog>

@@ -11,6 +11,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import io.terrakube.api.plugin.cost.InfracostContextExtractor;
+import io.terrakube.api.plugin.cost.InfracostSummary;
 import io.terrakube.api.plugin.notification.payload.NotificationContext;
 import io.terrakube.api.plugin.notification.payload.NotificationPayloadRenderer;
 import io.terrakube.api.rs.job.Job;
@@ -22,6 +24,7 @@ import io.terrakube.api.rs.template.Template;
 import io.terrakube.api.repository.NotificationOutboxRepository;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 
 // Shared by two very different callers:
 //  - JobNotificationHook (an Elide LifeCycleHook) uses enqueue() only, deferring dispatch to its
@@ -57,6 +60,7 @@ public class JobNotificationTrigger {
     private final NotificationOutboxRepository notificationOutboxRepository;
     private final NotificationDispatchService notificationDispatchService;
     private final JobFailureSummaryService jobFailureSummaryService;
+    private final InfracostContextExtractor infracostContextExtractor;
 
     @Value("${io.terrakube.ui.url:}")
     private String uiUrl;
@@ -73,11 +77,23 @@ public class JobNotificationTrigger {
             NotificationOutboxRepository notificationOutboxRepository,
             NotificationDispatchService notificationDispatchService,
             JobFailureSummaryService jobFailureSummaryService) {
+        this(notificationConfigResolver, notificationPayloadRenderer, notificationOutboxRepository,
+                notificationDispatchService, jobFailureSummaryService, null);
+    }
+
+    @Autowired
+    public JobNotificationTrigger(NotificationConfigResolver notificationConfigResolver,
+            NotificationPayloadRenderer notificationPayloadRenderer,
+            NotificationOutboxRepository notificationOutboxRepository,
+            NotificationDispatchService notificationDispatchService,
+            JobFailureSummaryService jobFailureSummaryService,
+            @Autowired(required = false) InfracostContextExtractor infracostContextExtractor) {
         this.notificationConfigResolver = notificationConfigResolver;
         this.notificationPayloadRenderer = notificationPayloadRenderer;
         this.notificationOutboxRepository = notificationOutboxRepository;
         this.notificationDispatchService = notificationDispatchService;
         this.jobFailureSummaryService = jobFailureSummaryService;
+        this.infracostContextExtractor = infracostContextExtractor;
     }
 
     // Returns the ids of rows that are due for immediate dispatch. A row rendered for a
@@ -171,6 +187,9 @@ public class JobNotificationTrigger {
         String failureReason = job.getStatus() == JobStatus.failed
                 ? jobFailureSummaryService.describeFailure(job)
                 : null;
+        InfracostSummary costSummary = shouldAttachCostSummary(job.getStatus()) && infracostContextExtractor != null
+                ? infracostContextExtractor.extract(job.getId()).orElse(null)
+                : null;
         return new NotificationContext(
                 job.getOrganization().getName(),
                 job.getWorkspace().getName(),
@@ -181,6 +200,14 @@ public class JobNotificationTrigger {
                 failureReason,
                 configuration.getName(),
                 workspaceUrl,
-                configuration.getMessageStyle());
+                configuration.getMessageStyle(),
+                costSummary);
+    }
+
+    private static boolean shouldAttachCostSummary(JobStatus status) {
+        return status == JobStatus.completed
+                || status == JobStatus.waitingApproval
+                || status == JobStatus.failed
+                || status == JobStatus.noChanges;
     }
 }

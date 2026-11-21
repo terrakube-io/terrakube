@@ -1,6 +1,7 @@
 package io.terrakube.api.plugin.scheduler.reconciliation;
 
 import java.util.Optional;
+import io.terrakube.api.plugin.cost.WorkspaceCostTrackingService;
 import io.terrakube.api.plugin.workspace.WorkspaceJobStatusService;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import io.terrakube.api.helpers.FailUnkownMethod;
@@ -225,5 +226,31 @@ class JobReconciliationServiceTest {
 
         assertThat(result.targetStatus()).isEqualTo(JobStatus.failed);
         assertThat(j.getStatus()).isEqualTo(JobStatus.failed);
+    }
+
+    @Test
+    void transitionToCompletedUpdatesWorkspaceCostViaTrackingService() {
+        WorkspaceCostTrackingService costTrackingService = mock(WorkspaceCostTrackingService.class);
+        JobReconciliationService costAwareSubject = new JobReconciliationService(
+                jobRepository,
+                stepRepository,
+                new WorkspaceJobStatusService(jobRepository, workspaceRepository),
+                new JobTerminalStateDeriver(),
+                jobNotificationTrigger,
+                scheduleJobService,
+                scheduler,
+                new JobReconciliationMetrics(new SimpleMeterRegistry()),
+                runTriggerEventWriter,
+                costTrackingService);
+
+        Job j = job(758, JobStatus.approved);
+        List<Step> steps = List.of(step(JobStatus.completed, 100), step(JobStatus.completed, 200));
+        doReturn(j).when(jobRepository).lockForUpdate(758);
+        doReturn(steps).when(stepRepository).findByJobId(758);
+
+        ReconciliationResult result = costAwareSubject.reconcile(758, false);
+
+        assertThat(result.targetStatus()).isEqualTo(JobStatus.completed);
+        verify(costTrackingService, times(1)).updateWorkspaceCostOnCompletion(j, steps);
     }
 }

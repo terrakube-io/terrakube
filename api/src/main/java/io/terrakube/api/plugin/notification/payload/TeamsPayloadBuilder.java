@@ -41,6 +41,14 @@ public class TeamsPayloadBuilder implements NotificationPayloadBuilder {
         if (context.configurationName() != null && !context.configurationName().isBlank()) {
             facts.add(Map.of("title", "Notification", "value", context.configurationName()));
         }
+        if (context.costSummary() != null && context.costSummary().isSuccess()) {
+            facts.add(Map.of("title", "Est. Monthly Cost", "value", context.costSummary().formatTotalMonthlyCost()));
+            facts.add(Map.of("title", "Est. Monthly Delta", "value", context.costSummary().formatMonthlyDelta()));
+            if (context.costSummary().unpricedResourceCount() > 0) {
+                facts.add(Map.of("title", "Unpriced Resources",
+                        "value", String.valueOf(context.costSummary().unpricedResourceCount())));
+            }
+        }
 
         List<Map<String, Object>> body = new ArrayList<>();
         if (context.workspaceUrl() != null && !context.workspaceUrl().isBlank()) {

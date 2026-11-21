@@ -58,6 +58,21 @@ public class SlackPayloadBuilder implements NotificationPayloadBuilder {
                     "text", Map.of("type", "mrkdwn", "text", "*Failure reason:* " + context.failureReason())));
         }
 
+        if (context.costSummary() != null && context.costSummary().isSuccess()) {
+            var cost = context.costSummary();
+            StringBuilder costText = new StringBuilder()
+                    .append("*💰 Pre-Deployment Cost Estimation:*\n")
+                    .append("• *Est. Monthly Cost:* ").append(cost.formatTotalMonthlyCost()).append("\n")
+                    .append("• *Est. Monthly Delta:* ").append(cost.formatMonthlyDelta());
+            int unpriced = cost.unpricedResourceCount();
+            if (unpriced > 0) {
+                costText.append(" _(").append(unpriced).append(" unpriced resource(s))_");
+            }
+            blocks.add(Map.of(
+                    "type", "section",
+                    "text", Map.of("type", "mrkdwn", "text", costText.toString())));
+        }
+
         if (context.runUrl() != null && !context.runUrl().isBlank()) {
             blocks.add(Map.of(
                     "type", "actions",

@@ -1,0 +1,366 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                   http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+    <!--
+    Demo organization showcasing end-to-end Infracost cost estimation + OPA FinOps guardrails.
+    Workspaces use offline mock AWS provider settings (zero AWS credentials needed to run terraform plan).
+    To enable live pricing estimation in this demo org, set INFRACOST_API_KEY as an Organization or
+    Global variable (or in the executor environment).
+    -->
+    <changeSet author="demo-data" id="demo-simple-finops">
+
+        <!--
+        ********************
+        *** ORGANIZATION ***
+        ********************
+        -->
+        <insert tableName="organization">
+            <column name="id"          value="71000000-0000-0000-0000-000000000001" />
+            <column name="name"        value="simple-finops" />
+            <column name="description" value="Demo organization showcasing end-to-end Infracost cost estimation, AWS sample plans, and OPA FinOps guardrails" />
+        </insert>
+
+        <!--
+        *************
+        *** TEAMS ***
+        *************
+        -->
+        <insert tableName="team">
+            <column name="id"                value="71000000-0000-0000-0000-000000000030" />
+            <column name="name"              value="TERRAKUBE_ADMIN" />
+            <column name="role"              value="admin" />
+            <column name="manage_state"      valueBoolean="true" />
+            <column name="manage_collection" valueBoolean="true" />
+            <column name="manage_job"        valueBoolean="true" />
+            <column name="manage_workspace"  valueBoolean="true" />
+            <column name="manage_module"     valueBoolean="true" />
+            <column name="manage_provider"   valueBoolean="true" />
+            <column name="manage_vcs"        valueBoolean="true" />
+            <column name="manage_template"   valueBoolean="true" />
+            <column name="manage_policies"   valueBoolean="true" />
+            <column name="plan_job"          valueBoolean="true" />
+            <column name="approve_job"       valueBoolean="true" />
+            <column name="destroy_job"       valueBoolean="true" />
+            <column name="organization_id"   value="71000000-0000-0000-0000-000000000001" />
+        </insert>
+
+        <insert tableName="team">
+            <column name="id"                value="71000000-0000-0000-0000-000000000031" />
+            <column name="name"              value="TERRAKUBE_FINOPS" />
+            <column name="role"              value="custom" />
+            <column name="manage_state"      valueBoolean="false" />
+            <column name="manage_collection" valueBoolean="false" />
+            <column name="manage_job"        valueBoolean="true" />
+            <column name="manage_workspace"  valueBoolean="true" />
+            <column name="manage_module"     valueBoolean="false" />
+            <column name="manage_provider"   valueBoolean="false" />
+            <column name="manage_vcs"        valueBoolean="false" />
+            <column name="manage_template"   valueBoolean="false" />
+            <column name="manage_policies"   valueBoolean="true" />
+            <column name="plan_job"          valueBoolean="true" />
+            <column name="approve_job"       valueBoolean="true" />
+            <column name="destroy_job"       valueBoolean="false" />
+            <column name="organization_id"   value="71000000-0000-0000-0000-000000000001" />
+        </insert>
+
+        <insert tableName="team">
+            <column name="id"                value="71000000-0000-0000-0000-000000000032" />
+            <column name="name"              value="TERRAKUBE_DEVELOPERS" />
+            <column name="role"              value="write" />
+            <column name="manage_state"      valueBoolean="true" />
+            <column name="manage_collection" valueBoolean="true" />
+            <column name="manage_job"        valueBoolean="true" />
+            <column name="manage_workspace"  valueBoolean="true" />
+            <column name="manage_module"     valueBoolean="true" />
+            <column name="manage_provider"   valueBoolean="true" />
+            <column name="manage_vcs"        valueBoolean="true" />
+            <column name="manage_template"   valueBoolean="true" />
+            <column name="manage_policies"   valueBoolean="false" />
+            <column name="plan_job"          valueBoolean="true" />
+            <column name="approve_job"       valueBoolean="true" />
+            <column name="destroy_job"       valueBoolean="true" />
+            <column name="organization_id"   value="71000000-0000-0000-0000-000000000001" />
+        </insert>
+
+        <!--
+        ****************
+        *** PROJECTS ***
+        ****************
+        -->
+        <insert tableName="project">
+            <column name="id"              value="71000000-0000-0000-0000-000000000010" />
+            <column name="name"            value="aws-finops-terraform" />
+            <column name="description"     value="Sample AWS workspaces demonstrating Infracost cost estimation and OPA FinOps policies with Terraform" />
+            <column name="organization_id" value="71000000-0000-0000-0000-000000000001" />
+        </insert>
+
+        <insert tableName="project">
+            <column name="id"              value="71000000-0000-0000-0000-000000000020" />
+            <column name="name"            value="aws-finops-tofu" />
+            <column name="description"     value="Sample AWS workspaces demonstrating Infracost cost estimation with OpenTofu" />
+            <column name="organization_id" value="71000000-0000-0000-0000-000000000001" />
+        </insert>
+
+        <!--
+        *****************
+        *** TEMPLATES ***
+        *****************
+        -->
+        <insert tableName="template">
+            <column name="id"              value="71000000-0000-0000-0000-000000000035" />
+            <column name="name"            value="Plan" />
+            <column name="description"     value="Running terraform plan with Infracost cost estimation" />
+            <column name="version"         value="1.0.0" />
+            <column name="tcl"             value="ZmxvdzoKICAtIHR5cGU6ICJ0ZXJyYWZvcm1QbGFuIgogICAgbmFtZTogIlBsYW4iCiAgICBzdGVwOiAxMDAK" />
+            <column name="organization_id" value="71000000-0000-0000-0000-000000000001" />
+        </insert>
+
+        <insert tableName="template">
+            <column name="id"              value="71000000-0000-0000-0000-000000000036" />
+            <column name="name"            value="Plan and Apply" />
+            <column name="description"     value="Running terraform plan and apply" />
+            <column name="version"         value="1.0.0" />
+            <column name="tcl"             value="ZmxvdzoKICAtIHR5cGU6ICJ0ZXJyYWZvcm1QbGFuIgogICAgc3RlcDogMTAwCiAgICBuYW1lOiAiUGxhbiIKICAtIHR5cGU6ICJ0ZXJyYWZvcm1BcHBseSIKICAgIHN0ZXA6IDIwMAogICAgbmFtZTogIkFwcGx5Ig==" />
+            <column name="organization_id" value="71000000-0000-0000-0000-000000000001" />
+        </insert>
+
+        <insert tableName="template">
+            <column name="id"              value="71000000-0000-0000-0000-000000000037" />
+            <column name="name"            value="Terraform-Destroy" />
+            <column name="description"     value="Running terraform destroy" />
+            <column name="version"         value="1.0.0" />
+            <column name="tcl"             value="ZmxvdzoKICAtIHR5cGU6ICJ0ZXJyYWZvcm1EZXN0cm95IgogICAgc3RlcDogMTAwCg==" />
+            <column name="organization_id" value="71000000-0000-0000-0000-000000000001" />
+        </insert>
+
+        <!--
+        *******************************************
+        *** AWS WORKSPACES - TERRAFORM (1.15.9) ***
+        *******************************************
+        -->
+        <insert tableName="workspace">
+            <column name="id"                       value="71000000-0000-0000-0000-000000000060" />
+            <column name="name"                     value="aws-cost-low" />
+            <column name="description"              value="Low-cost AWS workload (~$10/mo, passes all FinOps guardrails)" />
+            <column name="source"                   value="https://github.com/terrakube-io/terrakube-opa-reference.git" />
+            <column name="branch"                   value="main" />
+            <column name="folder"                   value="/examples/aws-cost-low" />
+            <column name="terraform_version"        value="1.15.9" />
+            <column name="iac_type"                 value="terraform" />
+            <column name="execution_mode"           value="remote" />
+            <column name="policy_compliance_status" value="UNKNOWN" />
+            <column name="organization_id"          value="71000000-0000-0000-0000-000000000001" />
+            <column name="project_id"               value="71000000-0000-0000-0000-000000000010" />
+        </insert>
+
+        <insert tableName="workspace">
+            <column name="id"                       value="71000000-0000-0000-0000-000000000061" />
+            <column name="name"                     value="aws-cost-advisory" />
+            <column name="description"              value="Advisory AWS workload (~$150+/mo with infracost-usage.yml S3 usage modeling)" />
+            <column name="source"                   value="https://github.com/terrakube-io/terrakube-opa-reference.git" />
+            <column name="branch"                   value="main" />
+            <column name="folder"                   value="/examples/aws-cost-advisory" />
+            <column name="terraform_version"        value="1.15.9" />
+            <column name="iac_type"                 value="terraform" />
+            <column name="execution_mode"           value="remote" />
+            <column name="policy_compliance_status" value="UNKNOWN" />
+            <column name="organization_id"          value="71000000-0000-0000-0000-000000000001" />
+            <column name="project_id"               value="71000000-0000-0000-0000-000000000010" />
+        </insert>
+
+        <insert tableName="workspace">
+            <column name="id"                       value="71000000-0000-0000-0000-000000000062" />
+            <column name="name"                     value="aws-cost-soft-fail" />
+            <column name="description"              value="Soft-mandatory AWS workload (~$360/mo delta triggers FinOps approval override)" />
+            <column name="source"                   value="https://github.com/terrakube-io/terrakube-opa-reference.git" />
+            <column name="branch"                   value="main" />
+            <column name="folder"                   value="/examples/aws-cost-soft-fail" />
+            <column name="terraform_version"        value="1.15.9" />
+            <column name="iac_type"                 value="terraform" />
+            <column name="execution_mode"           value="remote" />
+            <column name="policy_compliance_status" value="UNKNOWN" />
+            <column name="organization_id"          value="71000000-0000-0000-0000-000000000001" />
+            <column name="project_id"               value="71000000-0000-0000-0000-000000000010" />
+        </insert>
+
+        <insert tableName="workspace">
+            <column name="id"                       value="71000000-0000-0000-0000-000000000063" />
+            <column name="name"                     value="aws-cost-hard-fail" />
+            <column name="description"              value="Hard-mandatory AWS workload (>$5,000/mo exceeds hard budget ceiling and blocks apply)" />
+            <column name="source"                   value="https://github.com/terrakube-io/terrakube-opa-reference.git" />
+            <column name="branch"                   value="main" />
+            <column name="folder"                   value="/examples/aws-cost-hard-fail" />
+            <column name="terraform_version"        value="1.15.9" />
+            <column name="iac_type"                 value="terraform" />
+            <column name="execution_mode"           value="remote" />
+            <column name="policy_compliance_status" value="UNKNOWN" />
+            <column name="organization_id"          value="71000000-0000-0000-0000-000000000001" />
+            <column name="project_id"               value="71000000-0000-0000-0000-000000000010" />
+        </insert>
+
+        <insert tableName="workspace">
+            <column name="id"                       value="71000000-0000-0000-0000-000000000064" />
+            <column name="name"                     value="aws-cost-exempted" />
+            <column name="description"              value="Exempted AWS ML cluster workload (>$5,000/mo waived via PolicyExemption FINOPS-101)" />
+            <column name="source"                   value="https://github.com/terrakube-io/terrakube-opa-reference.git" />
+            <column name="branch"                   value="main" />
+            <column name="folder"                   value="/examples/aws-cost-exempted" />
+            <column name="terraform_version"        value="1.15.9" />
+            <column name="iac_type"                 value="terraform" />
+            <column name="execution_mode"           value="remote" />
+            <column name="policy_compliance_status" value="UNKNOWN" />
+            <column name="organization_id"          value="71000000-0000-0000-0000-000000000001" />
+            <column name="project_id"               value="71000000-0000-0000-0000-000000000010" />
+        </insert>
+
+        <insert tableName="workspace">
+            <column name="id"                       value="71000000-0000-0000-0000-000000000065" />
+            <column name="name"                     value="aws-cost-parameter" />
+            <column name="description"              value="Dynamic parameter AWS workload (~$140/mo fails PolicySetParameter max_monthly_cost=100)" />
+            <column name="source"                   value="https://github.com/terrakube-io/terrakube-opa-reference.git" />
+            <column name="branch"                   value="main" />
+            <column name="folder"                   value="/examples/aws-cost-parameter" />
+            <column name="terraform_version"        value="1.15.9" />
+            <column name="iac_type"                 value="terraform" />
+            <column name="execution_mode"           value="remote" />
+            <column name="policy_compliance_status" value="UNKNOWN" />
+            <column name="organization_id"          value="71000000-0000-0000-0000-000000000001" />
+            <column name="project_id"               value="71000000-0000-0000-0000-000000000010" />
+        </insert>
+
+        <!--
+        ******************************************
+        *** AWS WORKSPACE - OPENTOFU (1.11.14) ***
+        ******************************************
+        -->
+        <insert tableName="workspace">
+            <column name="id"                       value="71000000-0000-0000-0000-000000000066" />
+            <column name="name"                     value="tofu-aws-cost-low" />
+            <column name="description"              value="OpenTofu low-cost AWS workload (~$10/mo, passes all FinOps guardrails)" />
+            <column name="source"                   value="https://github.com/terrakube-io/terrakube-opa-reference.git" />
+            <column name="branch"                   value="main" />
+            <column name="folder"                   value="/examples/aws-cost-low" />
+            <column name="terraform_version"        value="1.11.14" />
+            <column name="iac_type"                 value="tofu" />
+            <column name="execution_mode"           value="remote" />
+            <column name="policy_compliance_status" value="UNKNOWN" />
+            <column name="organization_id"          value="71000000-0000-0000-0000-000000000001" />
+            <column name="project_id"               value="71000000-0000-0000-0000-000000000020" />
+        </insert>
+
+        <!--
+        *******************
+        *** POLICY SETS ***
+        *******************
+        -->
+        <insert tableName="policy_set">
+            <column name="id"                value="71000000-0000-0000-0000-000000000040" />
+            <column name="name"              value="finops-advisory" />
+            <column name="description"       value="Advisory FinOps guardrail warning on resources over $100/mo or unpriced resources" />
+            <column name="enforcement_level" value="ADVISORY" />
+            <column name="global"            valueBoolean="true" />
+            <column name="repository"        value="https://github.com/terrakube-io/terrakube-opa-reference.git" />
+            <column name="branch"            value="main" />
+            <column name="folder"            value="bundles/finops/advisory" />
+            <column name="organization_id"   value="71000000-0000-0000-0000-000000000001" />
+        </insert>
+
+        <insert tableName="policy_set">
+            <column name="id"                value="71000000-0000-0000-0000-000000000041" />
+            <column name="name"              value="finops-soft-mandatory" />
+            <column name="description"       value="Soft-mandatory FinOps guardrail requiring TERRAKUBE_ADMIN override if monthly delta > $200" />
+            <column name="enforcement_level" value="SOFT_MANDATORY" />
+            <column name="override_team"     value="TERRAKUBE_ADMIN" />
+            <column name="global"            valueBoolean="false" />
+            <column name="repository"        value="https://github.com/terrakube-io/terrakube-opa-reference.git" />
+            <column name="branch"            value="main" />
+            <column name="folder"            value="bundles/finops/soft_mandatory" />
+            <column name="organization_id"   value="71000000-0000-0000-0000-000000000001" />
+        </insert>
+
+        <insert tableName="policy_set">
+            <column name="id"                value="71000000-0000-0000-0000-000000000042" />
+            <column name="name"              value="finops-hard-mandatory" />
+            <column name="description"       value="Hard-mandatory FinOps ceiling strictly blocking plans above $5,000/mo" />
+            <column name="enforcement_level" value="HARD_MANDATORY" />
+            <column name="global"            valueBoolean="false" />
+            <column name="repository"        value="https://github.com/terrakube-io/terrakube-opa-reference.git" />
+            <column name="branch"            value="main" />
+            <column name="folder"            value="bundles/finops/hard_mandatory" />
+            <column name="organization_id"   value="71000000-0000-0000-0000-000000000001" />
+        </insert>
+
+        <insert tableName="policy_set">
+            <column name="id"                value="71000000-0000-0000-0000-000000000043" />
+            <column name="name"              value="finops-dynamic-budget" />
+            <column name="description"       value="Hard-mandatory dynamic monthly budget configured via PolicySetParameter max_monthly_cost" />
+            <column name="enforcement_level" value="HARD_MANDATORY" />
+            <column name="global"            valueBoolean="false" />
+            <column name="repository"        value="https://github.com/terrakube-io/terrakube-opa-reference.git" />
+            <column name="branch"            value="main" />
+            <column name="folder"            value="bundles/finops/dynamic_budget" />
+            <column name="organization_id"   value="71000000-0000-0000-0000-000000000001" />
+        </insert>
+
+        <!--
+        **************************
+        *** POLICY ATTACHMENTS ***
+        **************************
+        -->
+        <insert tableName="policy_attachment">
+            <column name="id"            value="71000000-0000-0000-0000-000000000050" />
+            <column name="policy_set_id" value="71000000-0000-0000-0000-000000000041" />
+            <column name="workspace_id"  value="71000000-0000-0000-0000-000000000062" />
+        </insert>
+
+        <insert tableName="policy_attachment">
+            <column name="id"            value="71000000-0000-0000-0000-000000000051" />
+            <column name="policy_set_id" value="71000000-0000-0000-0000-000000000042" />
+            <column name="workspace_id"  value="71000000-0000-0000-0000-000000000063" />
+        </insert>
+
+        <insert tableName="policy_attachment">
+            <column name="id"            value="71000000-0000-0000-0000-000000000052" />
+            <column name="policy_set_id" value="71000000-0000-0000-0000-000000000042" />
+            <column name="workspace_id"  value="71000000-0000-0000-0000-000000000064" />
+        </insert>
+
+        <insert tableName="policy_attachment">
+            <column name="id"            value="71000000-0000-0000-0000-000000000053" />
+            <column name="policy_set_id" value="71000000-0000-0000-0000-000000000043" />
+            <column name="workspace_id"  value="71000000-0000-0000-0000-000000000065" />
+        </insert>
+
+        <!--
+        *************************
+        *** POLICY EXEMPTIONS ***
+        *************************
+        -->
+        <insert tableName="policy_exemption">
+            <column name="id"               value="71000000-0000-0000-0000-000000000070" />
+            <column name="policy_set_id"    value="71000000-0000-0000-0000-000000000042" />
+            <column name="rule_id"          value="finops_monthly_budget_hard_ceiling" />
+            <column name="workspace_id"     value="71000000-0000-0000-0000-000000000064" />
+            <column name="ticket_reference" value="FINOPS-101" />
+            <column name="justification"    value="Approved GPU/compute capacity budget waiver for Q4 ML training cluster" />
+            <column name="expires_at"       valueDate="2030-12-31T23:59:59" />
+            <column name="organization_id"  value="71000000-0000-0000-0000-000000000001" />
+        </insert>
+
+        <!--
+        *****************************
+        *** POLICY SET PARAMETERS ***
+        *****************************
+        -->
+        <insert tableName="policy_set_parameter">
+            <column name="id"              value="71000000-0000-0000-0000-000000000080" />
+            <column name="policy_set_id"   value="71000000-0000-0000-0000-000000000043" />
+            <column name="parameter_key"   value="max_monthly_cost" />
+            <column name="parameter_value" value="100" />
+            <column name="description"     value="Dynamic monthly budget ceiling enforced in USD" />
+        </insert>
+
+    </changeSet>
+</databaseChangeLog>
