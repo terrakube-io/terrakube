@@ -137,3 +137,9 @@ h5.webhook-group-title {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* The help under "Require an approved pull request": one line per VCS provider. */
+.webhook-help-list {
+  margin: 4px 0;
+  padding-left: 20px;
+}

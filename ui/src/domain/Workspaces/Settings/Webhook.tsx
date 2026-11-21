@@ -92,12 +92,30 @@ const toAttributes = (trigger: Trigger, position: number) => ({
   prApplyRequirement: trigger.prApplyRequireApproval ? "APPROVED" : "WRITE",
 });
 
-// What "approved" means, as the API checks it (PrApplyAuthorizationService).
-const APPROVAL_HELP =
-  "The pull request must also be approved under the repository's own rules, for the commit being applied. " +
-  "On GitHub, branch protection must require a review; on GitLab, someone other than the author must approve. " +
-  "Turn on dismissing stale approvals (GitHub) or resetting approvals on push (GitLab) so a new commit needs a new approval. " +
-  "Bitbucket and Azure DevOps cannot be checked yet, so their comments are refused.";
+// What "approved" means, as the API checks it (PrApplyAuthorizationService), then where the setting applies.
+const ApprovalHelp = ({ notes }: { notes: string[] }) => (
+  <>
+    <div>
+      The pull request must also be approved under the repository&apos;s own rules, for the commit being applied.
+    </div>
+    <ul className="webhook-help-list">
+      <li>
+        <strong>GitHub</strong>: branch protection must require a review. Dismiss stale approvals so a new commit needs
+        a new approval.
+      </li>
+      <li>
+        <strong>GitLab</strong>: someone other than the author must approve. Reset approvals on push so a new commit
+        needs a new approval.
+      </li>
+      <li>
+        <strong>Bitbucket and Azure DevOps</strong>: cannot be checked yet, so their comments are refused.
+      </li>
+    </ul>
+    {notes.map((note) => (
+      <div key={note}>{note}</div>
+    ))}
+  </>
+);
 
 const REQUIRE_APPROVAL_LABEL = "Require an approved pull request";
 // The API checks a comment against the strictest pull request trigger that can start an apply, not only the one it
@@ -812,7 +830,7 @@ export const WorkspaceWebhook = ({
                                           {orgRequiresApproval ? (
                                             // Not bound to the form: the trigger keeps its own value, the API
                                             // applies the stricter of the two.
-                                            <Form.Item extra={`${ORG_NOTE.APPROVED} ${APPROVAL_HELP}`}>
+                                            <Form.Item extra={<ApprovalHelp notes={[ORG_NOTE.APPROVED]} />}>
                                               <Checkbox checked={trigger.prApplyEnabled} disabled>
                                                 {REQUIRE_APPROVAL_LABEL}
                                               </Checkbox>
@@ -821,13 +839,16 @@ export const WorkspaceWebhook = ({
                                             <Form.Item
                                               name={[name, "prApplyRequireApproval"]}
                                               valuePropName="checked"
-                                              extra={[
-                                                APPROVAL_HELP,
-                                                WORKSPACE_NOTE,
-                                                workspaceRequiresApproval && !trigger.prApplyRequireApproval
-                                                  ? OTHER_TRIGGER_NOTE
-                                                  : ORG_NOTE[orgMinimum],
-                                              ].join(" ")}
+                                              extra={
+                                                <ApprovalHelp
+                                                  notes={[
+                                                    WORKSPACE_NOTE,
+                                                    workspaceRequiresApproval && !trigger.prApplyRequireApproval
+                                                      ? OTHER_TRIGGER_NOTE
+                                                      : ORG_NOTE[orgMinimum],
+                                                  ]}
+                                                />
+                                              }
                                             >
                                               <Checkbox
                                                 disabled={!manageWorkspace || !trigger.prApplyEnabled || restrictApply}
