@@ -246,7 +246,7 @@ export const GeneralSettings = ({ managePermission = true }: Props) => {
                     {
                       value: "APPROVED",
                       label: "Approved pull request",
-                      help: "Write access, and the pull request must be approved under the repository's own rules on its latest commit.",
+                      help: "Write access, and the pull request approved under the repository's own rules: on GitHub, branch protection must require a review; on GitLab, someone other than the author must approve. Bitbucket and Azure DevOps comments are refused.",
                     },
                   ]}
                 />

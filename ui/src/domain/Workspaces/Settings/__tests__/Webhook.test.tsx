@@ -361,6 +361,42 @@ describe("WorkspaceWebhook", () => {
       expect(savedOps()[1].data.attributes).toMatchObject({ prApplyEnabled: true, prApplyRequirement: "WRITE" });
     });
 
+    it("shows the approved pull request requirement as required when the organization asks for it", async () => {
+      const event = {
+        ...base,
+        event: "PULL_REQUEST",
+        priority: 0,
+        branch: "main",
+        path: "**",
+        pathType: "PATTERN",
+        prWorkflowEnabled: true,
+        prApplyEnabled: true,
+        prApplyRequirement: "WRITE",
+      };
+      (axiosInstance.get as jest.Mock).mockImplementation((url: string) =>
+        Promise.resolve(
+          url.endsWith("/events")
+            ? { data: { data: [{ id: "ev-1", attributes: event }] } }
+            : url.startsWith("organization/org-1?")
+              ? { data: { data: { attributes: { prApplyMinRequirement: "APPROVED" } } } }
+              : { data: { data: { attributes: { remoteHookId: "4242" } } } }
+        )
+      );
+      renderWebhook();
+      await screen.findByText(/Apply by comment once approved/);
+
+      fireEvent.click(screen.getByRole("button", { name: "Edit trigger 1" }));
+      const requireApproval = screen.getByRole("checkbox", { name: /Require an approved pull request/ });
+      expect(requireApproval).toBeChecked();
+      expect(requireApproval).toBeDisabled();
+      expect(screen.getByText(/Required by the organization settings/)).toBeInTheDocument();
+
+      // The trigger keeps its own setting; the organization minimum is applied by the API.
+      fireEvent.click(screen.getByRole("button", { name: "Save webhook" }));
+      await waitFor(() => expect(axiosInstance.post).toHaveBeenCalledTimes(1));
+      expect(savedOps()[1].data.attributes).toMatchObject({ prApplyRequirement: "WRITE" });
+    });
+
     it("only offers the approved pull request requirement when apply by comment is on", async () => {
       loadEvents([{ ...base, event: "PULL_REQUEST", priority: 0, branch: "main", path: "*", prWorkflowEnabled: true }]);
       renderWebhook();

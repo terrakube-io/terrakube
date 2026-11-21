@@ -92,6 +92,13 @@ const toAttributes = (trigger: Trigger, position: number) => ({
   prApplyRequirement: trigger.prApplyRequireApproval ? "APPROVED" : "WRITE",
 });
 
+// What "approved" means, as the API checks it (PrApplyAuthorizationService).
+const APPROVAL_HELP =
+  "The pull request must also be approved under the repository's own rules, for the commit being applied. " +
+  "On GitHub, branch protection must require a review; on GitLab, someone other than the author must approve. " +
+  "Turn on dismissing stale approvals (GitHub) or resetting approvals on push (GitLab) so a new commit needs a new approval. " +
+  "Bitbucket and Azure DevOps cannot be checked yet, so their comments are refused.";
+
 const EVENT_LABELS: Record<string, string> = { push: "Push", pull_request: "Pull request", release: "Release" };
 const SHARED_WEBHOOK_VCS = [VcsType.GITHUB, VcsType.GITLAB, VcsType.AZURE_SP_MI, VcsType.AZURE_DEVOPS];
 // Explicitly drop Content-Type: Elide's Spring routing maps DELETE requests carrying
@@ -136,6 +143,19 @@ export const WorkspaceWebhook = ({
   const [deletedIds, setDeletedIds] = useState<string[]>([]);
   const [pendingDelete, setPendingDelete] = useState<Trigger | null>(null);
   const [confirmDisable, setConfirmDisable] = useState(false);
+  // The organization minimum: when it requires an approved pull request, every trigger does.
+  const [orgRequiresApproval, setOrgRequiresApproval] = useState(false);
+
+  useEffect(() => {
+    if (!hasVcs) {
+      return;
+    }
+    axiosInstance
+      .get(`organization/${organizationId}?fields[organization]=prApplyMinRequirement`)
+      .then((response) => setOrgRequiresApproval(response.data?.data?.attributes?.prApplyMinRequirement === "APPROVED"))
+      // The API applies the minimum either way; without it the page only shows the trigger's own setting.
+      .catch(() => setOrgRequiresApproval(false));
+  }, [organizationId, hasVcs]);
 
   useEffect(() => {
     if (!webhookId || !hasVcs) {
@@ -486,7 +506,9 @@ export const WorkspaceWebhook = ({
                             trigger.event === "pull_request" && trigger.prWorkflowEnabled && "Plan posted on PRs",
                             trigger.event === "pull_request" &&
                               trigger.prApplyEnabled &&
-                              (trigger.prApplyRequireApproval ? "Apply by comment once approved" : "Apply by comment"),
+                              (trigger.prApplyRequireApproval || orgRequiresApproval
+                                ? "Apply by comment once approved"
+                                : "Apply by comment"),
                             !trigger.created && "Not saved",
                           ].filter(Boolean);
                           return (
@@ -771,24 +793,37 @@ export const WorkspaceWebhook = ({
                                               Allow apply from a pull request comment
                                             </Checkbox>
                                           </Form.Item>
-                                          <Form.Item
-                                            name={[name, "prApplyRequireApproval"]}
-                                            valuePropName="checked"
-                                            extra={
-                                              <>
-                                                The pull request must also be approved under the repository&apos;s own
-                                                rules (branch protection on GitHub, approval rules on GitLab) on its
-                                                latest commit. The organization settings can require this for every
-                                                workspace.
-                                              </>
-                                            }
-                                          >
-                                            <Checkbox
-                                              disabled={!manageWorkspace || !trigger.prApplyEnabled || restrictApply}
+                                          {orgRequiresApproval ? (
+                                            <Form.Item
+                                              extra={
+                                                <>
+                                                  Required by the organization settings for every workspace.{" "}
+                                                  {APPROVAL_HELP}
+                                                </>
+                                              }
                                             >
-                                              Require an approved pull request
-                                            </Checkbox>
-                                          </Form.Item>
+                                              <Checkbox checked disabled>
+                                                Require an approved pull request
+                                              </Checkbox>
+                                            </Form.Item>
+                                          ) : (
+                                            <Form.Item
+                                              name={[name, "prApplyRequireApproval"]}
+                                              valuePropName="checked"
+                                              extra={
+                                                <>
+                                                  {APPROVAL_HELP} The organization settings can require this for every
+                                                  workspace.
+                                                </>
+                                              }
+                                            >
+                                              <Checkbox
+                                                disabled={!manageWorkspace || !trigger.prApplyEnabled || restrictApply}
+                                              >
+                                                Require an approved pull request
+                                              </Checkbox>
+                                            </Form.Item>
+                                          )}
                                         </>
                                       )}
                                     </div>
