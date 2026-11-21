@@ -157,6 +157,27 @@ public class ProjectTests extends ServerApplicationTests {
         }
     }
 
+    @Test
+    void landingTabOverrideIsAcceptedAndUnknownTabsAreRejected() {
+        String id = createProject("landing-tab-check", HttpStatus.CREATED.value());
+        try {
+            patchLandingTab(id, "workspaces", HttpStatus.NO_CONTENT.value());
+            patchLandingTab(id, "nonsense", HttpStatus.BAD_REQUEST.value());
+        } finally {
+            deleteProject(id);
+        }
+    }
+
+    private void patchLandingTab(String id, String tab, int expectedStatus) {
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
+                .body("{\"data\":{\"type\":\"project\",\"id\":\"" + id + "\",\"attributes\":{\"landingTab\":\"" + tab + "\"}}}")
+                .when()
+                .patch("/api/v1/organization/" + ORG + "/project/" + id)
+                .then()
+                .statusCode(expectedStatus);
+    }
+
     private String createProject(String name, int expectedStatus) {
         return given()
                 .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")

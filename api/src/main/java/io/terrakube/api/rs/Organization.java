@@ -18,6 +18,7 @@ import io.terrakube.api.rs.template.Template;
 import io.terrakube.api.rs.vcs.Vcs;
 import io.terrakube.api.rs.workspace.Workspace;
 import jakarta.persistence.*;
+import jakarta.validation.constraints.Pattern;
 import lombok.Getter;
 import lombok.Setter;
 import org.hibernate.annotations.JdbcTypeCode;
@@ -116,6 +117,12 @@ public class Organization {
 
     @Column(name = "icon")
     private String icon;
+
+    // The tab projects open on unless a project or the person says otherwise. Null means the overview.
+    @Pattern(regexp = "overview|workspaces|variables|policies|teams|general", message = "Landing tab must be one of overview, workspaces, variables, policies, teams, general")
+    @Column(name = "project_landing_tab")
+    private String projectLandingTab;
+
 
     @UpdatePermission(expression = "user belongs organization")
     @OneToMany(mappedBy = "organization")

@@ -959,7 +959,8 @@ class NewSecurityChecksTest {
         org.junit.jupiter.api.Assertions.assertNotNull(
                 Workspace.class.getDeclaredField("ssh").getAnnotation(LifeCycleHookBinding.class));
         org.junit.jupiter.api.Assertions.assertNotNull(
-                Workspace.class.getDeclaredField("project").getAnnotation(LifeCycleHookBinding.class));
+                Workspace.class.getDeclaredField("project").getAnnotationsByType(LifeCycleHookBinding.class).length > 0
+                        ? Boolean.TRUE : null);
         org.junit.jupiter.api.Assertions.assertNotNull(
                 Workspace.class.getDeclaredField("deleted").getAnnotation(LifeCycleHookBinding.class));
 

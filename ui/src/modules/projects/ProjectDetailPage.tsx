@@ -1,15 +1,17 @@
 import { DeleteOutlined } from "@ant-design/icons";
-import { Button, Flex, Form, Input, Layout, Menu, Popconfirm, Space, Spin, Typography, message } from "antd";
-import { useEffect, useState } from "react";
+import { Button, Flex, Form, Input, Layout, Menu, Popconfirm, Select, Space, Spin, Typography, message } from "antd";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import PageWrapper from "@/components/layout/PageWrapper/PageWrapper";
 import projectService from "./projectService";
 import { useProjectPermissions } from "@/modules/permissions/useProjectPermissions";
 import ProjectWorkspaces from "./ProjectWorkspaces";
 import ProjectAccessTab from "./ProjectAccessTab";
+import ProjectDefaultTags from "./ProjectDefaultTags";
 import ProjectOverview from "./ProjectOverview";
+import ProjectPoliciesTab from "./ProjectPoliciesTab";
 import ProjectVariablesTab from "./ProjectVariablesTab";
-import { ProjectTab, getLandingTab } from "./projectLandingTab";
+import { PROJECT_TAB_LABELS, ProjectTab, resolveLandingTab } from "./projectLandingTab";
 import useApiRequest from "@/modules/api/useApiRequest";
 import { ProjectModel, ProjectSummaryModel } from "@/domain/types";
 import { ORGANIZATION_NAME } from "../../config/actionTypes";
@@ -30,6 +32,7 @@ type Props = {
 type ProjectForm = {
   name: string;
   description?: string;
+  landingTab?: string;
 };
 
 type GeneralProps = {
@@ -57,14 +60,21 @@ function ProjectGeneralSettings({
 
   useEffect(() => {
     if (project) {
-      form.setFieldsValue({ name: project.name, description: project.description });
+      form.setFieldsValue({
+        name: project.name,
+        description: project.description,
+        landingTab: project.landingTab ?? "default",
+      });
     }
   }, [project, form]);
 
   const onFinish = async (values: ProjectForm) => {
     setWaiting(true);
     try {
-      await projectService.updateProject(orgid, projectId, values);
+      await projectService.updateProject(orgid, projectId, {
+        ...values,
+        landingTab: !values.landingTab || values.landingTab === "default" ? null : values.landingTab,
+      });
       message.success("Project updated successfully");
       onSaved();
     } catch (err: any) {
@@ -110,6 +120,19 @@ function ProjectGeneralSettings({
           <Form.Item name="description" label="Description" extra="Optional">
             <Input.TextArea rows={5} placeholder="Project description" disabled={!canUpdateProject} />
           </Form.Item>
+          <Form.Item
+            name="landingTab"
+            label="Opens on"
+            extra="The tab this project opens on. People can still choose their own."
+          >
+            <Select
+              disabled={!canUpdateProject}
+              options={[
+                { value: "default", label: "Organization default" },
+                ...Object.entries(PROJECT_TAB_LABELS).map(([value, label]) => ({ value, label })),
+              ]}
+            />
+          </Form.Item>
           <Form.Item>
             <Flex justify="flex-end">
               <Button type="primary" htmlType="submit" disabled={!canUpdateProject}>
@@ -119,6 +142,8 @@ function ProjectGeneralSettings({
           </Form.Item>
         </Form>
       </Spin>
+
+      <ProjectDefaultTags orgid={orgid} projectId={projectId} canManage={canUpdateProject} />
 
       <div className="project-delete-section">
         <Typography.Text type="secondary">
@@ -175,7 +200,8 @@ function ProjectGeneralSettings({
 export default function ProjectDetailPage({ organizationName, setOrganizationName }: Props) {
   const { orgid, id } = useParams();
   const [project, setProject] = useState<ProjectModel | null>(null);
-  const [activeKey, setActiveKey] = useState<ProjectTab>(getLandingTab);
+  const [activeKey, setActiveKey] = useState<ProjectTab>("overview");
+  const landedOn = useRef<string | undefined>(undefined);
   const [summary, setSummary] = useState<ProjectSummaryModel | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(true);
   const { permissions } = useOrgPermissions();
@@ -186,6 +212,11 @@ export default function ProjectDetailPage({ organizationName, setOrganizationNam
     action: () => projectService.getProject(orgid!, id!),
     onReturn: (data) => {
       setProject(data);
+      // Open on the right tab once per project, so reloading after a save does not move the user.
+      if (landedOn.current !== data.id) {
+        landedOn.current = data.id;
+        setActiveKey(resolveLandingTab(data.landingTab, data.organizationLandingTab));
+      }
       const stored = sessionStorage.getItem(ORGANIZATION_NAME);
       if (stored) setOrganizationName(stored);
     },
@@ -224,6 +255,7 @@ export default function ProjectDetailPage({ organizationName, setOrganizationNam
         { key: "general", label: "General" },
         { key: "workspaces", label: "Workspaces" },
         { key: "variables", label: "Variables" },
+        { key: "policies", label: "Policies" },
         { key: "teams", label: "Teams" },
       ],
     },
@@ -232,11 +264,15 @@ export default function ProjectDetailPage({ organizationName, setOrganizationNam
   const renderContent = () => {
     switch (activeKey) {
       case "overview":
-        return <ProjectOverview summary={summary} loading={summaryLoading} onOpenTab={handleTabChange} />;
+        return (
+          <ProjectOverview orgid={orgid!} summary={summary} loading={summaryLoading} onOpenTab={handleTabChange} />
+        );
       case "workspaces":
         return <ProjectWorkspaces key={`${orgid}:${id}`} orgid={orgid!} projectId={id!} canManage={canManageProject} />;
       case "variables":
         return <ProjectVariablesTab orgid={orgid!} projectId={id!} canManage={permissions.manageCollection} />;
+      case "policies":
+        return <ProjectPoliciesTab orgid={orgid!} projectId={id!} />;
       case "teams":
         return <ProjectAccessTab orgid={orgid!} projectId={id!} canManage={canManageProject} />;
       case "general":
