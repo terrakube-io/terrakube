@@ -452,6 +452,12 @@ describe("WorkspaceWebhook", () => {
       expect(screen.getAllByText(/Apply by comment once approved/)).toHaveLength(2);
       fireEvent.click(screen.getByRole("button", { name: "Edit trigger 2" }));
       expect(screen.getByText(/Another pull request trigger of this workspace requires it/)).toBeInTheDocument();
+
+      // A trigger that cannot start an apply is not covered, so it does not get the note.
+      fireEvent.click(screen.getByRole("checkbox", { name: /Allow apply from a pull request comment/ }));
+      await waitFor(() =>
+        expect(screen.queryByText(/Another pull request trigger of this workspace requires it/)).not.toBeInTheDocument()
+      );
     });
 
     it("drops the approved pull request requirement when apply by comment is turned off", async () => {

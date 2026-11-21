@@ -857,7 +857,9 @@ export const WorkspaceWebhook = ({
                                                 <ApprovalHelp
                                                   notes={[
                                                     WORKSPACE_NOTE,
-                                                    workspaceRequiresApproval && !trigger.prApplyRequireApproval
+                                                    workspaceRequiresApproval &&
+                                                    trigger.prApplyEnabled &&
+                                                    !trigger.prApplyRequireApproval
                                                       ? OTHER_TRIGGER_NOTE
                                                       : orgMinimum && ORG_NOTE[orgMinimum],
                                                   ].filter((note): note is string => Boolean(note))}
