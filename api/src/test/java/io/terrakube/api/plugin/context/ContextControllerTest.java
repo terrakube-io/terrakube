@@ -77,7 +77,7 @@ class ContextControllerTest {
         ContextWriteService writeService = new ContextWriteService(jobRepository, new ContextWriteLock(redisTemplate), readService,
                 sanitizer, storageTypeService, storageMetrics, new ObjectMapper());
         return new ContextController(sanitizer, streamingService, readService, writeService, properties,
-                policyEvaluationService, null, authenticatedUser(), new ObjectMapper());
+                policyEvaluationService, null, authenticatedUser(), new ObjectMapper(), null);
     }
 
     /** A storage mock whose reads return the last saved context, so successive writes build on each other. */

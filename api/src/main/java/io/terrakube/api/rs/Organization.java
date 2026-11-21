@@ -9,6 +9,7 @@ import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.module.Module;
 import io.terrakube.api.rs.notification.NotificationConfiguration;
 import io.terrakube.api.rs.project.Project;
+import io.terrakube.api.rs.project.LandingTab;
 import io.terrakube.api.rs.project.ProjectSummary;
 import io.terrakube.api.rs.provider.Provider;
 import io.terrakube.api.rs.ssh.Ssh;
@@ -19,6 +20,7 @@ import io.terrakube.api.rs.vcs.Vcs;
 import io.terrakube.api.rs.workspace.Workspace;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
 import lombok.Getter;
 import lombok.Setter;
 import org.hibernate.annotations.JdbcTypeCode;
@@ -69,8 +71,8 @@ public class Organization {
     private List<Project> project;
 
     /** Read-only catalogue rows: each project with a roll-up of its workspaces. */
-    @CreatePermission(expression = "Prefab.Role.None")
-    @UpdatePermission(expression = "Prefab.Role.None")
+    @CreatePermission(expression = "NONE")
+    @UpdatePermission(expression = "NONE")
     @OneToMany(mappedBy = "organization")
     private List<ProjectSummary> projectSummary;
 
@@ -118,8 +120,19 @@ public class Organization {
     @Column(name = "icon")
     private String icon;
 
+    // Where the organization is kept in code, so a settings screen can say an edit there is reverted by the next
+    // apply. Null when it is not kept in code.
+    @Size(max = 512, message = "Managed in code repository must be 512 characters or fewer")
+    @Column(name = "managed_in_code_repository")
+    private String managedInCodeRepository;
+
+    // "warn" shows the notice, "readonly" also makes the settings screens read-only. Null means "warn".
+    @Pattern(regexp = "warn|readonly", message = "Managed in code mode must be warn or readonly")
+    @Column(name = "managed_in_code_mode")
+    private String managedInCodeMode;
+
     // The tab projects open on unless a project or the person says otherwise. Null means the overview.
-    @Pattern(regexp = "overview|workspaces|variables|policies|teams|general", message = "Landing tab must be one of overview, workspaces, variables, policies, teams, general")
+    @Pattern(regexp = LandingTab.PATTERN, message = LandingTab.MESSAGE)
     @Column(name = "project_landing_tab")
     private String projectLandingTab;
 

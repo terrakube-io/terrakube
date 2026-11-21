@@ -135,6 +135,30 @@ public class Workspace extends GenericAuditFields {
     @Enumerated(EnumType.STRING)
     private ExecutionMode executionMode;
 
+    // "drifted" or "clean" from the last drift check (a scheduled plan-only run), null when never checked.
+    // Written by DriftCheckService.
+    @CreatePermission(expression = "NONE")
+    @UpdatePermission(expression = "NONE")
+    @Column(name = "drift_status")
+    private String driftStatus;
+
+    // When the current drift was first seen. Null while clean or never checked.
+    @CreatePermission(expression = "NONE")
+    @UpdatePermission(expression = "NONE")
+    @Column(name = "drift_first_seen")
+    private Date driftFirstSeen;
+
+    @CreatePermission(expression = "NONE")
+    @UpdatePermission(expression = "NONE")
+    @Column(name = "drift_last_checked")
+    private Date driftLastChecked;
+
+    // The run of the last check.
+    @CreatePermission(expression = "NONE")
+    @UpdatePermission(expression = "NONE")
+    @Column(name = "drift_job_id")
+    private Integer driftJobId;
+
     @Column(name = "policy_compliance_status")
     @Enumerated(EnumType.STRING)
     private io.terrakube.api.rs.policy.PolicyComplianceStatus policyComplianceStatus = io.terrakube.api.rs.policy.PolicyComplianceStatus.UNKNOWN;

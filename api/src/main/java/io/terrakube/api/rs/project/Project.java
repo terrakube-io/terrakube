@@ -49,8 +49,13 @@ public class Project extends GenericAuditFields {
     @Column(name = "description")
     private String description;
 
+    // The team that owns the project, by name. Null when nobody has claimed it.
+    @Size(max = 256, message = "Project owner must be 256 characters or fewer")
+    @Column(name = "owner_team")
+    private String ownerTeam;
+
     // Overrides the organization default for the tab this project opens on. Null means use the default.
-    @Pattern(regexp = "overview|workspaces|variables|policies|teams|general", message = "Landing tab must be one of overview, workspaces, variables, policies, teams, general")
+    @Pattern(regexp = LandingTab.PATTERN, message = LandingTab.MESSAGE)
     @Column(name = "landing_tab")
     private String landingTab;
 

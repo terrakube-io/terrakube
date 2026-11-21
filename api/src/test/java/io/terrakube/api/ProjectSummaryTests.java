@@ -145,6 +145,17 @@ class ProjectSummaryTests extends ServerApplicationTests {
     }
 
     @Test
+    void summaryCarriesTheTeamThatOwnsTheProject() {
+        jdbcTemplate.update("update project set owner_team = ? where id = ?", "payments-devs", quiet.getId().toString());
+
+        Map<String, Object> owned = firstNode(summaries("name==health-quiet", null, 10, "ownerTeam"));
+        Map<String, Object> unowned = firstNode(summaries("name==health-empty", null, 10, "ownerTeam"));
+
+        org.junit.jupiter.api.Assertions.assertEquals("payments-devs", owned.get("ownerTeam"));
+        org.junit.jupiter.api.Assertions.assertNull(unowned.get("ownerTeam"));
+    }
+
+    @Test
     void projectWithoutWorkspacesReportsZeroes() {
         Map<String, Object> node = firstNode(summaries("name==health-empty", null, 10,
                 "workspaceCount attentionCount lockedCount"));

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+
+    <!-- The team that owns a project, by name (teams come from identity provider groups, so no foreign key). Nullable, not backfilled. -->
+    <changeSet id="2-35-0-project-owner" author="terrakube">
+        <addColumn tableName="project">
+            <column name="owner_team" type="varchar(256)"/>
+        </addColumn>
+    </changeSet>
+</databaseChangeLog>
