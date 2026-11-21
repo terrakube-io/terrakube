@@ -813,6 +813,21 @@ public class PrCommentServiceTest {
     }
 
     @Test
+    public void postPlanResultDoesNotInviteAnApplyThatBitbucketCannotCheck() {
+        Job job = createJob(VcsType.BITBUCKET, 5, JobStatus.completed);
+        job.getWorkspace().getOrganization().setPrApplyMinRequirement(PrApplyRequirement.APPROVED);
+        stubStepOutput("Plan: 1 to add, 0 to change, 0 to destroy.");
+        doReturn("12345").when(bitBucketWebhookService).postPrComment(any(), any());
+
+        subject.postPlanResult(job);
+
+        ArgumentCaptor<String> markdownCaptor = ArgumentCaptor.forClass(String.class);
+        verify(bitBucketWebhookService, times(1)).postPrComment(eq(job), markdownCaptor.capture());
+        assertTrue(markdownCaptor.getValue().contains("cannot check on this VCS provider yet"));
+        assertFalse(markdownCaptor.getValue().contains("`terrakube apply`"));
+    }
+
+    @Test
     public void postPlanResultAsksForAnApprovalFirstWhenAnApplyTriggerRequiresIt() {
         Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
         job.getWorkspace().setId(UUID.randomUUID());

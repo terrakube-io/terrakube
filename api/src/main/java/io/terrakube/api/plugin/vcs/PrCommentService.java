@@ -664,7 +664,12 @@ public class PrCommentService {
         } else if (job.isPrCommentInterim()) {
             sb.append(approvalOutcome(job.getStatus())).append("\n");
         } else if (job.isPrApplyEnabled() && requiresApprovedPullRequest(job)) {
-            sb.append("This workspace requires an approved pull request. Once it is approved, apply this plan by commenting: `terrakube apply`\n");
+            if (canCheckApprovals(job)) {
+                sb.append("This workspace requires an approved pull request. Once it is approved, apply this plan by commenting: `terrakube apply`\n");
+            } else {
+                // PrApplyAuthorizationService refuses every such comment: do not invite one.
+                sb.append("This workspace requires an approved pull request, which Terrakube cannot check on this VCS provider yet. Apply this plan from the Terrakube UI.\n");
+            }
         } else if (job.isPrApplyEnabled()) {
             sb.append("To apply this plan, comment: `terrakube apply`\n");
         } else {
@@ -699,6 +704,13 @@ public class PrCommentService {
             log.warn("Could not read the apply requirement of workspace {}: {}", workspace.getName(), e.getMessage());
             return false;
         }
+    }
+
+    /** Approvals are read from GitHub and GitLab only (PrApplyAuthorizationService). */
+    private static boolean canCheckApprovals(Job job) {
+        Workspace workspace = job.getWorkspace();
+        VcsType type = workspace != null && workspace.getVcs() != null ? workspace.getVcs().getVcsType() : null;
+        return type == VcsType.GITHUB || type == VcsType.GITLAB;
     }
 
     public Optional<String> renderPolicyGuardrailsSummary(Job job) {
