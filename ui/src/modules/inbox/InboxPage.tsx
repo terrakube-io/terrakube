@@ -1,14 +1,16 @@
-import { Alert, Button, Card, Modal, Skeleton, Typography, message } from "antd";
+import { Alert, Button, Card, Segmented, Skeleton, Typography } from "antd";
+import { inboxOrigin, rememberWorkspaceOrigin } from "@/modules/workspaces/workspaceOrigin";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import PageWrapper from "@/components/layout/PageWrapper/PageWrapper";
 import { EmptyState } from "@/components/feedback/EmptyState";
 import { usePolling } from "@/hooks";
 import { listOrganizationNames } from "@/modules/navigation/navigationService";
-import { approveRuns, findWaitingRuns } from "@/modules/projects/bulkWorkspaceActions";
+import projectService from "@/modules/projects/projectService";
 import { shortAgo } from "@/modules/projects/projectHealth";
 import { InboxData, InboxItem, InboxKind, KIND_ORDER, KIND_TITLES, totalCount } from "./inboxModel";
-import { loadInbox } from "./inboxService";
+import { confirmApprove } from "./confirmApprove";
+import { InboxScope, loadInbox } from "./inboxService";
 import "./Inbox.css";
 
 const POLL_MS = 30000;
@@ -17,10 +19,16 @@ function Row({ item, onApprove }: { item: InboxItem; onApprove: (item: InboxItem
   return (
     <li className="inbox-row">
       <span className="inbox-row-main">
-        <Link to={`/organizations/${item.orgId}/workspaces/${item.workspaceId}`}>{item.name}</Link>
+        <Link
+          to={`/organizations/${item.orgId}/workspaces/${item.workspaceId}`}
+          onClick={() => rememberWorkspaceOrigin(item.workspaceId, inboxOrigin())}
+        >
+          {item.name}
+        </Link>
         <Typography.Text type="secondary" className="inbox-row-where">
           {item.orgName}
           {item.projectName ? ` / ${item.projectName}` : ""}
+          {item.ownerTeam ? ` · ${item.ownerTeam}` : ""}
         </Typography.Text>
       </span>
       <span className="inbox-row-actions">
@@ -30,8 +38,11 @@ function Row({ item, onApprove }: { item: InboxItem; onApprove: (item: InboxItem
             Approve
           </Button>
         )}
-        <Link to={`/organizations/${item.orgId}/workspaces/${item.workspaceId}/runs`}>
-          {item.kind === "policy" ? "View" : "Open run"}
+        <Link
+          to={`/organizations/${item.orgId}/workspaces/${item.workspaceId}/runs${item.runId ? `/${item.runId}` : ""}`}
+          onClick={() => rememberWorkspaceOrigin(item.workspaceId, inboxOrigin())}
+        >
+          {item.kind === "policy" ? "View" : item.kind === "drifted" ? "View plan" : "Open run"}
         </Link>
       </span>
     </li>
@@ -44,11 +55,28 @@ export default function InboxPage() {
   const [error, setError] = useState(false);
   const [orgCount, setOrgCount] = useState(0);
   const alive = useRef(true);
+  const [params, setParams] = useSearchParams();
+  const mine = params.get("scope") === "mine";
+  // The teams the person is in, read once and only when they ask for their own.
+  const [groups, setGroups] = useState<string[] | null>(null);
+
+  useEffect(() => {
+    if (!mine || groups !== null) return;
+    projectService
+      .getCurrentGroups()
+      .then(setGroups)
+      .catch(() => setGroups([]));
+  }, [mine, groups]);
+
+  const scope: InboxScope = mine ? { ownerTeams: groups ?? [] } : null;
+  const waitingForGroups = mine && groups === null;
+  const scopeKey = mine ? (groups ?? []).join("\n") : "";
 
   const load = useCallback(async () => {
+    if (waitingForGroups) return;
     try {
       const orgs = await listOrganizationNames();
-      const next = await loadInbox(orgs);
+      const next = await loadInbox(orgs, scope);
       if (!alive.current) return;
       setOrgCount(orgs.length);
       setData(next);
@@ -56,7 +84,8 @@ export default function InboxPage() {
     } catch {
       if (alive.current) setError(true);
     }
-  }, []);
+    // scope is rebuilt on every render; scopeKey says when it really changed.
+  }, [waitingForGroups, mine, scopeKey]);
 
   useEffect(() => {
     alive.current = true;
@@ -68,30 +97,7 @@ export default function InboxPage() {
 
   usePolling(load, { interval: POLL_MS, immediate: false });
 
-  const approve = (item: InboxItem) =>
-    Modal.confirm({
-      title: `Approve the run waiting on ${item.name}?`,
-      content: `${item.orgName}${item.projectName ? ` / ${item.projectName}` : ""}. Approving lets the run go ahead.`,
-      okText: "Approve",
-      onOk: async () => {
-        try {
-          const runs = await findWaitingRuns(item.orgId, [item.workspaceId]);
-          if (runs.length === 0) {
-            message.info("That run is no longer waiting for approval.");
-          } else {
-            const outcome = await approveRuns(
-              item.orgId,
-              runs.map((run) => run.jobId)
-            );
-            if (outcome.failed.length) message.error(outcome.failed[0].reason);
-            else message.success(`Approved the run on ${item.name}`);
-          }
-        } catch (err: any) {
-          message.error(err?.message ?? "The run could not be approved");
-        }
-        load();
-      },
-    });
+  const approve = (item: InboxItem) => confirmApprove(item, load);
 
   const total = data ? totalCount(data.counts) : 0;
 
@@ -103,6 +109,18 @@ export default function InboxPage() {
       loading={false}
       breadcrumbs={[{ label: "Needs attention", path: "/inbox" }]}
     >
+      <Segmented
+        className="inbox-scope"
+        value={mine ? "mine" : "all"}
+        options={[
+          { label: "Everything I can see", value: "all" },
+          { label: "My teams", value: "mine" },
+        ]}
+        onChange={(value) => {
+          setData(null);
+          setParams(value === "mine" ? { scope: "mine" } : {});
+        }}
+      />
       {error && !data && (
         <Alert
           type="error"
@@ -130,7 +148,13 @@ export default function InboxPage() {
       )}
       {!data && !error && <Skeleton active paragraph={{ rows: 6 }} />}
       {data && total === 0 && data.failedOrganizations.length === 0 && (
-        <EmptyState description={`Nothing needs you across ${orgCount} organization${orgCount === 1 ? "" : "s"}.`} />
+        <EmptyState
+          description={
+            mine
+              ? "Nothing needs your teams. Projects without an owner only show under Everything I can see."
+              : `Nothing needs you across ${orgCount} organization${orgCount === 1 ? "" : "s"}.`
+          }
+        />
       )}
       {data &&
         total > 0 &&
@@ -151,8 +175,9 @@ export default function InboxPage() {
               </ul>
               {data.counts[kind] > rows.length && (
                 <Typography.Text type="secondary" className="inbox-more">
-                  Showing the {rows.length} most {kind === "waiting" ? "overdue" : "recent"} of {data.counts[kind]}.
-                  Open an organization to see the rest.
+                  Showing the {rows.length} most{" "}
+                  {kind === "waiting" ? "overdue" : kind === "drifted" ? "long-standing" : "recent"} of{" "}
+                  {data.counts[kind]}. Open an organization to see the rest.
                 </Typography.Text>
               )}
             </Card>

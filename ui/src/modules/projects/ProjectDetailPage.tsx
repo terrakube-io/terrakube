@@ -1,4 +1,6 @@
 import { DeleteOutlined } from "@ant-design/icons";
+import { ManagedInCodeBanner } from "@/components/settings/ManagedInCodeBanner";
+import { useManagedInCode } from "@/modules/organizations/managedInCode";
 import { Alert, Button, Flex, Form, Input, Select, Space, Spin, Typography, message } from "antd";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -39,6 +41,7 @@ type ProjectForm = {
   defaultTerraformVersion?: string;
   defaultExecutionMode?: string;
   defaultTemplate?: string;
+  ownerTeam?: string;
 };
 
 type GeneralProps = {
@@ -60,6 +63,9 @@ function ProjectGeneralSettings({
   canUpdateProject,
   onSaved,
 }: GeneralProps) {
+  // Read-only here when the organization is kept in code and says so; the delete button stays with its own right.
+  const managed = useManagedInCode(orgid);
+  const canEdit = canUpdateProject && !managed?.readOnly;
   const [waiting, setWaiting] = useState(false);
   const [form] = Form.useForm<ProjectForm>();
   const navigate = useNavigate();
@@ -82,6 +88,7 @@ function ProjectGeneralSettings({
         defaultTerraformVersion: project.defaultTerraformVersion,
         defaultExecutionMode: project.defaultExecutionMode ?? "default",
         defaultTemplate: project.defaultTemplate ?? "default",
+        ownerTeam: project.ownerTeam,
       });
     }
   }, [project, form]);
@@ -99,6 +106,7 @@ function ProjectGeneralSettings({
             : values.defaultExecutionMode,
         defaultTemplate:
           !values.defaultTemplate || values.defaultTemplate === "default" ? null : values.defaultTemplate,
+        ownerTeam: values.ownerTeam?.trim() || null,
       });
       message.success("Project updated successfully");
       onSaved();
@@ -115,14 +123,22 @@ function ProjectGeneralSettings({
 
   return (
     <div className="project-settings-panel">
+      <ManagedInCodeBanner orgId={orgid} />
       <SettingsPageHeader title="General Settings" description="Adjust the name and description for this project." />
       <Spin spinning={waiting}>
         <Form form={form} layout="vertical" name="project-general-settings" onFinish={onFinish} requiredMark={false}>
           <Form.Item name="name" label="Name" rules={[{ required: true, message: "Name is required" }]}>
-            <Input disabled={!canUpdateProject} />
+            <Input disabled={!canEdit} />
           </Form.Item>
           <Form.Item name="description" label="Description" extra="Optional">
-            <Input.TextArea rows={5} placeholder="Project description" disabled={!canUpdateProject} />
+            <Input.TextArea rows={5} placeholder="Project description" disabled={!canEdit} />
+          </Form.Item>
+          <Form.Item
+            name="ownerTeam"
+            label="Owner"
+            extra="The team that owns this project. It is shown in Needs attention, and people can limit it to their teams."
+          >
+            <Input disabled={!canEdit} placeholder="Team name" maxLength={256} />
           </Form.Item>
           <Form.Item
             name="landingTab"
@@ -130,7 +146,7 @@ function ProjectGeneralSettings({
             extra="The tab this project opens on. People can still choose their own."
           >
             <Select
-              disabled={!canUpdateProject}
+              disabled={!canEdit}
               options={[
                 { value: "default", label: "Organization default" },
                 ...Object.entries(PROJECT_TAB_LABELS).map(([value, label]) => ({ value, label })),
@@ -150,7 +166,7 @@ function ProjectGeneralSettings({
                 : "Not set: the create form suggests the latest"
             }
           >
-            <Input disabled={!canUpdateProject} placeholder="For example 1.9.8" maxLength={32} />
+            <Input disabled={!canEdit} placeholder="For example 1.9.8" maxLength={32} />
           </Form.Item>
           <Form.Item
             name="defaultExecutionMode"
@@ -162,7 +178,7 @@ function ProjectGeneralSettings({
             }
           >
             <Select
-              disabled={!canUpdateProject}
+              disabled={!canEdit}
               options={[
                 { value: "default", label: "Organization default" },
                 { value: "remote", label: "Remote" },
@@ -180,7 +196,7 @@ function ProjectGeneralSettings({
             }
           >
             <Select
-              disabled={!canUpdateProject}
+              disabled={!canEdit}
               options={[
                 { value: "default", label: "No default" },
                 ...templates.map((template) => ({ value: template.id, label: template.name })),
@@ -190,10 +206,10 @@ function ProjectGeneralSettings({
           <Form.Item>
             <Flex justify="flex-end">
               <DisabledReason
-                disabled={!canUpdateProject}
+                disabled={!canEdit}
                 reason="Changing project settings needs the Admin role on this project, or Manage Workspaces in the organization."
               >
-                <Button type="primary" htmlType="submit" disabled={!canUpdateProject}>
+                <Button type="primary" htmlType="submit" disabled={!canEdit}>
                   Save settings
                 </Button>
               </DisabledReason>
@@ -202,7 +218,7 @@ function ProjectGeneralSettings({
         </Form>
       </Spin>
 
-      <ProjectDefaultTags orgid={orgid} projectId={projectId} canManage={canUpdateProject} />
+      <ProjectDefaultTags orgid={orgid} projectId={projectId} canManage={canEdit} />
 
       <div className="project-delete-section">
         <Typography.Text type="secondary">
@@ -356,7 +372,12 @@ export default function ProjectDetailPage({ organizationName, setOrganizationNam
     <PageWrapper
       width="full"
       title={project?.name ?? "Project"}
-      subTitle={project?.description || `Project in the ${organizationName} organization`}
+      subTitle={[
+        project?.description || `Project in the ${organizationName} organization`,
+        project?.ownerTeam && `Owner ${project.ownerTeam}`,
+      ]
+        .filter(Boolean)
+        .join(" · ")}
       loadingText="Loading project..."
       loading={loading}
       error={error}

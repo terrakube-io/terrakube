@@ -1,6 +1,15 @@
-import { Tag } from "antd";
+import clsx from "classnames";
+import type { ReactNode } from "react";
+import {
+  ClockCircleOutlined,
+  ExclamationCircleOutlined,
+  InboxOutlined,
+  UnorderedListOutlined,
+  UserOutlined,
+} from "@ant-design/icons";
 import { ProjectIndexCounts } from "./projectService";
 import { ProjectChip } from "./projectHealth";
+import "@/modules/workspaces/components/WorkspaceFilter.css";
 
 type Props = {
   value: ProjectChip;
@@ -9,26 +18,42 @@ type Props = {
   counts: ProjectIndexCounts | null;
 };
 
-const CHIPS: { key: ProjectChip; label: string; count: (counts: ProjectIndexCounts) => number }[] = [
-  { key: "all", label: "All", count: (counts) => counts.all },
-  { key: "attention", label: "Needs attention", count: (counts) => counts.attention },
-  { key: "mine", label: "My projects", count: (counts) => counts.mine },
-  { key: "empty", label: "Empty", count: (counts) => counts.empty },
-  { key: "stale", label: "Stale (90d)", count: (counts) => counts.stale },
+// The chips are the status pills of the workspace list: same look, same colours for the icons.
+const CHIPS: {
+  key: ProjectChip;
+  label: string;
+  icon: ReactNode;
+  tone?: string;
+  count: (counts: ProjectIndexCounts) => number;
+}[] = [
+  { key: "all", label: "All", icon: <UnorderedListOutlined />, count: (counts) => counts.all },
+  {
+    key: "attention",
+    label: "Needs attention",
+    icon: <ExclamationCircleOutlined />,
+    tone: "waitingApproval",
+    count: (counts) => counts.attention,
+  },
+  { key: "mine", label: "My projects", icon: <UserOutlined />, count: (counts) => counts.mine },
+  { key: "empty", label: "Empty", icon: <InboxOutlined />, count: (counts) => counts.empty },
+  { key: "stale", label: "Stale (90d)", icon: <ClockCircleOutlined />, count: (counts) => counts.stale },
 ];
 
 export default function ProjectFilterChips({ value, onChange, counts }: Props) {
   return (
-    <div className="project-chips" role="group" aria-label="Filter projects">
+    <div className="workspace-status-pills project-chips" role="group" aria-label="Filter projects">
       {CHIPS.map((chip) => (
-        <Tag.CheckableTag
+        <button
           key={chip.key}
-          checked={value === chip.key}
-          onChange={() => onChange(chip.key)}
-          className="project-chip"
+          type="button"
+          aria-pressed={value === chip.key}
+          data-status={chip.tone}
+          className={clsx("workspace-status-pill", { "workspace-status-pill--active": value === chip.key })}
+          onClick={() => onChange(chip.key)}
         >
-          {chip.label} {counts ? chip.count(counts) : "-"}
-        </Tag.CheckableTag>
+          {chip.icon}
+          {chip.label} <span className="workspace-status-count">{counts ? chip.count(counts) : "-"}</span>
+        </button>
       ))}
     </div>
   );

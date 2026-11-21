@@ -168,6 +168,14 @@ describe("ProjectsPage", () => {
     await waitFor(() => expect(screen.getByRole("group", { name: "Filter projects" })).toHaveTextContent("All 50"));
   });
 
+  it("marks the active chip as pressed, like the workspace list", async () => {
+    renderProjectsPage();
+
+    await screen.findByText("Billing API");
+    expect(screen.getByRole("button", { name: /All\s*50/ })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: /Empty\s*1/ })).toHaveAttribute("aria-pressed", "false");
+  });
+
   it("shows a dash with the total on hover instead of the team count when the caller cannot see who has access", async () => {
     mockManageWorkspace = false;
     try {
@@ -224,7 +232,7 @@ describe("ProjectsPage", () => {
     renderProjectsPage();
     await screen.findByText("Billing API");
 
-    fireEvent.click(screen.getByText(/Needs attention 3/));
+    fireEvent.click(screen.getByRole("button", { name: /Needs attention\s*3/ }));
 
     await waitFor(() => expect(lastQuery()).toMatchObject({ chip: "attention", page: 1 }));
   });
@@ -295,7 +303,7 @@ describe("ProjectsPage", () => {
     renderProjectsPage();
     await screen.findByText("Unassigned");
 
-    fireEvent.click(screen.getByText(/Empty 1/));
+    fireEvent.click(screen.getByRole("button", { name: /Empty\s*1/ }));
 
     await waitFor(() => expect(screen.queryByText("Unassigned")).not.toBeInTheDocument());
   });
@@ -382,7 +390,7 @@ describe("ProjectsPage", () => {
       await screen.findByText("Billing API");
       expect(screen.getByTestId("where")).toHaveTextContent(/^\/organizations\/org-1\/projects$/);
 
-      fireEvent.click(screen.getByText(/Empty 1/));
+      fireEvent.click(screen.getByRole("button", { name: /Empty\s*1/ }));
 
       await waitFor(() => expect(screen.getByTestId("where")).toHaveTextContent("chip=empty"));
     });

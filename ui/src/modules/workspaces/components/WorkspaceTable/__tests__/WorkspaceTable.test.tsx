@@ -217,8 +217,39 @@ describe("WorkspaceTable", () => {
 
   it("clicking the Status header applies the single status sort", () => {
     renderTable({ sortOption: "name_asc" });
-    fireEvent.click(screen.getByText("Status (grouped)"));
+    fireEvent.click(screen.getByText("Status"));
     expect(defaultProps.onSortChange).toHaveBeenCalledWith("status");
+  });
+
+  it("starts the last run column with the newest runs, then flips", () => {
+    const { rerender } = renderTable({ sortOption: "name_asc" });
+    fireEvent.click(screen.getByText("Last run"));
+    expect(defaultProps.onSortChange).toHaveBeenLastCalledWith("lastRun_desc");
+
+    rerender(
+      <MemoryRouter>
+        <WorkspaceTable {...defaultProps} sortOption="lastRun_desc" />
+      </MemoryRouter>
+    );
+    fireEvent.click(screen.getByText("Last run"));
+    expect(defaultProps.onSortChange).toHaveBeenLastCalledWith("lastRun_asc");
+  });
+
+  it("offers a checkbox per row and for the page when it is given a selection", () => {
+    const onChange = jest.fn();
+    const rows = defaultProps.workspaces as WorkspaceListItem[];
+    renderTable({ selection: { selected: [], onChange } });
+
+    fireEvent.click(screen.getByLabelText(`Select ${rows[0].name}`));
+    expect(onChange).toHaveBeenLastCalledWith([rows[0]]);
+    fireEvent.click(screen.getByLabelText("Select all workspaces on this page"));
+    expect(onChange).toHaveBeenLastCalledWith(rows);
+  });
+
+  it("has no checkboxes without a selection", () => {
+    renderTable();
+
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
   });
 
   it("is keyboard-operable: Enter on a sortable header sorts", () => {

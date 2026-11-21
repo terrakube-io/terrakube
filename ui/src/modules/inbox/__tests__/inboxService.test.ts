@@ -15,9 +15,9 @@ const ws = (id: string, name: string, lastJobDate?: string, project?: string) =>
   project: { edges: project ? [{ node: { name: project } }] : [] },
 });
 
-const answer = (waiting: any, failed: any, policy: any) => ({
+const answer = (waiting: any, failed: any, policy: any, drifted: any = rows(0)) => ({
   isError: false,
-  data: { organization: { edges: [{ node: { waiting, failed, policy } }] } },
+  data: { organization: { edges: [{ node: { waiting, failed, drifted, policy } }] } },
 });
 
 describe("loadInbox", () => {
@@ -39,7 +39,7 @@ describe("loadInbox", () => {
       { id: "b", name: "Admin" },
     ]);
 
-    expect(data.counts).toEqual({ waiting: 1, failed: 25, policy: 1 });
+    expect(data.counts).toEqual({ waiting: 1, failed: 25, drifted: 0, policy: 1 });
     expect(data.items.map((entry) => `${entry.kind}:${entry.name}`)).toEqual([
       "waiting:ledger-db",
       "failed:gateway",
@@ -55,11 +55,81 @@ describe("loadInbox", () => {
     await loadInbox([{ id: "a", name: "JXP" }]);
 
     const request = post.mock.calls[0][1];
-    expect(request.variables).toEqual({ orgId: "a", first: "10" });
-    expect(request.query).toContain("lastJobStatus=='waitingApproval'");
-    expect(request.query).toContain(
-      "policyComplianceStatus=='NON_COMPLIANT';lastJobStatus!='failed';lastJobStatus!='waitingApproval'"
+    expect(request.variables).toEqual({
+      orgId: "a",
+      first: "10",
+      waitingFilter: "lastJobStatus=='waitingApproval'",
+      failedFilter: "lastJobStatus=='failed'",
+      driftedFilter: "driftStatus=='drifted';lastJobStatus!='failed';lastJobStatus!='waitingApproval'",
+      policyFilter: "policyComplianceStatus=='NON_COMPLIANT';lastJobStatus!='failed';lastJobStatus!='waitingApproval'",
+    });
+    expect(request.query).toContain("filter: $waitingFilter");
+  });
+
+  it("limits every kind to the projects the given teams own, quoting each name", async () => {
+    post.mockResolvedValue(answer(rows(0), rows(0), rows(0)));
+
+    await loadInbox([{ id: "a", name: "JXP" }], { ownerTeams: ["payments-devs", 'odd "name", (team)'] });
+
+    const { variables } = post.mock.calls[0][1];
+    const owner = 'project.ownerTeam=in=("payments-devs","odd \\"name\\", (team)")';
+    expect(variables.waitingFilter).toBe(`lastJobStatus=='waitingApproval';${owner}`);
+    expect(variables.failedFilter).toBe(`lastJobStatus=='failed';${owner}`);
+    expect(variables.policyFilter).toContain(`lastJobStatus!='waitingApproval';${owner}`);
+  });
+
+  it("lists drifted workspaces from the day the drift was first seen, with the plan to open", async () => {
+    post.mockResolvedValue(
+      answer(
+        rows(0),
+        rows(0),
+        rows(0),
+        rows(1, {
+          id: "w9",
+          name: "edge-proxy",
+          lastJobDate: "2026-11-14T12:00:00Z",
+          driftFirstSeen: "2026-11-11T02:00:00Z",
+          driftJobId: 412,
+          project: { edges: [] },
+        })
+      )
     );
+
+    const data = await loadInbox([{ id: "a", name: "JXP" }]);
+
+    expect(data.counts.drifted).toBe(1);
+    expect(data.items[0]).toMatchObject({
+      kind: "drifted",
+      name: "edge-proxy",
+      at: "2026-11-11T02:00:00Z",
+      runId: "412",
+    });
+  });
+
+  it("asks for nothing when the person is in no team, because an empty list is not a filter", async () => {
+    const data = await loadInbox([{ id: "a", name: "JXP" }], { ownerTeams: [] });
+
+    expect(data.items).toEqual([]);
+    expect(data.counts).toEqual({ waiting: 0, failed: 0, drifted: 0, policy: 0 });
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it("carries the owner team of each project", async () => {
+    post.mockResolvedValue(
+      answer(
+        rows(1, {
+          id: "w1",
+          name: "ledger-db",
+          project: { edges: [{ node: { name: "payments", ownerTeam: "payments-devs" } }] },
+        }),
+        rows(0),
+        rows(0)
+      )
+    );
+
+    const data = await loadInbox([{ id: "a", name: "JXP" }]);
+
+    expect(data.items[0]).toMatchObject({ projectName: "payments", ownerTeam: "payments-devs" });
   });
 
   it("names the organizations it could not read instead of treating them as healthy", async () => {

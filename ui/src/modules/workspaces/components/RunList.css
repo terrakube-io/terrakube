@@ -139,6 +139,9 @@
 }
 
 .run-row-status {
+  /* Above the stretched row link, so the Approve button can be clicked. */
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
   gap: 8px;
