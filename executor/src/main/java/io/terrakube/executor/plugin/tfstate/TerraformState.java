@@ -9,6 +9,7 @@ import java.io.File;
 import java.io.IOException;
 import java.util.Collections;
 import java.util.Map;
+import java.util.Optional;
 
 public interface TerraformState {
 
@@ -161,6 +162,46 @@ public interface TerraformState {
      */
     default boolean downloadOpaBinary(String version, String os, String arch, File targetFile) {
         return false;
+    }
+
+    /**
+     * Upload an Infracost binary to cloud storage for cross-pod caching within the same architecture.
+     *
+     * @param version    the Infracost version (e.g. "0.10.50")
+     * @param os         operating system (e.g. "linux")
+     * @param arch       architecture (e.g. "amd64", "arm64")
+     * @param sourceFile the local binary executable file to upload
+     * @return true if save succeeded
+     */
+    default boolean saveInfracostBinary(String version, String os, String arch, File sourceFile) {
+        return false;
+    }
+
+    /**
+     * Download a cached Infracost binary from cloud storage for the specified architecture.
+     *
+     * @param version    the Infracost version (e.g. "0.10.50")
+     * @param os         operating system (e.g. "linux")
+     * @param arch       architecture (e.g. "amd64", "arm64")
+     * @param targetFile where to write the restored binary on the local filesystem
+     * @return true if binary was found in storage and restored successfully
+     */
+    default boolean downloadInfracostBinary(String version, String os, String arch, File targetFile) {
+        return false;
+    }
+
+    /**
+     * Upload the SHA-1 hex checksum sidecar for a cached Infracost binary.
+     */
+    default boolean saveInfracostChecksum(String version, String os, String arch, String sha1Hex) {
+        return false;
+    }
+
+    /**
+     * Download the SHA-1 hex checksum sidecar for a cached Infracost binary.
+     */
+    default Optional<String> downloadInfracostChecksum(String version, String os, String arch) {
+        return Optional.empty();
     }
 
     /**

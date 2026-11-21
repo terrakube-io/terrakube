@@ -579,4 +579,45 @@ class OpaExecutorServiceTest {
                     "no spilled output file may stay next to the working directory");
         }
     }
+
+    @Test
+    void evaluatePolicySetPassesInfracostDataFlagToOpaBinary(@TempDir Path tempDir) throws Exception {
+        File workDir = tempDir.toFile();
+        File bundleDir = tempDir.resolve("bundle").toFile();
+        assertTrue(bundleDir.mkdirs());
+        File planJson = java.nio.file.Files.writeString(tempDir.resolve("plan.json"), "{}").toFile();
+        File infracostData = java.nio.file.Files.writeString(
+                tempDir.resolve("infracost-opa-data.json"),
+                "{\"infracost\":{\"totalMonthlyCost\":\"350.00\"}}").toFile();
+        File argsLog = tempDir.resolve("captured-args.txt").toFile();
+
+        File fakeOpa = tempDir.resolve("fake-opa.sh").toFile();
+        java.nio.file.Files.writeString(fakeOpa.toPath(),
+                "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"" + argsLog.getAbsolutePath() + "\"\n"
+                        + "echo '{\"result\":[{\"expressions\":[{\"value\":{}}]}]}'\n");
+        assertTrue(fakeOpa.setExecutable(true, true));
+        Mockito.when(opaBinaryService.getOpaBinary(null)).thenReturn(fakeOpa);
+
+        PolicyContext policyContext = PolicyContext.builder()
+                .policyId("finops-1")
+                .policyName("finops-soft-mandatory")
+                .enforcementLevel("SOFT_MANDATORY")
+                .build();
+
+        OpaEvaluationResult evalResult = opaExecutorService.evaluatePolicySet(
+                policyContext,
+                List.of(),
+                workDir,
+                planJson,
+                bundleDir,
+                null,
+                infracostData,
+                line -> {}
+        );
+
+        assertEquals("PASSED", evalResult.getStatus());
+        String captured = java.nio.file.Files.readString(argsLog.toPath());
+        assertTrue(captured.contains(infracostData.getAbsolutePath()),
+                "Expected --data <infracostData> in OPA CLI args: " + captured);
+    }
 }

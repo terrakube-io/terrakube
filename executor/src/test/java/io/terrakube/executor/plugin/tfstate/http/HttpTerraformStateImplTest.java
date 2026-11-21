@@ -162,6 +162,10 @@ class HttpTerraformStateImplTest {
         when(delegate.downloadTerraformBinary("1.6.0", false, "linux", "arm64", workingDir)).thenReturn(true);
         when(delegate.saveOpaBinary("0.60.0", "linux", "amd64", workingDir)).thenReturn(true);
         when(delegate.downloadOpaBinary("0.60.0", "linux", "amd64", workingDir)).thenReturn(true);
+        when(delegate.saveInfracostBinary("0.10.50", "linux", "amd64", workingDir)).thenReturn(true);
+        when(delegate.downloadInfracostBinary("0.10.50", "linux", "amd64", workingDir)).thenReturn(true);
+        when(delegate.saveInfracostChecksum("0.10.50", "linux", "amd64", "abc")).thenReturn(true);
+        when(delegate.downloadInfracostChecksum("0.10.50", "linux", "amd64")).thenReturn(java.util.Optional.of("abc"));
         when(delegate.spoolContextPatch(ORG_ID, JOB_ID, STEP_ID, "post", patchBytes)).thenReturn("spool-key");
 
         assertEquals("plan-url", httpTerraformState.saveTerraformPlan(ORG_ID, WS_ID, JOB_ID, STEP_ID, workingDir));
@@ -184,6 +188,10 @@ class HttpTerraformStateImplTest {
         assertTrue(httpTerraformState.downloadTerraformBinary("1.6.0", false, "linux", "arm64", workingDir));
         assertTrue(httpTerraformState.saveOpaBinary("0.60.0", "linux", "amd64", workingDir));
         assertTrue(httpTerraformState.downloadOpaBinary("0.60.0", "linux", "amd64", workingDir));
+        assertTrue(httpTerraformState.saveInfracostBinary("0.10.50", "linux", "amd64", workingDir));
+        assertTrue(httpTerraformState.downloadInfracostBinary("0.10.50", "linux", "amd64", workingDir));
+        assertTrue(httpTerraformState.saveInfracostChecksum("0.10.50", "linux", "amd64", "abc"));
+        assertEquals(java.util.Optional.of("abc"), httpTerraformState.downloadInfracostChecksum("0.10.50", "linux", "amd64"));
         assertEquals("spool-key", httpTerraformState.spoolContextPatch(ORG_ID, JOB_ID, STEP_ID, "post", patchBytes));
         assertNotNull(httpTerraformState.getDelegate());
     }

@@ -93,6 +93,16 @@ public class OpaExecutorServiceImpl implements OpaExecutorService {
             File workingDirectory,
             File planJsonFile,
             Consumer<String> planOutput) {
+        return evaluateAllPolicies(job, workingDirectory, planJsonFile, null, planOutput);
+    }
+
+    @Override
+    public List<OpaEvaluationResult> evaluateAllPolicies(
+            TerraformJob job,
+            File workingDirectory,
+            File planJsonFile,
+            File infracostDataFile,
+            Consumer<String> planOutput) {
 
         if (job.getPolicyList() == null || job.getPolicyList().isEmpty()) {
             log.info("No policy sets configured for job {}", job.getJobId());
@@ -119,6 +129,7 @@ public class OpaExecutorServiceImpl implements OpaExecutorService {
                             planJsonFile,
                             policyBundleDir,
                             policyInputsFile,
+                            infracostDataFile,
                             null
                     );
                 } catch (Exception e) {
@@ -220,6 +231,28 @@ public class OpaExecutorServiceImpl implements OpaExecutorService {
             File policyBundleDir,
             File policyInputsFile,
             Consumer<String> consoleOutput) {
+        return evaluatePolicySet(
+                policyContext,
+                exemptions,
+                workingDirectory,
+                planJsonFile,
+                policyBundleDir,
+                policyInputsFile,
+                null,
+                consoleOutput
+        );
+    }
+
+    @Override
+    public OpaEvaluationResult evaluatePolicySet(
+            PolicyContext policyContext,
+            List<PolicyExemptionContext> exemptions,
+            File workingDirectory,
+            File planJsonFile,
+            File policyBundleDir,
+            File policyInputsFile,
+            File infracostDataFile,
+            Consumer<String> consoleOutput) {
 
         List<String> logs = new ArrayList<>();
         Consumer<String> logConsumer = consoleOutput != null ? consoleOutput : logs::add;
@@ -245,6 +278,10 @@ public class OpaExecutorServiceImpl implements OpaExecutorService {
         if (policyInputsFile != null && policyInputsFile.exists()) {
             commandList.add("--data");
             commandList.add(policyInputsFile.getAbsolutePath());
+        }
+        if (infracostDataFile != null && infracostDataFile.exists()) {
+            commandList.add("--data");
+            commandList.add(infracostDataFile.getAbsolutePath());
         }
         commandList.add("--input");
         commandList.add(planJsonFile.getAbsolutePath());

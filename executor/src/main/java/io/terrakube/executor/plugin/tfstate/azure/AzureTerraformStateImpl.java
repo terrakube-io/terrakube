@@ -40,6 +40,7 @@ import java.io.File;
 import java.io.IOException;
 import java.net.URL;
 import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
 import java.util.Optional;
 import java.util.UUID;
@@ -491,6 +492,106 @@ public class AzureTerraformStateImpl implements TerraformState {
             log.warn("Failed to restore OPA binary version {} ({}_{}) from Azure Blob: {}", version, os, arch, e.getMessage());
             return false;
         }
+    }
+
+    @Override
+    public boolean saveInfracostBinary(String version, String os, String arch, File sourceFile) {
+        String blobName = infracostBinaryBlobName(version, os, arch);
+        log.info("Saving Infracost binary to Azure Blob: {}", blobName);
+        try {
+            BlobContainerClient blobContainerClient = blobServiceClient.getBlobContainerClient(CONTAINER_BINARY_NAME);
+            if (!blobContainerClient.exists()) {
+                blobContainerClient.create();
+            }
+            BlobClient blobClient = blobContainerClient.getBlobClient(blobName);
+            blobClient.uploadFromFile(sourceFile.getAbsolutePath(), true);
+            log.info("Successfully cached Infracost binary version {} ({}_{}) in Azure Blob", version, os, arch);
+            return true;
+        } catch (Exception e) {
+            log.warn("Failed to cache Infracost binary version {} ({}_{}) in Azure Blob: {}", version, os, arch, e.getMessage());
+            return false;
+        }
+    }
+
+    @Override
+    public boolean downloadInfracostBinary(String version, String os, String arch, File targetFile) {
+        String blobName = infracostBinaryBlobName(version, os, arch);
+        log.info("Attempting to restore Infracost binary from Azure Blob: {}", blobName);
+        try {
+            BlobContainerClient blobContainerClient = blobServiceClient.getBlobContainerClient(CONTAINER_BINARY_NAME);
+            if (!blobContainerClient.exists()) {
+                log.info("Infracost binary container does not exist in Azure Blob, no cache available");
+                return false;
+            }
+            BlobClient blobClient = blobContainerClient.getBlobClient(blobName);
+            if (!blobClient.exists()) {
+                log.info("Infracost binary version {} ({}_{}) not found in Azure Blob cache", version, os, arch);
+                return false;
+            }
+
+            File parentDir = targetFile.getParentFile();
+            if (parentDir != null && !parentDir.exists()) {
+                FileUtils.forceMkdir(parentDir);
+            }
+
+            blobClient.downloadToFile(targetFile.getAbsolutePath(), true);
+
+            if (!targetFile.setExecutable(true, true)) {
+                log.warn("Failed to set executable permission on restored Infracost binary");
+            }
+
+            log.info("Successfully restored Infracost binary version {} ({}_{}) from Azure Blob", version, os, arch);
+            return true;
+        } catch (Exception e) {
+            log.warn("Failed to restore Infracost binary version {} ({}_{}) from Azure Blob: {}", version, os, arch, e.getMessage());
+            return false;
+        }
+    }
+
+    @Override
+    public boolean saveInfracostChecksum(String version, String os, String arch, String sha1Hex) {
+        String blobName = infracostChecksumBlobName(version, os, arch);
+        log.info("Saving Infracost SHA-1 checksum to Azure Blob: {}", blobName);
+        try {
+            BlobContainerClient blobContainerClient = blobServiceClient.getBlobContainerClient(CONTAINER_BINARY_NAME);
+            if (!blobContainerClient.exists()) {
+                blobContainerClient.create();
+            }
+            BlobClient blobClient = blobContainerClient.getBlobClient(blobName);
+            blobClient.upload(BinaryData.fromString(sha1Hex), true);
+            return true;
+        } catch (Exception e) {
+            log.warn("Failed to cache Infracost SHA-1 checksum for version {} ({}_{}) in Azure Blob: {}", version, os, arch, e.getMessage());
+            return false;
+        }
+    }
+
+    @Override
+    public Optional<String> downloadInfracostChecksum(String version, String os, String arch) {
+        String blobName = infracostChecksumBlobName(version, os, arch);
+        try {
+            BlobContainerClient blobContainerClient = blobServiceClient.getBlobContainerClient(CONTAINER_BINARY_NAME);
+            if (!blobContainerClient.exists()) {
+                return Optional.empty();
+            }
+            BlobClient blobClient = blobContainerClient.getBlobClient(blobName);
+            if (!blobClient.exists()) {
+                return Optional.empty();
+            }
+            String value = blobClient.downloadContent().toString().trim();
+            return value.isEmpty() ? Optional.empty() : Optional.of(value);
+        } catch (Exception e) {
+            log.warn("Failed to restore Infracost SHA-1 checksum for version {} ({}_{}) from Azure Blob: {}", version, os, arch, e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    private static String infracostBinaryBlobName(String version, String os, String arch) {
+        return "infracost/" + version + "/" + os + "_" + arch + "/infracost";
+    }
+
+    private static String infracostChecksumBlobName(String version, String os, String arch) {
+        return infracostBinaryBlobName(version, os, arch) + ".sha1";
     }
 
     @Override

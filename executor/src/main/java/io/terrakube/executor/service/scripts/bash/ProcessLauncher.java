@@ -119,6 +119,12 @@ public final class ProcessLauncher {
         return this.pidIsolation && !PID_ISOLATION_PREFIX.isEmpty();
     }
 
+    public void destroyForcibly() {
+        if (this.process != null && this.process.isAlive()) {
+            this.process.destroyForcibly();
+        }
+    }
+
     public CompletableFuture<Integer> launch() {
         assert this.process == null;
         if (this.inheritIO) {

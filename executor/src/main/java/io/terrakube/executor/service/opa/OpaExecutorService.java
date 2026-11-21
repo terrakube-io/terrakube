@@ -25,6 +25,19 @@ public interface OpaExecutorService {
     List<OpaEvaluationResult> evaluateAllPolicies(TerraformJob job, File workingDirectory, File planJsonFile, Consumer<String> planOutput);
 
     /**
+     * Evaluates all policy sets attached to the job concurrently against plan.json and optional
+     * extra data files (such as Infracost cost estimation JSON mounted under {@code data.infracost}).
+     */
+    default List<OpaEvaluationResult> evaluateAllPolicies(
+            TerraformJob job,
+            File workingDirectory,
+            File planJsonFile,
+            File infracostDataFile,
+            Consumer<String> planOutput) {
+        return evaluateAllPolicies(job, workingDirectory, planJsonFile, planOutput);
+    }
+
+    /**
      * Evaluates a single policy set against plan.json.
      */
     OpaEvaluationResult evaluatePolicySet(
@@ -35,6 +48,21 @@ public interface OpaExecutorService {
             File policyBundleDir,
             File policyInputsFile,
             Consumer<String> consoleOutput);
+
+    /**
+     * Evaluates a single policy set against plan.json with optional Infracost data injected via {@code --data}.
+     */
+    default OpaEvaluationResult evaluatePolicySet(
+            PolicyContext policyContext,
+            List<PolicyExemptionContext> exemptions,
+            File workingDirectory,
+            File planJsonFile,
+            File policyBundleDir,
+            File policyInputsFile,
+            File infracostDataFile,
+            Consumer<String> consoleOutput) {
+        return evaluatePolicySet(policyContext, exemptions, workingDirectory, planJsonFile, policyBundleDir, policyInputsFile, consoleOutput);
+    }
 
     /**
      * Executes headless policy evaluation for scheduled drift detection or compliance scans

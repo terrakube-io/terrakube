@@ -460,6 +460,94 @@ public class GcpTerraformStateImpl implements TerraformState {
     }
 
     @Override
+    public boolean saveInfracostBinary(String version, String os, String arch, File sourceFile) {
+        String blobKey = infracostBinaryBlobKey(version, os, arch);
+        log.info("Saving Infracost binary to GCS: {}", blobKey);
+        try {
+            BlobId blobId = BlobId.of(bucketName, blobKey);
+            BlobInfo blobInfo = BlobInfo.newBuilder(blobId).build();
+            storage.create(blobInfo, FileUtils.readFileToByteArray(sourceFile));
+            log.info("Successfully cached Infracost binary version {} ({}_{}) in GCS", version, os, arch);
+            return true;
+        } catch (Exception e) {
+            log.warn("Failed to cache Infracost binary version {} ({}_{}) in GCS: {}", version, os, arch, e.getMessage());
+            return false;
+        }
+    }
+
+    @Override
+    public boolean downloadInfracostBinary(String version, String os, String arch, File targetFile) {
+        String blobKey = infracostBinaryBlobKey(version, os, arch);
+        log.info("Attempting to restore Infracost binary from GCS: {}", blobKey);
+        try {
+            BlobId blobId = BlobId.of(bucketName, blobKey);
+            com.google.cloud.storage.Blob blob = storage.get(blobId);
+            if (blob == null || !blob.exists()) {
+                log.info("Infracost binary version {} ({}_{}) not found in GCS cache", version, os, arch);
+                return false;
+            }
+
+            File parentDir = targetFile.getParentFile();
+            if (parentDir != null && !parentDir.exists()) {
+                FileUtils.forceMkdir(parentDir);
+            }
+
+            byte[] content = storage.readAllBytes(blobId);
+            FileUtils.writeByteArrayToFile(targetFile, content);
+
+            if (!targetFile.setExecutable(true, true)) {
+                log.warn("Failed to set executable permission on restored Infracost binary");
+            }
+
+            log.info("Successfully restored Infracost binary version {} ({}_{}) from GCS", version, os, arch);
+            return true;
+        } catch (Exception e) {
+            log.warn("Failed to restore Infracost binary version {} ({}_{}) from GCS: {}", version, os, arch, e.getMessage());
+            return false;
+        }
+    }
+
+    @Override
+    public boolean saveInfracostChecksum(String version, String os, String arch, String sha1Hex) {
+        String blobKey = infracostChecksumBlobKey(version, os, arch);
+        log.info("Saving Infracost SHA-1 checksum to GCS: {}", blobKey);
+        try {
+            BlobId blobId = BlobId.of(bucketName, blobKey);
+            BlobInfo blobInfo = BlobInfo.newBuilder(blobId).build();
+            storage.create(blobInfo, sha1Hex.getBytes(StandardCharsets.UTF_8));
+            return true;
+        } catch (Exception e) {
+            log.warn("Failed to cache Infracost SHA-1 checksum for version {} ({}_{}) in GCS: {}", version, os, arch, e.getMessage());
+            return false;
+        }
+    }
+
+    @Override
+    public Optional<String> downloadInfracostChecksum(String version, String os, String arch) {
+        String blobKey = infracostChecksumBlobKey(version, os, arch);
+        try {
+            BlobId blobId = BlobId.of(bucketName, blobKey);
+            com.google.cloud.storage.Blob blob = storage.get(blobId);
+            if (blob == null || !blob.exists()) {
+                return Optional.empty();
+            }
+            String value = new String(storage.readAllBytes(blobId), StandardCharsets.UTF_8).trim();
+            return value.isEmpty() ? Optional.empty() : Optional.of(value);
+        } catch (Exception e) {
+            log.warn("Failed to restore Infracost SHA-1 checksum for version {} ({}_{}) from GCS: {}", version, os, arch, e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    private static String infracostBinaryBlobKey(String version, String os, String arch) {
+        return String.format("infracost/%s/%s_%s/infracost", version, os, arch);
+    }
+
+    private static String infracostChecksumBlobKey(String version, String os, String arch) {
+        return infracostBinaryBlobKey(version, os, arch) + ".sha1";
+    }
+
+    @Override
     public String spoolContextPatch(String organizationId, String jobId, String stepId, String phase, byte[] data) {
         String blobKey = String.format(CONTEXT_SPOOL_LOCATION, organizationId, jobId, stepId, phase);
         log.info("Spooling context patch to GCS: {}", blobKey);

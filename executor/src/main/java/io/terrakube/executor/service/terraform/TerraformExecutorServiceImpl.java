@@ -10,6 +10,8 @@ import io.terrakube.executor.plugin.tfstate.ArtifactVerificationException;
 import io.terrakube.executor.plugin.tfstate.TerraformState;
 import io.terrakube.executor.service.artifact.ArtifactPackagingService;
 import io.terrakube.executor.service.artifact.ArtifactRestoreService;
+import io.terrakube.executor.service.infracost.InfracostExecutorService;
+import io.terrakube.executor.service.infracost.InfracostResult;
 import io.terrakube.executor.service.executor.ExecutorJobResult;
 import io.terrakube.executor.service.logs.ExecutorLogsProperties;
 import io.terrakube.executor.service.logs.LogsConsumer;
@@ -129,7 +131,13 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
     StructuredOutputProperties structuredOutputProperties;
     MeterRegistry meterRegistry;
     OpaExecutorService opaExecutorService;
+    InfracostExecutorService infracostExecutorService;
     BinaryCacheRecoveryService binaryCacheRecoveryService;
+
+    @Autowired(required = false)
+    void setInfracostExecutorService(InfracostExecutorService infracostExecutorService) {
+        this.infracostExecutorService = infracostExecutorService;
+    }
     // The per-call JSON clients below are not Spring beans, so on SIGTERM Spring only closes the
     // shared terraformClient - which has no live process at that point. Tracked here so
     // closeLiveJsonClients() can terminate the running terraform (letting it release its state
@@ -331,9 +339,22 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                     }
                 }
 
+                File infracostOpaDataFile = null;
+                if (infracostExecutorService != null && planJsonFile.exists()) {
+                    InfracostResult infracostResult = infracostExecutorService.evaluateCost(
+                            terraformJob, terraformWorkingDir, planJsonFile);
+                    if (infracostResult != null) {
+                        infracostOpaDataFile = infracostResult.getInfracostOpaDataFile();
+                    }
+                }
+
                 if (opaExecutorService != null && terraformJob.getPolicyList() != null && !terraformJob.getPolicyList().isEmpty()) {
                     if (planJsonFile.exists()) {
-                        List<OpaEvaluationResult> opaResults = opaExecutorService.evaluateAllPolicies(terraformJob, terraformWorkingDir, planJsonFile, planOutput);
+                        List<OpaEvaluationResult> opaResults = infracostOpaDataFile != null
+                                ? opaExecutorService.evaluateAllPolicies(
+                                        terraformJob, terraformWorkingDir, planJsonFile, infracostOpaDataFile, planOutput)
+                                : opaExecutorService.evaluateAllPolicies(
+                                        terraformJob, terraformWorkingDir, planJsonFile, planOutput);
                         boolean hasHardViolations = opaResults.stream().anyMatch(r -> r.getHardMandatoryViolations() > 0);
                         hasSoftViolations = opaResults.stream().anyMatch(r -> r.getSoftMandatoryViolations() > 0);
                         if (hasSoftViolations && terraformJob.getPolicyList() != null) {

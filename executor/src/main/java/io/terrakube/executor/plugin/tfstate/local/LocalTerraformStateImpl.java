@@ -6,6 +6,7 @@ import io.terrakube.executor.service.logs.StepOutputBuffer;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -58,6 +59,8 @@ public class LocalTerraformStateImpl implements TerraformState {
     private static final String LOCAL_OUTPUT_DIRECTORY = "/.terraform-spring-boot/local/output/%s/%s/%s.tfoutput";
     private static final String LOCAL_BINARY_DIRECTORY = "/.terraform-spring-boot/local/binary/%s/%s/%s_%s/%s";
     private static final String LOCAL_OPA_BINARY_DIRECTORY = "/.terraform-spring-boot/local/opa/%s/%s_%s/opa";
+    private static final String LOCAL_INFRACOST_BINARY_DIRECTORY = "/.terraform-spring-boot/local/infracost/%s/%s_%s/infracost";
+    private static final String LOCAL_INFRACOST_CHECKSUM_DIRECTORY = "/.terraform-spring-boot/local/infracost/%s/%s_%s/infracost.sha1";
     private static final String LOCAL_CONTEXT_SPOOL_DIRECTORY = "/.terraform-spring-boot/local/context-spool/%s/%s/%s-%s.json.gz";
 
     @NonNull
@@ -462,6 +465,84 @@ public class LocalTerraformStateImpl implements TerraformState {
         } catch (Exception e) {
             log.warn("Failed to restore OPA binary version {} ({}_{}) from local storage: {}", version, os, arch, e.getMessage());
             return false;
+        }
+    }
+
+    @Override
+    public boolean saveInfracostBinary(String version, String os, String arch, File sourceFile) {
+        String binaryPath = String.format(LOCAL_INFRACOST_BINARY_DIRECTORY, version, os, arch);
+        log.info("Saving Infracost binary to local storage: {}", binaryPath);
+        try {
+            File targetFile = new File(FileUtils.getUserDirectoryPath().concat(
+                    FilenameUtils.separatorsToSystem(binaryPath)));
+            FileUtils.copyFile(sourceFile, targetFile);
+            log.info("Successfully cached Infracost binary version {} ({}_{}) in local storage", version, os, arch);
+            return true;
+        } catch (Exception e) {
+            log.warn("Failed to cache Infracost binary version {} ({}_{}) in local storage: {}", version, os, arch, e.getMessage());
+            return false;
+        }
+    }
+
+    @Override
+    public boolean downloadInfracostBinary(String version, String os, String arch, File targetFile) {
+        String binaryPath = String.format(LOCAL_INFRACOST_BINARY_DIRECTORY, version, os, arch);
+        log.info("Attempting to restore Infracost binary from local storage: {}", binaryPath);
+        try {
+            File sourceFile = new File(FileUtils.getUserDirectoryPath().concat(
+                    FilenameUtils.separatorsToSystem(binaryPath)));
+            if (!sourceFile.exists()) {
+                log.info("Infracost binary version {} ({}_{}) not found in local storage cache", version, os, arch);
+                return false;
+            }
+
+            File parentDir = targetFile.getParentFile();
+            if (parentDir != null && !parentDir.exists()) {
+                FileUtils.forceMkdir(parentDir);
+            }
+
+            FileUtils.copyFile(sourceFile, targetFile);
+
+            if (!targetFile.setExecutable(true, true)) {
+                log.warn("Failed to set executable permission on restored Infracost binary");
+            }
+
+            log.info("Successfully restored Infracost binary version {} ({}_{}) from local storage", version, os, arch);
+            return true;
+        } catch (Exception e) {
+            log.warn("Failed to restore Infracost binary version {} ({}_{}) from local storage: {}", version, os, arch, e.getMessage());
+            return false;
+        }
+    }
+
+    @Override
+    public boolean saveInfracostChecksum(String version, String os, String arch, String sha1Hex) {
+        String checksumPath = String.format(LOCAL_INFRACOST_CHECKSUM_DIRECTORY, version, os, arch);
+        try {
+            File targetFile = new File(FileUtils.getUserDirectoryPath().concat(
+                    FilenameUtils.separatorsToSystem(checksumPath)));
+            FileUtils.writeStringToFile(targetFile, sha1Hex, StandardCharsets.UTF_8);
+            return true;
+        } catch (Exception e) {
+            log.warn("Failed to cache Infracost SHA-1 checksum for version {} ({}_{}) in local storage: {}", version, os, arch, e.getMessage());
+            return false;
+        }
+    }
+
+    @Override
+    public Optional<String> downloadInfracostChecksum(String version, String os, String arch) {
+        String checksumPath = String.format(LOCAL_INFRACOST_CHECKSUM_DIRECTORY, version, os, arch);
+        try {
+            File sourceFile = new File(FileUtils.getUserDirectoryPath().concat(
+                    FilenameUtils.separatorsToSystem(checksumPath)));
+            if (!sourceFile.exists()) {
+                return Optional.empty();
+            }
+            String value = FileUtils.readFileToString(sourceFile, StandardCharsets.UTF_8).trim();
+            return value.isEmpty() ? Optional.empty() : Optional.of(value);
+        } catch (Exception e) {
+            log.warn("Failed to restore Infracost SHA-1 checksum for version {} ({}_{}) from local storage: {}", version, os, arch, e.getMessage());
+            return Optional.empty();
         }
     }
 

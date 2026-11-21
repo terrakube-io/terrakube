@@ -21,6 +21,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Stream;
 
 @Slf4j
@@ -193,6 +194,26 @@ public class HttpTerraformStateImpl implements TerraformState {
     @Override
     public boolean downloadOpaBinary(String version, String os, String arch, File targetFile) {
         return delegate != null && delegate.downloadOpaBinary(version, os, arch, targetFile);
+    }
+
+    @Override
+    public boolean saveInfracostBinary(String version, String os, String arch, File sourceFile) {
+        return delegate != null && delegate.saveInfracostBinary(version, os, arch, sourceFile);
+    }
+
+    @Override
+    public boolean downloadInfracostBinary(String version, String os, String arch, File targetFile) {
+        return delegate != null && delegate.downloadInfracostBinary(version, os, arch, targetFile);
+    }
+
+    @Override
+    public boolean saveInfracostChecksum(String version, String os, String arch, String sha1Hex) {
+        return delegate != null && delegate.saveInfracostChecksum(version, os, arch, sha1Hex);
+    }
+
+    @Override
+    public Optional<String> downloadInfracostChecksum(String version, String os, String arch) {
+        return delegate != null ? delegate.downloadInfracostChecksum(version, os, arch) : Optional.empty();
     }
 
     @Override
