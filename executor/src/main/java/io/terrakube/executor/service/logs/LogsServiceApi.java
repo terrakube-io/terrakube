@@ -5,6 +5,7 @@ import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.scheduling.annotation.Scheduled;
 import io.terrakube.client.TerrakubeClient;
@@ -19,6 +20,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantLock;
 
 @Service
+@Qualifier("processLogs")
 @Slf4j
 @ConditionalOnProperty(name = "io.executor.log-via-api", havingValue = "true", matchIfMissing = false)
 public class LogsServiceApi implements ProcessLogs {

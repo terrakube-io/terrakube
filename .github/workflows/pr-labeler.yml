@@ -22,10 +22,9 @@ jobs:
       pull-requests: write
       issues: write
     steps:
-      # Checks out the BASE branch (default for pull_request_target), never the PR head.
+      # No ref is set, so this checks out the base branch (the default for pull_request_target), never the PR head.
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          ref: ${{ github.event.pull_request.base.sha }}
           persist-credentials: false
           sparse-checkout: |
             .github/labeler.yml

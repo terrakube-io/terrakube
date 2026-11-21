@@ -3,6 +3,7 @@ package io.terrakube.executor.service.logs;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.data.redis.connection.RedisStreamCommands.XAddOptions;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
@@ -11,6 +12,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 @Service
+@Qualifier("processLogs")
 @Slf4j
 @AllArgsConstructor
 @ConditionalOnProperty(name = "io.executor.log-via-api", havingValue = "false", matchIfMissing = true)

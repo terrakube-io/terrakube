@@ -18,6 +18,7 @@ import org.springframework.stereotype.Service;
 import java.io.File;
 import java.io.IOException;
 import java.util.List;
+import java.util.Objects;
 import java.util.TreeMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
@@ -52,6 +53,7 @@ public class ScriptEngineService {
         AtomicBoolean executeSuccess = new AtomicBoolean(true);
         TreeMap<Integer, Command> commandOrder = new TreeMap<>();
         if (commands != null) {
+            Objects.requireNonNull(terraformWorkingDir, "terraformWorkingDir");
             log.debug("Executing scripts: {}", commands);
             commands.forEach(command -> {
                 commandOrder.put(command.getPriority(), command);

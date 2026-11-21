@@ -11,6 +11,7 @@ import io.terrakube.terraform.TerraformProcessData;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.text.TextStringBuilder;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import io.terrakube.executor.service.mode.TerraformJob;
 
@@ -53,7 +54,7 @@ public class PlanStructuredOutputService {
             StructuredOutputPersistenceQueue persistenceQueue,
             ExecutorFlagsProperties executorFlagsProperties,
             @Autowired(required = false) ContextSpoolService contextSpoolService,
-            @Autowired(required = false) io.terrakube.executor.service.logs.ProcessLogs processLogs) {
+            @Autowired(required = false) @Qualifier("processLogs") io.terrakube.executor.service.logs.ProcessLogs processLogs) {
         this.jobContextService = jobContextService;
         this.objectMapper = objectMapper;
         this.terraformClient = terraformClient;
