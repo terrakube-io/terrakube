@@ -119,6 +119,11 @@ public class Organization {
     @Enumerated(EnumType.STRING)
     private PrApplyRequirement prApplyMinRequirement = PrApplyRequirement.WRITE;
 
+    /** A null from the API means the default; the column is NOT NULL. */
+    public void setPrApplyMinRequirement(PrApplyRequirement prApplyMinRequirement) {
+        this.prApplyMinRequirement = prApplyMinRequirement == null ? PrApplyRequirement.WRITE : prApplyMinRequirement;
+    }
+
     @UpdatePermission(expression = "user belongs organization")
     @OneToMany(mappedBy = "organization")
     private List<NotificationConfiguration> notificationConfiguration;
