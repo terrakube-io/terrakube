@@ -572,6 +572,10 @@ export type ProjectModel = {
   // The tab this project opens on, and the organization default it falls back to.
   landingTab?: string;
   organizationLandingTab?: string;
+  // Defaults for new workspaces, and the organization default the execution mode falls back to.
+  defaultTerraformVersion?: string;
+  defaultExecutionMode?: string;
+  organizationExecutionMode?: string;
 };
 
 // Computed by the API (project_summary) from the project's non-deleted workspaces.

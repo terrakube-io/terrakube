@@ -27,7 +27,8 @@ import java.util.UUID;
 // Reads are filtered in SQL (ProjectReadFilter), so explicit pagination and sorting work. The high default keeps
 // callers that read without paging (Terraform provider, terrakube-go, CLI) returning every project as before.
 @Paginate(defaultPageSize = 10000, maxPageSize = 10000)
-@LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.DELETE, phase = LifeCycleHookBinding.TransactionPhase.PRECOMMIT, hook = ProjectDeleteGuardHook.class)
+// PREFLUSH, not PRECOMMIT: the flush is where the database would refuse the delete with its own, unhelpful, error.
+@LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.DELETE, phase = LifeCycleHookBinding.TransactionPhase.PREFLUSH, hook = ProjectDeleteGuardHook.class)
 @Include
 @Getter
 @Setter
@@ -52,6 +53,15 @@ public class Project extends GenericAuditFields {
     @Pattern(regexp = "overview|workspaces|variables|policies|teams|general", message = "Landing tab must be one of overview, workspaces, variables, policies, teams, general")
     @Column(name = "landing_tab")
     private String landingTab;
+
+    // Defaults for workspaces created in this project. Null means the organization's default (or the caller's value).
+    @Size(max = 32, message = "Default Terraform version must be 32 characters or fewer")
+    @Column(name = "default_terraform_version")
+    private String defaultTerraformVersion;
+
+    @Pattern(regexp = "remote|local", message = "Default execution mode must be remote or local")
+    @Column(name = "default_execution_mode")
+    private String defaultExecutionMode;
 
     @ManyToOne
     private Organization organization;

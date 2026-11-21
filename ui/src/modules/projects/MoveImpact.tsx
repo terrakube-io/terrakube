@@ -23,15 +23,15 @@ type Loaded = { impact: MoveImpactResult; teamsKnown: boolean; tagNames: Record<
 
 async function loadFacts(orgid: string, projectId: string): Promise<{ facts: ProjectFacts; teamsKnown: boolean }> {
   const [access, policies, collections, tags] = await Promise.all([
-    projectService.listProjectAccess(orgid, projectId),
+    projectService.listProjectTeams(orgid, projectId),
     projectService.listProjectPolicySets(orgid, projectId),
     projectService.listCollectionsForProject(orgid, projectId),
     projectService.listProjectDefaultTags(orgid, projectId).catch(() => []),
   ]);
   return {
-    teamsKnown: !access.isError,
+    teamsKnown: !access.isError && !access.data?.restricted,
     facts: {
-      teams: access.isError ? [] : (access.data ?? []).map((item) => item.name),
+      teams: access.isError ? [] : (access.data?.teams ?? []).map((item) => item.name),
       policySets: policies.isError
         ? []
         : (policies.data ?? [])
@@ -88,9 +88,13 @@ export default function MoveImpact({ orgid, sourceProjectId, targetProjectId, ta
   } else if (impact.teamsGaining.length + impact.teamsLosing.length > 0) {
     const parts = [];
     if (impact.teamsGaining.length)
-      parts.push(`${plural(impact.teamsGaining.length, "team")} gain access (${impact.teamsGaining.join(", ")})`);
+      parts.push(
+        `${plural(impact.teamsGaining.length, "team")} ${impact.teamsGaining.length === 1 ? "gains" : "gain"} access (${impact.teamsGaining.join(", ")})`
+      );
     if (impact.teamsLosing.length)
-      parts.push(`${plural(impact.teamsLosing.length, "team")} lose access (${impact.teamsLosing.join(", ")})`);
+      parts.push(
+        `${plural(impact.teamsLosing.length, "team")} ${impact.teamsLosing.length === 1 ? "loses" : "lose"} access (${impact.teamsLosing.join(", ")})`
+      );
     rows.push({ label: "Access", text: parts.join(", ") });
   }
   impact.policiesStarting.forEach((set) => {

@@ -22,6 +22,8 @@ public interface PolicyExemptionRepository extends JpaRepository<PolicyExemption
 
     List<PolicyExemption> findByProject(Project project);
 
+    long countByProject(Project project);
+
     @Query("SELECT pe FROM policy_exemption pe WHERE pe.organization = :org " +
            "AND (pe.expiresAt IS NULL OR pe.expiresAt > :now) " +
            "AND (pe.workspace = :workspace OR (pe.project IS NOT NULL AND pe.project = :project) OR (pe.workspace IS NULL AND pe.project IS NULL))")
