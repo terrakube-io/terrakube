@@ -29,6 +29,7 @@ export function HealthLegend() {
     { key: "queued", label: "Queued" },
     { key: "waiting", label: "Waiting approval" },
     { key: "never", label: "Never executed" },
+    { key: "noStatus", label: "No run status" },
   ];
   return (
     <ul className="project-health-legend" aria-label="Health colours">

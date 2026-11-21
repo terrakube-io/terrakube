@@ -104,7 +104,7 @@ describe("OrgOverviewPage", () => {
     expect(
       screen.getByRole("img", { name: /16 completed, 4 failed, 1 waiting approval, 2 running or queued/ })
     ).toBeInTheDocument();
-    expect(screen.getByText("83% of checked workspaces are compliant")).toBeInTheDocument();
+    expect(screen.getByText("83% compliant")).toBeInTheDocument();
     expect(screen.getByText("Failed runs").previousSibling).toHaveTextContent("4");
     expect(screen.getByRole("link", { name: "sample_rds" })).toHaveAttribute(
       "href",
@@ -163,6 +163,18 @@ describe("OrgOverviewPage", () => {
     const order = ["Workspace health", "Needs you", "Projects"].map((name) => screen.getByLabelText(name));
     expect(order[0].compareDocumentPosition(order[1]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(order[1].compareDocumentPosition(order[2]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("says how many projects are not shown and links to all of them", async () => {
+    renderPage();
+    await screen.findByText("29 workspaces in 6 projects");
+
+    expect(screen.getByText(/1 of 6, the ones that need attention most/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "All 6 projects" })).toHaveAttribute(
+      "href",
+      "/organizations/org-1/projects"
+    );
+    expect(screen.getByRole("link", { name: /\+5 more/ })).toHaveAttribute("href", "/organizations/org-1/projects");
   });
 
   it("asks for the projects with the most attention first", async () => {

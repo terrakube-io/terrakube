@@ -106,9 +106,20 @@ describe("ProjectDetailPage", () => {
     expect(await screen.findByRole("heading", { name: "payments-prod" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Edit" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "New workspace" })).toBeEnabled();
-    expect(screen.getByText("Write")).toBeInTheDocument();
-    expect(screen.getByText("payments-devs")).toBeInTheDocument();
-    expect(screen.getByText(/You can edit the project, manage its access and delete it/)).toBeInTheDocument();
+    // The role is a chip in the header. A banner is only for someone who cannot change the project.
+    expect(screen.getByRole("button", { name: "Your access in this project" })).toHaveTextContent("Write");
+    expect(screen.getByRole("button", { name: "Your access in this project" })).toHaveTextContent("via payments-devs");
+    expect(screen.queryByText(/Editing the project, managing its access and deleting it need/)).not.toBeInTheDocument();
+  });
+
+  it("lists what the role allows when the chip is opened", async () => {
+    renderAt("/organizations/org/projects/p1");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Your access in this project" }));
+
+    expect(await screen.findByLabelText("Can: Create and manage workspaces")).toBeInTheDocument();
+    expect(screen.getByLabelText("Cannot: Approve runs")).toBeInTheDocument();
+    expect(screen.getByLabelText("Cannot: Manage state")).toBeInTheDocument();
   });
 
   it("says what the caller cannot do when they cannot manage the project", async () => {
@@ -117,7 +128,10 @@ describe("ProjectDetailPage", () => {
 
     renderAt("/organizations/org/projects/p1");
 
-    expect(await screen.findByText(/You cannot edit the project, manage its access or delete it/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/Editing the project, managing its access and deleting it need the Admin role/)
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/You can see this project but not change it/)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Edit" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "New workspace" })).toBeDisabled();
     expect(screen.getByLabelText(/Editing a project needs the Admin role/)).toBeInTheDocument();

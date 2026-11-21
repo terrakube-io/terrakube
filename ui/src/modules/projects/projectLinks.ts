@@ -5,7 +5,8 @@ export type WorkspaceListFilter = { status?: string; policy?: string };
 
 // The workspace status the list filters on for each part of the health bar. The list filters on one status, but the
 // summary counts Completed as completed plus noChanges and Queued as pending, approved and queue. A link there would
-// open fewer rows than the number it sits on, so those two have no link until the list can filter on the whole set.
+// open fewer rows than the number it sits on, so those two have no link until the list can filter on the whole set. A
+// workspace with no run status has no status to filter on either.
 const STATUS_FOR_HEALTH: Record<HealthKey, string | null> = {
   completed: null,
   failed: "failed",
@@ -13,6 +14,7 @@ const STATUS_FOR_HEALTH: Record<HealthKey, string | null> = {
   queued: null,
   waiting: "waitingApproval",
   never: "NeverExecuted",
+  noStatus: null,
 };
 
 export function statusForHealth(key: HealthKey): string | null {

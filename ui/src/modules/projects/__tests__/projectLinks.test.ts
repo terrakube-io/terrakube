@@ -25,6 +25,9 @@ const base: ProjectSummaryModel = {
   exemptedCount: 0,
   queuedJobCount: 0,
   lockedCount: 0,
+  cliDrivenCount: 0,
+  vcsDrivenCount: 0,
+  noRunStatusCount: 0,
   attentionCount: 0,
   teamCount: 0,
 };

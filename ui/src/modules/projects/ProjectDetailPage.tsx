@@ -14,6 +14,8 @@ import DisabledReason from "./DisabledReason";
 import ProjectDeleteDialog from "./ProjectDeleteDialog";
 import ProjectEffectiveVariables from "./ProjectEffectiveVariables";
 import ProjectOverview from "./ProjectOverview";
+import AccessChip from "@/components/display/AccessChip/AccessChip";
+import { accessLevelLabel, projectCapabilities } from "@/modules/permissions/accessModel";
 import ProjectPoliciesTab from "./ProjectPoliciesTab";
 import ProjectVariablesTab from "./ProjectVariablesTab";
 import { PROJECT_TAB_LABELS, ProjectTab, resolveLandingTab } from "./projectLandingTab";
@@ -379,8 +381,6 @@ export default function ProjectDetailPage({ organizationName, setOrganizationNam
   };
 
   const level = projectPermissions.accessLevel;
-  const accessLevelLabel = (value: string) =>
-    value === "custom" ? "Custom permissions" : value.charAt(0).toUpperCase() + value.slice(1);
   const through = projectPermissions.grantedThrough;
 
   return (
@@ -406,6 +406,12 @@ export default function ProjectDetailPage({ organizationName, setOrganizationNam
       ]}
       actions={
         <Space>
+          <AccessChip
+            scope="project"
+            level={projectPermissions.accessLevel}
+            teams={projectPermissions.grantedThrough}
+            items={projectCapabilities(projectPermissions, permissions.manageWorkspace)}
+          />
           <DisabledReason
             disabled={!canManageProject}
             reason="Editing a project needs the Admin role on it, or Manage Workspaces in the organization."
@@ -429,25 +435,21 @@ export default function ProjectDetailPage({ organizationName, setOrganizationNam
         </Space>
       }
     >
-      {level && SECTIONS_WITH_ACCESS_BANNER.includes(section) && (
+      {level && !canManageProject && SECTIONS_WITH_ACCESS_BANNER.includes(section) && (
         <Alert
           type="info"
           showIcon={false}
           className="project-access-banner"
           message={
             <>
-              Your access in this project: <strong>{accessLevelLabel(level)}</strong>
+              Your access in this project is <strong>{accessLevelLabel(level)}</strong>
               {through.length > 0 && (
                 <>
                   , through {through.length === 1 ? "team" : "teams"} <strong>{through.join(", ")}</strong>
                 </>
               )}
-              .{" "}
-              {permissions.manageWorkspace
-                ? "You can edit the project, manage its access and delete it."
-                : canManageProject
-                  ? "You can edit the project and manage its access. Deleting it needs organization level rights."
-                  : "You cannot edit the project, manage its access or delete it."}
+              . Editing the project, managing its access and deleting it need the Admin role on the project, or Manage
+              Workspaces in the organization.
             </>
           }
         />

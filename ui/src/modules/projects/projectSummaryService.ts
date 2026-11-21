@@ -1,9 +1,10 @@
-import { Delivery, DeliveryJob, summarizeDelivery } from "./deliveryStats";
+import { Delivery, DeliveryJob, JOB_READ_CAP, summarizeDelivery } from "./deliveryStats";
 import axiosInstance from "@/config/axiosConfig";
 import { apiPost } from "@/modules/api/apiWrapper";
 import { ApiResponse } from "@/modules/api/types";
 import containsFilter from "@/modules/workspaces/utils/containsFilter";
 import { ProjectSummaryModel } from "@/domain/types";
+import quoteRsql from "@/modules/workspaces/utils/quoteRsql";
 
 export type ProjectSummaryQuery = {
   filter?: string;
@@ -24,17 +25,13 @@ export type ProjectSummaryPage = {
 
 export const STALE_DAYS = 90;
 
-function quoteList(values: string[]): string {
-  return values.map((value) => `'${value.replace(/['"\\]/g, "")}'`).join(",");
-}
-
 // The filter behind each chip. "My projects" with no groups matches nothing rather than everything.
 export function chipFilter(chip: ProjectSummaryQuery["chip"], groups: string[] = []): string | undefined {
   switch (chip) {
     case "attention":
       return "attentionCount=gt=0";
     case "mine":
-      return groups.length ? `projectAccess.name=in=(${quoteList(groups)})` : "workspaceCount<0";
+      return groups.length ? `projectAccess.name=in=(${groups.map(quoteRsql).join(",")})` : "workspaceCount<0";
     case "empty":
       return "workspaceCount==0";
     case "stale":
@@ -84,7 +81,7 @@ export async function listProjectSummaries(
               edges {
                 node {
                   id name description ownerTeam workspaceCount completedCount failedCount runningCount queuedCount
-                  waitingApprovalCount neverRunCount nonCompliantCount hardViolationCount softViolationCount compliantCount exemptedCount lockedCount attentionCount lastRunAt queuedJobCount queuedSince teamCount
+                  waitingApprovalCount neverRunCount nonCompliantCount hardViolationCount softViolationCount compliantCount exemptedCount lockedCount attentionCount cliDrivenCount vcsDrivenCount noRunStatusCount lastRunAt queuedJobCount queuedSince teamCount
                 }
               }
               pageInfo { totalRecords }
@@ -136,7 +133,7 @@ export async function getProjectSummary(
   projectId: string
 ): Promise<ApiResponse<ProjectSummaryModel | null>> {
   const result = await listProjectSummaries(organizationId, {
-    filter: `id=='${projectId}'`,
+    filter: `id==${quoteRsql(projectId)}`,
     sort: "+name",
     page: 1,
     pageSize: 1,
@@ -154,20 +151,29 @@ export async function getProjectIndexCounts(
   organizationId: string,
   groups: string[]
 ): Promise<ApiResponse<ProjectIndexCounts>> {
-  const count = (alias: string, filter?: string) =>
-    `${alias}: projectSummary(first: "1", after: "0"${filter ? `, filter: "${filter}"` : ""}) { pageInfo { totalRecords } }`;
-  const mine = groups.length ? count("mine", chipFilter("mine", groups)) : "";
+  // The filters travel as variables: the groups are names the identity provider chose, and quoting them inside the
+  // query text would mean escaping twice.
+  const filters: Record<string, string | undefined> = {
+    all: undefined,
+    attention: chipFilter("attention"),
+    ...(groups.length ? { mine: chipFilter("mine", groups) } : {}),
+    empty: chipFilter("empty"),
+    stale: chipFilter("stale"),
+  };
+  const aliases = Object.keys(filters);
+  const filtered = aliases.filter((alias) => filters[alias]);
+  const count = (alias: string) =>
+    `${alias}: projectSummary(first: "1", after: "0"${filters[alias] ? `, filter: $${alias}` : ""}) { pageInfo { totalRecords } }`;
   const body = {
-    query: `query ($orgId: String!) {
+    query: `query ($orgId: String!${filtered.map((alias) => `, $${alias}: String`).join("")}) {
       organization(ids: [$orgId]) { edges { node {
-        ${count("all")}
-        ${count("attention", chipFilter("attention"))}
-        ${mine}
-        ${count("empty", chipFilter("empty"))}
-        ${count("stale", chipFilter("stale"))}
+        ${aliases.map(count).join("\n        ")}
       } } }
     }`,
-    variables: { orgId: organizationId },
+    variables: {
+      orgId: organizationId,
+      ...Object.fromEntries(filtered.map((alias) => [alias, filters[alias]])),
+    },
   };
   const result = await apiPost<unknown, any>("/graphql/api/v1", body, {
     dataWrapped: true,
@@ -204,12 +210,14 @@ export async function getUnassignedSummary(organizationId: string): Promise<ApiR
         ${count("running", "lastJobStatus=='running'")}
         ${count("queued", "lastJobStatus=in=('pending','approved','queue')")}
         ${count("waiting", "lastJobStatus=='waitingApproval'")}
-        ${count("never", "lastJobStatus=='NeverExecuted'")}
+        ${count("never", "(lastJobStatus=='NeverExecuted',lastJobStatus=isnull=true)")}
         ${count("nonCompliant", "policyComplianceStatus=='NON_COMPLIANT'")}
         ${count("compliant", "policyComplianceStatus=='COMPLIANT'")}
         ${count("locked", "locked==true")}
         ${count("attention", "(lastJobStatus=in=('failed','waitingApproval'),policyComplianceStatus=='NON_COMPLIANT')")}
-        latest: workspace(first: "1", after: "0", sort: "-lastJobDate", filter: "${base}") { edges { node { lastJobDate } } }
+        ${count("cli", "source=='empty';branch=='remote-content'")}
+        ${count("noStatus", "source=='empty';branch=='remote-content';executionMode==local;lastJobStatus=='NeverExecuted'")}
+        latest: workspace(first: "1", after: "0", sort: "-lastJobDate", filter: "${base};lastJobDate=isnull=false") { edges { node { lastJobDate } } }
       } } }
     }`,
     variables: { orgId: organizationId },
@@ -237,6 +245,9 @@ export async function getUnassignedSummary(organizationId: string): Promise<ApiR
     queuedJobCount: 0,
     lockedCount: 0,
     attentionCount: 0,
+    cliDrivenCount: 0,
+    vcsDrivenCount: 0,
+    noRunStatusCount: 0,
     teamCount: 0,
   };
   if (result.isError) return { isError: true, responseCode: result.responseCode, error: result.error, data: blank };
@@ -258,6 +269,9 @@ export async function getUnassignedSummary(organizationId: string): Promise<ApiR
       compliantCount: total("compliant"),
       lockedCount: total("locked"),
       attentionCount: total("attention"),
+      cliDrivenCount: total("cli"),
+      vcsDrivenCount: total("total") - total("cli"),
+      noRunStatusCount: total("noStatus"),
       lastRunAt: node.latest?.edges?.[0]?.node?.lastJobDate ?? undefined,
     },
   };
@@ -281,7 +295,7 @@ export async function getDelivery(
     }`,
     variables: {
       orgId: organizationId,
-      filter: `workspace.project.id=='${projectId}';createdDate=ge=${since}`,
+      filter: `workspace.project.id==${quoteRsql(projectId)};createdDate=ge=${since}`,
     },
   };
   const result = await apiPost<unknown, any>("/graphql/api/v1", body, {
@@ -296,7 +310,8 @@ export async function getDelivery(
   return {
     isError: false,
     responseCode: result.responseCode,
-    data: summarizeDelivery(jobs, jobs.length),
+    // Job cannot be paged, so a read that came back with the cap's worth of rows may have been cut short.
+    data: summarizeDelivery(jobs, jobs.length, JOB_READ_CAP),
   };
 }
 
@@ -334,7 +349,7 @@ async function listProjectWorkspaceBriefs(
     variables: {
       orgId: organizationId,
       first: String(limit),
-      filter: `project.id=='${projectId}'${extraFilter ? `;${extraFilter}` : ""}`,
+      filter: `project.id==${quoteRsql(projectId)}${extraFilter ? `;${extraFilter}` : ""}`,
     },
   };
   const result = await apiPost<unknown, any>("/graphql/api/v1", body, {

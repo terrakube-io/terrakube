@@ -11,6 +11,21 @@ describe("ringSegments", () => {
       ["running", 2],
       ["other", 2],
       ["never", 6],
+      ["noStatus", 0],
+    ]);
+  });
+
+  it("keeps workspaces with no run status apart from the never executed ones and out of the leftover", () => {
+    const segments = ringSegments(10, { completed: 4, failed: 1, waiting: 0, running: 0, never: 2, noStatus: 3 });
+
+    expect(segments.map((segment) => [segment.key, segment.count])).toEqual([
+      ["completed", 4],
+      ["failed", 1],
+      ["waiting", 0],
+      ["running", 0],
+      ["other", 0],
+      ["never", 2],
+      ["noStatus", 3],
     ]);
   });
 

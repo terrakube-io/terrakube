@@ -1,7 +1,8 @@
 import axiosInstance from "@/config/axiosConfig";
 import { apiPost } from "@/modules/api/apiWrapper";
 import { ApiResponse } from "@/modules/api/types";
-import { isPlanOnlyTemplate } from "./templatePlanOnly";
+import { isPlanOnlyTemplate } from "@/domain/Jobs/planOnlyTemplate";
+import quoteRsql from "@/modules/workspaces/utils/quoteRsql";
 
 export type ProjectCollection = {
   id: string;
@@ -23,13 +24,13 @@ export async function listCollectionsForProject(
         edges { node { collection {
           edges { node {
             id name description priority
-            item { edges { node { id } } }
+            item(first: "1", after: "0") { pageInfo { totalRecords } }
             reference(filter: $filter) { edges { node { id } } }
           } }
         } } }
       }
     }`,
-    variables: { orgId: organizationId, filter: `scope=='PROJECT';project.id=='${projectId}'` },
+    variables: { orgId: organizationId, filter: `scope=='PROJECT';project.id==${quoteRsql(projectId)}` },
   };
   const result = await apiPost<unknown, any>("/graphql/api/v1", body, {
     dataWrapped: true,
@@ -47,7 +48,7 @@ export async function listCollectionsForProject(
       name: edge.node.name,
       description: edge.node.description ?? undefined,
       priority: edge.node.priority ?? 0,
-      variableCount: edge.node.item?.edges?.length ?? 0,
+      variableCount: edge.node.item?.pageInfo?.totalRecords ?? 0,
       referenceId: edge.node.reference?.edges?.[0]?.node?.id,
     })),
   };
@@ -97,7 +98,6 @@ export async function listOrganizationTags(organizationId: string): Promise<Orga
   return (response.data?.data ?? []).map((item: any) => ({
     id: item.id,
     name: item.attributes?.name,
-    planOnly: isPlanOnlyTemplate(item.attributes?.tcl),
   }));
 }
 
@@ -190,5 +190,10 @@ export type OrganizationTemplate = { id: string; name: string; planOnly: boolean
 
 export async function listOrganizationTemplates(organizationId: string): Promise<OrganizationTemplate[]> {
   const response = await axiosInstance.get(`organization/${organizationId}/template`);
-  return (response.data?.data ?? []).map((item: any) => ({ id: item.id, name: item.attributes?.name }));
+  // The template body is base64, which isPlanOnlyTemplate decodes. Only templates that just plan are offered.
+  return (response.data?.data ?? []).map((item: any) => ({
+    id: item.id,
+    name: item.attributes?.name,
+    planOnly: isPlanOnlyTemplate(item.attributes?.tcl),
+  }));
 }
