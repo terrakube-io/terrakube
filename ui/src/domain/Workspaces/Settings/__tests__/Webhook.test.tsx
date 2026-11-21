@@ -454,6 +454,32 @@ describe("WorkspaceWebhook", () => {
       expect(screen.getByText(/Another pull request trigger of this workspace requires it/)).toBeInTheDocument();
     });
 
+    it("drops the approved pull request requirement when apply by comment is turned off", async () => {
+      loadEvents([
+        {
+          ...base,
+          event: "PULL_REQUEST",
+          priority: 0,
+          branch: "main",
+          path: "**",
+          pathType: "PATTERN",
+          prWorkflowEnabled: true,
+          prApplyEnabled: true,
+          prApplyRequirement: "APPROVED",
+        },
+      ]);
+      renderWebhook();
+      await screen.findByText("Triggers (1)");
+
+      fireEvent.click(screen.getByRole("button", { name: "Edit trigger 1" }));
+      fireEvent.click(screen.getByRole("checkbox", { name: /Allow apply from a pull request comment/ }));
+      expect(screen.getByRole("checkbox", { name: /Require an approved pull request/ })).not.toBeChecked();
+
+      fireEvent.click(screen.getByRole("button", { name: "Save webhook" }));
+      await waitFor(() => expect(axiosInstance.post).toHaveBeenCalledTimes(1));
+      expect(savedOps()[1].data.attributes).toMatchObject({ prApplyEnabled: false, prApplyRequirement: "WRITE" });
+    });
+
     it("only offers the approved pull request requirement when apply by comment is on", async () => {
       loadEvents([{ ...base, event: "PULL_REQUEST", priority: 0, branch: "main", path: "*", prWorkflowEnabled: true }]);
       renderWebhook();

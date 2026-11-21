@@ -801,6 +801,7 @@ export const WorkspaceWebhook = ({
                                               onChange={(e) => {
                                                 if (!e.target.checked) {
                                                   form.setFieldValue(["events", name, "prApplyEnabled"], false);
+                                                  form.setFieldValue(["events", name, "prApplyRequireApproval"], false);
                                                 }
                                               }}
                                             >
@@ -823,6 +824,12 @@ export const WorkspaceWebhook = ({
                                           >
                                             <Checkbox
                                               disabled={!manageWorkspace || !trigger.prWorkflowEnabled || restrictApply}
+                                              onChange={(e) => {
+                                                // Like the apply setting itself, the requirement goes with it.
+                                                if (!e.target.checked) {
+                                                  form.setFieldValue(["events", name, "prApplyRequireApproval"], false);
+                                                }
+                                              }}
                                             >
                                               Allow apply from a pull request comment
                                             </Checkbox>
