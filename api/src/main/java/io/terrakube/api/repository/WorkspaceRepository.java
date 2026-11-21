@@ -57,13 +57,17 @@ public interface WorkspaceRepository extends JpaRepository<Workspace, UUID> {
 
     Workspace getByOrganizationNameAndName(String organizationName, String workspaceName);
 
-    // The "(organization_id, name)" unique constraint is DEFERRABLE INITIALLY DEFERRED, so
-    // Hibernate's auto-flush-before-query can momentarily land two rows with the same name
-    // in the table (the pre-existing one plus the pending insert being validated) before
-    // Postgres enforces uniqueness at commit. A single-result derived method would throw
-    // IncorrectResultSizeDataAccessException in that window, so callers doing a proactive
-    // uniqueness check must use this list form and filter out the entity being validated.
-    List<Workspace> findAllByOrganizationNameAndName(String organizationName, String workspaceName);
+    // Duplicate workspace name checks. The comparison ignores case so that names like "Payments" and
+    // "payments" count as the same workspace on every database, not only on case-insensitive collations.
+    // They filter on the organization_id column instead of joining the organization by name, and only
+    // answer yes or no, so no workspace (or its eager associations) is loaded. Soft-deleted workspaces are
+    // left out by the entity's @SQLRestriction. The "(organization_id, name)" unique constraint is
+    // DEFERRABLE INITIALLY DEFERRED, and Elide flushes a create or rename before its PRECOMMIT hooks run,
+    // so the workspace being validated can already be in the table: callers that have its id must use the
+    // IdNot form to leave it out. An exists query can't throw IncorrectResultSizeDataAccessException.
+    boolean existsByOrganizationIdAndNameIgnoreCase(UUID organizationId, String name);
+
+    boolean existsByOrganizationIdAndNameIgnoreCaseAndIdNot(UUID organizationId, String name, UUID id);
 
     Optional<List<Workspace>> findWorkspacesByOrganizationNameAndNameStartingWith(String organizationName, String workspaceNameStartingWidth);
 

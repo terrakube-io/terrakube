@@ -62,6 +62,7 @@ import io.terrakube.api.rs.job.step.Step;
 import io.terrakube.api.rs.project.Project;
 import io.terrakube.api.rs.tag.Tag;
 import io.terrakube.api.rs.template.Template;
+import io.terrakube.api.rs.hooks.workspace.WorkspaceManagementException;
 import io.terrakube.api.rs.workspace.Workspace;
 import io.terrakube.api.rs.workspace.access.Access;
 import io.terrakube.api.rs.workspace.content.Content;
@@ -1232,9 +1233,17 @@ public class RemoteTfeService {
                     organizationName);
 
             Organization organization = organizationRepository.getOrganizationByName(organizationName);
+            String workspaceName = workspaceData.getData().getAttributes().get("name").toString();
+            // This path saves through the repository, so the Elide workspace hook never runs. Apply the same
+            // case-insensitive rule here: with "Payments" in the organization, asking for "payments" is a
+            // conflict instead of a second workspace.
+            if (workspaceRepository.existsByOrganizationIdAndNameIgnoreCase(organization.getId(), workspaceName)) {
+                throw new WorkspaceManagementException(HttpStatus.CONFLICT.value(),
+                        "A workspace named " + workspaceName + " already exists in this organization.");
+            }
             Workspace newWorkspace = new Workspace();
             //newWorkspace.setId(UUID.randomUUID());
-            newWorkspace.setName(workspaceData.getData().getAttributes().get("name").toString());
+            newWorkspace.setName(workspaceName);
             String terraformVersion = "";
             if (workspaceData.getData().getAttributes().get("terraform-version") != null) {
                 terraformVersion = workspaceData.getData().getAttributes().get("terraform-version").toString();

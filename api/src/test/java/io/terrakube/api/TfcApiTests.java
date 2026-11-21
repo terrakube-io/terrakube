@@ -549,6 +549,24 @@ class TfcApiTests extends ServerApplicationTests {
         assertThat(remainingJobs.size()).isEqualTo(2);
     }
 
+    @Test
+    void createWorkspaceWithNameDifferingOnlyByCaseIsRejected() {
+        // "sample_simple" is seeded in the "simple" organization. The TFE API saves through the repository
+        // instead of Elide, so this checks it applies the same case-insensitive rule as the JSON:API.
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
+                .body("""
+                        {"data":{"type":"workspaces","attributes":{"name":"SAMPLE_SIMPLE","terraform-version":"1.9.0"}}}
+                        """)
+                .when()
+                .post("/remote/tfe/v2/organizations/simple/workspaces")
+                .then()
+                .log().ifValidationFails()
+                .statusCode(HttpStatus.CONFLICT.value())
+                .body("errors[0].status", IsEqual.equalTo("409"))
+                .body("errors[0].detail", IsEqual.equalTo("A workspace named SAMPLE_SIMPLE already exists in this organization."));
+    }
+
     // Same calls and payloads as go-tfe (Workspaces.Create / ListTagBindings / AddTagBindings / List)
     @Test
     void keyValueTagsFollowTheTerraformCloudBlockFlow() {

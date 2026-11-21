@@ -9,7 +9,6 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.jpa.repository.QueryHints;
 import org.springframework.data.repository.query.Param;
 
-import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -17,13 +16,15 @@ public interface OrganizationRepository extends JpaRepository<Organization, UUID
 
     Organization getOrganizationByName(String name);
 
-    // The "name" unique constraint is DEFERRABLE INITIALLY DEFERRED, so Hibernate's
-    // auto-flush-before-query can momentarily land two rows with the same name in the
-    // table (the pre-existing one plus the pending insert being validated) before Postgres
-    // enforces uniqueness at commit. A single-result derived method would throw
-    // IncorrectResultSizeDataAccessException in that window, so callers doing a proactive
-    // uniqueness check must use this list form and filter out the entity being validated.
-    List<Organization> findAllByName(String name);
+    // Duplicate organization name checks. The comparison ignores case so that names like "Acme" and "acme"
+    // count as the same organization on every database, not only on case-insensitive collations. They only
+    // answer yes or no, so no organization is loaded. The "name" unique constraint is DEFERRABLE INITIALLY
+    // DEFERRED, and Elide flushes a create or rename before its PRECOMMIT hooks run, so the organization
+    // being validated can already be in the table: callers that have its id must use the IdNot form to
+    // leave it out. An exists query can't throw IncorrectResultSizeDataAccessException.
+    boolean existsByNameIgnoreCase(String name);
+
+    boolean existsByNameIgnoreCaseAndIdNot(String name, UUID id);
 
     /**
      * Locks the organization's row for the rest of the transaction. A plain
