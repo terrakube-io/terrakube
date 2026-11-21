@@ -36,6 +36,7 @@ import io.terrakube.executor.service.logs.LogsConsumer;
 import io.terrakube.executor.service.logs.ProcessLogs;
 import io.terrakube.executor.service.opa.OpaExecutorService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -114,7 +115,7 @@ public class ExecutorJobImpl implements ExecutorJob {
             ExecutorCapacityGate executorCapacityGate,
             RedisTemplate<String, Object> redisTemplate,
             @Autowired(required = false) OpaExecutorService opaExecutorService,
-            @Autowired(required = false) ProcessLogs logsService) {
+            @Autowired(required = false) @Qualifier("processLogs") ProcessLogs logsService) {
         this(setupWorkspace, terraformExecutor, updateJobStatus, executorFlagsProperties,
                 shutdownService, scriptEngineService, eventPublisher, jobExecutionWatchdog,
                 executorCapacityGate, redisTemplate, opaExecutorService, logsService, null);
@@ -133,7 +134,7 @@ public class ExecutorJobImpl implements ExecutorJob {
             ExecutorCapacityGate executorCapacityGate,
             RedisTemplate<String, Object> redisTemplate,
             @Autowired(required = false) OpaExecutorService opaExecutorService,
-            @Autowired(required = false) ProcessLogs logsService,
+            @Autowired(required = false) @Qualifier("processLogs") ProcessLogs logsService,
             @Autowired(required = false) WorkspaceSecurity workspaceSecurity) {
         this.setupWorkspace = setupWorkspace;
         this.terraformExecutor = terraformExecutor;

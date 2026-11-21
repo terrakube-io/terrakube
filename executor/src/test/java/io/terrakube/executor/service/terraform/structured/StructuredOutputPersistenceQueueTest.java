@@ -186,10 +186,10 @@ class StructuredOutputPersistenceQueueTest {
         // Probe from inside the window between the worker taking the snapshot and persisting it.
         java.util.concurrent.atomic.AtomicBoolean drainedInWindow = new java.util.concurrent.atomic.AtomicBoolean();
         CountDownLatch probed = new CountDownLatch(1);
-        queue.afterDequeue = () -> {
+        queue.afterDequeue.set(() -> {
             drainedInWindow.set(queue.awaitDrain(Duration.ZERO));
             probed.countDown();
-        };
+        });
         queue.start();
 
         queue.submit(finalSnap("step-1", 1, "a"));

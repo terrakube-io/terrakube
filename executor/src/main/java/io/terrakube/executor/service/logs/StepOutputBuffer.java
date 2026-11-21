@@ -1,5 +1,7 @@
 package io.terrakube.executor.service.logs;
 
+import io.terrakube.executor.service.PrivateTemp;
+
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.ByteArrayOutputStream;
@@ -92,9 +94,7 @@ public class StepOutputBuffer implements AutoCloseable {
     }
 
     private void moveToFile() throws IOException {
-        file = spoolDirectory != null
-                ? Files.createTempFile(spoolDirectory, "step-output-", ".log")
-                : Files.createTempFile("step-output-", ".log");
+        file = PrivateTemp.file(spoolDirectory, "step-output-", ".log");
         fileOut = Files.newOutputStream(file, StandardOpenOption.WRITE);
         memory.writeTo(fileOut);
         memory = null;

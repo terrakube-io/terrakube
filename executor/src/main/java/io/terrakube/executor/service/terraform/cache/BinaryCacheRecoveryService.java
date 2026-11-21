@@ -133,8 +133,8 @@ public class BinaryCacheRecoveryService {
         if (file == null || !file.isFile() || file.length() == 0) {
             return false;
         }
-        if (!file.canExecute()) {
-            file.setExecutable(true, true);
+        if (!file.canExecute() && !file.setExecutable(true, true)) {
+            log.warn("Could not make {} executable", file);
         }
         return file.canExecute();
     }
