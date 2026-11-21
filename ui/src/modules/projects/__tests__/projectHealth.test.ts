@@ -21,6 +21,8 @@ const base: ProjectSummaryModel = {
   waitingApprovalCount: 0,
   neverRunCount: 4,
   nonCompliantCount: 0,
+  hardViolationCount: 0,
+  softViolationCount: 0,
   compliantCount: 0,
   exemptedCount: 0,
   queuedJobCount: 0,
@@ -78,6 +80,18 @@ describe("attentionTone", () => {
 });
 
 describe("policyRollup", () => {
+  it("shows hard before soft, and falls back to non-compliant for evaluations without a split", () => {
+    expect(policyRollup({ ...base, nonCompliantCount: 3, hardViolationCount: 1, softViolationCount: 2 })).toEqual({
+      tone: "danger",
+      text: "1 hard",
+    });
+    expect(policyRollup({ ...base, nonCompliantCount: 2, softViolationCount: 2 })).toEqual({
+      tone: "warning",
+      text: "2 soft",
+    });
+    expect(policyRollup({ ...base, nonCompliantCount: 2 }).text).toBe("2 non-compliant");
+  });
+
   it("reports non-compliant first, then compliant, then not evaluated", () => {
     expect(policyRollup({ ...base, nonCompliantCount: 1, compliantCount: 5 })).toEqual({
       tone: "danger",

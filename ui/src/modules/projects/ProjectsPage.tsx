@@ -1,8 +1,8 @@
-import { Button, Flex, Form, Input, Modal, Pagination, Segmented, Select, Table, message } from "antd";
-import type { TableProps } from "antd";
+import { Button, Flex, Form, Input, Modal, Pagination, Segmented, Select, Table, Tooltip, message } from "antd";
+import type { InputRef, TableProps } from "antd";
 import { AppstoreOutlined, PlusOutlined, SearchOutlined, UnorderedListOutlined } from "@ant-design/icons";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import PageWrapper from "@/components/layout/PageWrapper/PageWrapper";
 import projectService, { ProjectIndexCounts } from "./projectService";
 import useApiRequest from "@/modules/api/useApiRequest";
@@ -15,6 +15,9 @@ import ProjectCard from "./ProjectCard";
 import ProjectFilterChips from "./ProjectFilterChips";
 import { CountsUnavailable, NoMatch, NoProjects, ProjectsSkeleton } from "./ProjectStates";
 import { ProjectChip, attentionTone, defaultView, policyRollup, shortAgo } from "./projectHealth";
+import { attentionFilter, projectWorkspacesLink, readChoice, readPositiveInt, withViewState } from "./projectLinks";
+import DisabledReason from "./DisabledReason";
+import { useSlashToFocus } from "./useSlashToFocus";
 import "./Projects.css";
 
 type Props = {
@@ -47,6 +50,24 @@ const COLUMN_SORT_FIELDS: Record<string, string> = {
 };
 
 const VIEW_STORAGE_KEY = "terrakube-projects-view";
+const CHIPS = ["all", "attention", "mine", "empty", "stale"] as const;
+const PAGE_SIZES = [24, 50, 100];
+const SORT_FIELDS = new Set([
+  "name",
+  "workspaceCount",
+  "attentionCount",
+  "nonCompliantCount",
+  "teamCount",
+  "lastRunAt",
+]);
+
+// A sort comes from the address, so only "+field,-field" over known columns is accepted.
+function readSort(value: string | null, fallback: string): string {
+  if (!value) return fallback;
+  const parts = value.split(",");
+  const valid = parts.every((part) => /^[+-]/.test(part) && SORT_FIELDS.has(part.slice(1)));
+  return valid ? value : fallback;
+}
 const SEARCH_DEBOUNCE_MS = 300;
 const CARD_PAGE_SIZE = 24;
 const TABLE_PAGE_SIZE = 50;
@@ -65,17 +86,26 @@ export default function ProjectsPage({ organizationName, setOrganizationName }: 
   const [counts, setCounts] = useState<ProjectIndexCounts | null>(null);
   const [countsFailed, setCountsFailed] = useState(false);
   const [groups, setGroups] = useState<string[]>([]);
-  const [search, setSearch] = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [chip, setChip] = useState<ProjectChip>("all");
-  const [sort, setSort] = useState(PROJECT_SORT_PRESETS[0].value);
-  const [view, setView] = useState<ViewMode | null>(storedView);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState<number | null>(null);
+  // The view lives in the address, so a filtered list can be shared and the back button keeps it.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const initial = useRef(searchParams).current;
+  const [search, setSearch] = useState(initial.get("q") ?? "");
+  const [debouncedSearch, setDebouncedSearch] = useState(initial.get("q") ?? "");
+  const [chip, setChip] = useState<ProjectChip>(readChoice<ProjectChip>(initial, "chip", CHIPS, "all"));
+  const [sort, setSort] = useState(readSort(initial.get("sort"), PROJECT_SORT_PRESETS[0].value));
+  const [view, setView] = useState<ViewMode | null>(
+    readChoice<ViewMode | "">(initial, "view", ["cards", "table"], "") || storedView()
+  );
+  const [currentPage, setCurrentPage] = useState(readPositiveInt(initial, "page", 1));
+  const [pageSize, setPageSize] = useState<number | null>(
+    PAGE_SIZES.includes(readPositiveInt(initial, "size", 0)) ? readPositiveInt(initial, "size", 0) : null
+  );
   const [modalOpen, setModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [form] = Form.useForm<ProjectForm>();
   const hasLoadedOnce = useRef(false);
+  const searchRef = useRef<InputRef>(null);
+  useSlashToFocus(searchRef);
   const groupsLoaded = useRef(false);
 
   // Until the first answer arrives the size of the catalogue is unknown, so the saved choice or the table is used.
@@ -137,6 +167,22 @@ export default function ProjectsPage({ organizationName, setOrganizationName }: 
   useEffect(() => {
     execute();
   }, [id, debouncedSearch, chip, groups, sort, currentPage, effectivePageSize]);
+
+  useEffect(() => {
+    const next = withViewState(
+      searchParams,
+      {
+        q: debouncedSearch.trim(),
+        chip,
+        sort,
+        view: view ?? undefined,
+        page: currentPage,
+        size: pageSize ?? undefined,
+      },
+      { chip: "all", sort: PROJECT_SORT_PRESETS[0].value, page: 1 }
+    );
+    if (next !== searchParams) setSearchParams(next, { replace: true });
+  }, [debouncedSearch, chip, sort, view, currentPage, pageSize]);
 
   const openCreate = () => {
     form.resetFields();
@@ -220,9 +266,12 @@ export default function ProjectsPage({ organizationName, setOrganizationName }: 
         record.id === "unassigned" ? (
           <em>Unassigned</em>
         ) : (
-          <Link to={`/organizations/${id}/projects/${record.id}`}>
-            <strong>{name}</strong>
-          </Link>
+          <div className="project-name-cell">
+            <Link to={`/organizations/${id}/projects/${record.id}`}>
+              <strong>{name}</strong>
+            </Link>
+            {record.description && <div className="project-name-description">{record.description}</div>}
+          </div>
         ),
     },
     {
@@ -235,7 +284,19 @@ export default function ProjectsPage({ organizationName, setOrganizationName }: 
       title: "Attention",
       dataIndex: "attentionCount",
       ...sorter("attentionCount"),
-      render: (count: number) => <span className={`project-pill project-pill-${attentionTone(count)}`}>{count}</span>,
+      render: (count: number, record) => {
+        const pill = <span className={`project-pill project-pill-${attentionTone(count)}`}>{count}</span>;
+        if (count === 0 || record.id === "unassigned") return pill;
+        // The number leads to the workspaces behind it.
+        return (
+          <Link
+            to={projectWorkspacesLink(id!, record.id, attentionFilter(record))}
+            aria-label={`${count} need attention in ${record.name}, show them`}
+          >
+            {pill}
+          </Link>
+        );
+      },
     },
     {
       title: "Policy",
@@ -244,14 +305,34 @@ export default function ProjectsPage({ organizationName, setOrganizationName }: 
       sortOrder: sortFor("policy"),
       render: (_: unknown, record) => {
         const rollup = policyRollup(record);
-        return <span className={`project-pill project-pill-${rollup.tone}`}>{rollup.text}</span>;
+        const pill = <span className={`project-pill project-pill-${rollup.tone}`}>{rollup.text}</span>;
+        if (record.id === "unassigned" || record.nonCompliantCount === 0) return pill;
+        return (
+          <Link
+            to={projectWorkspacesLink(id!, record.id, { policy: "NON_COMPLIANT" })}
+            aria-label={`${rollup.text} in ${record.name}, show the workspaces`}
+          >
+            {pill}
+          </Link>
+        );
       },
     },
     {
       title: "Teams",
       dataIndex: "teamCount",
       ...sorter("teamCount"),
-      render: (count: number, record) => (record.id === "unassigned" ? "-" : count),
+      render: (count: number, record) =>
+        record.id === "unassigned" ? (
+          "-"
+        ) : permissions.manageWorkspace ? (
+          count
+        ) : (
+          <Tooltip
+            title={`Only users who manage project access can see team names. Total: ${count} team${count === 1 ? "" : "s"}.`}
+          >
+            <span aria-label={`${count} teams, names hidden`}>-</span>
+          </Tooltip>
+        ),
     },
     {
       title: "Last run",
@@ -279,9 +360,14 @@ export default function ProjectsPage({ organizationName, setOrganizationName }: 
         { label: "Projects", path: `/organizations/${id}/projects` },
       ]}
       actions={
-        <Button icon={<PlusOutlined />} type="primary" onClick={openCreate} disabled={!permissions.manageWorkspace}>
-          New project
-        </Button>
+        <DisabledReason
+          disabled={!permissions.manageWorkspace}
+          reason="You need the Manage Workspaces permission to create projects."
+        >
+          <Button icon={<PlusOutlined />} type="primary" onClick={openCreate} disabled={!permissions.manageWorkspace}>
+            New project
+          </Button>
+        </DisabledReason>
       }
     >
       {noProjectsAtAll ? (
@@ -292,6 +378,8 @@ export default function ProjectsPage({ organizationName, setOrganizationName }: 
         <>
           <Flex gap={12} wrap align="center" className="projects-toolbar">
             <Input
+              ref={searchRef}
+              suffix={search ? undefined : <kbd className="search-shortcut">/</kbd>}
               aria-label="Search projects by name"
               placeholder="Search name or description"
               prefix={<SearchOutlined />}
@@ -329,6 +417,15 @@ export default function ProjectsPage({ organizationName, setOrganizationName }: 
             counts={counts}
           />
           {countsFailed && <CountsUnavailable onRetry={() => loadCounts(groups)} />}
+          {filtersActive && !firstLoad && (
+            <div className="projects-results-summary" role="status" aria-live="polite">
+              Showing {totalRecords} of {counts ? counts.all : totalRecords} project{totalRecords === 1 ? "" : "s"}
+              {debouncedSearch.trim() ? ` matching "${debouncedSearch.trim()}"` : ""}.{" "}
+              <Button type="link" size="small" onClick={clearFilters} className="projects-clear-filters">
+                Clear filters
+              </Button>
+            </div>
+          )}
 
           {firstLoad ? (
             <ProjectsSkeleton view={effectiveView} />
@@ -359,6 +456,7 @@ export default function ProjectsPage({ organizationName, setOrganizationName }: 
                     orgid={id!}
                     project={project}
                     unassigned={project.id === "unassigned"}
+                    canSeeTeams={permissions.manageWorkspace}
                   />
                 ))}
               </div>

@@ -139,6 +139,17 @@ public class Workspace extends GenericAuditFields {
     @Enumerated(EnumType.STRING)
     private io.terrakube.api.rs.policy.PolicyComplianceStatus policyComplianceStatus = io.terrakube.api.rs.policy.PolicyComplianceStatus.UNKNOWN;
 
+    // Violations of the latest policy evaluation. Set by PolicyEvaluationService, never by clients.
+    @CreatePermission(expression = "user is a super service OR user is a superuser")
+    @UpdatePermission(expression = "user is a super service OR user is a superuser")
+    @Column(name = "policy_hard_violations")
+    private Integer policyHardViolations;
+
+    @CreatePermission(expression = "user is a super service OR user is a superuser")
+    @UpdatePermission(expression = "user is a super service OR user is a superuser")
+    @Column(name = "policy_soft_violations")
+    private Integer policySoftViolations;
+
     @ManyToOne
     private Organization organization;
 

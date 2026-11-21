@@ -60,6 +60,10 @@ import java.util.UUID;
                coalesce(sum(case when w.last_job_status = 'waitingApproval' then 1 else 0 end), 0) as waiting_approval_count,
                coalesce(sum(case when w.last_job_status = 'NeverExecuted' then 1 else 0 end), 0) as never_run_count,
                coalesce(sum(case when w.policy_compliance_status = 'NON_COMPLIANT' then 1 else 0 end), 0) as non_compliant_count,
+               coalesce(sum(case when w.policy_compliance_status = 'NON_COMPLIANT' and w.policy_hard_violations > 0 then 1 else 0 end), 0) as hard_violation_count,
+               coalesce(sum(case when w.policy_compliance_status = 'NON_COMPLIANT'
+                                   and (w.policy_hard_violations is null or w.policy_hard_violations = 0)
+                                   and w.policy_soft_violations > 0 then 1 else 0 end), 0) as soft_violation_count,
                coalesce(sum(case when w.policy_compliance_status = 'COMPLIANT' then 1 else 0 end), 0) as compliant_count,
                coalesce(sum(case when w.policy_compliance_status = 'EXEMPTED' then 1 else 0 end), 0) as exempted_count,
                coalesce(sum(case when cast(w.locked as integer) = 1 then 1 else 0 end), 0) as locked_count,
@@ -137,6 +141,13 @@ public class ProjectSummary {
 
     @Column(name = "non_compliant_count")
     private Long nonCompliantCount;
+
+    /** Non-compliant workspaces by the worst violation of their latest evaluation: any hard, or soft only. */
+    @Column(name = "hard_violation_count")
+    private Long hardViolationCount;
+
+    @Column(name = "soft_violation_count")
+    private Long softViolationCount;
 
     /** Workspaces whose last policy evaluation passed, and ones where the workspace is exempted. */
     @Column(name = "compliant_count")

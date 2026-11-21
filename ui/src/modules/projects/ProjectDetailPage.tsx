@@ -3,11 +3,12 @@ import { Alert, Button, Flex, Form, Input, Select, Space, Spin, Typography, mess
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import PageWrapper from "@/components/layout/PageWrapper/PageWrapper";
-import projectService from "./projectService";
+import projectService, { OrganizationTemplate } from "./projectService";
 import { useProjectPermissions } from "@/modules/permissions/useProjectPermissions";
 import ProjectWorkspaces from "./ProjectWorkspaces";
 import ProjectAccessTab from "./ProjectAccessTab";
 import ProjectDefaultTags from "./ProjectDefaultTags";
+import DisabledReason from "./DisabledReason";
 import ProjectDeleteDialog from "./ProjectDeleteDialog";
 import ProjectEffectiveVariables from "./ProjectEffectiveVariables";
 import ProjectOverview from "./ProjectOverview";
@@ -34,6 +35,7 @@ type ProjectForm = {
   landingTab?: string;
   defaultTerraformVersion?: string;
   defaultExecutionMode?: string;
+  defaultTemplate?: string;
 };
 
 type GeneralProps = {
@@ -61,6 +63,14 @@ function ProjectGeneralSettings({
   const [form] = Form.useForm<ProjectForm>();
   const navigate = useNavigate();
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [templates, setTemplates] = useState<OrganizationTemplate[]>([]);
+
+  useEffect(() => {
+    projectService
+      .listOrganizationTemplates(orgid)
+      .then(setTemplates)
+      .catch(() => setTemplates([]));
+  }, [orgid]);
 
   useEffect(() => {
     if (project) {
@@ -70,6 +80,7 @@ function ProjectGeneralSettings({
         landingTab: project.landingTab ?? "default",
         defaultTerraformVersion: project.defaultTerraformVersion,
         defaultExecutionMode: project.defaultExecutionMode ?? "default",
+        defaultTemplate: project.defaultTemplate ?? "default",
       });
     }
   }, [project, form]);
@@ -85,6 +96,8 @@ function ProjectGeneralSettings({
           !values.defaultExecutionMode || values.defaultExecutionMode === "default"
             ? null
             : values.defaultExecutionMode,
+        defaultTemplate:
+          !values.defaultTemplate || values.defaultTemplate === "default" ? null : values.defaultTemplate,
       });
       message.success("Project updated successfully");
       onSaved();
@@ -156,11 +169,33 @@ function ProjectGeneralSettings({
               ]}
             />
           </Form.Item>
+          <Form.Item
+            name="defaultTemplate"
+            label="Template"
+            extra={
+              project?.defaultTemplate
+                ? "Defaulted from project"
+                : "Not set: the create form suggests the first template"
+            }
+          >
+            <Select
+              disabled={!canUpdateProject}
+              options={[
+                { value: "default", label: "No default" },
+                ...templates.map((template) => ({ value: template.id, label: template.name })),
+              ]}
+            />
+          </Form.Item>
           <Form.Item>
             <Flex justify="flex-end">
-              <Button type="primary" htmlType="submit" disabled={!canUpdateProject}>
-                Save settings
-              </Button>
+              <DisabledReason
+                disabled={!canUpdateProject}
+                reason="Changing project settings needs the Admin role on this project, or Manage Workspaces in the organization."
+              >
+                <Button type="primary" htmlType="submit" disabled={!canUpdateProject}>
+                  Save settings
+                </Button>
+              </DisabledReason>
             </Flex>
           </Form.Item>
         </Form>
@@ -182,18 +217,20 @@ function ProjectGeneralSettings({
             <Typography.Text strong>Warning!</Typography.Text> This action cannot be undone.
           </Typography.Text>
         </div>
-        <Button
-          type="primary"
-          danger
-          className="project-delete-button"
-          disabled={!manageWorkspace}
-          onClick={() => setDeleteOpen(true)}
-        >
-          <Space>
-            <DeleteOutlined />
-            Delete Project
-          </Space>
-        </Button>
+        <DisabledReason disabled={!manageWorkspace} reason="Deleting a project needs the Manage Workspaces permission.">
+          <Button
+            type="primary"
+            danger
+            className="project-delete-button"
+            disabled={!manageWorkspace}
+            onClick={() => setDeleteOpen(true)}
+          >
+            <Space>
+              <DeleteOutlined />
+              Delete Project
+            </Space>
+          </Button>
+        </DisabledReason>
         <ProjectDeleteDialog
           orgid={orgid}
           projectId={projectId}
@@ -327,16 +364,26 @@ export default function ProjectDetailPage({ organizationName, setOrganizationNam
       ]}
       actions={
         <Space>
-          <Button disabled={!canManageProject} onClick={() => navigate(projectPath(orgid!, id!, "settings"))}>
-            Edit
-          </Button>
-          <Button
-            type="primary"
-            disabled={!permissions.manageWorkspace && !projectPermissions.manageWorkspace}
-            onClick={() => navigate(`/organizations/${orgid}/workspaces/create?projectId=${id}`)}
+          <DisabledReason
+            disabled={!canManageProject}
+            reason="Editing a project needs the Admin role on it, or Manage Workspaces in the organization."
           >
-            New workspace
-          </Button>
+            <Button disabled={!canManageProject} onClick={() => navigate(projectPath(orgid!, id!, "settings"))}>
+              Edit
+            </Button>
+          </DisabledReason>
+          <DisabledReason
+            disabled={!permissions.manageWorkspace && !projectPermissions.manageWorkspace}
+            reason="Creating a workspace here needs write access to this project, or Manage Workspaces in the organization."
+          >
+            <Button
+              type="primary"
+              disabled={!permissions.manageWorkspace && !projectPermissions.manageWorkspace}
+              onClick={() => navigate(`/organizations/${orgid}/workspaces/create?projectId=${id}`)}
+            >
+              New workspace
+            </Button>
+          </DisabledReason>
         </Space>
       }
     >
