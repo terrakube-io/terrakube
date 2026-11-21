@@ -29,6 +29,8 @@ import organizationService from "@/modules/organizations/organizationService";
 import { OrganizationSummaryProvider } from "@/modules/organizations/OrganizationSummaryContext";
 import { useOrganizationSummaries } from "@/modules/organizations/useOrganizationSummaries";
 import { useOrganizationName } from "@/hooks/useOrganizationName";
+import { AnnouncementProvider } from "@/modules/announcements/AnnouncementContext";
+import { AnnouncementBanner } from "@/modules/announcements/components/AnnouncementBanner";
 const { Footer } = Layout;
 
 type AppRouteContext = {
@@ -80,6 +82,11 @@ const OrganizationSettings = lazy(() =>
 );
 const UserSettingsPage = lazy(() =>
   import("@/modules/user/UserSettingsPage").then((module) => ({ default: module.UserSettingsPage }))
+);
+const PlatformAnnouncementsPage = lazy(() =>
+  import("@/modules/announcements/PlatformAnnouncementsPage").then((module) => ({
+    default: module.PlatformAnnouncementsPage,
+  }))
 );
 
 // API Docs
@@ -257,38 +264,45 @@ const AppLayout = () => {
 
   return (
     <ConfigProvider theme={getThemeConfig(colorScheme, themeMode)}>
-      <Layout className="layout mh-100">
-        <AppSidebar
-          organizationName={currentOrgName}
-          setOrganizationName={setOrganizationName}
-          organizations={orgs}
-          onOrgChange={handleOrgChange}
-          workspaceManageState={workspaceManageState}
-        />
-        <Layout className="app-content-shell">
-          <div className="app-content-scroll">
-            {backendError ? (
-              <ErrorState
-                status={backendError}
-                message={
-                  backendError === 500
-                    ? "The Terrakube API returned an unexpected error. Try again, and check the API logs if it keeps happening."
-                    : "The Terrakube API is not responding. Check that the backend is running, then try again."
-                }
-                onRetry={() => window.location.reload()}
-                showHomeLink={false}
-              />
-            ) : (
-              <ErrorBoundary key={currentPageKey} resetKey={location.pathname}>
-                <Outlet context={{ organizationName: currentOrgName, setOrganizationName, setWorkspaceManageState }} />
-              </ErrorBoundary>
-            )}
-            <Footer className="app-footer">
-              Terrakube {window._env_.REACT_APP_TERRAKUBE_VERSION} ©{new Date().getFullYear()}
-            </Footer>
-          </div>
-        </Layout>
-      </Layout>
+      <AnnouncementProvider orgId={urlOrgId} routeKey={location.pathname}>
+        <div className="app-shell">
+          <AnnouncementBanner />
+          <Layout className="layout">
+            <AppSidebar
+              organizationName={currentOrgName}
+              setOrganizationName={setOrganizationName}
+              organizations={orgs}
+              onOrgChange={handleOrgChange}
+              workspaceManageState={workspaceManageState}
+            />
+            <Layout className="app-content-shell">
+              <div className="app-content-scroll">
+                {backendError ? (
+                  <ErrorState
+                    status={backendError}
+                    message={
+                      backendError === 500
+                        ? "The Terrakube API returned an unexpected error. Try again, and check the API logs if it keeps happening."
+                        : "The Terrakube API is not responding. Check that the backend is running, then try again."
+                    }
+                    onRetry={() => window.location.reload()}
+                    showHomeLink={false}
+                  />
+                ) : (
+                  <ErrorBoundary key={currentPageKey} resetKey={location.pathname}>
+                    <Outlet
+                      context={{ organizationName: currentOrgName, setOrganizationName, setWorkspaceManageState }}
+                    />
+                  </ErrorBoundary>
+                )}
+                <Footer className="app-footer">
+                  Terrakube {window._env_.REACT_APP_TERRAKUBE_VERSION} ©{new Date().getFullYear()}
+                </Footer>
+              </div>
+            </Layout>
+          </Layout>
+        </div>
+      </AnnouncementProvider>
     </ConfigProvider>
   );
 };
@@ -586,6 +600,10 @@ const router = createBrowserRouter(
           element: <UserSettingsPage />,
         },
         {
+          path: "/settings/announcements",
+          element: <PlatformAnnouncementsPage />,
+        },
+        {
           path: "/organizations/:orgid/settings/ssh",
           element: <OrganizationSettings selectedTab="6" />,
         },
@@ -620,6 +638,10 @@ const router = createBrowserRouter(
         {
           path: "/organizations/:orgid/settings/policies",
           element: <OrganizationSettings selectedTab="13" />,
+        },
+        {
+          path: "/organizations/:orgid/settings/announcements",
+          element: <OrganizationSettings selectedTab="14" />,
         },
         {
           path: "/organizations/:orgid/settings/templates",

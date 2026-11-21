@@ -1,0 +1,36 @@
+.announcements-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.announcements-search {
+  width: 280px;
+  max-width: 100%;
+}
+
+.announcements-table-title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.announcements-table-excerpt {
+  font-size: 12px;
+  color: var(--tk-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 360px;
+}
+
+.announcement-markdown-preview {
+  min-height: 96px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--tk-border-primary);
+  background: var(--tk-fill-secondary);
+}

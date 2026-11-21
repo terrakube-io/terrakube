@@ -126,6 +126,11 @@ public class RbacV2Service implements RbacService {
     }
 
     @Override
+    public boolean canManageAnnouncements(Team team) {
+        return ROLE_ADMIN.equals(normalizeRole(team.getRole()));
+    }
+
+    @Override
     public boolean canPlanJob(Team team) {
         String role = normalizeRole(team.getRole());
         return switch (role) {
