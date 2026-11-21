@@ -59,10 +59,12 @@ public class WebhookService {
         // HTTP header names are case-insensitive; provider services look them up in lowercase.
         headers = WebhookHeaders.caseInsensitive(headers);
         String result = "";
-        Webhook webhook = webhookRepository.getReferenceById(UUID.fromString(webhookId));
-        if (webhook == null) {
-            throw new IllegalArgumentException("Webhook not found");
+        Optional<Webhook> webhookOptional = webhookRepository.findById(UUID.fromString(webhookId));
+        if (webhookOptional.isEmpty()) {
+            log.warn("Webhook {} not found", webhookId);
+            return result;
         }
+        Webhook webhook = webhookOptional.get();
         Workspace workspace = webhook.getWorkspace();
         Vcs vcs = workspace.getVcs();
 
@@ -72,13 +74,18 @@ public class WebhookService {
             return result;
         }
 
+        if (webhook.isMigratedV2() && isSharedWebhookProvider(vcs.getVcsType())) {
+            log.warn("Ignoring v1 webhook delivery for webhook {} because it has been migrated to v2", webhookId);
+            return result;
+        }
+
         WebhookResult webhookResult = new WebhookResult();
         String base64WorkspaceId = Base64.getEncoder()
                 .encodeToString(workspace.getId().toString().getBytes(StandardCharsets.UTF_8));
         switch (vcs.getVcsType()) {
             case GITHUB:
                 webhookResult = gitHubWebhookService.processWebhook(jsonPayload, headers,
-                        base64WorkspaceId, vcs);
+                        base64WorkspaceId, vcs, workspace.getSource());
                 break;
             case GITLAB:
                 webhookResult = gitLabWebhookService.processWebhook(jsonPayload, headers,
@@ -420,6 +427,13 @@ public class WebhookService {
 
     private String findTemplateIdRelease(WebhookResult result, Webhook webhook) {
         return WebhookEventMatcher.findTemplateIdRelease(result, webhook, webhookEventRepository);
+    }
+
+    private static boolean isSharedWebhookProvider(io.terrakube.api.rs.vcs.VcsType vcsType) {
+        return vcsType == io.terrakube.api.rs.vcs.VcsType.GITHUB
+                || vcsType == io.terrakube.api.rs.vcs.VcsType.GITLAB
+                || vcsType == io.terrakube.api.rs.vcs.VcsType.AZURE_SP_MI
+                || vcsType == io.terrakube.api.rs.vcs.VcsType.AZURE_DEVOPS;
     }
 
     private void sendCommitStatus(Job job) {

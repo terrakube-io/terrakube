@@ -25,6 +25,9 @@ interface SharedWorkspace {
   name: string;
 }
 
+// Quoting lets names hold spaces, commas or quotes; Elide still reads an edge `*` as a wildcard.
+const rsqlQuote = (value: string) => `'${value.replace(/[\\']/g, (char) => `\\${char}`)}'`;
+
 export const WorkspaceStateShared = ({ workspace, manageWorkspace, onWorkspaceUpdate }: Props) => {
   const [form] = Form.useForm();
   const globalRemoteState = Form.useWatch("globalRemoteState", form);
@@ -49,17 +52,21 @@ export const WorkspaceStateShared = ({ workspace, manageWorkspace, onWorkspaceUp
     }
 
     setLoadingTable(true);
-    Promise.all(
-      ids.map((workspaceId) =>
-        axiosInstance
-          .get(`/organization/${organizationId}/workspace/${workspaceId}`)
-          .then((response) => ({ id: workspaceId, name: response.data.data.attributes.name as string }))
-          .catch(() => ({ id: workspaceId, name: "Unknown workspace" }))
-      )
-    ).then((fetched) => {
-      setSharedWorkspaces(fetched);
-      setLoadingTable(false);
-    });
+    const filter = encodeURIComponent(`id=in=(${ids.map(rsqlQuote).join(",")})`);
+    axiosInstance
+      .get(`/organization/${organizationId}/workspace?fields[workspace]=name&filter[workspace]=${filter}`)
+      .then((response) => {
+        const found: { id: string; attributes: { name: string } }[] = response.data.data ?? [];
+        return new Map(found.map((item) => [item.id, item.attributes.name]));
+      })
+      .catch(() => new Map<string, string>())
+      .then((names) => {
+        // A deleted or unreadable workspace stays listed so its access can still be revoked.
+        setSharedWorkspaces(
+          ids.map((workspaceId) => ({ id: workspaceId, name: names.get(workspaceId) ?? "Unknown workspace" }))
+        );
+        setLoadingTable(false);
+      });
   }, [organizationId, workspace.attributes.sharedIds]);
 
   const fetchWorkspaceOptions = async (search: string) => {
@@ -69,8 +76,9 @@ export const WorkspaceStateShared = ({ workspace, manageWorkspace, onWorkspaceUp
     }
     setFetching(true);
     try {
+      const filter = encodeURIComponent(`name==${rsqlQuote(`*${search}*`)}`);
       const response = await axiosInstance.get(
-        `/organization/${organizationId}/workspace?filter[workspace]=name==*${search}*`
+        `/organization/${organizationId}/workspace?fields[workspace]=name&filter[workspace]=${filter}`
       );
       const workspaces = response.data.data.map((item: any) => ({
         id: item.id,

@@ -47,6 +47,10 @@ export const RunTriggers = ({ organizationId, workspaceId, workspaceName, manage
       .get("runTrigger", {
         params: {
           include: "sourceWorkspace,destinationWorkspace,template",
+          "fields[runTrigger]": "enabled,sourceWorkspace,destinationWorkspace,template",
+          // An unsparsed included workspace lists every one of its job ids.
+          "fields[workspace]": "name",
+          "fields[template]": "name",
           // Both directions in one round trip: a comma is OR in Elide's filter syntax.
           "filter[runTrigger]": `sourceWorkspace.id==${workspaceId},destinationWorkspace.id==${workspaceId}`,
         },
@@ -92,7 +96,7 @@ export const RunTriggers = ({ organizationId, workspaceId, workspaceName, manage
 
   const loadPickerData = useCallback(() => {
     axiosInstance
-      .get(`organization/${organizationId}/workspace`)
+      .get(`organization/${organizationId}/workspace?fields[workspace]=name`)
       .then((response) => {
         // A workspace cannot trigger itself, so it is not offered as a source.
         setWorkspaces((response.data.data ?? []).filter((item: Workspace) => item.id !== workspaceId));

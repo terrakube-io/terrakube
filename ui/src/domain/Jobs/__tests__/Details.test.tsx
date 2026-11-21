@@ -44,6 +44,41 @@ describe("DetailsJob apply structured output", () => {
     useStructuredOutputStreamMock.mockReturnValue(null);
   });
 
+  it("shows command execution only for command steps, including a missing duration", async () => {
+    getMock.mockImplementation((url: string) =>
+      Promise.resolve(
+        url.includes("/context/v1/")
+          ? { data: {} }
+          : {
+              data: {
+                data: { id: "1", attributes: { status: "failed" } },
+                included: [
+                  {
+                    id: "timed-plan",
+                    type: "step",
+                    attributes: { name: "Plan", status: "failed", stepNumber: 1, executionDurationMs: 263000 },
+                  },
+                  {
+                    id: "approval",
+                    type: "step",
+                    attributes: { name: "Approve Plan", status: "pending", stepNumber: 2 },
+                  },
+                  {
+                    id: "apply",
+                    type: "step",
+                    attributes: { name: "Apply", status: "notExecuted", stepNumber: 3, executionPhase: "apply" },
+                  },
+                ],
+              },
+            }
+      )
+    );
+    render(<DetailsJob jobId="1" />);
+    expect(await screen.findByText("4m 23s")).toBeInTheDocument();
+    expect(screen.getAllByText("Execution")).toHaveLength(2);
+    expect(screen.getByText("—")).toBeInTheDocument();
+  });
+
   it("uses the live structured-output stream while the job is running, not just the poll", async () => {
     getMock.mockImplementation((url: string) => {
       if (url.includes("/context/v1/")) {

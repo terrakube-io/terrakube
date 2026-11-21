@@ -302,6 +302,22 @@ describe("PolicySetsSettings", () => {
     expect(screen.getByRole("button", { name: "Create policy set" })).toBeInTheDocument();
   });
 
+  it("asks only for workspace names for the scope picker", async () => {
+    render(
+      <MemoryRouter initialEntries={["/organizations/org-1/settings/policies/new"]}>
+        <Routes>
+          <Route
+            path="/organizations/:orgid/settings/policies/new"
+            element={<PolicySetsSettings editorMode="new" managePermission={true} />}
+          />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => expect(getMock).toHaveBeenCalledWith("organization/org-1/workspace?fields[workspace]=name"));
+    expect(getMock).not.toHaveBeenCalledWith("organization/org-1/workspace");
+  });
+
   it("renders authorized override team select allowing user to pick teams", async () => {
     const sampleTeams = [
       { id: "team-1", attributes: { name: "security-admins" } },

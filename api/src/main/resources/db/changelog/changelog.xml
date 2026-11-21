@@ -149,4 +149,6 @@
     <include file="/db/changelog/local/changelog-2.34.0-workspace-require-approve-to-apply.xml"/>
     <include file="/db/changelog/local/changelog-2.35.0-module-refresh-schedule.xml"/>
     <include file="/db/changelog/local/changelog-2.35.0-registry-lookup-indexes.xml"/>
+    <include file="/db/changelog/local/changelog-2.35.0-step-execution-duration.xml"/>
+    <include file="/db/changelog/local/changelog-2.35.0-pr-comment-interim.xml"/>
 </databaseChangeLog>

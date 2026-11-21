@@ -41,7 +41,9 @@ public class WebHookController {
 
     @PostMapping("/webhook/v1/{webhookId}")
     public ResponseEntity<String> processWebhook(@PathVariable String webhookId,@RequestBody Map<String, Object> payload,@RequestHeader Map<String, String> headers) {
-
+        if (!UUID_PATTERN.matcher(webhookId).matches()) {
+            return ResponseEntity.status(401).build();
+        }
         log.info("Processing webhook {}", webhookId);
         try {
             String jsonPayload = objectMapper.writeValueAsString(payload);

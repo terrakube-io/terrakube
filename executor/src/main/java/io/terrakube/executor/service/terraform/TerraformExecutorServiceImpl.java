@@ -250,21 +250,22 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                         }
                     };
 
+                    TerraformProcessData planProcessData = getTerraformProcessData(terraformJob, terraformWorkingDir, executorTempDirectory);
                     TerraformClient jsonPlanClient = track(buildJsonEnabledPlanClient());
                     Consumer<String> guardedJsonLineConsumer = guardConsumer(jsonLineConsumer);
 
                     try {
                         if (isDestroy) {
                             log.warn("Executor running a plan to destroy resources...");
-                            exitCode = jsonPlanClient.planDestroyDetailExitCode(
-                                    getTerraformProcessData(terraformJob, terraformWorkingDir, executorTempDirectory),
+                            exitCode = CommandExecutionTiming.execute(terraformJob, "plan", () -> jsonPlanClient.planDestroyDetailExitCode(
+                                    planProcessData,
                                     guardedJsonLineConsumer,
-                                    null).get();
+                                    null));
                         } else {
-                            exitCode = jsonPlanClient.planDetailExitCode(
-                                    getTerraformProcessData(terraformJob, terraformWorkingDir, executorTempDirectory),
+                            exitCode = CommandExecutionTiming.execute(terraformJob, "plan", () -> jsonPlanClient.planDetailExitCode(
+                                    planProcessData,
                                     guardedJsonLineConsumer,
-                                    null).get();
+                                    null));
                         }
                     } finally {
                         release(jsonPlanClient);
@@ -708,7 +709,8 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         boolean execution = false;
         boolean interrupted = false;
         try {
-            execution = jsonApplyClient.apply(terraformProcessData, guardConsumer(jsonLineConsumer), null).get();
+            execution = CommandExecutionTiming.execute(terraformJob, "apply",
+                    () -> jsonApplyClient.apply(terraformProcessData, guardConsumer(jsonLineConsumer), null));
         } catch (InterruptedException e) {
             interrupted = true;
             throw e;
@@ -773,7 +775,8 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         boolean execution = false;
         boolean interrupted = false;
         try {
-            execution = jsonDestroyClient.destroy(terraformProcessData, guardConsumer(jsonLineConsumer), null).get();
+            execution = CommandExecutionTiming.execute(terraformJob, "apply",
+                    () -> jsonDestroyClient.destroy(terraformProcessData, guardConsumer(jsonLineConsumer), null));
         } catch (InterruptedException e) {
             interrupted = true;
             throw e;
