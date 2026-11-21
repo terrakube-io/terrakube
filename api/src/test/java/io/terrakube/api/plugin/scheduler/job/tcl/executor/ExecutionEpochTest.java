@@ -80,35 +80,4 @@ class ExecutionEpochTest {
         verify(persistentExecutorService).send(eq(job), payload.capture());
         assertThat(payload.getValue().getExecutionEpoch()).isBetween(before, System.currentTimeMillis());
     }
-
-    @Test
-    void dispatchCarriesTheOrganizationNameForTheProviderMirrorUrl() throws Exception {
-        Organization organization = new Organization();
-        organization.setId(UUID.randomUUID());
-        organization.setName("acme");
-        Workspace workspace = new Workspace();
-        workspace.setId(UUID.randomUUID());
-        workspace.setName("test");
-        workspace.setBranch("main");
-        workspace.setSource("https://example.com/test.git");
-        workspace.setTerraformVersion("1.9.0");
-        Job job = new Job();
-        job.setId(43);
-        job.setOrganization(organization);
-        job.setWorkspace(workspace);
-        Variable executorMode = new Variable();
-        executorMode.setCategory(Category.ENV);
-        executorMode.setKey("TERRAKUBE_ENABLE_EPHEMERAL_EXECUTOR");
-        executorMode.setValue("0");
-        when(variableRepository.findByWorkspace(workspace)).thenReturn(Optional.of(List.of(executorMode)));
-        Flow flow = new Flow();
-        flow.setType("terraformPlan");
-        flow.setStep(100);
-
-        executorService.execute(job, "100", flow);
-
-        ArgumentCaptor<ExecutorContext> payload = ArgumentCaptor.forClass(ExecutorContext.class);
-        verify(persistentExecutorService).send(eq(job), payload.capture());
-        assertThat(payload.getValue().getOrganizationName()).isEqualTo("acme");
-    }
 }

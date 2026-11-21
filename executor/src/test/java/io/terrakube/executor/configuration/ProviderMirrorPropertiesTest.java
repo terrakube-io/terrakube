@@ -75,5 +75,7 @@ class ProviderMirrorPropertiesTest {
                 .isEqualTo("false");
         assertThat(helper.replacePlaceholders(file.getProperty("io.terrakube.provider-mirror.only"), n -> null))
                 .isEqualTo("false");
+        assertThat(helper.replacePlaceholders(file.getProperty("io.terrakube.provider-mirror.registry-url"), n -> null))
+                .isEmpty();
     }
 }
