@@ -1,5 +1,6 @@
-import { ClockCircleOutlined, FolderOutlined } from "@ant-design/icons";
-import { Card, Space, Tag, Typography, Flex } from "antd";
+import { ClockCircleOutlined, DollarOutlined, FolderOutlined } from "@ant-design/icons";
+import { Card, Space, Tag, Tooltip, Typography, Flex } from "antd";
+import { COST_ESTIMATION_DISCLAIMER, formatMonthlyCost } from "@/modules/workspaces/utils/costFormat";
 import { IconContext } from "react-icons";
 import { BiTerminal } from "react-icons/bi";
 import { WorkspaceListItem } from "@/modules/workspaces/types";
@@ -53,6 +54,14 @@ export default function WorkspaceCard({ item, tags, organizationId }: Props) {
           <IacTypeLogo type={item.iacType} />
           <Typography.Text>{item.terraformVersion}</Typography.Text>
         </Space>
+        {item.currentMonthlyCost != null && (
+          <Tooltip title={COST_ESTIMATION_DISCLAIMER}>
+            <Space>
+              <DollarOutlined />
+              <Typography.Text>{formatMonthlyCost(item.currentMonthlyCost, item.costCurrency)}</Typography.Text>
+            </Space>
+          </Tooltip>
+        )}
       </div>
       <div className="workspace-card-source">
         {item.branch !== "remote-content" && item.normalizedSource ? (

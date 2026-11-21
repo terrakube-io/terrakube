@@ -8,7 +8,9 @@ export type WorkspaceSortOption =
   | "source_asc"
   | "source_desc"
   | "terraformVersion_asc"
-  | "terraformVersion_desc";
+  | "terraformVersion_desc"
+  | "cost_desc"
+  | "cost_asc";
 
 const SORT_STORAGE_KEY = "workspaceSortValue";
 
@@ -24,6 +26,8 @@ export function getStoredWorkspaceSortOption(): WorkspaceSortOption {
     "source_desc",
     "terraformVersion_asc",
     "terraformVersion_desc",
+    "cost_desc",
+    "cost_asc",
   ];
   if (stored && valid.includes(stored as WorkspaceSortOption)) {
     return stored as WorkspaceSortOption;
@@ -46,4 +50,6 @@ export const WORKSPACE_SORT_OPTIONS: { label: string; value: WorkspaceSortOption
   { label: "Repository (Z → A)", value: "source_desc" },
   { label: "Terraform version (A → Z)", value: "terraformVersion_asc" },
   { label: "Terraform version (Z → A)", value: "terraformVersion_desc" },
+  { label: "Highest Est. Cost", value: "cost_desc" },
+  { label: "Lowest Est. Cost", value: "cost_asc" },
 ];

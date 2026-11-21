@@ -7,6 +7,7 @@ import { EmptyState } from "@/components/feedback/EmptyState";
 import WorkspaceTable from "@/modules/workspaces/components/WorkspaceTable/WorkspaceTable";
 import WorkspaceCard from "@/modules/workspaces/components/WorkspaceCard";
 import WorkspaceFilter from "@/modules/workspaces/components/WorkspaceFilter";
+import EstimatedSpendRollupCard from "@/modules/workspaces/components/EstimatedSpendRollupCard";
 import { WorkspaceListItem, WorkspacePageRequest, WorkspaceTagFilter } from "@/modules/workspaces/types";
 import workspaceService from "@/modules/workspaces/workspaceService";
 import { WorkspaceSortOption } from "@/modules/workspaces/utils/workspaceSort";
@@ -43,6 +44,8 @@ const SORT_VALUES: WorkspaceSortOption[] = [
   "name_desc",
   "lastRun_desc",
   "lastRun_asc",
+  "cost_desc",
+  "cost_asc",
   "status",
   "source_asc",
   "source_desc",
@@ -336,6 +339,7 @@ export default function ProjectWorkspaces({
               onDone={() => load(true)}
             />
           )}
+          <EstimatedSpendRollupCard workspaces={workspaces} title="Estimated Project Monthly Spend" />
           {view === "rows" ? (
             workspaces.length === 0 ? (
               <EmptyState

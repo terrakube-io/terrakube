@@ -1,5 +1,12 @@
 import { ApprovalAttribution } from "@/components/display/ApprovalAttribution";
-import { CheckOutlined, CloseOutlined, SafetyCertificateOutlined, StopOutlined, UserOutlined } from "@ant-design/icons";
+import {
+  CheckOutlined,
+  CloseOutlined,
+  DollarOutlined,
+  SafetyCertificateOutlined,
+  StopOutlined,
+  UserOutlined,
+} from "@ant-design/icons";
 import {
   Alert,
   Avatar,
@@ -23,7 +30,15 @@ import { useAbortController, usePolling, useStructuredOutputStream } from "../..
 import WorkspaceStatusTag from "@/components/display/WorkspaceStatusTag";
 import { getWorkspaceStatusIcon } from "../../modules/workspaces/utils/workspaceStatusIcon";
 import { getWorkspaceStatusText } from "../../modules/workspaces/utils/workspaceStatusText";
-import { formatJobVia, IncludedItem, Job, JobStep, Workspace } from "../types";
+import {
+  formatJobVia,
+  IncludedItem,
+  InfracostContext,
+  Job,
+  JobStep,
+  PolicyEvaluationContext,
+  Workspace,
+} from "../types";
 import {
   ContextAvailability,
   StructuredOutputMarker,
@@ -63,7 +78,8 @@ import {
 import { relativeTime } from "@/modules/utils/dates";
 import { formatExecutionDuration } from "./executionDuration";
 import { PolicyChecksOutput } from "./PolicyChecksOutput";
-import { PolicyEvaluationContext } from "../types";
+import { CostEstimationOutput } from "./CostEstimationOutput";
+import { formatCostDelta, formatMonthlyCost } from "@/modules/workspaces/utils/costFormat";
 import "./runTokens.css";
 import "./Details.css";
 
@@ -155,6 +171,7 @@ export const DetailsJob = ({ jobId, workspaceName, canApprove = false }: Props) 
   const [terraformOutputs, setTerraformOutputs] = useState<StructuredOutputsByStep>({});
   const [jobDiagnostics, setJobDiagnostics] = useState<JobDiagnosticsByStep>({});
   const [policyEvaluation, setPolicyEvaluation] = useState<PolicyEvaluationContext | undefined>(undefined);
+  const [infracost, setInfracost] = useState<InfracostContext | undefined>(undefined);
   const hasPolicyBlockingViolations = useMemo(() => hasBlockingPolicyViolations(policyEvaluation), [policyEvaluation]);
   const [contextAvailability, setContextAvailability] = useState<ContextAvailability>("pending");
   // Sticky: once a persisted context has been seen, a later transient 503 does not un-see it.
@@ -657,6 +674,9 @@ export const DetailsJob = ({ jobId, workspaceName, canApprove = false }: Props) 
       if (response?.data?.policyEvaluation) {
         setPolicyEvaluation(response.data.policyEvaluation);
       }
+      if (response?.data?.infracost) {
+        setInfracost(response.data.infracost);
+      }
     } catch (error) {
       if (isAbortError(error)) return;
       if (requestId !== contextRequestRef.current) return;
@@ -681,6 +701,7 @@ export const DetailsJob = ({ jobId, workspaceName, canApprove = false }: Props) 
     abortContextRequests();
     abortStepDeliveryRequests();
     setRecoveryGaveUp(false);
+    setInfracost(undefined);
 
     if (!jobId) {
       setLoading(false);
@@ -1055,6 +1076,45 @@ export const DetailsJob = ({ jobId, workspaceName, canApprove = false }: Props) 
               {(attributes.cascadeDepth ?? 0) > 1 && ` It is ${attributes.cascadeDepth} triggers deep in the chain.`}
             </>
           }
+        />
+      )}
+
+      {infracost && (
+        <Collapse
+          className="run-panel"
+          defaultActiveKey={["cost-estimation"]}
+          items={[
+            {
+              key: "cost-estimation",
+              label: (() => {
+                if (infracost.status === "ERROR") {
+                  return (
+                    <span className="run-panel-label">
+                      <DollarOutlined className="run-panel-icon" aria-hidden />
+                      <h3 className="run-panel-title">Cost Estimation (Infracost)</h3>
+                      <Tag color="warning">Unavailable</Tag>
+                    </span>
+                  );
+                }
+                const delta = formatCostDelta(
+                  infracost.diffTotalMonthlyCost,
+                  infracost.pastTotalMonthlyCost,
+                  infracost.currency
+                );
+                const tagColor =
+                  delta.direction === "increase" ? "red" : delta.direction === "decrease" ? "green" : "default";
+                return (
+                  <span className="run-panel-label">
+                    <DollarOutlined className="run-panel-icon" aria-hidden />
+                    <h3 className="run-panel-title">Cost Estimation (Infracost)</h3>
+                    <Tag>{formatMonthlyCost(infracost.totalMonthlyCost, infracost.currency)}</Tag>
+                    {infracost.diffTotalMonthlyCost != null && <Tag color={tagColor}>{delta.text}</Tag>}
+                  </span>
+                );
+              })(),
+              children: <CostEstimationOutput infracost={infracost} />,
+            },
+          ]}
         />
       )}
 

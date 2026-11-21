@@ -1366,3 +1366,63 @@ describe("DetailsJob job variables notice", () => {
     expect(screen.queryByText(/run variables?/)).not.toBeInTheDocument();
   });
 });
+
+describe("DetailsJob Infracost estimation panel", () => {
+  beforeEach(() => {
+    useStructuredOutputStreamMock.mockReturnValue(null);
+  });
+
+  it("renders the Cost Estimation (Infracost) panel when context contains infracost data", async () => {
+    getMock.mockImplementation((url: string) => {
+      if (url.includes("/context/v1/")) {
+        return Promise.resolve({
+          data: {
+            infracost: {
+              status: "SUCCESS",
+              currency: "USD",
+              totalMonthlyCost: "142.50",
+              pastTotalMonthlyCost: "100.00",
+              diffTotalMonthlyCost: "42.50",
+              summary: {
+                totalDetectedResources: 1,
+                totalSupportedResources: 1,
+                totalUnsupportedResources: 0,
+                totalNoPriceResources: 0,
+              },
+              projects: [
+                {
+                  name: "infra",
+                  pastBreakdown: { resources: [] },
+                  breakdown: {
+                    resources: [
+                      {
+                        name: "aws_instance.app",
+                        resourceType: "aws_instance",
+                        monthlyCost: "142.50",
+                      },
+                    ],
+                  },
+                  diff: {
+                    resources: [{ name: "aws_instance.app", monthlyCost: "42.50" }],
+                  },
+                },
+              ],
+            },
+          },
+        });
+      }
+      return Promise.resolve({
+        data: {
+          data: { id: "1", attributes: { status: "completed" } },
+          included: [],
+        },
+      });
+    });
+
+    render(<DetailsJob jobId="1" />);
+
+    expect(await screen.findByText("Cost Estimation (Infracost)")).toBeInTheDocument();
+    expect(screen.getAllByText("$142.50/mo").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText("aws_instance.app")).toBeInTheDocument();
+  });
+});
