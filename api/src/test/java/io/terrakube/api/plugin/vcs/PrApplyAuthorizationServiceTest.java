@@ -222,6 +222,17 @@ class PrApplyAuthorizationServiceTest {
         }
 
         @Test
+        void aDecisionWithoutAHeadCommitCannotBeChecked() {
+            Workspace workspace = gitHubWriter();
+            when(gitHub.getPullRequestApproval(workspace.getVcs(), SOURCE, 12))
+                    .thenReturn(Optional.of(new PullRequestApproval(true, "APPROVED", null)));
+
+            assertThat(subject.refusalReason(workspace, approvedComment("maintainer", null),
+                    PrApplyRequirement.APPROVED))
+                    .hasValueSatisfying(reason -> assertThat(reason).contains("Could not check whether @maintainer"));
+        }
+
+        @Test
         void gitHubApplyIsRefusedWhenTheReviewDecisionCannotBeRead() {
             Workspace workspace = gitHubWriter();
             when(gitHub.getPullRequestApproval(any(), any(), anyInt())).thenReturn(Optional.empty());

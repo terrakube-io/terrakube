@@ -122,6 +122,12 @@ public class PrApplyAuthorizationService {
         if (approval.isEmpty()) {
             return Optional.of(cannotCheck(who));
         }
+        if (approval.get().headSha() == null || approval.get().headSha().isBlank()) {
+            // Without the head the decision cannot be tied to the commit; asking again would not help.
+            log.error("PR apply comment by {} on workspace {}: the provider returned no head commit", who,
+                    workspace.getName());
+            return Optional.of(cannotCheck(who));
+        }
         if (!commit.equals(approval.get().headSha())) {
             log.info("Refusing PR apply comment by {} on workspace {}: head moved from {} to {}", who,
                     workspace.getName(), commit, approval.get().headSha());
