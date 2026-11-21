@@ -65,7 +65,7 @@ public class PrApplyAuthorizationService {
                 // Fail closed: an approval was asked for and nothing can confirm it.
                 log.warn("Refusing PR apply comment by {} on workspace {}: approval required but no VCS connection",
                         author, workspace.getName());
-                return Optional.of(cannotCheck(whoOf(author)));
+                return Optional.of(cannotCheckQuoted(quote(whoOf(author))));
             }
             log.warn("PR apply comment on workspace {} has no VCS connection to check the author against",
                     workspace.getName());
@@ -85,7 +85,8 @@ public class PrApplyAuthorizationService {
                     // Fail closed: approvals cannot be read from this provider yet.
                     log.warn("Refusing PR apply comment by {} on workspace {}: approval required, not checked for {}",
                             author, workspace.getName(), vcs.getVcsType());
-                    yield Optional.of(approvalNotSupported(whoOf(author)));
+                    // Bitbucket and Azure DevOps send a display name, not a login: quote it, never mention.
+                    yield Optional.of(approvalNotSupported(quote(whoOf(author))));
                 }
                 log.warn("PR apply comment by {} on workspace {} is not checked: no permission check for {}",
                         author, workspace.getName(), vcs.getVcsType());
@@ -176,15 +177,22 @@ public class PrApplyAuthorizationService {
 
     /**
      * Mentions the comment author, so the notice reaches them; quotes what is not a plain username.
-     * Backticks and line breaks are dropped from a quoted name, so it cannot end the code span and add
-     * its own markdown to the comment.
+     * Only for GitHub and GitLab, which send the author's login: other providers send a display name,
+     * which could mention someone else.
      */
     static String mention(String author) {
         if (author != null && MENTIONABLE.matcher(author).matches()) {
             return "@" + author;
         }
-        String quoted = String.valueOf(author).replaceAll("[`\\r\\n]", "");
-        return "`" + quoted + "`";
+        return quote(author);
+    }
+
+    /**
+     * Quotes a name as code. Backticks and line breaks are dropped, so it cannot end the code span and
+     * add its own markdown to the comment.
+     */
+    static String quote(String author) {
+        return "`" + String.valueOf(author).replaceAll("[`\\r\\n]", "") + "`";
     }
 
     private static String notAllowed(String author, String requirement) {
@@ -197,9 +205,9 @@ public class PrApplyAuthorizationService {
                 .formatted(mention(author), decision);
     }
 
-    private static String approvalNotSupported(String author) {
+    private static String approvalNotSupported(String quotedAuthor) {
         return "%s cannot apply from a comment: this workspace requires an approved pull request, and Terrakube cannot check approvals on this VCS provider yet. Apply this plan from the Terrakube UI."
-                .formatted(mention(author));
+                .formatted(quotedAuthor);
     }
 
     private static String headMoved(String author) {
@@ -208,7 +216,11 @@ public class PrApplyAuthorizationService {
     }
 
     private static String cannotCheck(String author) {
+        return cannotCheckQuoted(mention(author));
+    }
+
+    private static String cannotCheckQuoted(String formattedAuthor) {
         return "Could not check whether %s may apply from a comment, so the apply was not started. If this was a temporary error, comment again; otherwise apply this plan from the Terrakube UI."
-                .formatted(mention(author));
+                .formatted(formattedAuthor);
     }
 }

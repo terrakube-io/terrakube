@@ -323,7 +323,8 @@ class PrApplyAuthorizationServiceTest {
             assertThat(subject.refusalReason(workspace(type), approvedComment("anyone", null),
                     PrApplyRequirement.APPROVED))
                     .hasValueSatisfying(reason -> assertThat(reason)
-                            .contains("@anyone cannot apply")
+                            .contains("`anyone` cannot apply")
+                            .doesNotContain("@anyone")
                             .contains("cannot check approvals on this VCS provider"));
             verifyNoInteractions(gitHub, gitLab);
         }
@@ -346,7 +347,7 @@ class PrApplyAuthorizationServiceTest {
 
             assertThat(subject.refusalReason(workspace, approvedComment("anyone", null),
                     PrApplyRequirement.APPROVED))
-                    .hasValueSatisfying(reason -> assertThat(reason).contains("Could not check whether @anyone"));
+                    .hasValueSatisfying(reason -> assertThat(reason).contains("Could not check whether `anyone`"));
             verifyNoInteractions(gitHub, gitLab);
         }
     }
