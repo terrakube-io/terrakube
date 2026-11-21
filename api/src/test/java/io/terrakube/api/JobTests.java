@@ -595,26 +595,32 @@ class JobTests extends ServerApplicationTests {
     @Test
     public void approvalIsRefusedForAJobThatIsNotWaitingForApproval() throws SchedulerException {
         devsManageJobs(true);
-        String jobId = createJob(jobDefinition("2db36f7c-f549-4341-a789-315d47eb061d"));
-        detachFromScheduler(jobId);
-        Job job = jobRepository.findById(Integer.parseInt(jobId)).orElseThrow();
+        // This tests the approval hook, not scheduling: Quartz must not race the status assertion.
+        Job job = new Job();
+        job.setWorkspace(workspace);
+        job.setOrganization(organization);
         job.setStatus(JobStatus.running);
-        jobRepository.save(job);
+        job = jobRepository.saveAndFlush(job);
+        String jobId = Integer.toString(job.getId());
 
-        // Approval permissions apply only to waitingApproval -> approved/rejected transitions.
-        given()
-                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
-                .body(statusChangePayload(jobId, JobStatus.approved))
-                .when()
-                .patch("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/job/" + jobId)
-                .then()
-                .assertThat()
-                .statusCode(HttpStatus.FORBIDDEN.value());
+        try {
+            // Approval permissions apply only to waitingApproval -> approved/rejected transitions.
+            given()
+                    .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
+                    .body(statusChangePayload(jobId, JobStatus.approved))
+                    .when()
+                    .patch("/api/v1/organization/d9b58bd3-f3fc-4056-a026-1163297e80a8/job/" + jobId)
+                    .then()
+                    .assertThat()
+                    .statusCode(HttpStatus.FORBIDDEN.value());
 
-        Job refused = jobRepository.findById(Integer.parseInt(jobId)).orElseThrow();
-        assertEquals(JobStatus.running, refused.getStatus());
-        assertNull(refused.getApprovedBy());
-        assertNull(refused.getApprovedAt());
+            Job refused = jobRepository.findById(Integer.parseInt(jobId)).orElseThrow();
+            assertEquals(JobStatus.running, refused.getStatus());
+            assertNull(refused.getApprovedBy());
+            assertNull(refused.getApprovedAt());
+        } finally {
+            jobRepository.deleteById(Integer.parseInt(jobId));
+        }
     }
 
     @ParameterizedTest

@@ -281,14 +281,14 @@ public class WebhookServiceTest {
         // broken (issue #3159). It should be ignored quietly and create no job.
         UUID webhookId = UUID.randomUUID();
         workspace.setId(UUID.randomUUID());
-        doReturn(webhook).when(webhookRepository).getReferenceById(webhookId);
+        doReturn(Optional.of(webhook)).when(webhookRepository).findById(webhookId);
 
         WebhookResult pushResult = new WebhookResult();
         pushResult.setValid(true);
         pushResult.setEvent("push");
         pushResult.setBranch("main");
         pushResult.setFileChanges(List.of("main.tf"));
-        doReturn(pushResult).when(gitHubWebhookService).processWebhook(any(), any(), any(), any());
+        doReturn(pushResult).when(gitHubWebhookService).processWebhook(any(), any(), any(), any(), any());
 
         // No PUSH rows are configured, only the PULL_REQUEST row from setup().
         doReturn(List.of())
@@ -366,11 +366,11 @@ public class WebhookServiceTest {
         pullRequestEvent.setPrApplyEnabled(true);
         UUID webhookId = UUID.randomUUID();
         workspace.setId(UUID.randomUUID());
-        doReturn(webhook).when(webhookRepository).getReferenceById(webhookId);
+        doReturn(Optional.of(webhook)).when(webhookRepository).findById(webhookId);
         WebhookResult result = createCommentResult("apply", 5);
         result.setValid(true);
         result.setEvent("issue_comment");
-        doReturn(result).when(gitHubWebhookService).processWebhook(any(), any(), any(), any());
+        doReturn(result).when(gitHubWebhookService).processWebhook(any(), any(), any(), any(), any());
         doReturn(Optional.of("restricted to main")).when(workspaceBranchPolicy)
                 .vcsViolation(eq(workspace), eq(WorkspaceBranchPolicy.Source.PULL_REQUEST), any(), any());
 
@@ -385,13 +385,13 @@ public class WebhookServiceTest {
     public void pushToAnotherBranchStartsNoRunWhenTheWorkspaceRestrictsApply() throws Exception {
         UUID webhookId = UUID.randomUUID();
         workspace.setId(UUID.randomUUID());
-        doReturn(webhook).when(webhookRepository).getReferenceById(webhookId);
+        doReturn(Optional.of(webhook)).when(webhookRepository).findById(webhookId);
         WebhookResult pushResult = new WebhookResult();
         pushResult.setValid(true);
         pushResult.setEvent("push");
         pushResult.setBranch("feature/x");
         pushResult.setFileChanges(List.of("main.tf"));
-        doReturn(pushResult).when(gitHubWebhookService).processWebhook(any(), any(), any(), any());
+        doReturn(pushResult).when(gitHubWebhookService).processWebhook(any(), any(), any(), any(), any());
         WebhookEvent pushEvent = new WebhookEvent();
         pushEvent.setEvent(WebhookEventType.PUSH);
         pushEvent.setBranch(".*");
@@ -437,7 +437,7 @@ public class WebhookServiceTest {
         UUID webhookId = UUID.randomUUID();
         workspace.setId(UUID.randomUUID());
         workspace.setBranch("main");
-        doReturn(webhook).when(webhookRepository).getReferenceById(webhookId);
+        doReturn(Optional.of(webhook)).when(webhookRepository).findById(webhookId);
 
         WebhookResult prResult = new WebhookResult();
         prResult.setValid(true);
@@ -445,7 +445,7 @@ public class WebhookServiceTest {
         prResult.setBranch("feature/login");
         prResult.setBaseBranch("develop");
         prResult.setFileChanges(List.of("main.tf"));
-        doReturn(prResult).when(gitHubWebhookService).processWebhook(any(), any(), any(), any());
+        doReturn(prResult).when(gitHubWebhookService).processWebhook(any(), any(), any(), any(), any());
 
         assertDoesNotThrow(() -> subject.processWebhook(webhookId.toString(), "{}", Map.of()));
 
@@ -459,7 +459,7 @@ public class WebhookServiceTest {
         UUID webhookId = UUID.randomUUID();
         workspace.setId(UUID.randomUUID());
         workspace.setBranch("main");
-        doReturn(webhook).when(webhookRepository).getReferenceById(webhookId);
+        doReturn(Optional.of(webhook)).when(webhookRepository).findById(webhookId);
 
         WebhookResult prResult = new WebhookResult();
         prResult.setValid(true);
@@ -467,7 +467,7 @@ public class WebhookServiceTest {
         prResult.setBranch("main"); // attacker-controlled source branch
         prResult.setBaseBranch(null);
         prResult.setFileChanges(List.of("main.tf"));
-        doReturn(prResult).when(gitHubWebhookService).processWebhook(any(), any(), any(), any());
+        doReturn(prResult).when(gitHubWebhookService).processWebhook(any(), any(), any(), any(), any());
 
         assertDoesNotThrow(() -> subject.processWebhook(webhookId.toString(), "{}", Map.of()));
 
@@ -481,7 +481,7 @@ public class WebhookServiceTest {
         UUID webhookId = UUID.randomUUID();
         workspace.setId(UUID.randomUUID());
         workspace.setBranch("develop");
-        doReturn(webhook).when(webhookRepository).getReferenceById(webhookId);
+        doReturn(Optional.of(webhook)).when(webhookRepository).findById(webhookId);
 
         WebhookResult prResult = new WebhookResult();
         prResult.setValid(true);
@@ -491,7 +491,7 @@ public class WebhookServiceTest {
         prResult.setCommit("sha-login");
         prResult.setPrNumber(12);
         prResult.setFileChanges(List.of("main.tf"));
-        doReturn(prResult).when(gitHubWebhookService).processWebhook(any(), any(), any(), any());
+        doReturn(prResult).when(gitHubWebhookService).processWebhook(any(), any(), any(), any(), any());
 
         pullRequestEvent.setBranch("feature/.*");
         Job savedJob = new Job();
@@ -510,7 +510,7 @@ public class WebhookServiceTest {
         UUID webhookId = UUID.randomUUID();
         workspace.setId(UUID.randomUUID());
         workspace.setBranch("main");
-        doReturn(webhook).when(webhookRepository).getReferenceById(webhookId);
+        doReturn(Optional.of(webhook)).when(webhookRepository).findById(webhookId);
 
         WebhookResult prResult = new WebhookResult();
         prResult.setValid(true);
@@ -520,7 +520,7 @@ public class WebhookServiceTest {
         prResult.setCommit("sha-login");
         prResult.setPrNumber(12);
         prResult.setFileChanges(List.of("main.tf"));
-        doReturn(prResult).when(gitHubWebhookService).processWebhook(any(), any(), any(), any());
+        doReturn(prResult).when(gitHubWebhookService).processWebhook(any(), any(), any(), any(), any());
 
         pullRequestEvent.setBranch("feature/.*");
         Job savedJob = new Job();
@@ -538,13 +538,13 @@ public class WebhookServiceTest {
         UUID webhookId = UUID.randomUUID();
         workspace.setId(UUID.randomUUID());
         workspace.setBranch("main");
-        doReturn(webhook).when(webhookRepository).getReferenceById(webhookId);
+        doReturn(Optional.of(webhook)).when(webhookRepository).findById(webhookId);
 
         WebhookResult commentResult = createCommentResult("plan", 7);
         commentResult.setValid(true);
         commentResult.setEvent("issue_comment");
         commentResult.setBaseBranch("develop");
-        doReturn(commentResult).when(gitHubWebhookService).processWebhook(any(), any(), any(), any());
+        doReturn(commentResult).when(gitHubWebhookService).processWebhook(any(), any(), any(), any(), any());
 
         assertDoesNotThrow(() -> subject.processWebhook(webhookId.toString(), "{}", Map.of()));
 
@@ -559,13 +559,13 @@ public class WebhookServiceTest {
         UUID webhookId = UUID.randomUUID();
         workspace.setId(UUID.randomUUID());
         workspace.setBranch("main");
-        doReturn(webhook).when(webhookRepository).getReferenceById(webhookId);
+        doReturn(Optional.of(webhook)).when(webhookRepository).findById(webhookId);
 
         WebhookResult commentResult = createCommentResult("plan", 0);
         commentResult.setValid(true);
         commentResult.setEvent("issue_comment");
         commentResult.setBaseBranch("develop");
-        doReturn(commentResult).when(gitHubWebhookService).processWebhook(any(), any(), any(), any());
+        doReturn(commentResult).when(gitHubWebhookService).processWebhook(any(), any(), any(), any(), any());
 
         assertDoesNotThrow(() -> subject.processWebhook(webhookId.toString(), "{}", Map.of()));
 
@@ -578,7 +578,7 @@ public class WebhookServiceTest {
         UUID webhookId = UUID.randomUUID();
         workspace.setId(UUID.randomUUID());
         workspace.setSource("https://github.com/owner/modules.git");
-        doReturn(webhook).when(webhookRepository).getReferenceById(webhookId);
+        doReturn(Optional.of(webhook)).when(webhookRepository).findById(webhookId);
 
         WebhookResult pushResult = new WebhookResult();
         pushResult.setValid(true);
@@ -586,7 +586,7 @@ public class WebhookServiceTest {
         pushResult.setBranch("v1.2.3");
         pushResult.setTag("v1.2.3");
         pushResult.setFileChanges(List.of("main.tf"));
-        doReturn(pushResult).when(gitHubWebhookService).processWebhook(any(), any(), any(), any());
+        doReturn(pushResult).when(gitHubWebhookService).processWebhook(any(), any(), any(), any(), any());
         doReturn(List.of())
                 .when(webhookEventRepository)
                 .findByWebhookAndEventOrderByPriorityAsc(webhook, WebhookEventType.PUSH);
@@ -603,13 +603,13 @@ public class WebhookServiceTest {
         UUID webhookId = UUID.randomUUID();
         workspace.setId(UUID.randomUUID());
         workspace.setSource("https://github.com/owner/modules");
-        doReturn(webhook).when(webhookRepository).getReferenceById(webhookId);
+        doReturn(Optional.of(webhook)).when(webhookRepository).findById(webhookId);
 
         WebhookResult createResult = new WebhookResult();
         createResult.setValid(true);
         createResult.setEvent("create");
         createResult.setTag("v2.0.0");
-        doReturn(createResult).when(gitHubWebhookService).processWebhook(any(), any(), any(), any());
+        doReturn(createResult).when(gitHubWebhookService).processWebhook(any(), any(), any(), any(), any());
 
         assertDoesNotThrow(() -> subject.processWebhook(webhookId.toString(), "{}", Map.of()));
 
@@ -622,14 +622,14 @@ public class WebhookServiceTest {
     public void branchPushDoesNotTouchModules() throws Exception {
         UUID webhookId = UUID.randomUUID();
         workspace.setId(UUID.randomUUID());
-        doReturn(webhook).when(webhookRepository).getReferenceById(webhookId);
+        doReturn(Optional.of(webhook)).when(webhookRepository).findById(webhookId);
 
         WebhookResult pushResult = new WebhookResult();
         pushResult.setValid(true);
         pushResult.setEvent("push");
         pushResult.setBranch("main");
         pushResult.setFileChanges(List.of("main.tf"));
-        doReturn(pushResult).when(gitHubWebhookService).processWebhook(any(), any(), any(), any());
+        doReturn(pushResult).when(gitHubWebhookService).processWebhook(any(), any(), any(), any(), any());
         doReturn(List.of())
                 .when(webhookEventRepository)
                 .findByWebhookAndEventOrderByPriorityAsc(webhook, WebhookEventType.PUSH);
@@ -637,5 +637,35 @@ public class WebhookServiceTest {
         assertDoesNotThrow(() -> subject.processWebhook(webhookId.toString(), "{}", Map.of()));
 
         verify(moduleRefreshTransactions, never()).markDueBySource(any(), any());
+    }
+
+    @Test
+    public void processWebhookIgnoresMigratedV2WebhookForSharedProvider() {
+        UUID webhookId = UUID.randomUUID();
+        workspace.setId(UUID.randomUUID());
+        webhook.setMigratedV2(true);
+        doReturn(Optional.of(webhook)).when(webhookRepository).findById(webhookId);
+
+        assertEquals("", subject.processWebhook(webhookId.toString(), "{}", Map.of()));
+
+        verify(gitHubWebhookService, never()).processWebhook(any(), any(), any(), any(), any());
+        verify(bitBucketWebhookService, never()).processWebhook(any(), any(), any());
+    }
+
+    @Test
+    public void processWebhookStillProcessesBitbucketWhenMigratedV2FlagIsSet() {
+        UUID webhookId = UUID.randomUUID();
+        workspace.setId(UUID.randomUUID());
+        workspace.getVcs().setVcsType(VcsType.BITBUCKET);
+        webhook.setMigratedV2(true);
+        doReturn(Optional.of(webhook)).when(webhookRepository).findById(webhookId);
+
+        WebhookResult bbResult = new WebhookResult();
+        bbResult.setValid(false);
+        doReturn(bbResult).when(bitBucketWebhookService).processWebhook(any(), any(), any());
+
+        assertEquals("", subject.processWebhook(webhookId.toString(), "{}", Map.of()));
+
+        verify(bitBucketWebhookService, times(1)).processWebhook(any(), any(), any());
     }
 }

@@ -20,7 +20,7 @@ const mockGet = (collections: unknown[], items: unknown[] = []) =>
   (axiosInstance.get as jest.Mock).mockImplementation((url: string) => {
     if (url.endsWith("/item")) return Promise.resolve({ data: { data: items } });
     if (url.endsWith("/reference")) return Promise.resolve({ data: { data: [] } });
-    if (url.endsWith("/workspace")) return Promise.resolve({ data: { data: [] } });
+    if (url.endsWith("/workspace?fields[workspace]=name")) return Promise.resolve({ data: { data: [] } });
     if (/\/collection\/col-\d+$/.test(url)) return Promise.resolve({ data: { data: collection } });
     return Promise.resolve({ data: { data: collections } });
   });
@@ -71,6 +71,19 @@ describe("VariableCollectionsSettings", () => {
 
 describe("CreateEditCollection", () => {
   beforeEach(() => jest.clearAllMocks());
+
+  it.each([
+    ["create", "/organizations/org-1/settings/collection/new"],
+    ["edit", "/organizations/org-1/settings/collection/edit/col-1"],
+  ])("asks only for workspace names for the picker in %s mode", async (_mode, path) => {
+    mockGet([collection]);
+    renderAt(path);
+
+    await waitFor(() =>
+      expect(axiosInstance.get).toHaveBeenCalledWith("organization/org-1/workspace?fields[workspace]=name")
+    );
+    expect(axiosInstance.get).not.toHaveBeenCalledWith("organization/org-1/workspace");
+  });
 
   it("opens the new collection after creating it", async () => {
     mockGet([]);

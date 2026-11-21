@@ -215,6 +215,11 @@ public class Job extends GenericAuditFields {
     @Column(name = "pr_comment_id")
     private String prCommentId;
 
+    // The comment was published while the job waited for approval: the final result still has to replace it.
+    @Exclude
+    @Column(name = "pr_comment_interim", nullable = false)
+    private boolean prCommentInterim = false;
+
     @Exclude
     @Column(name = "command_comment_id")
     private String commandCommentId;
@@ -288,6 +293,35 @@ public class Job extends GenericAuditFields {
     @UpdatePermission(expression = "user is a super service OR executor manage job OR user is an executor service")
     @OneToMany(mappedBy = "job", cascade = CascadeType.REMOVE, orphanRemoval = true)
     private List<Step> step;
+
+    @Transient
+    @ComputedAttribute
+    @CreatePermission(expression = "NONE")
+    @UpdatePermission(expression = "NONE")
+    public Long getPlanDurationMs() {
+        return executionDuration("plan");
+    }
+
+    @Transient
+    @ComputedAttribute
+    @CreatePermission(expression = "NONE")
+    @UpdatePermission(expression = "NONE")
+    public Long getApplyDurationMs() {
+        return executionDuration("apply");
+    }
+
+    private Long executionDuration(String phase) {
+        if (step == null) {
+            return null;
+        }
+        Long total = null;
+        for (Step entry : step) {
+            if (phase.equals(entry.getExecutionPhase()) && entry.getExecutionDurationMs() != null) {
+                total = (total == null ? 0L : total) + entry.getExecutionDurationMs();
+            }
+        }
+        return total;
+    }
 
     @OneToMany(mappedBy = "job", cascade = CascadeType.REMOVE, orphanRemoval = true)
     private List<Address> address;

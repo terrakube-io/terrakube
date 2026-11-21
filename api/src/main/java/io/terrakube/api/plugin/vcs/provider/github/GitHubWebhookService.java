@@ -1,5 +1,6 @@
 package io.terrakube.api.plugin.vcs.provider.github;
 
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.security.NoSuchAlgorithmException;
 import java.security.spec.InvalidKeySpecException;
@@ -7,6 +8,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -18,6 +20,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.stereotype.Service;
 import io.terrakube.api.plugin.vcs.TokenService;
+import io.terrakube.api.plugin.vcs.VcsApiUrlValidator;
 import io.terrakube.api.plugin.vcs.WebhookResult;
 import io.terrakube.api.plugin.vcs.WebhookServiceBase;
 import io.terrakube.api.rs.job.Job;
@@ -58,12 +61,14 @@ public class GitHubWebhookService extends WebhookServiceBase {
         this.tokenService = tokenService;
     }
 
-    public WebhookResult processWebhook(String jsonPayload, Map<String, String> headers, String token, Vcs vcs) {
+    public WebhookResult processWebhook(String jsonPayload, Map<String, String> headers, String token, Vcs vcs,
+            String workspaceSource) {
         return handleWebhook(jsonPayload, headers, token, "x-hub-signature-256", JobVia.GITHUB.getValue(),
-                (payload, result, headerMap) -> handleEvent(payload, result, headerMap, vcs));
+                (payload, result, headerMap) -> handleEvent(payload, result, headerMap, vcs, workspaceSource));
     }
 
-    private WebhookResult handleEvent(String jsonPayload, WebhookResult result, Map<String, String> headers, Vcs vcs) {
+    private WebhookResult handleEvent(String jsonPayload, WebhookResult result, Map<String, String> headers, Vcs vcs,
+            String workspaceSource) {
         String event = headers.get("x-github-event");
         result.setEvent(event);
         if (event.equals("ping")) {
@@ -118,9 +123,6 @@ public class GitHubWebhookService extends WebhookServiceBase {
             }
             // Handle pull request event (opened, synchronize, reopened)
         } else if ("pull_request".equals(event)) {
-            // Extract repository owner and name from the payload
-            String repoOwner = rootNode.path("repository").path("owner").path("login").asText();
-            String repoName = rootNode.path("repository").path("name").asText();
             String action = rootNode.path("action").asText();
             if ("opened".equals(action) || "synchronize".equals(action) || "reopened".equals(action)) {
                 int prNumber = rootNode.path("number").asInt();
@@ -138,11 +140,19 @@ public class GitHubWebhookService extends WebhookServiceBase {
                 String prUser = rootNode.path("pull_request").path("user").path("login").asText();
                 result.setCreatedBy(prUser);
                 
-                String prFilesUrl = rootNode.path("pull_request").path("url").asText() + "/files";
-                result.setPrFilesUrl(prFilesUrl);
                 if (vcs != null) {
-                    List<String> prFileChanges = getPrFileChanges(vcs, new String[]{repoOwner, repoName}, prFilesUrl);
-                    result.setFileChanges(prFileChanges);
+                    String[] ownerAndRepo = resolveOwnerAndRepo(workspaceSource);
+                    String prFilesUrl = buildPrUrl(vcs, ownerAndRepo, prNumber);
+                    if (ownerAndRepo != null && prNumber > 0 && prFilesUrl != null) {
+                        prFilesUrl = prFilesUrl + "/files";
+                        result.setPrFilesUrl(prFilesUrl);
+                        result.setFileChanges(getPrFileChanges(vcs, ownerAndRepo, prFilesUrl));
+                    } else {
+                        result.setValid(false);
+                    }
+                } else {
+                    String prFilesUrl = rootNode.path("pull_request").path("url").asText() + "/files";
+                    result.setPrFilesUrl(prFilesUrl);
                 }
             } else {
                 result.setValid(false);
@@ -186,12 +196,15 @@ public class GitHubWebhookService extends WebhookServiceBase {
                         result.setCreatedBy(rootNode.path(PATH_COMMENT).path("user").path("login").asText());
 
                         // Fetch PR details to get head SHA and branch
-                        String prUrl = issueNode.path("pull_request").path("url").asText();
+                        int prNumber = issueNode.path("number").asInt();
 
                         if (vcs != null) {
-                            String repoOwner = rootNode.path("repository").path("owner").path("login").asText();
-                            String repoName = rootNode.path("repository").path("name").asText();
-                            String[] ownerAndRepo = new String[]{repoOwner, repoName};
+                            String[] ownerAndRepo = resolveOwnerAndRepo(workspaceSource);
+                            String prUrl = buildPrUrl(vcs, ownerAndRepo, prNumber);
+                            if (ownerAndRepo == null || prNumber <= 0 || prUrl == null) {
+                                result.setValid(false);
+                                return result;
+                            }
 
                             ResponseEntity<String> prResponse = callGitHubApi(vcs, ownerAndRepo, null, prUrl, HttpMethod.GET);
                             if (prResponse != null && prResponse.getStatusCode().is2xxSuccessful()) {
@@ -213,6 +226,7 @@ public class GitHubWebhookService extends WebhookServiceBase {
                             }
                         } else {
                             // No Vcs yet on the shared (v2) path - defer to resolvePrDetails.
+                            String prUrl = issueNode.path("pull_request").path("url").asText();
                             result.setPrDetailsUrl(prUrl);
                             result.setPrFilesUrl(prUrl + "/files");
                         }
@@ -233,6 +247,53 @@ public class GitHubWebhookService extends WebhookServiceBase {
         }
 
         return result;
+    }
+
+    private String[] resolveOwnerAndRepo(String workspaceSource) {
+        if (workspaceSource == null || workspaceSource.isBlank()) {
+            log.warn("Blocked GitHub API request: workspace source URL is missing");
+            return null;
+        }
+        return extractOwnerAndRepo(workspaceSource);
+    }
+
+    private String buildPrUrl(Vcs vcs, String[] ownerAndRepo, int prNumber) {
+        if (vcs == null || vcs.getApiUrl() == null || vcs.getApiUrl().isBlank()
+                || ownerAndRepo == null || ownerAndRepo.length < 2
+                || ownerAndRepo[0] == null || ownerAndRepo[0].isBlank()
+                || ownerAndRepo[1] == null || ownerAndRepo[1].isBlank()
+                || prNumber <= 0) {
+            return null;
+        }
+        String baseApiUrl = vcs.getApiUrl().trim();
+        while (baseApiUrl.endsWith("/")) {
+            baseApiUrl = baseApiUrl.substring(0, baseApiUrl.length() - 1);
+        }
+        return baseApiUrl + "/repos/" + ownerAndRepo[0] + "/" + ownerAndRepo[1] + "/pulls/" + prNumber;
+    }
+
+    private boolean isExpectedRepoPath(Vcs vcs, String[] ownerAndRepo, String candidateUrl) {
+        if (vcs == null || vcs.getApiUrl() == null || ownerAndRepo == null || ownerAndRepo.length < 2
+                || candidateUrl == null || candidateUrl.isBlank()) {
+            return false;
+        }
+        try {
+            URI baseUri = URI.create(vcs.getApiUrl().trim()).normalize();
+            URI candidateUri = URI.create(candidateUrl.trim()).normalize();
+            String basePath = baseUri.getRawPath();
+            if (basePath == null || "/".equals(basePath)) {
+                basePath = "";
+            }
+            while (basePath.endsWith("/")) {
+                basePath = basePath.substring(0, basePath.length() - 1);
+            }
+            String expectedPrefix = (basePath + "/repos/" + ownerAndRepo[0] + "/" + ownerAndRepo[1] + "/")
+                    .toLowerCase(Locale.ROOT);
+            String candidatePath = candidateUri.getRawPath();
+            return candidatePath != null && candidatePath.toLowerCase(Locale.ROOT).startsWith(expectedPrefix);
+        } catch (IllegalArgumentException _) {
+            return false;
+        }
     }
 
     public void sendCommitStatus(Job job, String customContext, GithubCommitStatus commitStatus, String description) {
@@ -520,7 +581,7 @@ public class GitHubWebhookService extends WebhookServiceBase {
         result.setBranch("");
         result.setVia(JobVia.GITHUB.getValue());
         result.setValid(true);
-        return handleEvent(jsonPayload, result, headers, vcs);
+        return handleEvent(jsonPayload, result, headers, vcs, null);
     }
 
     public WebhookResult parseGitHubPayload(String jsonPayload, Map<String, String> headers) {
@@ -529,11 +590,19 @@ public class GitHubWebhookService extends WebhookServiceBase {
 
     public List<String> fetchPrFileChanges(Vcs vcs, String source, String prFilesUrl) {
         String[] ownerAndRepo = extractOwnerAndRepo(source);
+        if (!isExpectedRepoPath(vcs, ownerAndRepo, prFilesUrl)) {
+            log.warn("Blocked GitHub PR files request targeting a repository path outside workspace source");
+            return List.of();
+        }
         return getPrFileChanges(vcs, ownerAndRepo, prFilesUrl);
     }
 
     public boolean resolvePrDetails(Vcs vcs, String source, String prDetailsUrl, WebhookResult result) {
         String[] ownerAndRepo = extractOwnerAndRepo(source);
+        if (!isExpectedRepoPath(vcs, ownerAndRepo, prDetailsUrl)) {
+            log.warn("Blocked GitHub PR details request targeting a repository path outside workspace source");
+            return false;
+        }
         ResponseEntity<String> prResponse = callGitHubApi(vcs, ownerAndRepo, null, prDetailsUrl, HttpMethod.GET);
         if (prResponse == null || !prResponse.getStatusCode().is2xxSuccessful()) {
             log.error("Failed to resolve PR details from {}", prDetailsUrl);
@@ -634,6 +703,17 @@ public class GitHubWebhookService extends WebhookServiceBase {
 
     private ResponseEntity<String> callGitHubApi(Vcs vcs, String[] ownerAndRepo, String body, String apiUrl,
             HttpMethod httpMethod) {
+        if (ownerAndRepo == null || ownerAndRepo.length < 2
+                || ownerAndRepo[0] == null || ownerAndRepo[0].isBlank()
+                || ownerAndRepo[1] == null || ownerAndRepo[1].isBlank()) {
+            log.warn("Blocked GitHub API request: unable to determine repository owner and name");
+            return null;
+        }
+        if (!VcsApiUrlValidator.isAllowedForVcs(vcs, apiUrl)) {
+            log.warn("Blocked GitHub API request to URL outside configured VCS API origin");
+            return null;
+        }
+
         String token = "";
         try {
             token = tokenService.getAccessToken(ownerAndRepo, vcs);

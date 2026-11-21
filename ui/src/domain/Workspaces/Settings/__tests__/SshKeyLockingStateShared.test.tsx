@@ -113,27 +113,47 @@ describe("WorkspaceLocking", () => {
 describe("WorkspaceStateShared", () => {
   const shared = () => workspace({ globalRemoteState: false, sharedIds: "ws-a,ws-b" });
 
-  it("loads the shared workspace names in parallel", async () => {
-    const resolvers: Array<() => void> = [];
-    (axiosInstance.get as jest.Mock).mockImplementation(
-      (url: string) =>
-        new Promise((resolve) =>
-          resolvers.push(() => resolve({ data: { data: { attributes: { name: `name-${url.split("/").pop()}` } } } }))
-        )
-    );
+  const sharedNamesUrl =
+    "/organization/org-1/workspace?fields[workspace]=name&filter[workspace]=id%3Din%3D('ws-a'%2C'ws-b')";
+  const names = (...ids: string[]) => ({
+    data: { data: ids.map((id) => ({ id, type: "workspace", attributes: { name: `name-${id}` } })) },
+  });
+
+  it("loads the shared workspace names in one request for names only", async () => {
+    (axiosInstance.get as jest.Mock).mockResolvedValue(names("ws-a", "ws-b"));
     render(<WorkspaceStateShared workspace={shared()} manageWorkspace={true} />);
 
-    // Both requests are in flight before either resolves.
-    expect(axiosInstance.get).toHaveBeenCalledTimes(2);
-    resolvers.forEach((resolve) => resolve());
     expect(await screen.findByText("name-ws-a")).toBeInTheDocument();
     expect(screen.getByText("name-ws-b")).toBeInTheDocument();
+    expect(axiosInstance.get).toHaveBeenCalledTimes(1);
+    expect(axiosInstance.get).toHaveBeenCalledWith(sharedNamesUrl);
+  });
+
+  it("keeps a shared workspace the API no longer returns so its access can be revoked", async () => {
+    (axiosInstance.get as jest.Mock).mockResolvedValue(names("ws-b"));
+    render(<WorkspaceStateShared workspace={shared()} manageWorkspace={true} />);
+
+    expect(await screen.findByText("name-ws-b")).toBeInTheDocument();
+    expect(screen.getByText("Unknown workspace")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Remove access for Unknown workspace" })).toBeInTheDocument();
+  });
+
+  it("searches by a quoted name and asks for names only", async () => {
+    render(<WorkspaceStateShared workspace={workspace({ globalRemoteState: false })} manageWorkspace={true} />);
+
+    fireEvent.change(screen.getByRole("combobox", { name: "Add a workspace by name" }), {
+      target: { value: "it's prod" },
+    });
+
+    await waitFor(() =>
+      expect(axiosInstance.get).toHaveBeenCalledWith(
+        "/organization/org-1/workspace?fields[workspace]=name&filter[workspace]=name%3D%3D'*it%5C's%20prod*'"
+      )
+    );
   });
 
   it("asks for confirmation before revoking access", async () => {
-    (axiosInstance.get as jest.Mock).mockImplementation((url: string) =>
-      Promise.resolve({ data: { data: { attributes: { name: `name-${url.split("/").pop()}` } } } })
-    );
+    (axiosInstance.get as jest.Mock).mockResolvedValue(names("ws-a", "ws-b"));
     (axiosInstance.post as jest.Mock).mockResolvedValueOnce({ status: 200 });
     render(<WorkspaceStateShared workspace={shared()} manageWorkspace={true} />);
 

@@ -133,7 +133,7 @@ public class GitHubWebhookServiceTest {
 
             return subject.processWebhook(payload, Map.of(
                     "x-github-event", event,
-                    "x-hub-signature-256", signature), token, null);
+                    "x-hub-signature-256", signature), token, null, null);
         }
     }
 

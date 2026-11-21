@@ -76,7 +76,7 @@ export const PolicyExemptionModal: React.FC<PolicyExemptionModalProps> = ({
           .then((res) => res.data?.data || [])
           .catch(() => []),
         axiosInstance
-          .get(`organization/${organizationId}/workspace`)
+          .get(`organization/${organizationId}/workspace?fields[workspace]=name`)
           .then((res) => res.data?.data || [])
           .catch(() => []),
         axiosInstance

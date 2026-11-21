@@ -1,13 +1,18 @@
 package io.terrakube.api.plugin.vcs.provider.bitbucket;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import io.terrakube.api.plugin.http.ReactorNettyWebClientFactory;
+import io.terrakube.api.plugin.vcs.VcsApiUrlValidator;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobVia;
+import io.terrakube.api.rs.vcs.Vcs;
 import io.terrakube.api.rs.webhook.Webhook;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import io.terrakube.api.plugin.vcs.WebhookResult;
@@ -20,11 +25,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.util.DefaultUriBuilderFactory;
+import reactor.core.publisher.Mono;
 
 import java.io.BufferedReader;
 import java.io.StringReader;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.*;
 
 @Service
@@ -32,17 +40,29 @@ import java.util.*;
 public class BitBucketWebhookService extends WebhookServiceBase {
 
     private static final String PATH_COMMENT = "comment";
+    private static final int MAX_DIFF_REDIRECTS = 3;
+    private static final Duration DIFF_FETCH_TIMEOUT = Duration.ofSeconds(10);
 
     private final ObjectMapper objectMapper;
+    private final WebClient.Builder webClientBuilder;
+    private final ReactorClientHttpConnector webClientConnector;
 
     @Value("#{@publicUrls.apiBaseUrl()}")
     private String apiBaseUrl;
 
     private WorkspaceRepository workspaceRepository;
 
-    public BitBucketWebhookService(WorkspaceRepository workspaceRepository, ObjectMapper objectMapper) {
+    @Autowired
+    public BitBucketWebhookService(WorkspaceRepository workspaceRepository, ObjectMapper objectMapper,
+            WebClient.Builder webClientBuilder) {
         this.objectMapper = objectMapper;
         this.workspaceRepository = workspaceRepository;
+        this.webClientBuilder = webClientBuilder;
+        this.webClientConnector = ReactorNettyWebClientFactory.connector(DIFF_FETCH_TIMEOUT);
+    }
+
+    public BitBucketWebhookService(WorkspaceRepository workspaceRepository, ObjectMapper objectMapper) {
+        this(workspaceRepository, objectMapper, WebClient.builder());
     }
 
     public WebhookResult processWebhook(String jsonPayload, Map<String, String> headers, String token) {
@@ -276,26 +296,39 @@ public class BitBucketWebhookService extends WebhookServiceBase {
         return false;
     }
 
+    private record DiffFetchResult(String body, String redirectLocation) {
+    }
+
     private List<String> getFileChanges(String diffFile, String workspaceId) {
         List<String> fileChanges = new ArrayList<>();
+        if (diffFile == null || diffFile.isBlank() || workspaceId == null || workspaceId.isBlank()) {
+            return fileChanges;
+        }
 
         try {
-            String accessToken = "Bearer "
-                    + workspaceRepository.findById(UUID.fromString(workspaceId)).get().getVcs().getAccessToken();
+            Workspace workspace = workspaceRepository.findById(UUID.fromString(workspaceId)).orElse(null);
+            if (workspace == null || workspace.getVcs() == null) {
+                log.warn("Workspace {} or its VCS is missing, cannot fetch Bitbucket diff", workspaceId);
+                return fileChanges;
+            }
+            Vcs vcs = workspace.getVcs();
+            if (!VcsApiUrlValidator.isAllowedForVcs(vcs, diffFile)) {
+                log.warn("Blocked Bitbucket diff request to URL outside configured VCS API origin");
+                return fileChanges;
+            }
 
-            WebClient webClient = WebClient.builder()
+            String accessToken = "Bearer " + vcs.getAccessToken();
+            WebClient webClient = webClientBuilder
+                    .clone()
                     .uriBuilderFactory(createNoEncodingUriBuilderFactory())
+                    .clientConnector(webClientConnector)
                     .defaultHeader(HttpHeaders.AUTHORIZATION, accessToken)
                     .build();
 
-            log.info("Bitbucket diff: {}", diffFile);
-
-            String diffContent = webClient.get()
-                    .uri(diffFile)
-                    .retrieve()
-                    .bodyToMono(String.class)
-                    .timeout(Duration.ofSeconds(10))
-                    .block();
+            String diffContent = fetchDiffFollowingSameOriginRedirects(webClient, vcs, diffFile);
+            if (diffContent == null) {
+                return fileChanges;
+            }
 
             new BufferedReader(new StringReader(diffContent)).lines().forEach(line -> {
                 if (line.startsWith("diff --git ")) {
@@ -312,6 +345,57 @@ public class BitBucketWebhookService extends WebhookServiceBase {
         }
 
         return fileChanges;
+    }
+
+    private String fetchDiffFollowingSameOriginRedirects(WebClient webClient, Vcs vcs, String initialUrl) {
+        Instant deadline = Instant.now().plus(DIFF_FETCH_TIMEOUT);
+        String currentUrl = initialUrl;
+        for (int hop = 0; hop <= MAX_DIFF_REDIRECTS; hop++) {
+            Duration remaining = Duration.between(Instant.now(), deadline);
+            if (remaining.isZero() || remaining.isNegative()) {
+                log.warn("Timed out fetching Bitbucket diff");
+                return null;
+            }
+            if (!VcsApiUrlValidator.isAllowedForVcs(vcs, currentUrl)) {
+                log.warn("Blocked Bitbucket diff request to URL outside configured VCS API origin");
+                return null;
+            }
+            log.info("Bitbucket diff: {}", currentUrl);
+            DiffFetchResult result = webClient.get()
+                    .uri(currentUrl)
+                    .exchangeToMono(response -> {
+                        if (response.statusCode().is3xxRedirection()) {
+                            String location = response.headers().asHttpHeaders().getFirst(HttpHeaders.LOCATION);
+                            return response.releaseBody().thenReturn(new DiffFetchResult(null, location));
+                        }
+                        if (response.statusCode().is2xxSuccessful()) {
+                            return response.bodyToMono(String.class)
+                                    .defaultIfEmpty("")
+                                    .map(body -> new DiffFetchResult(body, null));
+                        }
+                        log.error("Failed to fetch Bitbucket diff, HTTP {}", response.statusCode());
+                        return response.releaseBody().then(Mono.empty());
+                    })
+                    .timeout(remaining)
+                    .block();
+
+            if (result == null) {
+                return null;
+            }
+            if (result.redirectLocation() == null) {
+                return result.body();
+            }
+            String resolvedLocation;
+            try {
+                resolvedLocation = URI.create(currentUrl).resolve(result.redirectLocation().trim()).toString();
+            } catch (IllegalArgumentException _) {
+                log.warn("Blocked Bitbucket diff redirect with invalid Location header");
+                return null;
+            }
+            currentUrl = resolvedLocation;
+        }
+        log.warn("Exceeded maximum redirect hops fetching Bitbucket diff");
+        return null;
     }
 
     private DefaultUriBuilderFactory createNoEncodingUriBuilderFactory() {
@@ -372,6 +456,9 @@ public class BitBucketWebhookService extends WebhookServiceBase {
 
         if (!webhookRemoteId.substring(0, 4).equals("http")) {
             apiUrl = workspace.getVcs().getApiUrl() + "/repositories/" + ownerAndRepo + "/hooks/" + webhookRemoteId;
+        } else if (!VcsApiUrlValidator.isAllowedForVcs(workspace.getVcs(), apiUrl)) {
+            log.warn("Blocked Bitbucket webhook deletion to URL outside configured VCS API origin");
+            return;
         }
 
         ResponseEntity<String> response = callBitBucketApi(workspace.getVcs().getAccessToken(), "", apiUrl,

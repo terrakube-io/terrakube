@@ -86,6 +86,19 @@ describe("RunTriggers", () => {
     expect(config.params.include).toContain("destinationWorkspace");
   });
 
+  it("asks only for the fields the tables read", async () => {
+    renderPage();
+
+    await waitFor(() => expect(getMock).toHaveBeenCalled());
+    const [, config] = getMock.mock.calls[0];
+    expect(config.params).toMatchObject({
+      include: "sourceWorkspace,destinationWorkspace,template",
+      "fields[runTrigger]": "enabled,sourceWorkspace,destinationWorkspace,template",
+      "fields[workspace]": "name",
+      "fields[template]": "name",
+    });
+  });
+
   /**
    * The split is the whole point of the page: the same collection has to land in the right
    * table, or a dependency reads backwards.
@@ -154,6 +167,7 @@ describe("RunTriggers", () => {
 
     expect(await screen.findByTitle("free-to-pick")).toBeInTheDocument();
     expect(screen.queryByTitle("network")).toBeNull();
+    expect(getMock).toHaveBeenCalledWith("organization/org-1/workspace?fields[workspace]=name");
   });
 
   it("says so when nothing depends on this workspace", async () => {
