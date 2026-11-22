@@ -1,5 +1,5 @@
 import { apiPost } from "@/modules/api/apiWrapper";
-import { buildProjectSummaryFilter, getProjectIndexCounts } from "../projectSummaryService";
+import { buildProjectSummaryFilter, getProjectIndexCounts, listProjectSummaries } from "../projectSummaryService";
 
 jest.mock("@/modules/api/apiWrapper", () => ({ apiPost: jest.fn() }));
 
@@ -61,5 +61,25 @@ describe("buildProjectSummaryFilter", () => {
     expect(buildProjectSummaryFilter({ search: 'pay*"ments;(x)' })).toBe(
       '(name=ini="*pay \\"ments;(x)*",description=ini="*pay \\"ments;(x)*")'
     );
+  });
+});
+
+describe("listProjectSummaries sort", () => {
+  it("sorts by hasRun first when the list is sorted by the last run, so a project that never ran is last", async () => {
+    post.mockResolvedValue({ isError: false, responseCode: 200, data: { organization: { edges: [] } } });
+
+    await listProjectSummaries("org-1", { sort: "-lastRunAt,+name", page: 1, pageSize: 24 });
+    expect(post.mock.calls[post.mock.calls.length - 1][1].variables.sort).toBe("-hasRun,-lastRunAt,+name");
+
+    await listProjectSummaries("org-1", { sort: "+lastRunAt,+name", page: 1, pageSize: 24 });
+    expect(post.mock.calls[post.mock.calls.length - 1][1].variables.sort).toBe("-hasRun,+lastRunAt,+name");
+  });
+
+  it("leaves any other sort as it is", async () => {
+    post.mockResolvedValue({ isError: false, responseCode: 200, data: { organization: { edges: [] } } });
+
+    await listProjectSummaries("org-1", { sort: "-attentionCount,+name", page: 1, pageSize: 24 });
+
+    expect(post.mock.calls[post.mock.calls.length - 1][1].variables.sort).toBe("-attentionCount,+name");
   });
 });
