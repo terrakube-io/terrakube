@@ -126,7 +126,9 @@ public class Organization {
     @Column(name = "managed_in_code_repository")
     private String managedInCodeRepository;
 
-    // "warn" shows the notice, "readonly" also makes the settings screens read-only. Null means "warn".
+    // "warn" shows the notice, "readonly" also makes the settings screens read-only. Null means "warn". Both only describe
+    // how the screens should speak: the API does not refuse an edit because of either, so a client that calls it
+    // directly (the Terraform provider, a script) is never blocked. The mode is cleared by sending null, not "".
     @Pattern(regexp = "warn|readonly", message = "Managed in code mode must be warn or readonly")
     @Column(name = "managed_in_code_mode")
     private String managedInCodeMode;
