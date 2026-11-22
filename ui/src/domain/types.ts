@@ -587,6 +587,8 @@ export type ProjectModel = {
   defaultExecutionMode?: string;
   defaultTemplate?: string;
   organizationExecutionMode?: string;
+  /** The team that owns the project, by name. */
+  ownerTeam?: string;
 };
 
 // Computed by the API (project_summary) from the project's non-deleted workspaces.
