@@ -1,4 +1,4 @@
-import { Alert, Button, Flex, Input, Modal, Select, Skeleton, Typography, message } from "antd";
+import { Alert, Button, Flex, Input, Modal, Popconfirm, Select, Skeleton, Typography, message } from "antd";
 import { useEffect, useState } from "react";
 import { ProjectSummaryModel } from "@/domain/types";
 import { TagModel } from "@/modules/organizations/types";
@@ -142,16 +142,6 @@ export default function BulkWorkspaceBar({
     finish(anyUnlocked ? "Locked" : "Unlocked", await setWorkspacesLocked(orgid, ids, anyUnlocked));
   };
 
-  const confirmLock = () =>
-    Modal.confirm({
-      title: `${anyUnlocked ? "Lock" : "Unlock"} ${noun}?`,
-      content: anyUnlocked
-        ? "Locked workspaces cannot start new runs until they are unlocked."
-        : "Unlocked workspaces can start new runs again.",
-      okText: anyUnlocked ? "Lock" : "Unlock",
-      onOk: doLock,
-    });
-
   const doTag = async () => {
     if (!tagId) return;
     setWorking(true);
@@ -212,9 +202,18 @@ export default function BulkWorkspaceBar({
       </DisabledReason>
       <Button onClick={() => setTagOpen(true)}>Add tag</Button>
       <Button onClick={() => setMoveOpen(true)}>Move to project</Button>
-      <Button onClick={confirmLock} loading={working}>
-        {anyUnlocked ? "Lock" : "Unlock"}
-      </Button>
+      <Popconfirm
+        title={`${anyUnlocked ? "Lock" : "Unlock"} ${noun}?`}
+        description={
+          anyUnlocked
+            ? "No new run can start on a locked workspace until it is unlocked."
+            : "Runs waiting on these workspaces can start again."
+        }
+        okText={anyUnlocked ? "Lock" : "Unlock"}
+        onConfirm={doLock}
+      >
+        <Button loading={working}>{anyUnlocked ? "Lock" : "Unlock"}</Button>
+      </Popconfirm>
       {canRemove && (
         <Button danger onClick={confirmRemove} loading={working}>
           Remove from project
