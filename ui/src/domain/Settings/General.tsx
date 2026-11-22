@@ -15,6 +15,8 @@ import { IdField } from "@/components/settings/IdField";
 import { DangerZone } from "@/components/settings/DangerZone";
 import { useOrganizationSummaries } from "@/modules/organizations/useOrganizationSummaries";
 import { cacheOrganizationName } from "@/hooks/useOrganizationName";
+import { clearManagedInCode } from "@/modules/organizations/managedInCode";
+import { ManagedInCodeBanner } from "@/components/settings/ManagedInCodeBanner";
 
 const DEFAULT_ICON = "FaBuilding";
 const DEFAULT_COLOR = "#000000";
@@ -24,7 +26,9 @@ const ORGANIZATION_FIELDS = sparseFields<Organization>("organization")(
   "description",
   "executionMode",
   "icon",
-  "projectLandingTab"
+  "projectLandingTab",
+  "managedInCodeRepository",
+  "managedInCodeMode"
 );
 type SparseOrganization = SparseOf<typeof ORGANIZATION_FIELDS>;
 
@@ -33,6 +37,8 @@ type GeneralSettingsForm = {
   description: string;
   executionMode: "remote" | "local";
   projectLandingTab?: string;
+  managedInCodeRepository?: string;
+  managedInCodeMode?: string;
   icon?: string;
 };
 
@@ -64,6 +70,8 @@ export const GeneralSettings = ({ managePermission = true }: Props) => {
           executionMode: values.executionMode,
           projectLandingTab:
             values.projectLandingTab && values.projectLandingTab !== "overview" ? values.projectLandingTab : null,
+          managedInCodeRepository: values.managedInCodeRepository?.trim() || null,
+          managedInCodeMode: values.managedInCodeRepository?.trim() ? values.managedInCodeMode || "warn" : null,
           icon: iconField,
         },
       },
@@ -81,6 +89,7 @@ export const GeneralSettings = ({ managePermission = true }: Props) => {
           if (orgid) {
             updateOrganization(orgid, { ...values, icon: iconField });
             cacheOrganizationName(orgid, values.name);
+            clearManagedInCode(orgid);
           }
         } else {
           message.error("Organization update failed");
@@ -145,6 +154,8 @@ export const GeneralSettings = ({ managePermission = true }: Props) => {
           description: response.data.data.attributes.description,
           executionMode: response.data.data.attributes.executionMode,
           projectLandingTab: response.data.data.attributes.projectLandingTab ?? "overview",
+          managedInCodeRepository: response.data.data.attributes.managedInCodeRepository,
+          managedInCodeMode: response.data.data.attributes.managedInCodeMode ?? "warn",
         });
         setLoading(false);
       })
@@ -160,6 +171,7 @@ export const GeneralSettings = ({ managePermission = true }: Props) => {
 
   return (
     <div className="setting">
+      <ManagedInCodeBanner orgId={orgid} />
       <SettingsPageHeader
         docUrl="https://docs.terrakube.io/user-guide/organizations"
         title="General settings"
@@ -179,6 +191,8 @@ export const GeneralSettings = ({ managePermission = true }: Props) => {
                 description: organization?.attributes.description,
                 executionMode: organization?.attributes.executionMode,
                 projectLandingTab: organization?.attributes.projectLandingTab ?? "overview",
+                managedInCodeRepository: organization?.attributes.managedInCodeRepository,
+                managedInCodeMode: organization?.attributes.managedInCodeMode ?? "warn",
               }}
               saveLabel="Update organization"
               saveDisabled={!managePermission}
@@ -244,6 +258,24 @@ export const GeneralSettings = ({ managePermission = true }: Props) => {
                     { value: "policies", label: "Policies" },
                     { value: "teams", label: "Teams" },
                     { value: "general", label: "General" },
+                  ]}
+                />
+              </Form.Item>
+              <Typography.Title level={4} className="general-settings-subtitle">
+                Managed in code
+              </Typography.Title>
+              <Typography.Paragraph type="secondary">
+                Set this when the organization is kept in a repository. Settings screens then say that an edit made
+                there is reverted by the next apply. It never blocks running, approving or locking.
+              </Typography.Paragraph>
+              <Form.Item name="managedInCodeRepository" label="Repository">
+                <Input placeholder="https://github.com/example/tf-terrakube-admin" maxLength={512} />
+              </Form.Item>
+              <Form.Item name="managedInCodeMode" label="On the settings screens">
+                <Select
+                  options={[
+                    { value: "warn", label: "Show a notice" },
+                    { value: "readonly", label: "Show a notice and make them read-only" },
                   ]}
                 />
               </Form.Item>
