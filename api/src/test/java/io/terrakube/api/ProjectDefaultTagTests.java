@@ -171,6 +171,16 @@ class ProjectDefaultTagTests extends ServerApplicationTests {
     }
 
     @Test
+    void addingTheSameDefaultTagTwiceIsAConflictNotAServerError() {
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
+                .body("{\"data\":{\"type\":\"project_tag\",\"attributes\":{\"tagId\":\"" + tag.getId() + "\"}}}")
+                .when().post("/api/v1/organization/" + ORG + "/project/" + project.getId() + "/projectTag")
+                .then().statusCode(HttpStatus.CONFLICT.value());
+        assertThat(projectTagRepository.findByProject(project)).hasSize(1);
+    }
+
+    @Test
     void aCallerWithoutAnyAccessToTheProjectCannotChangeItsDefaultTags() {
         given()
                 .headers("Authorization", "Bearer " + generatePAT("NOT_A_MEMBER"), "Content-Type", "application/vnd.api+json")
