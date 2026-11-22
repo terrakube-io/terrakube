@@ -117,8 +117,9 @@ export default function ProjectVariablesTab({ orgid, projectId, canManage }: Pro
         ]}
       />
       <Typography.Paragraph type="secondary" className="project-overview-meta">
-        Precedence: workspace variables, then collections attached to the workspace, then collections attached to this
-        project, then organization wide collections. Within one level the collection with the higher priority wins.
+        Precedence: workspace variables, then the organization global variables, then collections attached to the
+        workspace, then collections attached to this project, then organization wide collections. Within one level the
+        collection with the higher priority wins.
       </Typography.Paragraph>
     </div>
   );
