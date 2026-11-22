@@ -1,4 +1,6 @@
-export type PaletteKind = "page" | "organization" | "project" | "workspace";
+import { matchSorter, rankings } from "match-sorter";
+
+export type PaletteKind = "page" | "organization" | "project" | "workspace" | "action";
 
 export type PaletteItem = {
   key: string;
@@ -7,6 +9,8 @@ export type PaletteItem = {
   /** Where it is, for example the organization a workspace belongs to. */
   subtitle?: string;
   to: string;
+  /** What an action does when chosen. Navigation items have none. */
+  run?: () => Promise<void>;
 };
 
 const RECENT_KEY = "terrakube-palette-recent";
@@ -20,15 +24,23 @@ export function matchesQuery(item: Pick<PaletteItem, "title" | "subtitle">, quer
   return words.every((word) => haystack.includes(word));
 }
 
-/** Names that start with the query come first, then the rest in their given order. */
+/**
+ * Every word of the query has to match the title or subtitle, and the best matches come first: a name that is the
+ * query, then one that starts with it, then one with a word that starts with it, then one that contains it. Equally
+ * good matches keep the order they were given in.
+ */
 export function rank(items: PaletteItem[], query: string): PaletteItem[] {
-  const needle = query.trim().toLowerCase();
-  if (!needle) return items;
-  const starts = (item: PaletteItem) => (item.title.toLowerCase().startsWith(needle) ? 0 : 1);
-  return items
-    .map((item, index) => ({ item, index }))
-    .sort((a, b) => starts(a.item) - starts(b.item) || a.index - b.index)
-    .map(({ item }) => item);
+  const words = query.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return items;
+  return words.reduceRight(
+    (results, word) =>
+      matchSorter(results, word, {
+        keys: ["title", "subtitle"],
+        threshold: rankings.CONTAINS,
+        baseSort: (a, b) => a.index - b.index,
+      }),
+    items
+  );
 }
 
 /** The pages of the organization the person is in, always one keystroke away. */
