@@ -73,6 +73,8 @@ describe("NotificationDeliveryHistory", () => {
 
     render(<NotificationDeliveryHistory workspaceId="ws-1" />);
     await waitFor(() => expect(screen.getByText("Failed")).toBeInTheDocument());
+    // While the list is loading the spinner blurs it and takes away pointer events, and clicking in that moment fails.
+    await waitFor(() => expect(document.querySelector(".ant-spin-blur")).not.toBeInTheDocument());
 
     await userEvent.click(screen.getByRole("button", { name: /retry/i }));
 
