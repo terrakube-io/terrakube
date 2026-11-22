@@ -1,0 +1,31 @@
+.plan-summary {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.plan-summary-add {
+  color: var(--tk-status-success);
+}
+
+.plan-summary-change {
+  color: var(--tk-status-warning);
+}
+
+.plan-summary-destroy {
+  color: var(--tk-status-error);
+}
+
+/* A count of zero stays quiet, so the counts that are not zero are what the eye finds. */
+.plan-summary-zero {
+  color: var(--tk-text-tertiary);
+}
+
+/* Read by a screen reader instead of the symbols, which it would say as "plus 3, tilde 1, minus 0". */
+.plan-summary-words {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

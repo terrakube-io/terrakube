@@ -93,7 +93,10 @@ describe("WorkspaceDetails", () => {
     expect(screen.getByText("Remote")).toBeInTheDocument();
   });
 
-  const renderOverviewWithRuns = async (runs: Array<{ id: string; status: string }>) => {
+  const renderOverviewWithRuns = async (
+    runs: Array<{ id: string; status: string; planAdd?: number; planChange?: number; planDestroy?: number }>,
+    workspaceAttributes: Record<string, unknown> = {}
+  ) => {
     getMock.mockImplementation((url: string) => {
       if (url.includes("/workspace/ws-1")) {
         return Promise.resolve({
@@ -110,6 +113,7 @@ describe("WorkspaceDetails", () => {
                 terraformVersion: "1.5.0",
                 iacType: "terraform",
                 folder: "/",
+                ...workspaceAttributes,
               },
               relationships: { organization: { data: { id: "org-1" } } },
             },
@@ -124,6 +128,9 @@ describe("WorkspaceDetails", () => {
                   createdDate: "2026-10-19T10:00:00Z",
                   updatedDate: "2026-10-19T10:05:00Z",
                   via: "UI",
+                  planAdd: run.planAdd,
+                  planChange: run.planChange,
+                  planDestroy: run.planDestroy,
                 },
               })),
             ],
@@ -179,5 +186,29 @@ describe("WorkspaceDetails", () => {
     const card = await screen.findByRole("article", { name: "Latest run" });
     expect(card).toHaveTextContent("#2");
     expect(screen.getByRole("heading", { name: "Latest run" })).toBeInTheDocument();
+  });
+
+  it("shows a drifted workspace in the header, on the way to the plan that found it", async () => {
+    await renderOverviewWithRuns([{ id: "1", status: "completed" }], {
+      driftStatus: "drifted",
+      driftFirstSeen: "2026-11-11T02:00:00Z",
+      driftJobId: 9,
+    });
+
+    const tag = await screen.findByRole("link", { name: /^Drifted/ });
+    expect(tag).toHaveAttribute("href", "/organizations/org-1/workspaces/ws-1/runs/9");
+  });
+
+  it("does not mark a workspace that has no drift", async () => {
+    await renderOverviewWithRuns([{ id: "1", status: "completed" }], { driftStatus: "clean" });
+
+    await screen.findByText("Latest run");
+    expect(screen.queryByRole("link", { name: /^Drifted/ })).not.toBeInTheDocument();
+  });
+
+  it("shows what the latest run plans to change", async () => {
+    await renderOverviewWithRuns([{ id: "1", status: "completed", planAdd: 3, planChange: 1, planDestroy: 0 }]);
+
+    expect(await screen.findByText("3 to add, 1 to change, 0 to destroy")).toBeInTheDocument();
   });
 });

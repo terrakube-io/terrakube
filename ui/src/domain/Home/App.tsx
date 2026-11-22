@@ -47,6 +47,7 @@ const ProjectsPage = lazy(() => import("@/modules/projects/ProjectsPage"));
 const ProjectDetailPage = lazy(() => import("@/modules/projects/ProjectDetailPage"));
 const GoRedirect = lazy(() => import("@/modules/navigation/GoRedirect"));
 const InboxPage = lazy(() => import("@/modules/inbox/InboxPage"));
+const OrgOverviewPage = lazy(() => import("@/modules/organizations/overview/OrgOverviewPage"));
 const CommandPalette = lazy(() => import("@/modules/navigation/CommandPalette"));
 
 // Workspaces
@@ -250,12 +251,12 @@ const AppLayout = () => {
     // Deeper sub-paths (a specific workspace, run, etc.) are dropped since
     // those resource ids belong to the old organization and won't resolve
     // under the new one.
-    const knownSections = ["workspaces", "registry", "settings", "projects"];
+    const knownSections = ["overview", "workspaces", "registry", "settings", "projects"];
     const paths = location.pathname.split("/").filter(Boolean);
     const orgIdx = paths.indexOf("organizations");
     const section = orgIdx >= 0 ? paths[orgIdx + 2] : undefined;
 
-    navigate(`/organizations/${orgId}/${section && knownSections.includes(section) ? section : "workspaces"}`);
+    navigate(`/organizations/${orgId}/${section && knownSections.includes(section) ? section : "overview"}`);
   };
 
   return (
@@ -329,6 +330,10 @@ const router = createBrowserRouter(
         {
           path: "/organizations/:id/workspaces",
           element: <OrganizationsDetailRoute />,
+        },
+        {
+          path: "/organizations/:id/overview",
+          element: <OrgOverviewPage />,
         },
         {
           path: "/organizations/:id/projects",

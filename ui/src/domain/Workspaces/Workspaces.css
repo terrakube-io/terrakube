@@ -707,3 +707,30 @@
   font-family: var(--ant-font-family-code);
   font-size: 13px;
 }
+
+/* The overview's rail is a stack of cards, like the rest of the overview. */
+.workspace-rail {
+  display: grid;
+  gap: 14px;
+  padding-top: 0;
+}
+
+.workspace-rail-facts,
+.workspace-rail-section {
+  padding: 16px 18px;
+  border: 1px solid var(--tk-border-secondary);
+  border-radius: 12px;
+  background: var(--tk-bg-container);
+  box-shadow: var(--tk-shadow-sm);
+}
+
+.workspace-rail-section:has(+ .workspace-rail-section) {
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--tk-border-secondary);
+}
+
+.latest-run {
+  border-color: var(--tk-border-secondary);
+  border-radius: 12px;
+  box-shadow: var(--tk-shadow-sm);
+}

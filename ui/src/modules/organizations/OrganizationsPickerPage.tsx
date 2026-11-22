@@ -35,10 +35,10 @@ export default function OrganizationsPickerPage() {
         const organization = organizations[0];
         sessionStorage.setItem(ORGANIZATION_ARCHIVE, organization.id);
         sessionStorage.setItem(ORGANIZATION_NAME, organization.name);
-        navigate(`/organizations/${organization.id}/workspaces`, { replace: true });
+        navigate(`/organizations/${organization.id}/overview`, { replace: true });
       }
     } else {
-      navigate(`/organizations/${orgId}/workspaces`, { replace: true });
+      navigate(`/organizations/${orgId}/overview`, { replace: true });
     }
   }, [loading, location.pathname, navigate, orgId, organizations]);
 

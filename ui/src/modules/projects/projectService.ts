@@ -1,3 +1,4 @@
+import { Delivery, DeliveryJob, summarizeDelivery } from "./deliveryStats";
 import axiosInstance from "@/config/axiosConfig";
 import { apiPost } from "@/modules/api/apiWrapper";
 import { ApiResponse } from "@/modules/api/types";
@@ -144,7 +145,7 @@ async function listProjectSummaries(
             projectSummary(first: $first, after: $after, sort: $sort${filter ? ", filter: $filter" : ""}) {
               edges {
                 node {
-                  id name description workspaceCount completedCount failedCount runningCount queuedCount
+                  id name description ownerTeam workspaceCount completedCount failedCount runningCount queuedCount
                   waitingApprovalCount neverRunCount nonCompliantCount hardViolationCount softViolationCount compliantCount exemptedCount lockedCount attentionCount lastRunAt queuedJobCount queuedSince teamCount
                 }
               }
@@ -324,6 +325,39 @@ async function getUnassignedSummary(organizationId: string): Promise<ApiResponse
   };
 }
 
+// The runs a project's workspaces started in the last days, for the delivery numbers. Job's read permission is
+// evaluated in memory, so Elide rejects first/after ("Cannot paginate job"): the window and its default cap bound it.
+async function getDelivery(organizationId: string, projectId: string, days = 30): Promise<ApiResponse<Delivery>> {
+  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+  const body = {
+    query: `query ($orgId: String!, $filter: String) {
+      organization(ids: [$orgId]) { edges { node {
+        job(sort: "-createdDate", filter: $filter) {
+          edges { node { status createdDate updatedDate approvedAt } }
+        }
+      } } }
+    }`,
+    variables: {
+      orgId: organizationId,
+      filter: `workspace.project.id=='${projectId}';createdDate=ge=${since}`,
+    },
+  };
+  const result = await apiPost<unknown, any>("/graphql/api/v1", body, {
+    dataWrapped: true,
+    contentType: "application/json",
+  });
+  if (result.isError) {
+    return { isError: true, responseCode: result.responseCode, error: result.error, data: undefined as never };
+  }
+  const connection = result.data?.organization?.edges?.[0]?.node?.job;
+  const jobs: DeliveryJob[] = (connection?.edges ?? []).map((edge: any) => edge.node);
+  return {
+    isError: false,
+    responseCode: result.responseCode,
+    data: summarizeDelivery(jobs, jobs.length),
+  };
+}
+
 async function getCurrentGroups(): Promise<string[]> {
   const url = `${new URL(window._env_.REACT_APP_TERRAKUBE_API_URL).origin}/access-token/v1/teams/current-teams`;
   const response = await axiosInstance.get(url);
@@ -356,6 +390,7 @@ async function updateProject(
     defaultTerraformVersion?: string | null;
     defaultExecutionMode?: string | null;
     defaultTemplate?: string | null;
+    ownerTeam?: string | null;
   }
 ): Promise<void> {
   const body = {
@@ -372,6 +407,7 @@ async function updateProject(
           : {}),
         ...(data.defaultExecutionMode !== undefined ? { defaultExecutionMode: data.defaultExecutionMode } : {}),
         ...(data.defaultTemplate !== undefined ? { defaultTemplate: data.defaultTemplate } : {}),
+        ...(data.ownerTeam !== undefined ? { ownerTeam: data.ownerTeam } : {}),
       },
     },
   };
@@ -399,6 +435,7 @@ async function getProject(organizationId: string, projectId: string): Promise<Ap
                   defaultTerraformVersion
                   defaultExecutionMode
                   defaultTemplate
+                  ownerTeam
                 }
               }
             }
@@ -437,6 +474,7 @@ async function getProject(organizationId: string, projectId: string): Promise<Ap
       defaultTerraformVersion: node?.defaultTerraformVersion ?? undefined,
       defaultExecutionMode: node?.defaultExecutionMode ?? undefined,
       defaultTemplate: node?.defaultTemplate ?? undefined,
+      ownerTeam: node?.ownerTeam ?? undefined,
       organizationExecutionMode: organization?.executionMode ?? undefined,
     },
   };
@@ -1014,6 +1052,7 @@ const methods = {
   getProjectIndexCounts,
   getUnassignedSummary,
   getCurrentGroups,
+  getDelivery,
   getProjectSummary,
   listOrganizationTemplates,
   listProjectTeams,
