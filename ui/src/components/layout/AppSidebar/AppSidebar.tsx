@@ -193,6 +193,8 @@ export default function AppSidebar({
       setDefaultSelected([params[5] || "overview"]);
     } else if (location.pathname.startsWith("/inbox")) {
       setDefaultSelected(["inbox"]);
+    } else if (location.pathname.endsWith("/overview")) {
+      setDefaultSelected(["overview"]);
     } else if (location.pathname.includes("registry")) {
       setDefaultSelected(["registry"]);
     } else if (location.pathname.includes("projects")) {
@@ -558,6 +560,7 @@ export default function AppSidebar({
               ]
             : orgIdFromUrl
               ? [
+                  { key: "overview", name: "Overview", icon: <DashboardOutlined /> },
                   { key: "projects", name: "Projects", icon: <ProjectOutlined /> },
                   { key: "workspaces", name: "Workspaces", icon: <AppstoreOutlined /> },
                   { key: "registry", name: "Registry", icon: <CloudOutlined /> },

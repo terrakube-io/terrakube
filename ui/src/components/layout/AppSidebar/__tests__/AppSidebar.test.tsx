@@ -283,7 +283,9 @@ describe("workspace-detail context", () => {
 
     expect(await screen.findByText("Workspaces")).toBeInTheDocument();
     expect(screen.getByText("Projects")).toBeInTheDocument();
-    expect(screen.queryByText("Overview")).not.toBeInTheDocument();
+    // The organization has its own Overview, which is not the workspace's.
+    expect(screen.getByText("Overview").closest("a")).toHaveAttribute("href", `${orgPath}/overview`);
+    expect(screen.queryByText("Runs")).not.toBeInTheDocument();
   });
 
   it("can still be collapsed (with icons) while viewing a workspace's own sections", async () => {
