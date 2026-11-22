@@ -60,7 +60,8 @@ class ContextSecurityTest {
                 null,
                 jobLogAccessService,
                 null,
-                new ObjectMapper());
+                new ObjectMapper(),
+                null);
     }
 
     @Test

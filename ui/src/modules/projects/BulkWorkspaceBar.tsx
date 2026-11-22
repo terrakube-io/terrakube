@@ -15,6 +15,7 @@ import {
   findWaitingRuns,
   planWorkspaces,
   moveWorkspaces,
+  planTotals,
   removeWorkspacesFromProject,
   setWorkspacesLocked,
 } from "./bulkWorkspaceActions";
@@ -160,6 +161,11 @@ export default function BulkWorkspaceBar({
   const clear = (waiting ?? []).filter((run) => run.hardViolations + run.softViolations === 0);
   const heldBack = (waiting ?? []).filter((run) => run.hardViolations + run.softViolations > 0);
   const nameOf = (run: WaitingRun) => selected.find((workspace) => workspace.id === run.workspaceId)?.name;
+  const totals = planTotals(clear);
+  const describePlan = (run: WaitingRun) =>
+    run.add === null || run.change === null || run.destroy === null
+      ? "no plan summary"
+      : `${run.add} to add, ${run.change} to change, ${run.destroy} to destroy`;
 
   const doApprove = async () => {
     if (clear.length === 0) return;
@@ -261,12 +267,30 @@ export default function BulkWorkspaceBar({
               {new Set(waiting.map((run) => run.workspaceId)).size} of the selected workspaces. Approving lets{" "}
               {waiting.length === 1 ? "it" : "them"} go ahead.
             </Typography.Paragraph>
-            <Typography.Paragraph type="secondary">
-              {selected
-                .filter((workspace) => clear.some((run) => run.workspaceId === workspace.id))
-                .map((workspace) => workspace.name)
-                .join(", ")}
-            </Typography.Paragraph>
+            <ul className="project-bulk-runs" aria-label="Runs to approve">
+              {clear.map((run) => (
+                <li key={run.jobId}>
+                  <strong>{nameOf(run) ?? run.workspaceId}</strong>{" "}
+                  <Typography.Text type="secondary">{describePlan(run)}</Typography.Text>
+                </li>
+              ))}
+            </ul>
+            {clear.length > 0 && (
+              <Alert
+                type={totals.destroy > 0 ? "warning" : "info"}
+                showIcon
+                message={
+                  totals.destroy > 0
+                    ? `Approving will destroy ${totals.destroy} resource${totals.destroy === 1 ? "" : "s"}`
+                    : "Approving will not destroy anything"
+                }
+                description={`In all: ${totals.add} to add, ${totals.change} to change, ${totals.destroy} to destroy.${
+                  totals.withoutSummary > 0
+                    ? ` ${totals.withoutSummary} run${totals.withoutSummary === 1 ? " has" : "s have"} no plan summary and ${totals.withoutSummary === 1 ? "is" : "are"} not counted.`
+                    : ""
+                }`}
+              />
+            )}
             {heldBack.length > 0 && (
               <Alert
                 type="warning"

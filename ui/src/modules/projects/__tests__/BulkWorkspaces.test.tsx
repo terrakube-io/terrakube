@@ -164,8 +164,11 @@ describe("bulk plan and approve", () => {
 
     const runs = await findWaitingRuns("org", ["w1", "w2"]);
 
-    expect(runs).toEqual([{ jobId: "7", workspaceId: "w1", hardViolations: 0, softViolations: 0 }]);
+    expect(runs).toEqual([
+      { jobId: "7", workspaceId: "w1", hardViolations: 0, softViolations: 0, add: null, change: null, destroy: null },
+    ]);
     expect(graphql.mock.calls[0][1].query).toContain("policyEvaluation");
+    expect(graphql.mock.calls[0][1].query).toContain("planDestroy");
     const request = graphql.mock.calls[0][1];
     expect(request.variables.filter).toBe("status=='waitingApproval';workspace.id=in=('w1','w2')");
     expect(request.query).not.toContain("first:");
@@ -382,6 +385,86 @@ describe("BulkWorkspaceBar", () => {
     await waitFor(() => expect(onDone).toHaveBeenCalled());
     expect(patch).toHaveBeenCalledTimes(1);
     expect(patch).toHaveBeenCalledWith("organization/org/job/7", expect.anything(), expect.anything());
+  });
+
+  it("shows what each run will do and warns when approving will destroy resources", async () => {
+    const run = (id: number, workspace: string, plan: Record<string, number> | null) => ({
+      node: {
+        id,
+        ...(plan ?? {}),
+        workspace: { edges: [{ node: { id: workspace } }] },
+      },
+    });
+    graphql.mockResolvedValue({
+      isError: false,
+      data: {
+        organization: {
+          edges: [
+            {
+              node: {
+                job: {
+                  edges: [
+                    run(7, "w1", { planAdd: 3, planChange: 1, planDestroy: 0 }),
+                    run(8, "w2", { planAdd: 0, planChange: 2, planDestroy: 4 }),
+                    run(9, "w3", null),
+                  ],
+                },
+              },
+            },
+          ],
+        },
+      },
+    });
+    renderBar([
+      item("w1", { lastStatus: "waitingApproval" as never }),
+      item("w2", { lastStatus: "waitingApproval" as never }),
+      item("w3", { lastStatus: "waitingApproval" as never }),
+    ]);
+
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+
+    const runs = await screen.findByRole("list", { name: "Runs to approve" });
+    expect(within(runs).getByText("3 to add, 1 to change, 0 to destroy")).toBeInTheDocument();
+    expect(within(runs).getByText("0 to add, 2 to change, 4 to destroy")).toBeInTheDocument();
+    expect(within(runs).getByText("no plan summary")).toBeInTheDocument();
+    expect(screen.getByText("Approving will destroy 4 resources")).toBeInTheDocument();
+    expect(
+      screen.getByText(/In all: 3 to add, 3 to change, 4 to destroy\. 1 run has no plan summary and is not counted\./)
+    ).toBeInTheDocument();
+  });
+
+  it("says approving will not destroy anything when no run destroys", async () => {
+    graphql.mockResolvedValue({
+      isError: false,
+      data: {
+        organization: {
+          edges: [
+            {
+              node: {
+                job: {
+                  edges: [
+                    {
+                      node: {
+                        id: 7,
+                        planAdd: 1,
+                        planChange: 0,
+                        planDestroy: 0,
+                        workspace: { edges: [{ node: { id: "w1" } }] },
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+          ],
+        },
+      },
+    });
+    renderBar([item("w1", { lastStatus: "waitingApproval" as never })]);
+
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+
+    expect(await screen.findByText("Approving will not destroy anything")).toBeInTheDocument();
   });
 
   it("says when nothing is waiting, and offers nothing to approve", async () => {

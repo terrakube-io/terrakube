@@ -87,7 +87,33 @@ export function planWorkspaces(orgId: string, ids: string[], templateId: string)
 }
 
 // hardViolations and softViolations are what the run's policy check found: a run with either is for a person to look at.
-export type WaitingRun = { jobId: string; workspaceId: string; hardViolations: number; softViolations: number };
+// add, change and destroy are what the plan of the run will do, null when the run has no plan summary (an older run).
+export type WaitingRun = {
+  jobId: string;
+  workspaceId: string;
+  hardViolations: number;
+  softViolations: number;
+  add: number | null;
+  change: number | null;
+  destroy: number | null;
+};
+
+export type PlanTotals = { add: number; change: number; destroy: number; withoutSummary: number };
+
+// What approving these runs will do in all, and how many of them have no summary to count.
+export function planTotals(runs: Pick<WaitingRun, "add" | "change" | "destroy">[]): PlanTotals {
+  const totals: PlanTotals = { add: 0, change: 0, destroy: 0, withoutSummary: 0 };
+  for (const run of runs) {
+    if (run.add === null || run.change === null || run.destroy === null) {
+      totals.withoutSummary += 1;
+      continue;
+    }
+    totals.add += run.add;
+    totals.change += run.change;
+    totals.destroy += run.destroy;
+  }
+  return totals;
+}
 
 // The runs of these workspaces that are waiting for someone to approve them.
 export async function findWaitingRuns(orgId: string, workspaceIds: string[]): Promise<WaitingRun[]> {
@@ -99,6 +125,9 @@ export async function findWaitingRuns(orgId: string, workspaceIds: string[]): Pr
         job(filter: $filter) {
           edges { node {
             id
+            planAdd
+            planChange
+            planDestroy
             workspace { edges { node { id } } }
             policyEvaluation { edges { node { hardMandatoryViolations softMandatoryViolations } } }
           } }
@@ -122,6 +151,9 @@ export async function findWaitingRuns(orgId: string, workspaceIds: string[]): Pr
         workspaceId: edge.node.workspace?.edges?.[0]?.node?.id,
         hardViolations: sum("hardMandatoryViolations"),
         softViolations: sum("softMandatoryViolations"),
+        add: edge.node.planAdd ?? null,
+        change: edge.node.planChange ?? null,
+        destroy: edge.node.planDestroy ?? null,
       };
     })
     .filter((run: WaitingRun) => Boolean(run.workspaceId));
