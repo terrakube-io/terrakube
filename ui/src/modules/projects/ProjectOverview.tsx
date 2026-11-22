@@ -335,10 +335,10 @@ export default function ProjectOverview({
               <dd>
                 <Select
                   size="small"
-                  aria-label="Default project tab"
+                  aria-label="Tab every project opens on in this browser"
                   value={landing}
                   options={[
-                    { value: "default", label: "Each project's setting" },
+                    { value: "default", label: "As set by the project or organization" },
                     ...Object.entries(PROJECT_TAB_LABELS).map(([value, label]) => ({ value, label })),
                   ]}
                   onChange={(value: ProjectTab | "default") => {
