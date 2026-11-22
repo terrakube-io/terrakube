@@ -1,6 +1,12 @@
 import { apiUrl } from "@/config/apiUrls";
 import { ApprovalAttribution } from "@/components/display/ApprovalAttribution";
 import {
+  projectOrigin,
+  rememberWorkspaceOrigin,
+  useWorkspaceOrigin,
+  workspaceOriginOf,
+} from "@/modules/workspaces/workspaceOrigin";
+import {
   ArrowRightOutlined,
   BranchesOutlined,
   ClockCircleOutlined,
@@ -12,7 +18,7 @@ import {
   UnlockOutlined,
   UserOutlined,
 } from "@ant-design/icons";
-import { Alert, Avatar, Button, Col, Empty, message, Row, Space, Table, Tabs, Typography, Modal } from "antd";
+import { Alert, Avatar, Button, Col, Empty, message, Row, Space, Table, Tabs, Tag, Typography, Modal } from "antd";
 
 import { lazy, Suspense, useEffect, useState } from "react";
 import { useJobStatusSubscription, usePolling } from "../../hooks";
@@ -53,6 +59,10 @@ import LoadingFallback from "@/components/feedback/LoadingFallback";
 import PageWrapper from "@/components/layout/PageWrapper/PageWrapper";
 import { LinkButton } from "@/components/navigation/LinkButton";
 import RunList from "@/modules/workspaces/components/RunList";
+import WorkspaceStates from "@/modules/workspaces/components/WorkspaceStates";
+import { PolicyResult, listRunPolicyResults } from "@/modules/workspaces/runPolicyService";
+import PlanSummaryText from "@/modules/workspaces/components/PlanSummaryText";
+import { shortAgo } from "@/modules/projects/projectHealth";
 import WorkspaceStatusTag from "@/components/display/WorkspaceStatusTag";
 
 import {
@@ -464,6 +474,10 @@ export const WorkspaceDetails = ({
             if (proj) {
               setProjectName(proj.attributes?.name ?? null);
               setProjectId(proj.id ?? null);
+              // Opened by a direct link or after a refresh: the workspace belongs to this project, so go back there.
+              if (proj.id && !workspaceOriginOf(id)) {
+                rememberWorkspaceOrigin(id!, projectOrigin(organizationId!, proj.id));
+              }
             } else {
               setProjectName(null);
               setProjectId(null);
@@ -534,6 +548,19 @@ export const WorkspaceDetails = ({
       });
   };
 
+  // The policy result of every run, read when the Runs tab is opened and again when a run is added.
+  const [policyByRun, setPolicyByRun] = useState<Record<string, PolicyResult>>({});
+  useEffect(() => {
+    if (activeKey !== "2" || !id || !organizationId) return;
+    let alive = true;
+    listRunPolicyResults(organizationId, id)
+      .then((results) => alive && setPolicyByRun(results))
+      .catch(() => alive && setPolicyByRun({}));
+    return () => {
+      alive = false;
+    };
+  }, [activeKey, id, organizationId, jobs.length]);
+
   const currentRun = selectCurrentRun(jobs);
   const latestJob = currentRun?.job;
   const runCardTitle = currentRun?.active ? "Current run" : "Latest run";
@@ -545,6 +572,13 @@ export const WorkspaceDetails = ({
         return (
           <Row>
             <Col span={18} className="workspace-overview-main">
+              <WorkspaceStates
+                orgId={organizationId}
+                workspace={workspace}
+                run={latestJob ? { id: latestJob.id, status: latestJob.status, at: latestJob.updatedDate } : undefined}
+                runLink={runLink}
+                onRunClick={changeJob}
+              />
               {workspace.attributes.source === "empty" &&
               workspace.attributes.branch === "remote-content" &&
               (workspace.relationships?.history?.data?.length || 0) < 1 ? (
@@ -595,6 +629,18 @@ export const WorkspaceDetails = ({
                               ?.name ?? "—"}
                           </dd>
                         </div>
+                        {latestJob.planAdd != null && (
+                          <div>
+                            <dt>Plan</dt>
+                            <dd>
+                              <PlanSummaryText
+                                add={latestJob.planAdd}
+                                change={latestJob.planChange}
+                                destroy={latestJob.planDestroy}
+                              />
+                            </dd>
+                          </div>
+                        )}
                         <div>
                           <dt>Policy checks</dt>
                           <dd>
@@ -793,7 +839,14 @@ export const WorkspaceDetails = ({
             <DetailsJob jobId={jobId!} workspaceName={workspaceName} canApprove={approveJob} />
           </Suspense>
         ) : (
-          <RunList jobs={jobs} onRunClick={changeJob} runLink={runLink} />
+          <RunList
+            jobs={jobs}
+            onRunClick={changeJob}
+            runLink={runLink}
+            canApprove={approveJob}
+            policyByRun={policyByRun}
+            onApproved={() => loadWorkspace(false)}
+          />
         );
       case "3":
         return (
@@ -855,9 +908,17 @@ export const WorkspaceDetails = ({
     }
   };
 
+  const origin = useWorkspaceOrigin(id);
   const pageBreadcrumbs = [
     { label: organizationNameLocal ?? "", path: `/organizations/${organizationId}/workspaces` },
-    { label: "Workspaces", path: `/organizations/${organizationId}/workspaces` },
+    ...(origin?.kind === "project" && projectName
+      ? [
+          { label: "Projects", path: `/organizations/${organizationId}/projects` },
+          { label: projectName, path: origin.path },
+        ]
+      : origin?.kind === "inbox"
+        ? [{ label: "Inbox", path: origin.path }]
+        : [{ label: "Workspaces", path: `/organizations/${organizationId}/workspaces` }]),
     { label: workspaceName, path: `/organizations/${organizationId}/workspaces/${id}` },
     ...(activeKey === "6" && settingsSection
       ? [
@@ -987,6 +1048,19 @@ export const WorkspaceDetails = ({
                     </>
                   )}
                 </Typography.Text>
+                {workspace.attributes.driftStatus === "drifted" && (
+                  <Tag color="warning" className="workspace-status-drift">
+                    <Link
+                      to={
+                        workspace.attributes.driftJobId != null
+                          ? `/organizations/${organizationId}/workspaces/${id}/runs/${workspace.attributes.driftJobId}`
+                          : `/organizations/${organizationId}/workspaces/${id}`
+                      }
+                    >
+                      Drifted {shortAgo(workspace.attributes.driftFirstSeen)}
+                    </Link>
+                  </Tag>
+                )}
                 <PolicyStatusTag
                   status={workspace.attributes?.policyComplianceStatus}
                   organizationId={organizationId}

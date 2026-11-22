@@ -1,0 +1,261 @@
+.overview-card.ant-card {
+  border-radius: 12px;
+  box-shadow: var(--tk-shadow-sm);
+}
+
+.overview-card .ant-card-body {
+  padding: 16px 18px;
+}
+
+.overview-card-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.overview-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.overview-top {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) minmax(0, 1.6fr);
+  gap: 14px;
+  margin: 12px 0 14px;
+}
+
+.overview-health {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  margin: 14px 0 12px;
+}
+
+.overview-ring {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+}
+
+.overview-ring > div {
+  display: grid;
+  place-items: center;
+  width: 90px;
+  height: 90px;
+  border-radius: 50%;
+  background: var(--tk-bg-container);
+  text-align: center;
+  line-height: 1.2;
+}
+
+.overview-ring strong {
+  font-size: 24px;
+}
+
+.overview-ring span {
+  color: var(--tk-text-secondary);
+  font-size: 10px;
+}
+
+.overview-legend {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  color: var(--tk-text-secondary);
+  font-size: 13px;
+  list-style: none;
+}
+
+.overview-swatch {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 7px;
+  border-radius: 3px;
+}
+
+.overview-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.overview-action .ant-card-body {
+  display: grid;
+  align-content: start;
+  gap: 2px;
+}
+
+.overview-count {
+  margin-top: 10px;
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1.1;
+}
+
+.overview-count-error {
+  color: var(--tk-status-error);
+}
+
+.overview-count-warning {
+  color: var(--tk-status-warning);
+}
+
+.overview-action-label {
+  color: var(--tk-text-secondary);
+}
+
+.overview-badge {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  font-size: 16px;
+}
+
+.overview-badge-error {
+  color: var(--tk-status-error);
+  background: color-mix(in srgb, var(--tk-status-error) 14%, transparent);
+}
+
+.overview-badge-warning {
+  color: var(--tk-status-warning);
+  background: color-mix(in srgb, var(--tk-status-warning) 16%, transparent);
+}
+
+.overview-badge-accent {
+  color: var(--tk-link);
+  background: var(--tk-accent-tint);
+}
+
+.overview-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  gap: 14px;
+  align-items: stretch;
+  margin-bottom: 14px;
+}
+
+.overview-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.overview-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 0;
+  border-top: 1px solid var(--tk-border-secondary);
+}
+
+.overview-row-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.overview-row-sub {
+  font-size: 12px;
+}
+
+.overview-projects {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.overview-project {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--tk-border-secondary);
+  border-radius: 10px;
+  background: var(--tk-fill-secondary);
+}
+
+.overview-project-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.overview-project-head .ant-tag {
+  margin: 0;
+}
+
+@media (max-width: 960px) {
+  .overview-top,
+  .overview-columns {
+    grid-template-columns: 1fr;
+  }
+}
+
+.overview-badge-success {
+  color: var(--tk-status-success);
+  background: color-mix(in srgb, var(--tk-status-success) 14%, transparent);
+}
+
+.overview-figures {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.overview-figure {
+  padding: 10px 12px;
+  border: 1px solid var(--tk-border-secondary);
+  border-radius: 10px;
+  background: var(--tk-fill-secondary);
+}
+
+.overview-figure-number {
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.overview-stack {
+  display: grid;
+  gap: 14px;
+}
+
+/* The state cards of a workspace: last run, drift and policy side by side. */
+.overview-states {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.overview-state .ant-card-body {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.overview-state-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.overview-state-wide {
+  grid-column: 1 / -1;
+}
