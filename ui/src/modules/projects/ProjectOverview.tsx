@@ -269,7 +269,7 @@ export default function ProjectOverview({
       </div>
 
       <div className="overview-columns">
-        <Card className="overview-card" aria-label="Needs attention">
+        <Card className="overview-card" role="region" aria-label="Needs attention">
           <div className="overview-card-head">
             <h3 className="overview-card-title">Needs attention</h3>
             {attention.length > 0 && (
@@ -299,7 +299,7 @@ export default function ProjectOverview({
             </ul>
           )}
         </Card>
-        <Card className="overview-card" aria-label="Recent activity">
+        <Card className="overview-card" role="region" aria-label="Recent activity">
           <div className="overview-card-head">
             <h3 className="overview-card-title">Recent activity</h3>
           </div>
@@ -321,7 +321,7 @@ export default function ProjectOverview({
 
       <div className="overview-columns">
         <ProjectDelivery orgid={orgid} projectId={summary.id} />
-        <Card className="overview-card" aria-label="Details">
+        <Card className="overview-card" role="region" aria-label="Details">
           <h3 className="overview-card-title">Details</h3>
           <dl className="project-overview-details">
             <div>

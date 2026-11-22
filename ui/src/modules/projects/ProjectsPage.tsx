@@ -376,7 +376,9 @@ export default function ProjectsPage({ organizationName, setOrganizationName }: 
           <Tooltip
             title={`Only users who manage project access can see team names. Total: ${count} team${count === 1 ? "" : "s"}.`}
           >
-            <span aria-label={`${count} teams, names hidden`}>-</span>
+            <span role="img" aria-label={`${count} teams, names hidden`}>
+              -
+            </span>
           </Tooltip>
         ),
     },
