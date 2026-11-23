@@ -173,6 +173,53 @@ class WorkspaceJobStatusServiceTest {
     }
 
     @Test
+    void lookingAgainAtARunWhoseStatusIsAlreadyShownKeepsTheDate() {
+        Job waiting = job(1, JobStatus.waitingApproval);
+        waiting.setCreatedDate(new Date(1_000_000_000L));
+        Date shownSince = new Date(1_000_500_000L);
+        workspace.setLastJobStatus(JobStatus.waitingApproval);
+        workspace.setLastJobDate(shownSince);
+        when(jobRepository.findFirstByWorkspaceAndIdNotAndStatusInOrderByIdAsc(any(), anyInt(), any()))
+                .thenReturn(Optional.empty());
+
+        service.refresh(waiting);
+
+        assertEquals(shownSince, workspace.getLastJobDate());
+        verify(workspaceRepository, never()).save(any());
+    }
+
+    @Test
+    void aStatusThatChangesMovesTheDateToNow() {
+        Job approved = job(1, JobStatus.approved);
+        approved.setCreatedDate(new Date(1_000_000_000L));
+        workspace.setLastJobStatus(JobStatus.waitingApproval);
+        workspace.setLastJobDate(new Date(1_000_500_000L));
+        when(jobRepository.findFirstByWorkspaceAndIdNotAndStatusInOrderByIdAsc(any(), anyInt(), any()))
+                .thenReturn(Optional.empty());
+        long before = System.currentTimeMillis();
+
+        service.refresh(approved);
+
+        assertTrue(workspace.getLastJobDate().getTime() >= before);
+        verify(workspaceRepository).save(workspace);
+    }
+
+    @Test
+    void aNewerRunWithTheSameStatusMovesTheDate() {
+        Job waiting = job(2, JobStatus.waitingApproval);
+        waiting.setCreatedDate(new Date(2_000_000_000L));
+        workspace.setLastJobStatus(JobStatus.waitingApproval);
+        workspace.setLastJobDate(new Date(1_000_000_000L));
+        when(jobRepository.findFirstByWorkspaceAndIdNotAndStatusInOrderByIdAsc(any(), anyInt(), any()))
+                .thenReturn(Optional.empty());
+
+        service.refresh(waiting);
+
+        assertTrue(workspace.getLastJobDate().getTime() > 2_000_000_000L);
+        verify(workspaceRepository).save(workspace);
+    }
+
+    @Test
     void aJobWithoutWorkspaceChangesNothing() {
         Job orphan = new Job();
         orphan.setId(9);
