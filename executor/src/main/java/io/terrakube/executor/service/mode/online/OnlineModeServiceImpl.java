@@ -97,7 +97,10 @@ public class OnlineModeServiceImpl {
             releaseGateAndAcceptTraffic();
             return new ResponseEntity<>(HttpStatus.SERVICE_UNAVAILABLE);
         }
-        return new ResponseEntity<>(terraformJob, HttpStatus.ACCEPTED);
+        // Empty 202 body: PersistentExecutorService reads a bodyless entity, and serializing
+        // terraformJob here races @Async SetupWorkspaceImpl mutating environmentVariables while
+        // unnecessarily echoing secrets and large payloads back over the wire.
+        return new ResponseEntity<>(HttpStatus.ACCEPTED);
     }
 
     private void releaseGateAndAcceptTraffic() {
@@ -153,6 +156,21 @@ public class OnlineModeServiceImpl {
                 log.warn("Rejecting job {}: authoritative status '{}' is not dispatchable",
                         terraformJob.getJobId(), status);
                 return VerificationResult.MISMATCH;
+            }
+            // DISPATCHABLE_JOB_STATUSES includes "queue"/"running" at the job level, whereas
+            // TclService.getPendingSteps only ever dispatches steps in "pending" status and
+            // JobReconciliationSweep fails expired queue/running jobs rather than re-sending them.
+            // Intentionally fails open when `included` is absent or omits the step for compatibility
+            // with API responses that do not include step resources.
+            if (!"rejected".equals(status) && terraformJob.getStepId() != null && jobResponse.getIncluded() != null) {
+                for (Step step : jobResponse.getIncluded()) {
+                    if ("step".equals(step.getType()) && terraformJob.getStepId().equals(step.getId())
+                            && step.getAttributes() != null && !"pending".equals(step.getAttributes().getStatus())) {
+                        log.warn("Rejecting job {} step {}: authoritative step status '{}' is not pending",
+                                terraformJob.getJobId(), terraformJob.getStepId(), step.getAttributes().getStatus());
+                        return VerificationResult.MISMATCH;
+                    }
+                }
             }
             return VerificationResult.VALID;
         } catch (FeignException.NotFound e) {

@@ -901,6 +901,31 @@ public class PrCommentServiceTest {
     }
 
     @Test
+    public void acknowledgeRefusalAddsThumbsDownOnGitHub() {
+        Workspace workspace = workspaceWith(VcsType.GITHUB);
+
+        subject.acknowledgeRefusal(workspace, "445566", 5);
+
+        verify(gitHubWebhookService, times(1)).addCommentReaction(workspace, "445566", "-1");
+    }
+
+    @Test
+    public void acknowledgeRefusalAddsCrossOnGitLab() {
+        Workspace workspace = workspaceWith(VcsType.GITLAB);
+
+        subject.acknowledgeRefusal(workspace, "445566", 5);
+
+        verify(gitLabWebhookService, times(1)).addNoteReaction(workspace, 5, "445566", "x");
+    }
+
+    @Test
+    public void acknowledgeRefusalSkipsWhenCommentIdMissing() {
+        subject.acknowledgeRefusal(workspaceWith(VcsType.GITHUB), null, 5);
+
+        verify(gitHubWebhookService, never()).addCommentReaction(any(), any(), any());
+    }
+
+    @Test
     public void acknowledgeReceiptSkipsWhenCommentIdMissing() {
         subject.acknowledgeReceipt(workspaceWith(VcsType.GITHUB), null, 5);
 

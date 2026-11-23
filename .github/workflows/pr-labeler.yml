@@ -1,0 +1,51 @@
+name: Label Pull Requests
+
+# pull_request_target gives fork PRs a write token so labels can be applied.
+# That is only safe because this workflow NEVER checks out or runs code from the PR:
+# it reads the base branch's config/scripts and PR metadata through the API only.
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review, edited]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-labeler-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    steps:
+      # Checks out the BASE branch (default for pull_request_target), never the PR head.
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+          sparse-checkout: |
+            .github/labeler.yml
+            .github/scripts
+
+      - name: Ensure labels exist
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const { ensureLabels } = require('./.github/scripts/pr-labels.js');
+            await ensureLabels({ github, context });
+
+      - name: Label by changed paths
+        uses: actions/labeler@bf12e9b00b37c5c0ca2b87b79b2daf7891dbda13 # v7.0.0
+        with:
+          sync-labels: true
+
+      - name: Label by author, size, type, hygiene and priority
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const { run } = require('./.github/scripts/pr-labels.js');
+            await run({ github, context, core });

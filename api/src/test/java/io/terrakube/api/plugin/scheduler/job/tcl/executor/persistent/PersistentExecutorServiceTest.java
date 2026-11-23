@@ -1,6 +1,7 @@
 package io.terrakube.api.plugin.scheduler.job.tcl.executor.persistent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -17,6 +18,9 @@ import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
+import io.netty.handler.timeout.ReadTimeoutException;
+import java.net.ConnectException;
+import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
@@ -28,6 +32,7 @@ import org.apache.commons.lang3.RandomStringUtils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -37,6 +42,7 @@ import org.springframework.web.reactive.function.client.WebClient.RequestBodySpe
 import org.springframework.web.reactive.function.client.WebClient.RequestBodyUriSpec;
 import org.springframework.web.reactive.function.client.WebClient.RequestHeadersSpec;
 import org.springframework.web.reactive.function.client.WebClient.ResponseSpec;
+import org.springframework.web.reactive.function.client.WebClientRequestException;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 
 import io.terrakube.api.plugin.scheduler.job.tcl.executor.ExecutionException;
@@ -185,8 +191,10 @@ public class PersistentExecutorServiceTest {
                 503, "Service Unavailable", HttpHeaders.EMPTY, new byte[0], null);
         doReturn(Mono.error(busy)).when(responseSpec).toBodilessEntity();
 
-        assertThrows(ExecutorUnavailableException.class, () -> subject().send(jobOnDefaultExecutor(), context()));
+        ExecutorUnavailableException ex = assertThrows(ExecutorUnavailableException.class,
+                () -> subject().send(jobOnDefaultExecutor(), context()));
 
+        assertFalse(ex.mayHaveBeenAccepted());
         verify(requestHeadersSpec, times(1)).retrieve();
     }
 
@@ -198,7 +206,9 @@ public class PersistentExecutorServiceTest {
                 502, "Bad Gateway", HttpHeaders.EMPTY, new byte[0], null);
         doReturn(Mono.error(badGateway)).when(responseSpec).toBodilessEntity();
 
-        assertThrows(ExecutorUnavailableException.class, () -> subject().send(jobOnDefaultExecutor(), context()));
+        ExecutorUnavailableException ex = assertThrows(ExecutorUnavailableException.class,
+                () -> subject().send(jobOnDefaultExecutor(), context()));
+        assertTrue(ex.mayHaveBeenAccepted());
     }
 
     @Test
@@ -207,7 +217,9 @@ public class PersistentExecutorServiceTest {
                 504, "Gateway Timeout", HttpHeaders.EMPTY, new byte[0], null);
         doReturn(Mono.error(gatewayTimeout)).when(responseSpec).toBodilessEntity();
 
-        assertThrows(ExecutorUnavailableException.class, () -> subject().send(jobOnDefaultExecutor(), context()));
+        ExecutorUnavailableException ex = assertThrows(ExecutorUnavailableException.class,
+                () -> subject().send(jobOnDefaultExecutor(), context()));
+        assertTrue(ex.mayHaveBeenAccepted());
     }
 
     @Test
@@ -301,5 +313,76 @@ public class PersistentExecutorServiceTest {
         assertEquals("Terrakube Internal (Token)", claims.getSubject());
         assertTrue(claims.getAudience() != null && claims.getAudience().contains("TERRAKUBE_INTERNAL"));
         assertNull(claims.get("workspaceId"));
+    }
+
+    @Test
+    public void classifiesPreConnectVsPostSendFailures() throws Exception {
+        URI uri = new URI("http://default-executor/api/v1/terraform-rs");
+        WebClientRequestException refused = new WebClientRequestException(
+                new ConnectException("Connection refused"), HttpMethod.POST, uri, HttpHeaders.EMPTY);
+        doReturn(Mono.error(refused)).when(responseSpec).toBodilessEntity();
+        assertFalse(assertThrows(ExecutorUnavailableException.class,
+                () -> subject().send(jobOnDefaultExecutor(), context())).mayHaveBeenAccepted());
+
+        WebClientRequestException readTimedOut = new WebClientRequestException(
+                ReadTimeoutException.INSTANCE, HttpMethod.POST, uri, HttpHeaders.EMPTY);
+        doReturn(Mono.error(readTimedOut)).when(responseSpec).toBodilessEntity();
+        assertTrue(assertThrows(ExecutorUnavailableException.class,
+                () -> subject().send(jobOnDefaultExecutor(), context())).mayHaveBeenAccepted());
+    }
+
+    @Test
+    public void treatsTruncated202ResponseBodyAsAcceptedDispatch() throws Exception {
+        String secret = Base64.getUrlEncoder().withoutPadding().encodeToString(
+                "terrakube-internal-dispatch-secret-at-least-64-bytes-long-for-hmac!".getBytes(StandardCharsets.UTF_8));
+        try (java.net.ServerSocket server = new java.net.ServerSocket(0)) {
+            Thread responder = new Thread(() -> {
+                try (java.net.Socket client = server.accept()) {
+                    java.io.InputStream in = client.getInputStream();
+                    byte[] buf = new byte[4096];
+                    in.read(buf);
+                    java.io.OutputStream out = client.getOutputStream();
+                    out.write(("HTTP/1.1 202 Accepted\r\n"
+                            + "Content-Type: application/json\r\n"
+                            + "Transfer-Encoding: chunked\r\n\r\n"
+                            + "10\r\n{\"jobId\":\"71\"").getBytes(StandardCharsets.US_ASCII));
+                    out.flush();
+                    client.setSoLinger(true, 0);
+                } catch (Exception ignored) {
+                }
+            });
+            responder.setDaemon(true);
+            responder.start();
+
+            PersistentExecutorService realService = new PersistentExecutorService(
+                    "http://127.0.0.1:" + server.getLocalPort() + "/api/v1/terraform-rs",
+                    globalVarRepository,
+                    WebClient.builder(),
+                    secret);
+
+            realService.send(jobOnDefaultExecutor(), context());
+        }
+    }
+
+    @Test
+    public void outerBlockSafetyDeadlineBoundsStuckCallAndMarksMayHaveBeenAccepted() {
+        doReturn(Mono.never()).when(responseSpec).toBodilessEntity();
+        PersistentExecutorService service = subject();
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "responseTimeout", java.time.Duration.ofMillis(40));
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "blockSlackTimeout", java.time.Duration.ofMillis(40));
+
+        ExecutorUnavailableException ex = assertThrows(ExecutorUnavailableException.class,
+                () -> service.send(jobOnDefaultExecutor(), context()));
+        assertTrue(ex.mayHaveBeenAccepted());
+        assertTrue(ex.getCause() instanceof IllegalStateException);
+    }
+
+    @Test
+    public void sequentialDispatchesCloneSharedWebClientBuilder() throws Exception {
+        doReturn(HttpStatus.ACCEPTED).when(responseEntity).getStatusCode();
+        PersistentExecutorService service = subject();
+        service.send(jobOnDefaultExecutor(), context());
+        service.send(jobOnDefaultExecutor(), context());
+        verify(webClientBuilder, times(2)).clone();
     }
 }

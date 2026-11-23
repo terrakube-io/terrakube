@@ -1,0 +1,74 @@
+# Path-based labels, applied by actions/labeler (see .github/workflows/pr-labeler.yml).
+# Trust, size, type and hygiene labels are computed in .github/scripts/pr-labels.js.
+
+terrakube-api:
+  - changed-files:
+      - any-glob-to-any-file: ['api/**']
+
+terrakube-ui:
+  - changed-files:
+      - any-glob-to-any-file: ['ui/**']
+
+terrakube-registry:
+  - changed-files:
+      - any-glob-to-any-file: ['registry/**']
+
+terrakube-executor:
+  - changed-files:
+      - any-glob-to-any-file: ['executor/**', 'ephemeral-executor-config/**']
+
+# High-risk areas that need a closer look from a maintainer.
+area/db-migration:
+  - changed-files:
+      - any-glob-to-any-file: ['api/src/main/resources/db/changelog/**']
+
+area/security:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'api/**/plugin/security/**'
+          - 'api/**/plugin/token/**'
+          - 'api/**/rs/checks/**'
+          - 'SECURITY.md'
+
+area/scheduler:
+  - changed-files:
+      - any-glob-to-any-file: ['api/**/plugin/scheduler/**']
+
+area/rbac:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'api/**/rs/team/**'
+          - 'api/**/plugin/security/rbac/**'
+          - 'api/**/plugin/security/groups/**'
+
+area/policy:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'api/**/plugin/policy/**'
+          - 'api/**/rs/policy/**'
+
+area/notifications:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'api/**/plugin/notification/**'
+          - 'api/**/rs/notification/**'
+
+area/openapi:
+  - changed-files:
+      - any-glob-to-any-file: ['openapi-spec/**']
+
+area/ci:
+  - changed-files:
+      - any-glob-to-any-file:
+          - '.github/**'
+          - 'docker-compose/**'
+          - '**/Dockerfile*'
+          - '.devcontainer/**'
+
+documentation:
+  - changed-files:
+      - any-glob-to-any-file: ['docs/**', '**/*.md']
+
+dependencies:
+  - changed-files:
+      - any-glob-to-any-file: ['**/pom.xml', 'ui/package.json', 'ui/yarn.lock']

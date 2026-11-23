@@ -162,8 +162,11 @@ public class ScheduleJobTest {
         // Default to "next in line, no one to wake" so non-FIFO tests behave as before; the
         // ordering tests below override these.
         lenient().doReturn(true).when(jobRepository).isJobNextInDispatchOrder(anyInt());
-        // A dispatched job is still pending or approved unless a test says otherwise.
-        lenient().doReturn(1).when(jobRepository).markDispatched(anyInt(), any());
+        // A dispatched job is still pending or approved with a pending step unless a test says otherwise.
+        lenient().doReturn(1).when(jobRepository).markDispatched(anyInt(), any(), any());
+        lenient().doReturn(1).when(jobRepository).failDispatched(anyInt(), any(), any());
+        lenient().doReturn(Optional.empty()).when(jobRepository).findById(anyInt());
+        lenient().doReturn(Optional.empty()).when(stepRepository).findById(any());
         lenient().doNothing().when(scheduleJobService).wakeQueueHead();
 
         jobReconciliationService = mock(
@@ -372,7 +375,7 @@ public class ScheduleJobTest {
         Assert.assertTrue(subject().runExecution(job));
 
         verify(executorService, times(1)).execute(any(), any(), any());
-        verify(jobRepository, times(1)).markDispatched(eq(job.getId()), any());
+        verify(jobRepository, times(1)).markDispatched(eq(job.getId()), eq(stepId), any());
         verify(valueOperations, times(1)).setIfAbsent(any(), any(), any(Duration.class));
         verifyLockReleasedOnce(job);
         Assertions.assertEquals(JobStatus.queue, job.getStatus());
@@ -410,7 +413,7 @@ public class ScheduleJobTest {
             }
             stored.set(JobStatus.queue);
             return 1;
-        }).when(jobRepository).markDispatched(anyInt(), any());
+        }).when(jobRepository).markDispatched(anyInt(), any(), any());
         lenient().doAnswer(invocation -> {
             Job current = job(stored.get());
             return Optional.of(current);
@@ -452,7 +455,7 @@ public class ScheduleJobTest {
         Assert.assertTrue(subject().runExecution(job));
 
         verify(executorService, times(1)).execute(any(), any(), any());
-        verify(jobRepository, times(1)).markDispatched(eq(job.getId()), any());
+        verify(jobRepository, times(1)).markDispatched(eq(job.getId()), eq(stepId), any());
         verify(valueOperations, times(1)).setIfAbsent(any(), any(), any(Duration.class));
         verifyLockReleasedOnce(job);
         Assertions.assertEquals(JobStatus.queue, job.getStatus());
@@ -478,8 +481,7 @@ public class ScheduleJobTest {
         doReturn(flow).when(tclService).getNextFlow(any());
         doReturn(stepId.toString()).when(tclService).getCurrentStepId(any());
         doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
-        doReturn(job).when(jobRepository).save(any());
-        doReturn(job.getStep().get(0)).when(stepRepository).getReferenceById(any());
+        doReturn(Optional.of(job.getStep().get(0))).when(stepRepository).findById(any());
         doReturn(job.getStep()).when(stepRepository).findByJobId(anyInt());
         doReturn(null).when(stepRepository).save(any());
         doThrow(new ExecutionException(new Exception("Boom!"))).when(executorService).execute(any(), any(), any());
@@ -488,7 +490,7 @@ public class ScheduleJobTest {
         // Seems odd that we do not remove the job from the scheduler?
         Assert.assertTrue(subject().runExecution(job));
 
-        verify(jobRepository, times(1)).save(job);
+        verify(jobRepository, times(1)).failDispatched(eq(job.getId()), eq(stepId), any());
         verify(workspaceRepository, times(1)).save(job.getWorkspace());
         verify(gitLabWebhookService, times(1)).sendCommitStatus(job, JobStatus.unknown, null);
         Assertions.assertEquals(JobStatus.failed, job.getStatus());
@@ -511,8 +513,7 @@ public class ScheduleJobTest {
         doReturn(flow).when(tclService).getNextFlow(any());
         doReturn(stepId.toString()).when(tclService).getCurrentStepId(any());
         doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
-        doReturn(job).when(jobRepository).save(any());
-        doReturn(job.getStep().get(0)).when(stepRepository).getReferenceById(any());
+        doReturn(Optional.of(job.getStep().get(0))).when(stepRepository).findById(any());
         doReturn(job.getStep()).when(stepRepository).findByJobId(anyInt());
         doReturn(null).when(stepRepository).save(any());
         doThrow(new ExecutionException((String) null, null)).when(executorService).execute(any(), any(), any());
@@ -543,8 +544,7 @@ public class ScheduleJobTest {
         doReturn(flow).when(tclService).getNextFlow(any());
         doReturn(stepId.toString()).when(tclService).getCurrentStepId(any());
         doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
-        doReturn(job).when(jobRepository).save(any());
-        doReturn(job.getStep().get(0)).when(stepRepository).getReferenceById(any());
+        doReturn(Optional.of(job.getStep().get(0))).when(stepRepository).findById(any());
         doReturn(job.getStep()).when(stepRepository).findByJobId(anyInt());
         doReturn(null).when(stepRepository).save(any());
         doThrow(new ExecutionException("Boom!", null)).when(executorService).execute(any(), any(), any());
@@ -737,8 +737,7 @@ public class ScheduleJobTest {
         doReturn(flow).when(tclService).getNextFlow(any());
         doReturn(stepId.toString()).when(tclService).getCurrentStepId(any());
         doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
-        doReturn(job).when(jobRepository).save(any());
-        doReturn(job.getStep().get(0)).when(stepRepository).getReferenceById(any());
+        doReturn(Optional.of(job.getStep().get(0))).when(stepRepository).findById(any());
         doReturn(job.getStep()).when(stepRepository).findByJobId(anyInt());
         doReturn(null).when(stepRepository).save(any());
         doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any(), any());
@@ -797,8 +796,7 @@ public class ScheduleJobTest {
         doReturn(flow).when(tclService).getNextFlow(any());
         doReturn(stepId.toString()).when(tclService).getCurrentStepId(any());
         doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
-        doReturn(job).when(jobRepository).save(any());
-        doReturn(job.getStep().get(0)).when(stepRepository).getReferenceById(any());
+        doReturn(Optional.of(job.getStep().get(0))).when(stepRepository).findById(any());
         doReturn(job.getStep()).when(stepRepository).findByJobId(anyInt());
         doReturn(null).when(stepRepository).save(any());
         doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any(), any());
@@ -1335,7 +1333,7 @@ public class ScheduleJobTest {
 
         verify(executorService, times(1)).execute(any(), any(), any());
         verify(jobRepository, times(1)).save(job);
-        verify(jobRepository, times(1)).markDispatched(eq(job.getId()), any());
+        verify(jobRepository, times(1)).markDispatched(eq(job.getId()), eq(stepId), any());
         Assertions.assertEquals(JobStatus.queue, job.getStatus());
     }
 
@@ -1358,7 +1356,7 @@ public class ScheduleJobTest {
         doReturn(stepId.toString()).when(tclService).getCurrentStepId(any());
         doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
         doReturn(job).when(jobRepository).save(any());
-        doReturn(job.getStep().get(0)).when(stepRepository).getReferenceById(any());
+        doReturn(Optional.of(job.getStep().get(0))).when(stepRepository).findById(any());
         doReturn(job.getStep()).when(stepRepository).findByJobId(anyInt());
         doReturn(null).when(stepRepository).save(any());
         doThrow(new ExecutionException(new Exception("Boom!"))).when(executorService).execute(any(), any(), any());
@@ -2045,5 +2043,155 @@ public class ScheduleJobTest {
         Assertions.assertEquals(JobStatus.cancelled, step.getStatus());
         verify(jobRepository, times(1)).save(job);
         verify(stepRepository, times(1)).save(step);
+    }
+
+    @Test
+    public void completedStepDuringDispatchFailureReconcilesAtomicallyWithoutOverwritingJob() throws Exception {
+        Job staleJob = job(JobStatus.pending);
+        staleJob.setPlanChanges(true);
+        staleJob.setOutput("Step 300 completed\n");
+
+        Step liveCompletedStep = new Step();
+        liveCompletedStep.setId(stepId);
+        liveCompletedStep.setName("Custom Scripts");
+        liveCompletedStep.setStatus(JobStatus.completed);
+
+        Job liveJob = job(JobStatus.pending);
+        liveJob.setId(staleJob.getId());
+        liveJob.setWorkspace(staleJob.getWorkspace());
+        liveJob.setOrganization(staleJob.getOrganization());
+        liveJob.setPlanChanges(true);
+        liveJob.setOutput("Step 300 completed\nStep 400 completed\n");
+
+        Flow flow = new Flow();
+        flow.setType(FlowType.customScripts.name());
+
+        doReturn(false).when(tclService).isTemplatePlanOnly(any());
+        doReturn(Optional.of(Collections.emptyList()))
+                .when(jobRepository).findByWorkspaceAndStatusNotInAndIdLessThan(any(Workspace.class), anyList(), anyInt());
+        doAnswer(inv -> inv.getArgument(0)).when(tclService).initJobConfiguration(any(Job.class));
+        doReturn(flow).doReturn(null).when(tclService).getNextFlow(any());
+        doReturn(stepId.toString()).when(tclService).getCurrentStepId(any());
+        doReturn(staleJob.getWorkspace()).when(workspaceRepository).save(any());
+        // Simulate atomic CAS rejecting failDispatched (0 rows) because stepId already completed in DB.
+        doReturn(0).when(jobRepository).failDispatched(eq(staleJob.getId()), eq(stepId), any());
+        doThrow(new ExecutionException("Read timed out", null)).when(executorService).execute(any(), any(), any());
+        doReturn(Optional.of(liveCompletedStep)).when(stepRepository).findById(stepId);
+        doReturn(Optional.of(liveJob)).when(jobRepository).findById(staleJob.getId());
+        doReturn(new io.terrakube.api.plugin.scheduler.reconciliation.ReconciliationResult(
+                staleJob.getId(), JobStatus.pending,
+                io.terrakube.api.plugin.scheduler.reconciliation.DerivedOutcome.COMPLETED,
+                JobStatus.completed,
+                io.terrakube.api.plugin.scheduler.reconciliation.ReconciliationResult.ReconciliationDisposition.APPLIED,
+                List.of())).when(jobReconciliationService).reconcile(staleJob.getId(), false);
+        doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any(), any());
+        doReturn(Collections.emptyList()).when(globalVarRepository).findByOrganization(any());
+        doReturn(Optional.empty()).when(variableRepository).findByWorkspace(any());
+
+        Assertions.assertTrue(subject().runExecution(staleJob));
+
+        Assertions.assertEquals(JobStatus.completed, staleJob.getStatus());
+        Assertions.assertEquals("Custom Scripts", liveCompletedStep.getName());
+        verify(jobRepository, never()).save(any());
+        verify(stepRepository, never()).save(any());
+        verify(workspaceRepository, times(1)).save(any());
+        verify(gitLabWebhookService, times(1)).sendCommitStatus(liveJob, JobStatus.completed, null);
+    }
+
+    @Test
+    public void runningStepDuringDispatchFailurePreservesRunningStateWithoutFailing() throws Exception {
+        Job staleJob = job(JobStatus.pending);
+        staleJob.setPlanChanges(true);
+
+        Step liveRunningStep = new Step();
+        liveRunningStep.setId(stepId);
+        liveRunningStep.setStatus(JobStatus.running);
+
+        Job liveJob = job(JobStatus.running);
+        liveJob.setId(staleJob.getId());
+
+        Flow flow = new Flow();
+        flow.setType(FlowType.terraformApply.name());
+
+        doReturn(false).when(tclService).isTemplatePlanOnly(any());
+        doReturn(Optional.of(Collections.emptyList()))
+                .when(jobRepository).findByWorkspaceAndStatusNotInAndIdLessThan(any(Workspace.class), anyList(), anyInt());
+        doReturn(staleJob).when(tclService).initJobConfiguration(any(Job.class));
+        doReturn(flow).when(tclService).getNextFlow(any());
+        doReturn(stepId.toString()).when(tclService).getCurrentStepId(any());
+        doReturn(staleJob.getWorkspace()).when(workspaceRepository).save(any());
+        doThrow(new ExecutorUnavailableException("read timeout", null, true))
+                .when(executorService).execute(any(), any(), any());
+        doReturn(Optional.of(liveRunningStep)).when(stepRepository).findById(stepId);
+        doReturn(Optional.of(liveJob)).when(jobRepository).findById(staleJob.getId());
+
+        Assertions.assertTrue(subject().runExecution(staleJob));
+
+        Assertions.assertEquals(JobStatus.running, staleJob.getStatus());
+        verify(jobRepository, never()).save(any());
+        verify(stepRepository, never()).save(any());
+        verify(gitLabWebhookService, never()).sendCommitStatus(any(), any(), any());
+    }
+
+    @Test
+    public void errorJobAtStepSkipsStepRenameCleanlyWhenStepRowMissing() throws Exception {
+        Job job = job(JobStatus.pending);
+        job.setPlanChanges(true);
+
+        Flow flow = new Flow();
+        flow.setType(FlowType.terraformPlan.name());
+
+        doReturn(false).when(tclService).isTemplatePlanOnly(any());
+        doReturn(Optional.of(Collections.emptyList()))
+                .when(jobRepository).findByWorkspaceAndStatusNotInAndIdLessThan(any(Workspace.class), anyList(), anyInt());
+        doReturn(job).when(tclService).initJobConfiguration(any(Job.class));
+        doReturn(flow).when(tclService).getNextFlow(any());
+        doReturn(stepId.toString()).when(tclService).getCurrentStepId(any());
+        doReturn(job.getWorkspace()).when(workspaceRepository).save(any());
+        doReturn(Optional.empty()).when(stepRepository).findById(stepId);
+        doReturn(Collections.emptyList()).when(stepRepository).findByJobId(anyInt());
+        doThrow(new ExecutionException("Boom!", null)).when(executorService).execute(any(), any(), any());
+        doNothing().when(gitLabWebhookService).sendCommitStatus(any(), any(), any());
+
+        Assertions.assertTrue(subject().runExecution(job));
+
+        Assertions.assertEquals(JobStatus.failed, job.getStatus());
+        verify(stepRepository, never()).getReferenceById(any());
+        verify(stepRepository, never()).save(any());
+    }
+
+    @Test
+    public void reconcileProgressedDispatchNeverRecursesIntoSameStepWhenStepMissingOrStillPending() throws Exception {
+        Job staleJob = job(JobStatus.pending);
+        staleJob.setPlanChanges(true);
+
+        Step stillPendingStep = new Step();
+        stillPendingStep.setId(stepId);
+        stillPendingStep.setStatus(JobStatus.pending);
+
+        Job livePendingJob = job(JobStatus.pending);
+        livePendingJob.setId(staleJob.getId());
+        livePendingJob.setPlanChanges(true);
+
+        Flow flow = new Flow();
+        flow.setType(FlowType.terraformApply.name());
+
+        doReturn(false).when(tclService).isTemplatePlanOnly(any());
+        doReturn(Optional.of(Collections.emptyList()))
+                .when(jobRepository).findByWorkspaceAndStatusNotInAndIdLessThan(any(Workspace.class), anyList(), anyInt());
+        doReturn(staleJob).when(tclService).initJobConfiguration(any(Job.class));
+        doReturn(flow).when(tclService).getNextFlow(any());
+        doReturn(stepId.toString()).when(tclService).getCurrentStepId(any());
+        doReturn(staleJob.getWorkspace()).when(workspaceRepository).save(any());
+        doNothing().when(executorService).execute(any(), any(), any());
+        // CAS rejects markDispatched (0 rows) while liveJob is still pending and liveStep is missing or pending.
+        doReturn(0).when(jobRepository).markDispatched(eq(staleJob.getId()), eq(stepId), any());
+        doReturn(Optional.of(stillPendingStep)).when(stepRepository).findById(stepId);
+        doReturn(Optional.of(livePendingJob)).when(jobRepository).findById(staleJob.getId());
+
+        Assertions.assertTrue(subject().runExecution(staleJob));
+
+        // Must execute once and bail out without recursing into executorService.execute a second time.
+        verify(executorService, times(1)).execute(any(), eq(stepId.toString()), any());
     }
 }

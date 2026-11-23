@@ -68,6 +68,7 @@ public class WebhookServiceTest {
     WorkspaceBranchPolicy workspaceBranchPolicy;
     WebhookProperties webhookProperties;
     ModuleRefreshTransactions moduleRefreshTransactions;
+    PrApplyAuthorizationService prApplyAuthorizationService;
 
     WebhookService subject;
 
@@ -91,6 +92,8 @@ public class WebhookServiceTest {
         workspaceBranchPolicy = mock(WorkspaceBranchPolicy.class);
         webhookProperties = new WebhookProperties();
         moduleRefreshTransactions = mock(ModuleRefreshTransactions.class);
+        // A mock answers Optional.empty(): every comment author may apply unless a test says otherwise.
+        prApplyAuthorizationService = mock(PrApplyAuthorizationService.class);
 
         subject = new WebhookService(
                 webhookRepository,
@@ -106,7 +109,8 @@ public class WebhookServiceTest {
                 prCommentService,
                 workspaceBranchPolicy,
                 webhookProperties,
-                moduleRefreshTransactions);
+                moduleRefreshTransactions,
+                prApplyAuthorizationService);
 
         workspace = new Workspace();
         workspace.setName("test-workspace");
@@ -240,6 +244,39 @@ public class WebhookServiceTest {
         verify(workspaceRepository, times(1)).save(workspace);
         verify(scheduleJobService, times(1)).createJobContext(any());
         verify(prCommentService, never()).postApplyDisabledNotice(any(), any());
+    }
+
+    @Test
+    public void applyCommentIsRefusedBeforeTheWorkspaceIsLockedWhenTheAuthorMayNotApply() throws Exception {
+        pullRequestEvent.setPrWorkflowEnabled(true);
+        pullRequestEvent.setPrApplyEnabled(true);
+        WebhookResult result = createCommentResult("apply", 7);
+        result.setCommentId("comment-7");
+        doReturn(Optional.of("`reader` cannot apply")).when(prApplyAuthorizationService)
+                .refusalReason(workspace, result);
+
+        subject.handlePrCommentCommand(result, webhook, workspace);
+
+        assertFalse(workspace.isLocked());
+        verify(workspaceRepository, never()).save(any());
+        verify(jobRepository, never()).save(any());
+        verify(scheduleJobService, never()).createJobContext(any());
+        verify(prCommentService).postApplyNotAuthorizedNotice(workspace, 7, "`reader` cannot apply");
+        verify(prCommentService).acknowledgeRefusal(workspace, "comment-7", 7);
+    }
+
+    @Test
+    public void planCommentDoesNotCheckWhetherTheAuthorMayApply() throws Exception {
+        pullRequestEvent.setPrWorkflowEnabled(true);
+        WebhookResult result = createCommentResult("plan", 5);
+        Job savedJob = new Job();
+        savedJob.setWorkspace(workspace);
+        doReturn(savedJob).when(jobRepository).save(any());
+
+        subject.handlePrCommentCommand(result, webhook, workspace);
+
+        verify(prApplyAuthorizationService, never()).refusalReason(any(), any());
+        verify(scheduleJobService).createJobContext(any());
     }
 
     @Test

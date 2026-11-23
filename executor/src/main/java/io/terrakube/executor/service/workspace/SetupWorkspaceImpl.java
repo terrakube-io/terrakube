@@ -104,6 +104,7 @@ public class SetupWorkspaceImpl implements SetupWorkspace {
 
             workspaceSecurity.addTerraformCredentials(
                     terraformJob.getOrganizationId(),
+                    terraformJob.getOrganizationName(),
                     terraformJob.getWorkspaceId(),
                     terraformJob.getJobId(),
                     terraformJob.getStepId());

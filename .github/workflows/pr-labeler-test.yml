@@ -1,0 +1,19 @@
+name: Test PR Labeler
+
+on:
+  pull_request:
+    paths:
+      - '.github/scripts/**'
+      - '.github/labeler.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - run: node --test .github/scripts/pr-labels.test.js
