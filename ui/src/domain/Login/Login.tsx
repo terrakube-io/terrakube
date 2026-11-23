@@ -11,6 +11,7 @@ import {
 } from "../../config/themeConfig";
 import logo from "./logo.svg";
 import logoDark from "./logo-dark.svg";
+import { LoginAnnouncements } from "@/modules/announcements/components/LoginAnnouncements";
 import "./Login.css";
 
 const { Title, Text } = Typography;
@@ -42,6 +43,7 @@ const LoginContent = ({ themeMode }: { themeMode: ThemeMode }) => {
 
   return (
     <div className="login-container">
+      <LoginAnnouncements />
       <div className="login-card">
         <img src={themeMode === "dark" ? logoDark : logo} alt="Terrakube" className="login-logo" />
         <Title level={3}>Sign in to Terrakube</Title>

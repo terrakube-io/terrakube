@@ -4,8 +4,16 @@
   margin-block: 10px;
 }
 
-.layout {
+.app-shell {
   height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.layout {
+  flex: 1;
+  min-height: 0;
   overflow: hidden;
 }
 

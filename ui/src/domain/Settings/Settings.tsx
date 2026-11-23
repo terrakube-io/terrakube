@@ -17,6 +17,7 @@ import { VCSSettings } from "./VCS";
 import { VariableCollectionsSettings } from "./VariableCollections";
 import { CreateEditCollection } from "./CreateEditCollection";
 import { useOrgPermissions } from "../../modules/permissions/useOrgPermissions";
+import { OrgAnnouncementsSettings } from "@/modules/announcements/components/OrgAnnouncementsSettings";
 import PageWrapper from "@/components/layout/PageWrapper/PageWrapper";
 
 const SETTINGS_TAB_PATHS: Record<string, string> = {
@@ -33,6 +34,7 @@ const SETTINGS_TAB_PATHS: Record<string, string> = {
   "11": "federated-credentials",
   "12": "notifications",
   "13": "policies",
+  "14": "announcements",
 };
 
 const SETTINGS_TAB_LABELS: Record<string, string> = {
@@ -49,6 +51,7 @@ const SETTINGS_TAB_LABELS: Record<string, string> = {
   "11": "Federated credentials",
   "12": "Notifications",
   "13": "Policy sets",
+  "14": "Announcements",
 };
 
 type Props = {
@@ -160,6 +163,13 @@ export const OrganizationSettings = ({
             editorMode={editorMode}
             editorId={editorId}
             managePermission={permissions.managePolicies || permissions.managePermission}
+          />
+        );
+      case "14":
+        return (
+          <OrgAnnouncementsSettings
+            manageAnnouncements={permissions.manageAnnouncements}
+            isSuperUser={permissions.superUser}
           />
         );
       default:

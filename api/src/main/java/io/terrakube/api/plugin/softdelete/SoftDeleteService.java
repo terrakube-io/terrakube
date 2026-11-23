@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 import io.terrakube.api.plugin.scheduler.JobStatusChangeService;
 import io.terrakube.api.plugin.scheduler.ScheduleJobService;
 import io.terrakube.api.plugin.scheduler.workspace.DeleteStorageBackendJob;
+import io.terrakube.api.repository.AnnouncementRepository;
 import io.terrakube.api.repository.JobRepository;
 import io.terrakube.api.repository.ScheduleRepository;
 import io.terrakube.api.repository.WorkspaceRepository;
@@ -37,6 +38,8 @@ public class SoftDeleteService {
     Scheduler scheduler;
 
     JobStatusChangeService jobStatusChangeService;
+
+    AnnouncementRepository announcementRepository;
 
     public void disableWorkspaceSchedules(Workspace workspace){
         for(Schedule schedule: workspace.getSchedule()){
@@ -111,6 +114,10 @@ public class SoftDeleteService {
 
     public void disableOrganization(Organization organization){
         log.info("Disable Organization Id: {}", organization.getId().toString());
+
+        if (announcementRepository != null) {
+            announcementRepository.deleteByOrganizationId(organization.getId().toString());
+        }
 
         for(Workspace workspace: organization.getWorkspace()){
             log.info("Disable Workspace: {}", workspace.getId().toString());

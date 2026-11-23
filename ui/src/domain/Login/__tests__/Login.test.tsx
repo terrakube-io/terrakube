@@ -6,6 +6,10 @@ jest.mock("@/config/authConfig", () => ({
   mgr: { signinRedirect: jest.fn() },
 }));
 
+jest.mock("@/modules/announcements/announcementService", () => ({
+  fetchPublicLoginAnnouncements: jest.fn().mockResolvedValue({ announcements: [], serverTimeMs: 0 }),
+}));
+
 const mockSigninRedirect = mgr.signinRedirect as jest.Mock;
 
 describe("Login", () => {

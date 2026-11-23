@@ -121,4 +121,8 @@ public class Organization {
     @UpdatePermission(expression = "user belongs organization")
     @OneToMany(mappedBy = "organization")
     private List<io.terrakube.api.rs.policy.PolicyExemption> policyExemption;
+
+    @UpdatePermission(expression = "user belongs organization")
+    @OneToMany(mappedBy = "organization")
+    private List<io.terrakube.api.rs.announcement.Announcement> announcement;
 }
