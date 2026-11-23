@@ -10,6 +10,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import io.terrakube.client.spring.autoconfigure.RestClientProperties;
+import io.terrakube.executor.configuration.ProviderMirrorProperties;
 
 import io.terrakube.executor.configuration.security.InternalSecretLoader;
 
@@ -18,7 +19,9 @@ import java.io.File;
 import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.net.URLEncoder;
 import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Date;
@@ -43,17 +46,34 @@ public class WorkspaceSecurityImpl implements WorkspaceSecurity {
 
     String internalSecret;
 
+    private final boolean providerMirrorEnabled;
+    private final boolean providerMirrorOnly;
+    private final String providerMirrorRegistryUrl;
+
     @Autowired
     public WorkspaceSecurityImpl(
             RestClientProperties restClientProperties,
             @Value("${io.terrakube.registry.domain}") String registryDomain,
             @Value("${io.terrakube.api.url}") String apiUrl,
             @Value("${io.terrakube.public-url:}") String publicUrl,
-            InternalSecretLoader secretLoader) {
+            InternalSecretLoader secretLoader,
+            ProviderMirrorProperties providerMirror) {
         this.clientProperties = restClientProperties;
         this.registryDomain = resolveRegistryDomain(registryDomain, publicUrl);
         this.apiUrl = apiUrl;
         this.internalSecret = secretLoader.getInternalSecret();
+        this.providerMirrorEnabled = providerMirror.isEnabled();
+        this.providerMirrorOnly = providerMirror.isOnly();
+        this.providerMirrorRegistryUrl = resolveMirrorRegistryUrl(providerMirror.getRegistryUrl(), registryDomain, publicUrl);
+    }
+
+    public WorkspaceSecurityImpl(
+            RestClientProperties restClientProperties,
+            String registryDomain,
+            String apiUrl,
+            String publicUrl,
+            InternalSecretLoader secretLoader) {
+        this(restClientProperties, registryDomain, apiUrl, publicUrl, secretLoader, new ProviderMirrorProperties());
     }
 
     public WorkspaceSecurityImpl(RestClientProperties restClientProperties, String registryDomain, String apiUrl,
@@ -63,6 +83,47 @@ public class WorkspaceSecurityImpl implements WorkspaceSecurity {
 
     public WorkspaceSecurityImpl(RestClientProperties restClientProperties, String registryDomain, String apiUrl, String internalSecret) {
         this(restClientProperties, registryDomain, apiUrl, "", new InternalSecretLoader(internalSecret, null));
+    }
+
+    /**
+     * The registry base URL the provider mirror hangs off: the explicit setting, else https://TerrakubeRegistryDomain,
+     * else the single-domain public URL's /api/private-registry. Empty when none can be worked out.
+     */
+    static String resolveMirrorRegistryUrl(String explicit, String registryDomain, String publicUrl) {
+        String url = "";
+        if (explicit != null && !explicit.isBlank()) {
+            url = explicit.trim();
+        } else if (registryDomain != null && !registryDomain.isBlank()) {
+            url = "https://" + registryDomain.trim();
+        } else if (publicUrl != null && !publicUrl.isBlank()) {
+            url = publicUrl.trim() + "/api/private-registry";
+        }
+        while (url.endsWith("/")) {
+            url = url.substring(0, url.length() - 1);
+        }
+        return url;
+    }
+
+    /** The CLI configuration block for the mirror, or an empty string when it is off or cannot be built. */
+    String providerInstallationBlock(String organizationName) {
+        if (!providerMirrorEnabled) {
+            return "";
+        }
+        if (organizationName == null || organizationName.isBlank() || providerMirrorRegistryUrl.isEmpty()) {
+            log.warn("Provider mirror is enabled but the organization name or the registry URL is unknown: providers are installed from their origin");
+            return "";
+        }
+        // The name is free text, so encode it: nothing in it can then close the HCL string or start an interpolation.
+        String encoded = URLEncoder.encode(organizationName, StandardCharsets.UTF_8).replace("+", "%20");
+        StringBuilder block = new StringBuilder("provider_installation {\n")
+                .append("  network_mirror {\n")
+                .append("    url = \"").append(providerMirrorRegistryUrl)
+                .append("/terraform/providers/mirror/v1/").append(encoded).append("/\"\n")
+                .append("  }\n");
+        if (!providerMirrorOnly) {
+            block.append("  direct {\n  }\n");
+        }
+        return block.append("}\n").toString();
     }
 
     /** TerrakubeRegistryDomain, or the single-domain public URL's host when it is unset. */
@@ -136,6 +197,12 @@ public class WorkspaceSecurityImpl implements WorkspaceSecurity {
 
     @Override
     public void addTerraformCredentials(String organizationId, String workspaceId, String jobId, String stepId) {
+        addTerraformCredentials(organizationId, null, workspaceId, jobId, stepId);
+    }
+
+    @Override
+    public void addTerraformCredentials(String organizationId, String organizationName, String workspaceId,
+                                        String jobId, String stepId) {
 
         String token = generateAccessToken(60, organizationId, workspaceId, jobId, stepId);
         String credentialFileContent = String.format(CREDENTIALS_CONTENT, registryDomain, token);
@@ -162,6 +229,10 @@ public class WorkspaceSecurityImpl implements WorkspaceSecurity {
                 FileUtils.writeStringToFile(credentialFile, credentialFileContent, Charset.defaultCharset(), false);
                 FileUtils.writeStringToFile(credentialFile, "\n", Charset.defaultCharset(), true);
                 FileUtils.writeStringToFile(credentialFile, credentialFileContent2, Charset.defaultCharset(), true);
+                String mirrorBlock = providerInstallationBlock(organizationName);
+                if (!mirrorBlock.isEmpty()) {
+                    FileUtils.writeStringToFile(credentialFile, "\n" + mirrorBlock, Charset.defaultCharset(), true);
+                }
 
             }
         } catch (IOException e) {

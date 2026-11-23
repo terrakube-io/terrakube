@@ -10,6 +10,7 @@ import io.terrakube.client.model.organization.job.OrganizationData;
 import io.terrakube.client.model.organization.job.Relationships;
 import io.terrakube.client.model.organization.job.WorkspaceData;
 import io.terrakube.client.model.organization.job.step.Step;
+import io.terrakube.client.model.organization.job.step.StepAttributes;
 import io.terrakube.client.model.organization.workspace.Workspace;
 import io.terrakube.client.model.organization.workspace.WorkspaceAttributes;
 import io.terrakube.client.model.response.Response;
@@ -25,7 +26,11 @@ import org.springframework.boot.availability.ReadinessState;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.core.task.TaskRejectedException;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -41,6 +46,8 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 class OnlineModeServiceImplTest {
 
@@ -109,7 +116,7 @@ class OnlineModeServiceImplTest {
         ResponseEntity<TerraformJob> response = subject.terraformJob(job);
 
         assertEquals(HttpStatus.ACCEPTED, response.getStatusCode());
-        assertEquals(job, response.getBody());
+        assertNull(response.getBody());
         assertEquals(1, publishedEvents.size());
         assertEquals(ReadinessState.REFUSING_TRAFFIC, stateAt(0));
         verify(executorJob, times(1)).createJob(job);
@@ -287,6 +294,120 @@ class OnlineModeServiceImplTest {
         ResponseEntity<TerraformJob> response = subject.terraformJob(job);
 
         assertEquals(HttpStatus.ACCEPTED, response.getStatusCode());
+        verify(executorJob, times(1)).createJob(job);
+    }
+
+    private static Step stepResource(String stepId, String status) {
+        Step step = new Step();
+        step.setId(stepId);
+        step.setType("step");
+        StepAttributes stepAttributes = new StepAttributes();
+        stepAttributes.setStatus(status);
+        step.setAttributes(stepAttributes);
+        return step;
+    }
+
+    @Test
+    void httpPostReturnsEmpty202Body() throws Exception {
+        ExecutorCapacityGate gate = new ExecutorCapacityGate();
+        OnlineModeServiceImpl subject = new OnlineModeServiceImpl(executorJob, gate, eventPublisher, terrakubeClient);
+        MockMvc mockMvc = MockMvcBuilders.standaloneSetup(subject).build();
+
+        String payload = """
+                {
+                  "organizationId": "org",
+                  "workspaceId": "workspace",
+                  "jobId": "job-1",
+                  "stepId": "step-1",
+                  "accessToken": "glpat-super-secret-vcs-token",
+                  "environmentVariables": {
+                    "TERRAKUBE_GCP_CREDENTIALS_FILE": "secret-jwt"
+                  }
+                }
+                """;
+
+        MvcResult result = mockMvc.perform(
+                        post("/api/v1/terraform-rs")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(payload))
+                .andExpect(status().isAccepted())
+                .andReturn();
+
+        assertEquals("", result.getResponse().getContentAsString());
+        verify(executorJob, times(1)).createJob(Mockito.any(TerraformJob.class));
+    }
+
+    @Test
+    void acceptsDispatchWhenIncludedStepsAreMissingForCompatibility() {
+        ExecutorCapacityGate gate = new ExecutorCapacityGate();
+        OnlineModeServiceImpl subject = new OnlineModeServiceImpl(executorJob, gate, eventPublisher, terrakubeClient);
+
+        TerraformJob job = job();
+        job.setStepId("step-1");
+
+        ResponseEntity<TerraformJob> response = subject.terraformJob(job);
+        assertEquals(HttpStatus.ACCEPTED, response.getStatusCode());
+        assertNull(response.getBody());
+        verify(executorJob, times(1)).createJob(job);
+    }
+
+    @Test
+    void acceptsPendingStepEvenWhenJobStatusIsQueueOrRunning() {
+        for (String jobStatus : List.of("queue", "running")) {
+            ExecutorCapacityGate gate = new ExecutorCapacityGate();
+            ExecutorJob localExecutorJob = mock(ExecutorJob.class);
+            OnlineModeServiceImpl subject = new OnlineModeServiceImpl(localExecutorJob, gate, eventPublisher, terrakubeClient);
+
+            ResponseWithInclude<Job, Step> responseWithPendingStep = jobResponse("org", "workspace", "job-1", jobStatus);
+            responseWithPendingStep.setIncluded(List.of(stepResource("step-1", "pending")));
+            when(terrakubeClient.getJobById("org", "job-1")).thenReturn(responseWithPendingStep);
+
+            TerraformJob job = job();
+            job.setStepId("step-1");
+
+            ResponseEntity<TerraformJob> response = subject.terraformJob(job);
+            assertEquals(HttpStatus.ACCEPTED, response.getStatusCode());
+            assertNull(response.getBody());
+            verify(localExecutorJob, times(1)).createJob(job);
+        }
+    }
+
+    @Test
+    void rejectsDuplicateDispatchForEveryNonPendingStepStatusAndReleasesGate() {
+        for (String nonPendingStepStatus : List.of("queue", "running", "completed", "failed", "cancelled")) {
+            ExecutorCapacityGate gate = new ExecutorCapacityGate();
+            ExecutorJob localExecutorJob = mock(ExecutorJob.class);
+            OnlineModeServiceImpl subject = new OnlineModeServiceImpl(localExecutorJob, gate, eventPublisher, terrakubeClient);
+
+            ResponseWithInclude<Job, Step> responseWithStep = jobResponse("org", "workspace", "job-1", "running");
+            responseWithStep.setIncluded(List.of(stepResource("step-1", nonPendingStepStatus)));
+            when(terrakubeClient.getJobById("org", "job-1")).thenReturn(responseWithStep);
+
+            TerraformJob duplicate = job();
+            duplicate.setStepId("step-1");
+
+            assertEquals(HttpStatus.FORBIDDEN, subject.terraformJob(duplicate).getStatusCode(),
+                    "Expected 403 for step status " + nonPendingStepStatus);
+            verifyNoInteractions(localExecutorJob);
+            assertTrue(gate.tryAcquire());
+        }
+    }
+
+    @Test
+    void acceptsOnRejectHookEvenWhenStepIsNonPendingOnRejectedJob() {
+        ExecutorCapacityGate gate = new ExecutorCapacityGate();
+        OnlineModeServiceImpl subject = new OnlineModeServiceImpl(executorJob, gate, eventPublisher, terrakubeClient);
+
+        ResponseWithInclude<Job, Step> rejectedWithFailedStep = jobResponse("org", "workspace", "job-1", "rejected");
+        rejectedWithFailedStep.setIncluded(List.of(stepResource("step-approval", "failed")));
+        when(terrakubeClient.getJobById("org", "job-1")).thenReturn(rejectedWithFailedStep);
+
+        TerraformJob job = job();
+        job.setStepId("step-approval");
+
+        ResponseEntity<TerraformJob> response = subject.terraformJob(job);
+        assertEquals(HttpStatus.ACCEPTED, response.getStatusCode());
+        assertNull(response.getBody());
         verify(executorJob, times(1)).createJob(job);
     }
 }

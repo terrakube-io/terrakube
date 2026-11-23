@@ -905,6 +905,20 @@ class ExecutorServiceTest {
     }
 
     @Test
+    void theClaimIsKeptWhenExecutorUnavailableMayHaveBeenAccepted() throws Exception {
+        dispatchableJob();
+        io.terrakube.api.plugin.scheduler.ExecutionLeaseContext.bind(lease);
+        when(lease.claimDispatch("apply-step")).thenReturn(true);
+        org.mockito.Mockito.doThrow(new ExecutorUnavailableException("read timeout", null, true))
+                .when(persistentExecutorService).send(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+
+        assertThatThrownBy(() -> executorService.execute(job, "apply-step", flow(FlowType.terraformApply)))
+                .isInstanceOf(ExecutorUnavailableException.class);
+
+        verify(lease, never()).releaseDispatchClaim(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
     void theClaimIsKeptWhenTheOutcomeOfTheSubmissionIsUnknown() throws Exception {
         dispatchableJob();
         io.terrakube.api.plugin.scheduler.ExecutionLeaseContext.bind(lease);
@@ -1019,5 +1033,28 @@ class ExecutorServiceTest {
         assertThat(ExecutorService.isValidRemoteContentSource(
                 "http://localhost:8080/remote/tfe/v2/configuration-versions/" + id + "/terraformContent.tar.gz",
                 "localhost:8080")).isFalse();
+    }
+
+    @Test
+    void dispatchCarriesTheOrganizationNameForTheProviderMirrorUrl() throws Exception {
+        Organization organization = new Organization();
+        organization.setId(UUID.randomUUID());
+        organization.setName("acme");
+        workspace.setId(UUID.randomUUID());
+        workspace.setBranch("main");
+        workspace.setSource("https://example.com/test.git");
+        workspace.setTerraformVersion("1.9.0");
+        job.setOrganization(organization);
+        Variable executorMode = new Variable();
+        executorMode.setCategory(Category.ENV);
+        executorMode.setKey("TERRAKUBE_ENABLE_EPHEMERAL_EXECUTOR");
+        executorMode.setValue("0");
+        when(variableRepository.findByWorkspace(workspace)).thenReturn(Optional.of(List.of(executorMode)));
+
+        executorService.execute(job, "100", flow(FlowType.terraformPlan));
+
+        ArgumentCaptor<ExecutorContext> payload = ArgumentCaptor.forClass(ExecutorContext.class);
+        verify(persistentExecutorService).send(eq(job), payload.capture());
+        assertThat(payload.getValue().getOrganizationName()).isEqualTo("acme");
     }
 }

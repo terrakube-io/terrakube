@@ -51,4 +51,14 @@ be tested locally, say why so reviewers can help.
 - Include screenshots or recordings for user-interface changes.
 - Follow the project's [commit-message best practices](https://github.com/trein/dev-best-practices/wiki/Git-Commit-Best-Practices).
 
+### Pull request labels
+
+Labels are applied automatically to help maintainers triage; you do not need to set them.
+
+- `terrakube-*` and `area/*` describe the code the pull request touches.
+- `author/*` shows whether this is a first contribution. It never changes how thorough the review is.
+- `size/*` is the number of lines changed. Pull requests labelled `size/XL` are easier to review when split.
+- `type/*` comes from a conventional-commit title such as `fix(api): ...` or `feat(ui): ...`. A `!` after the type marks a breaking change.
+- `needs-tests` and `needs-description` mean the change has no test changes or the Testing section is empty.
+
 By participating, you agree to follow the [Code of Conduct](CODE_OF_CONDUCT.md).

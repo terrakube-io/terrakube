@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -80,6 +81,7 @@ class RepoWebhookServiceTest {
     WebhookProperties webhookProperties;
     ModuleRefreshTransactions moduleRefreshTransactions;
     ModuleRefreshProperties moduleRefreshProperties;
+    PrApplyAuthorizationService prApplyAuthorizationService;
 
     RepoWebhookService subject;
 
@@ -100,6 +102,8 @@ class RepoWebhookServiceTest {
         webhookProperties = new WebhookProperties();
         moduleRefreshTransactions = mock(ModuleRefreshTransactions.class);
         moduleRefreshProperties = new ModuleRefreshProperties();
+        // A mock answers Optional.empty(): every comment author may apply unless a test says otherwise.
+        prApplyAuthorizationService = mock(PrApplyAuthorizationService.class);
 
         subject = new RepoWebhookService(
                 repoWebhookRepository,
@@ -117,7 +121,8 @@ class RepoWebhookServiceTest {
                 workspaceBranchPolicy,
                 webhookProperties,
                 moduleRefreshTransactions,
-                moduleRefreshProperties);
+                moduleRefreshProperties,
+                prApplyAuthorizationService);
     }
 
     private Workspace workspaceWithSource(String source) {
@@ -977,6 +982,35 @@ class RepoWebhookServiceTest {
             assertThat(savedJob.getCommandCommentId()).isEqualTo("comment-apply-1");
             verify(gitHubWebhookService).sendCommitStatus(eq(savedJob), eq(JobStatus.pending), any());
             verify(prCommentService, never()).postApplyDisabledNotice(any(), any());
+        }
+
+        @Test
+        void v2WebhookIssueCommentApplyIsRefusedBeforeTheLockWhenTheAuthorMayNotApply() throws Exception {
+            String repoUrl = "https://github.com/owner/repo";
+            String payload = "{\"action\":\"created\", \"comment\": {\"body\": \"terrakube apply\"}}";
+
+            RepoWebhook rw = repoWebhookWith(repoUrl, "issue-comment-apply-unauthorized-secret");
+
+            Workspace ws = prCommentWorkspace(repoUrl, "ws-apply-unauthorized", "apply", 14, true, true);
+            ws.setDefaultTemplate("default-template-id");
+            when(workspaceRepository.findByNormalizedSourceWithMigratedWebhook(repoUrl)).thenReturn(List.of(ws));
+
+            WebhookResult commentResult = resolvedCommentResult("apply", 14, "comment-apply-3");
+            when(gitHubWebhookService.parseGitHubPayload(eq(payload), any())).thenReturn(commentResult);
+            // The v2 path hands each workspace a copy of the result, so match it by comment id.
+            when(prApplyAuthorizationService.refusalReason(eq(ws),
+                    argThat(result -> "comment-apply-3".equals(result.getCommentId()))))
+                    .thenReturn(Optional.of("`reader` cannot apply"));
+
+            Map<String, String> headers = Map.of("x-github-event", "issue_comment");
+
+            subject.processClaimedDelivery(rw, payload, headers);
+
+            assertThat(ws.isLocked()).isFalse();
+            verify(workspaceRepository, never()).save(any());
+            verify(jobRepository, never()).save(any(Job.class));
+            verify(prCommentService).postApplyNotAuthorizedNotice(ws, 14, "`reader` cannot apply");
+            verify(prCommentService).acknowledgeRefusal(ws, "comment-apply-3", 14);
         }
 
         @Test
@@ -2323,7 +2357,8 @@ class RepoWebhookServiceTest {
                         workspaceBranchPolicy,
                         webhookProperties,
                         moduleRefreshTransactions,
-                        moduleRefreshProperties);
+                        moduleRefreshProperties,
+                        prApplyAuthorizationService);
 
                 concurrentSubject.processClaimedDelivery(rw, payload, Map.of());
 

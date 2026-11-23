@@ -124,6 +124,29 @@ A pull-through download is streamed to a temporary file in `java.io.tmpdir` (`/t
 
 There is no total size limit for `mirror/`. With pull-through on, any member of any organization can make the registry download and keep any version and platform of a provider from an allowlisted upstream. Each archive is capped by `RegistryMirrorMaxArchiveSizeMb`, but the total is not. Watch the storage size, and use a bucket lifecycle rule or quota if needed. Deleted archives are fetched again on the next request.
 
+## Using the mirror from Terrakube runs
+
+Executors can install providers through the organization's mirror with no change to the workspace code. When enabled, the executor adds a `provider_installation` block to the `~/.terraformrc` it writes for the job and deletes it when the job ends. Terraform and OpenTofu both read it.
+
+| Setting (executor) | Property | Default | Meaning |
+| --- | --- | --- | --- |
+| `TerrakubeProviderMirrorEnabled` | `io.terrakube.provider-mirror.enabled` | `false` | Write the mirror block for every run. |
+| `TerrakubeProviderMirrorOnly` | `io.terrakube.provider-mirror.only` | `false` | Leave out the `direct {}` fallback, so a provider that is not in the mirror fails `init`. This includes providers published only in Terrakube's private provider registry (see below). |
+| `TerrakubeProviderMirrorRegistryUrl` | `io.terrakube.provider-mirror.registry-url` | derived | Registry base URL: `https://<TerrakubeRegistryDomain>`, or `<TerrakubePublicUrl>/api/private-registry` when no registry domain is set. |
+
+The run uses the token the executor already sends to the registry. The mirror URL names the run's organization, which the API sends with the job. With an older API that does not send it, the mirror stays off and providers install from their origin.
+
+- The block ends with `direct {}` by default, which the CLI uses for a provider the mirror does not have. It does not cover an unreachable mirror: `init` then fails with "Failed to query available provider packages". Set `TerrakubeProviderMirrorOnly` for installs without internet access.
+- These settings are executor-wide, not per workspace. Set them in the executor's configuration (`application.properties` or its environment). Ephemeral executor pods read them from their environment, so add them to the ConfigMap or Secret that carries `TerrakubeRegistryDomain`. Do not set them as workspace variables or in `EPHEMERAL_JOB_ENV_VARS`: the registry URL is written into `~/.terraformrc`, so it must come from the operator, not from workspace users.
+- A mirror records only the current platform's hashes (see "Client configuration"), so keep committing a `.terraform.lock.hcl` made with `providers lock` for every platform you use.
+
+### Providers in Terrakube's private provider registry
+
+Terrakube has two separate provider mechanisms. The private provider registry (`/terraform/providers/v1/...`, advertised as `providers.v1`) serves custom providers registered in Terrakube. The network mirror (`/terraform/providers/mirror/v1/...`) serves only the files under `mirror/` in the registry storage and, with pull-through on, the allowlisted upstream registries. The mirror never reads the private provider registry.
+
+- Without `TerrakubeProviderMirrorOnly`, a provider that is only in the private registry works as before: the mirror answers `404` and the CLI falls back to `direct {}`, which installs it from `/terraform/providers/v1/`.
+- With `TerrakubeProviderMirrorOnly=true` there is no `direct {}` block, so `init` fails for that provider even though the same registry hosts it. Either also upload its files under `mirror/<registry-hostname>/<namespace>/<type>/` (see "Uploading providers"), or leave the "only" setting off.
+
 ## Manual verification
 
 1. Set `RegistryMirrorPullThroughEnabled=true` on the registry.
