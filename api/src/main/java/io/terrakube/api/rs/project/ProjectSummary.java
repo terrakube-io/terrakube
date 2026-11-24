@@ -78,7 +78,7 @@ import java.util.UUID;
                           count(*) as queued_job_count,
                           min(coalesce(qj.queued_at, qj.created_date)) as queued_since
                      from job qj join workspace qw on qw.id = qj.workspace_id
-                    where cast(qw.deleted as integer) = 0 and qj.status in ('pending', 'approved')
+                    where cast(qw.deleted as integer) = 0 and qj.status in ('pending', 'approved', 'queue')
                     group by qw.organization_id, qw.project_id) q
                on q.organization_id = p.organization_id and q.project_id = p.id
         group by p.id, p.name, p.description, p.organization_id

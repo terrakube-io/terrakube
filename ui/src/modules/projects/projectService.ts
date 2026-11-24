@@ -93,8 +93,9 @@ export type ProjectSummaryPage = {
 
 export const STALE_DAYS = 90;
 
+// Each value is escaped, not stripped, so a team called O'Reilly Ops still matches its own name.
 function quoteList(values: string[]): string {
-  return values.map((value) => `'${value.replace(/['"\\]/g, "")}'`).join(",");
+  return values.map(quoteRsql).join(",");
 }
 
 // The filter behind each chip. "My projects" with no groups matches nothing rather than everything.
@@ -223,20 +224,25 @@ async function getProjectIndexCounts(
   organizationId: string,
   groups: string[]
 ): Promise<ApiResponse<ProjectIndexCounts>> {
-  const count = (alias: string, filter?: string) =>
-    `${alias}: projectSummary(first: "1", after: "0"${filter ? `, filter: "${filter}"` : ""}) { pageInfo { totalRecords } }`;
-  const mine = groups.length ? count("mine", chipFilter("mine", groups)) : "";
+  // The filters go in as variables, so nothing a team is called is ever part of the query text.
+  const mine = groups.length ? chipFilter("mine", groups) : undefined;
   const body = {
-    query: `query ($orgId: String!) {
+    query: `query ($orgId: String!, $attention: String, $mine: String, $empty: String, $stale: String) {
       organization(ids: [$orgId]) { edges { node {
-        ${count("all")}
-        ${count("attention", chipFilter("attention"))}
-        ${mine}
-        ${count("empty", chipFilter("empty"))}
-        ${count("stale", chipFilter("stale"))}
+        all: projectSummary(first: "1", after: "0") { pageInfo { totalRecords } }
+        attention: projectSummary(first: "1", after: "0", filter: $attention) { pageInfo { totalRecords } }
+        ${mine ? 'mine: projectSummary(first: "1", after: "0", filter: $mine) { pageInfo { totalRecords } }' : ""}
+        empty: projectSummary(first: "1", after: "0", filter: $empty) { pageInfo { totalRecords } }
+        stale: projectSummary(first: "1", after: "0", filter: $stale) { pageInfo { totalRecords } }
       } } }
     }`,
-    variables: { orgId: organizationId },
+    variables: {
+      orgId: organizationId,
+      attention: chipFilter("attention"),
+      mine,
+      empty: chipFilter("empty"),
+      stale: chipFilter("stale"),
+    },
   };
   const result = await apiPost<unknown, any>("/graphql/api/v1", body, {
     dataWrapped: true,
@@ -273,12 +279,12 @@ async function getUnassignedSummary(organizationId: string): Promise<ApiResponse
         ${count("running", "lastJobStatus=='running'")}
         ${count("queued", "lastJobStatus=in=('pending','approved','queue')")}
         ${count("waiting", "lastJobStatus=='waitingApproval'")}
-        ${count("never", "lastJobStatus=='NeverExecuted'")}
+        ${count("never", "(lastJobStatus=='NeverExecuted',lastJobStatus=isnull=true)")}
         ${count("nonCompliant", "policyComplianceStatus=='NON_COMPLIANT'")}
         ${count("compliant", "policyComplianceStatus=='COMPLIANT'")}
         ${count("locked", "locked==true")}
         ${count("attention", "(lastJobStatus=in=('failed','waitingApproval'),policyComplianceStatus=='NON_COMPLIANT')")}
-        latest: workspace(first: "1", after: "0", sort: "-lastJobDate", filter: "${base}") { edges { node { lastJobDate } } }
+        latest: workspace(first: "1", after: "0", sort: "-lastJobDate", filter: "${base};lastJobDate=isnull=false") { edges { node { lastJobDate } } }
       } } }
     }`,
     variables: { orgId: organizationId },

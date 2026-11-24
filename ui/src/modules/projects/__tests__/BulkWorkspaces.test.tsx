@@ -1,5 +1,6 @@
+import { Modal } from "antd";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import axiosInstance from "@/config/axiosConfig";
+import { axiosAuxiliary } from "@/config/axiosConfig";
 import workspaceService from "@/modules/workspaces/workspaceService";
 import { WorkspaceListItem } from "@/modules/workspaces/types";
 import projectService from "../projectService";
@@ -11,7 +12,11 @@ import {
   setWorkspacesLocked,
 } from "../bulkWorkspaceActions";
 
-jest.mock("@/config/axiosConfig", () => ({ __esModule: true, default: { post: jest.fn(), patch: jest.fn() } }));
+jest.mock("@/config/axiosConfig", () => ({
+  __esModule: true,
+  default: { post: jest.fn(), patch: jest.fn() },
+  axiosAuxiliary: { post: jest.fn(), patch: jest.fn() },
+}));
 jest.mock("@/modules/workspaces/workspaceService", () => ({
   __esModule: true,
   default: { assignWorkspaceToProject: jest.fn(), removeWorkspaceFromProject: jest.fn() },
@@ -24,8 +29,8 @@ jest.mock("../MoveImpact", () => ({
 
 const assign = workspaceService.assignWorkspaceToProject as jest.Mock;
 const remove = workspaceService.removeWorkspaceFromProject as jest.Mock;
-const post = axiosInstance.post as jest.Mock;
-const patch = axiosInstance.patch as jest.Mock;
+const post = axiosAuxiliary.post as jest.Mock;
+const patch = axiosAuxiliary.patch as jest.Mock;
 
 const item = (id: string, overrides: Partial<WorkspaceListItem> = {}): WorkspaceListItem => ({
   id,
@@ -112,6 +117,9 @@ describe("bulk workspace actions", () => {
 });
 
 describe("BulkWorkspaceBar", () => {
+  // A confirm dialog opened by one test must not still be on screen in the next.
+  afterEach(() => Modal.destroyAll());
+
   const renderBar = (selected: WorkspaceListItem[], onDone = jest.fn(), canRemove = false) =>
     render(
       <BulkWorkspaceBar
@@ -169,6 +177,22 @@ describe("BulkWorkspaceBar", () => {
 
     renderBar([item("w1", { locked: true }), item("w2")]);
     expect(screen.getByRole("button", { name: "Lock" })).toBeInTheDocument();
+  });
+
+  it("asks before locking and only then changes anything", async () => {
+    patch.mockResolvedValue({});
+    const onDone = jest.fn();
+    renderBar([item("w1"), item("w2")], onDone);
+
+    fireEvent.click(screen.getByRole("button", { name: "Lock" }));
+
+    expect((await screen.findAllByText("Lock 2 workspaces?")).length).toBeGreaterThan(0);
+    expect(patch).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Lock" }).pop() as HTMLElement);
+
+    await waitFor(() => expect(onDone).toHaveBeenCalled());
+    expect(patch).toHaveBeenCalledTimes(2);
   });
 
   it("moves the selection to another project, shows the impact, and never offers the current project", async () => {

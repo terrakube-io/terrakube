@@ -228,6 +228,7 @@ public class TeamTokenController {
             permissions.setManagePolicies(true);
             permissions.setManageProject(true);
         }
+        permissions.settleAccessLevel();
         return new ResponseEntity<>(permissions, HttpStatus.ACCEPTED);
     }
 
@@ -298,15 +299,41 @@ public class TeamTokenController {
 
         private static final List<String> ROLE_ORDER = List.of("read", "plan", "write", "admin");
 
+        // True when one of the grants is a custom role, whose rights are the flags and not a ranked level.
+        @com.fasterxml.jackson.annotation.JsonIgnore
+        private boolean customGrant;
+
         void addGrant(String team, String role) {
             if (!grantedThrough.contains(team)) {
                 grantedThrough.add(team);
             }
-            String normalized = role == null ? "custom" : role.toLowerCase(java.util.Locale.ROOT);
+            // The same normalization as RbacV2Service: a blank or unknown role is a custom one.
+            String normalized = role == null ? "" : role.trim().toLowerCase(java.util.Locale.ROOT);
             int candidate = ROLE_ORDER.indexOf(normalized);
-            int current = accessLevel == null ? -2 : ROLE_ORDER.indexOf(accessLevel);
-            if (accessLevel == null || candidate > current) {
+            if (candidate < 0) {
+                customGrant = true;
+                if (accessLevel == null) {
+                    accessLevel = "custom";
+                }
+                return;
+            }
+            int current = accessLevel == null || "custom".equals(accessLevel) ? -1 : ROLE_ORDER.indexOf(accessLevel);
+            if (candidate > current) {
                 accessLevel = normalized;
+            }
+        }
+
+        /**
+         * Call once every grant is in. A custom role has no rank, so beside a ranked role it must not be outvoted by
+         * the lower one: the level is then at least what the flags that came out of all the grants allow.
+         */
+        void settleAccessLevel() {
+            if (!customGrant || accessLevel == null || "custom".equals(accessLevel)) {
+                return;
+            }
+            String fromFlags = manageProject ? "admin" : (manageWorkspace || approveJob) ? "write" : planJob ? "plan" : "read";
+            if (ROLE_ORDER.indexOf(fromFlags) > ROLE_ORDER.indexOf(accessLevel)) {
+                accessLevel = fromFlags;
             }
         }
     }

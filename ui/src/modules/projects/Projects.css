@@ -334,6 +334,10 @@
   font-weight: 500;
 }
 
+.project-unassigned-table {
+  margin-top: 8px;
+}
+
 .project-unassigned-row td {
   font-style: italic;
   color: var(--tk-text-secondary, #8c8c8c);

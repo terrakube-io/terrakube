@@ -266,8 +266,6 @@ export default function ProjectDetailPage({ organizationName, setOrganizationNam
             canRemove={permissions.manageWorkspace}
           />
         );
-      case "variables":
-        return <ProjectVariablesTab orgid={orgid!} projectId={id!} canManage={permissions.manageCollection} />;
       case "policies":
         return <ProjectPoliciesTab orgid={orgid!} projectId={id!} />;
       case "teams":
@@ -347,9 +345,11 @@ export default function ProjectDetailPage({ organizationName, setOrganizationNam
                 </>
               )}
               .{" "}
-              {canManageProject
-                ? "You can manage access and delete the project."
-                : "You cannot manage access or delete the project."}
+              {permissions.manageWorkspace
+                ? "You can edit the project, manage its access and delete it."
+                : canManageProject
+                  ? "You can edit the project and manage its access. Deleting it needs organization level rights."
+                  : "You cannot edit the project, manage its access or delete it."}
             </>
           }
         />

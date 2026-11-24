@@ -1,9 +1,10 @@
 import { Alert, Modal, Select, message } from "antd";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import workspaceService from "@/modules/workspaces/workspaceService";
 import { WorkspaceListItem } from "@/modules/workspaces/types";
 import { moveWorkspaces } from "./bulkWorkspaceActions";
 import MoveImpact from "./MoveImpact";
+import { notifyProjectChanged } from "./projectEvents";
 
 type Props = {
   orgid: string;
@@ -20,8 +21,14 @@ export default function MoveExistingModal({ orgid, projectId, projectName, open,
   const [chosen, setChosen] = useState<string[]>([]);
   const [working, setWorking] = useState(false);
   const [failed, setFailed] = useState(false);
+  // Names of every workspace seen, so a ticked workspace keeps its name when a new search replaces the results.
+  const names = useRef(new Map<string, string>());
+  // Only the newest search may fill the list, and a keystroke waits a moment for the next one.
+  const latest = useRef(0);
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const search = async (text: string) => {
+    const current = ++latest.current;
     const response = await workspaceService.listWorkspacePage(
       {
         organizationId: orgid,
@@ -33,9 +40,21 @@ export default function MoveExistingModal({ orgid, projectId, projectName, open,
       },
       false
     );
+    if (current !== latest.current) return;
     setFailed(response.isError);
-    if (!response.isError) setOptions(response.data?.workspaces ?? []);
+    if (!response.isError) {
+      const found = response.data?.workspaces ?? [];
+      found.forEach((workspace) => names.current.set(workspace.id, workspace.name));
+      setOptions(found);
+    }
   };
+
+  const searchSoon = (text: string) => {
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => search(text), 250);
+  };
+
+  useEffect(() => () => clearTimeout(timer.current), []);
 
   useEffect(() => {
     if (open) {
@@ -53,6 +72,7 @@ export default function MoveExistingModal({ orgid, projectId, projectName, open,
         `Moved ${outcome.succeeded.length}, ${outcome.failed.length} failed: ${outcome.failed[0].reason}`
       );
     else message.success(`Moved ${outcome.succeeded.length} workspace${outcome.succeeded.length === 1 ? "" : "s"}`);
+    notifyProjectChanged();
     onMoved();
     onClose();
   };
@@ -75,13 +95,18 @@ export default function MoveExistingModal({ orgid, projectId, projectName, open,
         mode="multiple"
         showSearch
         filterOption={false}
-        onSearch={search}
+        onSearch={searchSoon}
         aria-label="Workspaces to move"
         placeholder="Search workspaces that are not in a project"
         style={{ width: "100%" }}
         value={chosen}
         onChange={setChosen}
-        options={options.map((workspace) => ({ value: workspace.id, label: workspace.name }))}
+        options={[
+          ...chosen.map((id) => ({ value: id, label: names.current.get(id) ?? id })),
+          ...options
+            .filter((workspace) => !chosen.includes(workspace.id))
+            .map((workspace) => ({ value: workspace.id, label: workspace.name })),
+        ]}
         notFoundContent="No workspaces without a project"
       />
       {chosen.length > 0 && (

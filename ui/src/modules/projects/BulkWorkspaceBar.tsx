@@ -4,6 +4,7 @@ import { ProjectSummaryModel } from "@/domain/types";
 import { TagModel } from "@/modules/organizations/types";
 import { WorkspaceListItem } from "@/modules/workspaces/types";
 import projectService from "./projectService";
+import { notifyProjectChanged } from "./projectEvents";
 import MoveImpact from "./MoveImpact";
 import {
   BulkOutcome,
@@ -79,6 +80,7 @@ export default function BulkWorkspaceBar({
     setTagValue("");
     onClear();
     onDone();
+    notifyProjectChanged();
   };
 
   const confirmRemove = () =>
@@ -98,6 +100,16 @@ export default function BulkWorkspaceBar({
     setWorking(true);
     finish(anyUnlocked ? "Locked" : "Unlocked", await setWorkspacesLocked(orgid, ids, anyUnlocked));
   };
+
+  const confirmLock = () =>
+    Modal.confirm({
+      title: `${anyUnlocked ? "Lock" : "Unlock"} ${noun}?`,
+      content: anyUnlocked
+        ? "Locked workspaces cannot start new runs until they are unlocked."
+        : "Unlocked workspaces can start new runs again.",
+      okText: anyUnlocked ? "Lock" : "Unlock",
+      onOk: doLock,
+    });
 
   const doTag = async () => {
     if (!tagId) return;
@@ -119,7 +131,7 @@ export default function BulkWorkspaceBar({
       <Typography.Text type="secondary">(this page only)</Typography.Text>
       <Button onClick={() => setTagOpen(true)}>Add tag</Button>
       <Button onClick={() => setMoveOpen(true)}>Move to project</Button>
-      <Button onClick={doLock} loading={working}>
+      <Button onClick={confirmLock} loading={working}>
         {anyUnlocked ? "Lock" : "Unlock"}
       </Button>
       {canRemove && (

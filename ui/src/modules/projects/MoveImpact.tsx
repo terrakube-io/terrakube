@@ -19,17 +19,23 @@ type Props = {
   workspaceCount: number;
 };
 
-type Loaded = { impact: MoveImpactResult; teamsKnown: boolean; tagNames: Record<string, string> };
+// Which of the four lookups worked. A lookup that failed must never read as "nothing is attached".
+type Known = { teams: boolean; policies: boolean; collections: boolean; tags: boolean };
+type Loaded = { impact: MoveImpactResult; known: Known; tagNames: Record<string, string> };
 
-async function loadFacts(orgid: string, projectId: string): Promise<{ facts: ProjectFacts; teamsKnown: boolean }> {
+async function loadFacts(orgid: string, projectId: string): Promise<{ facts: ProjectFacts; known: Known }> {
+  let tagsKnown = true;
   const [access, policies, collections, tags] = await Promise.all([
     projectService.listProjectAccess(orgid, projectId),
     projectService.listProjectPolicySets(orgid, projectId),
     projectService.listCollectionsForProject(orgid, projectId),
-    projectService.listProjectDefaultTags(orgid, projectId).catch(() => []),
+    projectService.listProjectDefaultTags(orgid, projectId).catch(() => {
+      tagsKnown = false;
+      return [];
+    }),
   ]);
   return {
-    teamsKnown: !access.isError,
+    known: { teams: !access.isError, policies: !policies.isError, collections: !collections.isError, tags: tagsKnown },
     facts: {
       teams: access.isError ? [] : (access.data ?? []).map((item) => item.name),
       policySets: policies.isError
@@ -57,7 +63,12 @@ export default function MoveImpact({ orgid, sourceProjectId, targetProjectId, ta
     setLoaded(null);
     setFailed(false);
     Promise.all([
-      sourceProjectId ? loadFacts(orgid, sourceProjectId) : Promise.resolve({ facts: NO_FACTS, teamsKnown: true }),
+      sourceProjectId
+        ? loadFacts(orgid, sourceProjectId)
+        : Promise.resolve({
+            facts: NO_FACTS,
+            known: { teams: true, policies: true, collections: true, tags: true } as Known,
+          }),
       loadFacts(orgid, targetProjectId),
       projectService.listOrganizationTags(orgid).catch(() => []),
     ])
@@ -65,7 +76,12 @@ export default function MoveImpact({ orgid, sourceProjectId, targetProjectId, ta
         if (cancelled) return;
         setLoaded({
           impact: computeMoveImpact(sourceProjectId ? source.facts : null, target.facts),
-          teamsKnown: source.teamsKnown && target.teamsKnown,
+          known: {
+            teams: source.known.teams && target.known.teams,
+            policies: source.known.policies && target.known.policies,
+            collections: source.known.collections && target.known.collections,
+            tags: source.known.tags && target.known.tags,
+          },
           tagNames: Object.fromEntries(tags.map((tag) => [tag.id, tag.name])),
         });
       })
@@ -80,10 +96,10 @@ export default function MoveImpact({ orgid, sourceProjectId, targetProjectId, ta
   }
   if (!loaded) return <Skeleton active paragraph={{ rows: 3 }} />;
 
-  const { impact, teamsKnown, tagNames } = loaded;
+  const { impact, known, tagNames } = loaded;
   const rows: { label: string; text: string }[] = [];
 
-  if (!teamsKnown) {
+  if (!known.teams) {
     rows.push({ label: "Access", text: "You can see these projects but not who has access to them." });
   } else if (impact.teamsGaining.length + impact.teamsLosing.length > 0) {
     const parts = [];
@@ -93,17 +109,35 @@ export default function MoveImpact({ orgid, sourceProjectId, targetProjectId, ta
       parts.push(`${plural(impact.teamsLosing.length, "team")} lose access (${impact.teamsLosing.join(", ")})`);
     rows.push({ label: "Access", text: parts.join(", ") });
   }
+  if (!known.policies) {
+    rows.push({
+      label: "Policy",
+      text: "Could not be checked, so policy sets that start or stop applying are not listed.",
+    });
+  }
   impact.policiesStarting.forEach((set) => {
     const level = enforcementLabel(set.enforcementLevel);
     rows.push({ label: "Policy", text: `${set.name} starts applying${level ? ` (${level})` : ""}` });
   });
   impact.policiesStopping.forEach((set) => rows.push({ label: "Policy", text: `${set.name} stops applying` }));
+  if (!known.collections) {
+    rows.push({
+      label: "Variables",
+      text: "Could not be checked, so collections that start or stop applying are not listed.",
+    });
+  }
   impact.collectionsStarting.forEach((item) =>
     rows.push({ label: "Variables", text: `Collection "${item.name}" starts applying` })
   );
   impact.collectionsStopping.forEach((item) =>
     rows.push({ label: "Variables", text: `Collection "${item.name}" stops applying` })
   );
+  if (!known.tags) {
+    rows.push({
+      label: "Tags",
+      text: "Could not be checked, so the default tags the workspaces inherit are not listed.",
+    });
+  }
   if (impact.tagsInherited.length) {
     const names = impact.tagsInherited.map(
       (tag) => `${tagNames[tag.tagId] ?? tag.tagId}${tag.value ? `:${tag.value}` : ""}`

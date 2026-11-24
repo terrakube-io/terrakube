@@ -596,7 +596,9 @@ public class ProjectAccessTests extends ServerApplicationTests {
                 .all()
                 .statusCode(HttpStatus.FORBIDDEN.value());
 
-        // PROJECT_WRITE_MEMBER cannot delete a ProjectAccess entry (Elide returns 404 when ReadPermission is denied)
+        // PROJECT_WRITE_MEMBER cannot delete a ProjectAccess entry. It can read the row of its own team, so the
+        // refusal is a 403 and not the 404 Elide gives for a row that cannot be read; the cleanup below proves the row
+        // is still there.
         given()
                 .headers("Authorization", "Bearer " + generatePAT("PROJECT_WRITE_MEMBER"))
                 .when()
@@ -604,7 +606,7 @@ public class ProjectAccessTests extends ServerApplicationTests {
                 .then()
                 .log()
                 .all()
-                .statusCode(HttpStatus.NOT_FOUND.value());
+                .statusCode(HttpStatus.FORBIDDEN.value());
 
         // Cleanup
         given()

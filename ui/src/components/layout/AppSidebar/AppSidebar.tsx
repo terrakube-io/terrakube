@@ -36,6 +36,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { ORGANIZATION_ARCHIVE, ORGANIZATION_NAME } from "@/config/actionTypes";
 import organizationService from "@/modules/organizations/organizationService";
+import { onProjectChanged } from "@/modules/projects/projectEvents";
 import projectService from "@/modules/projects/projectService";
 import { getOrgIdFromPathname, isOrgId } from "@/config/orgId";
 import { FlatOrganization } from "@/domain/types";
@@ -210,14 +211,19 @@ export default function AppSidebar({
     setProjectWorkspaceCount(null);
     if (!orgIdFromUrl || !projectIdFromUrl) return;
     let cancelled = false;
-    projectService
-      .getProjectSummary(orgIdFromUrl, projectIdFromUrl)
-      .then((response) => {
-        if (!cancelled && !response.isError) setProjectWorkspaceCount(response.data?.workspaceCount ?? null);
-      })
-      .catch(() => undefined);
+    const load = () =>
+      projectService
+        .getProjectSummary(orgIdFromUrl, projectIdFromUrl)
+        .then((response) => {
+          if (!cancelled && !response.isError) setProjectWorkspaceCount(response.data?.workspaceCount ?? null);
+        })
+        .catch(() => undefined);
+    load();
+    // Workspaces moved in or out of the project from its own pages change this number.
+    const stopListening = onProjectChanged(load);
     return () => {
       cancelled = true;
+      stopListening();
     };
   }, [orgIdFromUrl, projectIdFromUrl]);
 

@@ -79,7 +79,8 @@ export default function ProjectWorkspaces({
   const [statusCounts, setStatusCounts] = useState<Record<string, number>>();
   const [policyCounts, setPolicyCounts] = useState<Record<string, number>>();
   const [tags, setTags] = useState<TagModel[]>([]);
-  const [defaultTagIds, setDefaultTagIds] = useState<Set<string>>(new Set());
+  // The value each default tag has in the project. A workspace's own value for it is not "from project".
+  const [defaultTags, setDefaultTags] = useState<Map<string, string>>(new Map());
   const [view, setView] = useState<"rows" | "cards">("rows");
   const [loading, setLoading] = useState(true);
   const [loaded, setLoaded] = useState(false);
@@ -101,8 +102,8 @@ export default function ProjectWorkspaces({
   useEffect(() => {
     projectService
       .listProjectDefaultTags(orgid, projectId)
-      .then((defaults) => setDefaultTagIds(new Set(defaults.map((item) => item.tagId))))
-      .catch(() => setDefaultTagIds(new Set()));
+      .then((defaults) => setDefaultTags(new Map(defaults.map((item) => [item.tagId, item.value ?? ""]))))
+      .catch(() => setDefaultTags(new Map()));
   }, [orgid, projectId]);
 
   const request = useMemo<WorkspacePageRequest>(
@@ -247,7 +248,9 @@ export default function ProjectWorkspaces({
           {(record.tags ?? []).map((binding) => (
             <span key={binding.tagId} className="project-tag-with-source">
               <WorkspaceTagChips bindings={[binding]} tags={tags} />
-              {defaultTagIds.has(binding.tagId) && <span className="project-tag-source">from project</span>}
+              {defaultTags.has(binding.tagId) && (defaultTags.get(binding.tagId) ?? "") === (binding.value ?? "") && (
+                <span className="project-tag-source">from project</span>
+              )}
             </span>
           ))}
         </Flex>

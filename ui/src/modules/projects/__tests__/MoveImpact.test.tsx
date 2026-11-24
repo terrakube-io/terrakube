@@ -126,4 +126,25 @@ describe("MoveImpact", () => {
 
     expect(await screen.findByText("Nothing changes for access, policy, variables or tags.")).toBeInTheDocument();
   });
+
+  it("does not claim nothing changes when a lookup failed", async () => {
+    service.listProjectPolicySets.mockResolvedValue({ isError: true, data: [] } as never);
+    service.listCollectionsForProject.mockResolvedValue({ isError: true, data: [] } as never);
+    service.listProjectDefaultTags.mockRejectedValue(new Error("boom"));
+    service.listProjectAccess.mockResolvedValue(ok([]));
+    render(
+      <MoveImpact
+        orgid="org"
+        sourceProjectId={null}
+        targetProjectId="target"
+        targetName="payments-prod"
+        workspaceCount={1}
+      />
+    );
+
+    expect(await screen.findByText(/policy sets that start or stop applying are not listed/)).toBeInTheDocument();
+    expect(screen.getByText(/collections that start or stop applying are not listed/)).toBeInTheDocument();
+    expect(screen.getByText(/default tags the workspaces inherit are not listed/)).toBeInTheDocument();
+    expect(screen.queryByText("Nothing changes for access, policy, variables or tags.")).not.toBeInTheDocument();
+  });
 });

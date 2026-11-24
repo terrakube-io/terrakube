@@ -44,25 +44,43 @@ export default function ProjectOverview({ orgid, summary, loading, failed = fals
   const [landing, setLanding] = useState<ProjectTab | "default">(() => getStoredLandingTab() ?? "default");
   const [attention, setAttention] = useState<ProjectWorkspaceBrief[]>([]);
   const [recent, setRecent] = useState<ProjectWorkspaceBrief[]>([]);
+  // A list that is still loading, or could not be loaded, is never drawn as an empty one.
+  const [attentionState, setAttentionState] = useState<"loading" | "ready" | "failed">("ready");
+  const [recentState, setRecentState] = useState<"loading" | "ready" | "failed">("loading");
   const projectId = summary?.id;
   const attentionCount = summary?.attentionCount ?? 0;
   const workspaceCount = summary?.workspaceCount ?? 0;
 
   useEffect(() => {
     if (!projectId) return;
+    let current = true;
+    setRecentState("loading");
     projectService.listRecentWorkspaces(orgid, projectId).then((response) => {
+      if (!current) return;
       setRecent(response.isError ? [] : (response.data ?? []));
+      setRecentState(response.isError ? "failed" : "ready");
     });
+    return () => {
+      current = false;
+    };
   }, [orgid, projectId, workspaceCount]);
 
   useEffect(() => {
     if (!projectId || attentionCount === 0) {
       setAttention([]);
+      setAttentionState("ready");
       return;
     }
+    let current = true;
+    setAttentionState("loading");
     projectService.listAttentionWorkspaces(orgid, projectId).then((response) => {
+      if (!current) return;
       setAttention(response.isError ? [] : (response.data ?? []));
+      setAttentionState(response.isError ? "failed" : "ready");
     });
+    return () => {
+      current = false;
+    };
   }, [orgid, projectId, attentionCount]);
 
   if (failed) {
@@ -111,7 +129,13 @@ export default function ProjectOverview({ orgid, summary, loading, failed = fals
 
       <div className="project-overview-columns">
         <Card size="small" title="Needs attention">
-          {attention.length === 0 ? (
+          {attentionState === "loading" ? (
+            <Skeleton active paragraph={{ rows: 2 }} title={false} />
+          ) : attentionState === "failed" ? (
+            <Typography.Text type="secondary">
+              {attentionCount} need attention, but the list could not be loaded.
+            </Typography.Text>
+          ) : attention.length === 0 ? (
             <Typography.Text type="secondary">Nothing needs attention.</Typography.Text>
           ) : (
             <>
@@ -132,7 +156,11 @@ export default function ProjectOverview({ orgid, summary, loading, failed = fals
           )}
         </Card>
         <Card size="small" title="Recent activity">
-          {recent.length === 0 ? (
+          {recentState === "loading" ? (
+            <Skeleton active paragraph={{ rows: 2 }} title={false} />
+          ) : recentState === "failed" ? (
+            <Typography.Text type="secondary">Recent activity could not be loaded.</Typography.Text>
+          ) : recent.length === 0 ? (
             <Typography.Text type="secondary">No runs yet.</Typography.Text>
           ) : (
             <ul className="project-activity-list">

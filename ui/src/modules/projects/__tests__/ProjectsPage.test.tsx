@@ -297,6 +297,19 @@ describe("ProjectsPage", () => {
     expect(screen.getByRole("link", { name: "Move them to a project" })).toBeInTheDocument();
   });
 
+  it("keeps the Unassigned entry in table view when the first page is full", async () => {
+    const full = Array.from({ length: 50 }, (_, index) => summary({ id: `p${index}`, name: `Project ${index}` }));
+    (projectService.listProjectSummaries as jest.Mock).mockResolvedValue(page(full, 80));
+    (projectService.getUnassignedSummary as jest.Mock).mockResolvedValue({
+      isError: false,
+      data: summary({ id: "unassigned", name: "Unassigned", workspaceCount: 41 }),
+    });
+    renderProjectsPage();
+
+    expect(await screen.findByText("Project 49")).toBeInTheDocument();
+    expect(await screen.findByText("Unassigned")).toBeInTheDocument();
+  });
+
   it("does not show the Unassigned entry while filtering", async () => {
     (projectService.getUnassignedSummary as jest.Mock).mockResolvedValue({
       isError: false,

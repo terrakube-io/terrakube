@@ -239,6 +239,60 @@ class ProjectSummaryTests extends ServerApplicationTests {
                 .body("pageInfo.totalRecords", is(1));
     }
 
+    // The "My projects" chip filters on the caller's own teams. A caller whose only way into a project is a read, plan or
+    // write grant cannot read project access in general, so this must work through the rule that lets a caller read
+    // the rows of teams they are in, and the page and its count must agree.
+    @Test
+    void theMyProjectsFilterWorksForACallerWhoOnlyHasAProjectGrant() {
+        ProjectAccess access = new ProjectAccess();
+        access.setName(PROJECT_ONLY_TEAM);
+        access.setRole("read");
+        access.setProject(quiet);
+        quiet.getProjectAccess().add(access);
+        projectRepository.save(quiet);
+
+        given()
+                .headers("Authorization", "Bearer " + generatePAT(PROJECT_ONLY_TEAM))
+                .contentType("application/json")
+                .body(Map.of("query", summaryQuery("name=ini=*health-*;projectAccess.name=in=('" + PROJECT_ONLY_TEAM + "')",
+                        "+name", 10, 0, "name")))
+                .when()
+                .post("/graphql/api/v1")
+                .then()
+                .assertThat()
+                .log()
+                .ifValidationFails()
+                .body("$", not(hasKey("errors")))
+                .rootPath("data.organization.edges[0].node.projectSummary")
+                .body("edges.size()", is(1))
+                .body("edges[0].node.name", is("health-quiet"))
+                .body("pageInfo.totalRecords", is(1));
+    }
+
+    @Test
+    void anotherTeamNameInTheMyProjectsFilterMatchesNothingAndRevealsNothing() {
+        ProjectAccess access = new ProjectAccess();
+        access.setName(PROJECT_ONLY_TEAM);
+        access.setRole("read");
+        access.setProject(quiet);
+        quiet.getProjectAccess().add(access);
+        projectRepository.save(quiet);
+
+        given()
+                .headers("Authorization", "Bearer " + generatePAT(PROJECT_ONLY_TEAM))
+                .contentType("application/json")
+                .body(Map.of("query", summaryQuery("name=ini=*health-*;projectAccess.name=in=('SOME_OTHER_TEAM')",
+                        "+name", 10, 0, "name")))
+                .when()
+                .post("/graphql/api/v1")
+                .then()
+                .assertThat()
+                .body("$", not(hasKey("errors")))
+                .rootPath("data.organization.edges[0].node.projectSummary")
+                .body("edges.size()", is(0))
+                .body("pageInfo.totalRecords", is(0));
+    }
+
     @Test
     void callerWithoutAccessSeesNoSummaries() {
         given()

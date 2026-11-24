@@ -359,21 +359,37 @@ export default function ProjectsPage({ organizationName, setOrganizationName }: 
           ) : rows.length === 0 ? (
             <NoMatch search={debouncedSearch.trim()} onClear={clearFilters} />
           ) : effectiveView === "table" ? (
-            <Table<ProjectSummaryModel>
-              dataSource={rows}
-              columns={columns}
-              rowKey="id"
-              loading={loading}
-              rowClassName={(record) => (record.id === "unassigned" ? "project-unassigned-row" : "")}
-              onChange={handleTableChange}
-              pagination={{
-                showSizeChanger: true,
-                pageSizeOptions: [24, 50, 100],
-                pageSize: effectivePageSize,
-                current: currentPage,
-                total: totalRecords,
-              }}
-            />
+            <>
+              {/* The Unassigned entry is not part of the server page. Inside the paged table antd would cut it off
+                  whenever the page is full, so it is a table of its own under the page. */}
+              {(projects.length > 0 || !showUnassigned) && (
+                <Table<ProjectSummaryModel>
+                  dataSource={projects}
+                  columns={columns}
+                  rowKey="id"
+                  loading={loading}
+                  onChange={handleTableChange}
+                  pagination={{
+                    showSizeChanger: true,
+                    pageSizeOptions: [24, 50, 100],
+                    pageSize: effectivePageSize,
+                    current: currentPage,
+                    total: totalRecords,
+                  }}
+                />
+              )}
+              {showUnassigned && (
+                <Table<ProjectSummaryModel>
+                  className="project-unassigned-table"
+                  dataSource={[unassigned as ProjectSummaryModel]}
+                  columns={columns}
+                  rowKey="id"
+                  showHeader={false}
+                  pagination={false}
+                  rowClassName="project-unassigned-row"
+                />
+              )}
+            </>
           ) : (
             <>
               <div className="projects-card-grid">

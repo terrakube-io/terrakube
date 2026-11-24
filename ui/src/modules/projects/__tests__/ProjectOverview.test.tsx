@@ -113,6 +113,21 @@ describe("ProjectOverview", () => {
     expect(screen.getByText("1 failed")).toBeInTheDocument();
   });
 
+  it("says the attention list could not be loaded instead of saying nothing needs attention", async () => {
+    attentionList.mockResolvedValue({ isError: true, data: [] });
+    renderOverview({ summary: { ...summary, attentionCount: 2 }, loading: false, onOpenTab: jest.fn() });
+
+    expect(await screen.findByText("2 need attention, but the list could not be loaded.")).toBeInTheDocument();
+    expect(screen.queryByText("Nothing needs attention.")).not.toBeInTheDocument();
+  });
+
+  it("does not say nothing needs attention while the list is still loading", () => {
+    attentionList.mockReturnValue(new Promise(() => undefined));
+    renderOverview({ summary: { ...summary, attentionCount: 2 }, loading: false, onOpenTab: jest.fn() });
+
+    expect(screen.queryByText("Nothing needs attention.")).not.toBeInTheDocument();
+  });
+
   it("lists the workspaces that need attention and links to the full list", async () => {
     const onOpenTab = jest.fn();
     attentionList.mockResolvedValue({
