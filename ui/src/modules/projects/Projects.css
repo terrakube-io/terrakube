@@ -220,6 +220,12 @@
   margin-bottom: 16px;
 }
 
+/* A card that is a link fills its grid cell, so cards of a row are as wide and as tall as each other. */
+.projects-card-grid > a {
+  display: block;
+  min-width: 0;
+}
+
 .project-card {
   display: flex;
   flex-direction: column;

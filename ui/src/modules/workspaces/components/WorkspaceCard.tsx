@@ -1,5 +1,5 @@
 import { ClockCircleOutlined, FolderOutlined } from "@ant-design/icons";
-import { Card, Space, Row, Col, Tag, Typography, Flex } from "antd";
+import { Card, Space, Tag, Typography, Flex } from "antd";
 import { IconContext } from "react-icons";
 import { BiTerminal } from "react-icons/bi";
 import { WorkspaceListItem } from "@/modules/workspaces/types";
@@ -24,72 +24,60 @@ export default function WorkspaceCard({ item, tags, organizationId }: Props) {
   const orgId = organizationId || sessionStorage.getItem(ORGANIZATION_ARCHIVE) || undefined;
   return (
     <Card hoverable className="workspace-card">
-      <Space className="workspace-card-body" orientation="vertical">
-        <Row>
-          <Col span={12}>
-            <Typography.Title level={3}>{item.name}</Typography.Title>
-            <Typography.Text type="secondary">
-              {item.description || "No description provided for this workspace"}
-            </Typography.Text>
-          </Col>
-          <Col span={12}>
-            <Row justify="start">
-              <Col span={24}>
-                <Flex justify="end" wrap gap="small">
-                  {item.projectName && (
-                    <Tag icon={<FolderOutlined />} color="blue">
-                      {item.projectName}
-                    </Tag>
-                  )}
-                  <WorkspaceTagChips bindings={item.tags} tags={tags} />
-                </Flex>
-              </Col>
-            </Row>
-          </Col>
-        </Row>
-        <Space size={40} className="workspace-card-meta" wrap>
-          <Space>
-            <WorkspaceStatusTag status={item.lastStatus} /> <br />
-          </Space>
-          <Space>
-            <PolicyStatusTag
-              status={item.policyComplianceStatus}
-              organizationId={orgId}
-              workspaceId={item.id}
-              clickable
-            />
-          </Space>
-          <Space>
-            <ClockCircleOutlined />
-            <Typography.Text>{relativeTime(item.lastRun) ?? "Never executed"}</Typography.Text>
-          </Space>
-          <Space>
-            <IacTypeLogo type={item.iacType} />
-            <Typography.Text>{item.terraformVersion}</Typography.Text>
-          </Space>
-          {item.branch !== "remote-content" && item.normalizedSource ? (
-            <Space>
-              <VcsLogo type={getVcsTypeFromUrl(item.normalizedSource)} />
-              <Typography.Link
-                href={item.normalizedSource}
-                target="_blank"
-                rel="noreferrer"
-                onClick={(e) => e.stopPropagation()}
-                className="workspace-card-vcs-link"
-              >
-                {item.normalizedSource ? getVcsNameFromUrl(item.normalizedSource) : "Unknown"}
-              </Typography.Link>
-            </Space>
-          ) : (
-            <Typography.Text className="workspace-card-cli">
-              <IconContext.Provider value={{ size: "1.4em" }}>
-                <BiTerminal />
-              </IconContext.Provider>
-              &nbsp;&nbsp;cli/api driven workflow
-            </Typography.Text>
+      <div className="workspace-card-head">
+        <Typography.Title level={3} className="workspace-card-title" title={item.name}>
+          {item.name}
+        </Typography.Title>
+        <Flex justify="end" wrap gap="small" className="workspace-card-tags">
+          {item.projectName && (
+            <Tag icon={<FolderOutlined />} color="blue">
+              {item.projectName}
+            </Tag>
           )}
+          <WorkspaceTagChips bindings={item.tags} tags={tags} />
+        </Flex>
+      </div>
+      <Typography.Paragraph type="secondary" className="workspace-card-description" ellipsis={{ rows: 2 }}>
+        {item.description || "No description provided for this workspace"}
+      </Typography.Paragraph>
+      <div className="workspace-card-statuses">
+        <WorkspaceStatusTag status={item.lastStatus} />
+        <PolicyStatusTag status={item.policyComplianceStatus} organizationId={orgId} workspaceId={item.id} clickable />
+      </div>
+      <div className="workspace-card-meta">
+        <Space>
+          <ClockCircleOutlined />
+          <Typography.Text>{relativeTime(item.lastRun) ?? "Never executed"}</Typography.Text>
         </Space>
-      </Space>
+        <Space>
+          <IacTypeLogo type={item.iacType} />
+          <Typography.Text>{item.terraformVersion}</Typography.Text>
+        </Space>
+      </div>
+      <div className="workspace-card-source">
+        {item.branch !== "remote-content" && item.normalizedSource ? (
+          <>
+            <VcsLogo type={getVcsTypeFromUrl(item.normalizedSource)} />
+            <Typography.Link
+              href={item.normalizedSource}
+              target="_blank"
+              rel="noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="workspace-card-vcs-link"
+              title={item.normalizedSource}
+            >
+              {item.normalizedSource ? getVcsNameFromUrl(item.normalizedSource) : "Unknown"}
+            </Typography.Link>
+          </>
+        ) : (
+          <Typography.Text className="workspace-card-cli">
+            <IconContext.Provider value={{ size: "1.4em" }}>
+              <BiTerminal />
+            </IconContext.Provider>
+            &nbsp;&nbsp;cli/api driven workflow
+          </Typography.Text>
+        )}
+      </div>
     </Card>
   );
 }
