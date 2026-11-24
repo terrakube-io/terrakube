@@ -1,19 +1,18 @@
-export type ProjectTab = "overview" | "workspaces" | "policies" | "teams" | "general";
+export type ProjectTab = "overview" | "workspaces" | "variables" | "policies" | "teams" | "general";
 
 const STORAGE_KEY = "terrakube-project-landing-tab";
-export const PROJECT_TABS: ProjectTab[] = ["overview", "workspaces", "policies", "teams", "general"];
+export const PROJECT_TABS: ProjectTab[] = ["overview", "workspaces", "variables", "policies", "teams", "general"];
 
 export const PROJECT_TAB_LABELS: Record<ProjectTab, string> = {
   overview: "Overview",
   workspaces: "Workspaces",
+  variables: "Variables",
   policies: "Policies",
   teams: "Team access",
   general: "Settings",
 };
 
-// "variables" was a tab of its own before configuration moved into Settings, so an old choice lands there.
 function normalize(value: unknown): ProjectTab | null {
-  if (value === "variables") return "general";
   return typeof value === "string" && (PROJECT_TABS as string[]).includes(value) ? (value as ProjectTab) : null;
 }
 

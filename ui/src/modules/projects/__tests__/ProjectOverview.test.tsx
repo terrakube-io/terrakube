@@ -17,6 +17,7 @@ const renderOverview = (props: any) =>
     </MemoryRouter>
   );
 import { getLandingTab, resolveLandingTab, setLandingTab } from "../projectLandingTab";
+import { sectionForTab } from "../projectNav";
 
 const summary = {
   id: "p1",
@@ -73,6 +74,14 @@ describe("resolveLandingTab", () => {
     expect(resolveLandingTab("teams", "workspaces")).toBe("teams");
   });
 
+  it("opens a project on its Variables page when that is the landing tab, not on Settings", () => {
+    expect(resolveLandingTab("variables", null)).toBe("variables");
+    expect(sectionForTab("variables")).toBe("variables");
+    setLandingTab("variables");
+    expect(getLandingTab()).toBe("variables");
+    expect(sectionForTab("general")).toBe("settings");
+  });
+
   it("ignores values it does not know", () => {
     expect(resolveLandingTab("nonsense", "also-nonsense")).toBe("overview");
   });
@@ -92,7 +101,7 @@ describe("ProjectOverview", () => {
 
     expect(screen.getByText("workspaces").previousSibling).toHaveTextContent("5");
     expect(screen.getByText("need attention").previousSibling).toHaveTextContent("1");
-    expect(screen.getByText("teams with access").previousSibling).toHaveTextContent("3");
+    expect(screen.getByText("teams with project access").previousSibling).toHaveTextContent("3");
     expect(screen.getByText(/^queued now/).previousSibling).toHaveTextContent("0");
   });
 
@@ -207,7 +216,7 @@ describe("ProjectOverview", () => {
         "href",
         "/organizations/org/projects/p1/workspaces?status=pending"
       );
-      expect(screen.getByRole("link", { name: /2 teams with access, show them/ })).toHaveAttribute(
+      expect(screen.getByRole("link", { name: /2 teams with project access, show them/ })).toHaveAttribute(
         "href",
         "/organizations/org/projects/p1/teams"
       );
@@ -249,5 +258,50 @@ describe("ProjectOverview", () => {
         "/organizations/org/workspaces/w1/runs"
       );
     });
+  });
+});
+
+describe("an empty project", () => {
+  it("offers to create or move in a workspace", () => {
+    recentList.mockResolvedValue({ isError: false, data: [] });
+    const onOpenTab = jest.fn();
+
+    renderOverview({
+      summary: { ...summary, workspaceCount: 0, attentionCount: 0, completedCount: 0 },
+      onOpenTab,
+      canCreateWorkspace: true,
+      canMoveWorkspaces: true,
+    });
+
+    expect(screen.getByText("No workspaces in this project yet.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "New workspace" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Move existing" }));
+    expect(onOpenTab).toHaveBeenCalledWith("workspaces");
+  });
+
+  it("disables both actions, with the reason, for someone who may not use them", () => {
+    recentList.mockResolvedValue({ isError: false, data: [] });
+    const onOpenTab = jest.fn();
+
+    renderOverview({
+      summary: { ...summary, workspaceCount: 0, attentionCount: 0, completedCount: 0 },
+      onOpenTab,
+    });
+
+    expect(screen.getByRole("button", { name: "New workspace" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Move existing" })).toBeDisabled();
+    expect(
+      screen.getByRole("group", { name: /Creating a workspace needs the Manage Workspaces permission/ })
+    ).toBeInTheDocument();
+    expect(onOpenTab).not.toHaveBeenCalled();
+  });
+
+  it("shows no call to action when the project has workspaces", () => {
+    recentList.mockResolvedValue({ isError: false, data: [] });
+    attentionList.mockResolvedValue({ isError: false, data: [] });
+
+    renderOverview({ summary, onOpenTab: jest.fn() });
+
+    expect(screen.queryByText("No workspaces in this project yet.")).not.toBeInTheDocument();
   });
 });

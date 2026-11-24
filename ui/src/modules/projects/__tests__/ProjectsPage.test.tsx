@@ -345,6 +345,41 @@ describe("ProjectsPage", () => {
     expect(screen.getByRole("link", { name: "Move them to a project" })).toBeInTheDocument();
   });
 
+  it("applies a saved view: its search, chip and sort, back on page 1, with the address following", async () => {
+    localStorage.setItem(
+      "terrakube-saved-views:projects:org-1",
+      JSON.stringify([{ name: "Ledger problems", query: "q=ledger&chip=attention&sort=-workspaceCount%2C%2Bname" }])
+    );
+    renderProjectsPage("/organizations/org-1/projects?page=3&size=24");
+    await screen.findByText("Billing API");
+
+    fireEvent.click(screen.getByRole("button", { name: /Saved views/ }));
+    fireEvent.click(await screen.findByText("Ledger problems"));
+
+    await waitFor(() =>
+      expect(lastQuery()).toMatchObject({ search: "ledger", chip: "attention", sort: "-workspaceCount,+name", page: 1 })
+    );
+    await waitFor(() => expect(screen.getByTestId("where").textContent).toContain("chip=attention"));
+    expect(screen.getByTestId("where").textContent).toContain("q=ledger");
+    expect(screen.getByTestId("where").textContent).not.toContain("page=3");
+  });
+
+  it("falls back to the defaults for what a saved view does not say", async () => {
+    localStorage.setItem(
+      "terrakube-saved-views:projects:org-1",
+      JSON.stringify([{ name: "Only a search", query: "q=ledger" }])
+    );
+    renderProjectsPage("/organizations/org-1/projects?chip=attention&sort=%2Bname");
+    await screen.findByText("Billing API");
+
+    fireEvent.click(screen.getByRole("button", { name: /Saved views/ }));
+    fireEvent.click(await screen.findByText("Only a search"));
+
+    await waitFor(() =>
+      expect(lastQuery()).toMatchObject({ search: "ledger", chip: "all", sort: "-attentionCount,+name", page: 1 })
+    );
+  });
+
   it("keeps the Unassigned entry in table view when the first page is full", async () => {
     const full = Array.from({ length: 50 }, (_, index) => summary({ id: `p${index}`, name: `Project ${index}` }));
     (projectService.listProjectSummaries as jest.Mock).mockResolvedValue(page(full, 80));

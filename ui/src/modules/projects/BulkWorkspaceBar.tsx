@@ -101,7 +101,8 @@ export default function BulkWorkspaceBar({
     };
   }, [approveOpen, orgid, selectedIds.join(",")]);
 
-  if (selected.length === 0) return null;
+  // Keep the row's height when nothing is ticked so the table does not jump down on the first selection.
+  if (selected.length === 0) return <div className="project-bulk-bar project-bulk-bar-idle" aria-hidden />;
   const count = selected.length;
   const noun = `${count} workspace${count === 1 ? "" : "s"}`;
   const ids = selected.map((workspace) => workspace.id);
@@ -192,7 +193,7 @@ export default function BulkWorkspaceBar({
   };
 
   return (
-    <Flex gap={8} align="center" wrap className="project-bulk-bar">
+    <Flex gap={8} align="center" wrap className="project-bulk-bar project-bulk-bar-active">
       <Typography.Text strong>
         {count} of {total} selected
       </Typography.Text>

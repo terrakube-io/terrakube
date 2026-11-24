@@ -228,10 +228,11 @@ describe("BulkWorkspaceBar", () => {
     });
   });
 
-  it("renders nothing until a workspace is selected", () => {
+  it("shows no actions, only a placeholder that keeps the row height, until a workspace is selected", () => {
     const { container } = renderBar([]);
 
-    expect(container).toBeEmptyDOMElement();
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+    expect(container.querySelector(".project-bulk-bar-idle")).toBeInTheDocument();
   });
 
   it("offers Remove from project only to someone who may take workspaces out of projects", () => {

@@ -1,12 +1,14 @@
 import { Alert, Button, Card, Select, Skeleton, Tooltip, Typography } from "antd";
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
+import { EmptyState } from "@/components/feedback/EmptyState";
 import { ProjectSummaryModel } from "@/domain/types";
 import projectService, { ProjectWorkspaceBrief } from "./projectService";
 import { ProjectHealthBar } from "./ProjectHealthBar";
 import { PROJECT_TAB_LABELS, ProjectTab, getStoredLandingTab, setLandingTab } from "./projectLandingTab";
 import { shortAgo, shortDuration } from "./projectHealth";
 import { describeWorkspace } from "./projectStatus";
+import DisabledReason from "./DisabledReason";
 import { attentionFilter, projectWorkspacesLink, statusForHealth } from "./projectLinks";
 
 type Props = {
@@ -16,6 +18,9 @@ type Props = {
   /** Set when the counts could not be loaded, so they are never drawn as 0. */
   failed?: boolean;
   onRetry?: () => void;
+  /** Whether this person may create workspaces in the project, and move existing ones into it. */
+  canCreateWorkspace?: boolean;
+  canMoveWorkspaces?: boolean;
   onOpenTab: (tab: ProjectTab) => void;
 };
 
@@ -58,13 +63,23 @@ function StatusLine({ orgid, workspace }: { orgid: string; workspace: ProjectWor
   );
 }
 
-export default function ProjectOverview({ orgid, summary, loading, failed = false, onRetry, onOpenTab }: Props) {
+export default function ProjectOverview({
+  orgid,
+  summary,
+  loading,
+  failed = false,
+  onRetry,
+  onOpenTab,
+  canCreateWorkspace = false,
+  canMoveWorkspaces = false,
+}: Props) {
   const [landing, setLanding] = useState<ProjectTab | "default">(() => getStoredLandingTab() ?? "default");
   const [attention, setAttention] = useState<ProjectWorkspaceBrief[]>([]);
   const [recent, setRecent] = useState<ProjectWorkspaceBrief[]>([]);
   // A list that is still loading, or could not be loaded, is never drawn as an empty one.
   const [attentionState, setAttentionState] = useState<"loading" | "ready" | "failed">("ready");
   const [recentState, setRecentState] = useState<"loading" | "ready" | "failed">("loading");
+  const navigate = useNavigate();
   const projectId = summary?.id;
   const attentionCount = summary?.attentionCount ?? 0;
   const workspaceCount = summary?.workspaceCount ?? 0;
@@ -126,6 +141,32 @@ export default function ProjectOverview({ orgid, summary, loading, failed = fals
 
   return (
     <div className="project-overview">
+      {summary.workspaceCount === 0 && (
+        <Card size="small">
+          <EmptyState description="No workspaces in this project yet.">
+            <DisabledReason
+              disabled={!canCreateWorkspace}
+              reason="Creating a workspace needs the Manage Workspaces permission."
+            >
+              <Button
+                type="primary"
+                disabled={!canCreateWorkspace}
+                onClick={() => navigate(`/organizations/${orgid}/workspaces/create?projectId=${summary.id}`)}
+              >
+                New workspace
+              </Button>
+            </DisabledReason>
+            <DisabledReason
+              disabled={!canMoveWorkspaces}
+              reason="Moving workspaces into a project needs the Manage Workspaces permission or the Admin role on the project."
+            >
+              <Button disabled={!canMoveWorkspaces} onClick={() => onOpenTab("workspaces")}>
+                Move existing
+              </Button>
+            </DisabledReason>
+          </EmptyState>
+        </Card>
+      )}
       <div className="project-tiles">
         <Tile value={summary.workspaceCount} label="workspaces" to={projectWorkspacesLink(orgid, summary.id)} />
         <Tile
@@ -143,7 +184,7 @@ export default function ProjectOverview({ orgid, summary, loading, failed = fals
         />
         <Tile
           value={summary.teamCount}
-          label="teams with access"
+          label="teams with project access"
           to={`/organizations/${orgid}/projects/${summary.id}/teams`}
         />
       </div>
@@ -159,7 +200,12 @@ export default function ProjectOverview({ orgid, summary, loading, failed = fals
           }}
         />
         <Typography.Paragraph type="secondary" className="project-overview-meta">
-          Last run: {summary.lastRunAt ? new Date(summary.lastRunAt).toLocaleString() : "Never"}
+          Last run:{" "}
+          {summary.lastRunAt ? (
+            <span title={new Date(summary.lastRunAt).toLocaleString()}>{shortAgo(summary.lastRunAt)}</span>
+          ) : (
+            "Never"
+          )}
           {summary.lockedCount > 0 && ` · ${summary.lockedCount} locked`}
         </Typography.Paragraph>
       </Card>
