@@ -4,6 +4,7 @@ import { ApiResponse } from "@/modules/api/types";
 import containsFilter from "@/modules/workspaces/utils/containsFilter";
 import quoteRsql from "@/modules/workspaces/utils/quoteRsql";
 import { ProjectModel, ProjectSummaryModel } from "@/domain/types";
+import { CollectionEntry, VariableEntry } from "./effectiveVariables";
 
 export type ProjectAccessModel = {
   id: string;
@@ -361,7 +362,13 @@ async function createProject(organizationId: string, data: { name: string; descr
 async function updateProject(
   organizationId: string,
   projectId: string,
-  data: { name: string; description?: string; landingTab?: string | null }
+  data: {
+    name: string;
+    description?: string;
+    landingTab?: string | null;
+    defaultTerraformVersion?: string | null;
+    defaultExecutionMode?: string | null;
+  }
 ): Promise<void> {
   const body = {
     data: {
@@ -372,6 +379,10 @@ async function updateProject(
         description: data.description ?? "",
         // null clears the override so the organization default applies again.
         ...(data.landingTab !== undefined ? { landingTab: data.landingTab } : {}),
+        ...(data.defaultTerraformVersion !== undefined
+          ? { defaultTerraformVersion: data.defaultTerraformVersion }
+          : {}),
+        ...(data.defaultExecutionMode !== undefined ? { defaultExecutionMode: data.defaultExecutionMode } : {}),
       },
     },
   };
@@ -388,6 +399,7 @@ async function getProject(organizationId: string, projectId: string): Promise<Ap
         edges {
           node {
             projectLandingTab
+            executionMode
             project(ids: ["${projectId}"]) {
               edges {
                 node {
@@ -395,6 +407,8 @@ async function getProject(organizationId: string, projectId: string): Promise<Ap
                   name
                   description
                   landingTab
+                  defaultTerraformVersion
+                  defaultExecutionMode
                 }
               }
             }
@@ -430,6 +444,9 @@ async function getProject(organizationId: string, projectId: string): Promise<Ap
       description: node?.description,
       landingTab: node?.landingTab ?? undefined,
       organizationLandingTab: organization?.projectLandingTab ?? undefined,
+      defaultTerraformVersion: node?.defaultTerraformVersion ?? undefined,
+      defaultExecutionMode: node?.defaultExecutionMode ?? undefined,
+      organizationExecutionMode: organization?.executionMode ?? undefined,
     },
   };
 }
@@ -438,27 +455,35 @@ async function deleteProject(organizationId: string, projectId: string): Promise
   await axiosInstance.delete(`organization/${organizationId}/project/${projectId}`);
 }
 
+// Read through the organization, because a caller who only has project access gets nothing from the root project
+// collection. A caller who cannot manage the project's access sees the project but an empty list here.
 async function listProjectAccess(
-  _organizationId: string,
+  organizationId: string,
   projectId: string
 ): Promise<ApiResponse<ProjectAccessModel[]>> {
   const body = {
     query: `{
-      project(ids: ["${projectId}"]) {
+      organization(ids: ["${organizationId}"]) {
         edges {
           node {
-            projectAccess {
+            project(ids: ["${projectId}"]) {
               edges {
                 node {
-                  id
-                  name
-                  role
-                  manageWorkspace
-                  manageState
-                  manageJob
-                  planJob
-                  approveJob
-                  destroyJob
+                  projectAccess {
+                    edges {
+                      node {
+                        id
+                        name
+                        role
+                        manageWorkspace
+                        manageState
+                        manageJob
+                        planJob
+                        approveJob
+                        destroyJob
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -482,7 +507,7 @@ async function listProjectAccess(
     };
   }
 
-  const edges = tempData.data?.project?.edges?.[0]?.node?.projectAccess?.edges ?? [];
+  const edges = tempData.data?.organization?.edges?.[0]?.node?.project?.edges?.[0]?.node?.projectAccess?.edges ?? [];
 
   return {
     isError: false,
@@ -498,6 +523,35 @@ async function listProjectAccess(
       approveJob: edge.node.approveJob ?? false,
       destroyJob: edge.node.destroyJob ?? true,
     })),
+  };
+}
+
+export type ProjectTeams = {
+  teams: ProjectAccessModel[];
+  /** True when the project has teams this caller is not allowed to see, so the list is incomplete. */
+  restricted: boolean;
+};
+
+// The visible teams, and whether some are hidden: the summary counts every access row, the list only the readable ones.
+async function listProjectTeams(organizationId: string, projectId: string): Promise<ApiResponse<ProjectTeams>> {
+  const [access, summary] = await Promise.all([
+    listProjectAccess(organizationId, projectId),
+    getProjectSummary(organizationId, projectId),
+  ]);
+  if (access.isError) {
+    return {
+      isError: true,
+      responseCode: access.responseCode,
+      error: access.error,
+      data: { teams: [], restricted: false },
+    };
+  }
+  const teams = access.data ?? [];
+  const total = summary.isError ? teams.length : (summary.data?.teamCount ?? teams.length);
+  return {
+    isError: false,
+    responseCode: access.responseCode,
+    data: { teams, restricted: teams.length < total },
   };
 }
 
@@ -791,6 +845,173 @@ async function applyProjectDefaultTags(
   return response.data;
 }
 
+export type DeletePreflight = {
+  /** Null when the team list cannot be read by this caller. */
+  teamCount: number | null;
+  attachments: { id: string; policySetId: string }[];
+  exemptions: { id: string; policySetId: string }[];
+  collections: { id: string; name: string; referenceId: string }[];
+  defaultTagCount: number;
+  /** The reads that failed. While any did, an empty list means nothing is known, not that nothing is attached. */
+  failed: ("policy sets" | "variable collections")[];
+};
+
+// Everything that points at the project besides its workspaces, so the dialog can say what the delete removes.
+async function getDeletePreflight(organizationId: string, projectId: string): Promise<DeletePreflight> {
+  const body = {
+    query: `query ($orgId: String!) {
+      organization(ids: [$orgId]) { edges { node { policySet { edges { node {
+        id
+        attachments { edges { node { id project { edges { node { id } } } } } }
+        exemptions { edges { node { id project { edges { node { id } } } } } }
+      } } } } } }
+    }`,
+    variables: { orgId: organizationId },
+  };
+  const [policies, access, collections, tags] = await Promise.all([
+    apiPost<unknown, any>("/graphql/api/v1", body, { dataWrapped: true, contentType: "application/json" }),
+    getProjectSummary(organizationId, projectId),
+    listCollectionsForProject(organizationId, projectId),
+    listProjectDefaultTags(organizationId, projectId).catch(() => []),
+  ]);
+  const attachments: DeletePreflight["attachments"] = [];
+  const exemptions: DeletePreflight["exemptions"] = [];
+  const sets = policies.isError ? [] : (policies.data?.organization?.edges?.[0]?.node?.policySet?.edges ?? []);
+  const onProject = (node: any) => (node?.project?.edges ?? []).some((edge: any) => edge.node?.id === projectId);
+  sets.forEach((set: any) => {
+    (set.node.attachments?.edges ?? []).forEach((edge: any) => {
+      if (onProject(edge.node)) attachments.push({ id: edge.node.id, policySetId: set.node.id });
+    });
+    (set.node.exemptions?.edges ?? []).forEach((edge: any) => {
+      if (onProject(edge.node)) exemptions.push({ id: edge.node.id, policySetId: set.node.id });
+    });
+  });
+  const failed: DeletePreflight["failed"] = [];
+  if (policies.isError) failed.push("policy sets");
+  if (collections.isError) failed.push("variable collections");
+  return {
+    failed,
+    teamCount: access.isError ? null : (access.data?.teamCount ?? null),
+    attachments,
+    exemptions,
+    collections: (collections.data ?? [])
+      .filter((item) => item.referenceId)
+      .map((item) => ({ id: item.id, name: item.name, referenceId: item.referenceId as string })),
+    defaultTagCount: tags.length,
+  };
+}
+
+async function deletePolicyAttachment(policySetId: string, id: string): Promise<void> {
+  await axiosInstance.delete(`policy_set/${policySetId}/attachments/${id}`);
+}
+
+async function deletePolicyExemption(id: string): Promise<void> {
+  await axiosInstance.delete(`policy_exemption/${id}`);
+}
+
+export type WorkspaceVariableData = {
+  projectId?: string;
+  variables: VariableEntry[];
+  globals: VariableEntry[];
+  collections: CollectionEntry[];
+};
+
+const toEntry = (node: any): VariableEntry => ({
+  id: node.id,
+  key: node.key,
+  value: node.value ?? null,
+  category: node.category,
+  sensitive: !!node.sensitive,
+  hcl: !!node.hcl,
+});
+
+// Reading the value of a sensitive variable is denied by the API, and a denied field fails the whole response. So
+// values are only asked for on rows that are not sensitive, and sensitive rows are fetched without their value.
+const PLAIN_FIELDS = "id key value category sensitive hcl";
+const SENSITIVE_FIELDS = "id key category sensitive hcl";
+const split = (name: string) =>
+  `${name}Plain: ${name}(filter: "sensitive==false") { edges { node { ${PLAIN_FIELDS} } } }
+   ${name}Hidden: ${name}(filter: "sensitive==true") { edges { node { ${SENSITIVE_FIELDS} } } }`;
+
+// Everything needed to work out the variables of one workspace, read through the same API (and permissions) as the
+// variable pages themselves.
+async function getWorkspaceVariableData(
+  organizationId: string,
+  workspaceId: string
+): Promise<ApiResponse<WorkspaceVariableData>> {
+  const body = {
+    query: `query ($orgId: String!, $workspaceId: String!) {
+      organization(ids: [$orgId]) { edges { node {
+        ${split("globalvar")}
+        collection { edges { node {
+          id name priority
+          ${split("item")}
+          reference { edges { node { scope workspace { edges { node { id } } } project { edges { node { id } } } } } }
+        } } }
+        workspace(ids: [$workspaceId]) { edges { node {
+          project { edges { node { id } } }
+          ${split("variable")}
+        } } }
+      } } }
+    }`,
+    variables: { orgId: organizationId, workspaceId },
+  };
+  const result = await apiPost<unknown, any>("/graphql/api/v1", body, {
+    dataWrapped: true,
+    contentType: "application/json",
+  });
+  if (result.isError) {
+    return {
+      isError: true,
+      responseCode: result.responseCode,
+      error: result.error,
+      data: { variables: [], globals: [], collections: [] },
+    };
+  }
+  const org = result.data?.organization?.edges?.[0]?.node ?? {};
+  const workspace = org.workspace?.edges?.[0]?.node;
+  const projectId: string | undefined = workspace?.project?.edges?.[0]?.node?.id;
+  const nodes = (connection: any) => (connection?.edges ?? []).map((edge: any) => edge.node);
+  const merged = (parent: any, name: string): VariableEntry[] =>
+    [...nodes(parent?.[`${name}Plain`]), ...nodes(parent?.[`${name}Hidden`])].map(toEntry);
+
+  const collections: CollectionEntry[] = [];
+  nodes(org.collection).forEach((collection: any) => {
+    // A collection can be attached more than once; the narrowest attachment that applies to this workspace wins.
+    const scopes = nodes(collection.reference)
+      .map((reference: any) => {
+        const scope = reference.scope ?? "WORKSPACE";
+        if (scope === "WORKSPACE")
+          return nodes(reference.workspace).some((node: any) => node.id === workspaceId) ? scope : null;
+        if (scope === "PROJECT")
+          return projectId && nodes(reference.project).some((node: any) => node.id === projectId) ? scope : null;
+        return scope;
+      })
+      .filter(Boolean) as CollectionEntry["scope"][];
+    if (scopes.length === 0) return;
+    const order = ["WORKSPACE", "PROJECT", "ORGANIZATION"];
+    scopes.sort((a, b) => order.indexOf(a) - order.indexOf(b));
+    collections.push({
+      id: collection.id,
+      name: collection.name,
+      priority: collection.priority ?? 0,
+      scope: scopes[0],
+      items: merged(collection, "item"),
+    });
+  });
+
+  return {
+    isError: false,
+    responseCode: result.responseCode,
+    data: {
+      projectId,
+      variables: merged(workspace, "variable"),
+      globals: merged(org, "globalvar"),
+      collections,
+    },
+  };
+}
+
 const methods = {
   listProjects,
   listProjectSummaries,
@@ -798,6 +1019,11 @@ const methods = {
   getUnassignedSummary,
   getCurrentGroups,
   getProjectSummary,
+  listProjectTeams,
+  getWorkspaceVariableData,
+  getDeletePreflight,
+  deletePolicyAttachment,
+  deletePolicyExemption,
   applyProjectDefaultTags,
   listAttentionWorkspaces,
   listRecentWorkspaces,

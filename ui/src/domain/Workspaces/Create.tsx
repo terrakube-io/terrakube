@@ -78,6 +78,8 @@ type CreateWorkspaceForm = {
 export const CreateWorkspace = () => {
   const [organizationName, setOrganizationName] = useState<string | null>();
   const [executionMode, setExecutionMode] = useState<string | null>();
+  const [projectDefaultMode, setProjectDefaultMode] = useState<string>();
+  const [projectDefaultVersion, setProjectDefaultVersion] = useState<string>();
   const [terraformVersions, setTerraformVersions] = useState<string[]>([]);
   const [vcs, setVCS] = useState<VcsModel[]>([]);
   const [sshKeys, setSSHKeys] = useState<SshKey[]>([]);
@@ -254,6 +256,7 @@ export const CreateWorkspace = () => {
         setLoading(false);
       });
   }, [organizationId, orgid]);
+
   const handleClick = () => {
     setCurrent(2);
     setVersionControlFlow(true);
@@ -371,6 +374,27 @@ export const CreateWorkspace = () => {
   };
 
   const [form] = Form.useForm();
+
+  // A project can set the Terraform version and execution mode its workspaces start with. The API applies the mode
+  // when none is sent, but the CLI driven flow always sends one, so the project's own default is used instead of
+  // that fixed value when the project has one. The version is always sent, so it is prefilled.
+  const selectedProject = Form.useWatch("project", form);
+  useEffect(() => {
+    setProjectDefaultVersion(undefined);
+    setProjectDefaultMode(undefined);
+    if (!organizationId || !selectedProject || selectedProject === "none") return;
+    let cancelled = false;
+    projectService.getProject(organizationId, selectedProject).then((response) => {
+      if (!cancelled && !response.isError) setProjectDefaultMode(response.data?.defaultExecutionMode ?? undefined);
+      const version = response.isError ? undefined : response.data?.defaultTerraformVersion;
+      if (cancelled || !version || !terraformVersions.includes(version)) return;
+      form.setFieldsValue({ terraformVersion: version });
+      setProjectDefaultVersion(version);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedProject, organizationId, terraformVersions]);
   const handleGitContinueClick = () => {
     setCurrent(4);
     setStep4Hidden(false);
@@ -444,7 +468,7 @@ export const CreateWorkspace = () => {
               branch: values.branch,
               iacType: iacType.id,
               defaultTemplate: values.defaultTemplate,
-              executionMode: executionMode,
+              executionMode: executionMode ? (projectDefaultMode ?? executionMode) : executionMode,
             },
             relationships: {},
           },
@@ -932,7 +956,11 @@ export const CreateWorkspace = () => {
           <Form.Item
             name="project"
             label="Project"
-            extra="Optional. Assigning a project lets you group and filter workspaces."
+            extra={
+              projectDefaultVersion
+                ? `Terraform version ${projectDefaultVersion} was defaulted from this project.`
+                : "Optional. Assigning a project lets you group and filter workspaces."
+            }
           >
             <Select placeholder="(No project)" className="ws-create-field">
               {!preselectedProjectId && <Option key="none">(No project)</Option>}

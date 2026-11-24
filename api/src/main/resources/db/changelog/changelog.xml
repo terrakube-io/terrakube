@@ -156,4 +156,5 @@
     <include file="/db/changelog/local/changelog-2.35.0-collection-scope.xml"/>
     <include file="/db/changelog/local/changelog-2.35.0-project-tag.xml"/>
     <include file="/db/changelog/local/changelog-2.35.0-landing-tab.xml"/>
+    <include file="/db/changelog/local/changelog-2.35.0-project-defaults.xml"/>
 </databaseChangeLog>

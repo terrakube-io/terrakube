@@ -1,5 +1,5 @@
 import { DeleteOutlined } from "@ant-design/icons";
-import { Alert, Button, Flex, Form, Input, Popconfirm, Select, Space, Spin, Typography, message } from "antd";
+import { Alert, Button, Flex, Form, Input, Select, Space, Spin, Typography, message } from "antd";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import PageWrapper from "@/components/layout/PageWrapper/PageWrapper";
@@ -8,6 +8,8 @@ import { useProjectPermissions } from "@/modules/permissions/useProjectPermissio
 import ProjectWorkspaces from "./ProjectWorkspaces";
 import ProjectAccessTab from "./ProjectAccessTab";
 import ProjectDefaultTags from "./ProjectDefaultTags";
+import ProjectDeleteDialog from "./ProjectDeleteDialog";
+import ProjectEffectiveVariables from "./ProjectEffectiveVariables";
 import ProjectOverview from "./ProjectOverview";
 import ProjectPoliciesTab from "./ProjectPoliciesTab";
 import ProjectVariablesTab from "./ProjectVariablesTab";
@@ -30,6 +32,8 @@ type ProjectForm = {
   name: string;
   description?: string;
   landingTab?: string;
+  defaultTerraformVersion?: string;
+  defaultExecutionMode?: string;
 };
 
 type GeneralProps = {
@@ -40,6 +44,7 @@ type GeneralProps = {
   manageWorkspace: boolean;
   canUpdateProject: boolean;
   canManageCollection: boolean;
+  canManagePolicies: boolean;
   onSaved: () => void;
 };
 
@@ -51,11 +56,13 @@ function ProjectGeneralSettings({
   manageWorkspace,
   canUpdateProject,
   canManageCollection,
+  canManagePolicies,
   onSaved,
 }: GeneralProps) {
   const [waiting, setWaiting] = useState(false);
   const [form] = Form.useForm<ProjectForm>();
   const navigate = useNavigate();
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   useEffect(() => {
     if (project) {
@@ -63,6 +70,8 @@ function ProjectGeneralSettings({
         name: project.name,
         description: project.description,
         landingTab: project.landingTab ?? "default",
+        defaultTerraformVersion: project.defaultTerraformVersion,
+        defaultExecutionMode: project.defaultExecutionMode ?? "default",
       });
     }
   }, [project, form]);
@@ -73,6 +82,11 @@ function ProjectGeneralSettings({
       await projectService.updateProject(orgid, projectId, {
         ...values,
         landingTab: !values.landingTab || values.landingTab === "default" ? null : values.landingTab,
+        defaultTerraformVersion: values.defaultTerraformVersion?.trim() || null,
+        defaultExecutionMode:
+          !values.defaultExecutionMode || values.defaultExecutionMode === "default"
+            ? null
+            : values.defaultExecutionMode,
       });
       message.success("Project updated successfully");
       onSaved();
@@ -84,27 +98,6 @@ function ProjectGeneralSettings({
       }
     } finally {
       setWaiting(false);
-    }
-  };
-
-  const onDelete = async () => {
-    try {
-      await projectService.deleteProject(orgid, projectId);
-      message.success("Project deleted successfully");
-      navigate(`/organizations/${orgid}/projects`);
-    } catch (err: any) {
-      const statusCode = err?.response?.status;
-      if (statusCode === 403) {
-        message.error(<PermissionErrorMessage action="delete projects" permission="Manage Workspaces" />);
-      } else if (statusCode === 409 || statusCode === 423) {
-        message.error(
-          err?.response?.data?.errors?.[0]?.detail ??
-            err?.response?.data?.errors?.[0] ??
-            "Cannot delete project: workspaces are still associated with this project."
-        );
-      } else {
-        message.error(err?.message ?? "Project deletion failed");
-      }
     }
   };
 
@@ -132,6 +125,39 @@ function ProjectGeneralSettings({
               ]}
             />
           </Form.Item>
+          <Typography.Title level={5}>Defaults for new workspaces</Typography.Title>
+          <Typography.Paragraph type="secondary">
+            Copied onto a workspace when it is created in this project. Existing workspaces are not changed.
+          </Typography.Paragraph>
+          <Form.Item
+            name="defaultTerraformVersion"
+            label="Terraform version"
+            extra={
+              project?.defaultTerraformVersion
+                ? "Defaulted from project"
+                : "Not set: the create form suggests the latest"
+            }
+          >
+            <Input disabled={!canUpdateProject} placeholder="For example 1.9.8" maxLength={32} />
+          </Form.Item>
+          <Form.Item
+            name="defaultExecutionMode"
+            label="Execution mode"
+            extra={
+              project?.defaultExecutionMode
+                ? "Defaulted from project"
+                : `Defaulted from organisation${project?.organizationExecutionMode ? ` (${project.organizationExecutionMode})` : ""}`
+            }
+          >
+            <Select
+              disabled={!canUpdateProject}
+              options={[
+                { value: "default", label: "Organization default" },
+                { value: "remote", label: "Remote" },
+                { value: "local", label: "Local" },
+              ]}
+            />
+          </Form.Item>
           <Form.Item>
             <Flex justify="flex-end">
               <Button type="primary" htmlType="submit" disabled={!canUpdateProject}>
@@ -144,6 +170,8 @@ function ProjectGeneralSettings({
 
       <ProjectVariablesTab orgid={orgid} projectId={projectId} canManage={canManageCollection} />
 
+      <ProjectEffectiveVariables orgid={orgid} projectId={projectId} />
+
       <ProjectDefaultTags orgid={orgid} projectId={projectId} canManage={canUpdateProject} />
 
       <div className="project-delete-section">
@@ -155,44 +183,30 @@ function ProjectGeneralSettings({
           <Typography.Text type="secondary">
             <Typography.Text strong>Warning!</Typography.Text> This action cannot be undone.
           </Typography.Text>
-          {assignedWorkspacesCount > 0 && (
-            <div className="project-delete-workspaces-warning">
-              <Typography.Text type="warning">
-                This project has {assignedWorkspacesCount} workspace{assignedWorkspacesCount > 1 ? "s" : ""} assigned.
-                Please remove all workspaces before deleting this project.
-              </Typography.Text>
-            </div>
-          )}
         </div>
-        <Popconfirm
-          okButtonProps={{ danger: true }}
-          title={
-            <p>
-              Project will be permanently deleted
-              <br />
-              from this organization.
-              <br />
-              Are you sure?
-            </p>
-          }
-          onConfirm={onDelete}
-          okText="Yes"
-          cancelText="No"
-          placement="bottom"
-          disabled={assignedWorkspacesCount > 0 || !manageWorkspace}
+        <Button
+          type="primary"
+          danger
+          className="project-delete-button"
+          disabled={!manageWorkspace}
+          onClick={() => setDeleteOpen(true)}
         >
-          <Button
-            type="primary"
-            danger
-            className="project-delete-button"
-            disabled={assignedWorkspacesCount > 0 || !manageWorkspace}
-          >
-            <Space>
-              <DeleteOutlined />
-              Delete Project
-            </Space>
-          </Button>
-        </Popconfirm>
+          <Space>
+            <DeleteOutlined />
+            Delete Project
+          </Space>
+        </Button>
+        <ProjectDeleteDialog
+          orgid={orgid}
+          projectId={projectId}
+          projectName={project?.name ?? ""}
+          workspaceCount={assignedWorkspacesCount}
+          canManagePolicies={canManagePolicies}
+          canManageCollection={canManageCollection}
+          open={deleteOpen}
+          onClose={() => setDeleteOpen(false)}
+          onDeleted={() => navigate(`/organizations/${orgid}/projects`)}
+        />
       </div>
     </div>
   );
@@ -280,6 +294,7 @@ export default function ProjectDetailPage({ organizationName, setOrganizationNam
             manageWorkspace={permissions.manageWorkspace}
             canUpdateProject={canManageProject}
             canManageCollection={permissions.manageCollection}
+            canManagePolicies={permissions.managePolicies}
             onSaved={execute}
           />
         );

@@ -7,6 +7,7 @@ import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.agent.Agent;
 import io.terrakube.api.rs.collection.Reference;
 import io.terrakube.api.rs.hooks.workspace.WorkspaceManageHook;
+import io.terrakube.api.rs.hooks.workspace.WorkspaceProjectDefaultsHook;
 import io.terrakube.api.rs.hooks.workspace.WorkspaceProjectTagHook;
 import io.terrakube.api.rs.hooks.workspace.WorkspaceUnlockHook;
 import io.terrakube.api.rs.job.Job;
@@ -40,6 +41,7 @@ import java.util.UUID;
 @CreatePermission(expression = "team manage workspace OR team project limited create workspace")
 @UpdatePermission(expression = "team manage workspace OR team project limited manage workspace OR team limited manage workspace")
 @DeletePermission(expression = "team manage workspace")
+@LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.CREATE, phase = LifeCycleHookBinding.TransactionPhase.PREFLUSH, hook = WorkspaceProjectDefaultsHook.class)
 @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.CREATE, phase = LifeCycleHookBinding.TransactionPhase.PRECOMMIT, hook = WorkspaceManageHook.class)
 @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.CREATE, phase = LifeCycleHookBinding.TransactionPhase.POSTCOMMIT, hook = WorkspaceProjectTagHook.class)
 // Elide silently truncates un-paged collections to 500 rows, and clients cannot opt into page[...] because the

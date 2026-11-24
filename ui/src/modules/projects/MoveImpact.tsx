@@ -26,7 +26,7 @@ type Loaded = { impact: MoveImpactResult; known: Known; tagNames: Record<string,
 async function loadFacts(orgid: string, projectId: string): Promise<{ facts: ProjectFacts; known: Known }> {
   let tagsKnown = true;
   const [access, policies, collections, tags] = await Promise.all([
-    projectService.listProjectAccess(orgid, projectId),
+    projectService.listProjectTeams(orgid, projectId),
     projectService.listProjectPolicySets(orgid, projectId),
     projectService.listCollectionsForProject(orgid, projectId),
     projectService.listProjectDefaultTags(orgid, projectId).catch(() => {
@@ -35,9 +35,14 @@ async function loadFacts(orgid: string, projectId: string): Promise<{ facts: Pro
     }),
   ]);
   return {
-    known: { teams: !access.isError, policies: !policies.isError, collections: !collections.isError, tags: tagsKnown },
+    known: {
+      teams: !access.isError && !access.data?.restricted,
+      policies: !policies.isError,
+      collections: !collections.isError,
+      tags: tagsKnown,
+    },
     facts: {
-      teams: access.isError ? [] : (access.data ?? []).map((item) => item.name),
+      teams: access.isError ? [] : (access.data?.teams ?? []).map((item) => item.name),
       policySets: policies.isError
         ? []
         : (policies.data ?? [])
@@ -104,9 +109,13 @@ export default function MoveImpact({ orgid, sourceProjectId, targetProjectId, ta
   } else if (impact.teamsGaining.length + impact.teamsLosing.length > 0) {
     const parts = [];
     if (impact.teamsGaining.length)
-      parts.push(`${plural(impact.teamsGaining.length, "team")} gain access (${impact.teamsGaining.join(", ")})`);
+      parts.push(
+        `${plural(impact.teamsGaining.length, "team")} ${impact.teamsGaining.length === 1 ? "gains" : "gain"} access (${impact.teamsGaining.join(", ")})`
+      );
     if (impact.teamsLosing.length)
-      parts.push(`${plural(impact.teamsLosing.length, "team")} lose access (${impact.teamsLosing.join(", ")})`);
+      parts.push(
+        `${plural(impact.teamsLosing.length, "team")} ${impact.teamsLosing.length === 1 ? "loses" : "lose"} access (${impact.teamsLosing.join(", ")})`
+      );
     rows.push({ label: "Access", text: parts.join(", ") });
   }
   if (!known.policies) {

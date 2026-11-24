@@ -27,6 +27,15 @@ public class ProjectTests extends ServerApplicationTests {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    @Autowired
+    private io.terrakube.api.repository.PolicySetRepository policySetRepository;
+
+    @Autowired
+    private io.terrakube.api.repository.PolicyAttachmentRepository policyAttachmentRepository;
+
+    @Autowired
+    private io.terrakube.api.repository.PolicyExemptionRepository policyExemptionRepository;
+
     @BeforeEach
     public void setup() {
         MockitoAnnotations.openMocks(this);
@@ -183,6 +192,64 @@ public class ProjectTests extends ServerApplicationTests {
         } finally {
             jdbcTemplate.update("delete from workspace where name = ?", workspaceName);
             jdbcTemplate.update("delete from project where id = ?", projectId);
+        }
+    }
+
+    @Test
+    void projectWithAPolicyAttachmentCannotBeDeletedAndTheMessageSaysWhy() {
+        String projectId = createProject("delete-guard-policy", HttpStatus.CREATED.value());
+        io.terrakube.api.rs.policy.PolicySet policySet = new io.terrakube.api.rs.policy.PolicySet();
+        policySet.setName("guard-" + UUID.randomUUID());
+        policySet.setOrganization(organizationRepository.findById(UUID.fromString(ORG)).orElseThrow());
+        policySet = policySetRepository.save(policySet);
+        io.terrakube.api.rs.policy.PolicyAttachment attachment = new io.terrakube.api.rs.policy.PolicyAttachment();
+        attachment.setPolicySet(policySet);
+        attachment.setProject(projectRepository.findById(UUID.fromString(projectId)).orElseThrow());
+        attachment = policyAttachmentRepository.save(attachment);
+        try {
+            given()
+                    .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+                    .when()
+                    .delete("/api/v1/organization/" + ORG + "/project/" + projectId)
+                    .then()
+                    .statusCode(HttpStatus.CONFLICT.value())
+                    .body(org.hamcrest.Matchers.containsString("1 policy attachment"));
+        } finally {
+            jdbcTemplate.update("delete from policy_attachment where id = ?", attachment.getId().toString());
+            jdbcTemplate.update("delete from policy_set where id = ?", policySet.getId().toString());
+            deleteProject(projectId);
+        }
+    }
+
+    @Test
+    void projectWithOnlyAPolicyExemptionCannotBeDeletedAndTheMessageNamesJustThat() {
+        String projectId = createProject("delete-guard-exemption", HttpStatus.CREATED.value());
+        io.terrakube.api.rs.Organization organization = organizationRepository.findById(UUID.fromString(ORG)).orElseThrow();
+        io.terrakube.api.rs.policy.PolicySet policySet = new io.terrakube.api.rs.policy.PolicySet();
+        policySet.setName("guard-ex-" + UUID.randomUUID());
+        policySet.setOrganization(organization);
+        policySet = policySetRepository.save(policySet);
+        io.terrakube.api.rs.policy.PolicyExemption exemption = new io.terrakube.api.rs.policy.PolicyExemption();
+        exemption.setPolicySet(policySet);
+        exemption.setOrganization(organization);
+        exemption.setRuleId("rule-1");
+        exemption.setTicketReference("TICKET-1");
+        exemption.setJustification("test");
+        exemption.setProject(projectRepository.findById(UUID.fromString(projectId)).orElseThrow());
+        exemption = policyExemptionRepository.save(exemption);
+        try {
+            given()
+                    .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"))
+                    .when()
+                    .delete("/api/v1/organization/" + ORG + "/project/" + projectId)
+                    .then()
+                    .statusCode(HttpStatus.CONFLICT.value())
+                    .body(org.hamcrest.Matchers.containsString("1 policy exemption"))
+                    .body(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("0 policy")));
+        } finally {
+            jdbcTemplate.update("delete from policy_exemption where id = ?", exemption.getId().toString());
+            jdbcTemplate.update("delete from policy_set where id = ?", policySet.getId().toString());
+            deleteProject(projectId);
         }
     }
 
