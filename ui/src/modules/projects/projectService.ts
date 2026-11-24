@@ -423,13 +423,13 @@ async function listCollectionsForProject(
         edges { node { collection {
           edges { node {
             id name description priority
-            item { edges { node { id } } }
+            item(first: "1", after: "0") { pageInfo { totalRecords } }
             reference(filter: $filter) { edges { node { id } } }
           } }
         } } }
       }
     }`,
-    variables: { orgId: organizationId, filter: `scope=='PROJECT';project.id=='${projectId}'` },
+    variables: { orgId: organizationId, filter: `scope=='PROJECT';project.id==${quoteRsql(projectId)}` },
   };
   const result = await apiPost<unknown, any>("/graphql/api/v1", body, {
     dataWrapped: true,
@@ -447,7 +447,7 @@ async function listCollectionsForProject(
       name: edge.node.name,
       description: edge.node.description ?? undefined,
       priority: edge.node.priority ?? 0,
-      variableCount: edge.node.item?.edges?.length ?? 0,
+      variableCount: edge.node.item?.pageInfo?.totalRecords ?? 0,
       referenceId: edge.node.reference?.edges?.[0]?.node?.id,
     })),
   };

@@ -43,6 +43,26 @@ describe("ProjectVariablesTab", () => {
     await waitFor(() => expect(projectService.attachCollectionToProject).toHaveBeenCalledWith("org", "p1", "c2"));
   });
 
+  it("sends one attach however many times the button is pressed", async () => {
+    let finish: () => void = () => undefined;
+    (projectService.attachCollectionToProject as jest.Mock).mockReturnValue(
+      new Promise<void>((resolve) => {
+        finish = resolve;
+      })
+    );
+    render(<ProjectVariablesTab orgid="org" projectId="p1" canManage />);
+    await screen.findByText("Shared tags");
+
+    fireEvent.mouseDown(screen.getByRole("combobox", { name: "Collection to attach" }));
+    fireEvent.click(await screen.findByText("Unattached"));
+    const attach = screen.getByRole("button", { name: "Attach" });
+    fireEvent.click(attach);
+    fireEvent.click(attach);
+    finish();
+
+    await waitFor(() => expect(projectService.attachCollectionToProject).toHaveBeenCalledTimes(1));
+  });
+
   it("hides the attach and detach controls without permission", async () => {
     render(<ProjectVariablesTab orgid="org" projectId="p1" canManage={false} />);
     await screen.findByText("Shared tags");

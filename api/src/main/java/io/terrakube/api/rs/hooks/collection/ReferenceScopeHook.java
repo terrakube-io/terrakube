@@ -17,7 +17,8 @@ import lombok.AllArgsConstructor;
 
 /**
  * A reference must name exactly the target its scope implies: a workspace, a project, or neither for the whole
- * organization. A project must belong to the collection's organization. Rejected as 400 before anything is saved.
+ * organization. A project must belong to the collection's organization. Rejected as 400 before anything is written:
+ * the hook runs before the flush, on create and on update, so no later change can break the rule either.
  * Attaching the same collection to the same project, or to the organization, twice is refused as 409: the second
  * attachment would add nothing, and detaching once would leave the collection applied. This is checked here and not
  * with a unique index because the columns are nullable and SQL Server counts NULLs as equal in a unique index.
@@ -75,7 +76,12 @@ public class ReferenceScopeHook implements LifeCycleHook<Reference> {
     }
 
     private static HttpStatusException already(String target) {
-        return new HttpStatusException(409, "The collection is already attached to this " + target) {
-        };
+        return new AlreadyAttachedException("The collection is already attached to this " + target);
+    }
+
+    private static final class AlreadyAttachedException extends HttpStatusException {
+        AlreadyAttachedException(String message) {
+            super(409, message);
+        }
     }
 }

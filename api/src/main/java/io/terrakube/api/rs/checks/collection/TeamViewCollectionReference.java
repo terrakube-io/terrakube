@@ -76,6 +76,15 @@ public class TeamViewCollectionReference extends OperationCheck<Reference> {
                 return false;
             }
         }
+        if (reference.getCollection() != null && reference.getProject() != null) {
+            if (reference.getCollection().getOrganization() == null
+                    || reference.getProject().getOrganization() == null
+                    || reference.getCollection().getOrganization().getId() == null
+                    || !reference.getCollection().getOrganization().getId()
+                            .equals(reference.getProject().getOrganization().getId())) {
+                return false;
+            }
+        }
         return true;
     }
 }

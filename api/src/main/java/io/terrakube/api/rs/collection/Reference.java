@@ -22,7 +22,8 @@ import java.util.UUID;
 @CreatePermission(expression = "team manage collection reference")
 @UpdatePermission(expression = "team manage collection reference")
 @DeletePermission(expression = "team manage collection reference")
-@LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.CREATE, phase = LifeCycleHookBinding.TransactionPhase.PRECOMMIT, hook = ReferenceScopeHook.class)
+@LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.CREATE, phase = LifeCycleHookBinding.TransactionPhase.PREFLUSH, hook = ReferenceScopeHook.class)
+@LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.PREFLUSH, hook = ReferenceScopeHook.class)
 @Getter
 @Setter
 @Entity(name = "reference")

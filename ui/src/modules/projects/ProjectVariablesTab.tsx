@@ -1,5 +1,5 @@
 import { Alert, Button, Flex, Popconfirm, Select, Table, Typography, message } from "antd";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
 import projectService, { ProjectCollection } from "./projectService";
 
@@ -18,10 +18,15 @@ export default function ProjectVariablesTab({ orgid, projectId, canManage }: Pro
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
   const [toAttach, setToAttach] = useState<string>();
+  const [attaching, setAttaching] = useState(false);
+  // Only the newest request may fill the page, and nothing may after the tab is left.
+  const latest = useRef(0);
 
   const load = useCallback(async () => {
+    const current = ++latest.current;
     setLoading(true);
     const response = await projectService.listCollectionsForProject(orgid, projectId);
+    if (current !== latest.current) return;
     if (response.isError) setError(response.error?.message ?? "Failed to load variable collections");
     else {
       setError(undefined);
@@ -32,13 +37,17 @@ export default function ProjectVariablesTab({ orgid, projectId, canManage }: Pro
 
   useEffect(() => {
     load();
+    return () => {
+      latest.current += 1;
+    };
   }, [load]);
 
   const attached = collections.filter((collection) => collection.referenceId);
   const available = collections.filter((collection) => !collection.referenceId);
 
   const attach = async () => {
-    if (!toAttach) return;
+    if (!toAttach || attaching) return;
+    setAttaching(true);
     try {
       await projectService.attachCollectionToProject(orgid, projectId, toAttach);
       message.success("Collection attached to the project");
@@ -48,6 +57,8 @@ export default function ProjectVariablesTab({ orgid, projectId, canManage }: Pro
       message.error(
         err?.response?.status === 403 ? "You need Manage Collections to attach a collection" : err?.message
       );
+    } finally {
+      setAttaching(false);
     }
   };
 
@@ -82,7 +93,7 @@ export default function ProjectVariablesTab({ orgid, projectId, canManage }: Pro
             onChange={setToAttach}
             options={available.map((collection) => ({ value: collection.id, label: collection.name }))}
           />
-          <Button type="primary" disabled={!toAttach} onClick={attach}>
+          <Button type="primary" disabled={!toAttach} loading={attaching} onClick={attach}>
             Attach
           </Button>
         </Flex>
@@ -92,7 +103,11 @@ export default function ProjectVariablesTab({ orgid, projectId, canManage }: Pro
         loading={loading}
         dataSource={attached}
         pagination={false}
-        locale={{ emptyText: "No variable collections are attached to this project." }}
+        locale={{
+          emptyText: canManage
+            ? "No variable collections are attached to this project."
+            : "No variable collections are shown. Collections you are not allowed to read are not listed.",
+        }}
         columns={[
           { title: "Collection", dataIndex: "name", key: "name" },
           { title: "Variables", dataIndex: "variableCount", key: "variableCount", width: 110 },

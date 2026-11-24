@@ -63,6 +63,16 @@ public class TeamManageCollectionReference extends OperationCheck<Reference> {
                 return false;
             }
         }
+        if (reference.getProject() != null) {
+            if (reference.getCollection().getOrganization() == null
+                    || reference.getProject().getOrganization() == null
+                    || reference.getCollection().getOrganization().getId() == null
+                    || !reference.getCollection().getOrganization().getId()
+                            .equals(reference.getProject().getOrganization().getId())) {
+                log.warn("Rejecting collection reference: collection and project belong to different organizations");
+                return false;
+            }
+        }
         return true;
     }
 }

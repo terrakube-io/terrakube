@@ -126,6 +126,48 @@ class ReferenceScopeTests extends ServerApplicationTests {
     }
 
     @Test
+    void aProjectOfAnotherOrganizationCannotBeAttached() {
+        Organization other = organizationRepository.findById(UUID.fromString("3a130a1c-d96f-4f99-83b8-58d472567e3a")).orElseThrow();
+        Project foreign = new Project();
+        foreign.setName("foreign-" + UUID.randomUUID());
+        foreign.setOrganization(other);
+        foreign = projectRepository.save(foreign);
+        try {
+            createReference("PROJECT", foreign.getId().toString(), "TERRAKUBE_DEVELOPERS", HttpStatus.FORBIDDEN.value());
+            assertThat(referenceRepository.findByProjectWithCollectionItems(foreign, ReferenceScope.PROJECT)).isEmpty();
+        } finally {
+            jdbcTemplate.update("delete from reference where project_id = ?", foreign.getId().toString());
+            jdbcTemplate.update("delete from project where id = ?", foreign.getId().toString());
+        }
+    }
+
+    @Test
+    void aCallerWithoutAnOrganizationTeamCannotAttachACollection() {
+        createReference("PROJECT", project.getId().toString(), "SCOPE_NOT_A_MEMBER", HttpStatus.FORBIDDEN.value());
+
+        assertThat(referenceRepository.findByProjectWithCollectionItems(project, ReferenceScope.PROJECT)).isEmpty();
+    }
+
+    // Only a superuser may change the scope, and even then the target the scope needs must be there.
+    @Test
+    void anExistingReferenceCannotBeChangedIntoAScopeItDoesNotFit() {
+        createReference("ORGANIZATION", null, HttpStatus.CREATED.value());
+        Reference created = referenceRepository.findByOrganizationWithCollectionItems(organization, ReferenceScope.ORGANIZATION)
+                .stream().filter(r -> r.getCollection().getId().equals(collection.getId())).findFirst().orElseThrow();
+
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_ADMIN"),
+                        "Content-Type", "application/vnd.api+json")
+                .body("{\"data\":{\"type\":\"reference\",\"id\":\"" + created.getId()
+                        + "\",\"attributes\":{\"scope\":\"PROJECT\"}}}")
+                .when()
+                .patch("/api/v1/organization/" + ORG + "/collection/" + collection.getId() + "/reference/" + created.getId())
+                .then()
+                .log().ifValidationFails()
+                .statusCode(HttpStatus.BAD_REQUEST.value());
+    }
+
+    @Test
     void theProjectVariablesTabQueryFindsTheReferenceThatAttachesACollectionToTheProject() {
         createReference("PROJECT", project.getId().toString(), HttpStatus.CREATED.value());
         String filter = "scope=='PROJECT';project.id=='" + project.getId() + "'";
@@ -146,10 +188,14 @@ class ReferenceScopeTests extends ServerApplicationTests {
     }
 
     private void createReference(String scope, String projectId, int expectedStatus) {
+        createReference(scope, projectId, "TERRAKUBE_DEVELOPERS", expectedStatus);
+    }
+
+    private void createReference(String scope, String projectId, String team, int expectedStatus) {
         String relationships = projectId == null ? ""
                 : ",\"project\":{\"data\":{\"type\":\"project\",\"id\":\"" + projectId + "\"}}";
         given()
-                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"),
+                .headers("Authorization", "Bearer " + generatePAT(team),
                         "Content-Type", "application/vnd.api+json")
                 .body("{\"data\":{\"type\":\"reference\",\"attributes\":{\"description\":\"scope test\",\"scope\":\"" + scope
                         + "\"},\"relationships\":{\"collection\":{\"data\":{\"type\":\"collection\",\"id\":\""

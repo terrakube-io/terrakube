@@ -18,7 +18,9 @@
         <createIndex tableName="reference" indexName="idx_reference_project">
             <column name="project_id"/>
         </createIndex>
-        <createIndex tableName="reference" indexName="idx_reference_scope">
+        <!-- Scope alone has three values and selects nothing; the lookups are "is this collection already attached at this scope". -->
+        <createIndex tableName="reference" indexName="idx_reference_collection_scope">
+            <column name="collection_id"/>
             <column name="scope"/>
         </createIndex>
     </changeSet>
