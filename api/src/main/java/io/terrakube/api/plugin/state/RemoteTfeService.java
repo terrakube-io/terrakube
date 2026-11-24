@@ -1285,6 +1285,11 @@ public class RemoteTfeService {
                 if (!versionRequested && projectVersion != null) {
                     newWorkspace.setTerraformVersion(projectVersion);
                 }
+                String projectTemplate = ProjectWorkspaceDefaults.template(project);
+                if (projectTemplate != null && (newWorkspace.getDefaultTemplate() == null
+                        || newWorkspace.getDefaultTemplate().isBlank())) {
+                    newWorkspace.setDefaultTemplate(projectTemplate);
+                }
             }
             // go-tfe sends list-style tags as "tags" and key/value tags as "tag-bindings"
             io.terrakube.api.plugin.state.model.workspace.Relationships relationships = workspaceData.getData().getRelationships();

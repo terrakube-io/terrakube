@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.terrakube.api.plugin.context.ContextUnavailableException;
 import io.terrakube.api.plugin.context.ContextWriteService;
 import io.terrakube.api.plugin.context.InvalidContextPatchException;
+import io.terrakube.api.plugin.context.PlanSummaryRecorder;
 import io.terrakube.api.plugin.policy.PolicyEvaluationService;
 import io.terrakube.api.plugin.storage.StorageTypeService;
 import io.terrakube.api.repository.JobRepository;
@@ -37,6 +38,7 @@ public class SpoolRecoveryService {
     private final ContextWriteService contextWriteService;
     private final PolicyEvaluationService policyEvaluationService;
     private final SpoolRecoveryMetrics metrics;
+    private final PlanSummaryRecorder planSummaryRecorder;
 
     @Autowired
     public SpoolRecoveryService(
@@ -47,7 +49,8 @@ public class SpoolRecoveryService {
             SpoolRecoveryProperties properties,
             ContextWriteService contextWriteService,
             PolicyEvaluationService policyEvaluationService,
-            SpoolRecoveryMetrics metrics) {
+            SpoolRecoveryMetrics metrics,
+            PlanSummaryRecorder planSummaryRecorder) {
         this.stepRepository = Objects.requireNonNull(stepRepository);
         this.jobRepository = Objects.requireNonNull(jobRepository);
         this.storageTypeService = Objects.requireNonNull(storageTypeService);
@@ -56,6 +59,7 @@ public class SpoolRecoveryService {
         this.contextWriteService = Objects.requireNonNull(contextWriteService);
         this.policyEvaluationService = Objects.requireNonNull(policyEvaluationService);
         this.metrics = Objects.requireNonNull(metrics);
+        this.planSummaryRecorder = Objects.requireNonNull(planSummaryRecorder);
     }
 
     public int recoverPendingSpooledSteps() {
@@ -257,6 +261,15 @@ public class SpoolRecoveryService {
             ContextWriteService.PatchResult result = contextWriteService.patchRecovery(jobId, deliveryRevision, patch);
             if (result.context() != null) {
                 policyEvaluationService.processPolicyEvaluationContext(jobId, result.context());
+            }
+            // The same as when the executor's write arrives directly: a plan stored by a recovered patch is counted too.
+            if (result.applied().stream().anyMatch(key -> key.startsWith(PlanSummaryRecorder.PLAN_KEY))) {
+                try {
+                    planSummaryRecorder.recordFromPatch(jobId, objectMapper.valueToTree(Map.of("revision", deliveryRevision, "set", patch)));
+                } catch (RuntimeException e) {
+                    // A summary is a convenience for the run list and must never fail the recovery.
+                    log.warn("Could not record the plan summary of job {}: {}", jobId, e.getMessage());
+                }
             }
             return true;
         } catch (ContextUnavailableException e) {

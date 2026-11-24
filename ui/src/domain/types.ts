@@ -575,6 +575,7 @@ export type ProjectModel = {
   // Defaults for new workspaces, and the organization default the execution mode falls back to.
   defaultTerraformVersion?: string;
   defaultExecutionMode?: string;
+  defaultTemplate?: string;
   organizationExecutionMode?: string;
 };
 
@@ -591,6 +592,8 @@ export type ProjectSummaryModel = {
   waitingApprovalCount: number;
   neverRunCount: number;
   nonCompliantCount: number;
+  hardViolationCount: number;
+  softViolationCount: number;
   compliantCount: number;
   exemptedCount: number;
   lockedCount: number;

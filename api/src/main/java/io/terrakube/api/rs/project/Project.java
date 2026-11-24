@@ -3,6 +3,7 @@ package io.terrakube.api.rs.project;
 import com.yahoo.elide.annotation.*;
 import io.terrakube.api.plugin.security.audit.GenericAuditFields;
 import io.terrakube.api.rs.Organization;
+import io.terrakube.api.rs.hooks.project.ProjectDefaultTemplateHook;
 import io.terrakube.api.rs.hooks.project.ProjectDeleteGuardHook;
 import io.terrakube.api.rs.project.access.ProjectAccess;
 import io.terrakube.api.rs.project.tag.ProjectTag;
@@ -29,6 +30,8 @@ import java.util.UUID;
 @Paginate(defaultPageSize = 10000, maxPageSize = 10000)
 // PREFLUSH, not PRECOMMIT: the flush is where the database would refuse the delete with its own, unhelpful, error.
 @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.DELETE, phase = LifeCycleHookBinding.TransactionPhase.PREFLUSH, hook = ProjectDeleteGuardHook.class)
+@LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.CREATE, phase = LifeCycleHookBinding.TransactionPhase.PREFLUSH, hook = ProjectDefaultTemplateHook.class)
+@LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.PREFLUSH, hook = ProjectDefaultTemplateHook.class)
 @Include
 @Getter
 @Setter
@@ -59,6 +62,11 @@ public class Project extends GenericAuditFields {
     @Pattern(regexp = "^(\\S|\\S.*\\S)?$", message = "Default Terraform version must not be blank or start or end with a space")
     @Column(name = "default_terraform_version")
     private String defaultTerraformVersion;
+
+    // The workflow template (by id) a new workspace in this project starts with, when the request names none.
+    @Size(max = 36, message = "Default template must be a template id")
+    @Column(name = "default_template")
+    private String defaultTemplate;
 
     @Pattern(regexp = "remote|local", message = "Default execution mode must be remote or local")
     @Column(name = "default_execution_mode")

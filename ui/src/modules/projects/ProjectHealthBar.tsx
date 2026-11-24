@@ -1,12 +1,16 @@
 import { Tooltip } from "antd";
+import { Link } from "react-router-dom";
 import { ProjectSummaryModel } from "@/domain/types";
-import { HealthSegment, healthSegments } from "./projectHealth";
+import { HealthKey, HealthSegment, healthSegments } from "./projectHealth";
 
 type Props = {
   summary: ProjectSummaryModel;
   /** "counts" lists every status with its number under the bar, as on the project overview. */
   legend?: "none" | "labels" | "counts";
   size?: "small" | "large";
+  /** When given, each status in the legend links to the workspaces with that status. */
+  /** The page a part of the bar links to, or undefined for a part with no list that shows exactly its number. */
+  hrefFor?: (key: HealthKey) => string | undefined;
 };
 
 function describe(segments: HealthSegment[]): string {
@@ -39,7 +43,7 @@ export function HealthLegend() {
 }
 
 /** Status roll-up of a project's workspaces. Colour is always paired with a label, and queued is hatched. */
-export function ProjectHealthBar({ summary, legend = "none", size = "small" }: Props) {
+export function ProjectHealthBar({ summary, legend = "none", size = "small", hrefFor }: Props) {
   const segments = healthSegments(summary);
   if (summary.workspaceCount === 0) {
     return <span className="project-health-empty">No workspaces</span>;
@@ -65,7 +69,11 @@ export function ProjectHealthBar({ summary, legend = "none", size = "small" }: P
           {(legend === "counts" ? present : segments).map((segment) => (
             <li key={segment.key}>
               <span className={`project-health-swatch health-${segment.key}`} aria-hidden />
-              {legend === "counts" ? `${segment.count} ${segment.label.toLowerCase()}` : segment.label}
+              {(() => {
+                const text = legend === "counts" ? `${segment.count} ${segment.label.toLowerCase()}` : segment.label;
+                const href = hrefFor && segment.count > 0 ? hrefFor(segment.key) : undefined;
+                return href ? <Link to={href}>{text}</Link> : text;
+              })()}
             </li>
           ))}
         </ul>

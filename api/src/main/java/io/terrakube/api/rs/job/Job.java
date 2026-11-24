@@ -230,6 +230,25 @@ public class Job extends GenericAuditFields {
     @Column(name = "plan_changes")
     private boolean planChanges = true;
 
+    // What the plan adds, changes and destroys (a replacement is one of each), for run lists. Null without a summary.
+    // Written by PlanSummaryRecorder, never through a request: updating a job wakes the scheduler. The columns are not
+    // written by an entity save, only by JobRepository.updatePlanSummary, so a job that was loaded before the counts
+    // were recorded cannot write the old values back when it is saved later.
+    @CreatePermission(expression = "NONE")
+    @UpdatePermission(expression = "NONE")
+    @Column(name = "plan_add", insertable = false, updatable = false)
+    private Integer planAdd;
+
+    @CreatePermission(expression = "NONE")
+    @UpdatePermission(expression = "NONE")
+    @Column(name = "plan_change", insertable = false, updatable = false)
+    private Integer planChange;
+
+    @CreatePermission(expression = "NONE")
+    @UpdatePermission(expression = "NONE")
+    @Column(name = "plan_destroy", insertable = false, updatable = false)
+    private Integer planDestroy;
+
     @Column(name = "refresh_only")
     private boolean refreshOnly = false;
 

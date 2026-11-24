@@ -1,15 +1,21 @@
-import { Button, Flex, Input, Modal, Select, Typography, message } from "antd";
+import { Alert, Button, Flex, Input, Modal, Select, Skeleton, Typography, message } from "antd";
 import { useEffect, useState } from "react";
 import { ProjectSummaryModel } from "@/domain/types";
 import { TagModel } from "@/modules/organizations/types";
 import { WorkspaceListItem } from "@/modules/workspaces/types";
-import projectService from "./projectService";
+import projectService, { OrganizationTemplate } from "./projectService";
+import DisabledReason from "./DisabledReason";
 import { notifyProjectChanged } from "./projectEvents";
 import MoveImpact from "./MoveImpact";
 import {
   BulkOutcome,
+  WaitingRun,
   addTagToWorkspaces,
+  approveRuns,
+  findWaitingRuns,
+  planWorkspaces,
   moveWorkspaces,
+  planTotals,
   removeWorkspacesFromProject,
   setWorkspacesLocked,
 } from "./bulkWorkspaceActions";
@@ -54,6 +60,11 @@ export default function BulkWorkspaceBar({
   const [tagId, setTagId] = useState<string>();
   const [tagValue, setTagValue] = useState("");
   const [working, setWorking] = useState(false);
+  const [planOpen, setPlanOpen] = useState(false);
+  const [templates, setTemplates] = useState<OrganizationTemplate[]>([]);
+  const [templateId, setTemplateId] = useState<string>();
+  const [approveOpen, setApproveOpen] = useState(false);
+  const [waiting, setWaiting] = useState<WaitingRun[] | null>(null);
 
   const searchTargets = (search: string) =>
     projectService.listProjectSummaries(orgid, { search, sort: "+name", page: 1, pageSize: 20 }).then((response) => {
@@ -63,6 +74,32 @@ export default function BulkWorkspaceBar({
   useEffect(() => {
     if (moveOpen) searchTargets("");
   }, [moveOpen]);
+
+  useEffect(() => {
+    if (!planOpen) return;
+    projectService
+      .listOrganizationTemplates(orgid)
+      .then((all) => setTemplates(all.filter((template) => template.planOnly)))
+      .catch(() => setTemplates([]));
+  }, [planOpen, orgid]);
+
+  const selectedIds = selected.map((workspace) => workspace.id);
+  useEffect(() => {
+    if (!approveOpen) return;
+    setWaiting(null);
+    // The answer for an earlier selection or a closed dialog is dropped.
+    let current = true;
+    findWaitingRuns(orgid, selectedIds)
+      .then((runs) => current && setWaiting(runs))
+      .catch((err) => {
+        if (!current) return;
+        message.error(err?.message ?? "Runs waiting for approval could not be listed");
+        setApproveOpen(false);
+      });
+    return () => {
+      current = false;
+    };
+  }, [approveOpen, orgid, selectedIds.join(",")]);
 
   if (selected.length === 0) return null;
   const count = selected.length;
@@ -75,6 +112,9 @@ export default function BulkWorkspaceBar({
     setWorking(false);
     setMoveOpen(false);
     setTagOpen(false);
+    setPlanOpen(false);
+    setApproveOpen(false);
+    setTemplateId(undefined);
     setTarget(undefined);
     setTagId(undefined);
     setTagValue("");
@@ -117,6 +157,34 @@ export default function BulkWorkspaceBar({
     finish("Tagged", await addTagToWorkspaces(orgid, selected, tagId, tagValue));
   };
 
+  const doPlan = async () => {
+    if (!templateId) return;
+    setWorking(true);
+    finish("Started a run on", await planWorkspaces(orgid, ids, templateId));
+  };
+
+  // A run whose policy check found violations is never approved from here: it is looked at on its own page.
+  const clear = (waiting ?? []).filter((run) => run.hardViolations + run.softViolations === 0);
+  const heldBack = (waiting ?? []).filter((run) => run.hardViolations + run.softViolations > 0);
+  const nameOf = (run: WaitingRun) => selected.find((workspace) => workspace.id === run.workspaceId)?.name;
+  const totals = planTotals(clear);
+  const describePlan = (run: WaitingRun) =>
+    run.add === null || run.change === null || run.destroy === null
+      ? "no plan summary"
+      : `${run.add} to add, ${run.change} to change, ${run.destroy} to destroy`;
+
+  const doApprove = async () => {
+    if (clear.length === 0) return;
+    setWorking(true);
+    finish(
+      "Approved a run on",
+      await approveRuns(
+        orgid,
+        clear.map((run) => run.jobId)
+      )
+    );
+  };
+
   const doMove = async () => {
     if (!target) return;
     setWorking(true);
@@ -129,6 +197,18 @@ export default function BulkWorkspaceBar({
         {count} of {total} selected
       </Typography.Text>
       <Typography.Text type="secondary">(this page only)</Typography.Text>
+      <Button onClick={() => setPlanOpen(true)}>Plan</Button>
+      <DisabledReason
+        disabled={!selected.some((item) => item.lastStatus === "waitingApproval")}
+        reason="None of the selected workspaces has a run waiting for approval."
+      >
+        <Button
+          onClick={() => setApproveOpen(true)}
+          disabled={!selected.some((item) => item.lastStatus === "waitingApproval")}
+        >
+          Approve
+        </Button>
+      </DisabledReason>
       <Button onClick={() => setTagOpen(true)}>Add tag</Button>
       <Button onClick={() => setMoveOpen(true)}>Move to project</Button>
       <Button onClick={confirmLock} loading={working}>
@@ -142,6 +222,94 @@ export default function BulkWorkspaceBar({
       <Button type="link" onClick={onClear}>
         Clear
       </Button>
+
+      <Modal
+        title={`Start a run on ${noun}`}
+        open={planOpen}
+        onCancel={() => setPlanOpen(false)}
+        onOk={doPlan}
+        okText={`Start ${count === 1 ? "1 run" : `${count} runs`}`}
+        okButtonProps={{ disabled: !templateId }}
+        confirmLoading={working}
+      >
+        <Select
+          showSearch
+          optionFilterProp="label"
+          aria-label="Template"
+          placeholder="Choose a template"
+          style={{ width: "100%" }}
+          value={templateId}
+          onChange={setTemplateId}
+          options={templates.map((template) => ({ value: template.id, label: template.name }))}
+        />
+        <Typography.Paragraph type="secondary" className="project-bulk-impact">
+          {selected.map((workspace) => workspace.name).join(", ")}
+        </Typography.Paragraph>
+        <Alert
+          type="info"
+          showIcon
+          message="One plan starts on each workspace, using the workspace's own branch."
+          description="Only templates that plan are offered here, so nothing is applied. To apply, start the run on each workspace."
+        />
+      </Modal>
+
+      <Modal
+        title="Approve runs"
+        open={approveOpen}
+        onCancel={() => setApproveOpen(false)}
+        onOk={doApprove}
+        okText={clear.length > 0 ? `Approve ${clear.length} run${clear.length === 1 ? "" : "s"}` : "Approve"}
+        okButtonProps={{ disabled: clear.length === 0 }}
+        confirmLoading={working}
+      >
+        {waiting === null ? (
+          <Skeleton active paragraph={{ rows: 2 }} />
+        ) : waiting.length === 0 ? (
+          <Alert type="info" showIcon message="None of the selected workspaces has a run waiting for approval." />
+        ) : (
+          <>
+            <Typography.Paragraph>
+              {waiting.length} run{waiting.length === 1 ? " is" : "s are"} waiting for approval on{" "}
+              {new Set(waiting.map((run) => run.workspaceId)).size} of the selected workspaces. Approving lets{" "}
+              {waiting.length === 1 ? "it" : "them"} go ahead.
+            </Typography.Paragraph>
+            <ul className="project-bulk-runs" aria-label="Runs to approve">
+              {clear.map((run) => (
+                <li key={run.jobId}>
+                  <strong>{nameOf(run) ?? run.workspaceId}</strong>{" "}
+                  <Typography.Text type="secondary">{describePlan(run)}</Typography.Text>
+                </li>
+              ))}
+            </ul>
+            {clear.length > 0 && (
+              <Alert
+                type={totals.destroy > 0 || totals.withoutSummary > 0 ? "warning" : "info"}
+                showIcon
+                message={
+                  totals.destroy > 0
+                    ? `Approving will destroy ${totals.withoutSummary > 0 ? "at least " : ""}${totals.destroy} resource${totals.destroy === 1 ? "" : "s"}`
+                    : totals.withoutSummary > 0
+                      ? "What approving destroys is not known for every run"
+                      : "Approving will not destroy anything"
+                }
+                description={`In all: ${totals.add} to add, ${totals.change} to change, ${totals.destroy} to destroy.${
+                  totals.withoutSummary > 0
+                    ? ` ${totals.withoutSummary} run${totals.withoutSummary === 1 ? " has" : "s have"} no plan summary and ${totals.withoutSummary === 1 ? "is" : "are"} not counted.`
+                    : ""
+                }`}
+              />
+            )}
+            {heldBack.length > 0 && (
+              <Alert
+                type="warning"
+                showIcon
+                message={`${heldBack.length} run${heldBack.length === 1 ? " is" : "s are"} held back: the policy check found violations`}
+                description={`${heldBack.map(nameOf).filter(Boolean).join(", ")}. Open the run to review the findings and approve it there.`}
+              />
+            )}
+          </>
+        )}
+      </Modal>
 
       <Modal
         title={`Add a tag to ${noun}`}

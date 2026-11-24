@@ -1,13 +1,17 @@
 import { Modal } from "antd";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { axiosAuxiliary } from "@/config/axiosConfig";
+import { apiPost } from "@/modules/api/apiWrapper";
 import workspaceService from "@/modules/workspaces/workspaceService";
 import { WorkspaceListItem } from "@/modules/workspaces/types";
 import projectService from "../projectService";
 import BulkWorkspaceBar from "../BulkWorkspaceBar";
 import {
   addTagToWorkspaces,
+  approveRuns,
+  findWaitingRuns,
   moveWorkspaces,
+  planWorkspaces,
   removeWorkspacesFromProject,
   setWorkspacesLocked,
 } from "../bulkWorkspaceActions";
@@ -21,7 +25,11 @@ jest.mock("@/modules/workspaces/workspaceService", () => ({
   __esModule: true,
   default: { assignWorkspaceToProject: jest.fn(), removeWorkspaceFromProject: jest.fn() },
 }));
-jest.mock("../projectService", () => ({ __esModule: true, default: { listProjectSummaries: jest.fn() } }));
+jest.mock("@/modules/api/apiWrapper", () => ({ apiPost: jest.fn() }));
+jest.mock("../projectService", () => ({
+  __esModule: true,
+  default: { listProjectSummaries: jest.fn(), listOrganizationTemplates: jest.fn() },
+}));
 jest.mock("../MoveImpact", () => ({
   __esModule: true,
   default: ({ targetName }: { targetName: string }) => <div>impact for {targetName}</div>,
@@ -31,6 +39,7 @@ const assign = workspaceService.assignWorkspaceToProject as jest.Mock;
 const remove = workspaceService.removeWorkspaceFromProject as jest.Mock;
 const post = axiosAuxiliary.post as jest.Mock;
 const patch = axiosAuxiliary.patch as jest.Mock;
+const graphql = apiPost as jest.Mock;
 
 const item = (id: string, overrides: Partial<WorkspaceListItem> = {}): WorkspaceListItem => ({
   id,
@@ -111,6 +120,77 @@ describe("bulk workspace actions", () => {
     expect(patch).toHaveBeenCalledWith(
       "organization/org/workspace/w1",
       { data: { type: "workspace", id: "w1", attributes: { locked: true } } },
+      expect.anything()
+    );
+  });
+});
+
+describe("bulk plan and approve", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("starts one run per workspace from the template, and a failure on one does not stop the others", async () => {
+    post.mockImplementation((_url: string, body: any) =>
+      body.data.relationships.workspace.data.id === "w2"
+        ? Promise.reject({ response: { status: 403 } })
+        : Promise.resolve({})
+    );
+
+    const outcome = await planWorkspaces("org", ["w1", "w2", "w3"], "tpl-plan");
+
+    expect(outcome.succeeded).toEqual(["w1", "w3"]);
+    expect(outcome.failed[0].id).toBe("w2");
+    expect(post).toHaveBeenCalledWith(
+      "organization/org/job",
+      {
+        data: {
+          type: "job",
+          attributes: { templateReference: "tpl-plan", via: "UI" },
+          relationships: { workspace: { data: { type: "workspace", id: "w1" } } },
+        },
+      },
+      expect.anything()
+    );
+  });
+
+  it("finds the runs that wait for approval on the selected workspaces, without paging arguments", async () => {
+    graphql.mockResolvedValue({
+      isError: false,
+      data: {
+        organization: {
+          edges: [{ node: { job: { edges: [{ node: { id: 7, workspace: { edges: [{ node: { id: "w1" } }] } } }] } } }],
+        },
+      },
+    });
+
+    const runs = await findWaitingRuns("org", ["w1", "w2"]);
+
+    expect(runs).toEqual([
+      { jobId: "7", workspaceId: "w1", hardViolations: 0, softViolations: 0, add: null, change: null, destroy: null },
+    ]);
+    expect(graphql.mock.calls[0][1].query).toContain("policyEvaluation");
+    expect(graphql.mock.calls[0][1].query).toContain("planDestroy");
+    const request = graphql.mock.calls[0][1];
+    expect(request.variables.filter).toBe(`status=='waitingApproval';workspace.id=in=("w1","w2")`);
+    expect(request.query).not.toContain("first:");
+  });
+
+  it("does not ask the server when nothing is selected, and reports a failed lookup", async () => {
+    expect(await findWaitingRuns("org", [])).toEqual([]);
+    expect(graphql).not.toHaveBeenCalled();
+
+    graphql.mockResolvedValue({ isError: true, error: { message: "down" } });
+    await expect(findWaitingRuns("org", ["w1"])).rejects.toThrow("down");
+  });
+
+  it("approves each run by setting its status", async () => {
+    patch.mockResolvedValue({});
+
+    const outcome = await approveRuns("org", ["7", "8"]);
+
+    expect(outcome.succeeded).toEqual(["7", "8"]);
+    expect(patch).toHaveBeenCalledWith(
+      "organization/org/job/7",
+      { data: { type: "job", id: "7", attributes: { status: "approved" } } },
       expect.anything()
     );
   });
@@ -211,6 +291,230 @@ describe("BulkWorkspaceBar", () => {
     await waitFor(() => expect(onDone).toHaveBeenCalled());
     expect(assign).toHaveBeenCalledTimes(2);
     expect(assign).toHaveBeenCalledWith("org", "w1", "p2");
+  });
+
+  it("starts a run on every selected workspace once a template is chosen", async () => {
+    (projectService.listOrganizationTemplates as jest.Mock).mockResolvedValue([
+      { id: "tpl-plan", name: "Plan only", planOnly: true },
+      { id: "tpl-apply", name: "Plan and apply", planOnly: false },
+    ]);
+    post.mockResolvedValue({});
+    const onDone = jest.fn();
+    renderBar([item("w1"), item("w2")], onDone);
+
+    fireEvent.click(screen.getByRole("button", { name: "Plan" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByRole("button", { name: "Start 2 runs" })).toBeDisabled();
+    expect(within(dialog).getByText(/One plan starts on each workspace/)).toBeInTheDocument();
+    fireEvent.mouseDown(within(dialog).getByRole("combobox", { name: "Template" }));
+    expect(await screen.findByTitle("Plan only")).toBeInTheDocument();
+    // A template that applies is not offered for a bulk plan.
+    expect(screen.queryByTitle("Plan and apply")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTitle("Plan only"));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Start 2 runs" }));
+
+    await waitFor(() => expect(onDone).toHaveBeenCalled());
+    expect(post).toHaveBeenCalledTimes(2);
+  });
+
+  it("only offers Approve when a selected workspace is waiting for approval", () => {
+    const { unmount } = renderBar([item("w1", { lastStatus: "completed" as never })]);
+    expect(screen.getByRole("button", { name: "Approve" })).toBeDisabled();
+    unmount();
+
+    renderBar([item("w1", { lastStatus: "waitingApproval" as never })]);
+    expect(screen.getByRole("button", { name: "Approve" })).toBeEnabled();
+  });
+
+  it("lists the runs that wait and approves them", async () => {
+    graphql.mockResolvedValue({
+      isError: false,
+      data: {
+        organization: {
+          edges: [{ node: { job: { edges: [{ node: { id: 7, workspace: { edges: [{ node: { id: "w1" } }] } } }] } } }],
+        },
+      },
+    });
+    patch.mockResolvedValue({});
+    const onDone = jest.fn();
+    renderBar([item("w1", { lastStatus: "waitingApproval" as never })], onDone);
+
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    expect(
+      await screen.findByText(/1 run is waiting for approval on 1 of the selected workspaces/)
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Approve 1 run" }));
+
+    await waitFor(() => expect(onDone).toHaveBeenCalled());
+    expect(patch).toHaveBeenCalledWith("organization/org/job/7", expect.anything(), expect.anything());
+  });
+
+  it("holds back runs whose policy check found violations and approves only the others", async () => {
+    const run = (id: number, workspace: string, hard: number, soft: number) => ({
+      node: {
+        id,
+        workspace: { edges: [{ node: { id: workspace } }] },
+        policyEvaluation: {
+          edges: [{ node: { hardMandatoryViolations: hard, softMandatoryViolations: soft } }],
+        },
+      },
+    });
+    graphql.mockResolvedValue({
+      isError: false,
+      data: {
+        organization: {
+          edges: [{ node: { job: { edges: [run(7, "w1", 0, 0), run(8, "w2", 0, 2), run(9, "w3", 1, 0)] } } }],
+        },
+      },
+    });
+    patch.mockResolvedValue({});
+    const onDone = jest.fn();
+    renderBar(
+      [
+        item("w1", { lastStatus: "waitingApproval" as never }),
+        item("w2", { lastStatus: "waitingApproval" as never }),
+        item("w3", { lastStatus: "waitingApproval" as never }),
+      ],
+      onDone
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    expect(await screen.findByText(/2 runs are held back: the policy check found violations/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Approve 1 run" }));
+
+    await waitFor(() => expect(onDone).toHaveBeenCalled());
+    expect(patch).toHaveBeenCalledTimes(1);
+    expect(patch).toHaveBeenCalledWith("organization/org/job/7", expect.anything(), expect.anything());
+  });
+
+  it("shows what each run will do and warns when approving will destroy resources", async () => {
+    const run = (id: number, workspace: string, plan: Record<string, number> | null) => ({
+      node: {
+        id,
+        ...(plan ?? {}),
+        workspace: { edges: [{ node: { id: workspace } }] },
+      },
+    });
+    graphql.mockResolvedValue({
+      isError: false,
+      data: {
+        organization: {
+          edges: [
+            {
+              node: {
+                job: {
+                  edges: [
+                    run(7, "w1", { planAdd: 3, planChange: 1, planDestroy: 0 }),
+                    run(8, "w2", { planAdd: 0, planChange: 2, planDestroy: 4 }),
+                    run(9, "w3", null),
+                  ],
+                },
+              },
+            },
+          ],
+        },
+      },
+    });
+    renderBar([
+      item("w1", { lastStatus: "waitingApproval" as never }),
+      item("w2", { lastStatus: "waitingApproval" as never }),
+      item("w3", { lastStatus: "waitingApproval" as never }),
+    ]);
+
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+
+    const runs = await screen.findByRole("list", { name: "Runs to approve" });
+    expect(within(runs).getByText("3 to add, 1 to change, 0 to destroy")).toBeInTheDocument();
+    expect(within(runs).getByText("0 to add, 2 to change, 4 to destroy")).toBeInTheDocument();
+    expect(within(runs).getByText("no plan summary")).toBeInTheDocument();
+    expect(screen.getByText("Approving will destroy at least 4 resources")).toBeInTheDocument();
+    expect(
+      screen.getByText(/In all: 3 to add, 3 to change, 4 to destroy\. 1 run has no plan summary and is not counted\./)
+    ).toBeInTheDocument();
+  });
+
+  it("says approving will not destroy anything when no run destroys", async () => {
+    graphql.mockResolvedValue({
+      isError: false,
+      data: {
+        organization: {
+          edges: [
+            {
+              node: {
+                job: {
+                  edges: [
+                    {
+                      node: {
+                        id: 7,
+                        planAdd: 1,
+                        planChange: 0,
+                        planDestroy: 0,
+                        workspace: { edges: [{ node: { id: "w1" } }] },
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+          ],
+        },
+      },
+    });
+    renderBar([item("w1", { lastStatus: "waitingApproval" as never })]);
+
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+
+    expect(await screen.findByText("Approving will not destroy anything")).toBeInTheDocument();
+  });
+
+  it("does not say nothing will be destroyed when a run has no plan summary", async () => {
+    graphql.mockResolvedValue({
+      isError: false,
+      data: {
+        organization: {
+          edges: [
+            {
+              node: {
+                job: {
+                  edges: [
+                    {
+                      node: {
+                        id: 7,
+                        planAdd: null,
+                        planChange: null,
+                        planDestroy: null,
+                        workspace: { edges: [{ node: { id: "w1" } }] },
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+          ],
+        },
+      },
+    });
+    renderBar([item("w1", { lastStatus: "waitingApproval" as never })]);
+
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+
+    expect(await screen.findByText("What approving destroys is not known for every run")).toBeInTheDocument();
+    expect(screen.queryByText("Approving will not destroy anything")).not.toBeInTheDocument();
+  });
+
+  it("says when nothing is waiting, and offers nothing to approve", async () => {
+    graphql.mockResolvedValue({
+      isError: false,
+      data: { organization: { edges: [{ node: { job: { edges: [] } } }] } },
+    });
+    renderBar([item("w1", { lastStatus: "waitingApproval" as never })]);
+
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+
+    expect(
+      await screen.findByText("None of the selected workspaces has a run waiting for approval.")
+    ).toBeInTheDocument();
+    expect(within(screen.getByRole("dialog")).getByRole("button", { name: "Approve" })).toBeDisabled();
   });
 
   it("adds a tag to the selection", async () => {

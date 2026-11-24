@@ -157,4 +157,6 @@
     <include file="/db/changelog/local/changelog-2.35.0-project-tag.xml"/>
     <include file="/db/changelog/local/changelog-2.35.0-landing-tab.xml"/>
     <include file="/db/changelog/local/changelog-2.35.0-project-defaults.xml"/>
+    <include file="/db/changelog/local/changelog-2.35.0-policy-violations-template.xml"/>
+    <include file="/db/changelog/local/changelog-2.35.0-job-plan-summary.xml"/>
 </databaseChangeLog>

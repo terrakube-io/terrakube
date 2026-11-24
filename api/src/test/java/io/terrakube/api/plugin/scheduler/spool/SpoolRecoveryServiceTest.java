@@ -2,6 +2,7 @@ package io.terrakube.api.plugin.scheduler.spool;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.terrakube.api.plugin.context.ContextWriteService;
+import io.terrakube.api.plugin.context.PlanSummaryRecorder;
 import io.terrakube.api.plugin.context.InvalidContextPatchException;
 import io.terrakube.api.plugin.policy.PolicyEvaluationService;
 import io.terrakube.api.plugin.storage.StorageTypeService;
@@ -45,6 +46,7 @@ class SpoolRecoveryServiceTest {
     private ContextWriteService contextWriteService;
     private PolicyEvaluationService policyEvaluationService;
     private SpoolRecoveryMetrics metrics;
+    private PlanSummaryRecorder planSummaryRecorder;
     private ObjectMapper objectMapper;
     private SpoolRecoveryProperties properties;
     private SpoolRecoveryService spoolRecoveryService;
@@ -56,6 +58,7 @@ class SpoolRecoveryServiceTest {
         storageTypeService = mock(StorageTypeService.class);
         contextWriteService = mock(ContextWriteService.class);
         policyEvaluationService = mock(PolicyEvaluationService.class);
+        planSummaryRecorder = mock(PlanSummaryRecorder.class);
         metrics = mock(SpoolRecoveryMetrics.class);
         objectMapper = new ObjectMapper();
         properties = new SpoolRecoveryProperties();
@@ -75,7 +78,8 @@ class SpoolRecoveryServiceTest {
                 properties,
                 contextWriteService,
                 policyEvaluationService,
-                metrics);
+                metrics,
+                planSummaryRecorder);
     }
 
     private byte[] createGzippedPayload(Map<String, Object> payload) throws IOException {
@@ -450,6 +454,42 @@ class SpoolRecoveryServiceTest {
     }
 
     @Test
+    void mergeAndSaveContext_CountsAPlanThatTheRecoveredPatchStored() throws Exception {
+        int jobId = 202;
+        long revision = 500L;
+        Map<String, Object> patch = Map.of("planStructuredOutput/step-1", List.of());
+        when(contextWriteService.patchRecovery(eq(jobId), eq(revision), eq(patch)))
+                .thenReturn(new ContextWriteService.PatchResult(List.of("planStructuredOutput/step-1"), 0, "{}"));
+
+        assertThat(spoolRecoveryService.mergeAndSaveContext(jobId, revision, patch)).isTrue();
+
+        verify(planSummaryRecorder).recordFromPatch(eq(jobId), any());
+    }
+
+    @Test
+    void mergeAndSaveContext_DoesNotCountWhenThePatchStoredNoPlan() throws Exception {
+        int jobId = 203;
+        Map<String, Object> patch = Map.of("terrakubeUI/step-1", "ui");
+        when(contextWriteService.patchRecovery(eq(jobId), eq(500L), eq(patch)))
+                .thenReturn(new ContextWriteService.PatchResult(List.of("terrakubeUI/step-1"), 0, "{}"));
+
+        spoolRecoveryService.mergeAndSaveContext(jobId, 500L, patch);
+
+        verify(planSummaryRecorder, never()).recordFromPatch(anyInt(), any());
+    }
+
+    @Test
+    void mergeAndSaveContext_AProblemCountingThePlanDoesNotFailTheRecovery() throws Exception {
+        int jobId = 204;
+        Map<String, Object> patch = Map.of("planStructuredOutput/step-1", List.of());
+        when(contextWriteService.patchRecovery(eq(jobId), eq(500L), eq(patch)))
+                .thenReturn(new ContextWriteService.PatchResult(List.of("planStructuredOutput/step-1"), 0, "{}"));
+        when(planSummaryRecorder.recordFromPatch(eq(jobId), any())).thenThrow(new IllegalStateException("db down"));
+
+        assertThat(spoolRecoveryService.mergeAndSaveContext(jobId, 500L, patch)).isTrue();
+    }
+
+    @Test
     void mergeAndSaveContext_WhenLockBusy_ReturnsFalse() throws Exception {
         int jobId = 201;
         long revision = 500L;
@@ -593,7 +633,8 @@ class SpoolRecoveryServiceTest {
                 properties,
                 contextWriteService,
                 policyEvaluationService,
-                metricsMock);
+                metricsMock,
+                planSummaryRecorder);
 
         // Simulate updateDeliveryState returning 0 (lease owner changed / lost lease)
         when(stepRepository.updateDeliveryState(stepId, DeliveryState.RECOVERED, "my-worker")).thenReturn(0);
