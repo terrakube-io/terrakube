@@ -124,7 +124,7 @@ function OrganizationRow({ organization }: { organization: OrganizationModel }) 
   return (
     <div className="organization-row">
       <Link
-        to={`/organizations/${organization.id}/workspaces`}
+        to={`/organizations/${organization.id}/overview`}
         onClick={rememberOrganization}
         className="organization-row-link"
         aria-label={`Open organization ${organization.name}`}

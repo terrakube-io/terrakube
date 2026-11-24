@@ -131,7 +131,7 @@ export const OrganizationSelector: React.FC<OrganizationSelectorProps> = ({
               visibleOrganizations.map((org) => (
                 <Link
                   key={org.id}
-                  to={`/organizations/${org.id}/workspaces`}
+                  to={`/organizations/${org.id}/overview`}
                   className={org.id === selectedOrgId ? "org-selector-item selected" : "org-selector-item"}
                   aria-current={org.id === selectedOrgId ? "true" : undefined}
                   onClick={() => handleOrganizationClick(org.id)}

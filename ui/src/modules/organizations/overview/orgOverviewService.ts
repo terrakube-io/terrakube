@@ -30,14 +30,15 @@ export async function loadOrgOverview(orgId: string): Promise<OrgOverview> {
     {
       query: `query ($orgId: String!, $first: StringOrInt) {
         organization(ids: [$orgId]) { edges { node {
-          all: workspace { ${total} }
-          completed: workspace(filter: "lastJobStatus=='completed'") { ${total} }
-          failed: workspace(filter: "lastJobStatus=='failed'") { ${total} }
-          waiting: workspace(filter: "lastJobStatus=='waitingApproval'") { ${total} }
-          never: workspace(filter: "lastJobStatus=='NeverExecuted'") { ${total} }
-          compliant: workspace(filter: "policyComplianceStatus=='COMPLIANT'") { ${total} }
-          nonCompliant: workspace(filter: "policyComplianceStatus=='NON_COMPLIANT'") { ${total} }
-          projects: project { ${total} }
+          all: workspace(first: "1", after: "0") { ${total} }
+          completed: workspace(first: "1", after: "0", filter: "lastJobStatus=in=('completed','noChanges')") { ${total} }
+          failed: workspace(first: "1", after: "0", filter: "lastJobStatus=='failed'") { ${total} }
+          waiting: workspace(first: "1", after: "0", filter: "lastJobStatus=='waitingApproval'") { ${total} }
+          running: workspace(first: "1", after: "0", filter: "lastJobStatus=in=('running','pending','approved','queue')") { ${total} }
+          never: workspace(first: "1", after: "0", filter: "(lastJobStatus=='NeverExecuted',lastJobStatus=isnull=true)") { ${total} }
+          compliant: workspace(first: "1", after: "0", filter: "policyComplianceStatus=='COMPLIANT'") { ${total} }
+          nonCompliant: workspace(first: "1", after: "0", filter: "policyComplianceStatus=='NON_COMPLIANT'") { ${total} }
+          projects: project(first: "1", after: "0") { ${total} }
           recent: workspace(first: $first, after: "0", sort: "-lastJobDate", filter: "lastJobStatus!='NeverExecuted'") {
             edges { node { id name lastJobStatus lastJobDate project { edges { node { name } } } } }
           }
@@ -57,6 +58,7 @@ export async function loadOrgOverview(orgId: string): Promise<OrgOverview> {
         completed: count("completed"),
         failed: count("failed"),
         waiting: count("waiting"),
+        running: count("running"),
         never: count("never"),
       },
       projects: count("projects"),

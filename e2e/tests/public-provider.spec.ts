@@ -24,6 +24,9 @@ test("adds a public provider at its latest version from the provider page", asyn
 
   await page.goto("/organizations");
   await page.getByRole("link", { name: "Open organization simple", exact: true }).click();
+  // Opening an organization lands on its overview; the workspace list is one click away.
+  await expect(page).toHaveURL(/\/organizations\/[^/]+\/overview/);
+  await page.getByRole("link", { name: "Workspaces", exact: true }).first().click();
   await expect(page).toHaveURL(/\/organizations\/([^/]+)\/workspaces/);
   const orgId = page.url().match(/organizations\/([^/]+)\//)![1];
   await removeImportedProvider(page, orgId);

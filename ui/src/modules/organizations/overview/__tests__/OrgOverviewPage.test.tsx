@@ -1,5 +1,5 @@
-import { act, render, screen } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { act, fireEvent, render, screen } from "@testing-library/react";
+import { Link, MemoryRouter, Route, Routes } from "react-router-dom";
 import { loadInbox } from "@/modules/inbox/inboxService";
 import { usePolling } from "@/hooks";
 import projectService from "@/modules/projects/projectService";
@@ -19,10 +19,11 @@ jest.mock("@/hooks/useOrganizationName", () => ({ useOrganizationName: () => "aw
 jest.mock("@/hooks", () => ({ usePolling: jest.fn() }));
 jest.mock("@/components/layout/PageWrapper/PageWrapper", () => ({
   __esModule: true,
-  default: ({ title, subTitle, children }: any) => (
+  default: ({ title, subTitle, actions, children }: any) => (
     <div>
       <h1>{title}</h1>
       <p>{subTitle}</p>
+      {actions}
       {children}
     </div>
   ),
@@ -58,7 +59,7 @@ describe("OrgOverviewPage", () => {
     (loadOrgOverview as jest.Mock).mockResolvedValue({
       counts: {
         workspaces: 29,
-        status: { completed: 16, failed: 4, waiting: 1, never: 6 },
+        status: { completed: 16, failed: 4, waiting: 1, running: 2, never: 6 },
         projects: 6,
         compliant: 20,
         nonCompliant: 4,
@@ -114,6 +115,47 @@ describe("OrgOverviewPage", () => {
     expect(screen.getByRole("link", { name: "svc-17" })).toBeInTheDocument();
   });
 
+  it("says the projects could not be read instead of saying there are none", async () => {
+    (projectService.listProjectSummaries as jest.Mock).mockResolvedValue({ isError: true, data: undefined });
+
+    renderPage();
+
+    expect(await screen.findByText("The projects could not be read.")).toBeInTheDocument();
+    expect(screen.queryByText("No projects yet.")).not.toBeInTheDocument();
+  });
+
+  it("offers Import and New workspace as links, so they can be opened in a new tab", async () => {
+    renderPage();
+    await screen.findByText("29 workspaces in 6 projects");
+
+    expect(screen.getByRole("link", { name: "Import" })).toHaveAttribute(
+      "href",
+      "/organizations/org-1/workspaces/import"
+    );
+    expect(screen.getByRole("link", { name: "New workspace" })).toHaveAttribute(
+      "href",
+      "/organizations/org-1/workspaces/create"
+    );
+  });
+
+  it("does not keep showing the last organization's numbers when the next one fails to load", async () => {
+    render(
+      <MemoryRouter initialEntries={["/organizations/org-1/overview"]}>
+        <Link to="/organizations/org-2/overview">other organization</Link>
+        <Routes>
+          <Route path="/organizations/:id/overview" element={<OrgOverviewPage />} />
+        </Routes>
+      </MemoryRouter>
+    );
+    await screen.findByText("29 workspaces in 6 projects");
+
+    (loadOrgOverview as jest.Mock).mockRejectedValue(new Error("down"));
+    fireEvent.click(screen.getByRole("link", { name: "other organization" }));
+
+    expect(await screen.findByText("Could not load the overview.")).toBeInTheDocument();
+    expect(screen.queryByText("29 workspaces in 6 projects")).not.toBeInTheDocument();
+  });
+
   it("lists the sections in the order of the questions: how is it, what needs me, how are the projects", async () => {
     renderPage();
     await screen.findByText("29 workspaces in 6 projects");
@@ -150,7 +192,7 @@ describe("OrgOverviewPage", () => {
     const overview = (workspaces: number) => ({
       counts: {
         workspaces,
-        status: { completed: 1, failed: 0, waiting: 0, never: 0 },
+        status: { completed: 1, failed: 0, waiting: 0, running: 0, never: 0 },
         projects: 2,
         compliant: 1,
         nonCompliant: 0,

@@ -1,8 +1,9 @@
 import { Alert, Button, Card, Skeleton, Tag, Typography } from "antd";
 import { ClockCircleOutlined, CloseCircleOutlined, SafetyOutlined, SwapOutlined } from "@ant-design/icons";
 import { ReactNode, useCallback, useEffect, useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { EmptyState } from "@/components/feedback/EmptyState";
+import { LinkButton } from "@/components/navigation/LinkButton";
 import PageWrapper from "@/components/layout/PageWrapper/PageWrapper";
 import WorkspaceStatusTag from "@/components/display/WorkspaceStatusTag/WorkspaceStatusTag";
 import { usePolling } from "@/hooks";
@@ -27,12 +28,13 @@ const WORST_FIRST = "-attentionCount,+name";
 /** How the organization is doing, and what needs a person, before the lists of workspaces and projects. */
 export default function OrgOverviewPage() {
   const { id: orgId = "" } = useParams();
-  const navigate = useNavigate();
   const name = useOrganizationName(orgId) ?? "";
   const [overview, setOverview] = useState<OrgOverview | null>(null);
   const [inbox, setInbox] = useState<InboxData | null>(null);
   const [projects, setProjects] = useState<ProjectSummaryModel[] | null>(null);
   const [error, setError] = useState(false);
+  // A failed project request is not "No projects yet.", which would say something false about the organization.
+  const [projectsFailed, setProjectsFailed] = useState(false);
   // Each load takes a number, and only the newest one may show its answer: a slow one for the organization the person
   // has left, or one overtaken by the next poll, must not overwrite what is on screen.
   const latest = useRef(0);
@@ -52,6 +54,7 @@ export default function OrgOverviewPage() {
       setOverview(nextOverview);
       setInbox(nextInbox);
       setProjects(nextProjects.isError ? [] : (nextProjects.data?.items ?? []));
+      setProjectsFailed(nextProjects.isError);
       setError(false);
     } catch {
       if (mine === latest.current) setError(true);
@@ -59,6 +62,13 @@ export default function OrgOverviewPage() {
   }, [orgId]);
 
   useEffect(() => {
+    // Another organization starts from nothing: if its load fails, the page must say so and not keep showing the
+    // numbers of the one that was left.
+    setOverview(null);
+    setInbox(null);
+    setProjects(null);
+    setProjectsFailed(false);
+    setError(false);
     load();
     return () => {
       latest.current += 1;
@@ -124,10 +134,10 @@ export default function OrgOverviewPage() {
       breadcrumbs={[{ label: "Overview", path: `${base}/overview` }]}
       actions={
         <>
-          <Button onClick={() => navigate(`${base}/workspaces/import`)}>Import</Button>
-          <Button type="primary" onClick={() => navigate(`${base}/workspaces/create`)}>
+          <LinkButton to={`${base}/workspaces/import`}>Import</LinkButton>
+          <LinkButton type="primary" to={`${base}/workspaces/create`}>
             New workspace
-          </Button>
+          </LinkButton>
         </>
       }
     >
@@ -161,7 +171,7 @@ export default function OrgOverviewPage() {
           </div>
 
           <div className="overview-columns">
-            <Card className="overview-card" aria-label="Needs you">
+            <Card className="overview-card" role="region" aria-label="Needs you">
               <div className="overview-card-head">
                 <h3 className="overview-card-title">Needs you</h3>
                 <Link to={`/inbox?org=${orgId}`}>Open inbox</Link>
@@ -208,7 +218,7 @@ export default function OrgOverviewPage() {
               )}
             </Card>
 
-            <Card className="overview-card" aria-label="Recent runs">
+            <Card className="overview-card" role="region" aria-label="Recent runs">
               <div className="overview-card-head">
                 <h3 className="overview-card-title">Recent runs</h3>
               </div>
@@ -235,12 +245,14 @@ export default function OrgOverviewPage() {
             </Card>
           </div>
 
-          <Card className="overview-card" aria-label="Projects">
+          <Card className="overview-card" role="region" aria-label="Projects">
             <div className="overview-card-head">
               <h3 className="overview-card-title">Projects</h3>
               <Link to={`${base}/projects`}>All projects</Link>
             </div>
-            {projects.length === 0 ? (
+            {projectsFailed ? (
+              <Alert type="warning" showIcon message="The projects could not be read." />
+            ) : projects.length === 0 ? (
               <EmptyState description="No projects yet." />
             ) : (
               <div className="overview-projects">

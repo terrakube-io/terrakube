@@ -17,7 +17,7 @@ export default function OrganizationGridItem({ organization }: Props) {
   };
 
   return (
-    <Link to={`/organizations/${organization.id}/workspaces`} onClick={rememberOrganization} className="org-card-link">
+    <Link to={`/organizations/${organization.id}/overview`} onClick={rememberOrganization} className="org-card-link">
       <Card hoverable className="org-card">
         <Flex gap="small" align="center">
           <div className="org-card-icon">{getOrgIcon(iconName, color)}</div>
