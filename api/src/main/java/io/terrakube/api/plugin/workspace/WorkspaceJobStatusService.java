@@ -86,6 +86,13 @@ public class WorkspaceJobStatusService {
             return;
         }
         Shown shown = shownFor(changed);
+        // A run that waits for approval is looked at again every 30 seconds. With the status unchanged the date
+        // must stay the one of the change, or the workspace always reads "just now".
+        Date current = workspace.getLastJobDate();
+        if (shown.status() == workspace.getLastJobStatus() && current != null
+                && changed.getCreatedDate() != null && !current.before(changed.getCreatedDate())) {
+            return;
+        }
         log.info("Updating last status for workspace {} to {} (job {} is {})", workspace.getName(), shown.status(),
                 changed.getId(), changed.getStatus());
         workspace.setLastJobStatus(shown.status());
