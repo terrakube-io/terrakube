@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import SavedViews from "../SavedViews";
 
 describe("SavedViews", () => {
@@ -42,11 +42,11 @@ describe("SavedViews", () => {
     render(<SavedViews orgid="org" currentQuery="chip=attention" onApply={onApply} />);
 
     await saveAs("Failing");
-    fireEvent.click(await screen.findByRole("button", { name: /Saved views/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Manage saved views" }));
     fireEvent.click(await screen.findByRole("button", { name: "Delete view Failing" }));
 
     expect(onApply).not.toHaveBeenCalled();
-    expect(await screen.findByText("No saved views yet")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Manage saved views" })).toBeDisabled());
   });
 
   it("shows the views of the organization it is now in, not the one it was in", async () => {

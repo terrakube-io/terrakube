@@ -8,6 +8,7 @@ import { ProjectHealthBar } from "./ProjectHealthBar";
 import { PROJECT_TAB_LABELS, ProjectTab, getStoredLandingTab, setLandingTab } from "./projectLandingTab";
 import { shortAgo, shortDuration } from "./projectHealth";
 import { describeWorkspace } from "./projectStatus";
+import DisabledReason from "./DisabledReason";
 import { attentionFilter, projectWorkspacesLink, statusForHealth } from "./projectLinks";
 
 type Props = {
@@ -17,6 +18,9 @@ type Props = {
   /** Set when the counts could not be loaded, so they are never drawn as 0. */
   failed?: boolean;
   onRetry?: () => void;
+  /** Whether this person may create workspaces in the project, and move existing ones into it. */
+  canCreateWorkspace?: boolean;
+  canMoveWorkspaces?: boolean;
   onOpenTab: (tab: ProjectTab) => void;
 };
 
@@ -59,7 +63,16 @@ function StatusLine({ orgid, workspace }: { orgid: string; workspace: ProjectWor
   );
 }
 
-export default function ProjectOverview({ orgid, summary, loading, failed = false, onRetry, onOpenTab }: Props) {
+export default function ProjectOverview({
+  orgid,
+  summary,
+  loading,
+  failed = false,
+  onRetry,
+  onOpenTab,
+  canCreateWorkspace = false,
+  canMoveWorkspaces = false,
+}: Props) {
   const [landing, setLanding] = useState<ProjectTab | "default">(() => getStoredLandingTab() ?? "default");
   const [attention, setAttention] = useState<ProjectWorkspaceBrief[]>([]);
   const [recent, setRecent] = useState<ProjectWorkspaceBrief[]>([]);
@@ -131,13 +144,26 @@ export default function ProjectOverview({ orgid, summary, loading, failed = fals
       {summary.workspaceCount === 0 && (
         <Card size="small">
           <EmptyState description="No workspaces in this project yet.">
-            <Button
-              type="primary"
-              onClick={() => navigate(`/organizations/${orgid}/workspaces/create?projectId=${summary.id}`)}
+            <DisabledReason
+              disabled={!canCreateWorkspace}
+              reason="Creating a workspace needs the Manage Workspaces permission."
             >
-              New workspace
-            </Button>
-            <Button onClick={() => onOpenTab("workspaces")}>Move existing</Button>
+              <Button
+                type="primary"
+                disabled={!canCreateWorkspace}
+                onClick={() => navigate(`/organizations/${orgid}/workspaces/create?projectId=${summary.id}`)}
+              >
+                New workspace
+              </Button>
+            </DisabledReason>
+            <DisabledReason
+              disabled={!canMoveWorkspaces}
+              reason="Moving workspaces into a project needs the Manage Workspaces permission or the Admin role on the project."
+            >
+              <Button disabled={!canMoveWorkspaces} onClick={() => onOpenTab("workspaces")}>
+                Move existing
+              </Button>
+            </DisabledReason>
           </EmptyState>
         </Card>
       )}

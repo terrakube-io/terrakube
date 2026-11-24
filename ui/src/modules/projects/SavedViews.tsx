@@ -1,4 +1,4 @@
-import { CloseOutlined, StarOutlined } from "@ant-design/icons";
+import { DeleteOutlined, StarOutlined } from "@ant-design/icons";
 import { Button, Dropdown, Flex, Input, type InputRef, Popover, Typography } from "antd";
 import { useEffect, useRef, useState } from "react";
 import { MAX_VIEW_NAME, SavedView, addView, loadViews, removeView, validateViewName } from "./viewStore";
@@ -36,25 +36,9 @@ export default function SavedViews({ orgid, currentQuery, onApply }: Props) {
     setSaveOpen(false);
   };
 
+  // Plain labels only: a button nested in a menu item cannot be reached from the keyboard, so deleting is its own list.
   const items = [
-    ...views.map((view) => ({
-      key: view.name,
-      label: (
-        <Flex justify="space-between" align="center" gap={12}>
-          <span>{view.name}</span>
-          <Button
-            type="text"
-            size="small"
-            aria-label={`Delete view ${view.name}`}
-            icon={<CloseOutlined />}
-            onClick={(event) => {
-              event.stopPropagation();
-              setViews(removeView(orgid, view.name));
-            }}
-          />
-        </Flex>
-      ),
-    })),
+    ...views.map((view) => ({ key: view.name, label: view.name })),
     ...(views.length === 0 ? [{ key: "none", disabled: true, label: "No saved views yet" }] : []),
   ];
 
@@ -74,6 +58,29 @@ export default function SavedViews({ orgid, currentQuery, onApply }: Props) {
           Views{views.length > 0 ? ` (${views.length})` : ""}
         </Button>
       </Dropdown>
+      <Popover
+        trigger="click"
+        title="Delete a saved view"
+        content={
+          <Flex vertical gap={4} style={{ minWidth: 220 }}>
+            {views.map((view) => (
+              <Flex key={view.name} justify="space-between" align="center" gap={12}>
+                <span>{view.name}</span>
+                <Button
+                  type="text"
+                  size="small"
+                  danger
+                  aria-label={`Delete view ${view.name}`}
+                  icon={<DeleteOutlined />}
+                  onClick={() => setViews(removeView(orgid, view.name))}
+                />
+              </Flex>
+            ))}
+          </Flex>
+        }
+      >
+        <Button aria-label="Manage saved views" icon={<DeleteOutlined />} disabled={views.length === 0} />
+      </Popover>
       <Popover
         trigger="click"
         open={saveOpen}

@@ -17,6 +17,7 @@ const renderOverview = (props: any) =>
     </MemoryRouter>
   );
 import { getLandingTab, resolveLandingTab, setLandingTab } from "../projectLandingTab";
+import { sectionForTab } from "../projectNav";
 
 const summary = {
   id: "p1",
@@ -71,6 +72,14 @@ describe("resolveLandingTab", () => {
     expect(resolveLandingTab("teams", "workspaces")).toBe("general");
     setLandingTab(null);
     expect(resolveLandingTab("teams", "workspaces")).toBe("teams");
+  });
+
+  it("opens a project on its Variables page when that is the landing tab, not on Settings", () => {
+    expect(resolveLandingTab("variables", null)).toBe("variables");
+    expect(sectionForTab("variables")).toBe("variables");
+    setLandingTab("variables");
+    expect(getLandingTab()).toBe("variables");
+    expect(sectionForTab("general")).toBe("settings");
   });
 
   it("ignores values it does not know", () => {
@@ -260,12 +269,31 @@ describe("an empty project", () => {
     renderOverview({
       summary: { ...summary, workspaceCount: 0, attentionCount: 0, completedCount: 0 },
       onOpenTab,
+      canCreateWorkspace: true,
+      canMoveWorkspaces: true,
     });
 
     expect(screen.getByText("No workspaces in this project yet.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "New workspace" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "New workspace" })).toBeEnabled();
     fireEvent.click(screen.getByRole("button", { name: "Move existing" }));
     expect(onOpenTab).toHaveBeenCalledWith("workspaces");
+  });
+
+  it("disables both actions, with the reason, for someone who may not use them", () => {
+    recentList.mockResolvedValue({ isError: false, data: [] });
+    const onOpenTab = jest.fn();
+
+    renderOverview({
+      summary: { ...summary, workspaceCount: 0, attentionCount: 0, completedCount: 0 },
+      onOpenTab,
+    });
+
+    expect(screen.getByRole("button", { name: "New workspace" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Move existing" })).toBeDisabled();
+    expect(
+      screen.getByRole("group", { name: /Creating a workspace needs the Manage Workspaces permission/ })
+    ).toBeInTheDocument();
+    expect(onOpenTab).not.toHaveBeenCalled();
   });
 
   it("shows no call to action when the project has workspaces", () => {

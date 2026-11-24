@@ -351,6 +351,8 @@ export default function ProjectDetailPage({ organizationName, setOrganizationNam
             failed={summaryFailed}
             onRetry={loadSummary}
             onOpenTab={openTab}
+            canCreateWorkspace={permissions.manageWorkspace || projectPermissions.manageWorkspace}
+            canMoveWorkspaces={canManageProject}
           />
         );
     }
