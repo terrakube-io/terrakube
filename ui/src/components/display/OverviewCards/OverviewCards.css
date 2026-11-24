@@ -216,6 +216,15 @@
   margin-top: 12px;
 }
 
+.overview-figure-hint {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
 .overview-figure {
   padding: 10px 12px;
   border: 1px solid var(--tk-border-secondary);

@@ -31,7 +31,13 @@ export function median(values: number[]): number | null {
   return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
 }
 
-export function summarizeDelivery(jobs: DeliveryJob[], total: number): Delivery {
+/**
+ * How many rows Elide returns for a collection that is not paged, which Job is. A read that comes back with this many
+ * may have been cut short, and a count made from it is "at least", not exact.
+ */
+export const JOB_READ_CAP = 500;
+
+export function summarizeDelivery(jobs: DeliveryJob[], total: number, readCap?: number): Delivery {
   const finished = jobs.filter((job) => FINISHED.has(job.status));
   const succeeded = finished.filter((job) => SUCCEEDED.has(job.status)).length;
   return {
@@ -39,7 +45,7 @@ export function summarizeDelivery(jobs: DeliveryJob[], total: number): Delivery 
     succeededPercent: finished.length === 0 ? null : Math.round((succeeded / finished.length) * 100),
     medianApproveMs: median(jobs.map((job) => time(job.approvedAt) - time(job.createdDate))),
     medianRunMs: median(finished.map((job) => time(job.updatedDate) - time(job.createdDate))),
-    partial: total > jobs.length,
+    partial: total > jobs.length || (readCap !== undefined && jobs.length >= readCap),
   };
 }
 

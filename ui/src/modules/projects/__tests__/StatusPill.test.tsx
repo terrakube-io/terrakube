@@ -25,4 +25,11 @@ describe("StatusPill", () => {
     const tag = container.querySelector(".tk-status-tag") as HTMLElement;
     expect(tag.style.getPropertyValue("--status-color")).toBe("");
   });
+
+  it("does not put the name of its icon in front of its text for a screen reader", () => {
+    render(<StatusPill tone="danger">3 hard</StatusPill>);
+
+    expect(screen.queryByRole("img")).not.toBeInTheDocument();
+    expect(screen.getByText("3 hard").closest(".tk-status-tag")).toHaveTextContent(/^3 hard$/);
+  });
 });

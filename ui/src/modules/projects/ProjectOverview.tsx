@@ -19,7 +19,7 @@ import { PROJECT_TAB_LABELS, ProjectTab, getStoredLandingTab, setLandingTab } fr
 import { HealthKey, shortAgo, shortDuration } from "./projectHealth";
 import { describeWorkspace } from "./projectStatus";
 import DisabledReason from "./DisabledReason";
-import { attentionFilter, projectWorkspacesLink, statusForHealth } from "./projectLinks";
+import { projectWorkspacesLink, statusForHealth } from "./projectLinks";
 import ProjectDelivery from "./ProjectDelivery";
 
 type Props = {

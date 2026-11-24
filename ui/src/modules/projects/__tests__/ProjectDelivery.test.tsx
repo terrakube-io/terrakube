@@ -51,6 +51,25 @@ describe("ProjectDelivery", () => {
     expect(await screen.findByText(/latest runs only/)).toBeInTheDocument();
   });
 
+  it("shows a count that may have been cut short as at least that many", async () => {
+    getDelivery.mockResolvedValue(delivery({ runs: 500, partial: true }));
+    render(<ProjectDelivery orgid="org" projectId="p1" />);
+
+    expect(await screen.findByText("500+")).toBeInTheDocument();
+    expect(screen.queryByText("500")).not.toBeInTheDocument();
+  });
+
+  it("gives each figure its definition to the keyboard and to a screen reader, not only to the mouse", async () => {
+    getDelivery.mockResolvedValue(delivery());
+    render(<ProjectDelivery orgid="org" projectId="p1" />);
+    await screen.findByText("184");
+
+    const figure = screen.getByText("Median run time").closest(".overview-figure") as HTMLElement;
+    expect(figure).toHaveAttribute("tabindex", "0");
+    const described = document.getElementById(figure.getAttribute("aria-describedby") as string);
+    expect(described).toHaveTextContent("From a run starting to it finishing, so it includes any wait for approval.");
+  });
+
   it("says so when there were no runs, and when it could not be read", async () => {
     getDelivery.mockResolvedValue(delivery({ runs: 0 }));
     const { unmount } = render(<ProjectDelivery orgid="org" projectId="p1" />);

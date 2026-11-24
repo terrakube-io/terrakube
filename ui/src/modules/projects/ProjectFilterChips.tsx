@@ -26,17 +26,17 @@ const CHIPS: {
   tone?: string;
   count: (counts: ProjectIndexCounts) => number;
 }[] = [
-  { key: "all", label: "All", icon: <UnorderedListOutlined />, count: (counts) => counts.all },
+  { key: "all", label: "All", icon: <UnorderedListOutlined aria-hidden />, count: (counts) => counts.all },
   {
     key: "attention",
     label: "Needs attention",
-    icon: <ExclamationCircleOutlined />,
+    icon: <ExclamationCircleOutlined aria-hidden />,
     tone: "waitingApproval",
     count: (counts) => counts.attention,
   },
-  { key: "mine", label: "My projects", icon: <UserOutlined />, count: (counts) => counts.mine },
-  { key: "empty", label: "Empty", icon: <InboxOutlined />, count: (counts) => counts.empty },
-  { key: "stale", label: "Stale (90d)", icon: <ClockCircleOutlined />, count: (counts) => counts.stale },
+  { key: "mine", label: "My projects", icon: <UserOutlined aria-hidden />, count: (counts) => counts.mine },
+  { key: "empty", label: "Empty", icon: <InboxOutlined aria-hidden />, count: (counts) => counts.empty },
+  { key: "stale", label: "Stale (90d)", icon: <ClockCircleOutlined aria-hidden />, count: (counts) => counts.stale },
 ];
 
 export default function ProjectFilterChips({ value, onChange, counts }: Props) {

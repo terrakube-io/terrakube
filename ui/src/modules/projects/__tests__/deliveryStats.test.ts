@@ -52,6 +52,21 @@ describe("summarizeDelivery", () => {
   it("says when more runs started than were read", () => {
     expect(summarizeDelivery(jobs, 6).partial).toBe(false);
     expect(summarizeDelivery(jobs, 1200).partial).toBe(true);
+    // A read that came back with as many rows as Elide returns may have been cut short, whatever the total says.
+    expect(
+      summarizeDelivery(
+        Array.from({ length: 500 }, () => jobs[0]),
+        500,
+        500
+      ).partial
+    ).toBe(true);
+    expect(
+      summarizeDelivery(
+        Array.from({ length: 499 }, () => jobs[0]),
+        499,
+        500
+      ).partial
+    ).toBe(false);
   });
 });
 

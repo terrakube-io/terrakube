@@ -1,4 +1,4 @@
-import { Delivery, DeliveryJob, summarizeDelivery } from "./deliveryStats";
+import { Delivery, DeliveryJob, JOB_READ_CAP, summarizeDelivery } from "./deliveryStats";
 import axiosInstance from "@/config/axiosConfig";
 import { apiPost } from "@/modules/api/apiWrapper";
 import { ApiResponse } from "@/modules/api/types";
@@ -355,7 +355,7 @@ async function getDelivery(organizationId: string, projectId: string, days = 30)
     }`,
     variables: {
       orgId: organizationId,
-      filter: `workspace.project.id=='${projectId}';createdDate=ge=${since}`,
+      filter: `workspace.project.id==${quoteRsql(projectId)};createdDate=ge=${since}`,
     },
   };
   const result = await apiPost<unknown, any>("/graphql/api/v1", body, {
@@ -370,7 +370,8 @@ async function getDelivery(organizationId: string, projectId: string, days = 30)
   return {
     isError: false,
     responseCode: result.responseCode,
-    data: summarizeDelivery(jobs, jobs.length),
+    // Job cannot be paged, so a read that came back with the cap's worth of rows may have been cut short.
+    data: summarizeDelivery(jobs, jobs.length, JOB_READ_CAP),
   };
 }
 

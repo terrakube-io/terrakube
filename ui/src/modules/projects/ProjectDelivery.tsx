@@ -1,5 +1,5 @@
 import { Card, Skeleton, Tooltip, Typography } from "antd";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import "@/components/display/OverviewCards/OverviewCards.css";
 import { Delivery, formatSpan } from "./deliveryStats";
 import projectService from "./projectService";
@@ -7,11 +7,17 @@ import projectService from "./projectService";
 const DAYS = 30;
 
 function Figure({ value, label, hint }: { value: string; label: string; hint: string }) {
+  const hintId = useId();
   return (
-    <Tooltip title={hint}>
-      <div className="overview-figure">
+    <Tooltip title={hint} trigger={["hover", "focus"]}>
+      {/* Focusable, so the definition opens from the keyboard too, and the same words are read out with the figure. */}
+      {/* eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex */}
+      <div className="overview-figure" tabIndex={0} aria-describedby={hintId}>
         <div className="overview-figure-number">{value}</div>
         <Typography.Text type="secondary">{label}</Typography.Text>
+        <span id={hintId} className="overview-figure-hint">
+          {hint}
+        </span>
       </div>
     </Tooltip>
   );
@@ -37,7 +43,7 @@ export default function ProjectDelivery({ orgid, projectId }: { orgid: string; p
 
   const delivery = state?.delivery;
   return (
-    <Card className="overview-card" aria-label="Delivery">
+    <Card className="overview-card" role="region" aria-label="Delivery">
       <h3 className="overview-card-title">{`Delivery, last ${DAYS} days`}</h3>
       {state === null && <Skeleton active paragraph={{ rows: 1 }} />}
       {state?.failed && <Typography.Text type="secondary">Not available right now.</Typography.Text>}
@@ -45,7 +51,11 @@ export default function ProjectDelivery({ orgid, projectId }: { orgid: string; p
       {delivery && delivery.runs > 0 && (
         <>
           <div className="overview-figures">
-            <Figure value={String(delivery.runs)} label="Runs" hint="Runs started in this time." />
+            <Figure
+              value={delivery.partial ? `${delivery.runs}+` : String(delivery.runs)}
+              label="Runs"
+              hint="Runs started in this time."
+            />
             <Figure
               value={delivery.succeededPercent === null ? "-" : `${delivery.succeededPercent}%`}
               label="Succeeded"
@@ -64,7 +74,7 @@ export default function ProjectDelivery({ orgid, projectId }: { orgid: string; p
           </div>
           {delivery.partial && (
             <Typography.Text type="secondary" className="project-overview-meta">
-              Based on the latest runs only: there were more than could be read.
+              Based on the latest runs only: there were more than could be read, so the count is at least this.
             </Typography.Text>
           )}
         </>

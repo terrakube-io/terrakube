@@ -10,10 +10,10 @@ import {
 export type PillTone = "danger" | "warning" | "success" | "neutral";
 
 const TONES: Record<PillTone, { color?: string; icon: ReactNode }> = {
-  danger: { color: "var(--tk-status-error)", icon: <CloseCircleOutlined /> },
-  warning: { color: "var(--tk-status-warning)", icon: <ExclamationCircleOutlined /> },
-  success: { color: "var(--tk-status-success)", icon: <CheckCircleOutlined /> },
-  neutral: { icon: <QuestionCircleOutlined /> },
+  danger: { color: "var(--tk-status-error)", icon: <CloseCircleOutlined aria-hidden /> },
+  warning: { color: "var(--tk-status-warning)", icon: <ExclamationCircleOutlined aria-hidden /> },
+  success: { color: "var(--tk-status-success)", icon: <CheckCircleOutlined aria-hidden /> },
+  neutral: { icon: <QuestionCircleOutlined aria-hidden /> },
 };
 
 /** A status in the tag style of the workspace list: tinted and bordered, with the icon of its tone. */
