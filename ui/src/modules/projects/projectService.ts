@@ -852,6 +852,8 @@ export type DeletePreflight = {
   exemptions: { id: string; policySetId: string }[];
   collections: { id: string; name: string; referenceId: string }[];
   defaultTagCount: number;
+  /** The reads that failed. While any did, an empty list means nothing is known, not that nothing is attached. */
+  failed: ("policy sets" | "variable collections")[];
 };
 
 // Everything that points at the project besides its workspaces, so the dialog can say what the delete removes.
@@ -884,7 +886,11 @@ async function getDeletePreflight(organizationId: string, projectId: string): Pr
       if (onProject(edge.node)) exemptions.push({ id: edge.node.id, policySetId: set.node.id });
     });
   });
+  const failed: DeletePreflight["failed"] = [];
+  if (policies.isError) failed.push("policy sets");
+  if (collections.isError) failed.push("variable collections");
   return {
+    failed,
     teamCount: access.isError ? null : (access.data?.teamCount ?? null),
     attachments,
     exemptions,

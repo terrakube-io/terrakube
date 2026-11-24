@@ -41,8 +41,11 @@ public class ProjectDeleteGuardHook implements LifeCycleHook<Project> {
         long attachments = policyAttachmentRepository.countByProject(project);
         long exemptions = policyExemptionRepository.countByProject(project);
         if (attachments + exemptions > 0) {
-            throw new ProjectDeleteGuardException("Project " + project.getName() + " still has "
-                    + count(attachments, "policy attachment") + " and " + count(exemptions, "policy exemption")
+            // Only what is there is named, so the message never says "and 0 policy exemptions".
+            String what = attachments > 0 && exemptions > 0
+                    ? count(attachments, "policy attachment") + " and " + count(exemptions, "policy exemption")
+                    : attachments > 0 ? count(attachments, "policy attachment") : count(exemptions, "policy exemption");
+            throw new ProjectDeleteGuardException("Project " + project.getName() + " still has " + what
                     + ". Remove them before deleting the project.");
         }
         long workspaces = workspaceRepository.countLiveByProject(projectId);

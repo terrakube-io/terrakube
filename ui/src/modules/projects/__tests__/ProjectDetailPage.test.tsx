@@ -97,7 +97,7 @@ describe("ProjectDetailPage", () => {
     expect(screen.getByRole("button", { name: "New workspace" })).toBeEnabled();
     expect(screen.getByText("Write")).toBeInTheDocument();
     expect(screen.getByText("payments-devs")).toBeInTheDocument();
-    expect(screen.getByText(/You can manage access and delete the project/)).toBeInTheDocument();
+    expect(screen.getByText(/You can edit the project, manage its access and delete it/)).toBeInTheDocument();
   });
 
   it("says what the caller cannot do when they cannot manage the project", async () => {
@@ -106,7 +106,7 @@ describe("ProjectDetailPage", () => {
 
     renderAt("/organizations/org/projects/p1");
 
-    expect(await screen.findByText(/You cannot manage access or delete the project/)).toBeInTheDocument();
+    expect(await screen.findByText(/You cannot edit the project, manage its access or delete it/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Edit" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "New workspace" })).toBeDisabled();
   });

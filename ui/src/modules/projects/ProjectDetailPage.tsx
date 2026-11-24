@@ -44,6 +44,7 @@ type GeneralProps = {
   manageWorkspace: boolean;
   canUpdateProject: boolean;
   canManageCollection: boolean;
+  canManagePolicies: boolean;
   onSaved: () => void;
 };
 
@@ -55,6 +56,7 @@ function ProjectGeneralSettings({
   manageWorkspace,
   canUpdateProject,
   canManageCollection,
+  canManagePolicies,
   onSaved,
 }: GeneralProps) {
   const [waiting, setWaiting] = useState(false);
@@ -199,6 +201,8 @@ function ProjectGeneralSettings({
           projectId={projectId}
           projectName={project?.name ?? ""}
           workspaceCount={assignedWorkspacesCount}
+          canManagePolicies={canManagePolicies}
+          canManageCollection={canManageCollection}
           open={deleteOpen}
           onClose={() => setDeleteOpen(false)}
           onDeleted={() => navigate(`/organizations/${orgid}/projects`)}
@@ -290,6 +294,7 @@ export default function ProjectDetailPage({ organizationName, setOrganizationNam
             manageWorkspace={permissions.manageWorkspace}
             canUpdateProject={canManageProject}
             canManageCollection={permissions.manageCollection}
+            canManagePolicies={permissions.managePolicies}
             onSaved={execute}
           />
         );

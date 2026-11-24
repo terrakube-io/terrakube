@@ -56,6 +56,7 @@ public class Project extends GenericAuditFields {
 
     // Defaults for workspaces created in this project. Null means the organization's default (or the caller's value).
     @Size(max = 32, message = "Default Terraform version must be 32 characters or fewer")
+    @Pattern(regexp = "^(\\S|\\S.*\\S)?$", message = "Default Terraform version must not be blank or start or end with a space")
     @Column(name = "default_terraform_version")
     private String defaultTerraformVersion;
 

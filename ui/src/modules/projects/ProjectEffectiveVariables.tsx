@@ -1,5 +1,5 @@
 import { Alert, Select, Skeleton, Table, Tag, Typography } from "antd";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import workspaceService from "@/modules/workspaces/workspaceService";
 import { WorkspaceListItem } from "@/modules/workspaces/types";
@@ -27,20 +27,37 @@ function SourceLink({ orgid, workspaceId, source }: { orgid: string; workspaceId
 export default function ProjectEffectiveVariables({ orgid, projectId }: Props) {
   const [workspaces, setWorkspaces] = useState<WorkspaceListItem[]>([]);
   const [workspaceId, setWorkspaceId] = useState<string>();
+  const workspaceIdRef = useRef<string | undefined>(undefined);
+  workspaceIdRef.current = workspaceId;
   const [rows, setRows] = useState<EffectiveVariable[] | null>(null);
   const [failed, setFailed] = useState(false);
+  // Only the newest search may fill the list, and the workspace being looked at stays in it while searching.
+  const latestSearch = useRef(0);
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const searchWorkspaces = async (search: string) => {
+    const current = ++latestSearch.current;
     const response = await workspaceService.listWorkspacePage(
       { organizationId: orgid, first: 20, after: 0, projectId, search, sort: "name_asc" },
       false
     );
+    if (current !== latestSearch.current) return;
     if (!response.isError) {
       const found = response.data?.workspaces ?? [];
-      setWorkspaces(found);
-      setWorkspaceId((current) => current ?? found[0]?.id);
+      setWorkspaces((shown) => {
+        const keep = shown.find((workspace) => workspace.id === workspaceIdRef.current);
+        return keep && !found.some((workspace) => workspace.id === keep.id) ? [keep, ...found] : found;
+      });
+      setWorkspaceId((chosen) => chosen ?? found[0]?.id);
     }
   };
+
+  const searchSoon = (search: string) => {
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => searchWorkspaces(search), 250);
+  };
+
+  useEffect(() => () => clearTimeout(timer.current), []);
 
   useEffect(() => {
     searchWorkspaces("");
@@ -72,7 +89,7 @@ export default function ProjectEffectiveVariables({ orgid, projectId }: Props) {
       <Select
         showSearch
         filterOption={false}
-        onSearch={searchWorkspaces}
+        onSearch={searchSoon}
         aria-label="Workspace"
         placeholder="Choose a workspace"
         style={{ minWidth: 280, marginBottom: 12 }}
@@ -119,7 +136,8 @@ export default function ProjectEffectiveVariables({ orgid, projectId }: Props) {
       )}
       <Typography.Paragraph type="secondary" className="project-overview-meta">
         Precedence: workspace, then organisation global variables, then collections (workspace, project, organisation
-        tier, then priority). Each source links to where it is edited.
+        tier, then priority). Each source links to where it is edited. A workflow template that sets its own inputsEnv
+        or inputsTerraform does not load the default collections.
       </Typography.Paragraph>
     </div>
   );

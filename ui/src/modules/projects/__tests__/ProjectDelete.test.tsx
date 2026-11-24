@@ -34,6 +34,7 @@ const preflight: DeletePreflight = {
   exemptions: [{ id: "e1", policySetId: "ps1" }],
   collections: [{ id: "c1", name: "payments-common", referenceId: "r1" }],
   defaultTagCount: 0,
+  failed: [],
 };
 
 const pageOf = (ids: string[]) => ({ isError: false, data: { workspaces: ids.map((id) => ({ id })) } });
@@ -81,6 +82,18 @@ describe("deleteProjectWithContents", () => {
     expect(service.deletePolicyAttachment).not.toHaveBeenCalled();
   });
 
+  it("says the workspaces were already moved when a later step fails", async () => {
+    list.mockResolvedValueOnce(pageOf(["w1", "w2"])).mockResolvedValueOnce(pageOf([]));
+    remove.mockResolvedValue({ succeeded: ["w1", "w2"], failed: [] });
+    service.deletePolicyExemption.mockRejectedValueOnce({ response: { status: 403 } });
+
+    await expect(deleteProjectWithContents("org", "p1", preflight)).rejects.toThrow(
+      "You do not have permission for this step. 2 workspaces were already moved to Unassigned and the project still exists."
+    );
+
+    expect(service.deleteProject).not.toHaveBeenCalled();
+  });
+
   it("does not delete the project when the workspaces cannot be listed", async () => {
     list.mockResolvedValue({ isError: true, error: { message: "down" } });
 
@@ -91,13 +104,14 @@ describe("deleteProjectWithContents", () => {
 });
 
 describe("ProjectDeleteDialog", () => {
-  const renderDialog = (workspaceCount = 18, onDeleted = jest.fn()) =>
+  const renderDialog = (workspaceCount = 18, onDeleted = jest.fn(), rights = {}) =>
     render(
       <ProjectDeleteDialog
         orgid="org"
         projectId="p1"
         projectName="payments-prod"
         workspaceCount={workspaceCount}
+        {...rights}
         open
         onClose={jest.fn()}
         onDeleted={onDeleted}
@@ -167,5 +181,35 @@ describe("ProjectDeleteDialog", () => {
 
     expect(await screen.findByText("Project still has 1 workspace.")).toBeInTheDocument();
     expect(onDeleted).not.toHaveBeenCalled();
+  });
+
+  it("blocks the delete when a read failed, instead of saying nothing is attached", async () => {
+    service.getDeletePreflight.mockResolvedValue({
+      ...preflight,
+      attachments: [],
+      exemptions: [],
+      collections: [],
+      failed: ["policy sets"],
+    });
+    renderDialog();
+
+    expect(await screen.findByText(/policy sets could not be read/)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Project name"), { target: { value: "payments-prod" } });
+    expect(screen.getByRole("button", { name: "Move to Unassigned, then delete" })).toBeDisabled();
+  });
+
+  it("blocks moving the workspaces when the person cannot manage policies or collections", async () => {
+    renderDialog(18, jest.fn(), { canManagePolicies: false });
+    expect(await screen.findByText(/needs Manage Policies/)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Project name"), { target: { value: "payments-prod" } });
+    expect(screen.getByRole("button", { name: "Move to Unassigned, then delete" })).toBeDisabled();
+  });
+
+  it("still lets an empty project be deleted without those rights, because nothing is moved first", async () => {
+    renderDialog(0, jest.fn(), { canManagePolicies: false, canManageCollection: false });
+    await screen.findByText("0 workspaces, 3 team access rows");
+    fireEvent.change(screen.getByLabelText("Project name"), { target: { value: "payments-prod" } });
+
+    expect(screen.getByRole("button", { name: "Delete project" })).toBeEnabled();
   });
 });

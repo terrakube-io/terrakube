@@ -149,7 +149,7 @@ describe("MoveImpact", () => {
     service.listProjectPolicySets.mockResolvedValue({ isError: true, data: [] } as never);
     service.listCollectionsForProject.mockResolvedValue({ isError: true, data: [] } as never);
     service.listProjectDefaultTags.mockRejectedValue(new Error("boom"));
-    service.listProjectAccess.mockResolvedValue(ok([]));
+    service.listProjectTeams.mockResolvedValue(ok({ teams: [], restricted: false }));
     render(
       <MoveImpact
         orgid="org"

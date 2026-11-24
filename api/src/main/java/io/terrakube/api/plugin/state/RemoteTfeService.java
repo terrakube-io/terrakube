@@ -59,6 +59,7 @@ import io.terrakube.api.rs.job.JobVia;
 import io.terrakube.api.rs.job.address.Address;
 import io.terrakube.api.rs.job.address.AddressType;
 import io.terrakube.api.rs.job.step.Step;
+import io.terrakube.api.rs.hooks.workspace.ProjectWorkspaceDefaults;
 import io.terrakube.api.rs.project.Project;
 import io.terrakube.api.rs.tag.Tag;
 import io.terrakube.api.rs.template.Template;
@@ -1239,6 +1240,7 @@ public class RemoteTfeService {
             //newWorkspace.setId(UUID.randomUUID());
             newWorkspace.setName(workspaceData.getData().getAttributes().get("name").toString());
             String terraformVersion = "";
+            boolean versionRequested = workspaceData.getData().getAttributes().get("terraform-version") != null;
             if (workspaceData.getData().getAttributes().get("terraform-version") != null) {
                 terraformVersion = workspaceData.getData().getAttributes().get("terraform-version").toString();
             } else {
@@ -1254,10 +1256,12 @@ public class RemoteTfeService {
                     ? organization.getExecutionMode()
                     : ExecutionMode.remote;
             ExecutionMode executionMode = fallbackMode;
+            boolean modeRequested = false;
             Object execModeAttr = workspaceData.getData().getAttributes().get("execution-mode");
             if (execModeAttr != null) {
                 try {
                     executionMode = ExecutionMode.valueOf(execModeAttr.toString().toLowerCase(Locale.ROOT));
+                    modeRequested = true;
                 } catch (IllegalArgumentException e) {
                     log.warn("Unknown execution-mode '{}' requested for workspace {}, falling back to organization default: {}",
                             execModeAttr, newWorkspace.getName(), fallbackMode);
@@ -1272,6 +1276,15 @@ public class RemoteTfeService {
                 log.info("Project Id: {}", projectId);
                 Project project = projectRepository.getReferenceById(UUID.fromString(projectId));
                 newWorkspace.setProject(project);
+                // Request, then project, then organization: the same rule the Elide create applies.
+                ExecutionMode projectMode = ProjectWorkspaceDefaults.executionMode(project);
+                if (!modeRequested && projectMode != null) {
+                    newWorkspace.setExecutionMode(projectMode);
+                }
+                String projectVersion = ProjectWorkspaceDefaults.terraformVersion(project);
+                if (!versionRequested && projectVersion != null) {
+                    newWorkspace.setTerraformVersion(projectVersion);
+                }
             }
             // go-tfe sends list-style tags as "tags" and key/value tags as "tag-bindings"
             io.terrakube.api.plugin.state.model.workspace.Relationships relationships = workspaceData.getData().getRelationships();

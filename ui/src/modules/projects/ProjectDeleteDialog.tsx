@@ -8,9 +8,21 @@ type Props = {
   projectId: string;
   projectName: string;
   workspaceCount: number;
+  /** Deleting removes what is attached, which needs these rights. Without them the workspaces would move for nothing. */
+  canManagePolicies?: boolean;
+  canManageCollection?: boolean;
   open: boolean;
   onClose: () => void;
   onDeleted: () => void;
+};
+
+const UNREAD: DeletePreflight = {
+  teamCount: null,
+  attachments: [],
+  exemptions: [],
+  collections: [],
+  defaultTagCount: 0,
+  failed: [],
 };
 
 const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`;
@@ -27,6 +39,8 @@ export default function ProjectDeleteDialog({
   projectId,
   projectName,
   workspaceCount,
+  canManagePolicies = true,
+  canManageCollection = true,
   open,
   onClose,
   onDeleted,
@@ -41,7 +55,14 @@ export default function ProjectDeleteDialog({
     setTyped("");
     setError(undefined);
     setPreflight(null);
-    projectService.getDeletePreflight(orgid, projectId).then(setPreflight);
+    let current = true;
+    projectService
+      .getDeletePreflight(orgid, projectId)
+      .then((found) => current && setPreflight(found))
+      .catch(() => current && setPreflight({ ...UNREAD, failed: ["policy sets", "variable collections"] }));
+    return () => {
+      current = false;
+    };
   }, [open, orgid, projectId]);
 
   const confirm = async () => {
@@ -59,7 +80,23 @@ export default function ProjectDeleteDialog({
   };
 
   const policyCount = (preflight?.attachments.length ?? 0) + (preflight?.exemptions.length ?? 0);
-  const matches = typed.trim() === projectName;
+  // An empty name must never match an empty box while the project is still loading.
+  const matches = Boolean(projectName) && typed.trim() === projectName;
+  // What stops the delete before anything is moved, since the workspaces move first and the later steps need these rights.
+  const blocked = (() => {
+    if (!preflight) return undefined;
+    if (preflight.failed.length > 0) {
+      return `${preflight.failed.join(" and ")} could not be read, so what the delete would remove is not known.`;
+    }
+    if (workspaceCount === 0) return undefined;
+    if (!canManagePolicies) {
+      return "Deleting a project that has workspaces also removes the policy sets attached to it, which needs Manage Policies. Ask someone who has it.";
+    }
+    if (!canManageCollection) {
+      return "Deleting a project that has workspaces also detaches its variable collections, which needs Manage Collections. Ask someone who has it.";
+    }
+    return undefined;
+  })();
 
   return (
     <Modal
@@ -68,7 +105,7 @@ export default function ProjectDeleteDialog({
       onCancel={step ? undefined : onClose}
       onOk={confirm}
       okText={workspaceCount > 0 ? "Move to Unassigned, then delete" : "Delete project"}
-      okButtonProps={{ danger: true, disabled: !matches || !preflight }}
+      okButtonProps={{ danger: true, disabled: !matches || !preflight || Boolean(blocked) }}
       confirmLoading={Boolean(step)}
       closable={!step}
       maskClosable={!step}
@@ -118,6 +155,7 @@ export default function ProjectDeleteDialog({
           )}
         </dl>
       )}
+      {blocked && <Alert type="warning" showIcon className="project-bulk-impact" message={blocked} />}
       {workspaceCount > 0 && (
         <Typography.Paragraph type="secondary" className="project-bulk-impact">
           The workspaces are moved to Unassigned first, not deleted.

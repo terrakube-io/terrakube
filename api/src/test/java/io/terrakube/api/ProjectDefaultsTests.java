@@ -82,6 +82,50 @@ class ProjectDefaultsTests extends ServerApplicationTests {
                 .statusCode(HttpStatus.BAD_REQUEST.value());
     }
 
+    @Test
+    void aWorkspaceCreatedThroughTheRemoteApiGetsTheProjectDefaults() {
+        Workspace created = createRemote("{\"name\":\"%s\"}");
+
+        assertThat(created.getExecutionMode()).isEqualTo(ExecutionMode.local);
+        assertThat(created.getTerraformVersion()).isEqualTo("1.9.8");
+    }
+
+    @Test
+    void valuesTheRemoteApiRequestSendsStillWinOverTheProject() {
+        Workspace created = createRemote("{\"name\":\"%s\",\"terraform-version\":\"1.14.0\",\"execution-mode\":\"remote\"}");
+
+        assertThat(created.getExecutionMode()).isEqualTo(ExecutionMode.remote);
+        assertThat(created.getTerraformVersion()).isEqualTo("1.14.0");
+    }
+
+    @Test
+    void aBlankOrPaddedDefaultTerraformVersionIsRejected() {
+        for (String version : new String[] {"   ", " 1.9.8", "1.9.8 "}) {
+            given()
+                    .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
+                    .body("{\"data\":{\"type\":\"project\",\"id\":\"" + project.getId() + "\",\"attributes\":{\"defaultTerraformVersion\":\"" + version + "\"}}}")
+                    .when()
+                    .patch("/api/v1/organization/" + ORG + "/project/" + project.getId())
+                    .then()
+                    .statusCode(HttpStatus.BAD_REQUEST.value());
+        }
+    }
+
+    private Workspace createRemote(String attributesTemplate) {
+        String name = "defaults-remote-" + UUID.randomUUID();
+        names.add(name);
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
+                .body("{\"data\":{\"type\":\"workspaces\",\"attributes\":" + String.format(attributesTemplate, name)
+                        + ",\"relationships\":{\"project\":{\"data\":{\"type\":\"projects\",\"id\":\"" + project.getId() + "\"}}}}}")
+                .when()
+                .post("/remote/tfe/v2/organizations/simple/workspaces")
+                .then()
+                .log().ifValidationFails()
+                .statusCode(HttpStatus.CREATED.value());
+        return workspaceRepository.findAll().stream().filter(w -> name.equals(w.getName())).findFirst().orElseThrow();
+    }
+
     private Workspace create(String attributesTemplate) {
         String name = "defaults-ws-" + UUID.randomUUID();
         names.add(name);

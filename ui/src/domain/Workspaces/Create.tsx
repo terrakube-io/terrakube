@@ -78,6 +78,7 @@ type CreateWorkspaceForm = {
 export const CreateWorkspace = () => {
   const [organizationName, setOrganizationName] = useState<string | null>();
   const [executionMode, setExecutionMode] = useState<string | null>();
+  const [projectDefaultMode, setProjectDefaultMode] = useState<string>();
   const [projectDefaultVersion, setProjectDefaultVersion] = useState<string>();
   const [terraformVersions, setTerraformVersions] = useState<string[]>([]);
   const [vcs, setVCS] = useState<VcsModel[]>([]);
@@ -374,14 +375,17 @@ export const CreateWorkspace = () => {
 
   const [form] = Form.useForm();
 
-  // A project can set the Terraform version its workspaces start with. The execution mode default is applied by the
-  // API when none is sent, so only the version, which this form always sends, needs prefilling.
+  // A project can set the Terraform version and execution mode its workspaces start with. The API applies the mode
+  // when none is sent, but the CLI driven flow always sends one, so the project's own default is used instead of
+  // that fixed value when the project has one. The version is always sent, so it is prefilled.
   const selectedProject = Form.useWatch("project", form);
   useEffect(() => {
     setProjectDefaultVersion(undefined);
+    setProjectDefaultMode(undefined);
     if (!organizationId || !selectedProject || selectedProject === "none") return;
     let cancelled = false;
     projectService.getProject(organizationId, selectedProject).then((response) => {
+      if (!cancelled && !response.isError) setProjectDefaultMode(response.data?.defaultExecutionMode ?? undefined);
       const version = response.isError ? undefined : response.data?.defaultTerraformVersion;
       if (cancelled || !version || !terraformVersions.includes(version)) return;
       form.setFieldsValue({ terraformVersion: version });
@@ -464,7 +468,7 @@ export const CreateWorkspace = () => {
               branch: values.branch,
               iacType: iacType.id,
               defaultTemplate: values.defaultTemplate,
-              executionMode: executionMode,
+              executionMode: executionMode ? (projectDefaultMode ?? executionMode) : executionMode,
             },
             relationships: {},
           },
