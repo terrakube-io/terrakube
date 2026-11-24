@@ -1,5 +1,6 @@
 package io.terrakube.api.plugin.project;
 
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -87,6 +88,7 @@ public class ProjectDefaultTagService {
             for (Object[] pair : workspaceTagRepository.findExistingPairs(ids.getContent())) {
                 existing.add(pair[0] + "|" + pair[1]);
             }
+            List<WorkspaceTag> toSave = new ArrayList<>();
             for (UUID workspaceId : ids.getContent()) {
                 boolean touched = false;
                 for (ProjectTag projectTag : defaults) {
@@ -96,12 +98,16 @@ public class ProjectDefaultTagService {
                     added++;
                     touched = true;
                     if (!dryRun) {
-                        workspaceTagRepository.save(projectTag.copyTo(workspaceRepository.getReferenceById(workspaceId)));
+                        toSave.add(projectTag.copyTo(workspaceRepository.getReferenceById(workspaceId)));
                     }
                 }
                 if (touched) {
                     changed++;
                 }
+            }
+            // One write per page, not one per tag.
+            if (!toSave.isEmpty()) {
+                workspaceTagRepository.saveAll(toSave);
             }
         } while (ids.hasNext());
         return new Result(workspaces, changed, added);

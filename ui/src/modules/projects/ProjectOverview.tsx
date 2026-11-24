@@ -98,13 +98,13 @@ export default function ProjectOverview({ orgid, summary, loading, onOpenTab }: 
         </Typography.Paragraph>
       </Card>
       <div className="project-overview-landing">
-        <Typography.Text type="secondary">Open this project on: </Typography.Text>
+        <Typography.Text type="secondary">Open projects on: </Typography.Text>
         <Select
           size="small"
           aria-label="Default project tab"
           value={landing}
           options={[
-            { value: "default", label: "Project default" },
+            { value: "default", label: "Each project's setting" },
             ...Object.entries(PROJECT_TAB_LABELS).map(([value, label]) => ({ value, label })),
           ]}
           onChange={(value: ProjectTab | "default") => {

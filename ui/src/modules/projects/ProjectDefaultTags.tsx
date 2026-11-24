@@ -1,5 +1,5 @@
 import { Button, Flex, Input, Modal, Select, Tag, Typography, message } from "antd";
-import { useCallback, useEffect, useState } from "react";
+import { MouseEvent, useCallback, useEffect, useState } from "react";
 import projectService, { OrganizationTag, ProjectDefaultTag } from "./projectService";
 
 type Props = {
@@ -17,6 +17,7 @@ export default function ProjectDefaultTags({ orgid, projectId, canManage }: Prop
   const [tags, setTags] = useState<OrganizationTag[]>([]);
   const [tagId, setTagId] = useState<string>();
   const [value, setValue] = useState("");
+  const [adding, setAdding] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -39,7 +40,8 @@ export default function ProjectDefaultTags({ orgid, projectId, canManage }: Prop
   const unused = tags.filter((tag) => !defaults.some((item) => item.tagId === tag.id));
 
   const add = async () => {
-    if (!tagId) return;
+    if (!tagId || adding) return;
+    setAdding(true);
     try {
       await projectService.addProjectDefaultTag(orgid, projectId, tagId, value.trim());
       setTagId(undefined);
@@ -47,6 +49,8 @@ export default function ProjectDefaultTags({ orgid, projectId, canManage }: Prop
       load();
     } catch (err: any) {
       message.error(err?.response?.status === 403 ? "You do not have permission to change this project" : err?.message);
+    } finally {
+      setAdding(false);
     }
   };
 
@@ -62,8 +66,16 @@ export default function ProjectDefaultTags({ orgid, projectId, canManage }: Prop
         content: `${preview.tagsAdded} tag${preview.tagsAdded === 1 ? "" : "s"} will be added to ${preview.workspacesChanged} of ${preview.workspaces} workspace${preview.workspaces === 1 ? "" : "s"}. Tags a workspace already has are not changed.`,
         okText: "Apply",
         onOk: async () => {
-          const done = await projectService.applyProjectDefaultTags(orgid, projectId, false);
-          message.success(`Added ${done.tagsAdded} tag${done.tagsAdded === 1 ? "" : "s"}`);
+          try {
+            const done = await projectService.applyProjectDefaultTags(orgid, projectId, false);
+            message.success(`Added ${done.tagsAdded} tag${done.tagsAdded === 1 ? "" : "s"}`);
+          } catch (err: any) {
+            message.error(
+              err?.response?.status === 404
+                ? "You do not have permission to change this project"
+                : (err?.message ?? "The default tags could not be applied")
+            );
+          }
         },
       });
     } catch (err: any) {
@@ -73,7 +85,9 @@ export default function ProjectDefaultTags({ orgid, projectId, canManage }: Prop
     }
   };
 
-  const remove = async (item: ProjectDefaultTag) => {
+  // The tag stays on screen until the delete has worked; the reload then drops it.
+  const remove = async (event: MouseEvent<HTMLElement>, item: ProjectDefaultTag) => {
+    event.preventDefault();
     try {
       await projectService.removeProjectDefaultTag(orgid, projectId, item.id);
       load();
@@ -92,7 +106,7 @@ export default function ProjectDefaultTags({ orgid, projectId, canManage }: Prop
       <Flex gap={8} wrap className="project-default-tags-list">
         {defaults.length === 0 && <Typography.Text type="secondary">No default tags.</Typography.Text>}
         {defaults.map((item) => (
-          <Tag key={item.id} closable={canManage} onClose={() => remove(item)}>
+          <Tag key={item.id} closable={canManage} onClose={(event) => remove(event, item)}>
             {item.value ? `${nameOf(item.tagId)}: ${item.value}` : nameOf(item.tagId)}
           </Tag>
         ))}
@@ -117,7 +131,7 @@ export default function ProjectDefaultTags({ orgid, projectId, canManage }: Prop
             value={value}
             onChange={(event) => setValue(event.target.value)}
           />
-          <Button type="primary" disabled={!tagId} onClick={add}>
+          <Button type="primary" disabled={!tagId} loading={adding} onClick={add}>
             Add tag
           </Button>
           <Button disabled={defaults.length === 0} onClick={applyToExisting}>

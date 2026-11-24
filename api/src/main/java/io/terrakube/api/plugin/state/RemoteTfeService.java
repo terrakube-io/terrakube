@@ -1301,12 +1301,9 @@ public class RemoteTfeService {
         if (workspace.getProject() == null) {
             return;
         }
-        try {
-            projectDefaultTagService.copyDefaults(workspace);
-        } catch (RuntimeException e) {
-            log.error("Failed to copy the default tags of project {} onto workspace {}",
-                    workspace.getProject().getId(), workspace.getName(), e);
-        }
+        // Not caught: the copy joins the create's transaction, so a failure rolls the create back whatever is done
+        // here. Letting it propagate reports the real cause instead of an unexpected rollback at commit.
+        projectDefaultTagService.copyDefaults(workspace);
     }
 
     WorkspaceData updateWorkspaceLock(String workspaceId, boolean locked, JwtAuthenticationToken currentUser) {

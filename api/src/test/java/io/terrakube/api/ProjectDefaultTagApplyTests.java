@@ -88,8 +88,54 @@ class ProjectDefaultTagApplyTests extends ServerApplicationTests {
             jdbcTemplate.update("delete from workspace where id = ?", id);
         }
         jdbcTemplate.update("delete from project_tag where project_id = ?", project.getId().toString());
+        jdbcTemplate.update("delete from project_access where project_id = ?", project.getId().toString());
         jdbcTemplate.update("delete from project where id = ?", project.getId().toString());
         jdbcTemplate.update("delete from tag where id = ?", tag.getId().toString());
+    }
+
+    @Test
+    void aProjectAdminWithoutAnOrganizationTeamCanApply() {
+        grant("APPLY_PROJECT_ADMIN", "admin");
+
+        apply("APPLY_PROJECT_ADMIN", false).statusCode(HttpStatus.OK.value()).body("tagsAdded", is(1));
+
+        assertThat(workspaceTagRepository.findByWorkspace(untagged)).extracting(WorkspaceTag::getValue).containsExactly("default");
+    }
+
+    @Test
+    void aProjectTeamThatIsNotAdminIsRefusedAndNothingIsWritten() {
+        grant("APPLY_PROJECT_WRITE", "write");
+        grant("APPLY_PROJECT_PLAN", "plan");
+        grant("APPLY_PROJECT_READ", "read");
+
+        for (String team : new String[] {"APPLY_PROJECT_WRITE", "APPLY_PROJECT_PLAN", "APPLY_PROJECT_READ"}) {
+            apply(team, true).statusCode(HttpStatus.NOT_FOUND.value());
+            apply(team, false).statusCode(HttpStatus.NOT_FOUND.value());
+        }
+
+        assertThat(workspaceTagRepository.findByWorkspace(untagged)).isEmpty();
+    }
+
+    @Test
+    void theRightProjectUnderAnotherOrganizationIsNotFound() {
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_ADMIN"))
+                .when()
+                .post("/access-token/v1/projects/organization/3a130a1c-d96f-4f99-83b8-58d472567e3a/project/" + project.getId()
+                        + "/default-tags/apply?dryRun=false")
+                .then()
+                .statusCode(HttpStatus.NOT_FOUND.value());
+
+        assertThat(workspaceTagRepository.findByWorkspace(untagged)).isEmpty();
+    }
+
+    private void grant(String team, String role) {
+        io.terrakube.api.rs.project.access.ProjectAccess access = new io.terrakube.api.rs.project.access.ProjectAccess();
+        access.setName(team);
+        access.setRole(role);
+        access.setProject(project);
+        project.getProjectAccess().add(access);
+        project = projectRepository.save(project);
     }
 
     @Test

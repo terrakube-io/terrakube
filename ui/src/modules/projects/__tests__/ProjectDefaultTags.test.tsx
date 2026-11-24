@@ -77,4 +77,48 @@ describe("ProjectDefaultTags", () => {
 
     await waitFor(() => expect(service.applyProjectDefaultTags).toHaveBeenLastCalledWith("org", "p1", false));
   });
+
+  it("keeps a tag on screen when removing it fails", async () => {
+    service.removeProjectDefaultTag.mockRejectedValue(new Error("refused"));
+    render(<ProjectDefaultTags orgid="org" projectId="p1" canManage />);
+    await screen.findByText("env: prod");
+
+    fireEvent.click(screen.getByLabelText("Close"));
+
+    await waitFor(() => expect(service.removeProjectDefaultTag).toHaveBeenCalledWith("org", "p1", "pt1"));
+    expect(screen.getByText("env: prod")).toBeInTheDocument();
+  });
+
+  it("reports a failure of the confirmed apply instead of leaving the dialog hanging", async () => {
+    service.applyProjectDefaultTags
+      .mockResolvedValueOnce({ workspaces: 2, workspacesChanged: 1, tagsAdded: 1 })
+      .mockRejectedValueOnce({ response: { status: 404 } });
+    render(<ProjectDefaultTags orgid="org" projectId="p1" canManage />);
+    await screen.findByText("env: prod");
+
+    fireEvent.click(screen.getByRole("button", { name: "Apply to existing workspaces" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Apply" }));
+
+    expect(await screen.findByText("You do not have permission to change this project")).toBeInTheDocument();
+  });
+
+  it("adds a tag once however many times Add tag is pressed", async () => {
+    let finish: () => void = () => undefined;
+    service.addProjectDefaultTag.mockReturnValue(
+      new Promise<void>((resolve) => {
+        finish = resolve;
+      })
+    );
+    render(<ProjectDefaultTags orgid="org" projectId="p1" canManage />);
+    await screen.findByText("env: prod");
+
+    fireEvent.mouseDown(screen.getByRole("combobox", { name: "Tag to add" }));
+    fireEvent.click(await screen.findByTitle("team"));
+    const add = screen.getByRole("button", { name: "Add tag" });
+    fireEvent.click(add);
+    fireEvent.click(add);
+    finish();
+
+    await waitFor(() => expect(service.addProjectDefaultTag).toHaveBeenCalledTimes(1));
+  });
 });

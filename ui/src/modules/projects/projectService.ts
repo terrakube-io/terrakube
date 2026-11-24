@@ -582,7 +582,7 @@ async function listAttentionWorkspaces(
   limit = 5
 ): Promise<ApiResponse<AttentionWorkspace[]>> {
   const body = {
-    query: `query ($orgId: String!, $first: Int!, $filter: String) {
+    query: `query ($orgId: String!, $first: StringOrInt, $filter: String) {
       organization(ids: [$orgId]) {
         edges { node { workspace(first: $first, after: "0", sort: "-lastJobDate", filter: $filter) {
           edges { node { id name lastJobStatus policyComplianceStatus } }
@@ -591,8 +591,8 @@ async function listAttentionWorkspaces(
     }`,
     variables: {
       orgId: organizationId,
-      first: limit,
-      filter: `project.id=='${projectId}';(lastJobStatus=in=('failed','waitingApproval'),policyComplianceStatus=='NON_COMPLIANT')`,
+      first: String(limit),
+      filter: `project.id==${quoteRsql(projectId)};(lastJobStatus=in=('failed','waitingApproval'),policyComplianceStatus=='NON_COMPLIANT')`,
     },
   };
   const result = await apiPost<unknown, any>("/graphql/api/v1", body, {
