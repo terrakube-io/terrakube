@@ -42,7 +42,9 @@ describe("projectWorkspacesLink", () => {
 describe("statusForHealth", () => {
   it("maps each part of the health bar to the status the list filters on", () => {
     expect(statusForHealth("waiting")).toBe("waitingApproval");
-    expect(statusForHealth("queued")).toBe("pending");
+    // The list filters on one status, so a part of the bar that is several statuses has no link.
+    expect(statusForHealth("queued")).toBeNull();
+    expect(statusForHealth("completed")).toBeNull();
     expect(statusForHealth("never")).toBe("NeverExecuted");
   });
 });

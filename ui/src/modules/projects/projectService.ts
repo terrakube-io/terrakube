@@ -5,7 +5,7 @@ import containsFilter from "@/modules/workspaces/utils/containsFilter";
 import quoteRsql from "@/modules/workspaces/utils/quoteRsql";
 import { ProjectModel, ProjectSummaryModel } from "@/domain/types";
 import { CollectionEntry, VariableEntry } from "./effectiveVariables";
-import { isPlanOnlyTemplate } from "./templatePlanOnly";
+import { isPlanOnlyTemplate } from "@/domain/Jobs/planOnlyTemplate";
 
 export type ProjectAccessModel = {
   id: string;
@@ -701,7 +701,6 @@ async function listOrganizationTags(organizationId: string): Promise<Organizatio
   return (response.data?.data ?? []).map((item: any) => ({
     id: item.id,
     name: item.attributes?.name,
-    planOnly: isPlanOnlyTemplate(item.attributes?.tcl),
   }));
 }
 
@@ -1027,7 +1026,12 @@ export type OrganizationTemplate = { id: string; name: string; planOnly: boolean
 
 async function listOrganizationTemplates(organizationId: string): Promise<OrganizationTemplate[]> {
   const response = await axiosInstance.get(`organization/${organizationId}/template`);
-  return (response.data?.data ?? []).map((item: any) => ({ id: item.id, name: item.attributes?.name }));
+  // The template body is base64, which isPlanOnlyTemplate decodes. Only templates that just plan are offered.
+  return (response.data?.data ?? []).map((item: any) => ({
+    id: item.id,
+    name: item.attributes?.name,
+    planOnly: isPlanOnlyTemplate(item.attributes?.tcl),
+  }));
 }
 
 const methods = {

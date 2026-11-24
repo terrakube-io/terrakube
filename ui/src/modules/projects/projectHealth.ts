@@ -39,9 +39,12 @@ export type PolicyRollup = { tone: "danger" | "warning" | "success" | "neutral";
 // A hard mandatory violation outranks a soft one. Older evaluations have no split, so those fall back to the
 // plain non-compliant count.
 export function policyRollup(summary: ProjectSummaryModel): PolicyRollup {
+  const split = summary.hardViolationCount + summary.softViolationCount;
+  // Workspaces that were non-compliant before the split existed have no hard or soft count. They may well have hard
+  // violations, so when there are more non-compliant workspaces than the split explains, show them all as danger.
+  if (summary.nonCompliantCount > split) return { tone: "danger", text: `${summary.nonCompliantCount} non-compliant` };
   if (summary.hardViolationCount > 0) return { tone: "danger", text: `${summary.hardViolationCount} hard` };
   if (summary.softViolationCount > 0) return { tone: "warning", text: `${summary.softViolationCount} soft` };
-  if (summary.nonCompliantCount > 0) return { tone: "danger", text: `${summary.nonCompliantCount} non-compliant` };
   if (summary.compliantCount + summary.exemptedCount > 0) return { tone: "success", text: "Compliant" };
   return { tone: "neutral", text: "Not evaluated" };
 }

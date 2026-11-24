@@ -153,7 +153,10 @@ export default function ProjectOverview({ orgid, summary, loading, failed = fals
           summary={summary}
           legend="counts"
           size="large"
-          hrefFor={(key) => projectWorkspacesLink(orgid, summary.id, { status: statusForHealth(key) })}
+          hrefFor={(key) => {
+            const status = statusForHealth(key);
+            return status ? projectWorkspacesLink(orgid, summary.id, { status }) : undefined;
+          }}
         />
         <Typography.Paragraph type="secondary" className="project-overview-meta">
           Last run: {summary.lastRunAt ? new Date(summary.lastRunAt).toLocaleString() : "Never"}

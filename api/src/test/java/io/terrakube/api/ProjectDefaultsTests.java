@@ -29,6 +29,8 @@ class ProjectDefaultsTests extends ServerApplicationTests {
     @Autowired
     private WorkspaceRepository workspaceRepository;
     @Autowired
+    private io.terrakube.api.repository.TemplateRepository templateRepository;
+    @Autowired
     private JdbcTemplate jdbcTemplate;
 
     private Project project;
@@ -112,6 +114,41 @@ class ProjectDefaultsTests extends ServerApplicationTests {
                     .then()
                     .statusCode(HttpStatus.BAD_REQUEST.value());
         }
+    }
+
+    @Test
+    void theDefaultTemplateMustBeATemplateOfTheSameOrganization() {
+        io.terrakube.api.rs.template.Template real = new io.terrakube.api.rs.template.Template();
+        real.setName("defaults-tpl-" + UUID.randomUUID());
+        real.setOrganization(organizationRepository.findById(UUID.fromString(ORG)).orElseThrow());
+        real.setTcl("ZmxvdzogW10=");
+        real = templateRepository.save(real);
+        io.terrakube.api.rs.template.Template foreign = new io.terrakube.api.rs.template.Template();
+        foreign.setName("defaults-foreign-" + UUID.randomUUID());
+        foreign.setOrganization(organizationRepository.findById(UUID.fromString("3a130a1c-d96f-4f99-83b8-58d472567e3a")).orElseThrow());
+        foreign.setTcl("ZmxvdzogW10=");
+        foreign = templateRepository.save(foreign);
+        try {
+            patchDefaultTemplate("\"" + real.getId() + "\"", HttpStatus.NO_CONTENT.value());
+            patchDefaultTemplate("\"" + UUID.randomUUID() + "\"", HttpStatus.BAD_REQUEST.value());
+            patchDefaultTemplate("\"" + foreign.getId() + "\"", HttpStatus.BAD_REQUEST.value());
+            patchDefaultTemplate("\"not-a-template\"", HttpStatus.BAD_REQUEST.value());
+            // Blank means no default, so a project can be cleared.
+            patchDefaultTemplate("\"  \"", HttpStatus.NO_CONTENT.value());
+        } finally {
+            jdbcTemplate.update("update project set default_template = null where id = ?", project.getId().toString());
+            jdbcTemplate.update("delete from template where id in (?, ?)", real.getId().toString(), foreign.getId().toString());
+        }
+    }
+
+    private void patchDefaultTemplate(String value, int expectedStatus) {
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
+                .body("{\"data\":{\"type\":\"project\",\"id\":\"" + project.getId() + "\",\"attributes\":{\"defaultTemplate\":" + value + "}}}")
+                .when()
+                .patch("/api/v1/organization/" + ORG + "/project/" + project.getId())
+                .then()
+                .statusCode(expectedStatus);
     }
 
     private Workspace createRemote(String attributesTemplate) {

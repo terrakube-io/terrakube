@@ -92,6 +92,14 @@ describe("policyRollup", () => {
     expect(policyRollup({ ...base, nonCompliantCount: 2 }).text).toBe("2 non-compliant");
   });
 
+  it("does not let one evaluated soft violation hide workspaces that were non-compliant before the split", () => {
+    // Four workspaces have no hard or soft count yet and may well have hard violations; one is soft only.
+    expect(policyRollup({ ...base, nonCompliantCount: 5, softViolationCount: 1 })).toEqual({
+      tone: "danger",
+      text: "5 non-compliant",
+    });
+  });
+
   it("reports non-compliant first, then compliant, then not evaluated", () => {
     expect(policyRollup({ ...base, nonCompliantCount: 1, compliantCount: 5 })).toEqual({
       tone: "danger",

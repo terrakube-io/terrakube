@@ -33,4 +33,12 @@ public final class ProjectWorkspaceDefaults {
         }
         return project.getDefaultTerraformVersion().trim();
     }
+
+    /** The project's default template id, or null when it has none. */
+    public static String template(Project project) {
+        if (project == null || project.getDefaultTemplate() == null || project.getDefaultTemplate().isBlank()) {
+            return null;
+        }
+        return project.getDefaultTemplate().trim();
+    }
 }

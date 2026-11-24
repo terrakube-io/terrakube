@@ -87,13 +87,19 @@ export default function BulkWorkspaceBar({
   useEffect(() => {
     if (!approveOpen) return;
     setWaiting(null);
+    // The answer for an earlier selection or a closed dialog is dropped.
+    let current = true;
     findWaitingRuns(orgid, selectedIds)
-      .then(setWaiting)
+      .then((runs) => current && setWaiting(runs))
       .catch((err) => {
+        if (!current) return;
         message.error(err?.message ?? "Runs waiting for approval could not be listed");
         setApproveOpen(false);
       });
-  }, [approveOpen]);
+    return () => {
+      current = false;
+    };
+  }, [approveOpen, orgid, selectedIds.join(",")]);
 
   if (selected.length === 0) return null;
   const count = selected.length;
@@ -277,12 +283,14 @@ export default function BulkWorkspaceBar({
             </ul>
             {clear.length > 0 && (
               <Alert
-                type={totals.destroy > 0 ? "warning" : "info"}
+                type={totals.destroy > 0 || totals.withoutSummary > 0 ? "warning" : "info"}
                 showIcon
                 message={
                   totals.destroy > 0
-                    ? `Approving will destroy ${totals.destroy} resource${totals.destroy === 1 ? "" : "s"}`
-                    : "Approving will not destroy anything"
+                    ? `Approving will destroy ${totals.withoutSummary > 0 ? "at least " : ""}${totals.destroy} resource${totals.destroy === 1 ? "" : "s"}`
+                    : totals.withoutSummary > 0
+                      ? "What approving destroys is not known for every run"
+                      : "Approving will not destroy anything"
                 }
                 description={`In all: ${totals.add} to add, ${totals.change} to change, ${totals.destroy} to destroy.${
                   totals.withoutSummary > 0

@@ -170,7 +170,7 @@ describe("bulk plan and approve", () => {
     expect(graphql.mock.calls[0][1].query).toContain("policyEvaluation");
     expect(graphql.mock.calls[0][1].query).toContain("planDestroy");
     const request = graphql.mock.calls[0][1];
-    expect(request.variables.filter).toBe("status=='waitingApproval';workspace.id=in=('w1','w2')");
+    expect(request.variables.filter).toBe(`status=='waitingApproval';workspace.id=in=("w1","w2")`);
     expect(request.query).not.toContain("first:");
   });
 
@@ -427,7 +427,7 @@ describe("BulkWorkspaceBar", () => {
     expect(within(runs).getByText("3 to add, 1 to change, 0 to destroy")).toBeInTheDocument();
     expect(within(runs).getByText("0 to add, 2 to change, 4 to destroy")).toBeInTheDocument();
     expect(within(runs).getByText("no plan summary")).toBeInTheDocument();
-    expect(screen.getByText("Approving will destroy 4 resources")).toBeInTheDocument();
+    expect(screen.getByText("Approving will destroy at least 4 resources")).toBeInTheDocument();
     expect(
       screen.getByText(/In all: 3 to add, 3 to change, 4 to destroy\. 1 run has no plan summary and is not counted\./)
     ).toBeInTheDocument();
@@ -465,6 +465,41 @@ describe("BulkWorkspaceBar", () => {
     fireEvent.click(screen.getByRole("button", { name: "Approve" }));
 
     expect(await screen.findByText("Approving will not destroy anything")).toBeInTheDocument();
+  });
+
+  it("does not say nothing will be destroyed when a run has no plan summary", async () => {
+    graphql.mockResolvedValue({
+      isError: false,
+      data: {
+        organization: {
+          edges: [
+            {
+              node: {
+                job: {
+                  edges: [
+                    {
+                      node: {
+                        id: 7,
+                        planAdd: null,
+                        planChange: null,
+                        planDestroy: null,
+                        workspace: { edges: [{ node: { id: "w1" } }] },
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+          ],
+        },
+      },
+    });
+    renderBar([item("w1", { lastStatus: "waitingApproval" as never })]);
+
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+
+    expect(await screen.findByText("What approving destroys is not known for every run")).toBeInTheDocument();
+    expect(screen.queryByText("Approving will not destroy anything")).not.toBeInTheDocument();
   });
 
   it("says when nothing is waiting, and offers nothing to approve", async () => {

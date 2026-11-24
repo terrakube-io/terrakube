@@ -227,10 +227,9 @@ describe("ProjectOverview", () => {
     it("links each health status to the workspaces with that status", () => {
       renderOverview({ summary, loading: false, onOpenTab: jest.fn() });
 
-      expect(screen.getByRole("link", { name: "3 completed" })).toHaveAttribute(
-        "href",
-        "/organizations/org/projects/p1/workspaces?status=completed"
-      );
+      // Completed is completed plus noChanges, which the list cannot filter on together, so it is not a link.
+      expect(screen.getByText("3 completed")).toBeInTheDocument();
+      expect(screen.queryByRole("link", { name: "3 completed" })).not.toBeInTheDocument();
       expect(screen.getByRole("link", { name: "1 failed" })).toHaveAttribute(
         "href",
         "/organizations/org/projects/p1/workspaces?status=failed"

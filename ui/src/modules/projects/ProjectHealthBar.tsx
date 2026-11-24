@@ -9,7 +9,8 @@ type Props = {
   legend?: "none" | "labels" | "counts";
   size?: "small" | "large";
   /** When given, each status in the legend links to the workspaces with that status. */
-  hrefFor?: (key: HealthKey) => string;
+  /** The page a part of the bar links to, or undefined for a part with no list that shows exactly its number. */
+  hrefFor?: (key: HealthKey) => string | undefined;
 };
 
 function describe(segments: HealthSegment[]): string {
@@ -70,7 +71,8 @@ export function ProjectHealthBar({ summary, legend = "none", size = "small", hre
               <span className={`project-health-swatch health-${segment.key}`} aria-hidden />
               {(() => {
                 const text = legend === "counts" ? `${segment.count} ${segment.label.toLowerCase()}` : segment.label;
-                return hrefFor && segment.count > 0 ? <Link to={hrefFor(segment.key)}>{text}</Link> : text;
+                const href = hrefFor && segment.count > 0 ? hrefFor(segment.key) : undefined;
+                return href ? <Link to={href}>{text}</Link> : text;
               })()}
             </li>
           ))}
