@@ -68,6 +68,19 @@ class OrganizationManagedInCodeTests extends ServerApplicationTests {
     }
 
     @Test
+    void onlyAWebAddressIsKeptAsTheRepository() {
+        for (String value : new String[] {"javascript:alert(1)", "data:text/html,x", "git@github.com:example/tf.git",
+                "github.com/example/tf", "ssh://git@example.com/tf", "https://", "https://exa mple.com"}) {
+            assertThat(patch(generatePAT("TERRAKUBE_ADMIN"), "{\"managedInCodeRepository\":\"" + value + "\"}"))
+                    .as(value).isEqualTo(HttpStatus.BAD_REQUEST.value());
+        }
+        assertThat(stored().getManagedInCodeRepository()).isNull();
+
+        assertThat(patch(generatePAT("TERRAKUBE_ADMIN"), "{\"managedInCodeRepository\":\"http://example.com/tf\"}"))
+                .isEqualTo(HttpStatus.NO_CONTENT.value());
+    }
+
+    @Test
     void aTeamMemberWhoIsNotASuperuserCannotChangeIt() {
         int status = patch(generatePAT("TERRAKUBE_DEVELOPERS"), "{\"managedInCodeRepository\":\"https://example.com/x\"}");
 

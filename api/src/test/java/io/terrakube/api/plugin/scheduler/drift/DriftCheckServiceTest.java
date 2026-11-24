@@ -16,20 +16,28 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import io.terrakube.api.plugin.scheduler.job.tcl.TclService;
 import io.terrakube.api.repository.JobRepository;
 import io.terrakube.api.repository.WorkspaceRepository;
 import io.terrakube.api.rs.job.Job;
+import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.job.JobVia;
 import io.terrakube.api.rs.workspace.Workspace;
 
 class DriftCheckServiceTest {
 
-    private static final String PLAN_ONLY = "plan-only-template";
+    // The flow a run stored when it started: its steps as the template wrote them, base64 encoded.
+    private static String flow(String... types) {
+        StringBuilder yaml = new StringBuilder("flow:\n");
+        int step = 100;
+        for (String type : types) {
+            yaml.append("  - type: ").append(type).append("\n    step: ").append(step).append("\n");
+            step += 100;
+        }
+        return java.util.Base64.getEncoder().encodeToString(yaml.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    }
 
     private JobRepository jobRepository;
     private WorkspaceRepository workspaceRepository;
-    private TclService tclService;
     private DriftCheckService service;
     private Workspace workspace;
 
@@ -37,9 +45,7 @@ class DriftCheckServiceTest {
     void setUp() {
         jobRepository = mock(JobRepository.class);
         workspaceRepository = mock(WorkspaceRepository.class);
-        tclService = mock(TclService.class);
-        service = new DriftCheckService(jobRepository, workspaceRepository, tclService);
-        when(tclService.isTemplatePlanOnly(PLAN_ONLY)).thenReturn(true);
+        service = new DriftCheckService(jobRepository, workspaceRepository);
         workspace = new Workspace();
         workspace.setId(UUID.randomUUID());
         workspace.setName("ledger-db");
@@ -49,7 +55,8 @@ class DriftCheckServiceTest {
         Job job = new Job();
         job.setId(id);
         job.setVia(JobVia.SCHEDULE.getValue());
-        job.setTemplateReference(PLAN_ONLY);
+        job.setTcl(flow("terraformPlan"));
+        job.setStatus(JobStatus.completed);
         job.setWorkspace(workspace);
         job.setPlanAdd(add);
         job.setPlanChange(change);
@@ -151,13 +158,76 @@ class DriftCheckServiceTest {
     @Test
     void aScheduledRunThatCanApplyIsNotACheck() {
         Job job = check(7, 0, 2, 0);
-        job.setTemplateReference("plan-and-apply-template");
-        when(tclService.isTemplatePlanOnly("plan-and-apply-template")).thenReturn(false);
+        job.setTcl(flow("terraformPlan", "terraformApply"));
 
         service.record(7);
 
         assertThat(job.getDriftResult()).isNull();
-        assertThat(workspace.getDriftStatus()).isNull();
+        verify(workspaceRepository, never()).updateDrift(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void aScheduledPlanOfADestroyIsNotACheckBecauseEveryResourceIsADelete() {
+        check(7, 0, 0, 12);
+        jobRepository.findById(7).get().setTcl(flow("terraformPlanDestroy"));
+        workspace.setDriftStatus("clean");
+
+        service.record(7);
+
+        verify(workspaceRepository, never()).updateDrift(any(), any(), any(), any(), any());
+        verify(jobRepository, never()).updateDriftResult(any(Integer.class), any());
+    }
+
+    @Test
+    void aPlanFollowedByAPlanOfADestroyIsNotACheckEither() {
+        check(7, 0, 0, 12);
+        jobRepository.findById(7).get().setTcl(flow("terraformPlan", "terraformPlanDestroy"));
+
+        service.record(7);
+
+        verify(workspaceRepository, never()).updateDrift(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void aRunThatFailedSaysNothingEvenWithPlanCountsFromAStreamThatWasCutShort() {
+        Job job = check(7, 0, 0, 0);
+        job.setStatus(JobStatus.failed);
+        workspace.setDriftStatus("drifted");
+
+        service.record(7);
+
+        assertThat(workspace.getDriftStatus()).isEqualTo("drifted");
+        verify(workspaceRepository, never()).updateDrift(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void aRunWithNoChangesIsASuccessfulCheckToo() {
+        Job job = check(7, 0, 0, 0);
+        job.setStatus(JobStatus.noChanges);
+
+        service.record(7);
+
+        verify(workspaceRepository).updateDrift(eq(workspace.getId()), eq("clean"), isNull(), any(Date.class), eq(7));
+    }
+
+    @Test
+    void aRunWhoseResultIsAlreadyRecordedIsNotRecordedAgain() {
+        Job job = check(7, 0, 2, 0);
+        job.setDriftResult("drift");
+
+        service.record(7);
+
+        verify(workspaceRepository, never()).updateDrift(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void aRunWithoutAStoredFlowIsNotACheck() {
+        Job job = check(7, 0, 2, 0);
+        job.setTcl(null);
+
+        service.record(7);
+
+        verify(workspaceRepository, never()).updateDrift(any(), any(), any(), any(), any());
     }
 
     @Test

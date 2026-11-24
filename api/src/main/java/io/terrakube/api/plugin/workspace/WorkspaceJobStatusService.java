@@ -28,6 +28,10 @@ public class WorkspaceJobStatusService {
     private final JobRepository jobRepository;
     private final WorkspaceRepository workspaceRepository;
 
+    // Set by Spring, and not part of the constructor, so a service built by hand without it simply records no drift.
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private io.terrakube.api.plugin.scheduler.drift.DriftCheckService driftCheckService;
+
     /** What the workspace shows: the status, and since when. */
     public record Shown(JobStatus status, Date date) {
     }
@@ -85,6 +89,7 @@ public class WorkspaceJobStatusService {
         if (workspace == null) {
             return;
         }
+        recordDrift(changed);
         Shown shown = shownFor(changed);
         // A run that waits for approval is looked at again every 30 seconds. With the status unchanged the date
         // must stay the one of the change, or the workspace always reads "just now".
@@ -98,5 +103,18 @@ public class WorkspaceJobStatusService {
         workspace.setLastJobStatus(shown.status());
         workspace.setLastJobDate(shown.date());
         workspaceRepository.save(workspace);
+    }
+
+    /** A scheduled plan that finished well is a drift check. The service ignores any other run and a repeat. */
+    private void recordDrift(Job changed) {
+        if (driftCheckService == null || changed.getDriftResult() != null
+                || (changed.getStatus() != JobStatus.completed && changed.getStatus() != JobStatus.noChanges)) {
+            return;
+        }
+        try {
+            driftCheckService.record(changed.getId());
+        } catch (RuntimeException e) {
+            log.warn("Could not record the drift check of job {}: {}", changed.getId(), e.getMessage());
+        }
     }
 }

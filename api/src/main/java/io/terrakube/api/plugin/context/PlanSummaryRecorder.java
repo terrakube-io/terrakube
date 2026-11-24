@@ -4,7 +4,6 @@ import org.springframework.stereotype.Component;
 
 import com.fasterxml.jackson.databind.JsonNode;
 
-import io.terrakube.api.plugin.scheduler.drift.DriftCheckService;
 import io.terrakube.api.repository.JobRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -30,7 +29,6 @@ public class PlanSummaryRecorder {
     }
 
     private final JobRepository jobRepository;
-    private final DriftCheckService driftCheckService;
 
     /**
      * @param patch the body of a context patch: {@code {"revision": n, "set": {path: value}}}
@@ -41,12 +39,9 @@ public class PlanSummaryRecorder {
         if (counts == null) {
             return false;
         }
+        // Only the counts. Whether they are a drift check is decided when the run has finished well, not while it can
+        // still fail, so a plan that was cut short never counts.
         jobRepository.updatePlanSummary(jobId, counts.add(), counts.change(), counts.destroy());
-        try {
-            driftCheckService.record(jobId);
-        } catch (RuntimeException e) {
-            log.warn("Could not record the drift check of job {}: {}", jobId, e.getMessage());
-        }
         return true;
     }
 

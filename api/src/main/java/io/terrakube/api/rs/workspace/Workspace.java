@@ -135,28 +135,31 @@ public class Workspace extends GenericAuditFields {
     @Enumerated(EnumType.STRING)
     private ExecutionMode executionMode;
 
+    // The drift columns are written only by WorkspaceRepository.updateDrift. An entity save never writes them, so a
+    // workspace loaded before a check was recorded cannot write the old values back when it is saved later.
+
     // "drifted" or "clean" from the last drift check (a scheduled plan-only run), null when never checked.
     // Written by DriftCheckService.
     @CreatePermission(expression = "NONE")
     @UpdatePermission(expression = "NONE")
-    @Column(name = "drift_status")
+    @Column(name = "drift_status", insertable = false, updatable = false)
     private String driftStatus;
 
     // When the current drift was first seen. Null while clean or never checked.
     @CreatePermission(expression = "NONE")
     @UpdatePermission(expression = "NONE")
-    @Column(name = "drift_first_seen")
+    @Column(name = "drift_first_seen", insertable = false, updatable = false)
     private Date driftFirstSeen;
 
     @CreatePermission(expression = "NONE")
     @UpdatePermission(expression = "NONE")
-    @Column(name = "drift_last_checked")
+    @Column(name = "drift_last_checked", insertable = false, updatable = false)
     private Date driftLastChecked;
 
     // The run of the last check.
     @CreatePermission(expression = "NONE")
     @UpdatePermission(expression = "NONE")
-    @Column(name = "drift_job_id")
+    @Column(name = "drift_job_id", insertable = false, updatable = false)
     private Integer driftJobId;
 
     @Column(name = "policy_compliance_status")

@@ -9,6 +9,7 @@ import io.terrakube.api.plugin.scheduler.job.tcl.TclService;
 import io.terrakube.api.repository.JobRepository;
 import io.terrakube.api.repository.WorkspaceRepository;
 import io.terrakube.api.rs.job.Job;
+import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.job.JobVia;
 import io.terrakube.api.rs.workspace.Workspace;
 import lombok.AllArgsConstructor;
@@ -19,8 +20,9 @@ import lombok.extern.slf4j.Slf4j;
  * a scheduled run of a plan-only template is a drift check, and when its plan has changes the workspace is drifted.
  * A run of any other kind, including a scheduled apply, says nothing about drift and is left alone.
  *
- * <p>Called after the plan counts of a run were recorded, so a check that failed before it had a plan never reaches
- * here and leaves the workspace as it was: an unknown result must not turn a drifted workspace clean.
+ * <p>Called when a run has finished well, with the plan counts recorded. A run that failed, even after it streamed a
+ * plan, says nothing: an unknown result must not turn a drifted workspace clean, and a plan cut short would show
+ * fewer changes than there are. A run that has a result recorded is not looked at again.
  */
 @Slf4j
 @Service
@@ -32,15 +34,20 @@ public class DriftCheckService {
 
     private final JobRepository jobRepository;
     private final WorkspaceRepository workspaceRepository;
-    private final TclService tclService;
 
     @Transactional
     public void record(int jobId) {
         Job job = jobRepository.findById(jobId).orElse(null);
-        if (job == null || job.getPlanAdd() == null || job.getPlanChange() == null || job.getPlanDestroy() == null) {
+        if (job == null || job.getDriftResult() != null) {
             return;
         }
-        if (!JobVia.SCHEDULE.getValue().equals(job.getVia()) || !tclService.isTemplatePlanOnly(job.getTemplateReference())) {
+        if (job.getStatus() != JobStatus.completed && job.getStatus() != JobStatus.noChanges) {
+            return;
+        }
+        if (job.getPlanAdd() == null || job.getPlanChange() == null || job.getPlanDestroy() == null) {
+            return;
+        }
+        if (!JobVia.SCHEDULE.getValue().equals(job.getVia()) || !TclService.isDriftCheckFlow(job.getTcl())) {
             return;
         }
         if (job.isRefreshOnly()) {

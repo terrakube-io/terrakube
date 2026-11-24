@@ -252,7 +252,7 @@ public class Job extends GenericAuditFields {
     // "drift" or "clean" for a drift check run, null for every other run. Written by DriftCheckService.
     @CreatePermission(expression = "NONE")
     @UpdatePermission(expression = "NONE")
-    @Column(name = "drift_result")
+    @Column(name = "drift_result", insertable = false, updatable = false)
     private String driftResult;
 
     @Column(name = "refresh_only")

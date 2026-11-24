@@ -123,6 +123,8 @@ public class Organization {
     // Where the organization is kept in code, so a settings screen can say an edit there is reverted by the next
     // apply. Null when it is not kept in code.
     @Size(max = 512, message = "Managed in code repository must be 512 characters or fewer")
+    // The address is shown as a link, so only a web address is kept: javascript: and data: values must never be stored.
+    @Pattern(regexp = "(?i)^(https?://\\S+)?$", message = "Managed in code repository must be an http or https address")
     @Column(name = "managed_in_code_repository")
     private String managedInCodeRepository;
 

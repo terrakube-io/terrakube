@@ -2,10 +2,10 @@ package io.terrakube.api.plugin.context;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -13,7 +13,6 @@ import org.junit.jupiter.api.Test;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-import io.terrakube.api.plugin.scheduler.drift.DriftCheckService;
 import io.terrakube.api.repository.JobRepository;
 
 class PlanSummaryRecorderTest {
@@ -21,14 +20,12 @@ class PlanSummaryRecorderTest {
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private JobRepository jobRepository;
-    private DriftCheckService driftCheckService;
     private PlanSummaryRecorder recorder;
 
     @BeforeEach
     void setUp() {
         jobRepository = mock(JobRepository.class);
-        driftCheckService = mock(DriftCheckService.class);
-        recorder = new PlanSummaryRecorder(jobRepository, driftCheckService);
+        recorder = new PlanSummaryRecorder(jobRepository);
     }
 
     private static JsonNode finalPlanPatch(String changes, String diagnostics) throws Exception {
@@ -103,20 +100,13 @@ class PlanSummaryRecorderTest {
     }
 
     @Test
-    void aSummaryIsStoredOnTheJobAndTheDriftCheckIsAsked() throws Exception {
+    void aSummaryIsStoredOnTheJobAndNothingElse() throws Exception {
         boolean recorded = recorder.recordFromPatch(7, finalPlanPatch("[" + resource("update") + "]", "[]"));
 
         assertThat(recorded).isTrue();
         verify(jobRepository).updatePlanSummary(7, 0, 1, 0);
-        verify(driftCheckService).record(7);
-    }
-
-    @Test
-    void aProblemWithTheDriftCheckDoesNotUndoTheSummary() throws Exception {
-        doThrow(new IllegalStateException("db down")).when(driftCheckService).record(7);
-
-        assertThat(recorder.recordFromPatch(7, finalPlanPatch("[" + resource("update") + "]", "[]"))).isTrue();
-        verify(jobRepository).updatePlanSummary(7, 0, 1, 0);
+        // Whether the counts are a drift check is decided when the run has finished well, not while it can still fail.
+        verifyNoMoreInteractions(jobRepository);
     }
 
     @Test
@@ -125,6 +115,5 @@ class PlanSummaryRecorderTest {
 
         assertThat(recorded).isFalse();
         verify(jobRepository, never()).updatePlanSummary(anyInt(), anyInt(), anyInt(), anyInt());
-        verify(driftCheckService, never()).record(anyInt());
     }
 }
