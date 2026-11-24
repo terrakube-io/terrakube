@@ -54,6 +54,23 @@ describe("pageItems", () => {
 describe("recents", () => {
   beforeEach(() => localStorage.clear());
 
+  it("drops stored entries that are not an address inside the app", () => {
+    const good = { key: "a", kind: "workspace", title: "a", to: "/organizations/o/workspaces/a" };
+    localStorage.setItem(
+      "terrakube-palette-recent",
+      JSON.stringify([
+        good,
+        { ...good, key: "protocol-relative", to: "//evil.example/x" },
+        { ...good, key: "absolute", to: "https://evil.example/x" },
+        { ...good, key: "backslash", to: "/\\evil.example" },
+        { ...good, key: "no-title", title: 5 },
+        { ...good, key: "odd-kind", kind: "script" },
+      ])
+    );
+
+    expect(loadRecents().map((entry) => entry.key)).toEqual(["a"]);
+  });
+
   it("remembers what was opened, newest first, once each", () => {
     rememberRecent(item("a"));
     rememberRecent(item("b"));

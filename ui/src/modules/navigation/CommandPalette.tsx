@@ -56,6 +56,10 @@ export default function CommandPalette({ organizations }: Props) {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key.toLowerCase() === "k" && (event.metaKey || event.ctrlKey) && !event.altKey) {
+        // Typing inside another dialog must not open the palette on top of it. Focus is trapped in an open dialog, so
+        // where the key press comes from says whether one is open, which a modal kept in the page after closing never does.
+        const insideOtherDialog = !openRef.current && (event.target as Element | null)?.closest?.('[role="dialog"]');
+        if (insideOtherDialog) return;
         event.preventDefault();
         if (openRef.current) close();
         else setOpen(true);
@@ -141,6 +145,12 @@ export default function CommandPalette({ organizations }: Props) {
 
   useEffect(() => setActive(0), [query]);
 
+  // The list scrolls, and the highlight moves with the arrow keys, so the highlighted row is kept in view.
+  useEffect(() => {
+    const item = items[active];
+    if (item) document.getElementById(optionId(item.key))?.scrollIntoView?.({ block: "nearest" });
+  }, [active, items]);
+
   const choose = (item: PaletteItem) => {
     if (item.kind === "project" || item.kind === "workspace") rememberRecent(item);
     close();
@@ -182,7 +192,7 @@ export default function CommandPalette({ organizations }: Props) {
         aria-controls="command-palette-results"
         aria-activedescendant={items[active] ? optionId(items[active].key) : undefined}
         role="combobox"
-        aria-expanded
+        aria-expanded={items.length > 0}
         variant="borderless"
         size="large"
       />
@@ -216,7 +226,9 @@ export default function CommandPalette({ organizations }: Props) {
           : searching
             ? "Searching..."
             : query.trim() && items.length === 0
-              ? `Nothing matches "${query.trim()}".`
+              ? organizations.length > MAX_ORGANIZATIONS_SEARCHED && !currentOrg
+                ? "Open an organization to search its projects and workspaces."
+                : `Nothing matches "${query.trim()}".`
               : ""}
       </div>
     </Modal>

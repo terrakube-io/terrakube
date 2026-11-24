@@ -44,6 +44,7 @@ async function findByName(orgId: string, field: "workspace" | "project", name: s
            workspace(first: "2", after: "0", filter: $filter) { edges { node { id name } } } } } } }`
       : `query ($orgId: String!, $filter: String) { organization(ids: [$orgId]) { edges { node {
            project(first: "2", after: "0", filter: $filter) { edges { node { id name } } } } } } }`;
+  if (name.includes("*")) return null;
   const data = await graphql<any>(query, { orgId, filter: `name==${quoteRsql(name)}` });
   const found = nodes(nodes(data.organization)[0]?.[field]);
   return found.length === 1 ? { id: found[0].id, name: found[0].name } : null;

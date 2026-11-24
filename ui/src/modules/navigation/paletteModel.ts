@@ -51,14 +51,27 @@ export function pageItems(orgId: string | null, orgName?: string): PaletteItem[]
   ];
 }
 
+const KINDS: PaletteKind[] = ["page", "organization", "project", "workspace"];
+
+// Storage can be edited by anything running on the page, and an item is opened with navigate(item.to), so only an
+// address inside the app, with text for a title and a known kind, is accepted.
+function isSafeRecent(item: any): item is PaletteItem {
+  return (
+    item &&
+    typeof item.key === "string" &&
+    typeof item.title === "string" &&
+    KINDS.includes(item.kind) &&
+    typeof item.to === "string" &&
+    item.to.startsWith("/") &&
+    !item.to.startsWith("//") &&
+    !item.to.includes("\\")
+  );
+}
+
 export function loadRecents(): PaletteItem[] {
   try {
     const parsed = JSON.parse(localStorage.getItem(RECENT_KEY) ?? "[]");
-    return Array.isArray(parsed)
-      ? parsed
-          .filter((item) => item && typeof item.key === "string" && typeof item.to === "string")
-          .slice(0, RECENT_LIMIT)
-      : [];
+    return Array.isArray(parsed) ? parsed.filter(isSafeRecent).slice(0, RECENT_LIMIT) : [];
   } catch {
     return [];
   }

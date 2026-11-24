@@ -19,6 +19,9 @@ export function parseGoPath(rest: string): GoTarget | null {
   const [kind, rawName, section, run, ...extra] = segments;
   const name = rawName === undefined || rawName.length === 0 ? null : rawName;
   if (name === null || extra.length > 0) return null;
+  // Workspace and project names cannot contain a star, and the API reads one in a name filter as a wildcard, so a
+  // link with one would open whichever name happens to match instead of being refused.
+  if (name.includes("*")) return null;
 
   if (kind === "projects") {
     return segments.length === 2 ? { kind: "project", name } : null;

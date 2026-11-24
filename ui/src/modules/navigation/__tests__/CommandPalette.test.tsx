@@ -193,6 +193,35 @@ describe("CommandPalette", () => {
     expect(mocked.searchOrganization).toHaveBeenCalledWith(ORG_A, "ledger");
   });
 
+  it("tells the person to open an organization when there are too many to search and none is open", async () => {
+    const many = Array.from({ length: 13 }, (_, index) => ({
+      id: `${index.toString(16).padStart(8, "0")}-5717-4562-b3fc-2c963f66afa6`,
+      name: `org-${index}`,
+    }));
+    renderPalette("/inbox", many);
+    openWithKeyboard();
+
+    fireEvent.change(await screen.findByRole("combobox", { name: "Search" }), { target: { value: "ledger" } });
+
+    expect(await screen.findByText("Open an organization to search its projects and workspaces.")).toBeInTheDocument();
+    expect(mocked.searchOrganization).not.toHaveBeenCalled();
+    expect(screen.queryByText(/Nothing matches/)).not.toBeInTheDocument();
+  });
+
+  it("does not open on top of a dialog the person is typing in", async () => {
+    renderPalette();
+    const dialog = document.createElement("div");
+    dialog.setAttribute("role", "dialog");
+    const field = document.createElement("input");
+    dialog.appendChild(field);
+    document.body.appendChild(dialog);
+
+    fireEvent.keyDown(field, { key: "k", ctrlKey: true });
+
+    expect(screen.queryByRole("combobox", { name: "Search" })).not.toBeInTheDocument();
+    dialog.remove();
+  });
+
   it("ignores a slow answer that was overtaken by a newer search", async () => {
     let releaseFirst: (value: service.SearchHits) => void = () => undefined;
     mocked.searchOrganization

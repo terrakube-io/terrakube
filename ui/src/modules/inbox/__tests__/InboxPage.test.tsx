@@ -114,6 +114,17 @@ describe("InboxPage", () => {
     await waitFor(() => expect(load.mock.calls.length).toBeGreaterThan(1));
   });
 
+  it("does not approve a run with a policy violation from the list", async () => {
+    waiting.mockResolvedValue([{ jobId: "7", workspaceId: "ledger-db-id", hardViolations: 0, softViolations: 2 }]);
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Approve" }));
+
+    fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Approve" }));
+
+    expect(await screen.findByText(/has policy violations. Open it to review before approving/)).toBeInTheDocument();
+    expect(approve).not.toHaveBeenCalled();
+  });
+
   it("says so when the run was already handled, and approves nothing", async () => {
     waiting.mockResolvedValue([]);
     renderPage();

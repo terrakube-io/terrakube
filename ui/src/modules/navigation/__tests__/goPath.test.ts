@@ -26,6 +26,12 @@ describe("parseGoPath", () => {
     expect(parseGoPath("workspaces/my workspace")).toEqual({ kind: "workspace", name: "my workspace" });
   });
 
+  it("refuses a name with a star, which the API would read as a wildcard", () => {
+    expect(parseGoPath("workspaces/prod*")).toBeNull();
+    expect(parseGoPath("workspaces/*prod")).toBeNull();
+    expect(parseGoPath("projects/pay*ments")).toBeNull();
+  });
+
   it("refuses shapes it does not know instead of guessing", () => {
     expect(parseGoPath("nonsense")).toBeNull();
     expect(parseGoPath("workspaces")).toBeNull();

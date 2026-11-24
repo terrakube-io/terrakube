@@ -76,12 +76,16 @@ export default function InboxPage() {
       onOk: async () => {
         try {
           const runs = await findWaitingRuns(item.orgId, [item.workspaceId]);
+          // A run with a policy violation is for a person to read on its page, never approved from a list.
+          const clear = runs.filter((run) => !run.hardViolations && !run.softViolations);
           if (runs.length === 0) {
             message.info("That run is no longer waiting for approval.");
+          } else if (clear.length === 0) {
+            message.warning(`The run on ${item.name} has policy violations. Open it to review before approving.`);
           } else {
             const outcome = await approveRuns(
               item.orgId,
-              runs.map((run) => run.jobId)
+              clear.map((run) => run.jobId)
             );
             if (outcome.failed.length) message.error(outcome.failed[0].reason);
             else message.success(`Approved the run on ${item.name}`);
