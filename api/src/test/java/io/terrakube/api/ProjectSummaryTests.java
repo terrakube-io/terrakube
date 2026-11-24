@@ -77,6 +77,19 @@ class ProjectSummaryTests extends ServerApplicationTests {
     }
 
     @Test
+    void aWorkspaceWithNoRecordedStatusCountsAsNeverRun() {
+        Project legacy = project("health-legacy");
+        Workspace old = workspace(legacy, "l1", JobStatus.completed, PolicyComplianceStatus.UNKNOWN, false);
+        jdbcTemplate.update("update workspace set last_job_status = null where id = ?", old.getId().toString());
+
+        Map<String, Object> node = firstNode(summaries("name==health-legacy", null, 10, "workspaceCount neverRunCount completedCount"));
+
+        org.junit.jupiter.api.Assertions.assertEquals(1, ((Number) node.get("workspaceCount")).intValue());
+        org.junit.jupiter.api.Assertions.assertEquals(1, ((Number) node.get("neverRunCount")).intValue());
+        org.junit.jupiter.api.Assertions.assertEquals(0, ((Number) node.get("completedCount")).intValue());
+    }
+
+    @Test
     void summaryCountsWorkspacesByStatusAndIgnoresDeletedOnes() {
         Map<String, Object> node = firstNode(summaries("name==health-busy", null, 10,
                 "workspaceCount completedCount failedCount runningCount queuedCount waitingApprovalCount "

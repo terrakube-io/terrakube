@@ -58,7 +58,7 @@ import java.util.UUID;
                coalesce(sum(case when w.last_job_status = 'running' then 1 else 0 end), 0) as running_count,
                coalesce(sum(case when w.last_job_status in ('pending', 'approved', 'queue') then 1 else 0 end), 0) as queued_count,
                coalesce(sum(case when w.last_job_status = 'waitingApproval' then 1 else 0 end), 0) as waiting_approval_count,
-               coalesce(sum(case when w.last_job_status = 'NeverExecuted' then 1 else 0 end), 0) as never_run_count,
+               coalesce(sum(case when w.last_job_status = 'NeverExecuted' or w.last_job_status is null then 1 else 0 end), 0) as never_run_count,
                coalesce(sum(case when w.policy_compliance_status = 'NON_COMPLIANT' then 1 else 0 end), 0) as non_compliant_count,
                coalesce(sum(case when cast(w.locked as integer) = 1 then 1 else 0 end), 0) as locked_count,
                coalesce(sum(case when w.last_job_status in ('failed', 'waitingApproval')
@@ -147,6 +147,7 @@ public class ProjectSummary {
     @Column(name = "has_run")
     private Long hasRun;
 
+    /** Teams with an explicit project access grant. Organization teams that can manage workspaces are not counted. */
     @Column(name = "team_count")
     private Long teamCount;
 }
