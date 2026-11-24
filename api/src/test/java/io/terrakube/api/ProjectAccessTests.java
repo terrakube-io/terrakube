@@ -881,7 +881,7 @@ public class ProjectAccessTests extends ServerApplicationTests {
                 .statusCode(HttpStatus.CREATED.value());
 
         // Project Admin tries to move workspace to Project B. The caller cannot read Project B, so Elide
-        // reports it as not found (404) rather than forbidden (403). Either way the move is rejected.
+        // reports it as not found (404) rather than forbidden (403).
         given()
                 .headers("Authorization", "Bearer " + generatePAT("PROJECT_ADMIN_MEMBER"), "Content-Type", "application/vnd.api+json")
                 .body("{\n" +
@@ -903,9 +903,7 @@ public class ProjectAccessTests extends ServerApplicationTests {
                 .then()
                 .log()
                 .all()
-                .statusCode(org.hamcrest.Matchers.anyOf(
-                        org.hamcrest.Matchers.is(HttpStatus.FORBIDDEN.value()),
-                        org.hamcrest.Matchers.is(HttpStatus.NOT_FOUND.value())));
+                .statusCode(HttpStatus.NOT_FOUND.value());
 
         // Project Admin tries to set project to null — must also be forbidden
         given()

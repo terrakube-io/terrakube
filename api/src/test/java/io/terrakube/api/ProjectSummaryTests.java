@@ -179,6 +179,7 @@ class ProjectSummaryTests extends ServerApplicationTests {
                 .assertThat()
                 .log()
                 .ifValidationFails()
+                .statusCode(HttpStatus.OK.value())
                 .body("$", not(hasKey("errors")))
                 .rootPath("data.organization.edges[0].node.projectSummary")
                 .body("edges.node.name", org.hamcrest.Matchers.contains("health-empty"))
