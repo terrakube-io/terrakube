@@ -134,9 +134,14 @@ export default function RunList({ jobs, onRunClick, runLink, canApprove = false,
       okText: "Approve",
       onOk: async () => {
         if (!organizationId) return;
-        const outcome = await approveRuns(organizationId, [item.id]);
-        if (outcome.failed.length) message.error(outcome.failed[0].reason);
-        else message.success(`Approved run #${item.id}`);
+        try {
+          const outcome = await approveRuns(organizationId, [item.id]);
+          if (outcome.failed.length) message.error(outcome.failed[0].reason);
+          else message.success(`Approved run #${item.id}`);
+        } catch (err: any) {
+          // approveRuns reports a refused approval itself; this is for what it did not expect.
+          message.error(err?.message ?? `Run #${item.id} could not be approved`);
+        }
         onApproved?.();
       },
     });

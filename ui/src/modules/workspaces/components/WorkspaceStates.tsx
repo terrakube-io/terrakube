@@ -27,7 +27,7 @@ export default function WorkspaceStates({ orgId, workspace, run, runLink, onRunC
   const badge = status ? badgeForStatusTone(status.tone) : { tone: "accent" as const, icon: <ClockCircleOutlined /> };
   return (
     <div className="overview-states">
-      <Card className="overview-card overview-state" aria-label="Last run">
+      <Card className="overview-card overview-state" role="region" aria-label="Last run">
         <StatusBadge tone={badge.tone}>{badge.icon}</StatusBadge>
         <span className="overview-state-text">
           <Typography.Text type="secondary">Last run</Typography.Text>
@@ -43,7 +43,7 @@ export default function WorkspaceStates({ orgId, workspace, run, runLink, onRunC
         </span>
       </Card>
       <WorkspaceDrift orgId={orgId} workspace={workspace} />
-      <Card className="overview-card overview-state" aria-label="Policy">
+      <Card className="overview-card overview-state" role="region" aria-label="Policy">
         <StatusBadge tone={policyTone(workspace.attributes?.policyComplianceStatus)}>
           <SafetyOutlined />
         </StatusBadge>

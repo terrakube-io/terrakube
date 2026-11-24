@@ -1,5 +1,6 @@
 import { apiPost } from "@/modules/api/apiWrapper";
 import { ApiResponse } from "@/modules/api/types";
+import quoteRsql from "./utils/quoteRsql";
 import { DRIFT_WINDOW_DAYS, createdWithin } from "./jobWindow";
 
 export type DriftCheck = {
@@ -30,7 +31,7 @@ export async function listDriftChecks(
     }`,
     variables: {
       orgId: organizationId,
-      filter: `workspace.id=='${workspaceId}';driftResult=isnull=false;${createdWithin(DRIFT_WINDOW_DAYS)}`,
+      filter: `workspace.id==${quoteRsql(workspaceId)};driftResult=isnull=false;${createdWithin(DRIFT_WINDOW_DAYS)}`,
     },
   };
   const result = await apiPost<unknown, any>("/graphql/api/v1", body, {

@@ -1,5 +1,6 @@
 import { apiPost } from "@/modules/api/apiWrapper";
 import { RUN_POLICY_WINDOW_DAYS, createdWithin } from "./jobWindow";
+import quoteRsql from "./utils/quoteRsql";
 
 export type PolicyResult = "FAILED" | "WARNING" | "OVERRIDDEN" | "EXEMPTED" | "PASSED";
 
@@ -21,10 +22,10 @@ export async function listRunPolicyResults(orgId: string, workspaceId: string): 
     {
       query: `query ($orgId: String!, $filter: String) {
         organization(ids: [$orgId]) { edges { node {
-          job(filter: $filter) { edges { node { id policyEvaluation { edges { node { status } } } } } }
+          job(filter: $filter) { edges { node { id policyEvaluation { edges { node { status override { edges { node { id } } } } } } } } }
         } } }
       }`,
-      variables: { orgId, filter: `workspace.id=='${workspaceId}';${createdWithin(RUN_POLICY_WINDOW_DAYS)}` },
+      variables: { orgId, filter: `workspace.id==${quoteRsql(workspaceId)};${createdWithin(RUN_POLICY_WINDOW_DAYS)}` },
     },
     { dataWrapped: true, contentType: "application/json" }
   );
@@ -32,7 +33,11 @@ export async function listRunPolicyResults(orgId: string, workspaceId: string): 
   const jobs = result.data?.organization?.edges?.[0]?.node?.job?.edges ?? [];
   const results: Record<string, PolicyResult> = {};
   jobs.forEach((edge: any) => {
-    const statuses = (edge.node.policyEvaluation?.edges ?? []).map((evaluation: any) => String(evaluation.node.status));
+    // The API never stores OVERRIDDEN: an override is a record on an evaluation whose status is then set to PASSED, so
+    // an evaluation that has one is read as overridden, or a run whose violation someone let through looks like a pass.
+    const statuses = (edge.node.policyEvaluation?.edges ?? []).map((evaluation: any) =>
+      (evaluation.node.override?.edges ?? []).length > 0 ? "OVERRIDDEN" : String(evaluation.node.status)
+    );
     const worst = worstResult(statuses);
     if (worst) results[String(edge.node.id)] = worst;
   });

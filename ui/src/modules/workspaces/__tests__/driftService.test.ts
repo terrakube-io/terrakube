@@ -15,7 +15,7 @@ describe("listDriftChecks", () => {
     const request = post.mock.calls[0][1];
     expect(request.variables.orgId).toBe("org-1");
     expect(request.variables.filter).toMatch(
-      /^workspace\.id=='ws-1';driftResult=isnull=false;createdDate=ge=\d{4}-\d{2}-\d{2}T[\d:.]+Z$/
+      /^workspace\.id=="ws-1";driftResult=isnull=false;createdDate=ge=\d{4}-\d{2}-\d{2}T[\d:.]+Z$/
     );
     expect(request.query).toContain('sort: "-createdDate"');
     // Job cannot be paginated by Elide ("Cannot paginate job"), so the page size is applied after reading.

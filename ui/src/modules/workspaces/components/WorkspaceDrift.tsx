@@ -39,6 +39,7 @@ export default function WorkspaceDrift({ orgId, workspace }: { orgId: string; wo
   return (
     <Card
       className={`overview-card overview-state workspace-drift${showHistory ? " overview-state-wide" : ""}`}
+      role="region"
       aria-label="Drift"
     >
       <StatusBadge tone={drifted ? "warning" : "success"}>

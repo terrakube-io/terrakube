@@ -193,6 +193,37 @@ describe("settings context", () => {
 describe("workspace-detail context", () => {
   beforeEach(() => {
     localStorage.clear();
+    sessionStorage.clear();
+  });
+
+  const rememberOrigin = (workspaceId: string, origin: { kind: string; path: string }) =>
+    sessionStorage.setItem("terrakube.workspaceOrigin", JSON.stringify({ workspaceId, origin }));
+
+  it("goes back to the inbox, with its filters, when the workspace was opened from there", async () => {
+    rememberOrigin(workspacePath.split("/")[4], { kind: "inbox", path: "/inbox?kind=failed" });
+    renderSidebar(workspacePath);
+
+    const backLink = await screen.findByText("Inbox");
+
+    expect(backLink.closest("a")).toHaveAttribute("href", "/inbox?kind=failed");
+  });
+
+  it("goes back to the project when the workspace was opened from it", async () => {
+    rememberOrigin(workspacePath.split("/")[4], { kind: "project", path: `${orgPath}/projects/p-1` });
+    renderSidebar(workspacePath);
+
+    const backLink = await screen.findByText("Project");
+
+    expect(backLink.closest("a")).toHaveAttribute("href", `${orgPath}/projects/p-1`);
+  });
+
+  it("goes back to the workspaces for a workspace that was remembered for another one", async () => {
+    rememberOrigin("another-workspace", { kind: "inbox", path: "/inbox" });
+    renderSidebar(workspacePath);
+
+    const backLink = await screen.findByText("Workspaces");
+
+    expect(backLink.closest("a")).toHaveAttribute("href", `${orgPath}/workspaces`);
   });
 
   it("shows the 6 workspace sections plus the back link instead of the top-level nav", async () => {

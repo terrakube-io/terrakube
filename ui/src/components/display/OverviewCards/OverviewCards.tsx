@@ -58,7 +58,7 @@ export function HealthRing({
 }) {
   const segments = ringSegments(total, status).filter((segment) => segment.count > 0);
   return (
-    <Card className="overview-card" aria-label={title}>
+    <Card className="overview-card" role="region" aria-label={title}>
       <h3 className="overview-card-title">{title}</h3>
       <div className="overview-health">
         <div

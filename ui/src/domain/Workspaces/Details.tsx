@@ -548,8 +548,11 @@ export const WorkspaceDetails = ({
       });
   };
 
-  // The policy result of every run, read when the Runs tab is opened and again when a run is added.
+  // The policy result of every run, read when the Runs tab is opened and again whenever a run is added or changes
+  // status. A run is created before its policy is evaluated, and the result appears when it reaches waitingApproval,
+  // so a count of runs would never read it again for the newest run.
   const [policyByRun, setPolicyByRun] = useState<Record<string, PolicyResult>>({});
+  const runStatuses = jobs.map((job) => `${job.id}:${job.status}`).join(",");
   useEffect(() => {
     if (activeKey !== "2" || !id || !organizationId) return;
     let alive = true;
@@ -559,7 +562,7 @@ export const WorkspaceDetails = ({
     return () => {
       alive = false;
     };
-  }, [activeKey, id, organizationId, jobs.length]);
+  }, [activeKey, id, organizationId, runStatuses]);
 
   const currentRun = selectCurrentRun(jobs);
   const latestJob = currentRun?.job;
@@ -909,12 +912,20 @@ export const WorkspaceDetails = ({
   };
 
   const origin = useWorkspaceOrigin(id);
+  // A remembered project can be an old one: the workspace may have been moved since. The project it is in now is the
+  // one to name and link, and the remembered entry is corrected so the sidebar's way back leads there too.
+  const originIsThisProject =
+    origin?.kind === "project" && Boolean(projectId) && origin.path.endsWith(`/projects/${projectId}`);
+  useEffect(() => {
+    if (!id || !organizationId || !projectId || origin?.kind !== "project" || originIsThisProject) return;
+    rememberWorkspaceOrigin(id, projectOrigin(organizationId, projectId));
+  }, [id, organizationId, projectId, origin, originIsThisProject]);
   const pageBreadcrumbs = [
     { label: organizationNameLocal ?? "", path: `/organizations/${organizationId}/workspaces` },
-    ...(origin?.kind === "project" && projectName
+    ...(origin?.kind === "project" && projectName && projectId
       ? [
           { label: "Projects", path: `/organizations/${organizationId}/projects` },
-          { label: projectName, path: origin.path },
+          { label: projectName, path: `/organizations/${organizationId}/projects/${projectId}` },
         ]
       : origin?.kind === "inbox"
         ? [{ label: "Inbox", path: origin.path }]
