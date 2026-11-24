@@ -26,7 +26,32 @@ describe("approveWaiting", () => {
 
     expect(findWaitingRuns).toHaveBeenCalledWith("a", ["w1", "w2"]);
     expect(approveRuns).toHaveBeenCalledTimes(1);
-    expect(outcome).toEqual({ approved: 1, skipped: 2, failures: [] });
+    expect(outcome).toEqual({ approved: 1, skipped: 2, heldBack: 0, failures: [] });
+  });
+
+  it("holds back a run with a policy violation and approves the rest", async () => {
+    (findWaitingRuns as jest.Mock).mockResolvedValue([
+      { jobId: "1", workspaceId: "w1", hardViolations: 0, softViolations: 0 },
+      { jobId: "2", workspaceId: "w2", hardViolations: 1, softViolations: 0 },
+      { jobId: "3", workspaceId: "w3", hardViolations: 0, softViolations: 2 },
+    ]);
+    (approveRuns as jest.Mock).mockResolvedValue({ succeeded: ["1"], failed: [] });
+
+    const outcome = await approveWaiting([item("a", "w1"), item("a", "w2"), item("a", "w3")]);
+
+    expect(approveRuns).toHaveBeenCalledWith("a", ["1"]);
+    expect(outcome).toEqual({ approved: 1, skipped: 0, heldBack: 2, failures: [] });
+  });
+
+  it("approves nothing when every run has a violation", async () => {
+    (findWaitingRuns as jest.Mock).mockResolvedValue([
+      { jobId: "2", workspaceId: "w2", hardViolations: 1, softViolations: 0 },
+    ]);
+
+    const outcome = await approveWaiting([item("a", "w2")]);
+
+    expect(approveRuns).not.toHaveBeenCalled();
+    expect(outcome.heldBack).toBe(1);
   });
 
   it("reports a refused approval and an organization that could not be read, and carries on", async () => {

@@ -79,6 +79,7 @@ export default function InboxOrganizations({ rows, onOpen }: Props) {
     <>
       <Table<OrganizationCounts>
         className="inbox-table"
+        scroll={{ x: "max-content" }}
         size="middle"
         rowKey={(row) => row.org.id}
         columns={columns}

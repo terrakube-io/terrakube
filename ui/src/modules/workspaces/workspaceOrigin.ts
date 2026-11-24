@@ -36,8 +36,17 @@ const subscribe = (listener: () => void) => {
   return () => listeners.delete(listener);
 };
 
+// Reading storage can throw, for example when it is blocked, and a snapshot that throws breaks the render.
+const snapshot = () => {
+  try {
+    return sessionStorage.getItem(KEY);
+  } catch {
+    return null;
+  }
+};
+
 export function useWorkspaceOrigin(workspaceId?: string): WorkspaceOrigin | null {
-  const raw = useSyncExternalStore(subscribe, () => sessionStorage.getItem(KEY));
+  const raw = useSyncExternalStore(subscribe, snapshot);
   return raw ? workspaceOriginOf(workspaceId) : null;
 }
 

@@ -1,4 +1,12 @@
-import { inboxOrigin, listOrigin, projectOrigin, rememberWorkspaceOrigin, workspaceOriginOf } from "../workspaceOrigin";
+import { renderHook } from "@testing-library/react";
+import {
+  inboxOrigin,
+  listOrigin,
+  projectOrigin,
+  rememberWorkspaceOrigin,
+  useWorkspaceOrigin,
+  workspaceOriginOf,
+} from "../workspaceOrigin";
 
 describe("workspaceOrigin", () => {
   beforeEach(() => sessionStorage.clear());
@@ -24,5 +32,17 @@ describe("workspaceOrigin", () => {
   it("ignores a broken stored value", () => {
     sessionStorage.setItem("terrakube.workspaceOrigin", "{");
     expect(workspaceOriginOf("ws-1")).toBeNull();
+  });
+
+  it("renders without an origin, and does not crash, when storage cannot be read", () => {
+    const spy = jest.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new Error("blocked");
+    });
+    try {
+      const { result } = renderHook(() => useWorkspaceOrigin("ws-1"));
+      expect(result.current).toBeNull();
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

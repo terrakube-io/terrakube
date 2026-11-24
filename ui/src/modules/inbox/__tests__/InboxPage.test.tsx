@@ -197,6 +197,51 @@ describe("InboxPage", () => {
       expect(await screen.findByText(/Nothing needs your teams/)).toBeInTheDocument();
     });
 
+    it("says the teams could not be read, with a retry, and never reads that as an empty team list", async () => {
+      groups.mockRejectedValueOnce(new Error("down")).mockResolvedValue(["payments-devs"]);
+      renderPage("/inbox?scope=mine");
+
+      expect(await screen.findByText("Your teams could not be read, so My teams cannot be shown.")).toBeInTheDocument();
+      expect(screen.queryByText(/Nothing needs your teams/)).not.toBeInTheDocument();
+      expect(counts).not.toHaveBeenCalled();
+
+      fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+      await waitFor(() => expect(counts).toHaveBeenCalledWith(ORG, { ownerTeams: ["payments-devs"] }, ""));
+      expect(screen.queryByText("Your teams could not be read, so My teams cannot be shown.")).not.toBeInTheDocument();
+    });
+
+    it("does not show an answer for everyone under My teams when it arrives after the switch", async () => {
+      let releaseUnscoped: (value: InboxCounts) => void = () => undefined;
+      counts.mockImplementationOnce(() => new Promise<InboxCounts>((resolve) => (releaseUnscoped = resolve)));
+      let releaseGroups: (value: string[]) => void = () => undefined;
+      groups.mockImplementation(() => new Promise<string[]>((resolve) => (releaseGroups = resolve)));
+      renderPage();
+      await waitFor(() => expect(counts).toHaveBeenCalledTimes(1));
+
+      fireEvent.click(screen.getByText("My teams"));
+      await act(async () => releaseUnscoped(some({ waiting: 0, failed: 9, policy: 0 })));
+
+      // The late answer was for the other scope, so nothing of it is on the page while the teams are still read.
+      expect(screen.queryByRole("button", { name: /Failed 9/ })).not.toBeInTheDocument();
+      await act(async () => releaseGroups(["payments-devs"]));
+    });
+
+    it("starts the new first tab from page 1, with nothing ticked, when a poll moves it", async () => {
+      counts.mockResolvedValueOnce(some({ waiting: 30, failed: 5, policy: 0 }));
+      renderPage("/inbox?page=2");
+      await screen.findByRole("link", { name: "ledger-db" });
+
+      // The waiting runs were approved elsewhere, so the poll finds failures first.
+      counts.mockResolvedValue(some({ waiting: 0, failed: 5, policy: 0 }));
+      const poll = (usePolling as jest.Mock).mock.calls.at(-1)[0] as () => Promise<void>;
+      await act(async () => poll());
+
+      await waitFor(() =>
+        expect(pages).toHaveBeenLastCalledWith(ORG, expect.objectContaining({ kind: "failed", page: 1 }))
+      );
+    });
+
     it("reports when nothing needs anyone", async () => {
       counts.mockResolvedValue(some({ waiting: 0, failed: 0, policy: 0 }));
       renderPage();

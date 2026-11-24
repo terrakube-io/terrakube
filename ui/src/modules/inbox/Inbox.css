@@ -59,7 +59,7 @@
 }
 
 .inbox-rail-item:focus-visible {
-  outline: 2px solid var(--tk-primary, #722ed1);
+  outline: 2px solid var(--tk-accent);
   outline-offset: 1px;
 }
 
@@ -85,7 +85,7 @@
 }
 
 .inbox-rail-policy .inbox-rail-icon {
-  color: var(--tk-primary, #722ed1);
+  color: var(--tk-accent);
 }
 
 .inbox-rail-count {
@@ -101,7 +101,7 @@
 }
 
 .inbox-rail-active .inbox-rail-count {
-  background: var(--tk-primary, #722ed1);
+  background: var(--tk-accent);
   color: #fff;
 }
 

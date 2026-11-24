@@ -113,13 +113,20 @@ export default function InboxPage() {
 
   // The teams the person is in, read once and only when they ask for their own.
   const [groups, setGroups] = useState<string[] | null>(null);
+  // A lookup that failed is not the same as being in no team: it is shown as an error with a retry, and "My teams"
+  // never reads it as an empty list.
+  const [groupsFailed, setGroupsFailed] = useState(false);
   useEffect(() => {
-    if (!mine || groups !== null) return;
+    if (!mine || groups !== null || groupsFailed) return;
+    let current = true;
     projectService
       .getCurrentGroups()
-      .then(setGroups)
-      .catch(() => setGroups([]));
-  }, [mine, groups]);
+      .then((found) => current && setGroups(found))
+      .catch(() => current && setGroupsFailed(true));
+    return () => {
+      current = false;
+    };
+  }, [mine, groups, groupsFailed]);
   const scope: InboxScope = mine ? { ownerTeams: groups ?? [] } : null;
   const waitingForGroups = mine && groups === null;
   const scopeKey = mine ? (groups ?? []).join("\n") : "";
@@ -173,8 +180,17 @@ export default function InboxPage() {
     setActiveKind(null);
   }, [selectedOrganizationId, askedKind, page, search, mine]);
 
+  const activeKindRef = useRef<InboxKind | null>(null);
+  activeKindRef.current = activeKind;
+
   const load = useCallback(async () => {
-    if (!organizations || !selectedOrganizationId || waitingForGroups) return;
+    if (waitingForGroups) {
+      // A load for another scope may still be on its way. Its answer must not fill the page under My teams.
+      requestId.current += 1;
+      setLoading(false);
+      return;
+    }
+    if (!organizations || !selectedOrganizationId) return;
     const current = ++requestId.current;
     setLoading(true);
     try {
@@ -188,6 +204,15 @@ export default function InboxPage() {
       const nextCounts = await loadInboxCounts(organization, scope, search);
       // With no tab asked for, open the first one that has something: approvals, then failures, drift, policy.
       const kind = askedKind ?? KIND_ORDER.find((each) => nextCounts[each] > 0) ?? null;
+      // With no tab asked for, a poll can move the first non-empty tab (the waiting runs were approved elsewhere). The
+      // page number and the ticked rows belong to the old tab, so the new one starts from its first page.
+      if (!askedKind && activeKindRef.current && kind !== activeKindRef.current) {
+        setSelected(new Map());
+        if (page > 1) {
+          update({ page: null }, true);
+          return;
+        }
+      }
       let result: PageOfItems | null = null;
       if (kind && nextCounts[kind] > 0) {
         result = await loadInboxPage(organization, { kind, page, pageSize: PAGE_SIZE, search, scope });
@@ -364,6 +389,19 @@ export default function InboxPage() {
           }
         />
       )}
+      {mine && groupsFailed && (
+        <Alert
+          type="error"
+          showIcon
+          className="inbox-alert"
+          message="Your teams could not be read, so My teams cannot be shown."
+          action={
+            <Button size="small" onClick={() => setGroupsFailed(false)}>
+              Retry
+            </Button>
+          }
+        />
+      )}
       {error && (
         <Alert
           type="error"
@@ -466,6 +504,7 @@ export default function InboxPage() {
                 {activeKind && counts[activeKind] > 0 && (
                   <Table<InboxItem>
                     className="inbox-table"
+                    scroll={{ x: "max-content" }}
                     size="middle"
                     rowKey="key"
                     loading={loading && !listed}

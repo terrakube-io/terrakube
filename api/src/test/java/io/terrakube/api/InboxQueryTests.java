@@ -74,7 +74,11 @@ class InboxQueryTests extends ServerApplicationTests {
     @AfterEach
     void cleanUp() {
         for (Workspace workspace : workspaces) {
-            jdbcTemplate.update("update workspace set deleted = true where id = ?", workspace.getId().toString());
+            jdbcTemplate.update("update workspace set deleted = true, project_id = null where id = ?", workspace.getId().toString());
+        }
+        if (project != null) {
+            jdbcTemplate.update("delete from project where id = ?", project.getId().toString());
+            project = null;
         }
     }
 
@@ -107,6 +111,112 @@ class InboxQueryTests extends ServerApplicationTests {
                 .body("errors", nullValue())
                 .body("data.organization.edges[0].node.failed.pageInfo.totalRecords", is(4))
                 .body("data.organization.edges[0].node.waiting.pageInfo.totalRecords", is(1));
+    }
+
+    // The filters the UI sends for each kind, as the service builds them, narrowed to the teams that own the project.
+    private static final String DRIFTED = "driftStatus=='drifted';lastJobStatus!='failed';lastJobStatus!='waitingApproval'";
+    private static final String POLICY = "policyComplianceStatus=='NON_COMPLIANT';lastJobStatus!='failed';lastJobStatus!='waitingApproval'";
+
+    private static final String DRIFT_PAGE_QUERY = """
+            query ($orgId: String!, $first: StringOrInt, $after: StringOrInt, $sort: String, $filter: String) {
+              organization(ids: [$orgId]) { edges { node {
+                workspace(first: $first, after: $after, sort: $sort, filter: $filter) {
+                  edges { node { id name lastJobDate driftFirstSeen driftJobId project { edges { node { name ownerTeam } } } } }
+                  pageInfo { totalRecords }
+                }
+              } } }
+            }""";
+
+    private static final String FOUR_COUNTS_QUERY = """
+            query ($orgId: String!, $waitingFilter: String, $failedFilter: String, $driftedFilter: String, $policyFilter: String) {
+              organization(ids: [$orgId]) { edges { node {
+                waiting: workspace(first: "1", after: "0", filter: $waitingFilter) { pageInfo { totalRecords } }
+                failed: workspace(first: "1", after: "0", filter: $failedFilter) { pageInfo { totalRecords } }
+                drifted: workspace(first: "1", after: "0", filter: $driftedFilter) { pageInfo { totalRecords } }
+                policy: workspace(first: "1", after: "0", filter: $policyFilter) { pageInfo { totalRecords } }
+              } } }
+            }""";
+
+    private String ownerTeam;
+    private io.terrakube.api.rs.project.Project project;
+
+    // A project owned by a team, with a drifted workspace and a non-compliant one in it. The drift columns are not
+    // written by an entity save, so they are set with the statement that owns them.
+    private void seedOwnedProject() {
+        ownerTeam = "inbox-owner-" + run;
+        Organization organization = organizationRepository.findById(UUID.fromString(ORG)).orElseThrow();
+        project = new io.terrakube.api.rs.project.Project();
+        project.setName(PREFIX + run + "-project");
+        project.setOrganization(organization);
+        project.setOwnerTeam(ownerTeam);
+        project = projectRepository.save(project);
+        Workspace drifted = workspace(organization, "drifted-0", JobStatus.completed, 3);
+        drifted.setProject(project);
+        workspaces.add(workspaceRepository.save(drifted));
+        jdbcTemplate.update("update workspace set drift_status = 'drifted', drift_first_seen = ?, drift_job_id = 77 where id = ?",
+                new Date(System.currentTimeMillis() - 2 * 3_600_000L), drifted.getId().toString());
+        Workspace policy = workspace(organization, "policy-0", JobStatus.completed, 4);
+        policy.setProject(project);
+        policy.setPolicyComplianceStatus(io.terrakube.api.rs.policy.PolicyComplianceStatus.NON_COMPLIANT);
+        workspaces.add(workspaceRepository.save(policy));
+    }
+
+    private ValidatableResponse query(String team, String query, Map<String, Object> variables) {
+        return given()
+                .headers("Authorization", "Bearer " + generatePAT(team), "Content-Type", "application/json")
+                .body(Map.of("query", query, "variables", variables))
+                .post("/graphql/api/v1")
+                .then();
+    }
+
+    @Test
+    void readsDriftedWorkspacesOfAnOwnedProjectSortedByWhenDriftWasFirstSeen() {
+        seedOwnedProject();
+        String filter = DRIFTED + ";project.ownerTeam=in=(\"" + ownerTeam + "\");name=ini=*" + PREFIX + run + "*";
+
+        query("TERRAKUBE_ADMIN", DRIFT_PAGE_QUERY, Map.of("orgId", ORG, "first", "25", "after", "0",
+                "sort", "+driftFirstSeen,+name", "filter", filter))
+                .body("errors", nullValue())
+                .body("data.organization.edges[0].node.workspace.pageInfo.totalRecords", is(1))
+                .body("data.organization.edges[0].node.workspace.edges[0].node.name", is(PREFIX + run + "-drifted-0"))
+                .body("data.organization.edges[0].node.workspace.edges[0].node.driftJobId", is(77))
+                .body("data.organization.edges[0].node.workspace.edges[0].node.project.edges[0].node.ownerTeam", is(ownerTeam));
+    }
+
+    @Test
+    void theOwnerFilterWorksThroughTheProjectReadCheckForSomeoneWhoIsNotASuperuser() {
+        seedOwnedProject();
+        String filter = DRIFTED + ";project.ownerTeam=in=(\"" + ownerTeam + "\");name=ini=*" + PREFIX + run + "*";
+
+        // TERRAKUBE_DEVELOPERS is an organization team: the relationship goes through the project's own read filter.
+        query("TERRAKUBE_DEVELOPERS", DRIFT_PAGE_QUERY, Map.of("orgId", ORG, "first", "25", "after", "0",
+                "sort", "+driftFirstSeen,+name", "filter", filter))
+                .body("errors", nullValue())
+                .body("data.organization.edges[0].node.workspace.pageInfo.totalRecords", is(1));
+
+        // Someone with no team at all gets nothing, and no error that would say the project exists.
+        query("NOT_A_MEMBER", DRIFT_PAGE_QUERY, Map.of("orgId", ORG, "first", "25", "after", "0",
+                "sort", "+driftFirstSeen,+name", "filter", filter))
+                .body("data.organization.edges[0].node.workspace.edges", org.hamcrest.Matchers.anyOf(
+                        org.hamcrest.Matchers.nullValue(), hasSize(0)));
+    }
+
+    @Test
+    void sendsTheFourCountFiltersOfTheSummaryInOneRequest() {
+        seedOwnedProject();
+        String name = ";name=ini=*" + PREFIX + run + "*";
+        String owner = ";project.ownerTeam=in=(\"" + ownerTeam + "\")";
+
+        query("TERRAKUBE_ADMIN", FOUR_COUNTS_QUERY, Map.of("orgId", ORG,
+                "waitingFilter", "lastJobStatus=='waitingApproval'" + owner + name,
+                "failedFilter", "lastJobStatus=='failed'" + owner + name,
+                "driftedFilter", DRIFTED + owner + name,
+                "policyFilter", POLICY + owner + name))
+                .body("errors", nullValue())
+                .body("data.organization.edges[0].node.waiting.pageInfo.totalRecords", is(0))
+                .body("data.organization.edges[0].node.failed.pageInfo.totalRecords", is(0))
+                .body("data.organization.edges[0].node.drifted.pageInfo.totalRecords", is(1))
+                .body("data.organization.edges[0].node.policy.pageInfo.totalRecords", is(1));
     }
 
     private ValidatableResponse page(String sort, String filter, String after, String first) {
