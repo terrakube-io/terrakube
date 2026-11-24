@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -99,11 +100,13 @@ class PlanSummaryRecorderTest {
     }
 
     @Test
-    void aSummaryIsStoredOnTheJob() throws Exception {
+    void aSummaryIsStoredOnTheJobAndNothingElse() throws Exception {
         boolean recorded = recorder.recordFromPatch(7, finalPlanPatch("[" + resource("update") + "]", "[]"));
 
         assertThat(recorded).isTrue();
         verify(jobRepository).updatePlanSummary(7, 0, 1, 0);
+        // Whether the counts are a drift check is decided when the run has finished well, not while it can still fail.
+        verifyNoMoreInteractions(jobRepository);
     }
 
     @Test

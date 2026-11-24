@@ -362,6 +362,26 @@ public class TclService {
         }
     }
 
+    /**
+     * True when every step of the flow a run executed is a plain plan, so its plan says whether the workspace has
+     * drifted. A plan of a destroy lists every resource as a delete, so a flow with one is not a check of drift, and
+     * the flow stored on the run is read, not the template, because the template can be edited or deleted meanwhile.
+     */
+    public static boolean isDriftCheckFlow(String tcl) {
+        if (tcl == null || tcl.isBlank()) {
+            return false;
+        }
+        try {
+            FlowConfig flowConfig = parseFlowConfig(tcl);
+            return flowConfig != null && flowConfig.getFlow() != null && !flowConfig.getFlow().isEmpty()
+                    && flowConfig.getFlow().stream()
+                            .allMatch(flow -> FlowType.terraformPlan.toString().equals(flow.getType()));
+        } catch (Exception e) {
+            log.warn("Could not read the flow of a run to see if it is a drift check: {}", e.getMessage());
+            return false;
+        }
+    }
+
     public boolean isTemplatePlanOnly(String templateId) {
         if (templateId == null || templateId.isEmpty()) {
             return false;

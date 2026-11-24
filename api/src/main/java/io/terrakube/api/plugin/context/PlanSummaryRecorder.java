@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 
 import io.terrakube.api.repository.JobRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * Records what a plan adds, changes and destroys on the job, from the final plan snapshot the executor sends to the
@@ -16,6 +17,7 @@ import lombok.RequiredArgsConstructor;
  * <p>Counted the way Terraform prints it: a replacement is one add and one destroy; imports, reads, ephemeral
  * resources and output changes are not counted. A plan with an error has no summary.
  */
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class PlanSummaryRecorder {
@@ -37,6 +39,8 @@ public class PlanSummaryRecorder {
         if (counts == null) {
             return false;
         }
+        // Only the counts. Whether they are a drift check is decided when the run has finished well, not while it can
+        // still fail, so a plan that was cut short never counts.
         jobRepository.updatePlanSummary(jobId, counts.add(), counts.change(), counts.destroy());
         return true;
     }
