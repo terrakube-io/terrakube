@@ -49,6 +49,8 @@ const PROJECT_SORT_PRESETS = [
 
 const VIEW_STORAGE_KEY = "terrakube-projects-view";
 const SEARCH_DEBOUNCE_MS = 300;
+// 24 is the default, so it has to be one of the choices the size changer offers.
+const PAGE_SIZE_OPTIONS = [12, 24, 48, 96];
 
 function formatLastRun(value?: string): string {
   return value ? new Date(value).toLocaleString() : "Never";
@@ -255,6 +257,7 @@ export default function ProjectsPage({ organizationName, setOrganizationName }: 
               locale={{ emptyText: <EmptyState description="No projects found" /> }}
               pagination={{
                 showSizeChanger: true,
+                pageSizeOptions: PAGE_SIZE_OPTIONS,
                 pageSize,
                 current: currentPage,
                 total: totalRecords,
@@ -293,6 +296,7 @@ export default function ProjectsPage({ organizationName, setOrganizationName }: 
                 pageSize={pageSize}
                 total={totalRecords}
                 showSizeChanger
+                pageSizeOptions={PAGE_SIZE_OPTIONS}
                 onChange={(page, size) => {
                   setCurrentPage(page);
                   setPageSize(size);

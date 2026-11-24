@@ -7,7 +7,7 @@
     <!-- When a job entered the queue. Nullable, not backfilled: readers fall back to created_date. -->
     <changeSet id="2-35-0-job-queued-at" author="terrakube">
         <addColumn tableName="job">
-            <column name="queued_at" type="datetime"/>
+            <column name="queued_at" type="timestamp"/>
         </addColumn>
     </changeSet>
 </databaseChangeLog>

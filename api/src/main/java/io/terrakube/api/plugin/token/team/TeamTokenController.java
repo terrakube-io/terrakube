@@ -166,7 +166,7 @@ public class TeamTokenController {
     /**
      * The caller's own effective permissions on a project: their organization team permissions combined with the
      * project access entries of their groups. Workspace-level overrides are not included. Answers 404 when the
-     * project is not in the organization, so the id pair cannot be used to probe other organizations.
+     * project is not in the organization or the caller could not see it, so the ids cannot be used to probe.
      */
     @Transactional
     @GetMapping(path = "/permissions/organization/{organizationId}/project/{projectId}")
@@ -189,7 +189,16 @@ public class TeamTokenController {
 
         PermissionSet permissions = new PermissionSet();
         List<String> groups = teamTokenService.getCurrentGroups(principalJwt);
-        teamRepository.findAllByOrganizationIdAndNameIn(organizationUuid, groups).forEach(team -> {
+        var organizationTeams = teamRepository.findAllByOrganizationIdAndNameIn(organizationUuid, groups);
+        // The same rule as the project read filter: a caller who could not list the project gets the answer for a
+        // project that does not exist, so this endpoint cannot be used to find out which projects exist.
+        boolean canSeeProject = groups.contains(instanceOwner)
+                || organizationTeams.stream().anyMatch(team -> rbacService.canManageWorkspace(team))
+                || project.getProjectAccess().stream().anyMatch(access -> groups.contains(access.getName()));
+        if (!canSeeProject) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Project not found");
+        }
+        organizationTeams.forEach(team -> {
             permissions.setManageState(permissions.manageState || rbacService.canManageState(team));
             permissions.setManageWorkspace(permissions.manageWorkspace || rbacService.canManageWorkspace(team));
             permissions.setManageJob(permissions.manageJob || rbacService.canManageJob(team));

@@ -2,6 +2,7 @@ import axiosInstance from "@/config/axiosConfig";
 import { apiPost } from "@/modules/api/apiWrapper";
 import { ApiResponse } from "@/modules/api/types";
 import containsFilter from "@/modules/workspaces/utils/containsFilter";
+import quoteRsql from "@/modules/workspaces/utils/quoteRsql";
 import { ProjectModel, ProjectSummaryModel } from "@/domain/types";
 
 export type ProjectAccessModel = {
@@ -172,7 +173,7 @@ async function getProjectSummary(
   projectId: string
 ): Promise<ApiResponse<ProjectSummaryModel | null>> {
   const result = await listProjectSummaries(organizationId, {
-    filter: `id=='${projectId}'`,
+    filter: `id==${quoteRsql(projectId)}`,
     sort: "+name",
     page: 1,
     pageSize: 1,

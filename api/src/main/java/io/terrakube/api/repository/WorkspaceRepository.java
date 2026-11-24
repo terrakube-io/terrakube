@@ -22,8 +22,11 @@ import java.util.UUID;
 
 public interface WorkspaceRepository extends JpaRepository<Workspace, UUID> {
 
-    /** Counts the workspaces a person can still see in a project. Native so it is explicit about {@code deleted}. */
-    @Query(value = "select count(w.id) from workspace w where w.project_id = :projectId and w.deleted = false",
+    /**
+     * Counts the workspaces a person can still see in a project. Native so it is explicit about {@code deleted}. The
+     * flag is compared as an integer because SQL Server has no boolean literals.
+     */
+    @Query(value = "select count(w.id) from workspace w where w.project_id = :projectId and cast(w.deleted as integer) = 0",
             nativeQuery = true)
     long countLiveByProject(@Param("projectId") String projectId);
 
@@ -33,7 +36,7 @@ public interface WorkspaceRepository extends JpaRepository<Workspace, UUID> {
      */
     @Transactional
     @Modifying
-    @Query(value = "update workspace set project_id = null where project_id = :projectId and deleted = true",
+    @Query(value = "update workspace set project_id = null where project_id = :projectId and cast(deleted as integer) = 1",
             nativeQuery = true)
     int detachDeletedFromProject(@Param("projectId") String projectId);
 

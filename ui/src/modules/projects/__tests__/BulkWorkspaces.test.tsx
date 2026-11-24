@@ -28,6 +28,26 @@ describe("bulk workspace actions", () => {
     expect(assign).toHaveBeenCalledWith("org", "w1", "p2");
   });
 
+  it("never has more than five changes in flight", async () => {
+    let inFlight = 0;
+    let peak = 0;
+    assign.mockImplementation(async () => {
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      inFlight -= 1;
+    });
+
+    const outcome = await moveWorkspaces(
+      "org",
+      Array.from({ length: 20 }, (_, i) => `w${i}`),
+      "p2"
+    );
+
+    expect(outcome.succeeded).toHaveLength(20);
+    expect(peak).toBeLessThanOrEqual(5);
+  });
+
   it("removes workspaces from their project", async () => {
     remove.mockResolvedValue(undefined);
 
@@ -59,6 +79,25 @@ describe("BulkWorkspaceBar", () => {
     );
 
     expect(container).toBeEmptyDOMElement();
+  });
+
+  it("offers Remove from project only to someone who may take workspaces out of projects", () => {
+    const { rerender } = render(
+      <BulkWorkspaceBar orgid="org" projectId="p1" selectedIds={["w1"]} onClear={jest.fn()} onDone={jest.fn()} />
+    );
+    expect(screen.queryByRole("button", { name: "Remove from project" })).not.toBeInTheDocument();
+
+    rerender(
+      <BulkWorkspaceBar
+        orgid="org"
+        projectId="p1"
+        selectedIds={["w1"]}
+        canRemove
+        onClear={jest.fn()}
+        onDone={jest.fn()}
+      />
+    );
+    expect(screen.getByRole("button", { name: "Remove from project" })).toBeInTheDocument();
   });
 
   it("moves the selection to another project and never offers the current one", async () => {

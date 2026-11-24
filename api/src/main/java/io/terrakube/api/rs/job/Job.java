@@ -30,7 +30,9 @@ import org.hibernate.annotations.SQLRestriction;
 
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
+import jakarta.persistence.PostLoad;
 import jakarta.persistence.PrePersist;
+import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -134,11 +136,34 @@ public class Job extends GenericAuditFields {
     @Column(name = "queued_at")
     private Date queuedAt;
 
+    // The status this row had when it was read, so a save can tell that the job has just gone back to waiting.
+    @Exclude
+    @Transient
+    private JobStatus statusWhenLoaded;
+
     @PrePersist
     void stampQueuedAt() {
         if (queuedAt == null) {
             queuedAt = new Date();
         }
+    }
+
+    @PostLoad
+    void rememberStatus() {
+        statusWhenLoaded = status;
+    }
+
+    /**
+     * A job returns to pending after a step that changed something and to approved once a person approves it. From
+     * then on it waits again, so the wait is measured from that moment and not from when the job was created.
+     */
+    @PreUpdate
+    void restampQueuedAtWhenWaitingAgain() {
+        boolean waiting = status == JobStatus.pending || status == JobStatus.approved || status == JobStatus.queue;
+        if (waiting && statusWhenLoaded != null && statusWhenLoaded != status) {
+            queuedAt = new Date();
+        }
+        statusWhenLoaded = status;
     }
 
     @ReadPermission(expression = "team view job OR team project limited view job OR team limited view job OR executor read job OR user is an executor service")

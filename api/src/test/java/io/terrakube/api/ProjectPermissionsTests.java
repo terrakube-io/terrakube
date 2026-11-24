@@ -76,6 +76,25 @@ class ProjectPermissionsTests extends ServerApplicationTests {
     }
 
     @Test
+    void aCallerWhoCannotSeeTheProjectIsToldItDoesNotExist() {
+        permissions("PERMS_NOT_A_MEMBER", ORG, project.getId().toString()).statusCode(HttpStatus.NOT_FOUND.value());
+    }
+
+    @Test
+    void anOrganizationTeamThatManagesWorkspacesSeesTheProjectWithoutAProjectGrant() {
+        permissions("TERRAKUBE_DEVELOPERS", ORG, project.getId().toString())
+                .statusCode(HttpStatus.ACCEPTED.value())
+                .body("manageWorkspace", is(true));
+    }
+
+    @Test
+    void theInstanceOwnerSeesEveryProject() {
+        permissions("TERRAKUBE_ADMIN", ORG, project.getId().toString())
+                .statusCode(HttpStatus.ACCEPTED.value())
+                .body("manageProject", is(true));
+    }
+
+    @Test
     void malformedIdsAreNotFound() {
         permissions(ADMIN_TEAM, ORG, "not-a-uuid").statusCode(HttpStatus.NOT_FOUND.value());
     }

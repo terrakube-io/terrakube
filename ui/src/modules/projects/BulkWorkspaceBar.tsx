@@ -8,6 +8,8 @@ type Props = {
   orgid: string;
   projectId: string;
   selectedIds: string[];
+  /** Taking a workspace out of every project needs the organization level right; a project admin cannot. */
+  canRemove?: boolean;
   onClear: () => void;
   onDone: () => void;
 };
@@ -22,7 +24,7 @@ function report(verb: string, outcome: BulkOutcome) {
 }
 
 /** Actions on the workspaces ticked in the project workspace list. Hidden until something is selected. */
-export default function BulkWorkspaceBar({ orgid, projectId, selectedIds, onClear, onDone }: Props) {
+export default function BulkWorkspaceBar({ orgid, projectId, selectedIds, canRemove = false, onClear, onDone }: Props) {
   const [moveOpen, setMoveOpen] = useState(false);
   const [targets, setTargets] = useState<ProjectSummaryModel[]>([]);
   const [target, setTarget] = useState<string>();
@@ -73,9 +75,11 @@ export default function BulkWorkspaceBar({ orgid, projectId, selectedIds, onClea
     <Flex gap={8} align="center" className="project-bulk-bar">
       <Typography.Text strong>{count} selected</Typography.Text>
       <Button onClick={() => setMoveOpen(true)}>Move to project</Button>
-      <Button danger onClick={confirmRemove} loading={working}>
-        Remove from project
-      </Button>
+      {canRemove && (
+        <Button danger onClick={confirmRemove} loading={working}>
+          Remove from project
+        </Button>
+      )}
       <Button type="link" onClick={onClear}>
         Clear
       </Button>

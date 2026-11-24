@@ -232,7 +232,15 @@ export default function ProjectDetailPage({ organizationName, setOrganizationNam
       case "overview":
         return <ProjectOverview summary={summary} loading={summaryLoading} onOpenTab={handleTabChange} />;
       case "workspaces":
-        return <ProjectWorkspaces key={`${orgid}:${id}`} orgid={orgid!} projectId={id!} canManage={canManageProject} />;
+        return (
+          <ProjectWorkspaces
+            key={`${orgid}:${id}`}
+            orgid={orgid!}
+            projectId={id!}
+            canManage={canManageProject}
+            canRemove={permissions.manageWorkspace}
+          />
+        );
       case "teams":
         return <ProjectAccessTab orgid={orgid!} projectId={id!} canManage={canManageProject} />;
       case "general":

@@ -1,6 +1,7 @@
 package io.terrakube.api.rs.job;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 import java.util.Date;
@@ -26,6 +27,36 @@ class JobQueuedAtTest {
 
         job.stampQueuedAt();
 
+        assertEquals(earlier, job.getQueuedAt());
+    }
+
+    @Test
+    void restampsTheQueueTimeWhenAJobGoesBackToWaiting() {
+        Date earlier = new Date(1_000L);
+        Job job = new Job();
+        job.setStatus(JobStatus.running);
+        job.setQueuedAt(earlier);
+        job.rememberStatus();
+
+        job.setStatus(JobStatus.pending);
+        job.restampQueuedAtWhenWaitingAgain();
+
+        assertNotEquals(earlier, job.getQueuedAt());
+    }
+
+    @Test
+    void keepsTheQueueTimeWhileTheStatusIsUnchangedOrNotWaiting() {
+        Date earlier = new Date(1_000L);
+        Job job = new Job();
+        job.setStatus(JobStatus.pending);
+        job.setQueuedAt(earlier);
+        job.rememberStatus();
+
+        job.restampQueuedAtWhenWaitingAgain();
+        assertEquals(earlier, job.getQueuedAt());
+
+        job.setStatus(JobStatus.running);
+        job.restampQueuedAtWhenWaitingAgain();
         assertEquals(earlier, job.getQueuedAt());
     }
 }
