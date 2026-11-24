@@ -38,7 +38,7 @@ public class InitWorkspaceStatus {
                 Optional<Job> lastJob = jobRepository.findFirstByWorkspaceOrderByIdDesc(workspace);
                 if( lastJob.isPresent()){
                     Job job = lastJob.get();
-                    WorkspaceJobStatusService.Shown shown = workspaceJobStatusService.shownFor(job);
+                    WorkspaceJobStatusService.Shown shown = workspaceJobStatusService.shownFor(job, lastChange(job, workspace));
                     Date date = shown.date();
                     // Only the rows that are not right yet are written: on a database that is already
                     // correct, a restart changes nothing.
@@ -56,5 +56,15 @@ public class InitWorkspaceStatus {
                 }
             }));
         });
+    }
+
+    private static Date lastChange(Job job, Workspace workspace) {
+        if (job.getUpdatedDate() != null) {
+            return job.getUpdatedDate();
+        }
+        if (workspace.getLastJobDate() != null) {
+            return workspace.getLastJobDate();
+        }
+        return new Date(System.currentTimeMillis());
     }
 }
