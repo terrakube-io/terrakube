@@ -104,8 +104,10 @@ public class OnlineModeServiceImpl {
     }
 
     private void releaseGateAndAcceptTraffic() {
-        executorCapacityGate.release();
+        // Publish ACCEPTING_TRAFFIC before releasing the capacity gate so a newly admitted
+        // request cannot have its REFUSING_TRAFFIC state overwritten by this rejecting thread.
         publishReadiness(ReadinessState.ACCEPTING_TRAFFIC);
+        executorCapacityGate.release();
     }
 
     private VerificationResult verifyJobIdentity(TerraformJob terraformJob) {
