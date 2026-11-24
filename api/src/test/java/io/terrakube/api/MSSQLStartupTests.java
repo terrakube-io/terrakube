@@ -5,6 +5,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.UUID;
 
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -21,6 +23,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 import io.terrakube.api.repository.JobRepository;
 import io.terrakube.api.repository.OrganizationRepository;
+import io.terrakube.api.repository.ProjectRepository;
 import io.terrakube.api.repository.StepRepository;
 import io.terrakube.api.repository.WorkspaceRepository;
 import io.terrakube.api.rs.Organization;
@@ -74,6 +77,17 @@ class MSSQLStartupTests {
     private OrganizationRepository organizationRepository;
     @Autowired
     private StepRepository stepRepository;
+
+    @Autowired
+    private ProjectRepository projectRepository;
+
+    @PersistenceContext
+    private EntityManager entityManager;
+
+    @Test
+    void projectSummaryAggregateRunsOnSqlServer() {
+        ProjectSummaryDatabaseCheck.run(organizationRepository, projectRepository, workspaceRepository, entityManager);
+    }
 
     @Test
     void contextLoads() {
