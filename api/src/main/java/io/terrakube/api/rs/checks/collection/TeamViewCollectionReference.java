@@ -4,6 +4,7 @@ import com.yahoo.elide.annotation.SecurityCheck;
 import com.yahoo.elide.core.security.ChangeSpec;
 import com.yahoo.elide.core.security.RequestScope;
 import com.yahoo.elide.core.security.checks.OperationCheck;
+import io.terrakube.api.plugin.security.groups.GroupService;
 import io.terrakube.api.plugin.security.user.AuthenticatedUser;
 import io.terrakube.api.rs.checks.membership.MembershipService;
 import io.terrakube.api.rs.checks.workspace.WorkspaceCheckSupport;
@@ -26,6 +27,9 @@ public class TeamViewCollectionReference extends OperationCheck<Reference> {
 
     @Autowired
     private MembershipService membershipService;
+
+    @Autowired
+    private GroupService groupService;
 
     @Autowired
     private WorkspaceCheckSupport workspaceCheckSupport;
@@ -51,6 +55,11 @@ public class TeamViewCollectionReference extends OperationCheck<Reference> {
         if (reference.getWorkspace() != null) {
             return workspaceCheckSupport.canViewWorkspace(reference.getWorkspace(), requestScope);
         }
+        if (reference.getProject() != null && reference.getProject().getProjectAccess() != null) {
+            // A project scoped reference is visible to the teams that have access to that project.
+            var groups = groupService.getEffectiveGroups(requestScope.getUser());
+            return reference.getProject().getProjectAccess().stream().anyMatch(access -> groups.contains(access.getName()));
+        }
         return false;
     }
 
@@ -64,6 +73,15 @@ public class TeamViewCollectionReference extends OperationCheck<Reference> {
                     || reference.getCollection().getOrganization().getId() == null
                     || !reference.getCollection().getOrganization().getId()
                             .equals(reference.getWorkspace().getOrganization().getId())) {
+                return false;
+            }
+        }
+        if (reference.getCollection() != null && reference.getProject() != null) {
+            if (reference.getCollection().getOrganization() == null
+                    || reference.getProject().getOrganization() == null
+                    || reference.getCollection().getOrganization().getId() == null
+                    || !reference.getCollection().getOrganization().getId()
+                            .equals(reference.getProject().getOrganization().getId())) {
                 return false;
             }
         }
