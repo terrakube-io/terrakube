@@ -22,6 +22,7 @@ import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.project.Project;
 import io.terrakube.api.rs.project.access.ProjectAccess;
 import io.terrakube.api.rs.workspace.Workspace;
+import io.terrakube.api.rs.workspace.access.Access;
 
 // The organization and workspace permissions the UI reads for its "your access" chip: besides what the caller can do,
 // they say through which teams and with which role.
@@ -66,6 +67,7 @@ class WorkspacePermissionsTests extends ServerApplicationTests {
 
     @AfterEach
     void cleanUp() {
+        jdbcTemplate.update("delete from access where workspace_id = ?", workspace.getId().toString());
         jdbcTemplate.update("update workspace set project_id = null, deleted = true where id = ?",
                 workspace.getId().toString());
         jdbcTemplate.update("delete from project_access where project_id = ?", project.getId().toString());
@@ -104,6 +106,30 @@ class WorkspacePermissionsTests extends ServerApplicationTests {
                 .body("manageWorkspace", is(false))
                 .body("grantedThrough", nullValue())
                 .body("accessLevel", nullValue());
+    }
+
+    @Test
+    void theAccessRowOfATeamTheCallerIsNotInIsNeitherCountedNorNamed() {
+        Access others = new Access();
+        others.setName("PERMS_WORKSPACE_OTHER_TEAM");
+        others.setRole("admin");
+        others.setWorkspace(workspace);
+        workspace.setAccess(new java.util.ArrayList<>(java.util.List.of(others)));
+        workspace = workspaceRepository.save(workspace);
+
+        workspacePermissions(PROJECT_TEAM)
+                .statusCode(HttpStatus.ACCEPTED.value())
+                .body("manageWorkspace", is(false))
+                .body("planJob", is(false))
+                .body("grantedThrough", contains(PROJECT_TEAM))
+                .body("accessLevel", is("read"));
+    }
+
+    @Test
+    void aWorkspaceOfAnotherOrganizationIsReportedAsNotFound() {
+        get(ORG_TEAM, "/access-token/v1/teams/permissions/organization/" + UUID.randomUUID() + "/workspace/"
+                + workspace.getId())
+                .statusCode(HttpStatus.NOT_FOUND.value());
     }
 
     private ValidatableResponse workspacePermissions(String team) {
