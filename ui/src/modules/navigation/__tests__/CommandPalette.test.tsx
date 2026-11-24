@@ -44,6 +44,9 @@ describe("CommandPalette", () => {
     jest.clearAllMocks();
     localStorage.clear();
     mocked.searchOrganization.mockResolvedValue({ projects: [], workspaces: [] });
+    // clearAllMocks keeps what a test set, so a waiting run from one test would be there in the next.
+    (findWaitingRuns as jest.Mock).mockReset();
+    (findWaitingRuns as jest.Mock).mockResolvedValue([]);
   });
 
   describe("approving the waiting run of a workspace", () => {
@@ -88,9 +91,8 @@ describe("CommandPalette", () => {
       expect(approveRuns).not.toHaveBeenCalled();
     });
 
-    it("offers nothing when the workspace has no run waiting, and nothing for a failed lookup", async () => {
+    it("offers nothing when the workspace has no run waiting", async () => {
       search();
-      (findWaitingRuns as jest.Mock).mockResolvedValueOnce([]);
       renderPalette();
       openWithKeyboard();
       const input = await screen.findByRole("combobox", { name: "Search" });
@@ -98,8 +100,93 @@ describe("CommandPalette", () => {
       await screen.findByRole("option", { name: /^ledger-db/ });
 
       await waitFor(() => expect(findWaitingRuns).toHaveBeenCalled());
+      await act(async () => undefined);
       expect(screen.queryByRole("option", { name: /Approve run/ })).not.toBeInTheDocument();
     });
+
+    it("offers nothing, and does not break, when the lookup fails", async () => {
+      search();
+      (findWaitingRuns as jest.Mock).mockRejectedValueOnce(new Error("down"));
+      renderPalette();
+      openWithKeyboard();
+      const input = await screen.findByRole("combobox", { name: "Search" });
+      fireEvent.change(input, { target: { value: "ledger" } });
+      await screen.findByRole("option", { name: /^ledger-db/ });
+
+      await waitFor(() => expect(findWaitingRuns).toHaveBeenCalled());
+      await act(async () => undefined);
+      expect(screen.queryByRole("option", { name: /Approve run/ })).not.toBeInTheDocument();
+      expect(screen.getByRole("option", { name: /^ledger-db/ })).toBeInTheDocument();
+    });
+
+    it("moves one row at a time when arrowing past the approve row", async () => {
+      mocked.searchOrganization.mockResolvedValue({
+        projects: [],
+        workspaces: [
+          { id: "ws-1", name: "ledger-db" },
+          { id: "ws-2", name: "ledger-web" },
+          { id: "ws-3", name: "ledger-api" },
+        ],
+      } as never);
+      (findWaitingRuns as jest.Mock).mockImplementation(async (_org: string, ids: string[]) =>
+        ids[0] === "ws-1" ? [{ jobId: "412", workspaceId: "ws-1" }] : []
+      );
+      renderPalette();
+      openWithKeyboard();
+      const input = await screen.findByRole("combobox", { name: "Search" });
+      fireEvent.change(input, { target: { value: "ledger" } });
+      await screen.findByRole("option", { name: /Approve run #412/ });
+
+      fireEvent.keyDown(input, { key: "ArrowDown" });
+      await waitFor(() =>
+        expect(screen.getByRole("option", { name: /Approve run #412/ })).toHaveAttribute("aria-selected", "true")
+      );
+      fireEvent.keyDown(input, { key: "ArrowDown" });
+      // The approve row goes away once the selection leaves it, and the selection stays on the row it moved to.
+      await waitFor(() =>
+        expect(screen.getByRole("option", { name: /^ledger-web/ })).toHaveAttribute("aria-selected", "true")
+      );
+      fireEvent.keyDown(input, { key: "ArrowDown" });
+      await waitFor(() =>
+        expect(screen.getByRole("option", { name: /^ledger-api/ })).toHaveAttribute("aria-selected", "true")
+      );
+      fireEvent.keyDown(input, { key: "Enter" });
+      await waitFor(() =>
+        expect(screen.getByTestId("where")).toHaveTextContent(`/organizations/${ORG_A}/workspaces/ws-3`)
+      );
+    });
+
+    it("does not leave the approve row of the last text openable for the next one", async () => {
+      search();
+      (findWaitingRuns as jest.Mock).mockResolvedValue([{ jobId: "412", workspaceId: "ws-1" }]);
+      renderPalette();
+      openWithKeyboard();
+      const input = await screen.findByRole("combobox", { name: "Search" });
+      fireEvent.change(input, { target: { value: "ledger" } });
+      await screen.findByRole("option", { name: /Approve run #412/ });
+
+      mocked.searchOrganization.mockResolvedValue({ projects: [], workspaces: [] });
+      fireEvent.change(input, { target: { value: "zzz" } });
+      expect(screen.queryByRole("option", { name: /Approve run/ })).not.toBeInTheDocument();
+      fireEvent.keyDown(input, { key: "Enter" });
+
+      expect(confirmApprove).not.toHaveBeenCalled();
+      expect(await screen.findByText('Nothing matches "zzz".')).toBeInTheDocument();
+    });
+  });
+
+  it("still goes with g then i after a dialog was opened and closed, because a closed one stays in the page", () => {
+    renderPalette(`/organizations/${ORG_A}/settings`);
+    const closed = document.createElement("div");
+    closed.setAttribute("role", "dialog");
+    closed.style.display = "none";
+    document.body.appendChild(closed);
+
+    press("g");
+    press("i");
+
+    expect(screen.getByTestId("where")).toHaveTextContent("/inbox");
+    closed.remove();
   });
 
   it.each([
@@ -131,10 +218,13 @@ describe("CommandPalette", () => {
     renderPalette();
     const dialog = document.createElement("div");
     dialog.setAttribute("role", "dialog");
+    // Focus is trapped inside an open dialog, so the key presses come from within it.
+    const button = document.createElement("button");
+    dialog.appendChild(button);
     document.body.appendChild(dialog);
 
-    press("g");
-    press("i");
+    press("g", button);
+    press("i", button);
 
     expect(screen.getByTestId("where")).toHaveTextContent(`/organizations/${ORG_A}/projects`);
     dialog.remove();

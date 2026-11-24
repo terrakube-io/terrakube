@@ -40,7 +40,9 @@ export default function CommandPalette({ organizations }: Props) {
   const [remote, setRemote] = useState<PaletteItem[]>([]);
   const [searching, setSearching] = useState(false);
   const [failed, setFailed] = useState(false);
-  const [active, setActive] = useState(0);
+  // The highlighted row is remembered by its key, not its place: the approve row comes and goes under the workspace
+  // it belongs to, and a place would then point at the row after the one the person moved to. Null means the first.
+  const [activeKey, setActiveKey] = useState<string | null>(null);
   const inputRef = useRef<InputRef>(null);
   const sequence = useRef(0);
   const openRef = useRef(false);
@@ -54,7 +56,7 @@ export default function CommandPalette({ organizations }: Props) {
     setOpen(false);
     setQuery("");
     setRemote([]);
-    setActive(0);
+    setActiveKey(null);
   }, []);
 
   useEffect(() => {
@@ -88,7 +90,11 @@ export default function CommandPalette({ organizations }: Props) {
         "g w": go(currentOrgId ? `/organizations/${currentOrgId}/workspaces` : null),
       },
       {
-        ignore: (event) => defaultKeybindingsHandlerIgnore(event) || document.querySelector('[role="dialog"]') !== null,
+        // Where the key press comes from says whether a dialog is open: focus is trapped inside one. A modal that stays
+        // mounted after closing is still in the page, so asking the page for any dialog would switch these off for good.
+        ignore: (event) =>
+          defaultKeybindingsHandlerIgnore(event) ||
+          (event.target as Element | null)?.closest?.('[role="dialog"]') != null,
       }
     );
     const onOpen = () => setOpen(true);
@@ -200,14 +206,23 @@ export default function CommandPalette({ organizations }: Props) {
     };
     // Right under the workspace it belongs to, so one arrow down reaches it whatever else the search found.
     const at = items.findIndex((item) => item.key === focused.key);
-    return at < 0 ? [...items, action] : [...items.slice(0, at + 1), action, ...items.slice(at + 1)];
+    // A workspace that is not in the results (they are for newer text) has no approve row: it would be the only row,
+    // openable with Enter, for a search that has not answered yet.
+    if (at < 0) return items;
+    return [...items.slice(0, at + 1), action, ...items.slice(at + 1)];
   }, [items, focused, waiting]);
+
+  const found = shown.findIndex((item) => item.key === activeKey);
+  const active = found < 0 ? 0 : found;
 
   useEffect(() => {
     const current = shown[active];
     if (current?.kind === "workspace") setFocused(current);
     else if (current?.kind !== "action") setFocused(null);
   }, [shown, active]);
+
+  // New text is a new question: what was found for the last text is not carried over to it.
+  useEffect(() => setFocused(null), [query]);
 
   useEffect(() => {
     if (!open || !focused || focused.key in waiting) return;
@@ -230,16 +245,19 @@ export default function CommandPalette({ organizations }: Props) {
   }, [open, focused, waiting]);
 
   useEffect(() => {
-    if (!open) setWaiting({});
+    if (!open) {
+      setWaiting({});
+      setFocused(null);
+    }
   }, [open]);
 
-  useEffect(() => setActive(0), [query]);
+  useEffect(() => setActiveKey(null), [query]);
 
   // The list scrolls, and the highlight moves with the arrow keys, so the highlighted row is kept in view.
   useEffect(() => {
-    const item = items[active];
+    const item = shown[active];
     if (item) document.getElementById(optionId(item.key))?.scrollIntoView?.({ block: "nearest" });
-  }, [active, items]);
+  }, [active, shown]);
 
   const choose = (item: PaletteItem) => {
     if (item.kind === "project" || item.kind === "workspace") rememberRecent(item);
@@ -254,10 +272,10 @@ export default function CommandPalette({ organizations }: Props) {
   const onKeyDown = (event: React.KeyboardEvent) => {
     if (event.key === "ArrowDown") {
       event.preventDefault();
-      setActive((index) => Math.min(index + 1, shown.length - 1));
+      setActiveKey(shown[Math.min(active + 1, shown.length - 1)]?.key ?? null);
     } else if (event.key === "ArrowUp") {
       event.preventDefault();
-      setActive((index) => Math.max(index - 1, 0));
+      setActiveKey(shown[Math.max(active - 1, 0)]?.key ?? null);
     } else if (event.key === "Enter" && shown[active]) {
       event.preventDefault();
       choose(shown[active]);
@@ -286,7 +304,7 @@ export default function CommandPalette({ organizations }: Props) {
         aria-controls="command-palette-results"
         aria-activedescendant={shown[active] ? optionId(shown[active].key) : undefined}
         role="combobox"
-        aria-expanded={items.length > 0}
+        aria-expanded={shown.length > 0}
         variant="borderless"
         size="large"
       />
@@ -301,7 +319,7 @@ export default function CommandPalette({ organizations }: Props) {
             role="option"
             aria-selected={index === active}
             className={index === active ? "command-palette-item command-palette-item-active" : "command-palette-item"}
-            onMouseEnter={() => setActive(index)}
+            onMouseEnter={() => setActiveKey(item.key)}
             onClick={() => choose(item)}
           >
             <span>
