@@ -186,6 +186,48 @@ public class ProjectTests extends ServerApplicationTests {
         }
     }
 
+    @Test
+    void landingTabOverrideIsAcceptedAndUnknownTabsAreRejected() {
+        String id = createProject("landing-tab-check", HttpStatus.CREATED.value());
+        try {
+            patchLandingTab(id, "workspaces", HttpStatus.NO_CONTENT.value());
+            patchLandingTab(id, "nonsense", HttpStatus.BAD_REQUEST.value());
+        } finally {
+            deleteProject(id);
+        }
+    }
+
+    @Test
+    void theOrganizationLandingTabOnlyAcceptsKnownTabs() {
+        try {
+            patchOrganizationLandingTab("\"teams\"", HttpStatus.NO_CONTENT.value());
+            patchOrganizationLandingTab("\"nonsense\"", HttpStatus.BAD_REQUEST.value());
+            patchOrganizationLandingTab("\"\"", HttpStatus.BAD_REQUEST.value());
+        } finally {
+            patchOrganizationLandingTab("null", HttpStatus.NO_CONTENT.value());
+        }
+    }
+
+    private void patchOrganizationLandingTab(String value, int expectedStatus) {
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_ADMIN"), "Content-Type", "application/vnd.api+json")
+                .body("{\"data\":{\"type\":\"organization\",\"id\":\"" + ORG + "\",\"attributes\":{\"projectLandingTab\":" + value + "}}}")
+                .when()
+                .patch("/api/v1/organization/" + ORG)
+                .then()
+                .statusCode(expectedStatus);
+    }
+
+    private void patchLandingTab(String id, String tab, int expectedStatus) {
+        given()
+                .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
+                .body("{\"data\":{\"type\":\"project\",\"id\":\"" + id + "\",\"attributes\":{\"landingTab\":\"" + tab + "\"}}}")
+                .when()
+                .patch("/api/v1/organization/" + ORG + "/project/" + id)
+                .then()
+                .statusCode(expectedStatus);
+    }
+
     private String createProject(String name, int expectedStatus) {
         return given()
                 .headers("Authorization", "Bearer " + generatePAT("TERRAKUBE_DEVELOPERS"), "Content-Type", "application/vnd.api+json")
