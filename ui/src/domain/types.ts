@@ -587,9 +587,14 @@ export type ProjectSummaryModel = {
   waitingApprovalCount: number;
   neverRunCount: number;
   nonCompliantCount: number;
+  compliantCount: number;
+  exemptedCount: number;
   lockedCount: number;
   attentionCount: number;
   lastRunAt?: string;
+  // Jobs still waiting to run, and when the oldest of them entered the queue.
+  queuedJobCount: number;
+  queuedSince?: string;
   teamCount: number;
 };
 

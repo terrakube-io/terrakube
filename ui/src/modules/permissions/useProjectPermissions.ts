@@ -9,6 +9,9 @@ export interface ProjectPermissionSet {
   planJob: boolean;
   approveJob: boolean;
   managePolicies: boolean;
+  // Which teams grant the access, and the highest role among them.
+  grantedThrough: string[];
+  accessLevel?: string;
 }
 
 const none: ProjectPermissionSet = {
@@ -19,6 +22,7 @@ const none: ProjectPermissionSet = {
   planJob: false,
   approveJob: false,
   managePolicies: false,
+  grantedThrough: [],
 };
 
 /**
@@ -54,6 +58,8 @@ export function useProjectPermissions(orgId?: string, projectId?: string) {
           planJob: data.planJob ?? false,
           approveJob: data.approveJob ?? false,
           managePolicies: data.managePolicies ?? false,
+          grantedThrough: data.grantedThrough ?? [],
+          accessLevel: data.accessLevel ?? undefined,
         });
       })
       .catch(() => {

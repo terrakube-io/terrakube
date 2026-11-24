@@ -1,31 +1,20 @@
-import {
-  Badge,
-  Button,
-  Card,
-  Checkbox,
-  Flex,
-  Form,
-  Input,
-  Modal,
-  Pagination,
-  Segmented,
-  Select,
-  Table,
-  Typography,
-  message,
-} from "antd";
+import { Button, Flex, Form, Input, Modal, Pagination, Segmented, Select, Table, message } from "antd";
+import type { TableProps } from "antd";
 import { AppstoreOutlined, PlusOutlined, SearchOutlined, UnorderedListOutlined } from "@ant-design/icons";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import PageWrapper from "@/components/layout/PageWrapper/PageWrapper";
-import projectService from "./projectService";
+import projectService, { ProjectIndexCounts } from "./projectService";
 import useApiRequest from "@/modules/api/useApiRequest";
 import { ProjectSummaryModel } from "@/domain/types";
 import { ORGANIZATION_NAME } from "../../config/actionTypes";
 import { useOrgPermissions } from "@/modules/permissions/useOrgPermissions";
 import { PermissionErrorMessage } from "@/components/feedback/PermissionErrorMessage";
-import { EmptyState } from "@/components/feedback/EmptyState";
-import { ProjectHealthBar } from "./ProjectHealthBar";
+import { HealthLegend, ProjectHealthBar } from "./ProjectHealthBar";
+import ProjectCard from "./ProjectCard";
+import ProjectFilterChips from "./ProjectFilterChips";
+import { CountsUnavailable, NoMatch, NoProjects, ProjectsSkeleton } from "./ProjectStates";
+import { ProjectChip, attentionTone, defaultView, policyRollup, shortAgo } from "./projectHealth";
 import "./Projects.css";
 
 type Props = {
@@ -47,13 +36,29 @@ const PROJECT_SORT_PRESETS = [
   { value: "-workspaceCount,+name", label: "Most workspaces" },
 ];
 
+// Every column header sorts on the server, so each one maps to a column of the summary.
+const COLUMN_SORT_FIELDS: Record<string, string> = {
+  name: "name",
+  workspaceCount: "workspaceCount",
+  attentionCount: "attentionCount",
+  policy: "nonCompliantCount",
+  teamCount: "teamCount",
+  lastRunAt: "lastRunAt",
+};
+
 const VIEW_STORAGE_KEY = "terrakube-projects-view";
 const SEARCH_DEBOUNCE_MS = 300;
-// 24 is the default, so it has to be one of the choices the size changer offers.
-const PAGE_SIZE_OPTIONS = [12, 24, 48, 96];
+const CARD_PAGE_SIZE = 24;
+const TABLE_PAGE_SIZE = 50;
 
-function formatLastRun(value?: string): string {
-  return value ? new Date(value).toLocaleString() : "Never";
+function storedView(): ViewMode | null {
+  try {
+    const stored = localStorage.getItem(VIEW_STORAGE_KEY);
+    return stored === "cards" || stored === "table" ? stored : null;
+  } catch {
+    // Storage blocked (private window, site data off): no saved choice.
+    return null;
+  }
 }
 
 export default function ProjectsPage({ organizationName, setOrganizationName }: Props) {
@@ -61,31 +66,49 @@ export default function ProjectsPage({ organizationName, setOrganizationName }: 
   const { permissions } = useOrgPermissions(id);
   const [projects, setProjects] = useState<ProjectSummaryModel[]>([]);
   const [totalRecords, setTotalRecords] = useState(0);
-  const [unassigned, setUnassigned] = useState(0);
+  const [unassigned, setUnassigned] = useState<ProjectSummaryModel | null>(null);
+  const [counts, setCounts] = useState<ProjectIndexCounts | null>(null);
+  const [countsFailed, setCountsFailed] = useState(false);
+  const [groups, setGroups] = useState<string[]>([]);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [attentionOnly, setAttentionOnly] = useState(false);
+  const [chip, setChip] = useState<ProjectChip>("all");
   const [sort, setSort] = useState(PROJECT_SORT_PRESETS[0].value);
-  const [view, setView] = useState<ViewMode>(() =>
-    localStorage.getItem(VIEW_STORAGE_KEY) === "cards" ? "cards" : "table"
-  );
+  const [view, setView] = useState<ViewMode | null>(storedView);
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(24);
+  const [pageSize, setPageSize] = useState<number | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [form] = Form.useForm<ProjectForm>();
   const hasLoadedOnce = useRef(false);
+  // The first list waits for the caller's groups, because the chips filter on them: fetching earlier would load the
+  // list once without them and again with them.
+  const [groupsReady, setGroupsReady] = useState(false);
+  // The page size depends on the view, and the view on how many projects there are, so unless the person chose a view
+  // the first list waits for the counts as well.
+  const [countsSettled, setCountsSettled] = useState(false);
+  // Each request takes a number, and only the newest answer is shown, so a slow earlier page cannot replace a later one.
+  const requestSeq = useRef(0);
+
+  // Until the counts arrive the size of the catalogue is unknown, so the saved choice or the cards are used.
+  const effectiveView: ViewMode = view ?? (counts ? defaultView(counts.all) : "cards");
+  const effectivePageSize = pageSize ?? (effectiveView === "cards" ? CARD_PAGE_SIZE : TABLE_PAGE_SIZE);
 
   const { loading, execute, error } = useApiRequest({
-    action: () =>
-      projectService.listProjectSummaries(id!, {
+    action: async () => {
+      const seq = ++requestSeq.current;
+      const response = await projectService.listProjectSummaries(id!, {
         search: debouncedSearch,
-        attentionOnly,
+        chip,
+        groups,
         sort,
         page: currentPage,
-        pageSize,
-      }),
+        pageSize: effectivePageSize,
+      });
+      return { ...response, data: response.data && { ...response.data, seq } };
+    },
     onReturn: (data) => {
+      if (data.seq !== requestSeq.current) return;
       hasLoadedOnce.current = true;
       setProjects(data.items);
       setTotalRecords(data.totalRecords);
@@ -94,23 +117,46 @@ export default function ProjectsPage({ organizationName, setOrganizationName }: 
     },
   });
 
+  const loadCounts = useCallback(
+    async (currentGroups: string[]) => {
+      const [countsResponse, unassignedResponse] = await Promise.all([
+        projectService.getProjectIndexCounts(id!, currentGroups),
+        projectService.getUnassignedSummary(id!),
+      ]);
+      setCountsFailed(countsResponse.isError);
+      setCounts(countsResponse.isError ? null : (countsResponse.data ?? null));
+      const roll = unassignedResponse.isError ? undefined : unassignedResponse.data;
+      setUnassigned(roll && roll.workspaceCount > 0 ? roll : null);
+      setCountsSettled(true);
+    },
+    [id]
+  );
+
   useEffect(() => {
+    projectService
+      .getCurrentGroups()
+      .catch(() => [] as string[])
+      .then((current) => {
+        setGroups(current);
+        setGroupsReady(true);
+        loadCounts(current).catch(() => setCountsSettled(true));
+      });
+  }, [id, loadCounts]);
+
+  useEffect(() => {
+    // Only a search that differs from the applied one starts the timer, so opening the page, or a link to page 3, does
+    // not fall back to page 1 a moment later.
+    if (search === debouncedSearch) return;
     const handle = window.setTimeout(() => {
       setDebouncedSearch(search);
       setCurrentPage(1);
     }, SEARCH_DEBOUNCE_MS);
     return () => window.clearTimeout(handle);
-  }, [search]);
+  }, [search, debouncedSearch]);
 
   useEffect(() => {
-    execute();
-  }, [id, debouncedSearch, attentionOnly, sort, currentPage, pageSize]);
-
-  useEffect(() => {
-    projectService.countUnassignedWorkspaces(id!).then((response) => {
-      if (!response.isError) setUnassigned(response.data ?? 0);
-    });
-  }, [id]);
+    if (groupsReady && (view !== null || countsSettled)) execute();
+  }, [groupsReady, countsSettled, id, debouncedSearch, chip, groups, sort, currentPage, effectivePageSize]);
 
   const openCreate = () => {
     form.resetFields();
@@ -124,10 +170,12 @@ export default function ProjectsPage({ organizationName, setOrganizationName }: 
       await projectService.createProject(id!, values);
       setSearch("");
       setDebouncedSearch("");
+      setChip("all");
       setCurrentPage(1);
       message.success("Project created");
       setModalOpen(false);
       execute();
+      loadCounts(groups);
     } catch (err: any) {
       if (err?.errorFields) return;
       if (err?.response?.status === 403) {
@@ -144,51 +192,111 @@ export default function ProjectsPage({ organizationName, setOrganizationName }: 
 
   const changeView = (next: ViewMode) => {
     setView(next);
-    localStorage.setItem(VIEW_STORAGE_KEY, next);
+    setPageSize(null);
+    setCurrentPage(1);
+    try {
+      localStorage.setItem(VIEW_STORAGE_KEY, next);
+    } catch {
+      // The choice applies for this visit only.
+    }
   };
 
-  const attentionBadge = (record: ProjectSummaryModel) =>
-    record.attentionCount > 0 ? (
-      <Badge status="error" text={`${record.attentionCount} need attention`} />
-    ) : (
-      <Typography.Text type="secondary">Healthy</Typography.Text>
-    );
+  const clearFilters = () => {
+    setSearch("");
+    setDebouncedSearch("");
+    setChip("all");
+    setCurrentPage(1);
+  };
 
-  const columns = [
+  const sortFor = (columnKey: string) => {
+    const field = COLUMN_SORT_FIELDS[columnKey];
+    if (sort.startsWith(`+${field}`)) return "ascend" as const;
+    if (sort.startsWith(`-${field}`)) return "descend" as const;
+    return null;
+  };
+
+  const handleTableChange: TableProps<ProjectSummaryModel>["onChange"] = (pagination, _filters, sorter) => {
+    const active = Array.isArray(sorter) ? sorter[0] : sorter;
+    const field = active?.columnKey ? COLUMN_SORT_FIELDS[String(active.columnKey)] : undefined;
+    if (field && active?.order) {
+      setSort(`${active.order === "ascend" ? "+" : "-"}${field}${field === "name" ? "" : ",+name"}`);
+      setCurrentPage(1);
+    } else if (!active?.order && active?.columnKey) {
+      setSort(PROJECT_SORT_PRESETS[0].value);
+      setCurrentPage(1);
+    }
+    if (pagination.pageSize && pagination.pageSize !== effectivePageSize) {
+      setPageSize(pagination.pageSize);
+      setCurrentPage(1);
+    } else if (pagination.current) {
+      setCurrentPage(pagination.current);
+    }
+  };
+
+  const sorter = (columnKey: string) => ({ sorter: true, sortOrder: sortFor(columnKey), key: columnKey });
+
+  const columns: TableProps<ProjectSummaryModel>["columns"] = [
     {
-      title: "Name",
+      title: "Project",
       dataIndex: "name",
-      key: "name",
-      render: (_: unknown, record: ProjectSummaryModel) => (
-        <Button type="link" className="projects-name-link">
-          <Link to={`/organizations/${id}/projects/${record.id}`}>{record.name}</Link>
-        </Button>
-      ),
+      ...sorter("name"),
+      render: (name: string, record) =>
+        record.id === "unassigned" ? (
+          <em>Unassigned</em>
+        ) : (
+          <Link to={`/organizations/${id}/projects/${record.id}`}>
+            <strong>{name}</strong>
+          </Link>
+        ),
     },
-    { title: "Description", dataIndex: "description", key: "description" },
-    { title: "Workspaces", dataIndex: "workspaceCount", key: "workspaceCount" },
     {
       title: "Health",
       key: "health",
-      render: (_: unknown, record: ProjectSummaryModel) => <ProjectHealthBar summary={record} />,
+      render: (_: unknown, record) => <ProjectHealthBar summary={record} />,
     },
-    { title: "Status", key: "status", render: (_: unknown, record: ProjectSummaryModel) => attentionBadge(record) },
+    { title: "Workspaces", dataIndex: "workspaceCount", ...sorter("workspaceCount") },
+    {
+      title: "Attention",
+      dataIndex: "attentionCount",
+      ...sorter("attentionCount"),
+      render: (count: number) => <span className={`project-pill project-pill-${attentionTone(count)}`}>{count}</span>,
+    },
+    {
+      title: "Policy",
+      key: "policy",
+      sorter: true,
+      sortOrder: sortFor("policy"),
+      render: (_: unknown, record) => {
+        const rollup = policyRollup(record);
+        return <span className={`project-pill project-pill-${rollup.tone}`}>{rollup.text}</span>;
+      },
+    },
+    {
+      title: "Teams",
+      dataIndex: "teamCount",
+      ...sorter("teamCount"),
+      render: (count: number, record) => (record.id === "unassigned" ? "-" : count),
+    },
     {
       title: "Last run",
-      key: "lastRunAt",
-      render: (_: unknown, record: ProjectSummaryModel) => formatLastRun(record.lastRunAt),
+      dataIndex: "lastRunAt",
+      ...sorter("lastRunAt"),
+      render: (value?: string) => shortAgo(value),
     },
   ];
 
-  const filtersActive = debouncedSearch.trim() !== "" || attentionOnly;
-  const showEmptyOrg = !loading && hasLoadedOnce.current && totalRecords === 0 && !filtersActive;
+  const filtersActive = debouncedSearch.trim() !== "" || chip !== "all";
+  const showUnassigned = unassigned !== null && !filtersActive && currentPage === 1;
+  const firstLoad = !hasLoadedOnce.current && loading;
+  const noProjectsAtAll = hasLoadedOnce.current && !loading && totalRecords === 0 && !filtersActive && !unassigned;
+  const rows = showUnassigned ? [...projects, unassigned as ProjectSummaryModel] : projects;
 
   return (
     <PageWrapper
-      title="Projects"
+      title={`Projects${counts ? ` (${counts.all})` : ""}`}
       subTitle={`Projects in the ${organizationName} organization`}
       loadingText="Loading projects..."
-      loading={loading && !hasLoadedOnce.current}
+      loading={false}
       error={error}
       breadcrumbs={[
         { label: organizationName, path: "/" },
@@ -200,20 +308,16 @@ export default function ProjectsPage({ organizationName, setOrganizationName }: 
         </Button>
       }
     >
-      {showEmptyOrg ? (
+      {noProjectsAtAll ? (
         <Flex justify="center">
-          <EmptyState description="You have not created any projects yet. Projects let you group related workspaces together.">
-            <Button type="primary" icon={<PlusOutlined />} onClick={openCreate} disabled={!permissions.manageWorkspace}>
-              Create a new project
-            </Button>
-          </EmptyState>
+          <NoProjects canCreate={permissions.manageWorkspace} onCreate={openCreate} />
         </Flex>
       ) : (
         <>
           <Flex gap={12} wrap align="center" className="projects-toolbar">
             <Input
               aria-label="Search projects by name"
-              placeholder="Search projects"
+              placeholder="Search name or description"
               prefix={<SearchOutlined />}
               value={search}
               onChange={(event) => setSearch(event.target.value)}
@@ -222,7 +326,8 @@ export default function ProjectsPage({ organizationName, setOrganizationName }: 
             />
             <Select
               aria-label="Sort projects"
-              value={sort}
+              value={PROJECT_SORT_PRESETS.some((preset) => preset.value === sort) ? sort : undefined}
+              placeholder="Custom order"
               options={PROJECT_SORT_PRESETS}
               onChange={(value) => {
                 setSort(value);
@@ -230,73 +335,79 @@ export default function ProjectsPage({ organizationName, setOrganizationName }: 
               }}
               style={{ minWidth: 200 }}
             />
-            <Checkbox
-              checked={attentionOnly}
-              onChange={(event) => {
-                setAttentionOnly(event.target.checked);
-                setCurrentPage(1);
-              }}
-            >
-              Needs attention only
-            </Checkbox>
             <Segmented
-              value={view}
+              value={effectiveView}
               onChange={(value) => changeView(value as ViewMode)}
               options={[
-                { value: "table", icon: <UnorderedListOutlined />, label: "Table" },
                 { value: "cards", icon: <AppstoreOutlined />, label: "Cards" },
+                { value: "table", icon: <UnorderedListOutlined />, label: "Table" },
               ]}
             />
           </Flex>
-          {view === "table" ? (
-            <Table
-              dataSource={projects}
-              columns={columns}
-              rowKey="id"
-              loading={loading}
-              locale={{ emptyText: <EmptyState description="No projects found" /> }}
-              pagination={{
-                showSizeChanger: true,
-                pageSizeOptions: PAGE_SIZE_OPTIONS,
-                pageSize,
-                current: currentPage,
-                total: totalRecords,
-                onChange: (page, size) => {
-                  setCurrentPage(page);
-                  setPageSize(size);
-                },
-              }}
-            />
+          <ProjectFilterChips
+            value={chip}
+            onChange={(next) => {
+              setChip(next);
+              setCurrentPage(1);
+            }}
+            counts={counts}
+          />
+          {countsFailed && <CountsUnavailable onRetry={() => loadCounts(groups)} />}
+
+          {firstLoad ? (
+            <ProjectsSkeleton view={effectiveView} />
+          ) : rows.length === 0 ? (
+            <NoMatch search={debouncedSearch.trim()} onClear={clearFilters} />
+          ) : effectiveView === "table" ? (
+            <>
+              {/* The Unassigned entry is not part of the server page. Inside the paged table antd would cut it off
+                  whenever the page is full, so it is a table of its own under the page. */}
+              {(projects.length > 0 || !showUnassigned) && (
+                <Table<ProjectSummaryModel>
+                  dataSource={projects}
+                  columns={columns}
+                  rowKey="id"
+                  loading={loading}
+                  onChange={handleTableChange}
+                  pagination={{
+                    showSizeChanger: true,
+                    pageSizeOptions: [24, 50, 100],
+                    pageSize: effectivePageSize,
+                    current: currentPage,
+                    total: totalRecords,
+                  }}
+                />
+              )}
+              {showUnassigned && (
+                <Table<ProjectSummaryModel>
+                  className="project-unassigned-table"
+                  dataSource={[unassigned as ProjectSummaryModel]}
+                  columns={columns}
+                  rowKey="id"
+                  showHeader={false}
+                  pagination={false}
+                  rowClassName="project-unassigned-row"
+                />
+              )}
+            </>
           ) : (
             <>
-              {projects.length === 0 && !loading ? (
-                <EmptyState description="No projects found" />
-              ) : (
-                <div className="projects-card-grid">
-                  {projects.map((project) => (
-                    <Card
-                      key={project.id}
-                      size="small"
-                      title={<Link to={`/organizations/${id}/projects/${project.id}`}>{project.name}</Link>}
-                    >
-                      <Typography.Paragraph type="secondary" ellipsis={{ rows: 2 }}>
-                        {project.description || "No description"}
-                      </Typography.Paragraph>
-                      <ProjectHealthBar summary={project} />
-                      <Flex justify="space-between" style={{ marginTop: 8 }}>
-                        <span>{project.workspaceCount} workspaces</span>
-                        {attentionBadge(project)}
-                      </Flex>
-                    </Card>
-                  ))}
-                </div>
-              )}
+              <div className="projects-card-grid">
+                {rows.map((project) => (
+                  <ProjectCard
+                    key={project.id}
+                    orgid={id!}
+                    project={project}
+                    unassigned={project.id === "unassigned"}
+                  />
+                ))}
+              </div>
               <Pagination
                 current={currentPage}
-                pageSize={pageSize}
+                pageSize={effectivePageSize}
                 total={totalRecords}
                 showSizeChanger
-                pageSizeOptions={PAGE_SIZE_OPTIONS}
+                pageSizeOptions={[24, 50, 100]}
                 onChange={(page, size) => {
                   setCurrentPage(page);
                   setPageSize(size);
@@ -304,12 +415,7 @@ export default function ProjectsPage({ organizationName, setOrganizationName }: 
               />
             </>
           )}
-          {unassigned > 0 && (
-            <Typography.Paragraph type="secondary" style={{ marginTop: 16 }}>
-              {unassigned} workspace{unassigned === 1 ? " is" : "s are"} not in a project.{" "}
-              <Link to={`/organizations/${id}/workspaces`}>View workspaces</Link>
-            </Typography.Paragraph>
-          )}
+          {!firstLoad && rows.length > 0 && <HealthLegend />}
         </>
       )}
       <Modal

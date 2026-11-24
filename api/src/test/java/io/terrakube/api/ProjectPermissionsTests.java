@@ -58,7 +58,9 @@ class ProjectPermissionsTests extends ServerApplicationTests {
                 .statusCode(HttpStatus.ACCEPTED.value())
                 .body("manageProject", is(true))
                 .body("manageWorkspace", is(true))
-                .body("planJob", is(true));
+                .body("planJob", is(true))
+                .body("grantedThrough", org.hamcrest.Matchers.contains(ADMIN_TEAM))
+                .body("accessLevel", is("admin"));
     }
 
     @Test
@@ -67,7 +69,9 @@ class ProjectPermissionsTests extends ServerApplicationTests {
                 .statusCode(HttpStatus.ACCEPTED.value())
                 .body("manageProject", is(false))
                 .body("manageWorkspace", is(false))
-                .body("planJob", is(false));
+                .body("planJob", is(false))
+                .body("grantedThrough", org.hamcrest.Matchers.contains(READ_TEAM))
+                .body("accessLevel", is("read"));
     }
 
     @Test
@@ -92,6 +96,40 @@ class ProjectPermissionsTests extends ServerApplicationTests {
         permissions("TERRAKUBE_ADMIN", ORG, project.getId().toString())
                 .statusCode(HttpStatus.ACCEPTED.value())
                 .body("manageProject", is(true));
+    }
+
+    @Test
+    void aCustomTeamWithFullRightsIsNotOutvotedByARoleBelowIt() {
+        io.terrakube.api.rs.team.Team custom = new io.terrakube.api.rs.team.Team();
+        custom.setName("PERMS_CUSTOM_" + UUID.randomUUID().toString().replace("-", "").substring(0, 8));
+        custom.setOrganization(organizationRepository.findById(UUID.fromString(ORG)).orElseThrow());
+        custom.setRole("custom");
+        custom.setManageWorkspace(true);
+        custom.setManageJob(true);
+        custom.setPlanJob(true);
+        custom.setApproveJob(true);
+        custom = teamRepository.save(custom);
+        try {
+            given()
+                    .headers("Authorization", "Bearer " + generatePAT(custom.getName(), READ_TEAM), "Content-Type", "application/json")
+                    .when()
+                    .get("/access-token/v1/teams/permissions/organization/" + ORG + "/project/" + project.getId())
+                    .then()
+                    .statusCode(HttpStatus.ACCEPTED.value())
+                    .body("manageProject", is(true))
+                    // The flags allow managing the project, so the label is not "read" because the read team ranks.
+                    .body("accessLevel", is("admin"));
+        } finally {
+            jdbcTemplate.update("delete from team where id = ?", custom.getId().toString());
+        }
+    }
+
+    @Test
+    void aReadOrPlanOrganizationTeamDoesNotCountAsAGrantOnTheProject() {
+        permissions(READ_TEAM, ORG, project.getId().toString())
+                .statusCode(HttpStatus.ACCEPTED.value())
+                .body("grantedThrough", org.hamcrest.Matchers.contains(READ_TEAM))
+                .body("accessLevel", is("read"));
     }
 
     @Test
