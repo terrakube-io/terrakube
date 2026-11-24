@@ -89,6 +89,12 @@ export const InboxBell = () => {
     try {
       const next = await loadInbox([{ id: organizationId, name: organizationName }]);
       if (mine !== latest.current) return;
+      // loadInbox does not throw for an organization it could not read: it lists it. The bell reads one organization,
+      // so that list is the failure of that one, and what is already shown is kept while the warning says so.
+      if (next.failedOrganizations.length > 0) {
+        setFailed(true);
+        return;
+      }
       setData(next);
       setFailed(false);
     } catch {
@@ -150,7 +156,7 @@ export const InboxBell = () => {
 
   const total = data ? totalCount(data.counts) : 0;
   const shown = data?.items.slice(0, SHOWN) ?? [];
-  const unreadable = failed || (data?.failedOrganizations.length ?? 0) > 0;
+  const unreadable = failed;
 
   const content = (
     <div className="inbox-bell-panel">
@@ -162,7 +168,7 @@ export const InboxBell = () => {
       </div>
       {unreadable && (
         <Typography.Text type="warning" className="inbox-bell-warning">
-          {data ? "Some organizations could not be read." : "Could not load what needs attention."}
+          Could not load what needs attention.
         </Typography.Text>
       )}
       {organizationId && data && shown.length === 0 && !unreadable && (

@@ -114,6 +114,20 @@ class ProjectSummaryTests extends ServerApplicationTests {
     }
 
     @Test
+    void aCliWorkspaceThatAppliedOnceIsStillCliDrivenAfterItsSourceBecameTheConfigurationVersion() {
+        // The first remote apply of a CLI workspace replaces its source with the address of the configuration version.
+        jdbcTemplate.update("update workspace set source = ? where project_id = ? and name like 'health-b1-%'",
+                "https://terrakube.example/remote/tfe/v2/configuration-versions/7/terraformContent.tar.gz",
+                busy.getId().toString());
+
+        Map<String, Object> node = firstNode(summaries("name==health-busy", null, 10,
+                "workspaceCount cliDrivenCount vcsDrivenCount"));
+
+        org.junit.jupiter.api.Assertions.assertEquals(7, ((Number) node.get("cliDrivenCount")).intValue());
+        org.junit.jupiter.api.Assertions.assertEquals(0, ((Number) node.get("vcsDrivenCount")).intValue());
+    }
+
+    @Test
     void summarySeparatesCliDrivenFromRepositoryDrivenWorkspaces() {
         // Every seeded workspace is CLI driven (no repository); give two of the live ones a repository.
         jdbcTemplate.update("update workspace set source = 'https://example.com/r.git', branch = 'main' "

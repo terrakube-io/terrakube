@@ -215,8 +215,8 @@ export async function getUnassignedSummary(organizationId: string): Promise<ApiR
         ${count("compliant", "policyComplianceStatus=='COMPLIANT'")}
         ${count("locked", "locked==true")}
         ${count("attention", "(lastJobStatus=in=('failed','waitingApproval'),policyComplianceStatus=='NON_COMPLIANT')")}
-        ${count("cli", "source=='empty';branch=='remote-content'")}
-        ${count("noStatus", "source=='empty';branch=='remote-content';executionMode==local;lastJobStatus=='NeverExecuted'")}
+        ${count("cli", "branch=='remote-content';vcs=isnull=true;ssh=isnull=true")}
+        ${count("noStatus", "branch=='remote-content';vcs=isnull=true;ssh=isnull=true;executionMode==local;lastJobStatus=='NeverExecuted'")}
         latest: workspace(first: "1", after: "0", sort: "-lastJobDate", filter: "${base};lastJobDate=isnull=false") { edges { node { lastJobDate } } }
       } } }
     }`,

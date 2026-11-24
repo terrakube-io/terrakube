@@ -67,9 +67,9 @@ import java.util.UUID;
                coalesce(sum(case when cast(w.locked as integer) = 1 then 1 else 0 end), 0) as locked_count,
                coalesce(sum(case when w.last_job_status in ('failed', 'waitingApproval')
                                    or w.policy_compliance_status = 'NON_COMPLIANT' then 1 else 0 end), 0) as attention_count,
-               coalesce(sum(case when w.source = 'empty' and w.branch = 'remote-content' then 1 else 0 end), 0) as cli_driven_count,
-               count(w.id) - coalesce(sum(case when w.source = 'empty' and w.branch = 'remote-content' then 1 else 0 end), 0) as vcs_driven_count,
-               coalesce(sum(case when w.source = 'empty' and w.branch = 'remote-content' and w.execution_mode = 'local'
+               coalesce(sum(case when (w.branch = 'remote-content' and w.vcs_id is null and w.ssh_id is null) then 1 else 0 end), 0) as cli_driven_count,
+               count(w.id) - coalesce(sum(case when (w.branch = 'remote-content' and w.vcs_id is null and w.ssh_id is null) then 1 else 0 end), 0) as vcs_driven_count,
+               coalesce(sum(case when (w.branch = 'remote-content' and w.vcs_id is null and w.ssh_id is null) and w.execution_mode = 'local'
                                    and w.last_job_status = 'NeverExecuted' then 1 else 0 end), 0) as no_run_status_count,
                max(w.last_job_date) as last_run_at,
                case when max(w.last_job_date) is null then 0 else 1 end as has_run,
@@ -168,7 +168,11 @@ public class ProjectSummary {
     @Column(name = "locked_count")
     private Long lockedCount;
 
-    /** Workspaces with no repository (source "empty", branch "remote-content"): driven from the CLI or the API. */
+    /**
+     * Workspaces with no repository connection (branch "remote-content", no VCS and no SSH key): driven from the CLI
+     * or the API. The source is not used: after the first remote apply it holds the address of the configuration
+     * version, not "empty", so a workspace that is run actively from the CLI would count as repository driven.
+     */
     @Column(name = "cli_driven_count")
     private Long cliDrivenCount;
 

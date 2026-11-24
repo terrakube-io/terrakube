@@ -110,6 +110,17 @@ describe("InboxBell", () => {
     expect(screen.queryByText("Nothing needs attention.")).not.toBeInTheDocument();
   });
 
+  it("says the same when the loader lists the one organization as unreadable instead of throwing, which is how it fails", async () => {
+    load.mockResolvedValue({ ...data([], {}), failedOrganizations: ["aws"] });
+    renderBell();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Needs attention" }));
+
+    await waitFor(() => expect(screen.getByText("Could not load what needs attention.")).toBeInTheDocument());
+    expect(screen.queryByText("Some organizations could not be read.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Nothing needs attention here.")).not.toBeInTheDocument();
+  });
+
   it("only reads the organization the person is working in", async () => {
     load.mockResolvedValue(data([item("failed", "ws-1")], { failed: 1 }));
     renderBell();
