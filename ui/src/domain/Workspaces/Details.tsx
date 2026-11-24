@@ -55,7 +55,13 @@ import { LinkButton } from "@/components/navigation/LinkButton";
 import RunList from "@/modules/workspaces/components/RunList";
 import WorkspaceStatusTag from "@/components/display/WorkspaceStatusTag";
 
-import { setupWorkspaceIncludes, isValidUrl, fixSshURL, StateOutputVariableWithName } from "./workspaceDataUtils";
+import {
+  setupWorkspaceIncludes,
+  isValidUrl,
+  fixSshURL,
+  StateOutputVariableWithName,
+  WORKSPACE_PAGE_QUERY,
+} from "./workspaceDataUtils";
 import VcsLogo from "@/components/display/VcsLogo";
 import { formatDateTime, formatDuration, relativeTime } from "@/modules/utils/dates";
 import { computeWorkspaceMetrics, FINISHED_JOB_STATUSES } from "./workspaceMetrics";
@@ -144,7 +150,6 @@ export const WorkspaceDetails = ({
   const [templates, setTemplates] = useState([]);
   const [lastRun, setLastRun] = useState("");
   const [executionMode, setExecutionMode] = useState("...");
-  const [, setAgent] = useState("...");
   const [orgTemplates, setOrgTemplates] = useState([]);
   const [vcsProvider, setVCSProvider] = useState<VcsType>(VcsType.UNKNOWN);
   const [resources, setResources] = useState<Resource[]>([]);
@@ -416,9 +421,7 @@ export const WorkspaceDetails = ({
     templatesRequest
       .then((templateList) => {
         axiosInstance
-          .get(
-            `organization/${organizationId}/workspace/${id}?include=job,variable,history,schedule,vcs,agent,organization,webhook,reference,project`
-          )
+          .get(`organization/${organizationId}/workspace/${id}?${WORKSPACE_PAGE_QUERY}`)
           .then(async (response) => {
             if (_loadPermissionSet) loadPermissionSet();
 
@@ -440,8 +443,6 @@ export const WorkspaceDetails = ({
                 axiosInstance,
                 setResources,
                 setOutputs,
-                setAgent,
-                _loadTemplates,
                 setContextState,
                 setCollectionVariables,
                 setCollectionEnvVariables,
