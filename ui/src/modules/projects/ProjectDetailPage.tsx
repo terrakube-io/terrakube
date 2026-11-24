@@ -3,13 +3,14 @@ import { Button, Flex, Form, Input, Layout, Menu, Popconfirm, Space, Spin, Typog
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import PageWrapper from "@/components/layout/PageWrapper/PageWrapper";
-import projectService, { ProjectAccessModel } from "./projectService";
-import { apiGet } from "@/modules/api/apiWrapper";
+import projectService from "./projectService";
+import { useProjectPermissions } from "@/modules/permissions/useProjectPermissions";
 import ProjectWorkspaces from "./ProjectWorkspaces";
 import ProjectAccessTab from "./ProjectAccessTab";
-import workspaceService from "@/modules/workspaces/workspaceService";
+import ProjectOverview from "./ProjectOverview";
+import { ProjectTab, getLandingTab } from "./projectLandingTab";
 import useApiRequest from "@/modules/api/useApiRequest";
-import { ProjectModel } from "@/domain/types";
+import { ProjectModel, ProjectSummaryModel } from "@/domain/types";
 import { ORGANIZATION_NAME } from "../../config/actionTypes";
 import { useOrgPermissions } from "@/modules/permissions/useOrgPermissions";
 import type { MenuProps } from "antd";
@@ -85,9 +86,11 @@ function ProjectGeneralSettings({
       const statusCode = err?.response?.status;
       if (statusCode === 403) {
         message.error(<PermissionErrorMessage action="delete projects" permission="Manage Workspaces" />);
-      } else if (statusCode === 423) {
+      } else if (statusCode === 409 || statusCode === 423) {
         message.error(
-          "Cannot delete project: Workspaces are still associated with this project. Please remove all workspaces first and try again."
+          err?.response?.data?.errors?.[0]?.detail ??
+            err?.response?.data?.errors?.[0] ??
+            "Cannot delete project: workspaces are still associated with this project."
         );
       } else {
         message.error(err?.message ?? "Project deletion failed");
@@ -171,28 +174,12 @@ function ProjectGeneralSettings({
 export default function ProjectDetailPage({ organizationName, setOrganizationName }: Props) {
   const { orgid, id } = useParams();
   const [project, setProject] = useState<ProjectModel | null>(null);
-  const [activeKey, setActiveKey] = useState("general");
-  const [assignedWorkspacesCount, setAssignedWorkspacesCount] = useState(0);
+  const [activeKey, setActiveKey] = useState<ProjectTab>(getLandingTab);
+  const [summary, setSummary] = useState<ProjectSummaryModel | null>(null);
+  const [summaryLoading, setSummaryLoading] = useState(true);
   const { permissions } = useOrgPermissions();
-  const [userGroups, setUserGroups] = useState<string[]>([]);
-  const [projectAccessForPerm, setProjectAccessForPerm] = useState<ProjectAccessModel[]>([]);
-
-  useEffect(() => {
-    apiGet<{ groups: string[] }>("/access-token/v1/teams/current-teams").then((res) => {
-      if (!res.isError && res.data?.groups) setUserGroups(res.data.groups);
-    });
-  }, []);
-
-  useEffect(() => {
-    if (orgid && id) {
-      projectService.listProjectAccess(orgid, id).then((res) => {
-        if (!res.isError) setProjectAccessForPerm(res.data ?? []);
-      });
-    }
-  }, [orgid, id]);
-
-  const isProjectAdmin = projectAccessForPerm.some((a) => userGroups.includes(a.name) && a.role === "admin");
-  const canManageProject = permissions.manageWorkspace || isProjectAdmin;
+  const { permissions: projectPermissions } = useProjectPermissions(orgid, id);
+  const canManageProject = permissions.manageWorkspace || projectPermissions.manageProject;
 
   const { loading, execute, error } = useApiRequest({
     action: () => projectService.getProject(orgid!, id!),
@@ -207,44 +194,32 @@ export default function ProjectDetailPage({ organizationName, setOrganizationNam
     execute();
   }, [id]);
 
-  useEffect(() => {
-    async function loadWorkspaces() {
-      try {
-        const result = await workspaceService.listWorkspaces(orgid!);
-        if (!result.isError && result.data) {
-          const assignedCount = result.data.workspaces.filter((ws) => ws.projectId === id).length;
-          setAssignedWorkspacesCount(assignedCount);
-        }
-      } catch {
-        // Silently fail if workspaces cannot be loaded
-      }
-    }
+  const loadSummary = () => {
+    if (!orgid || !id) return;
+    setSummaryLoading(true);
+    projectService
+      .getProjectSummary(orgid, id)
+      .then((res) => setSummary(res.isError ? null : (res.data ?? null)))
+      .finally(() => setSummaryLoading(false));
+  };
 
-    if (orgid && id) {
-      loadWorkspaces();
-    }
-  }, [orgid, id]);
+  useEffect(loadSummary, [orgid, id]);
 
-  // Reload workspace count when switching tabs
-  const handleTabChange = (key: string) => {
+  const handleTabChange = (key: ProjectTab) => {
     setActiveKey(key);
-    if (key === "general" && orgid && id) {
+    if (key === "general" || key === "overview") {
       execute();
-      workspaceService.listWorkspaces(orgid).then((result) => {
-        if (!result.isError && result.data) {
-          const assignedCount = result.data.workspaces.filter((ws) => ws.projectId === id).length;
-          setAssignedWorkspacesCount(assignedCount);
-        }
-      });
+      loadSummary();
     }
   };
 
   const menuItems: MenuItem[] = [
     {
       type: "group",
-      label: "Project Settings",
+      label: "Project",
       key: "project-settings",
       children: [
+        { key: "overview", label: "Overview" },
         { key: "general", label: "General" },
         { key: "workspaces", label: "Workspaces" },
         { key: "teams", label: "Teams" },
@@ -254,8 +229,18 @@ export default function ProjectDetailPage({ organizationName, setOrganizationNam
 
   const renderContent = () => {
     switch (activeKey) {
+      case "overview":
+        return <ProjectOverview summary={summary} loading={summaryLoading} onOpenTab={handleTabChange} />;
       case "workspaces":
-        return <ProjectWorkspaces key={`${orgid}:${id}`} orgid={orgid!} projectId={id!} />;
+        return (
+          <ProjectWorkspaces
+            key={`${orgid}:${id}`}
+            orgid={orgid!}
+            projectId={id!}
+            canManage={canManageProject}
+            canRemove={permissions.manageWorkspace}
+          />
+        );
       case "teams":
         return <ProjectAccessTab orgid={orgid!} projectId={id!} canManage={canManageProject} />;
       case "general":
@@ -265,7 +250,7 @@ export default function ProjectDetailPage({ organizationName, setOrganizationNam
             orgid={orgid!}
             projectId={id!}
             project={project}
-            assignedWorkspacesCount={assignedWorkspacesCount}
+            assignedWorkspacesCount={summary?.workspaceCount ?? 0}
             manageWorkspace={permissions.manageWorkspace}
             canUpdateProject={canManageProject}
             onSaved={execute}
@@ -294,7 +279,7 @@ export default function ProjectDetailPage({ organizationName, setOrganizationNam
             selectedKeys={[activeKey]}
             className="project-detail-menu"
             items={menuItems}
-            onClick={(e) => handleTabChange(e.key)}
+            onClick={(e) => handleTabChange(e.key as ProjectTab)}
           />
         </Sider>
         <Content className="project-detail-content">{renderContent()}</Content>

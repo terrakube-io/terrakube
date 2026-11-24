@@ -139,3 +139,90 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* Projects index: health bar, toolbar and card grid. */
+.project-health-bar {
+  display: flex;
+  width: 160px;
+  height: 8px;
+  gap: 2px;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.project-health-segment {
+  min-width: 4px;
+  height: 100%;
+}
+
+.project-health-segment.health-failed {
+  background: var(--ant-color-error, #ff4d4f);
+}
+
+.project-health-segment.health-waiting {
+  background: var(--ant-color-warning, #faad14);
+}
+
+.project-health-segment.health-running {
+  background: var(--ant-color-info, #1677ff);
+}
+
+.project-health-segment.health-completed {
+  background: var(--ant-color-success, #52c41a);
+}
+
+.project-health-segment.health-never {
+  background: var(--tk-border-secondary, #d9d9d9);
+}
+
+.project-health-empty {
+  color: var(--tk-text-secondary, #8c8c8c);
+  font-size: 12px;
+}
+
+.projects-toolbar {
+  margin-bottom: 16px;
+}
+
+.projects-toolbar .projects-search-input {
+  margin-bottom: 0;
+}
+
+.projects-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+/* Project overview tab. */
+.project-overview-alert,
+.project-overview-health {
+  margin-bottom: 16px;
+}
+
+.project-overview-health {
+  margin-top: 16px;
+}
+
+.project-overview-meta {
+  margin: 12px 0 0;
+}
+
+.project-overview-landing {
+  margin-top: 24px;
+}
+
+.project-overview-link.ant-btn {
+  padding: 0;
+  height: auto;
+}
+
+/* Bulk selection bar on the project workspace list. */
+.project-bulk-bar {
+  margin-bottom: 12px;
+}
+
+.project-bulk-impact {
+  margin-top: 16px;
+}

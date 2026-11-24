@@ -12,12 +12,16 @@ import getVcsNameFromUrl from "@/modules/workspaces/utils/getVcsNameFromUrl";
 import getVcsTypeFromUrl from "@/modules/workspaces/utils/getVcsTypeFromUrl";
 import { ErrorInformation } from "@/modules/api/types";
 import { usePolling } from "@/hooks";
+import BulkWorkspaceBar from "./BulkWorkspaceBar";
 import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
 import "./Projects.css";
 
 type Props = {
   orgid: string;
   projectId: string;
+  canManage?: boolean;
+  /** Removing workspaces from the project needs the organization level right to manage workspaces. */
+  canRemove?: boolean;
 };
 
 type Sorter = Parameters<NonNullable<TableProps<WorkspaceListItem>["onChange"]>>[2];
@@ -43,7 +47,8 @@ function toSortOption(sorter: Sorter): WorkspaceSortOption {
  * so the tab never loads the rest of the organization. The parent keys it by project, so a different project
  * starts from the first page.
  */
-export default function ProjectWorkspaces({ orgid, projectId }: Props) {
+export default function ProjectWorkspaces({ orgid, projectId, canManage = false, canRemove = false }: Props) {
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [workspaces, setWorkspaces] = useState<WorkspaceListItem[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -116,6 +121,8 @@ export default function ProjectWorkspaces({ orgid, projectId }: Props) {
     } else if (pagination.current) {
       setPage(pagination.current);
     }
+    // Ticked rows belong to the page they were ticked on, so a bulk action never reaches rows that are out of sight.
+    setSelectedIds([]);
   };
 
   const columns: TableProps<WorkspaceListItem>["columns"] = [
@@ -198,16 +205,33 @@ export default function ProjectWorkspaces({ orgid, projectId }: Props) {
           }
         />
       ) : (
-        <Table<WorkspaceListItem>
-          className="project-workspaces-table"
-          rowKey="id"
-          loading={loading}
-          dataSource={workspaces}
-          columns={columns}
-          onChange={handleTableChange}
-          pagination={{ current: page, pageSize, total, showSizeChanger: true }}
-          locale={{ emptyText: loaded ? "No workspaces assigned to this project yet." : "Loading workspaces..." }}
-        />
+        <>
+          {canManage && (
+            <BulkWorkspaceBar
+              orgid={orgid}
+              projectId={projectId}
+              selectedIds={selectedIds}
+              canRemove={canRemove}
+              onClear={() => setSelectedIds([])}
+              onDone={() => load(true)}
+            />
+          )}
+          <Table<WorkspaceListItem>
+            rowSelection={
+              canManage
+                ? { selectedRowKeys: selectedIds, onChange: (keys) => setSelectedIds(keys as string[]) }
+                : undefined
+            }
+            className="project-workspaces-table"
+            rowKey="id"
+            loading={loading}
+            dataSource={workspaces}
+            columns={columns}
+            onChange={handleTableChange}
+            pagination={{ current: page, pageSize, total, showSizeChanger: true }}
+            locale={{ emptyText: loaded ? "No workspaces assigned to this project yet." : "Loading workspaces..." }}
+          />
+        </>
       )}
     </div>
   );

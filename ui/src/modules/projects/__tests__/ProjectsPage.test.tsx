@@ -1,16 +1,22 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import projectService from "../projectService";
+import projectService, { buildProjectSummaryFilter, withNeverRunLast } from "../projectService";
 import ProjectsPage from "../ProjectsPage";
 
-jest.mock("../projectService", () => ({
-  __esModule: true,
-  default: {
-    listProjects: jest.fn(),
-    createProject: jest.fn(),
-  },
-}));
+jest.mock("../projectService", () => {
+  const actual = jest.requireActual("../projectService");
+  return {
+    __esModule: true,
+    buildProjectSummaryFilter: actual.buildProjectSummaryFilter,
+    withNeverRunLast: actual.withNeverRunLast,
+    default: {
+      listProjectSummaries: jest.fn(),
+      countUnassignedWorkspaces: jest.fn(),
+      createProject: jest.fn(),
+    },
+  };
+});
 
 jest.mock("@/modules/permissions/useOrgPermissions", () => ({
   useOrgPermissions: () => ({ permissions: { manageWorkspace: true } }),
@@ -26,13 +32,27 @@ jest.mock("@/components/layout/PageWrapper/PageWrapper", () => ({
   ),
 }));
 
-const projects = [
-  ...Array.from({ length: 10 }, (_, index) => ({
-    id: `project-${index + 1}`,
-    name: `Project ${index + 1}`,
-  })),
-  { id: "billing-api", name: "Billing API" },
-];
+const summary = (overrides: Record<string, unknown>) => ({
+  id: "p",
+  name: "Project",
+  workspaceCount: 3,
+  completedCount: 2,
+  failedCount: 1,
+  runningCount: 0,
+  queuedCount: 0,
+  waitingApprovalCount: 0,
+  neverRunCount: 0,
+  nonCompliantCount: 0,
+  lockedCount: 0,
+  attentionCount: 1,
+  teamCount: 1,
+  ...overrides,
+});
+
+const page = (items: unknown[], totalRecords = items.length) => ({
+  isError: false,
+  data: { items, totalRecords },
+});
 
 function renderProjectsPage() {
   return render(
@@ -47,123 +67,155 @@ function renderProjectsPage() {
   );
 }
 
-describe("ProjectsPage search", () => {
+const lastQuery = () => {
+  const calls = (projectService.listProjectSummaries as jest.Mock).mock.calls;
+  return calls[calls.length - 1][1];
+};
+
+describe("withNeverRunLast", () => {
+  it("puts hasRun first in front of the last run, whichever way it is ordered", () => {
+    expect(withNeverRunLast("-lastRunAt,+name")).toBe("-hasRun,-lastRunAt,+name");
+    expect(withNeverRunLast("+lastRunAt,+name")).toBe("-hasRun,+lastRunAt,+name");
+  });
+
+  it("leaves a sort that does not use the last run as it is", () => {
+    expect(withNeverRunLast("-attentionCount,+name")).toBe("-attentionCount,+name");
+  });
+});
+
+describe("buildProjectSummaryFilter", () => {
+  it("is empty without a search or attention filter", () => {
+    expect(buildProjectSummaryFilter({})).toBe("");
+  });
+
+  it("searches name and description for the whole text, spaces and punctuation included", () => {
+    expect(buildProjectSummaryFilter({ search: " prod network (eu) " })).toBe(
+      '(name=ini="*prod network (eu)*",description=ini="*prod network (eu)*")'
+    );
+  });
+
+  it("does not let the person add their own wildcards", () => {
+    expect(buildProjectSummaryFilter({ search: "bil*ling" })).toBe(
+      '(name=ini="*bil ling*",description=ini="*bil ling*")'
+    );
+  });
+
+  it("combines the search with the attention filter", () => {
+    expect(buildProjectSummaryFilter({ search: "billing", attentionOnly: true })).toBe(
+      '(name=ini="*billing*",description=ini="*billing*");attentionCount=gt=0'
+    );
+  });
+});
+
+describe("ProjectsPage", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     sessionStorage.clear();
-    (projectService.listProjects as jest.Mock).mockResolvedValue({ isError: false, data: projects });
+    localStorage.clear();
+    (projectService.listProjectSummaries as jest.Mock).mockResolvedValue(
+      page([summary({ id: "a", name: "Billing API" }), summary({ id: "b", name: "Platform", attentionCount: 0 })], 50)
+    );
+    (projectService.countUnassignedWorkspaces as jest.Mock).mockResolvedValue({ isError: false, data: 0 });
   });
 
-  it("searches all projects case-insensitively and restores the full list when cleared", async () => {
+  it("requests the first page sorted by attention and shows the server total", async () => {
     renderProjectsPage();
 
-    fireEvent.click(await screen.findByRole("button", { name: "Next Page" }));
     expect(await screen.findByText("Billing API")).toBeInTheDocument();
-
-    const search = await screen.findByRole("textbox", { name: "Search projects by name" });
-    fireEvent.change(search, { target: { value: "BILLING" } });
-
-    expect(screen.getByText("Billing API")).toBeInTheDocument();
-    expect(screen.queryByText("Project 1")).not.toBeInTheDocument();
-
-    fireEvent.change(search, { target: { value: "" } });
-
-    expect(screen.getByText("Project 1")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Next Page" })).toBeInTheDocument();
+    expect(lastQuery()).toMatchObject({ sort: "-attentionCount,+name", page: 1, pageSize: 24, attentionOnly: false });
+    expect(screen.getByText("1 need attention")).toBeInTheDocument();
+    expect(screen.getByText("Healthy")).toBeInTheDocument();
   });
 
-  it("shows a no-results state when the search has no matches", async () => {
+  it("asks the server for the next page instead of paging locally", async () => {
     renderProjectsPage();
+    await screen.findByText("Billing API");
 
-    fireEvent.change(await screen.findByRole("textbox", { name: "Search projects by name" }), {
-      target: { value: "missing project" },
-    });
-
-    await waitFor(() => expect(screen.getByText("No projects found")).toBeInTheDocument());
-    expect(screen.queryByText("Project 1")).not.toBeInTheDocument();
-  });
-
-  it("ignores leading and trailing whitespace in the query", async () => {
-    renderProjectsPage();
-    await screen.findByText("Project 1");
-
-    fireEvent.change(screen.getByRole("textbox", { name: "Search projects by name" }), {
-      target: { value: " billing " },
-    });
-
-    expect(screen.getByText("Billing API")).toBeInTheDocument();
-    expect(screen.queryByText("Project 1")).not.toBeInTheDocument();
-  });
-
-  it("paginates the filtered results rather than the complete list", async () => {
-    (projectService.listProjects as jest.Mock).mockResolvedValue({
-      isError: false,
-      data: [
-        ...Array.from({ length: 12 }, (_, index) => ({
-          id: `billing-${index}`,
-          name: `Billing ${index + 1}`,
-        })),
-        ...projects,
-      ],
-    });
-    renderProjectsPage();
-    await screen.findByText("Billing 1");
-
-    fireEvent.change(screen.getByRole("textbox", { name: "Search projects by name" }), {
-      target: { value: "billing" },
-    });
     fireEvent.click(screen.getByRole("button", { name: "Next Page" }));
 
-    expect(screen.getByText("Billing 11")).toBeInTheDocument();
-    expect(screen.getByText("Billing 12")).toBeInTheDocument();
-    expect(screen.getByText("Billing API")).toBeInTheDocument();
-    expect(within(screen.getByRole("table")).getAllByRole("row")).toHaveLength(4);
-    expect(screen.getByRole("button", { name: "Next Page" })).toHaveAttribute("aria-disabled", "true");
+    await waitFor(() => expect(lastQuery()).toMatchObject({ page: 2 }));
   });
 
-  it("preserves the selected page size after a search with no matches", async () => {
+  it("debounces the search and resets to the first page", async () => {
+    jest.useFakeTimers();
+    try {
+      renderProjectsPage();
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(400);
+      });
+      const calls = (projectService.listProjectSummaries as jest.Mock).mock.calls.length;
+
+      fireEvent.change(screen.getByRole("textbox", { name: "Search projects by name" }), {
+        target: { value: "bill" },
+      });
+      expect((projectService.listProjectSummaries as jest.Mock).mock.calls.length).toBe(calls);
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(400);
+      });
+
+      expect(lastQuery()).toMatchObject({ search: "bill", page: 1 });
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("filters to projects that need attention", async () => {
     renderProjectsPage();
-    await screen.findByText("Project 1");
-    fireEvent.mouseDown(screen.getByRole("combobox"));
-    fireEvent.click(await screen.findByTitle("20 / page"));
-    expect(screen.getByText("Billing API")).toBeInTheDocument();
+    await screen.findByText("Billing API");
 
-    const search = screen.getByRole("textbox", { name: "Search projects by name" });
-    fireEvent.change(search, { target: { value: "missing project" } });
-    expect(screen.getByText("No projects found")).toBeInTheDocument();
-    fireEvent.change(search, { target: { value: "" } });
+    fireEvent.click(screen.getByRole("checkbox", { name: "Needs attention only" }));
 
-    expect(screen.getByText("Project 1")).toBeInTheDocument();
-    expect(screen.getByText("Billing API")).toBeInTheDocument();
+    await waitFor(() => expect(lastQuery()).toMatchObject({ attentionOnly: true, page: 1 }));
   });
 
-  it("clears the active search after a successful project creation", async () => {
+  it("remembers the cards view", async () => {
     renderProjectsPage();
-    await screen.findByText("Project 1");
-    fireEvent.change(screen.getByRole("textbox", { name: "Search projects by name" }), {
-      target: { value: "billing" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: /New project/ }));
-    const dialog = await screen.findByRole("dialog");
-    fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: "Platform" } });
-    (projectService.createProject as jest.Mock).mockResolvedValue(undefined);
-    (projectService.listProjects as jest.Mock).mockResolvedValue({
-      isError: false,
-      data: [{ id: "platform", name: "Platform" }, ...projects],
-    });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Create" }));
+    await screen.findByText("Billing API");
 
-    expect(await screen.findByText("Platform")).toBeInTheDocument();
-    expect(projectService.createProject).toHaveBeenCalledWith("org-1", { name: "Platform" });
-    expect(screen.getByRole("textbox", { name: "Search projects by name" })).toHaveValue("");
+    fireEvent.click(screen.getByText("Cards"));
+
+    expect(localStorage.getItem("terrakube-projects-view")).toBe("cards");
+    expect(screen.getByText("Platform")).toBeInTheDocument();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
   });
 
-  it("keeps the existing empty state when the organization has no projects", async () => {
-    (projectService.listProjects as jest.Mock).mockResolvedValue({ isError: false, data: [] });
+  it("mentions workspaces that are not in a project", async () => {
+    (projectService.countUnassignedWorkspaces as jest.Mock).mockResolvedValue({ isError: false, data: 4 });
+
+    renderProjectsPage();
+
+    expect(await screen.findByText(/4 workspaces are not in a project/)).toBeInTheDocument();
+  });
+
+  it("shows a no-results state when the filters match nothing", async () => {
+    (projectService.listProjectSummaries as jest.Mock).mockResolvedValue(page([]));
+    renderProjectsPage();
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Needs attention only" }));
+
+    await waitFor(() => expect(screen.getByText("No projects found")).toBeInTheDocument());
+    expect(screen.queryByText(/You have not created any projects yet/)).not.toBeInTheDocument();
+  });
+
+  it("shows the empty state when the organization has no projects", async () => {
+    (projectService.listProjectSummaries as jest.Mock).mockResolvedValue(page([]));
 
     renderProjectsPage();
 
     expect(await screen.findByText(/You have not created any projects yet/)).toBeInTheDocument();
     expect(screen.queryByRole("textbox", { name: "Search projects by name" })).not.toBeInTheDocument();
+  });
+
+  it("creates a project and reloads the list", async () => {
+    renderProjectsPage();
+    await screen.findByText("Billing API");
+    (projectService.createProject as jest.Mock).mockResolvedValue(undefined);
+
+    fireEvent.click(screen.getByRole("button", { name: /New project/ }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: "Platform" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Create" }));
+
+    await waitFor(() => expect(projectService.createProject).toHaveBeenCalledWith("org-1", { name: "Platform" }));
   });
 });
