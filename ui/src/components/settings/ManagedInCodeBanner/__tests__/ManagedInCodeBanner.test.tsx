@@ -26,12 +26,20 @@ describe("ManagedInCodeBanner", () => {
     expect(link).toHaveAttribute("rel", "noopener noreferrer");
   });
 
-  it("says the settings are read-only in that mode, and has no link without a safe address", () => {
+  it("says the settings are read-only on a screen whose fields really are, and has no link without a safe address", () => {
     managed.mockReturnValue({ repository: undefined, readOnly: true });
-    render(<ManagedInCodeBanner orgId="org-1" />);
+    render(<ManagedInCodeBanner orgId="org-1" readOnlyHere />);
 
     expect(screen.getByText(/read-only here/)).toBeInTheDocument();
     expect(screen.queryByRole("link")).not.toBeInTheDocument();
+  });
+
+  it("does not call a screen read-only when its fields stay editable, even in read-only mode", () => {
+    managed.mockReturnValue({ repository: undefined, readOnly: true });
+    render(<ManagedInCodeBanner orgId="org-1" />);
+
+    expect(screen.queryByText(/read-only here/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Edits here are reverted on the next apply/)).toBeInTheDocument();
   });
 
   it("has no accessibility violations", async () => {

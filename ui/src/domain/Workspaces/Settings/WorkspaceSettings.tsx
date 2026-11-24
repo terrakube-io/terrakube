@@ -43,7 +43,7 @@ export const WorkspaceSettings = ({
 
   return (
     <>
-      <ManagedInCodeBanner orgId={organizationId} />
+      <ManagedInCodeBanner orgId={organizationId} readOnlyHere={activeSection === "general"} />
       {section()}
     </>
   );

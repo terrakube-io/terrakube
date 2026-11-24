@@ -127,7 +127,7 @@ function ProjectGeneralSettings({
 
   return (
     <div className="project-settings-panel">
-      <ManagedInCodeBanner orgId={orgid} />
+      <ManagedInCodeBanner orgId={orgid} readOnlyHere />
       <SettingsPageHeader title="General Settings" description="Adjust the name and description for this project." />
       <Spin spinning={waiting}>
         <Form form={form} layout="vertical" name="project-general-settings" onFinish={onFinish} requiredMark={false}>
@@ -211,7 +211,11 @@ function ProjectGeneralSettings({
             <Flex justify="flex-end">
               <DisabledReason
                 disabled={!canEdit}
-                reason="Changing project settings needs the Admin role on this project, or Manage Workspaces in the organization."
+                reason={
+                  managed?.readOnly
+                    ? "This organization is managed in code. Change these settings in its repository."
+                    : "Changing project settings needs the Admin role on this project, or Manage Workspaces in the organization."
+                }
               >
                 <Button type="primary" htmlType="submit" disabled={!canEdit}>
                   Save settings

@@ -15,7 +15,7 @@ import { IdField } from "@/components/settings/IdField";
 import { DangerZone } from "@/components/settings/DangerZone";
 import { useOrganizationSummaries } from "@/modules/organizations/useOrganizationSummaries";
 import { cacheOrganizationName } from "@/hooks/useOrganizationName";
-import { clearManagedInCode } from "@/modules/organizations/managedInCode";
+import { clearManagedInCode, safeRepository } from "@/modules/organizations/managedInCode";
 import { ManagedInCodeBanner } from "@/components/settings/ManagedInCodeBanner";
 
 const DEFAULT_ICON = "FaBuilding";
@@ -268,7 +268,20 @@ export const GeneralSettings = ({ managePermission = true }: Props) => {
                 Set this when the organization is kept in a repository. Settings screens then say that an edit made
                 there is reverted by the next apply. It never blocks running, approving or locking.
               </Typography.Paragraph>
-              <Form.Item name="managedInCodeRepository" label="Repository">
+              <Form.Item
+                name="managedInCodeRepository"
+                label="Repository"
+                rules={[
+                  {
+                    // The banner links to it, and only an http or https address is kept: anything else would be saved
+                    // and then shown with no link and no word on why.
+                    validator: (_, value?: string) =>
+                      !value?.trim() || safeRepository(value.trim())
+                        ? Promise.resolve()
+                        : Promise.reject(new Error("Enter an http or https address")),
+                  },
+                ]}
+              >
                 <Input placeholder="https://github.com/example/tf-terrakube-admin" maxLength={512} />
               </Form.Item>
               <Form.Item name="managedInCodeMode" label="On the settings screens">

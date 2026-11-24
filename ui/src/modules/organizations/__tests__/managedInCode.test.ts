@@ -1,8 +1,14 @@
-import axiosInstance from "@/config/axiosConfig";
-import { clearManagedInCode, loadManagedInCode, safeRepository } from "../managedInCode";
+import { renderHook, waitFor } from "@testing-library/react";
+import { axiosAuxiliary } from "@/config/axiosConfig";
+import { clearManagedInCode, loadManagedInCode, safeRepository, useManagedInCode } from "../managedInCode";
 
-jest.mock("@/config/axiosConfig", () => ({ __esModule: true, default: { get: jest.fn() } }));
-const get = axiosInstance.get as jest.Mock;
+// The auxiliary client: a failure of this optional read stays local and never takes over the page.
+jest.mock("@/config/axiosConfig", () => ({
+  __esModule: true,
+  default: { get: jest.fn() },
+  axiosAuxiliary: { get: jest.fn() },
+}));
+const get = axiosAuxiliary.get as jest.Mock;
 
 const answer = (attributes: object) => ({ data: { data: { attributes } } });
 
@@ -44,6 +50,16 @@ describe("loadManagedInCode", () => {
     expect(await loadManagedInCode("org-1")).toBeNull();
   });
 
+  it("does not remember a failed read, so the next screen asks again", async () => {
+    get.mockRejectedValueOnce(new Error("down"));
+    expect(await loadManagedInCode("org-1")).toBeNull();
+
+    get.mockResolvedValue(answer({ managedInCodeRepository: "https://github.com/example/x" }));
+
+    expect(await loadManagedInCode("org-1")).toMatchObject({ repository: "https://github.com/example/x" });
+    expect(get).toHaveBeenCalledTimes(2);
+  });
+
   it("reads each organization once a minute, and again after it is cleared", async () => {
     get.mockResolvedValue(answer({ managedInCodeRepository: "https://github.com/example/x" }));
 
@@ -54,6 +70,38 @@ describe("loadManagedInCode", () => {
     clearManagedInCode("org-1");
     await loadManagedInCode("org-1");
     expect(get).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("useManagedInCode", () => {
+  beforeEach(() => {
+    jest.resetAllMocks();
+    clearManagedInCode();
+  });
+
+  it("reads again when the settings were saved, so a banner already on screen does not stay as it was", async () => {
+    get.mockResolvedValue(answer({}));
+    const { result } = renderHook(() => useManagedInCode("org-1"));
+    await waitFor(() => expect(get).toHaveBeenCalledTimes(1));
+    expect(result.current).toBeNull();
+
+    get.mockResolvedValue(
+      answer({ managedInCodeRepository: "https://github.com/example/x", managedInCodeMode: "warn" })
+    );
+    clearManagedInCode("org-1");
+
+    await waitFor(() => expect(result.current).toMatchObject({ repository: "https://github.com/example/x" }));
+  });
+
+  it("starts an organization without the banner of the one before", async () => {
+    get.mockResolvedValue(answer({ managedInCodeRepository: "https://github.com/example/a" }));
+    const { result, rerender } = renderHook(({ id }) => useManagedInCode(id), { initialProps: { id: "org-a" } });
+    await waitFor(() => expect(result.current).not.toBeNull());
+
+    get.mockReturnValue(new Promise(() => undefined));
+    rerender({ id: "org-b" });
+
+    await waitFor(() => expect(result.current).toBeNull());
   });
 });
 
