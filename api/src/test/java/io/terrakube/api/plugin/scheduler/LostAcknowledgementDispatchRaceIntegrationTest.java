@@ -436,7 +436,7 @@ class LostAcknowledgementDispatchRaceIntegrationTest {
         assertThat(persistedJob.getOutput()).isEqualTo("Step 300 completed\nStep 400 completed\n");
         assertThat(persistedStep400.getStatus()).isEqualTo(JobStatus.completed);
         assertThat(persistedStep400.getName()).isEqualTo("Custom Scripts");
-        assertThat(redisStore).containsKey("job-dispatch-claim:" + seeded.jobId() + ":" + seeded.step400Id());
+        assertThat(redisStore).containsKey(ExecutionLease.claimKey(seeded.jobId(), seeded.step400Id().toString()));
         verify(gitLabWebhookService).sendCommitStatus(any(Job.class), eq(JobStatus.completed), any());
         verify(gitLabWebhookService, never()).sendCommitStatus(any(Job.class), eq(JobStatus.unknown), any());
         verify(gitLabWebhookService, never()).sendCommitStatus(any(Job.class), eq(JobStatus.failed), any());
@@ -493,7 +493,7 @@ class LostAcknowledgementDispatchRaceIntegrationTest {
         boolean dispatchDeschedule = scheduleJob.runExecution(detachedBeforeDispatch);
         Job afterDispatchJob = jobRepository.findById(seeded.jobId()).orElseThrow();
         Step afterDispatchStep400 = stepRepository.findById(seeded.step400Id()).orElseThrow();
-        boolean claimHeldAfterDispatch = redisStore.containsKey("job-dispatch-claim:" + seeded.jobId() + ":" + seeded.step400Id());
+        boolean claimHeldAfterDispatch = redisStore.containsKey(ExecutionLease.claimKey(seeded.jobId(), seeded.step400Id().toString()));
 
         // Stage 2 (t ~ 15s): Because the executor actually accepted the job on 202, it finishes Step 400
         // in the background, updates step=completed and job=pending, and JobManageHook runs ScheduleJob.
@@ -627,7 +627,7 @@ class LostAcknowledgementDispatchRaceIntegrationTest {
 
         Job afterDispatchJob = jobRepository.findById(seeded.jobId()).orElseThrow();
         Step afterDispatchStep400 = stepRepository.findById(seeded.step400Id()).orElseThrow();
-        boolean claimHeldAfterDispatch = redisStore.containsKey("job-dispatch-claim:" + seeded.jobId() + ":" + seeded.step400Id());
+        boolean claimHeldAfterDispatch = redisStore.containsKey(ExecutionLease.claimKey(seeded.jobId(), seeded.step400Id().toString()));
 
         // Stage 2: Executor finishes Step 400 and triggers ScheduleJob reconciliation (auto-heal).
         simulateExecutorCompletingStepInDatabase(seeded.jobId(), seeded.step400Id());
