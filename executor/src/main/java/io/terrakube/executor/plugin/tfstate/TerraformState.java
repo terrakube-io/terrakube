@@ -191,14 +191,14 @@ public interface TerraformState {
     }
 
     /**
-     * Upload the SHA-1 hex checksum sidecar for a cached Infracost binary.
+     * Upload the SHA-256 hex checksum sidecar for a cached Infracost binary.
      */
-    default boolean saveInfracostChecksum(String version, String os, String arch, String sha1Hex) {
+    default boolean saveInfracostChecksum(String version, String os, String arch, String sha256Hex) {
         return false;
     }
 
     /**
-     * Download the SHA-1 hex checksum sidecar for a cached Infracost binary.
+     * Download the SHA-256 hex checksum sidecar for a cached Infracost binary.
      */
     default Optional<String> downloadInfracostChecksum(String version, String os, String arch) {
         return Optional.empty();

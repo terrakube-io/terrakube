@@ -22,6 +22,7 @@ import io.terrakube.client.model.organization.workspace.history.HistoryAttribute
 import io.terrakube.client.model.organization.workspace.history.HistoryRequest;
 import io.terrakube.executor.plugin.tfstate.ArtifactStorageKeys;
 import io.terrakube.executor.plugin.tfstate.ArtifactVerificationException;
+import io.terrakube.executor.plugin.tfstate.BinaryCacheFileSupport;
 import io.terrakube.executor.plugin.tfstate.StorageRetryMetrics;
 import io.terrakube.executor.plugin.tfstate.TerraformOutputPathService;
 import io.terrakube.executor.plugin.tfstate.TerraformState;
@@ -36,6 +37,7 @@ import java.io.IOException;
 import java.net.URL;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -365,159 +367,88 @@ public class GcpTerraformStateImpl implements TerraformState {
     public boolean saveTerraformBinary(String version, boolean tofu, String os, String arch, File binaryFile) {
         String product = tofu ? "tofu" : "terraform";
         String blobKey = String.format("tfbinary/%s/%s/%s_%s/%s", product, version, os, arch, product);
-        log.info("Saving {} binary to GCS: {}", product, blobKey);
-        try {
-            BlobId blobId = BlobId.of(bucketName, blobKey);
-            BlobInfo blobInfo = BlobInfo.newBuilder(blobId).build();
-            storage.create(blobInfo, FileUtils.readFileToByteArray(binaryFile));
-            log.info("Successfully cached {} binary version {} ({}_{}) in GCS", product, version, os, arch);
-            return true;
-        } catch (Exception e) {
-            log.warn("Failed to cache {} binary version {} ({}_{}) in GCS: {}", product, version, os, arch, e.getMessage());
-            return false;
-        }
+        return saveCachedBinary(product, blobKey, version, os, arch, binaryFile);
     }
 
     @Override
     public boolean downloadTerraformBinary(String version, boolean tofu, String os, String arch, File targetFile) {
         String product = tofu ? "tofu" : "terraform";
         String blobKey = String.format("tfbinary/%s/%s/%s_%s/%s", product, version, os, arch, product);
-        log.info("Attempting to restore {} binary from GCS: {}", product, blobKey);
-        try {
-            BlobId blobId = BlobId.of(bucketName, blobKey);
-            com.google.cloud.storage.Blob blob = storage.get(blobId);
-            if (blob == null || !blob.exists()) {
-                log.info("{} binary version {} ({}_{}) not found in GCS cache", product, version, os, arch);
-                return false;
-            }
-
-            File parentDir = targetFile.getParentFile();
-            if (parentDir != null && !parentDir.exists()) {
-                FileUtils.forceMkdir(parentDir);
-            }
-
-            byte[] content = storage.readAllBytes(blobId);
-            FileUtils.writeByteArrayToFile(targetFile, content);
-
-            if (!targetFile.setExecutable(true, true)) {
-                log.warn("Failed to set executable permission on restored {} binary", product);
-            }
-
-            log.info("Successfully restored {} binary version {} ({}_{}) from GCS", product, version, os, arch);
-            return true;
-        } catch (Exception e) {
-            log.warn("Failed to restore {} binary version {} ({}_{}) from GCS: {}", product, version, os, arch, e.getMessage());
-            return false;
-        }
+        return downloadCachedBinary(product, blobKey, version, os, arch, targetFile);
     }
 
     @Override
     public boolean saveOpaBinary(String version, String os, String arch, File sourceFile) {
         String blobKey = String.format("opa/%s/%s_%s/opa", version, os, arch);
-        log.info("Saving OPA binary to GCS: {}", blobKey);
-        try {
-            BlobId blobId = BlobId.of(bucketName, blobKey);
-            BlobInfo blobInfo = BlobInfo.newBuilder(blobId).build();
-            storage.create(blobInfo, FileUtils.readFileToByteArray(sourceFile));
-            log.info("Successfully cached OPA binary version {} ({}_{}) in GCS", version, os, arch);
-            return true;
-        } catch (Exception e) {
-            log.warn("Failed to cache OPA binary version {} ({}_{}) in GCS: {}", version, os, arch, e.getMessage());
-            return false;
-        }
+        return saveCachedBinary("OPA", blobKey, version, os, arch, sourceFile);
     }
 
     @Override
     public boolean downloadOpaBinary(String version, String os, String arch, File targetFile) {
         String blobKey = String.format("opa/%s/%s_%s/opa", version, os, arch);
-        log.info("Attempting to restore OPA binary from GCS: {}", blobKey);
-        try {
-            BlobId blobId = BlobId.of(bucketName, blobKey);
-            com.google.cloud.storage.Blob blob = storage.get(blobId);
-            if (blob == null || !blob.exists()) {
-                log.info("OPA binary version {} ({}_{}) not found in GCS cache", version, os, arch);
-                return false;
-            }
-
-            File parentDir = targetFile.getParentFile();
-            if (parentDir != null && !parentDir.exists()) {
-                FileUtils.forceMkdir(parentDir);
-            }
-
-            byte[] content = storage.readAllBytes(blobId);
-            FileUtils.writeByteArrayToFile(targetFile, content);
-
-            if (!targetFile.setExecutable(true, true)) {
-                log.warn("Failed to set executable permission on restored OPA binary");
-            }
-
-            log.info("Successfully restored OPA binary version {} ({}_{}) from GCS", version, os, arch);
-            return true;
-        } catch (Exception e) {
-            log.warn("Failed to restore OPA binary version {} ({}_{}) from GCS: {}", version, os, arch, e.getMessage());
-            return false;
-        }
+        return downloadCachedBinary("OPA", blobKey, version, os, arch, targetFile);
     }
 
     @Override
     public boolean saveInfracostBinary(String version, String os, String arch, File sourceFile) {
-        String blobKey = infracostBinaryBlobKey(version, os, arch);
-        log.info("Saving Infracost binary to GCS: {}", blobKey);
-        try {
-            BlobId blobId = BlobId.of(bucketName, blobKey);
-            BlobInfo blobInfo = BlobInfo.newBuilder(blobId).build();
-            storage.create(blobInfo, FileUtils.readFileToByteArray(sourceFile));
-            log.info("Successfully cached Infracost binary version {} ({}_{}) in GCS", version, os, arch);
-            return true;
-        } catch (Exception e) {
-            log.warn("Failed to cache Infracost binary version {} ({}_{}) in GCS: {}", version, os, arch, e.getMessage());
-            return false;
-        }
+        return saveCachedBinary("Infracost", infracostBinaryBlobKey(version, os, arch), version, os, arch, sourceFile);
     }
 
     @Override
     public boolean downloadInfracostBinary(String version, String os, String arch, File targetFile) {
-        String blobKey = infracostBinaryBlobKey(version, os, arch);
-        log.info("Attempting to restore Infracost binary from GCS: {}", blobKey);
+        return downloadCachedBinary("Infracost", infracostBinaryBlobKey(version, os, arch), version, os, arch, targetFile);
+    }
+
+    private boolean saveCachedBinary(String label, String blobKey, String version, String os, String arch, File sourceFile) {
+        log.info("Saving {} binary to GCS: {}", label, blobKey);
         try {
             BlobId blobId = BlobId.of(bucketName, blobKey);
-            com.google.cloud.storage.Blob blob = storage.get(blobId);
-            if (blob == null || !blob.exists()) {
-                log.info("Infracost binary version {} ({}_{}) not found in GCS cache", version, os, arch);
-                return false;
-            }
-
-            File parentDir = targetFile.getParentFile();
-            if (parentDir != null && !parentDir.exists()) {
-                FileUtils.forceMkdir(parentDir);
-            }
-
-            byte[] content = storage.readAllBytes(blobId);
-            FileUtils.writeByteArrayToFile(targetFile, content);
-
-            if (!targetFile.setExecutable(true, true)) {
-                log.warn("Failed to set executable permission on restored Infracost binary");
-            }
-
-            log.info("Successfully restored Infracost binary version {} ({}_{}) from GCS", version, os, arch);
+            BlobInfo blobInfo = BlobInfo.newBuilder(blobId).build();
+            storage.createFrom(blobInfo, sourceFile.toPath());
+            log.info("Successfully cached {} binary version {} ({}_{}) in GCS", label, version, os, arch);
             return true;
         } catch (Exception e) {
-            log.warn("Failed to restore Infracost binary version {} ({}_{}) from GCS: {}", version, os, arch, e.getMessage());
+            log.warn("Failed to cache {} binary version {} ({}_{}) in GCS: {}", label, version, os, arch, e.getMessage());
             return false;
         }
     }
 
+    private boolean downloadCachedBinary(String label, String blobKey, String version, String os, String arch, File targetFile) {
+        log.info("Attempting to restore {} binary from GCS: {}", label, blobKey);
+        Path tempFile = null;
+        try {
+            BlobId blobId = BlobId.of(bucketName, blobKey);
+            com.google.cloud.storage.Blob blob = storage.get(blobId);
+            if (blob == null || !blob.exists()) {
+                log.info("{} binary version {} ({}_{}) not found in GCS cache", label, version, os, arch);
+                return false;
+            }
+
+            tempFile = BinaryCacheFileSupport.prepareTempTarget(targetFile);
+            storage.downloadTo(blobId, tempFile);
+            BinaryCacheFileSupport.finalizeDownloadedBinary(tempFile, targetFile, label);
+
+            log.info("Successfully restored {} binary version {} ({}_{}) from GCS", label, version, os, arch);
+            return true;
+        } catch (Exception e) {
+            log.warn("Failed to restore {} binary version {} ({}_{}) from GCS: {}", label, version, os, arch, e.getMessage());
+            return false;
+        } finally {
+            BinaryCacheFileSupport.deleteQuietly(tempFile);
+        }
+    }
+
     @Override
-    public boolean saveInfracostChecksum(String version, String os, String arch, String sha1Hex) {
+    public boolean saveInfracostChecksum(String version, String os, String arch, String sha256Hex) {
         String blobKey = infracostChecksumBlobKey(version, os, arch);
-        log.info("Saving Infracost SHA-1 checksum to GCS: {}", blobKey);
+        log.info("Saving Infracost SHA-256 checksum to GCS: {}", blobKey);
         try {
             BlobId blobId = BlobId.of(bucketName, blobKey);
             BlobInfo blobInfo = BlobInfo.newBuilder(blobId).build();
-            storage.create(blobInfo, sha1Hex.getBytes(StandardCharsets.UTF_8));
+            storage.create(blobInfo, sha256Hex.getBytes(StandardCharsets.UTF_8));
             return true;
         } catch (Exception e) {
-            log.warn("Failed to cache Infracost SHA-1 checksum for version {} ({}_{}) in GCS: {}", version, os, arch, e.getMessage());
+            log.warn("Failed to cache Infracost SHA-256 checksum for version {} ({}_{}) in GCS: {}", version, os, arch, e.getMessage());
             return false;
         }
     }
@@ -534,7 +465,7 @@ public class GcpTerraformStateImpl implements TerraformState {
             String value = new String(storage.readAllBytes(blobId), StandardCharsets.UTF_8).trim();
             return value.isEmpty() ? Optional.empty() : Optional.of(value);
         } catch (Exception e) {
-            log.warn("Failed to restore Infracost SHA-1 checksum for version {} ({}_{}) from GCS: {}", version, os, arch, e.getMessage());
+            log.warn("Failed to restore Infracost SHA-256 checksum for version {} ({}_{}) from GCS: {}", version, os, arch, e.getMessage());
             return Optional.empty();
         }
     }
@@ -544,7 +475,7 @@ public class GcpTerraformStateImpl implements TerraformState {
     }
 
     private static String infracostChecksumBlobKey(String version, String os, String arch) {
-        return infracostBinaryBlobKey(version, os, arch) + ".sha1";
+        return infracostBinaryBlobKey(version, os, arch) + ".sha256";
     }
 
     @Override

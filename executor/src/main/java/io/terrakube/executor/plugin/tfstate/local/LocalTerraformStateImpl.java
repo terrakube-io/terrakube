@@ -31,6 +31,7 @@ import io.terrakube.client.model.organization.workspace.history.HistoryAttribute
 import io.terrakube.client.model.organization.workspace.history.HistoryRequest;
 import io.terrakube.executor.plugin.tfstate.ArtifactStorageKeys;
 import io.terrakube.executor.plugin.tfstate.ArtifactVerificationException;
+import io.terrakube.executor.plugin.tfstate.BinaryCacheFileSupport;
 import io.terrakube.executor.plugin.tfstate.StorageRetryMetrics;
 import io.terrakube.executor.plugin.tfstate.TerraformOutputPathService;
 import io.terrakube.executor.plugin.tfstate.TerraformState;
@@ -60,7 +61,7 @@ public class LocalTerraformStateImpl implements TerraformState {
     private static final String LOCAL_BINARY_DIRECTORY = "/.terraform-spring-boot/local/binary/%s/%s/%s_%s/%s";
     private static final String LOCAL_OPA_BINARY_DIRECTORY = "/.terraform-spring-boot/local/opa/%s/%s_%s/opa";
     private static final String LOCAL_INFRACOST_BINARY_DIRECTORY = "/.terraform-spring-boot/local/infracost/%s/%s_%s/infracost";
-    private static final String LOCAL_INFRACOST_CHECKSUM_DIRECTORY = "/.terraform-spring-boot/local/infracost/%s/%s_%s/infracost.sha1";
+    private static final String LOCAL_INFRACOST_CHECKSUM_DIRECTORY = "/.terraform-spring-boot/local/infracost/%s/%s_%s/infracost.sha256";
     private static final String LOCAL_CONTEXT_SPOOL_DIRECTORY = "/.terraform-spring-boot/local/context-spool/%s/%s/%s-%s.json.gz";
 
     @NonNull
@@ -376,155 +377,89 @@ public class LocalTerraformStateImpl implements TerraformState {
     public boolean saveTerraformBinary(String version, boolean tofu, String os, String arch, File binaryFile) {
         String product = tofu ? "tofu" : "terraform";
         String binaryPath = String.format(LOCAL_BINARY_DIRECTORY, product, version, os, arch, product);
-        log.info("Saving {} binary to local storage: {}", product, binaryPath);
-        try {
-            File targetFile = new File(FileUtils.getUserDirectoryPath().concat(
-                    FilenameUtils.separatorsToSystem(binaryPath)));
-            FileUtils.copyFile(binaryFile, targetFile);
-            log.info("Successfully cached {} binary version {} ({}_{}) in local storage", product, version, os, arch);
-            return true;
-        } catch (Exception e) {
-            log.warn("Failed to cache {} binary version {} ({}_{}) in local storage: {}", product, version, os, arch, e.getMessage());
-            return false;
-        }
+        return saveCachedBinary(product, binaryPath, version, os, arch, binaryFile);
     }
 
     @Override
     public boolean downloadTerraformBinary(String version, boolean tofu, String os, String arch, File targetFile) {
         String product = tofu ? "tofu" : "terraform";
         String binaryPath = String.format(LOCAL_BINARY_DIRECTORY, product, version, os, arch, product);
-        log.info("Attempting to restore {} binary from local storage: {}", product, binaryPath);
-        try {
-            File sourceFile = new File(FileUtils.getUserDirectoryPath().concat(
-                    FilenameUtils.separatorsToSystem(binaryPath)));
-            if (!sourceFile.exists()) {
-                log.info("{} binary version {} ({}_{}) not found in local storage cache", product, version, os, arch);
-                return false;
-            }
-
-            File parentDir = targetFile.getParentFile();
-            if (parentDir != null && !parentDir.exists()) {
-                FileUtils.forceMkdir(parentDir);
-            }
-
-            FileUtils.copyFile(sourceFile, targetFile);
-
-            if (!targetFile.setExecutable(true, true)) {
-                log.warn("Failed to set executable permission on restored {} binary", product);
-            }
-
-            log.info("Successfully restored {} binary version {} ({}_{}) from local storage", product, version, os, arch);
-            return true;
-        } catch (Exception e) {
-            log.warn("Failed to restore {} binary version {} ({}_{}) from local storage: {}", product, version, os, arch, e.getMessage());
-            return false;
-        }
+        return downloadCachedBinary(product, binaryPath, version, os, arch, targetFile);
     }
 
     @Override
     public boolean saveOpaBinary(String version, String os, String arch, File sourceFile) {
         String binaryPath = String.format(LOCAL_OPA_BINARY_DIRECTORY, version, os, arch);
-        log.info("Saving OPA binary to local storage: {}", binaryPath);
-        try {
-            File targetFile = new File(FileUtils.getUserDirectoryPath().concat(
-                    FilenameUtils.separatorsToSystem(binaryPath)));
-            FileUtils.copyFile(sourceFile, targetFile);
-            log.info("Successfully cached OPA binary version {} ({}_{}) in local storage", version, os, arch);
-            return true;
-        } catch (Exception e) {
-            log.warn("Failed to cache OPA binary version {} ({}_{}) in local storage: {}", version, os, arch, e.getMessage());
-            return false;
-        }
+        return saveCachedBinary("OPA", binaryPath, version, os, arch, sourceFile);
     }
 
     @Override
     public boolean downloadOpaBinary(String version, String os, String arch, File targetFile) {
         String binaryPath = String.format(LOCAL_OPA_BINARY_DIRECTORY, version, os, arch);
-        log.info("Attempting to restore OPA binary from local storage: {}", binaryPath);
-        try {
-            File sourceFile = new File(FileUtils.getUserDirectoryPath().concat(
-                    FilenameUtils.separatorsToSystem(binaryPath)));
-            if (!sourceFile.exists()) {
-                log.info("OPA binary version {} ({}_{}) not found in local storage cache", version, os, arch);
-                return false;
-            }
-
-            File parentDir = targetFile.getParentFile();
-            if (parentDir != null && !parentDir.exists()) {
-                FileUtils.forceMkdir(parentDir);
-            }
-
-            FileUtils.copyFile(sourceFile, targetFile);
-
-            if (!targetFile.setExecutable(true, true)) {
-                log.warn("Failed to set executable permission on restored OPA binary");
-            }
-
-            log.info("Successfully restored OPA binary version {} ({}_{}) from local storage", version, os, arch);
-            return true;
-        } catch (Exception e) {
-            log.warn("Failed to restore OPA binary version {} ({}_{}) from local storage: {}", version, os, arch, e.getMessage());
-            return false;
-        }
+        return downloadCachedBinary("OPA", binaryPath, version, os, arch, targetFile);
     }
 
     @Override
     public boolean saveInfracostBinary(String version, String os, String arch, File sourceFile) {
         String binaryPath = String.format(LOCAL_INFRACOST_BINARY_DIRECTORY, version, os, arch);
-        log.info("Saving Infracost binary to local storage: {}", binaryPath);
-        try {
-            File targetFile = new File(FileUtils.getUserDirectoryPath().concat(
-                    FilenameUtils.separatorsToSystem(binaryPath)));
-            FileUtils.copyFile(sourceFile, targetFile);
-            log.info("Successfully cached Infracost binary version {} ({}_{}) in local storage", version, os, arch);
-            return true;
-        } catch (Exception e) {
-            log.warn("Failed to cache Infracost binary version {} ({}_{}) in local storage: {}", version, os, arch, e.getMessage());
-            return false;
-        }
+        return saveCachedBinary("Infracost", binaryPath, version, os, arch, sourceFile);
     }
 
     @Override
     public boolean downloadInfracostBinary(String version, String os, String arch, File targetFile) {
         String binaryPath = String.format(LOCAL_INFRACOST_BINARY_DIRECTORY, version, os, arch);
-        log.info("Attempting to restore Infracost binary from local storage: {}", binaryPath);
+        return downloadCachedBinary("Infracost", binaryPath, version, os, arch, targetFile);
+    }
+
+    private boolean saveCachedBinary(String label, String binaryPath, String version, String os, String arch, File sourceFile) {
+        log.info("Saving {} binary to local storage: {}", label, binaryPath);
         try {
-            File sourceFile = new File(FileUtils.getUserDirectoryPath().concat(
+            File targetFile = new File(FileUtils.getUserDirectoryPath().concat(
                     FilenameUtils.separatorsToSystem(binaryPath)));
-            if (!sourceFile.exists()) {
-                log.info("Infracost binary version {} ({}_{}) not found in local storage cache", version, os, arch);
-                return false;
-            }
-
-            File parentDir = targetFile.getParentFile();
-            if (parentDir != null && !parentDir.exists()) {
-                FileUtils.forceMkdir(parentDir);
-            }
-
             FileUtils.copyFile(sourceFile, targetFile);
-
-            if (!targetFile.setExecutable(true, true)) {
-                log.warn("Failed to set executable permission on restored Infracost binary");
-            }
-
-            log.info("Successfully restored Infracost binary version {} ({}_{}) from local storage", version, os, arch);
+            log.info("Successfully cached {} binary version {} ({}_{}) in local storage", label, version, os, arch);
             return true;
         } catch (Exception e) {
-            log.warn("Failed to restore Infracost binary version {} ({}_{}) from local storage: {}", version, os, arch, e.getMessage());
+            log.warn("Failed to cache {} binary version {} ({}_{}) in local storage: {}", label, version, os, arch, e.getMessage());
             return false;
         }
     }
 
+    private boolean downloadCachedBinary(String label, String binaryPath, String version, String os, String arch, File targetFile) {
+        log.info("Attempting to restore {} binary from local storage: {}", label, binaryPath);
+        java.nio.file.Path tempFile = null;
+        try {
+            File sourceFile = new File(FileUtils.getUserDirectoryPath().concat(
+                    FilenameUtils.separatorsToSystem(binaryPath)));
+            if (!sourceFile.exists()) {
+                log.info("{} binary version {} ({}_{}) not found in local storage cache", label, version, os, arch);
+                return false;
+            }
+
+            tempFile = BinaryCacheFileSupport.prepareTempTarget(targetFile);
+            FileUtils.copyFile(sourceFile, tempFile.toFile());
+            BinaryCacheFileSupport.finalizeDownloadedBinary(tempFile, targetFile, label);
+
+            log.info("Successfully restored {} binary version {} ({}_{}) from local storage", label, version, os, arch);
+            return true;
+        } catch (Exception e) {
+            log.warn("Failed to restore {} binary version {} ({}_{}) from local storage: {}", label, version, os, arch, e.getMessage());
+            return false;
+        } finally {
+            BinaryCacheFileSupport.deleteQuietly(tempFile);
+        }
+    }
+
     @Override
-    public boolean saveInfracostChecksum(String version, String os, String arch, String sha1Hex) {
+    public boolean saveInfracostChecksum(String version, String os, String arch, String sha256Hex) {
         String checksumPath = String.format(LOCAL_INFRACOST_CHECKSUM_DIRECTORY, version, os, arch);
         try {
             File targetFile = new File(FileUtils.getUserDirectoryPath().concat(
                     FilenameUtils.separatorsToSystem(checksumPath)));
-            FileUtils.writeStringToFile(targetFile, sha1Hex, StandardCharsets.UTF_8);
+            FileUtils.writeStringToFile(targetFile, sha256Hex, StandardCharsets.UTF_8);
             return true;
         } catch (Exception e) {
-            log.warn("Failed to cache Infracost SHA-1 checksum for version {} ({}_{}) in local storage: {}", version, os, arch, e.getMessage());
+            log.warn("Failed to cache Infracost SHA-256 checksum for version {} ({}_{}) in local storage: {}", version, os, arch, e.getMessage());
             return false;
         }
     }
@@ -541,7 +476,7 @@ public class LocalTerraformStateImpl implements TerraformState {
             String value = FileUtils.readFileToString(sourceFile, StandardCharsets.UTF_8).trim();
             return value.isEmpty() ? Optional.empty() : Optional.of(value);
         } catch (Exception e) {
-            log.warn("Failed to restore Infracost SHA-1 checksum for version {} ({}_{}) from local storage: {}", version, os, arch, e.getMessage());
+            log.warn("Failed to restore Infracost SHA-256 checksum for version {} ({}_{}) from local storage: {}", version, os, arch, e.getMessage());
             return Optional.empty();
         }
     }

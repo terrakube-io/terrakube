@@ -16,17 +16,21 @@ import org.mockito.Answers;
 import software.amazon.awssdk.core.ResponseBytes;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.core.sync.ResponseTransformer;
+import software.amazon.awssdk.http.AbortableInputStream;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.S3Utilities;
 import software.amazon.awssdk.services.s3.model.*;
 
+import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -712,9 +716,14 @@ class AwsTerraformStateImplTest {
     @Test
     void testDownloadTerraformBinaryReadsTheObjectOfItsOwnOsAndArchitecture(@TempDir Path tempDir) throws IOException {
         String key = "tfbinary/terraform/1.9.0/linux_amd64/terraform";
-        ResponseBytes<GetObjectResponse> responseBytes = mock(ResponseBytes.class);
-        when(responseBytes.asByteArray()).thenReturn("terraform-binary".getBytes());
-        when(s3Client.getObject(any(GetObjectRequest.class), any(ResponseTransformer.class))).thenReturn(responseBytes);
+        when(s3Client.getObject(any(GetObjectRequest.class), any(ResponseTransformer.class)))
+                .thenAnswer(invocation -> {
+                    @SuppressWarnings("unchecked")
+                    ResponseTransformer<GetObjectResponse, GetObjectResponse> transformer = invocation.getArgument(1);
+                    return transformer.transform(
+                            GetObjectResponse.builder().build(),
+                            AbortableInputStream.create(new ByteArrayInputStream("terraform-binary".getBytes(StandardCharsets.UTF_8))));
+                });
         org.mockito.ArgumentCaptor<GetObjectRequest> request = org.mockito.ArgumentCaptor.forClass(GetObjectRequest.class);
         File target = tempDir.resolve("terraform/1.9.0/terraform").toFile();
 
@@ -723,6 +732,32 @@ class AwsTerraformStateImplTest {
         verify(s3Client).headObject(argThat((HeadObjectRequest head) -> key.equals(head.key())));
         verify(s3Client).getObject(request.capture(), any(ResponseTransformer.class));
         assertEquals(key, request.getValue().key());
-        assertEquals("terraform-binary", FileUtils.readFileToString(target, Charset.defaultCharset()));
+        assertEquals("terraform-binary", FileUtils.readFileToString(target, StandardCharsets.UTF_8));
+    }
+
+    @Test
+    void testSaveAndDownloadInfracostBinaryAndSha256Checksum(@TempDir Path tempDir) throws IOException {
+        File binary = tempDir.resolve("infracost").toFile();
+        FileUtils.writeStringToFile(binary, "infracost-binary", StandardCharsets.UTF_8);
+        String expectedChecksum = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+        org.mockito.ArgumentCaptor<PutObjectRequest> putRequest = org.mockito.ArgumentCaptor.forClass(PutObjectRequest.class);
+        assertTrue(awsTerraformState.saveInfracostBinary("0.10.50", "linux", "amd64", binary));
+        assertTrue(awsTerraformState.saveInfracostChecksum("0.10.50", "linux", "amd64", expectedChecksum));
+
+        verify(s3Client, times(2)).putObject(putRequest.capture(), any(RequestBody.class));
+        assertEquals("infracost/0.10.50/linux_amd64/infracost", putRequest.getAllValues().get(0).key());
+        assertEquals("infracost/0.10.50/linux_amd64/infracost.sha256", putRequest.getAllValues().get(1).key());
+
+        @SuppressWarnings("unchecked")
+        ResponseBytes<GetObjectResponse> checksumBytes = mock(ResponseBytes.class);
+        when(checksumBytes.asString(StandardCharsets.UTF_8)).thenReturn(expectedChecksum + "\n");
+        when(s3Client.getObject(
+                argThat((GetObjectRequest req) -> req != null && "infracost/0.10.50/linux_amd64/infracost.sha256".equals(req.key())),
+                any(ResponseTransformer.class)))
+                .thenReturn(checksumBytes);
+
+        assertEquals(Optional.of(expectedChecksum),
+                awsTerraformState.downloadInfracostChecksum("0.10.50", "linux", "amd64"));
     }
 }

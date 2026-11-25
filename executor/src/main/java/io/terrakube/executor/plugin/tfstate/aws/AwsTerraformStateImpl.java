@@ -20,6 +20,7 @@ import io.terrakube.client.model.organization.workspace.history.HistoryAttribute
 import io.terrakube.client.model.organization.workspace.history.HistoryRequest;
 import io.terrakube.executor.plugin.tfstate.ArtifactStorageKeys;
 import io.terrakube.executor.plugin.tfstate.ArtifactVerificationException;
+import io.terrakube.executor.plugin.tfstate.BinaryCacheFileSupport;
 import io.terrakube.executor.plugin.tfstate.StorageRetryMetrics;
 import io.terrakube.executor.plugin.tfstate.TerraformOutputPathService;
 import io.terrakube.executor.plugin.tfstate.TerraformState;
@@ -42,6 +43,7 @@ import java.net.URL;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -492,128 +494,40 @@ public class AwsTerraformStateImpl implements TerraformState {
     public boolean saveTerraformBinary(String version, boolean tofu, String os, String arch, File binaryFile) {
         String product = tofu ? "tofu" : "terraform";
         String blobKey = "tfbinary/" + product + "/" + version + "/" + os + "_" + arch + "/" + product;
-        log.info("Saving {} binary to S3: {}", product, blobKey);
-        try {
-            PutObjectRequest putObjectRequest = PutObjectRequest.builder()
-                    .bucket(bucketName)
-                    .key(blobKey)
-                    .build();
-
-            s3client.putObject(putObjectRequest, RequestBody.fromFile(binaryFile));
-            log.info("Successfully cached {} binary version {} ({}_{}) in S3", product, version, os, arch);
-            return true;
-        } catch (Exception e) {
-            log.warn("Failed to cache {} binary version {} ({}_{}) in S3: {}", product, version, os, arch, e.getMessage());
-            return false;
-        }
+        return saveCachedBinary(product, blobKey, version, os, arch, binaryFile);
     }
 
     @Override
     public boolean downloadTerraformBinary(String version, boolean tofu, String os, String arch, File targetFile) {
         String product = tofu ? "tofu" : "terraform";
         String blobKey = "tfbinary/" + product + "/" + version + "/" + os + "_" + arch + "/" + product;
-        log.info("Attempting to restore {} binary from S3: {}", product, blobKey);
-        try {
-            // Check if the object exists first
-            HeadObjectRequest headRequest = HeadObjectRequest.builder()
-                    .bucket(bucketName)
-                    .key(blobKey)
-                    .build();
-            s3client.headObject(headRequest);
-
-            // Object exists, download it
-            GetObjectRequest getRequest = GetObjectRequest.builder()
-                    .bucket(bucketName)
-                    .key(blobKey)
-                    .build();
-
-            File parentDir = targetFile.getParentFile();
-            if (parentDir != null && !parentDir.exists()) {
-                FileUtils.forceMkdir(parentDir);
-            }
-
-            ResponseBytes<GetObjectResponse> objectBytes = s3client.getObject(getRequest,
-                    ResponseTransformer.toBytes());
-            FileUtils.writeByteArrayToFile(targetFile, objectBytes.asByteArray());
-
-            if (!targetFile.setExecutable(true, true)) {
-                log.warn("Failed to set executable permission on restored {} binary", product);
-            }
-
-            log.info("Successfully restored {} binary version {} ({}_{}) from S3", product, version, os, arch);
-            return true;
-        } catch (NoSuchKeyException e) {
-            log.info("{} binary version {} ({}_{}) not found in S3 cache", product, version, os, arch);
-            return false;
-        } catch (Exception e) {
-            log.warn("Failed to restore {} binary version {} ({}_{}) from S3: {}", product, version, os, arch, e.getMessage());
-            return false;
-        }
+        return downloadCachedBinary(product, blobKey, version, os, arch, targetFile);
     }
 
     @Override
     public boolean saveOpaBinary(String version, String os, String arch, File sourceFile) {
         String blobKey = "opa/" + version + "/" + os + "_" + arch + "/opa";
-        log.info("Saving OPA binary to S3: {}", blobKey);
-        try {
-            PutObjectRequest putObjectRequest = PutObjectRequest.builder()
-                    .bucket(bucketName)
-                    .key(blobKey)
-                    .build();
-
-            s3client.putObject(putObjectRequest, RequestBody.fromFile(sourceFile));
-            log.info("Successfully cached OPA binary version {} ({}_{}) in S3", version, os, arch);
-            return true;
-        } catch (Exception e) {
-            log.warn("Failed to cache OPA binary version {} ({}_{}) in S3: {}", version, os, arch, e.getMessage());
-            return false;
-        }
+        return saveCachedBinary("OPA", blobKey, version, os, arch, sourceFile);
     }
 
     @Override
     public boolean downloadOpaBinary(String version, String os, String arch, File targetFile) {
         String blobKey = "opa/" + version + "/" + os + "_" + arch + "/opa";
-        log.info("Attempting to restore OPA binary from S3: {}", blobKey);
-        try {
-            HeadObjectRequest headRequest = HeadObjectRequest.builder()
-                    .bucket(bucketName)
-                    .key(blobKey)
-                    .build();
-            s3client.headObject(headRequest);
-
-            GetObjectRequest getRequest = GetObjectRequest.builder()
-                    .bucket(bucketName)
-                    .key(blobKey)
-                    .build();
-
-            File parentDir = targetFile.getParentFile();
-            if (parentDir != null && !parentDir.exists()) {
-                FileUtils.forceMkdir(parentDir);
-            }
-
-            ResponseBytes<GetObjectResponse> objectBytes = s3client.getObject(getRequest,
-                    ResponseTransformer.toBytes());
-            FileUtils.writeByteArrayToFile(targetFile, objectBytes.asByteArray());
-
-            if (!targetFile.setExecutable(true, true)) {
-                log.warn("Failed to set executable permission on restored OPA binary");
-            }
-
-            log.info("Successfully restored OPA binary version {} ({}_{}) from S3", version, os, arch);
-            return true;
-        } catch (NoSuchKeyException e) {
-            log.info("OPA binary version {} ({}_{}) not found in S3 cache", version, os, arch);
-            return false;
-        } catch (Exception e) {
-            log.warn("Failed to restore OPA binary version {} ({}_{}) from S3: {}", version, os, arch, e.getMessage());
-            return false;
-        }
+        return downloadCachedBinary("OPA", blobKey, version, os, arch, targetFile);
     }
 
     @Override
     public boolean saveInfracostBinary(String version, String os, String arch, File sourceFile) {
-        String blobKey = infracostBinaryKey(version, os, arch);
-        log.info("Saving Infracost binary to S3: {}", blobKey);
+        return saveCachedBinary("Infracost", infracostBinaryKey(version, os, arch), version, os, arch, sourceFile);
+    }
+
+    @Override
+    public boolean downloadInfracostBinary(String version, String os, String arch, File targetFile) {
+        return downloadCachedBinary("Infracost", infracostBinaryKey(version, os, arch), version, os, arch, targetFile);
+    }
+
+    private boolean saveCachedBinary(String label, String blobKey, String version, String os, String arch, File sourceFile) {
+        log.info("Saving {} binary to S3: {}", label, blobKey);
         try {
             PutObjectRequest putObjectRequest = PutObjectRequest.builder()
                     .bucket(bucketName)
@@ -621,18 +535,17 @@ public class AwsTerraformStateImpl implements TerraformState {
                     .build();
 
             s3client.putObject(putObjectRequest, RequestBody.fromFile(sourceFile));
-            log.info("Successfully cached Infracost binary version {} ({}_{}) in S3", version, os, arch);
+            log.info("Successfully cached {} binary version {} ({}_{}) in S3", label, version, os, arch);
             return true;
         } catch (Exception e) {
-            log.warn("Failed to cache Infracost binary version {} ({}_{}) in S3: {}", version, os, arch, e.getMessage());
+            log.warn("Failed to cache {} binary version {} ({}_{}) in S3: {}", label, version, os, arch, e.getMessage());
             return false;
         }
     }
 
-    @Override
-    public boolean downloadInfracostBinary(String version, String os, String arch, File targetFile) {
-        String blobKey = infracostBinaryKey(version, os, arch);
-        log.info("Attempting to restore Infracost binary from S3: {}", blobKey);
+    private boolean downloadCachedBinary(String label, String blobKey, String version, String os, String arch, File targetFile) {
+        log.info("Attempting to restore {} binary from S3: {}", label, blobKey);
+        Path tempFile = null;
         try {
             HeadObjectRequest headRequest = HeadObjectRequest.builder()
                     .bucket(bucketName)
@@ -645,43 +558,36 @@ public class AwsTerraformStateImpl implements TerraformState {
                     .key(blobKey)
                     .build();
 
-            File parentDir = targetFile.getParentFile();
-            if (parentDir != null && !parentDir.exists()) {
-                FileUtils.forceMkdir(parentDir);
-            }
+            tempFile = BinaryCacheFileSupport.prepareTempTarget(targetFile);
+            s3client.getObject(getRequest, ResponseTransformer.toFile(tempFile));
+            BinaryCacheFileSupport.finalizeDownloadedBinary(tempFile, targetFile, label);
 
-            ResponseBytes<GetObjectResponse> objectBytes = s3client.getObject(getRequest,
-                    ResponseTransformer.toBytes());
-            FileUtils.writeByteArrayToFile(targetFile, objectBytes.asByteArray());
-
-            if (!targetFile.setExecutable(true, true)) {
-                log.warn("Failed to set executable permission on restored Infracost binary");
-            }
-
-            log.info("Successfully restored Infracost binary version {} ({}_{}) from S3", version, os, arch);
+            log.info("Successfully restored {} binary version {} ({}_{}) from S3", label, version, os, arch);
             return true;
         } catch (NoSuchKeyException e) {
-            log.info("Infracost binary version {} ({}_{}) not found in S3 cache", version, os, arch);
+            log.info("{} binary version {} ({}_{}) not found in S3 cache", label, version, os, arch);
             return false;
         } catch (Exception e) {
-            log.warn("Failed to restore Infracost binary version {} ({}_{}) from S3: {}", version, os, arch, e.getMessage());
+            log.warn("Failed to restore {} binary version {} ({}_{}) from S3: {}", label, version, os, arch, e.getMessage());
             return false;
+        } finally {
+            BinaryCacheFileSupport.deleteQuietly(tempFile);
         }
     }
 
     @Override
-    public boolean saveInfracostChecksum(String version, String os, String arch, String sha1Hex) {
+    public boolean saveInfracostChecksum(String version, String os, String arch, String sha256Hex) {
         String blobKey = infracostChecksumKey(version, os, arch);
-        log.info("Saving Infracost SHA-1 checksum to S3: {}", blobKey);
+        log.info("Saving Infracost SHA-256 checksum to S3: {}", blobKey);
         try {
             PutObjectRequest putObjectRequest = PutObjectRequest.builder()
                     .bucket(bucketName)
                     .key(blobKey)
                     .build();
-            s3client.putObject(putObjectRequest, RequestBody.fromString(sha1Hex, StandardCharsets.UTF_8));
+            s3client.putObject(putObjectRequest, RequestBody.fromString(sha256Hex, StandardCharsets.UTF_8));
             return true;
         } catch (Exception e) {
-            log.warn("Failed to cache Infracost SHA-1 checksum for version {} ({}_{}) in S3: {}", version, os, arch, e.getMessage());
+            log.warn("Failed to cache Infracost SHA-256 checksum for version {} ({}_{}) in S3: {}", version, os, arch, e.getMessage());
             return false;
         }
     }
@@ -699,10 +605,10 @@ public class AwsTerraformStateImpl implements TerraformState {
                     .trim();
             return value.isEmpty() ? Optional.empty() : Optional.of(value);
         } catch (NoSuchKeyException e) {
-            log.info("Infracost SHA-1 checksum for version {} ({}_{}) not found in S3 cache", version, os, arch);
+            log.info("Infracost SHA-256 checksum for version {} ({}_{}) not found in S3 cache", version, os, arch);
             return Optional.empty();
         } catch (Exception e) {
-            log.warn("Failed to restore Infracost SHA-1 checksum for version {} ({}_{}) from S3: {}", version, os, arch, e.getMessage());
+            log.warn("Failed to restore Infracost SHA-256 checksum for version {} ({}_{}) from S3: {}", version, os, arch, e.getMessage());
             return Optional.empty();
         }
     }
@@ -712,7 +618,7 @@ public class AwsTerraformStateImpl implements TerraformState {
     }
 
     private static String infracostChecksumKey(String version, String os, String arch) {
-        return infracostBinaryKey(version, os, arch) + ".sha1";
+        return infracostBinaryKey(version, os, arch) + ".sha256";
     }
 
     private static final String CONTEXT_SPOOL_LOCATION = "context-spool/%s/%s/%s-%s.json.gz";
