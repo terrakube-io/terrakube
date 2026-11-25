@@ -186,7 +186,7 @@ public class ScheduleJobTest {
 
     private void verifyLockReleasedOnce(Job job) {
         verify(redisTemplate, times(1)).execute(any(RedisScript.class),
-                eq(List.of("job-execution-lock:" + job.getId())), any(Object[].class));
+                eq(List.of(ExecutionLease.lockKey(job.getId()))), any(Object[].class));
     }
 
     private ScheduleJob subject() {
@@ -1603,7 +1603,7 @@ public class ScheduleJobTest {
         inOrder.verify(valueOperations).setIfAbsent(any(), any(), any(Duration.class)); // lock acquired
         inOrder.verify(jobRepository).findById(job.getId());                            // job loaded
         inOrder.verify(workspaceRepository).save(job.getWorkspace());                   // a write happens
-        inOrder.verify(redisTemplate).execute(any(RedisScript.class), eq(List.of("job-execution-lock:" + job.getId())), any(Object[].class)); // lock released last
+        inOrder.verify(redisTemplate).execute(any(RedisScript.class), eq(List.of(ExecutionLease.lockKey(job.getId()))), any(Object[].class)); // lock released last
     }
 
     @Test

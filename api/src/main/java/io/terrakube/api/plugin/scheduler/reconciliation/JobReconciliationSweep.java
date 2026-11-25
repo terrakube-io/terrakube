@@ -220,18 +220,37 @@ public class JobReconciliationSweep implements org.quartz.Job {
     private boolean isRedisWithinWarmupPeriod() {
         try {
             Properties info = redisTemplate.execute((RedisCallback<Properties>) connection -> connection.serverCommands().info("server"));
-            if (info == null) {
-                return true;
-            }
-            String uptimeSeconds = info.getProperty("uptime_in_seconds");
-            if (uptimeSeconds == null) {
-                return true;
-            }
-            return Long.parseLong(uptimeSeconds) < REDIS_WARMUP_PERIOD.getSeconds();
+            return isRedisWithinWarmupPeriod(info);
         } catch (DataAccessException | NumberFormatException e) {
             log.warn("Could not determine Redis uptime, treating it as recently restarted this sweep: {}", e.getMessage());
             return true;
         }
+    }
+
+    /**
+     * Checks whether any Redis node reports an uptime below {@link #REDIS_WARMUP_PERIOD}.
+     * Standalone/Sentinel returns {@code uptime_in_seconds}; {@code JedisClusterConnection} merges
+     * per-node {@code INFO} entries under {@code <host>:<port>.uptime_in_seconds}.
+     */
+    public static boolean isRedisWithinWarmupPeriod(Properties info) {
+        if (info == null) {
+            return true;
+        }
+        String uptimeSeconds = info.getProperty("uptime_in_seconds");
+        if (uptimeSeconds != null) {
+            return Long.parseLong(uptimeSeconds) < REDIS_WARMUP_PERIOD.getSeconds();
+        }
+        Long minClusterUptime = null;
+        for (String name : info.stringPropertyNames()) {
+            if (name.endsWith(".uptime_in_seconds")) {
+                long nodeUptime = Long.parseLong(info.getProperty(name));
+                minClusterUptime = minClusterUptime == null ? nodeUptime : Math.min(minClusterUptime, nodeUptime);
+            }
+        }
+        if (minClusterUptime == null) {
+            return true;
+        }
+        return minClusterUptime < REDIS_WARMUP_PERIOD.getSeconds();
     }
 
     private boolean isExecutorOwnedStatus(JobStatus status) {

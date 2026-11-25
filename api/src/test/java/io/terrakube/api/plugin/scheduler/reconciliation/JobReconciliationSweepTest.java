@@ -646,4 +646,28 @@ class JobReconciliationSweepTest {
         verify(spoolRecoveryService, never()).recoverStep(any(Step.class));
         verify(reconciliationService).reconcile(eq(55), anyBoolean());
     }
+
+    @Test
+    void clusterInfoWarmupCheck_ReturnsFalseWhenAllNodesWarmedUp() {
+        Properties clusterInfo = new Properties();
+        clusterInfo.setProperty("10.0.0.1:6379.uptime_in_seconds", "3600");
+        clusterInfo.setProperty("10.0.0.2:6379.uptime_in_seconds", "1200");
+
+        org.assertj.core.api.Assertions.assertThat(JobReconciliationSweep.isRedisWithinWarmupPeriod(clusterInfo)).isFalse();
+    }
+
+    @Test
+    void clusterInfoWarmupCheck_ReturnsTrueWhenAnyNodeRecentlyRestarted() {
+        Properties clusterInfo = new Properties();
+        clusterInfo.setProperty("10.0.0.1:6379.uptime_in_seconds", "3600");
+        clusterInfo.setProperty("10.0.0.2:6379.uptime_in_seconds", "45");
+
+        org.assertj.core.api.Assertions.assertThat(JobReconciliationSweep.isRedisWithinWarmupPeriod(clusterInfo)).isTrue();
+    }
+
+    @Test
+    void clusterInfoWarmupCheck_ReturnsTrueWhenUptimeMissing() {
+        org.assertj.core.api.Assertions.assertThat(JobReconciliationSweep.isRedisWithinWarmupPeriod(new Properties())).isTrue();
+        org.assertj.core.api.Assertions.assertThat(JobReconciliationSweep.isRedisWithinWarmupPeriod(null)).isTrue();
+    }
 }
