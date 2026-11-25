@@ -1,3 +1,4 @@
+import { axe, toHaveNoViolations } from "jest-axe";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { Modal } from "antd";
 import type { ReactNode } from "react";
@@ -10,6 +11,8 @@ import { approveRuns, findWaitingRuns } from "@/modules/projects/bulkWorkspaceAc
 import InboxPage from "../InboxPage";
 import { loadInboxCounts, loadInboxPage, loadOrganizationCounts } from "../inboxService";
 import { InboxCounts, InboxItem, InboxKind } from "../inboxModel";
+
+expect.extend(toHaveNoViolations);
 
 jest.mock("@/hooks", () => ({ usePolling: jest.fn() }));
 jest.mock("@/components/layout/PageWrapper/PageWrapper", () => ({
@@ -297,6 +300,13 @@ describe("InboxPage", () => {
       fireEvent.click(await screen.findByRole("button", { name: "Retry" }));
 
       expect(await screen.findByRole("link", { name: "ledger-db" })).toBeInTheDocument();
+    });
+
+    it("has no accessibility violations", async () => {
+      const { container } = renderPage();
+      await screen.findByRole("link", { name: "ledger-db" });
+
+      expect(await axe(container)).toHaveNoViolations();
     });
   });
 
