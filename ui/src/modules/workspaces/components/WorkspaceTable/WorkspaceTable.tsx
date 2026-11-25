@@ -45,7 +45,7 @@ type Props = {
   /** On a project's own list the project is the page, so its chip is left out and the tags take its place. */
   hideProject?: boolean;
   /** The tags a project hands to its workspaces. Their rows say "from project" next to the tag. */
-  defaultTagIds?: ReadonlySet<string>;
+  defaultTags?: ReadonlyMap<string, string>;
   /** Adds a checkbox to every row and to the header, for actions on several workspaces at once. */
   selection?: { selected: WorkspaceListItem[]; onChange: (rows: WorkspaceListItem[]) => void };
   sortOption: WorkspaceSortOption;
@@ -134,7 +134,7 @@ function WorkspaceRow({
   tags,
   origin,
   hideProject,
-  defaultTagIds,
+  defaultTags,
   selection,
 }: {
   item: WorkspaceListItem;
@@ -143,7 +143,7 @@ function WorkspaceRow({
   tags: TagModel[];
   origin: WorkspaceOrigin;
   hideProject: boolean;
-  defaultTagIds?: ReadonlySet<string>;
+  defaultTags?: ReadonlyMap<string, string>;
   selection?: Props["selection"];
 }) {
   const checked = !!selection?.selected.some((row) => row.id === item.id);
@@ -185,14 +185,16 @@ function WorkspaceRow({
             {item.name}
           </Typography.Text>
           {/* The other columns have fixed widths, so the tags open from an icon and leave the room to the name */}
-          {!defaultTagIds && <WorkspaceTagChips bindings={item.tags} tags={tags} collapsed />}
+          {!defaultTags && <WorkspaceTagChips bindings={item.tags} tags={tags} collapsed />}
         </div>
-        {defaultTagIds && (item.tags ?? []).length > 0 && (
+        {defaultTags && (item.tags ?? []).length > 0 && (
           <Flex wrap gap={4} align="center" className="workspace-name-line2 workspace-name-tags">
             {(item.tags ?? []).map((binding) => (
               <span key={binding.tagId} className="workspace-tag-with-source">
                 <WorkspaceTagChips bindings={[binding]} tags={tags} />
-                {defaultTagIds.has(binding.tagId) && <span className="workspace-tag-source">from project</span>}
+                {defaultTags.has(binding.tagId) && (defaultTags.get(binding.tagId) ?? "") === (binding.value ?? "") && (
+                  <span className="workspace-tag-source">from project</span>
+                )}
               </span>
             ))}
           </Flex>
@@ -264,7 +266,7 @@ export default function WorkspaceTable({
   onSelectProject,
   origin,
   hideProject = false,
-  defaultTagIds,
+  defaultTags,
   selection,
   sortOption,
   onSortChange,
@@ -455,7 +457,7 @@ export default function WorkspaceTable({
                         tags={tags}
                         origin={rowOrigin}
                         hideProject={hideProject}
-                        defaultTagIds={defaultTagIds}
+                        defaultTags={defaultTags}
                         selection={selection}
                       />
                     ))}
@@ -483,7 +485,7 @@ export default function WorkspaceTable({
               tags={tags}
               origin={rowOrigin}
               hideProject={hideProject}
-              defaultTagIds={defaultTagIds}
+              defaultTags={defaultTags}
               selection={selection}
             />
           ))}

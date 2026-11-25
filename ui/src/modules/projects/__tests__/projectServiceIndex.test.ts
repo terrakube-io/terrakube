@@ -110,3 +110,49 @@ describe("listAttentionWorkspaces", () => {
     expect(sent().variables.filter).toContain(`project.id=="p\\"1"`);
   });
 });
+
+describe("getDelivery", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  const jobsResponse = (count: number) => ({
+    isError: false,
+    responseCode: 200,
+    data: {
+      organization: {
+        edges: [
+          {
+            node: {
+              job: {
+                edges: Array.from({ length: count }, () => ({
+                  node: {
+                    status: "completed",
+                    createdDate: "2026-11-01T10:00:00Z",
+                    updatedDate: "2026-11-01T10:05:00Z",
+                  },
+                })),
+              },
+            },
+          },
+        ],
+      },
+    },
+  });
+
+  it("marks the count as cut short when Elide returned its limit of rows, and not before", async () => {
+    post.mockResolvedValue(jobsResponse(500));
+    const capped = await projectService.getDelivery("org", "p1");
+    expect(capped.data).toMatchObject({ runs: 500, partial: true });
+
+    post.mockResolvedValue(jobsResponse(499));
+    const exact = await projectService.getDelivery("org", "p1");
+    expect(exact.data).toMatchObject({ runs: 499, partial: false });
+  });
+
+  it("quotes the project id", async () => {
+    post.mockResolvedValue(jobsResponse(0));
+
+    await projectService.getDelivery("org", 'p"1');
+
+    expect(post.mock.calls[0][1].variables.filter).toContain(`workspace.project.id=="p\\"1"`);
+  });
+});

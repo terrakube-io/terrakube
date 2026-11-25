@@ -20,6 +20,7 @@ import { ProjectChip, attentionTone, defaultView, policyRollup, shortAgo } from 
 import { attentionFilter, projectWorkspacesLink, readChoice, readPositiveInt, withViewState } from "./projectLinks";
 import DisabledReason from "./DisabledReason";
 import { useSlashToFocus } from "./useSlashToFocus";
+import StatusPill from "./StatusPill";
 import "./Projects.css";
 
 type Props = {
@@ -321,7 +322,16 @@ export default function ProjectsPage({ organizationName, setOrganizationName }: 
       dataIndex: "attentionCount",
       ...sorter("attentionCount"),
       render: (count: number, record) => {
-        const pill = <span className={`project-pill project-pill-${attentionTone(count)}`}>{count}</span>;
+        const pill = (
+          <StatusPill
+            tone={
+              attentionTone(count) === "danger" ? "danger" : attentionTone(count) === "warning" ? "warning" : "neutral"
+            }
+            icon={false}
+          >
+            {count}
+          </StatusPill>
+        );
         if (count === 0 || record.id === "unassigned") return pill;
         // The number leads to the workspaces behind it.
         return (
@@ -341,7 +351,7 @@ export default function ProjectsPage({ organizationName, setOrganizationName }: 
       sortOrder: sortFor("policy"),
       render: (_: unknown, record) => {
         const rollup = policyRollup(record);
-        const pill = <span className={`project-pill project-pill-${rollup.tone}`}>{rollup.text}</span>;
+        const pill = <StatusPill tone={rollup.tone}>{rollup.text}</StatusPill>;
         if (record.id === "unassigned" || record.nonCompliantCount === 0) return pill;
         return (
           <Link
@@ -387,7 +397,7 @@ export default function ProjectsPage({ organizationName, setOrganizationName }: 
   return (
     <PageWrapper
       width="full"
-      title={`Projects${counts ? ` (${counts.all})` : ""}`}
+      title="Projects"
       subTitle={`Projects in the ${organizationName} organization`}
       loadingText="Loading projects..."
       loading={false}
@@ -485,6 +495,7 @@ export default function ProjectsPage({ organizationName, setOrganizationName }: 
                   whenever the page is full, so it is a table of its own under the page. */}
               {(projects.length > 0 || !showUnassigned) && (
                 <Table<ProjectSummaryModel>
+                  className="projects-table"
                   dataSource={projects}
                   columns={columns}
                   rowKey="id"
@@ -501,7 +512,7 @@ export default function ProjectsPage({ organizationName, setOrganizationName }: 
               )}
               {showUnassigned && (
                 <Table<ProjectSummaryModel>
-                  className="project-unassigned-table"
+                  className="projects-table project-unassigned-table"
                   dataSource={[unassigned as ProjectSummaryModel]}
                   columns={columns}
                   rowKey="id"

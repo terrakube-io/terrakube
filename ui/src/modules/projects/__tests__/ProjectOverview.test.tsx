@@ -1,13 +1,14 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import projectService from "../projectService";
 import ProjectOverview from "../ProjectOverview";
 
 jest.mock("../projectService", () => ({
   __esModule: true,
-  default: { listAttentionWorkspaces: jest.fn(), listRecentWorkspaces: jest.fn() },
+  default: { listAttentionWorkspaces: jest.fn(), listRecentWorkspaces: jest.fn(), getDelivery: jest.fn() },
 }));
 const recentList = projectService.listRecentWorkspaces as jest.Mock;
+const deliveryOf = projectService.getDelivery as jest.Mock;
 const attentionList = projectService.listAttentionWorkspaces as jest.Mock;
 
 const renderOverview = (props: any) =>
@@ -94,18 +95,30 @@ describe("ProjectOverview", () => {
     recentList.mockReset();
     attentionList.mockResolvedValue({ isError: false, data: [] });
     recentList.mockResolvedValue({ isError: false, data: [] });
+    deliveryOf.mockReset();
+    deliveryOf.mockResolvedValue({ isError: true });
   });
 
-  it("shows the four tiles of the design", () => {
-    renderOverview({ summary: { ...summary, teamCount: 3 }, loading: false, onOpenTab: jest.fn() });
+  it("shows the delivery numbers of the project", async () => {
+    deliveryOf.mockResolvedValue({
+      isError: false,
+      data: { runs: 12, succeededPercent: 90, medianApproveMs: 600_000, medianRunMs: 1_800_000, partial: false },
+    });
+    renderOverview({ summary, onOpenTab: jest.fn() });
 
-    expect(screen.getByText("workspaces").previousSibling).toHaveTextContent("5");
-    expect(screen.getByText("need attention").previousSibling).toHaveTextContent("1");
-    expect(screen.getByText("teams with project access").previousSibling).toHaveTextContent("3");
-    expect(screen.getByText(/^queued now/).previousSibling).toHaveTextContent("0");
+    expect(await screen.findByText("90%")).toBeInTheDocument();
+    expect(deliveryOf).toHaveBeenCalledWith("org", "p1", 30);
   });
 
-  it("adds the longest wait to the queued tile", () => {
+  it("says the workspace count, the queue and the last run in one line under the health bar", () => {
+    renderOverview({ summary: { ...summary, lockedCount: 2 }, loading: false, onOpenTab: jest.fn() });
+
+    expect(screen.getByRole("link", { name: "5 workspaces" })).toBeInTheDocument();
+    expect(screen.getByText(/2 locked/)).toBeInTheDocument();
+    expect(screen.queryByText(/queued now/)).not.toBeInTheDocument();
+  });
+
+  it("adds the longest wait to the queue, which links to the pending workspaces", () => {
     const queuedSince = new Date(Date.now() - 6 * 60 * 1000).toISOString();
 
     renderOverview({
@@ -114,7 +127,49 @@ describe("ProjectOverview", () => {
       onOpenTab: jest.fn(),
     });
 
-    expect(screen.getByText("queued now (longest wait 6m)")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "queued now (longest wait 6m)" })).toHaveAttribute(
+      "href",
+      "/organizations/org/projects/p1/workspaces?status=pending"
+    );
+  });
+
+  it("leads with the health of the project, then what needs attention", () => {
+    renderOverview({ summary, loading: false, onOpenTab: jest.fn() });
+
+    const health = screen.getByLabelText("Project health");
+    const attention = screen.getByLabelText("Needs attention");
+    expect(health.compareDocumentPosition(attention) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("offers the failed, waiting and policy counts as cards that lead to the workspaces behind them", () => {
+    renderOverview({
+      summary: { ...summary, failedCount: 2, waitingApprovalCount: 1, nonCompliantCount: 3 },
+      loading: false,
+      onOpenTab: jest.fn(),
+    });
+
+    expect(screen.getByText("Failed runs").previousSibling).toHaveTextContent("2");
+    expect(screen.getByRole("link", { name: /Review/ })).toHaveAttribute(
+      "href",
+      "/organizations/org/projects/p1/workspaces?status=failed"
+    );
+    expect(screen.getByRole("link", { name: /Approve/ })).toHaveAttribute(
+      "href",
+      "/organizations/org/projects/p1/workspaces?status=waitingApproval"
+    );
+    expect(screen.getByRole("link", { name: /^View/ })).toHaveAttribute(
+      "href",
+      "/organizations/org/projects/p1/workspaces?policy=NON_COMPLIANT"
+    );
+  });
+
+  it("links the teams with access from the details", () => {
+    renderOverview({ summary: { ...summary, teamCount: 3 }, loading: false, onOpenTab: jest.fn() });
+
+    expect(screen.getByRole("link", { name: "3 with access" })).toHaveAttribute(
+      "href",
+      "/organizations/org/projects/p1/teams"
+    );
   });
 
   it("lists the health counts under the bar", () => {
@@ -151,8 +206,11 @@ describe("ProjectOverview", () => {
 
     renderOverview({ summary: { ...summary, attentionCount: 2 }, loading: false, onOpenTab });
 
-    expect(await screen.findByText("network")).toHaveAttribute("href", "/organizations/org/workspaces/w1");
-    expect(screen.getByText("Non-compliant")).toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: "network" })).toHaveAttribute(
+      "href",
+      "/organizations/org/workspaces/w1"
+    );
+    expect(screen.getByText(/Non-compliant/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /View all 2 in Workspaces/ }));
     expect(onOpenTab).toHaveBeenCalledWith("workspaces");
   });
@@ -175,9 +233,10 @@ describe("ProjectOverview", () => {
 
     renderOverview({ summary, loading: false, onOpenTab: jest.fn() });
 
-    expect(await screen.findByText("gateway-us")).toBeInTheDocument();
-    expect(screen.getByText("Applied")).toBeInTheDocument();
-    expect(screen.getByText("Waiting approval")).toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: "gateway-us" })).toBeInTheDocument();
+    const recent = within(screen.getByLabelText("Recent activity"));
+    expect(recent.getByText(/Applied/)).toBeInTheDocument();
+    expect(recent.getByText(/Waiting approval/)).toBeInTheDocument();
   });
 
   it("never draws counts that could not be loaded, and offers a retry", () => {
@@ -197,42 +256,6 @@ describe("ProjectOverview", () => {
   });
 
   describe("click-through", () => {
-    it("links each number to the workspaces behind it", () => {
-      renderOverview({
-        summary: { ...summary, teamCount: 2, queuedJobCount: 1, failedCount: 1, attentionCount: 1 },
-        loading: false,
-        onOpenTab: jest.fn(),
-      });
-
-      expect(screen.getByRole("link", { name: /5 workspaces, show them/ })).toHaveAttribute(
-        "href",
-        "/organizations/org/projects/p1/workspaces"
-      );
-      expect(screen.getByRole("link", { name: /1 need attention, show them/ })).toHaveAttribute(
-        "href",
-        "/organizations/org/projects/p1/workspaces?status=failed"
-      );
-      expect(screen.getByRole("link", { name: /1 queued now, show them/ })).toHaveAttribute(
-        "href",
-        "/organizations/org/projects/p1/workspaces?status=pending"
-      );
-      expect(screen.getByRole("link", { name: /2 teams with project access, show them/ })).toHaveAttribute(
-        "href",
-        "/organizations/org/projects/p1/teams"
-      );
-    });
-
-    it("leaves a tile with nothing behind it as plain text", () => {
-      renderOverview({
-        summary: { ...summary, attentionCount: 0, failedCount: 0, queuedJobCount: 0 },
-        loading: false,
-        onOpenTab: jest.fn(),
-      });
-
-      expect(screen.queryByRole("link", { name: /need attention, show them/ })).not.toBeInTheDocument();
-      expect(screen.queryByRole("link", { name: /queued now, show them/ })).not.toBeInTheDocument();
-    });
-
     it("links each health status to the workspaces with that status", () => {
       renderOverview({ summary, loading: false, onOpenTab: jest.fn() });
 
