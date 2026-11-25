@@ -98,10 +98,17 @@ public class InfracostExecutorServiceImpl implements InfracostExecutorService {
         }
 
         try {
-            File configFile = resolveOptionalWorkspaceFile(workingDirectory, resolveSetting(job, "INFRACOST_CONFIG_FILE"), "infracost.yml");
+            boolean hasPlanJson = planJsonFile != null && planJsonFile.isFile();
+            String configuredConfigFile = resolveSetting(job, "INFRACOST_CONFIG_FILE");
+            File configFile = null;
+            if (!hasPlanJson && configuredConfigFile != null && !configuredConfigFile.isBlank()) {
+                configFile = resolveOptionalWorkspaceFile(workingDirectory, configuredConfigFile, null);
+            } else if (hasPlanJson && configuredConfigFile != null && !configuredConfigFile.isBlank()) {
+                log.info("Ignoring INFRACOST_CONFIG_FILE for job {} because plan.json is present", job.getJobId());
+            }
             File usageFile = resolveOptionalWorkspaceFile(workingDirectory, resolveSetting(job, "INFRACOST_USAGE_FILE"), "infracost-usage.yml");
 
-            if (configFile == null && (planJsonFile == null || !planJsonFile.isFile())) {
+            if (configFile == null && !hasPlanJson) {
                 return recordFailure(job, workDir, "Plan JSON missing; cost estimation skipped.", apiKey, null);
             }
 
@@ -203,14 +210,13 @@ public class InfracostExecutorServiceImpl implements InfracostExecutorService {
             launcher.setEnvironmentVariable("INFRACOST_CURRENCY", currency.trim());
         }
 
-        String endpoint = resolveSetting(job, "INFRACOST_PRICING_API_ENDPOINT");
+        String endpoint = properties.getPricingApiEndpoint();
         if (endpoint != null && !endpoint.isBlank()) {
             launcher.setEnvironmentVariable("INFRACOST_PRICING_API_ENDPOINT", endpoint.trim());
         }
 
-        String dashboard = resolveSetting(job, "INFRACOST_ENABLE_DASHBOARD");
         launcher.setEnvironmentVariable("INFRACOST_ENABLE_DASHBOARD",
-                "true".equalsIgnoreCase(dashboard) ? "true" : "false");
+                properties.isEnableDashboard() ? "true" : "false");
         launcher.setEnvironmentVariable("INFRACOST_SKIP_UPDATE_CHECK", "true");
         launcher.setEnvironmentVariable("INFRACOST_TELEMETRY", "false");
     }
@@ -304,6 +310,9 @@ public class InfracostExecutorServiceImpl implements InfracostExecutorService {
     private File resolveOptionalWorkspaceFile(File workingDirectory, String configuredPath, String defaultFilename) throws IOException {
         boolean explicit = configuredPath != null && !configuredPath.isBlank();
         String relativePath = explicit ? configuredPath.trim() : defaultFilename;
+        if (relativePath == null || relativePath.isBlank()) {
+            return null;
+        }
         File candidate = new File(relativePath).isAbsolute()
                 ? new File(relativePath)
                 : new File(workingDirectory, relativePath);

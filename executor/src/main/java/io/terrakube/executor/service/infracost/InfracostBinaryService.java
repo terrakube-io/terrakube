@@ -38,7 +38,7 @@ import java.util.regex.Pattern;
 @Service
 public class InfracostBinaryService {
 
-    public static final String DEFAULT_INFRACOST_VERSION = "0.10.50";
+    public static final String DEFAULT_INFRACOST_VERSION = InfracostExecutorProperties.DEFAULT_VERSION;
     private static final String DEFAULT_RELEASE_BASE_URL = "https://github.com/infracost/infracost/releases/download";
     private static final String REDIS_UPLOAD_LOCK_PREFIX = "infracost-binary-uploading:";
     private static final Duration REDIS_UPLOAD_LOCK_TTL = Duration.ofSeconds(120);

@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.terrakube.client.TerrakubeClient;
 import io.terrakube.executor.plugin.tfstate.TerraformState;
 import io.terrakube.executor.service.executor.ExecutorJobResult;
+import io.terrakube.executor.service.infracost.InfracostEnvSanitizer;
 import io.terrakube.executor.service.mode.PolicyContext;
 import io.terrakube.executor.service.mode.PolicyExemptionContext;
 import io.terrakube.executor.service.logs.ExecutorLogsProperties;
@@ -295,6 +296,7 @@ public class OpaExecutorServiceImpl implements OpaExecutorService {
         int exitCode;
         try {
             ProcessBuilder processBuilder = new ProcessBuilder(commandList);
+            InfracostEnvSanitizer.stripFromEnvironmentMap(processBuilder.environment());
             if (workingDirectory != null) {
                 processBuilder.directory(workingDirectory);
             }

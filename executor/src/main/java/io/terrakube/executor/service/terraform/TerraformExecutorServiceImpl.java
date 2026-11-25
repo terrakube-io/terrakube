@@ -10,6 +10,7 @@ import io.terrakube.executor.plugin.tfstate.ArtifactVerificationException;
 import io.terrakube.executor.plugin.tfstate.TerraformState;
 import io.terrakube.executor.service.artifact.ArtifactPackagingService;
 import io.terrakube.executor.service.artifact.ArtifactRestoreService;
+import io.terrakube.executor.service.infracost.InfracostEnvSanitizer;
 import io.terrakube.executor.service.infracost.InfracostExecutorService;
 import io.terrakube.executor.service.infracost.InfracostResult;
 import io.terrakube.executor.service.executor.ExecutorJobResult;
@@ -1153,7 +1154,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                 }
             });
         }
-        terraformProcessData.setTerraformEnvironmentVariables(backendCredentials);
+        terraformProcessData.setTerraformEnvironmentVariables(InfracostEnvSanitizer.sanitizeForTerraform(backendCredentials));
         Boolean showJsonState = terraformClient.show(terraformProcessData,
                 getStringConsumer(jsonState), getStringConsumer(showError)).get();
         Boolean showRawState = terraformClient.statePull(terraformProcessData,
@@ -1680,7 +1681,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
         return TerraformProcessData.builder()
                 .terraformVersion(terraformJob.getTerraformVersion())
                 .terraformVariables(argumentVariables(terraformJob))
-                .terraformEnvironmentVariables(environmentVariables)
+                .terraformEnvironmentVariables(InfracostEnvSanitizer.sanitizeForTerraform(environmentVariables))
                 .workingDirectory(terraformWorkingDir)
                 .refresh(terraformJob.isRefresh())
                 .refreshOnly(terraformJob.isRefreshOnly())

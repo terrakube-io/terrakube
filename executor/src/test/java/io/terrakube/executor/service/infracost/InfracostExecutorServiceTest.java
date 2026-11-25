@@ -225,15 +225,155 @@ class InfracostExecutorServiceTest {
         File workDir = Files.createDirectory(tempDir.resolve("workspace")).toFile();
         File planJson = Files.writeString(workDir.toPath().resolve("plan.json"), "{}").toFile();
 
+        TerraformJob usageJob = baseJob();
+        usageJob.getEnvironmentVariables().put("INFRACOST_API_KEY", "ico-traversal-key-123");
+        usageJob.getEnvironmentVariables().put("INFRACOST_USAGE_FILE", "../outside-secret.yml");
+
+        InfracostResult usageResult = service.evaluateCost(usageJob, workDir, planJson);
+
+        assertEquals(InfracostResult.Status.ERROR, usageResult.getStatus());
+        assertTrue(usageResult.getErrorMessage().contains("escapes workspace directory"));
+        verifyNoInteractions(binaryService);
+
+        TerraformJob configJob = baseJob();
+        configJob.getEnvironmentVariables().put("INFRACOST_API_KEY", "ico-traversal-key-123");
+        configJob.getEnvironmentVariables().put("INFRACOST_CONFIG_FILE", "../outside-config.yml");
+
+        InfracostResult configResult = service.evaluateCost(configJob, workDir, null);
+
+        assertEquals(InfracostResult.Status.ERROR, configResult.getStatus());
+        assertTrue(configResult.getErrorMessage().contains("escapes workspace directory"));
+        verifyNoInteractions(binaryService);
+    }
+
+    @Test
+    void testWorkspaceCannotOverridePricingEndpointOrDashboard() throws Exception {
+        File workDir = tempDir.toFile();
+        File planJson = Files.writeString(tempDir.resolve("plan.json"), "{}").toFile();
+
+        File fakeBin = writeFakeInfracostScript("""
+                #!/bin/sh
+                set -eu
+                if [ -n "${INFRACOST_PRICING_API_ENDPOINT:-}" ]; then
+                  echo "unexpected endpoint: $INFRACOST_PRICING_API_ENDPOINT" >&2
+                  exit 10
+                fi
+                if [ "${INFRACOST_ENABLE_DASHBOARD:-}" != "false" ]; then
+                  echo "dashboard must be false, got: ${INFRACOST_ENABLE_DASHBOARD:-}" >&2
+                  exit 11
+                fi
+                OUT=""
+                while [ "$#" -gt 0 ]; do
+                  case "$1" in
+                    --out-file) OUT="$2"; shift 2 ;;
+                    *) shift ;;
+                  esac
+                done
+                echo '{"version":"0.2","currency":"USD","totalMonthlyCost":"10.00","projects":[]}' > "$OUT"
+                """);
+        when(binaryService.getInfracostBinary(null)).thenReturn(fakeBin);
+
+        systemEnv.put("INFRACOST_API_KEY", "ico-operator-secret");
         TerraformJob job = baseJob();
-        job.getEnvironmentVariables().put("INFRACOST_API_KEY", "ico-traversal-key-123");
-        job.getEnvironmentVariables().put("INFRACOST_CONFIG_FILE", "../outside-secret.yml");
+        job.getEnvironmentVariables().put("INFRACOST_PRICING_API_ENDPOINT", "https://attacker.example.com");
+        job.getEnvironmentVariables().put("INFRACOST_ENABLE_DASHBOARD", "true");
+
+        InfracostResult blockedResult = service.evaluateCost(job, workDir, planJson);
+        assertEquals(InfracostResult.Status.SUCCESS, blockedResult.getStatus());
+
+        // Now verify operator-configured properties ARE honored
+        properties.setPricingApiEndpoint("https://pricing.internal.example");
+        properties.setEnableDashboard(true);
+        File operatorBin = writeFakeInfracostScript("""
+                #!/bin/sh
+                set -eu
+                if [ "${INFRACOST_PRICING_API_ENDPOINT:-}" != "https://pricing.internal.example" ]; then
+                  echo "expected operator endpoint" >&2
+                  exit 12
+                fi
+                if [ "${INFRACOST_ENABLE_DASHBOARD:-}" != "true" ]; then
+                  echo "expected operator dashboard=true" >&2
+                  exit 13
+                fi
+                OUT=""
+                while [ "$#" -gt 0 ]; do
+                  case "$1" in
+                    --out-file) OUT="$2"; shift 2 ;;
+                    *) shift ;;
+                  esac
+                done
+                echo '{"version":"0.2","currency":"USD","totalMonthlyCost":"10.00","projects":[]}' > "$OUT"
+                """);
+        when(binaryService.getInfracostBinary(null)).thenReturn(operatorBin);
+
+        InfracostResult operatorResult = service.evaluateCost(job, workDir, planJson);
+        assertEquals(InfracostResult.Status.SUCCESS, operatorResult.getStatus());
+    }
+
+    @Test
+    void testRepoInfracostYmlIgnoredWhenPlanJsonExists() throws Exception {
+        File workDir = Files.createDirectory(tempDir.resolve("ws-yml")).toFile();
+        File planJson = Files.writeString(workDir.toPath().resolve("plan.json"), "{}").toFile();
+        Files.writeString(workDir.toPath().resolve("infracost.yml"), "version: 0.1\n");
+
+        File fakeBin = writeFakeInfracostScript("""
+                #!/bin/sh
+                set -eu
+                SAW_PATH="false"
+                OUT=""
+                while [ "$#" -gt 0 ]; do
+                  case "$1" in
+                    --config-file) echo "config-file must not be used when plan.json exists" >&2; exit 20 ;;
+                    --path) SAW_PATH="true"; shift 2 ;;
+                    --out-file) OUT="$2"; shift 2 ;;
+                    *) shift ;;
+                  esac
+                done
+                if [ "$SAW_PATH" != "true" ]; then
+                  exit 21
+                fi
+                echo '{"version":"0.2","currency":"USD","totalMonthlyCost":"25.00","projects":[]}' > "$OUT"
+                """);
+        when(binaryService.getInfracostBinary(null)).thenReturn(fakeBin);
+
+        TerraformJob job = baseJob();
+        job.getEnvironmentVariables().put("INFRACOST_API_KEY", "ico-plan-precedence-key");
 
         InfracostResult result = service.evaluateCost(job, workDir, planJson);
+        assertEquals(InfracostResult.Status.SUCCESS, result.getStatus());
+    }
 
-        assertEquals(InfracostResult.Status.ERROR, result.getStatus());
-        assertTrue(result.getErrorMessage().contains("escapes workspace directory"));
-        verifyNoInteractions(binaryService);
+    @Test
+    void testExplicitConfigFileUsedWhenPlanJsonMissing() throws Exception {
+        File workDir = Files.createDirectory(tempDir.resolve("ws-cfg")).toFile();
+        Files.writeString(workDir.toPath().resolve("custom-infracost.yml"), "version: 0.1\n");
+
+        File fakeBin = writeFakeInfracostScript("""
+                #!/bin/sh
+                set -eu
+                SAW_CONFIG="false"
+                OUT=""
+                while [ "$#" -gt 0 ]; do
+                  case "$1" in
+                    --path) echo "--path must not be combined with --config-file" >&2; exit 30 ;;
+                    --config-file) SAW_CONFIG="true"; shift 2 ;;
+                    --out-file) OUT="$2"; shift 2 ;;
+                    *) shift ;;
+                  esac
+                done
+                if [ "$SAW_CONFIG" != "true" ]; then
+                  exit 31
+                fi
+                echo '{"version":"0.2","currency":"USD","totalMonthlyCost":"30.00","projects":[]}' > "$OUT"
+                """);
+        when(binaryService.getInfracostBinary(null)).thenReturn(fakeBin);
+
+        TerraformJob job = baseJob();
+        job.getEnvironmentVariables().put("INFRACOST_API_KEY", "ico-cfg-only-key");
+        job.getEnvironmentVariables().put("INFRACOST_CONFIG_FILE", "custom-infracost.yml");
+
+        InfracostResult result = service.evaluateCost(job, workDir, null);
+        assertEquals(InfracostResult.Status.SUCCESS, result.getStatus());
     }
 
     private File writeFakeInfracostScript(String scriptContent) throws IOException {
