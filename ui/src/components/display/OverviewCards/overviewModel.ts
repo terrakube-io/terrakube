@@ -2,10 +2,18 @@
  * How many workspaces last ended in each state. Completed includes runs that found no changes and never includes a
  * workspace with no status, as everywhere else. Running is running, pending, approved and queued.
  */
-export type StatusCounts = { completed: number; failed: number; waiting: number; running: number; never: number };
+export type StatusCounts = {
+  completed: number;
+  failed: number;
+  waiting: number;
+  running: number;
+  never: number;
+  /** Workspaces that run on someone's machine and only upload state: no run status will ever exist. */
+  noStatus?: number;
+};
 
 export type RingSegment = {
-  key: "completed" | "failed" | "waiting" | "running" | "other" | "never";
+  key: "completed" | "failed" | "waiting" | "running" | "other" | "never" | "noStatus";
   label: string;
   count: number;
 };
@@ -15,7 +23,11 @@ export type RingSegment = {
  * the like) is "other", so nothing finished is ever drawn as running.
  */
 export function ringSegments(total: number, status: StatusCounts): RingSegment[] {
-  const other = Math.max(0, total - status.completed - status.failed - status.waiting - status.running - status.never);
+  const noStatus = status.noStatus ?? 0;
+  const other = Math.max(
+    0,
+    total - status.completed - status.failed - status.waiting - status.running - status.never - noStatus
+  );
   return [
     { key: "completed", label: "completed", count: status.completed },
     { key: "failed", label: "failed", count: status.failed },
@@ -23,6 +35,7 @@ export function ringSegments(total: number, status: StatusCounts): RingSegment[]
     { key: "running", label: "running or queued", count: status.running },
     { key: "other", label: "stopped or other", count: other },
     { key: "never", label: "never executed", count: status.never },
+    { key: "noStatus", label: "no run status", count: noStatus },
   ];
 }
 
@@ -33,6 +46,7 @@ const COLORS: Record<RingSegment["key"], string> = {
   running: "var(--ant-color-info, #1677ff)",
   other: "var(--ant-color-text-tertiary, #8c8c8c)",
   never: "var(--tk-text-quaternary, #bfbfbf)",
+  noStatus: "var(--tk-border-secondary, #e4e4e4)",
 };
 
 export const segmentColor = (key: RingSegment["key"]) => COLORS[key];

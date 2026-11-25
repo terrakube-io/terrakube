@@ -79,7 +79,7 @@ class ProjectSummaryPostgresTests {
             try (ResultSet rows = connection.createStatement().executeQuery(
                     "SELECT id, workspace_count, completed_count, failed_count, waiting_approval_count, running_count, "
                             + "queued_count, never_run_count, non_compliant_count, hard_violation_count, soft_violation_count, compliant_count, exempted_count, queued_job_count, queued_since, locked_count, attention_count, "
-                            + "team_count, last_run_at, has_run FROM (" + subselect + ") s ORDER BY attention_count DESC, name")) {
+                            + "cli_driven_count, vcs_driven_count, no_run_status_count, team_count, last_run_at, has_run FROM (" + subselect + ") s ORDER BY attention_count DESC, name")) {
                 assertTrue(rows.next());
                 assertEquals("summary-project", rows.getString("id"));
                 assertEquals(6, rows.getLong("workspace_count"));
@@ -93,6 +93,10 @@ class ProjectSummaryPostgresTests {
                 assertEquals(1, rows.getLong("locked_count"));
                 assertEquals(2, rows.getLong("attention_count"));
                 assertEquals(1, rows.getLong("team_count"));
+                // The seeded workspaces all have a repository.
+                assertEquals(0, rows.getLong("cli_driven_count"));
+                assertEquals(6, rows.getLong("vcs_driven_count"));
+                assertEquals(0, rows.getLong("no_run_status_count"));
                 assertNotNull(rows.getTimestamp("last_run_at"));
                 assertEquals(1, rows.getLong("has_run"));
 

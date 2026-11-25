@@ -19,6 +19,7 @@ import { PROJECT_TAB_LABELS, ProjectTab, getStoredLandingTab, setLandingTab } fr
 import { HealthKey, shortAgo, shortDuration } from "./projectHealth";
 import { describeWorkspace } from "./projectStatus";
 import DisabledReason from "./DisabledReason";
+import { SourceMix } from "./SourceMix";
 import { projectWorkspacesLink, statusForHealth } from "./projectLinks";
 import ProjectDelivery from "./ProjectDelivery";
 
@@ -66,7 +67,8 @@ function StatusLine({
         </Link>
         <Tooltip title={workspace.lastJobDate ? new Date(workspace.lastJobDate).toLocaleString() : "No runs yet"}>
           <Typography.Text type="secondary" className="overview-row-sub">
-            {label} · {shortAgo(workspace.lastJobDate)}
+            {label}
+            {workspace.lastJobDate ? ` · ${shortAgo(workspace.lastJobDate)}` : ""}
           </Typography.Text>
         </Tooltip>
       </span>
@@ -225,7 +227,8 @@ export default function ProjectOverview({
             failed: summary.failedCount,
             waiting: summary.waitingApprovalCount,
             running: summary.runningCount + summary.queuedCount,
-            never: summary.neverRunCount,
+            never: Math.max(0, summary.neverRunCount - summary.noRunStatusCount),
+            noStatus: summary.noRunStatusCount,
           }}
           hrefFor={(key) => {
             const health = RING_TO_HEALTH[key];
@@ -233,6 +236,11 @@ export default function ProjectOverview({
             const status = health ? statusForHealth(health) : null;
             return status ? projectWorkspacesLink(orgid, summary.id, { status }) : undefined;
           }}
+          footer={
+            summary.workspaceCount > 0 ? (
+              <SourceMix vcs={summary.vcsDrivenCount} cli={summary.cliDrivenCount} locked={summary.lockedCount} />
+            ) : undefined
+          }
           note={
             <>
               <Link to={projectWorkspacesLink(orgid, summary.id)}>
@@ -244,7 +252,6 @@ export default function ProjectOverview({
                   <Link to={projectWorkspacesLink(orgid, summary.id, { status: "pending" })}>{queuedLabel}</Link>
                 </>
               )}
-              {summary.lockedCount > 0 && ` · ${summary.lockedCount} locked`}
               {" · Last run: "}
               {summary.lastRunAt ? (
                 <span title={new Date(summary.lastRunAt).toLocaleString()}>{shortAgo(summary.lastRunAt)}</span>
@@ -262,7 +269,7 @@ export default function ProjectOverview({
       </div>
 
       <div className="overview-columns">
-        <Card className="overview-card" aria-label="Needs attention">
+        <Card className="overview-card" role="region" aria-label="Needs attention">
           <div className="overview-card-head">
             <h3 className="overview-card-title">Needs attention</h3>
             {attention.length > 0 && (
@@ -292,7 +299,7 @@ export default function ProjectOverview({
             </ul>
           )}
         </Card>
-        <Card className="overview-card" aria-label="Recent activity">
+        <Card className="overview-card" role="region" aria-label="Recent activity">
           <div className="overview-card-head">
             <h3 className="overview-card-title">Recent activity</h3>
           </div>
@@ -314,7 +321,7 @@ export default function ProjectOverview({
 
       <div className="overview-columns">
         <ProjectDelivery orgid={orgid} projectId={summary.id} />
-        <Card className="overview-card" aria-label="Details">
+        <Card className="overview-card" role="region" aria-label="Details">
           <h3 className="overview-card-title">Details</h3>
           <dl className="project-overview-details">
             <div>
@@ -328,10 +335,10 @@ export default function ProjectOverview({
               <dd>
                 <Select
                   size="small"
-                  aria-label="Default project tab"
+                  aria-label="Tab every project opens on in this browser"
                   value={landing}
                   options={[
-                    { value: "default", label: "Each project's setting" },
+                    { value: "default", label: "As set by the project or organization" },
                     ...Object.entries(PROJECT_TAB_LABELS).map(([value, label]) => ({ value, label })),
                   ]}
                   onChange={(value: ProjectTab | "default") => {

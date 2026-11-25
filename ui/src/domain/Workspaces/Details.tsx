@@ -30,6 +30,8 @@ const ActionLoader = lazy(() => import("../../ActionLoader"));
 import { ORGANIZATION_ARCHIVE, ORGANIZATION_NAME, WORKSPACE_ARCHIVE } from "../../config/actionTypes";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import { CreateJob } from "../Jobs/Create";
+import AccessChip from "@/components/display/AccessChip/AccessChip";
+import { WorkspacePermissionSet, workspaceCapabilities } from "@/modules/permissions/accessModel";
 import PolicyStatusTag from "@/components/display/PolicyStatusTag";
 import {
   Action,
@@ -137,6 +139,12 @@ export const WorkspaceDetails = ({
   const [manageState, setManageState] = useState(false);
   const [planJob, setPlanJob] = useState(false);
   const [approveJob, setApproveJob] = useState(false);
+  // The same answer as the four flags above, with the role and the teams it comes through, for the access chip.
+  const [workspaceAccess, setWorkspaceAccess] = useState<{
+    permissions: WorkspacePermissionSet;
+    level?: string;
+    teams: string[];
+  }>();
   const [permissionsLoaded, setPermissionsLoaded] = useState(false);
   const [variables, setVariables] = useState<FlatVariable[]>([]);
   const [collectionVariables, setCollectionVariables] = useState<any[]>([]);
@@ -407,6 +415,17 @@ export const WorkspaceDetails = ({
               setManageWorkspace(response.data.manageWorkspace);
               setPlanJob(response.data.planJob);
               setApproveJob(response.data.approveJob);
+              setWorkspaceAccess({
+                permissions: {
+                  manageWorkspace: response.data.manageWorkspace ?? false,
+                  manageState: response.data.manageState ?? false,
+                  manageJob: response.data.manageJob ?? false,
+                  planJob: response.data.planJob ?? false,
+                  approveJob: response.data.approveJob ?? false,
+                },
+                level: response.data.accessLevel ?? undefined,
+                teams: response.data.grantedThrough ?? [],
+              });
               setPermissionsLoaded(true);
             })
             .catch((err) => {
@@ -994,6 +1013,14 @@ export const WorkspaceDetails = ({
                 />
               </Suspense>
             ))}
+        {workspaceAccess && (
+          <AccessChip
+            scope="workspace"
+            level={workspaceAccess.level}
+            teams={workspaceAccess.teams}
+            items={workspaceCapabilities(workspaceAccess.permissions)}
+          />
+        )}
         <Button
           type="default"
           htmlType="button"

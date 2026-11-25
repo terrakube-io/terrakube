@@ -183,6 +183,12 @@
   background: var(--tk-border-secondary, #d9d9d9);
 }
 
+/* Dotted, so "no run status" does not rely on being a lighter grey than "never executed". */
+.health-noStatus {
+  background: radial-gradient(circle, var(--tk-text-quaternary, #bfbfbf) 1px, var(--tk-bg-container, #fff) 1.5px) 0 0 /
+    4px 4px;
+}
+
 .project-health-legend {
   display: flex;
   flex-wrap: wrap;
@@ -212,6 +218,12 @@
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 16px;
   margin-bottom: 16px;
+}
+
+/* A card that is a link fills its grid cell, so cards of a row are as wide and as tall as each other. */
+.projects-card-grid > a {
+  display: block;
+  min-width: 0;
 }
 
 .project-card {

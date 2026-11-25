@@ -54,6 +54,9 @@ const summary = (overrides: Record<string, unknown>) => ({
   hardViolationCount: 0,
   softViolationCount: 0,
   lockedCount: 0,
+  cliDrivenCount: 0,
+  vcsDrivenCount: 0,
+  noRunStatusCount: 0,
   attentionCount: 1,
   teamCount: 1,
   ...overrides,
@@ -350,7 +353,7 @@ describe("ProjectsPage", () => {
 
     expect(await screen.findByText("Unassigned")).toBeInTheDocument();
     expect(screen.getByText("41 workspaces")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Move them to a project" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "List all workspaces" })).toBeInTheDocument();
   });
 
   it("applies a saved view: its search, chip and sort, back on page 1, with the address following", async () => {

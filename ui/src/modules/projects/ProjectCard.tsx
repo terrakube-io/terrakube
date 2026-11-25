@@ -51,7 +51,7 @@ export default function ProjectCard({ orgid, project, unassigned = false, canSee
       <footer className="project-card-footer">
         <span>{neverRan ? "0 runs yet" : plural(project.workspaceCount, "workspace")}</span>
         {unassigned ? (
-          <Link to={`/organizations/${orgid}/workspaces`}>Move them to a project</Link>
+          <Link to={`/organizations/${orgid}/workspaces`}>List all workspaces</Link>
         ) : (
           <>
             {canSeeTeams ? (
@@ -60,7 +60,9 @@ export default function ProjectCard({ orgid, project, unassigned = false, canSee
               <Tooltip
                 title={`Only users who manage project access can see team names. Total: ${plural(project.teamCount, "team")}.`}
               >
-                <span aria-label={`${plural(project.teamCount, "team")}, names hidden`}>-</span>
+                <span role="img" aria-label={`${plural(project.teamCount, "team")}, names hidden`}>
+                  -
+                </span>
               </Tooltip>
             )}
             <Tooltip title={project.lastRunAt ? new Date(project.lastRunAt).toLocaleString() : "No runs yet"}>
