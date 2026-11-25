@@ -147,7 +147,7 @@ class InfracostExecutorServiceTest {
                 JSON
                 """);
 
-        when(binaryService.getInfracostBinary(null)).thenReturn(fakeBin);
+        when(binaryService.getInfracostBinary(any(), any())).thenReturn(fakeBin);
 
         TerraformJob job = baseJob();
         job.getEnvironmentVariables().put("INFRACOST_API_KEY", "ico-real-test-key");
@@ -182,7 +182,7 @@ class InfracostExecutorServiceTest {
                 echo "Authentication failed for token $INFRACOST_API_KEY" >&2
                 exit 1
                 """);
-        when(binaryService.getInfracostBinary(null)).thenReturn(fakeBin);
+        when(binaryService.getInfracostBinary(any(), any())).thenReturn(fakeBin);
 
         TerraformJob job = baseJob();
         job.getEnvironmentVariables().put("INFRACOST_API_KEY", secret);
@@ -211,7 +211,7 @@ class InfracostExecutorServiceTest {
                 #!/bin/sh
                 sleep 10
                 """);
-        when(binaryService.getInfracostBinary(null)).thenReturn(fakeBin);
+        when(binaryService.getInfracostBinary(any(), any())).thenReturn(fakeBin);
 
         TerraformJob job = baseJob();
         job.getEnvironmentVariables().put("INFRACOST_API_KEY", "ico-timeout-key-999");
@@ -273,7 +273,7 @@ class InfracostExecutorServiceTest {
                 done
                 echo '{"version":"0.2","currency":"USD","totalMonthlyCost":"10.00","projects":[]}' > "$OUT"
                 """);
-        when(binaryService.getInfracostBinary(null)).thenReturn(fakeBin);
+        when(binaryService.getInfracostBinary(any(), any())).thenReturn(fakeBin);
 
         systemEnv.put("INFRACOST_API_KEY", "ico-operator-secret");
         TerraformJob job = baseJob();
@@ -306,7 +306,7 @@ class InfracostExecutorServiceTest {
                 done
                 echo '{"version":"0.2","currency":"USD","totalMonthlyCost":"10.00","projects":[]}' > "$OUT"
                 """);
-        when(binaryService.getInfracostBinary(null)).thenReturn(operatorBin);
+        when(binaryService.getInfracostBinary(any(), any())).thenReturn(operatorBin);
 
         InfracostResult operatorResult = service.evaluateCost(job, workDir, planJson);
         assertEquals(InfracostResult.Status.SUCCESS, operatorResult.getStatus());
@@ -336,7 +336,7 @@ class InfracostExecutorServiceTest {
                 fi
                 echo '{"version":"0.2","currency":"USD","totalMonthlyCost":"25.00","projects":[]}' > "$OUT"
                 """);
-        when(binaryService.getInfracostBinary(null)).thenReturn(fakeBin);
+        when(binaryService.getInfracostBinary(any(), any())).thenReturn(fakeBin);
 
         TerraformJob job = baseJob();
         job.getEnvironmentVariables().put("INFRACOST_API_KEY", "ico-plan-precedence-key");
@@ -368,7 +368,7 @@ class InfracostExecutorServiceTest {
                 fi
                 echo '{"version":"0.2","currency":"USD","totalMonthlyCost":"30.00","projects":[]}' > "$OUT"
                 """);
-        when(binaryService.getInfracostBinary(null)).thenReturn(fakeBin);
+        when(binaryService.getInfracostBinary(any(), any())).thenReturn(fakeBin);
 
         TerraformJob job = baseJob();
         job.getEnvironmentVariables().put("INFRACOST_API_KEY", "ico-cfg-only-key");
@@ -394,7 +394,7 @@ class InfracostExecutorServiceTest {
                 done
                 echo '{"version":"0.2","currency":"USD","totalMonthlyCost":"99.50","projects":[]}' > "$OUT"
                 """);
-        when(binaryService.getInfracostBinary(null)).thenReturn(fakeBin);
+        when(binaryService.getInfracostBinary(any(), any())).thenReturn(fakeBin);
 
         TerraformJob step1 = baseJob();
         step1.setStepId("plan-1");
@@ -436,7 +436,7 @@ class InfracostExecutorServiceTest {
         File fakeBin = writeFakeInfracostScript("#!/bin/sh\nOUT=\"\"\nwhile [ \"$#\" -gt 0 ]; do\n"
                 + "  case \"$1\" in --out-file) OUT=\"$2\"; shift 2 ;; *) shift ;; esac\ndone\n"
                 + "cat > \"$OUT\" <<'JSON'\n" + payloadJson + "\nJSON\n");
-        when(binaryService.getInfracostBinary(null)).thenReturn(fakeBin);
+        when(binaryService.getInfracostBinary(any(), any())).thenReturn(fakeBin);
 
         TerraformJob job = baseJob();
         job.getEnvironmentVariables().put("INFRACOST_API_KEY", "ico-large-key");
@@ -464,7 +464,7 @@ class InfracostExecutorServiceTest {
         File planJson = Files.writeString(tempDir.resolve("plan.json"), "{}").toFile();
         String secret = "ico-console-secret-xyz";
         File fakeBin = writeFakeInfracostScript("#!/bin/sh\necho \"fail $INFRACOST_API_KEY\" >&2\nexit 1\n");
-        when(binaryService.getInfracostBinary(null)).thenReturn(fakeBin);
+        when(binaryService.getInfracostBinary(any(), any())).thenReturn(fakeBin);
 
         TerraformJob job = baseJob();
         job.getEnvironmentVariables().put("INFRACOST_API_KEY", secret);

@@ -24,6 +24,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.HexFormat;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -96,7 +97,8 @@ class InfracostBinaryServiceTest {
                 "0.10.50",
                 tempDir.toString(),
                 baseUrl,
-                name -> pathBin
+                name -> pathBin,
+                file -> Optional.of("0.10.50")
         );
 
         File resolved = pathAware.getInfracostBinary(null);
@@ -105,7 +107,35 @@ class InfracostBinaryServiceTest {
     }
 
     @Test
-    void testGetInfracostBinary_FromLocalCacheWhenSha1Matches() throws Exception {
+    void testGetInfracostBinary_PathVersionMismatchSkipsPathAndUsesManagedCache() throws Exception {
+        File pathBin = tempDir.resolve("path-infracost-old").toFile();
+        Files.writeString(pathBin.toPath(), "#!/bin/sh\necho 'Infracost v0.10.42'\n");
+        assertTrue(pathBin.setExecutable(true, true));
+
+        String os = InfracostBinaryService.resolveOs();
+        String arch = InfracostBinaryService.resolveArchitecture();
+        byte[] freshBinary = "#!/bin/sh\necho managed-0.10.50\n".getBytes(StandardCharsets.UTF_8);
+        AtomicInteger downloads = registerTarballEndpoints("0.10.50", os, arch, "infracost", freshBinary, null);
+        when(terraformState.downloadInfracostBinary(eq("0.10.50"), eq(os), eq(arch), any())).thenReturn(false);
+
+        InfracostBinaryService pathGuarded = new InfracostBinaryService(
+                terraformState,
+                redisTemplate,
+                "0.10.50",
+                tempDir.toString(),
+                baseUrl,
+                name -> pathBin,
+                file -> Optional.of("0.10.42")
+        );
+
+        File resolved = pathGuarded.getInfracostBinary(null);
+        assertNotEquals(pathBin.getAbsolutePath(), resolved.getAbsolutePath());
+        assertEquals(1, downloads.get());
+        assertArrayEquals(freshBinary, Files.readAllBytes(resolved.toPath()));
+    }
+
+    @Test
+    void testGetInfracostBinary_FromLocalCacheWhenSha256MatchesAndMemoizesHash() throws Exception {
         String version = "0.10.50";
         String os = InfracostBinaryService.resolveOs();
         String arch = InfracostBinaryService.resolveArchitecture();
@@ -117,16 +147,27 @@ class InfracostBinaryServiceTest {
         byte[] content = "#!/bin/sh\necho cached\n".getBytes(StandardCharsets.UTF_8);
         Files.write(cachedBin.toPath(), content);
         assertTrue(cachedBin.setExecutable(true, true));
-        Files.writeString(cacheDir.resolve("infracost.sha1"), sha1Hex(content));
+        Files.writeString(cacheDir.resolve("infracost.sha256"), sha256Hex(content));
 
         File resolved = service.getInfracostBinary("v" + version);
-
         assertEquals(cachedBin.getAbsolutePath(), resolved.getAbsolutePath());
+
+        // Second call hits memoized (mtime, size) hash entry
+        File secondResolved = service.getInfracostBinary("v" + version);
+        assertEquals(cachedBin.getAbsolutePath(), secondResolved.getAbsolutePath());
         verify(terraformState, never()).downloadInfracostBinary(anyString(), anyString(), anyString(), any());
+
+        // Modifying cached binary (different size/mtime) invalidates memoized entry and triggers self-healing
+        byte[] freshBinary = "#!/bin/sh\necho self-healed-v0.10.50\n".getBytes(StandardCharsets.UTF_8);
+        Files.writeString(cachedBin.toPath(), "tampered-longer-binary-content");
+        AtomicInteger downloads = registerTarballEndpoints(version, os, arch, binName, freshBinary, null);
+        File repaired = service.getInfracostBinary("v" + version);
+        assertEquals(1, downloads.get());
+        assertArrayEquals(freshBinary, Files.readAllBytes(repaired.toPath()));
     }
 
     @Test
-    void testGetInfracostBinary_LocalCacheSha1Mismatch_DeletesAndRedownloadsLocally() throws Exception {
+    void testGetInfracostBinary_LocalCacheSha256Mismatch_DeletesAndRedownloadsLocally() throws Exception {
         String version = "0.10.50";
         String os = InfracostBinaryService.resolveOs();
         String arch = InfracostBinaryService.resolveArchitecture();
@@ -137,31 +178,31 @@ class InfracostBinaryServiceTest {
         File staleBin = cacheDir.resolve(binName).toFile();
         Files.writeString(staleBin.toPath(), "corrupted-local-binary");
         assertTrue(staleBin.setExecutable(true, true));
-        Files.writeString(cacheDir.resolve("infracost.sha1"), "0000000000000000000000000000000000000000");
+        Files.writeString(cacheDir.resolve("infracost.sha256"), "0000000000000000000000000000000000000000000000000000000000000000");
 
         byte[] freshBinary = "#!/bin/sh\necho fresh-upstream\n".getBytes(StandardCharsets.UTF_8);
         AtomicInteger downloadCount = registerTarballEndpoints(version, os, arch, "infracost-" + os + "-" + arch, freshBinary, null);
 
         when(terraformState.downloadInfracostBinary(eq(version), eq(os), eq(arch), any())).thenReturn(false);
         when(terraformState.saveInfracostBinary(eq(version), eq(os), eq(arch), any())).thenReturn(true);
-        when(terraformState.saveInfracostChecksum(eq(version), eq(os), eq(arch), eq(sha1Hex(freshBinary)))).thenReturn(true);
+        when(terraformState.saveInfracostChecksum(eq(version), eq(os), eq(arch), eq(sha256Hex(freshBinary)))).thenReturn(true);
 
         File resolved = service.getInfracostBinary(version);
 
         assertEquals(1, downloadCount.get());
         assertArrayEquals(freshBinary, Files.readAllBytes(resolved.toPath()));
-        assertEquals(sha1Hex(freshBinary), Files.readString(cacheDir.resolve("infracost.sha1")).trim());
+        assertEquals(sha256Hex(freshBinary), Files.readString(cacheDir.resolve("infracost.sha256")).trim());
         verify(terraformState).saveInfracostBinary(eq(version), eq(os), eq(arch), eq(resolved));
-        verify(terraformState).saveInfracostChecksum(eq(version), eq(os), eq(arch), eq(sha1Hex(freshBinary)));
+        verify(terraformState).saveInfracostChecksum(eq(version), eq(os), eq(arch), eq(sha256Hex(freshBinary)));
     }
 
     @Test
-    void testGetInfracostBinary_StorageCacheSha1Valid() throws Exception {
+    void testGetInfracostBinary_StorageCacheSha256Valid() throws Exception {
         String version = "0.10.49";
         String os = InfracostBinaryService.resolveOs();
         String arch = InfracostBinaryService.resolveArchitecture();
         byte[] storedBinary = "#!/bin/sh\necho from-s3\n".getBytes(StandardCharsets.UTF_8);
-        String expectedSha1 = sha1Hex(storedBinary);
+        String expectedSha256 = sha256Hex(storedBinary);
 
         when(terraformState.downloadInfracostBinary(eq(version), eq(os), eq(arch), any()))
                 .thenAnswer(inv -> {
@@ -170,25 +211,25 @@ class InfracostBinaryServiceTest {
                     return true;
                 });
         when(terraformState.downloadInfracostChecksum(eq(version), eq(os), eq(arch)))
-                .thenReturn(Optional.of(expectedSha1));
+                .thenReturn(Optional.of(expectedSha256));
 
         File resolved = service.getInfracostBinary(version);
 
         assertArrayEquals(storedBinary, Files.readAllBytes(resolved.toPath()));
         assertTrue(resolved.canExecute());
-        File sidecar = new File(resolved.getParentFile(), "infracost.sha1");
+        File sidecar = new File(resolved.getParentFile(), "infracost.sha256");
         assertTrue(sidecar.isFile());
-        assertEquals(expectedSha1, Files.readString(sidecar.toPath()).trim());
+        assertEquals(expectedSha256, Files.readString(sidecar.toPath()).trim());
     }
 
     @Test
-    void testGetInfracostBinary_StorageCacheSha1Mismatch_DeletesCachedBinaryAndDownloadsFresh() throws Exception {
+    void testGetInfracostBinary_StorageCacheSha256Mismatch_DeletesCachedBinaryAndDownloadsFresh() throws Exception {
         String version = "0.10.48";
         String os = InfracostBinaryService.resolveOs();
         String arch = InfracostBinaryService.resolveArchitecture();
         byte[] corruptStorageBinary = "corrupted-storage-bytes".getBytes(StandardCharsets.UTF_8);
         byte[] freshBinary = "#!/bin/sh\necho fresh-after-mismatch\n".getBytes(StandardCharsets.UTF_8);
-        String freshSha1 = sha1Hex(freshBinary);
+        String freshSha256 = sha256Hex(freshBinary);
 
         when(terraformState.downloadInfracostBinary(eq(version), eq(os), eq(arch), any()))
                 .thenAnswer(inv -> {
@@ -197,19 +238,40 @@ class InfracostBinaryServiceTest {
                     return true;
                 });
         when(terraformState.downloadInfracostChecksum(eq(version), eq(os), eq(arch)))
-                .thenReturn(Optional.of("1111111111111111111111111111111111111111"));
+                .thenReturn(Optional.of("1111111111111111111111111111111111111111111111111111111111111111"));
 
         AtomicInteger downloadCount = registerTarballEndpoints(version, os, arch, "infracost", freshBinary, null);
         when(terraformState.saveInfracostBinary(eq(version), eq(os), eq(arch), any())).thenReturn(true);
-        when(terraformState.saveInfracostChecksum(eq(version), eq(os), eq(arch), eq(freshSha1))).thenReturn(true);
+        when(terraformState.saveInfracostChecksum(eq(version), eq(os), eq(arch), eq(freshSha256))).thenReturn(true);
 
         File resolved = service.getInfracostBinary(version);
 
         assertEquals(1, downloadCount.get());
         assertArrayEquals(freshBinary, Files.readAllBytes(resolved.toPath()));
-        assertEquals(freshSha1, Files.readString(new File(resolved.getParentFile(), "infracost.sha1").toPath()).trim());
+        assertEquals(freshSha256, Files.readString(new File(resolved.getParentFile(), "infracost.sha256").toPath()).trim());
         verify(terraformState).saveInfracostBinary(eq(version), eq(os), eq(arch), eq(resolved));
-        verify(terraformState).saveInfracostChecksum(eq(version), eq(os), eq(arch), eq(freshSha1));
+        verify(terraformState).saveInfracostChecksum(eq(version), eq(os), eq(arch), eq(freshSha256));
+    }
+
+    @Test
+    void testGetInfracostBinary_DeadlineExceededOnSlowDownloadFailsFast() throws Exception {
+        String version = "0.10.46";
+        String os = InfracostBinaryService.resolveOs();
+        String arch = InfracostBinaryService.resolveArchitecture();
+        String archiveName = InfracostBinaryService.getArchiveFilename(os, arch);
+        httpServer.createContext("/v" + version + "/" + archiveName, exchange -> {
+            try {
+                Thread.sleep(3000);
+            } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
+            }
+            exchange.sendResponseHeaders(200, 0);
+            exchange.close();
+        });
+        when(terraformState.downloadInfracostBinary(eq(version), eq(os), eq(arch), any())).thenReturn(false);
+
+        Instant shortDeadline = Instant.now().plusMillis(250);
+        assertThrows(IllegalStateException.class, () -> service.getInfracostBinary(version, shortDeadline));
     }
 
     @Test

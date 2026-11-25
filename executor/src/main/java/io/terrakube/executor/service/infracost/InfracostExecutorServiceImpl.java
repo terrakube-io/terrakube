@@ -17,6 +17,8 @@ import java.io.File;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -131,12 +133,16 @@ public class InfracostExecutorServiceImpl implements InfracostExecutorService {
                 return recordFailure(job, workDir, "Plan JSON missing; cost estimation skipped.", apiKey, null, planOutput);
             }
 
+            long timeoutSeconds = properties.getTimeoutSeconds() > 0 ? properties.getTimeoutSeconds() : 180L;
+            Instant deadline = Instant.now().plusSeconds(timeoutSeconds);
+
             String version = resolveSetting(job, "INFRACOST_VERSION");
-            File infracostBinary = binaryService.getInfracostBinary(version);
+            File infracostBinary = binaryService.getInfracostBinary(version, deadline);
             File outputFile = new File(workDir, INFRACOST_OUT_FILE);
 
             List<String> command = buildCommand(infracostBinary, planJsonFile, configFile, usageFile, outputFile);
             ProcessLauncher launcher = new ProcessLauncher(processExecutor, command.toArray(String[]::new));
+            launcher.setPidIsolation(false);
             launcher.setDirectory(workingDirectory);
             launcher.clearEnvironment();
             configureSubprocessEnvironment(launcher, job, apiKey);
@@ -146,10 +152,15 @@ public class InfracostExecutorServiceImpl implements InfracostExecutorService {
             launcher.setOutputListener(line -> appendBounded(stdoutBuf, line));
             launcher.setErrorListener(line -> appendBounded(stderrBuf, line));
 
-            long timeoutSeconds = properties.getTimeoutSeconds() > 0 ? properties.getTimeoutSeconds() : 180L;
+            long remainingMillis = Duration.between(Instant.now(), deadline).toMillis();
+            if (remainingMillis <= 0) {
+                return recordFailure(job, workDir,
+                        String.format("Infracost estimation timed out after %d seconds. Plan proceeded without cost estimation.", timeoutSeconds),
+                        apiKey, null, planOutput);
+            }
             int exitCode;
             try {
-                exitCode = launcher.launch().get(timeoutSeconds, TimeUnit.SECONDS);
+                exitCode = launcher.launch().get(remainingMillis, TimeUnit.MILLISECONDS);
             } catch (TimeoutException te) {
                 launcher.destroyForcibly();
                 return recordFailure(job, workDir,

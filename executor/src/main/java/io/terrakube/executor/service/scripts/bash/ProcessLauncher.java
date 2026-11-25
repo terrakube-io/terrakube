@@ -24,7 +24,7 @@ public final class ProcessLauncher {
     private static final long STREAM_DRAIN_TIMEOUT_SECONDS = 60;
     private static final List<String> PID_ISOLATION_PREFIX = detectPidIsolationPrefix();
 
-    private Process process;
+    private volatile Process process;
     private ProcessBuilder builder;
     private Consumer<String> outputListener, errorListener;
     private boolean inheritIO;
@@ -120,8 +120,20 @@ public final class ProcessLauncher {
     }
 
     public void destroyForcibly() {
-        if (this.process != null && this.process.isAlive()) {
-            this.process.destroyForcibly();
+        Process current = this.process;
+        if (current != null) {
+            try {
+                // Kill deepest descendants first so parent shells don't exit before children are signaled.
+                List<ProcessHandle> descendants = current.descendants().toList();
+                for (int i = descendants.size() - 1; i >= 0; i--) {
+                    descendants.get(i).destroyForcibly();
+                }
+            } catch (Exception e) {
+                log.debug("Unable to enumerate or kill descendant processes: {}", e.getMessage());
+            }
+            if (current.isAlive()) {
+                current.destroyForcibly();
+            }
         }
     }
 

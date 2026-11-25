@@ -1,6 +1,7 @@
 package io.terrakube.executor.service.opa;
 
 import io.terrakube.executor.plugin.tfstate.TerraformState;
+import io.terrakube.executor.service.common.BinaryPlatformUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.FilenameUtils;
@@ -22,7 +23,6 @@ public class OpaBinaryService {
     private static final String DEFAULT_OPA_VERSION = "1.20.2";
     private static final String REDIS_OPA_UPLOAD_LOCK_PREFIX = "opa-binary-uploading:";
     private static final Duration REDIS_OPA_UPLOAD_LOCK_TTL = Duration.ofSeconds(120);
-    private static final Pattern SEMVER_PATTERN = Pattern.compile("^[0-9]++(?:\\.[0-9]++)*+(?:-[a-zA-Z0-9.]++)?+$");
 
     private final TerraformState terraformState;
     private final RedisTemplate<String, Object> redisTemplate;
@@ -45,40 +45,16 @@ public class OpaBinaryService {
     }
 
     public String normalizeAndValidateVersion(String version) {
-        String effective = (version != null && !version.isBlank()) ? version.trim() : this.defaultOpaVersion;
-        if (effective == null || effective.isBlank()) {
-            effective = DEFAULT_OPA_VERSION;
-        }
-
-        // Strip leading 'v' or 'V' if present
-        if (effective.startsWith("v") || effective.startsWith("V")) {
-            effective = effective.substring(1).trim();
-        }
-
-        if (!SEMVER_PATTERN.matcher(effective).matches()) {
-            throw new IllegalArgumentException(String.format(
-                    "Invalid OPA version format: '%s'. Expected semantic version (e.g. 1.20.2, 0.68.0).", version));
-        }
-
-        return effective;
+        return BinaryPlatformUtils.normalizeAndValidateVersion(
+                version, this.defaultOpaVersion, DEFAULT_OPA_VERSION, "OPA");
     }
 
     public static String resolveArchitecture() {
-        String arch = System.getProperty("os.arch", "amd64").toLowerCase();
-        if (arch.contains("aarch64") || arch.contains("arm64") || arch.contains("armv8")) {
-            return "arm64";
-        }
-        return "amd64";
+        return BinaryPlatformUtils.resolveArchitecture();
     }
 
     public static String resolveOs() {
-        String os = System.getProperty("os.name", "linux").toLowerCase();
-        if (os.contains("mac") || os.contains("darwin")) {
-            return "darwin";
-        } else if (os.contains("win")) {
-            return "windows";
-        }
-        return "linux";
+        return BinaryPlatformUtils.resolveOs();
     }
 
     public static String getOpaBinaryFilename(String os, String arch) {
