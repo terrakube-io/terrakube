@@ -87,7 +87,7 @@ describe("OrganizationSelector", () => {
       fireEvent.click(button);
 
       const devTeamLink = screen.getByText("Dev Team").closest("a");
-      expect(devTeamLink).toHaveAttribute("href", "/organizations/org-2/workspaces");
+      expect(devTeamLink).toHaveAttribute("href", "/organizations/org-2/overview");
     });
 
     it("shows 'Manage Organizations' link in dropdown", () => {

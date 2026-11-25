@@ -16,7 +16,7 @@ test("every request stays on the shared host", async ({ page, baseURL }) => {
 
   await page.goto("/");
   await page.getByRole("link", { name: "Open organization simple", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Workspaces" })).toBeVisible();
+  await expect(page).toHaveURL(/\/organizations\/[^/]+\/overview/);
   const orgId = page.url().match(/\/organizations\/([^/]+)/)?.[1];
   await page.goto(`/organizations/${orgId}/registry/search?tab=providers&q=random`);
   await page.waitForLoadState("networkidle");

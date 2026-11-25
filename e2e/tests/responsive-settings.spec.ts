@@ -70,6 +70,8 @@ test("the workspaces list fits a phone: actions wrap, rows wrap inside their car
   await page
     .getByRole("link", { name: "Open organization simple", exact: true })
     .click();
+  // Opening an organization lands on its overview; the workspace list is one click away.
+  await page.getByRole("link", { name: "Workspaces", exact: true }).first().click();
   await expect(page.getByRole("heading", { name: "Workspaces" })).toBeVisible();
   await expect(page.locator(".workspace-row").first()).toBeVisible();
 

@@ -594,6 +594,8 @@ export type ProjectSummaryModel = {
   id: string;
   name: string;
   description?: string;
+  /** The team that owns the project, when it has one. */
+  ownerTeam?: string | null;
   workspaceCount: number;
   completedCount: number;
   failedCount: number;
