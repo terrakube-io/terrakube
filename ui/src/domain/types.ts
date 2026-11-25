@@ -191,6 +191,12 @@ export type JobAttributes = {
   triggeredByJobId?: number;
   /** How many triggered runs deep this one is. Zero for a run nobody triggered. */
   cascadeDepth?: number;
+  /** What the plan adds, changes and destroys. Null for a plan that has no summary (older, or failed). */
+  planAdd?: number | null;
+  planChange?: number | null;
+  planDestroy?: number | null;
+  /** "drift" or "clean" for a run that was a drift check, empty for every other run. */
+  driftResult?: "drift" | "clean" | null;
 } & AuditFieldBase;
 
 /** Output-delivery outcome of a step, tracked apart from whether the step itself succeeded. */
@@ -231,6 +237,10 @@ export type FlatJob = {
   createdDate?: string;
   updatedDate?: string;
   templateReference?: string;
+  planAdd?: number | null;
+  planChange?: number | null;
+  planDestroy?: number | null;
+  driftResult?: "drift" | "clean" | null;
 };
 // VCS
 
@@ -636,6 +646,13 @@ export type WorkspaceAttributes = {
   sharedIds?: string;
   policyComplianceStatus?: "COMPLIANT" | "NON_COMPLIANT" | "EXEMPTED" | "UNKNOWN";
   lastJobStatus?: string;
+  /** "drifted" when the last drift check found changes, "clean" when it found none, empty when never checked. */
+  driftStatus?: "drifted" | "clean" | null;
+  /** When the current drift was first seen. Empty while clean. */
+  driftFirstSeen?: string | null;
+  driftLastChecked?: string | null;
+  /** The run of the last drift check, so its plan can be opened. */
+  driftJobId?: number | null;
   /** Only plan-only runs may use a branch other than the workspace branch. */
   restrictApplyToConfiguredBranch?: boolean;
   requireApproveToApply?: boolean;

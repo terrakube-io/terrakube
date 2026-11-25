@@ -1,4 +1,5 @@
 import { Flex, List, message, Pagination, Space } from "antd";
+import { listOrigin, rememberWorkspaceOrigin } from "@/modules/workspaces/workspaceOrigin";
 import PageWrapper from "@/components/layout/PageWrapper/PageWrapper";
 import { ImportOutlined, PlusOutlined } from "@ant-design/icons";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -294,6 +295,7 @@ export default function OrganizationsDetailPage({ organizationName, setOrganizat
                     to={`/organizations/${id}/workspaces/${item.id}`}
                     aria-label={`Open workspace ${item.name}`}
                     className="workspace-card-link"
+                    onClick={() => rememberWorkspaceOrigin(item.id, listOrigin(id!))}
                   />
                   <WorkspaceCard tags={tags} item={item} organizationId={id} />
                 </List.Item>

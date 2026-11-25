@@ -1,15 +1,19 @@
-import { Avatar, Button, Pagination, Tag, Tooltip, Typography } from "antd";
+import { Avatar, Button, message, Modal, Pagination, Tag, Tooltip, Typography } from "antd";
+import { PolicyResult } from "../runPolicyService";
+import RunPolicyTag from "./RunPolicyTag";
 import { FieldTimeOutlined, UserOutlined, WarningOutlined } from "@ant-design/icons";
 import { FiGitCommit } from "react-icons/fi";
 import { Link, useParams } from "react-router-dom";
-import { FlatJob, formatJobVia } from "../../../domain/types";
+import { FlatJob, formatJobVia, JobStatus } from "../../../domain/types";
 import { useState, useEffect, useMemo } from "react";
 import axiosInstance from "../../../config/axiosConfig";
 import { ORGANIZATION_ARCHIVE } from "../../../config/actionTypes";
 import RunFilter, { ALL_RUNS } from "./RunFilter";
 import WorkspaceStatusTag from "@/components/display/WorkspaceStatusTag";
+import PlanSummaryText from "./PlanSummaryText";
 import { EmptyState } from "@/components/feedback/EmptyState";
 import { formatDateTime, formatDuration } from "@/modules/utils/dates";
+import { approveRuns } from "@/modules/projects/bulkWorkspaceActions";
 import { isTerminalStatus } from "@/domain/Jobs/stepStatus";
 import "@/domain/Jobs/runTokens.css";
 import "./RunList.css";
@@ -35,9 +39,15 @@ type Props = {
   jobs: FlatJob[];
   onRunClick: (id: string) => void;
   runLink: (id: string) => string;
+  /** Shows an Approve button on a run that waits for approval. Where the person may not approve, leave it off. */
+  canApprove?: boolean;
+  /** The policy result of each run by id, for the runs that were evaluated. Rows without one show nothing. */
+  policyByRun?: Record<string, PolicyResult>;
+  /** Called after a run was approved, so the page can load the run again. */
+  onApproved?: () => void;
 };
 
-export default function RunList({ jobs, onRunClick, runLink }: Props) {
+export default function RunList({ jobs, onRunClick, runLink, canApprove = false, policyByRun, onApproved }: Props) {
   const [currentPage, setCurrentPage] = useState<number>(parseInt(sessionStorage.getItem(RUNS_PAGE_KEY) || "1"));
   const [templateNames, setTemplateNames] = useState<{ [key: string]: string }>({});
   const { orgid } = useParams();
@@ -117,6 +127,25 @@ export default function RunList({ jobs, onRunClick, runLink }: Props) {
     }
   }, [sortedJobs.length, currentPage]);
 
+  const approve = (item: FlatJob) =>
+    Modal.confirm({
+      title: `Approve run #${item.id}?`,
+      content: "Approving lets the run go ahead.",
+      okText: "Approve",
+      onOk: async () => {
+        if (!organizationId) return;
+        try {
+          const outcome = await approveRuns(organizationId, [item.id]);
+          if (outcome.failed.length) message.error(outcome.failed[0].reason);
+          else message.success(`Approved run #${item.id}`);
+        } catch (err: any) {
+          // approveRuns reports a refused approval itself; this is for what it did not expect.
+          message.error(err?.message ?? `Run #${item.id} could not be approved`);
+        }
+        onApproved?.();
+      },
+    });
+
   const clearFilters = () => {
     setStatus(ALL_RUNS);
     setTemplateIds([]);
@@ -179,7 +208,16 @@ export default function RunList({ jobs, onRunClick, runLink }: Props) {
                             <span className="run-row-time">{item.latestChange}</span>
                           </Tooltip>
                         </span>
-                        <span>via {formatJobVia(item.via)}</span>
+                        <span>
+                          via {formatJobVia(item.via)}
+                          {item.prNumber ? ` PR #${item.prNumber}` : ""}
+                        </span>
+                        {item.driftResult && (
+                          <span>Drift check: {item.driftResult === "drift" ? "drift" : "clean"}</span>
+                        )}
+                        {item.planAdd != null && (
+                          <PlanSummaryText add={item.planAdd} change={item.planChange} destroy={item.planDestroy} />
+                        )}
                         {templateName && <span>{templateName}</span>}
                         {commitId && (
                           <span>
@@ -199,6 +237,12 @@ export default function RunList({ jobs, onRunClick, runLink }: Props) {
                           <WarningOutlined className="run-row-warning" aria-label="Pull request comment failed" />
                         </Tooltip>
                       )}
+                      {canApprove && item.status === JobStatus.WaitingApproval && (
+                        <Button size="small" type="primary" onClick={() => approve(item)}>
+                          Approve
+                        </Button>
+                      )}
+                      {policyByRun?.[String(item.id)] && <RunPolicyTag result={policyByRun[String(item.id)]} />}
                       <WorkspaceStatusTag status={item.status} />
                     </div>
                   </li>
