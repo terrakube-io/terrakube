@@ -74,6 +74,8 @@ export type OrganizationAttributes = {
   executionMode?: string;
   icon?: string;
   projectLandingTab?: string;
+  managedInCodeRepository?: string;
+  managedInCodeMode?: string;
   workspaceCount?: number;
   workspaceStatusCounts?: Record<string, number>;
 };
