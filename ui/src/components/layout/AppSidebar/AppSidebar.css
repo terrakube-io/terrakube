@@ -283,3 +283,48 @@
   font-size: 0;
   background: var(--tk-sidebar-border);
 }
+
+.app-sidebar-search-row {
+  padding: 0 12px 10px;
+}
+
+.app-sidebar-search-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--tk-sidebar-control-border);
+  border-radius: 8px;
+  background: var(--tk-sidebar-control-bg);
+  color: var(--tk-sidebar-text-secondary);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.app-sidebar-search-box:hover {
+  background: var(--tk-sidebar-control-bg-hover);
+  border-color: var(--tk-sidebar-control-border-hover);
+  color: var(--tk-sidebar-text);
+}
+
+.app-sidebar-search-box:focus-visible {
+  outline: 2px solid var(--tk-sidebar-text);
+  outline-offset: 1px;
+}
+
+.app-sidebar-search-text {
+  flex: 1;
+  text-align: left;
+}
+
+.app-sidebar-search-key {
+  padding: 1px 6px;
+  border: 1px solid var(--tk-sidebar-control-border);
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--tk-sidebar-text-secondary);
+}

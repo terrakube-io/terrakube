@@ -30,6 +30,9 @@ import org.hibernate.annotations.SQLRestriction;
 
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
+import jakarta.persistence.PostLoad;
+import jakarta.persistence.PrePersist;
+import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -127,6 +130,42 @@ public class Job extends GenericAuditFields {
     @Column(name = "approved_at")
     private Date approvedAt;
 
+    // Set once when the job is first persisted, whichever path creates it.
+    @CreatePermission(expression = "NONE")
+    @UpdatePermission(expression = "NONE")
+    @Column(name = "queued_at")
+    private Date queuedAt;
+
+    // The status this row had when it was read, so a save can tell that the job has just gone back to waiting.
+    @Exclude
+    @Transient
+    private JobStatus statusWhenLoaded;
+
+    @PrePersist
+    void stampQueuedAt() {
+        if (queuedAt == null) {
+            queuedAt = new Date();
+        }
+    }
+
+    @PostLoad
+    void rememberStatus() {
+        statusWhenLoaded = status;
+    }
+
+    /**
+     * A job returns to pending after a step that changed something and to approved once a person approves it. From
+     * then on it waits again, so the wait is measured from that moment and not from when the job was created.
+     */
+    @PreUpdate
+    void restampQueuedAtWhenWaitingAgain() {
+        boolean waiting = status == JobStatus.pending || status == JobStatus.approved || status == JobStatus.queue;
+        if (waiting && statusWhenLoaded != null && statusWhenLoaded != status) {
+            queuedAt = new Date();
+        }
+        statusWhenLoaded = status;
+    }
+
     @ReadPermission(expression = "team view job OR team project limited view job OR team limited view job OR executor read job OR user is an executor service")
     @Column(name = "output")
     private String output;
@@ -190,6 +229,31 @@ public class Job extends GenericAuditFields {
 
     @Column(name = "plan_changes")
     private boolean planChanges = true;
+
+    // What the plan adds, changes and destroys (a replacement is one of each), for run lists. Null without a summary.
+    // Written by PlanSummaryRecorder, never through a request: updating a job wakes the scheduler. The columns are not
+    // written by an entity save, only by JobRepository.updatePlanSummary, so a job that was loaded before the counts
+    // were recorded cannot write the old values back when it is saved later.
+    @CreatePermission(expression = "NONE")
+    @UpdatePermission(expression = "NONE")
+    @Column(name = "plan_add", insertable = false, updatable = false)
+    private Integer planAdd;
+
+    @CreatePermission(expression = "NONE")
+    @UpdatePermission(expression = "NONE")
+    @Column(name = "plan_change", insertable = false, updatable = false)
+    private Integer planChange;
+
+    @CreatePermission(expression = "NONE")
+    @UpdatePermission(expression = "NONE")
+    @Column(name = "plan_destroy", insertable = false, updatable = false)
+    private Integer planDestroy;
+
+    // "drift" or "clean" for a drift check run, null for every other run. Written by DriftCheckService.
+    @CreatePermission(expression = "NONE")
+    @UpdatePermission(expression = "NONE")
+    @Column(name = "drift_result", insertable = false, updatable = false)
+    private String driftResult;
 
     @Column(name = "refresh_only")
     private boolean refreshOnly = false;

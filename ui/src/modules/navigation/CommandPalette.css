@@ -1,0 +1,37 @@
+.command-palette .ant-modal-content {
+  padding: 8px;
+}
+
+.command-palette-results {
+  max-height: 360px;
+  margin: 4px 0 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.command-palette-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.command-palette-item-active {
+  background: var(--ant-color-primary-bg, #f0f0ff);
+}
+
+.command-palette-kind {
+  flex-shrink: 0;
+  font-size: 12px;
+}
+
+.command-palette-status {
+  min-height: 22px;
+  padding: 4px 12px 0;
+  font-size: 12px;
+  color: var(--tk-text-secondary, #8c8c8c);
+}

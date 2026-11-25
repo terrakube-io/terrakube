@@ -1,4 +1,18 @@
-import { Button, Form, Input, InputNumber, Select, Space, Spin, Table, Tag, Typography, message } from "antd";
+import {
+  Button,
+  Form,
+  Input,
+  InputNumber,
+  Modal,
+  Select,
+  Space,
+  Spin,
+  Switch,
+  Table,
+  Tag,
+  Typography,
+  message,
+} from "antd";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
@@ -48,6 +62,8 @@ export const CreateEditCollection = ({
   const [editingVariableId, setEditingVariableId] = useState<string>("");
   const [pendingDelete, setPendingDelete] = useState<any>(null);
   const [collectionName, setCollectionName] = useState("");
+  // The reference that applies the collection to the whole organization, when there is one.
+  const [organizationReferenceId, setOrganizationReferenceId] = useState<string | null>(null);
 
   // Use either the prop or URL parameter for collection ID
   const collectionid = propCollectionId || urlCollectionId;
@@ -81,6 +97,9 @@ export const CreateEditCollection = ({
             .filter((ref: any) => ref.relationships?.workspace?.data?.id != null)
             .map((ref: any) => ref.relationships.workspace.data.id);
           setSelectedWorkspaces(workspaceIds);
+          setOrganizationReferenceId(
+            refsRes.data.data.find((ref: any) => ref.attributes?.scope === "ORGANIZATION")?.id ?? null
+          );
 
           setLoading(false);
         })
@@ -186,6 +205,8 @@ export const CreateEditCollection = ({
 
         // Delete references that are not in the new selection or where the workspace is null because it was deleted
         for (const ref of existingRefs) {
+          // Project and organization references are managed elsewhere and have no workspace on purpose.
+          if (ref.attributes?.scope && ref.attributes.scope !== "WORKSPACE") continue;
           const workspaceId = ref.relationships?.workspace?.data?.id;
           if (workspaceId == null) {
             await axiosInstance.delete(`organization/${orgid}/collection/${collectionid}/reference/${ref.id}`);
@@ -230,6 +251,41 @@ export const CreateEditCollection = ({
     } finally {
       setSaveLoading(false);
     }
+  };
+
+  // Applies at once, not on Save: it changes every workspace in the organization, so it asks first.
+  const changeOrganizationScope = (apply: boolean) => {
+    Modal.confirm({
+      title: apply ? "Apply to every workspace in the organization?" : "Stop applying to the whole organization?",
+      content: apply
+        ? `The variables in ${collectionName} will reach every workspace, in every project, on its next run.`
+        : `Workspaces will stop receiving the variables in ${collectionName} unless they or their project attach it.`,
+      okText: apply ? "Apply to organization" : "Stop applying",
+      onOk: async () => {
+        try {
+          if (apply) {
+            const response = await axiosInstance.post(
+              `organization/${orgid}/collection/${collectionid}/reference`,
+              {
+                data: {
+                  type: "reference",
+                  attributes: { description: "Reference to the organization", scope: "ORGANIZATION" },
+                },
+              },
+              { headers: { "Content-Type": "application/vnd.api+json" } }
+            );
+            setOrganizationReferenceId(response.data.data.id);
+          } else {
+            await axiosInstance.delete(
+              `organization/${orgid}/collection/${collectionid}/reference/${organizationReferenceId}`
+            );
+            setOrganizationReferenceId(null);
+          }
+        } catch (error) {
+          message.error(`Could not change the scope of the collection: ${getErrorMessage(error)}`);
+        }
+      },
+    });
   };
 
   const handleDeleteCollection = async () => {
@@ -535,6 +591,20 @@ export const CreateEditCollection = ({
               options={workspaces.map((workspace) => ({ value: workspace.id, label: workspace.attributes.name }))}
             />
           </Form.Item>
+          {mode === "edit" && (
+            <Form.Item
+              label="Whole organization"
+              htmlFor="collection-organization-scope"
+              extra="Applies the variables to every workspace in every project. Needs Manage Collections."
+            >
+              <Switch
+                id="collection-organization-scope"
+                checked={organizationReferenceId !== null}
+                disabled={!managePermission}
+                onChange={changeOrganizationScope}
+              />
+            </Form.Item>
+          )}
         </SettingsForm>
 
         {mode === "create" ? (

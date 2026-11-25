@@ -85,7 +85,7 @@ class RemoteTfePolicyChecksTest {
                 historyRepository, templateRepository, scheduleJobService, "https://localhost", storageTypeService,
                 stepRepository, redisTemplate, 1, tagRepository, workspaceTagRepository, teamTokenService,
                 archiveRepository, accessRepository, encryptionService, addressRepository, projectRepository,
-                variableRepository, globalVarRepository, rbacService, jobNotificationTrigger
+                variableRepository, globalVarRepository, rbacService, jobNotificationTrigger, null
         );
         remoteTfeService.setPolicyApprovalGuard(Mockito.mock(PolicyApprovalGuard.class));
         remoteTfeService.setPolicyEvaluationRepository(policyEvaluationRepository);

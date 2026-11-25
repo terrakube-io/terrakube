@@ -110,6 +110,9 @@ class PolicyEvaluationServiceTest {
         ArgumentCaptor<Workspace> wsCaptor = ArgumentCaptor.forClass(Workspace.class);
         verify(workspaceRepository).save(wsCaptor.capture());
         assertEquals(PolicyComplianceStatus.COMPLIANT, wsCaptor.getValue().getPolicyComplianceStatus());
+        // The counts that tell hard from soft in the project list are reset to zero by a clean evaluation.
+        assertEquals(0, wsCaptor.getValue().getPolicyHardViolations());
+        assertEquals(0, wsCaptor.getValue().getPolicySoftViolations());
     }
 
     @Test
@@ -186,6 +189,8 @@ class PolicyEvaluationServiceTest {
         ArgumentCaptor<Workspace> wsCaptor = ArgumentCaptor.forClass(Workspace.class);
         verify(workspaceRepository).save(wsCaptor.capture());
         assertEquals(PolicyComplianceStatus.NON_COMPLIANT, wsCaptor.getValue().getPolicyComplianceStatus());
+        assertEquals(1, wsCaptor.getValue().getPolicyHardViolations());
+        assertEquals(0, wsCaptor.getValue().getPolicySoftViolations());
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<PolicySet>> policySetsCaptor = ArgumentCaptor.forClass(List.class);

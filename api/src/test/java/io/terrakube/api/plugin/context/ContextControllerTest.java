@@ -1,5 +1,6 @@
 package io.terrakube.api.plugin.context;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -77,8 +78,11 @@ class ContextControllerTest {
         ContextWriteService writeService = new ContextWriteService(jobRepository, new ContextWriteLock(redisTemplate), readService,
                 sanitizer, storageTypeService, storageMetrics, new ObjectMapper());
         return new ContextController(sanitizer, streamingService, readService, writeService, properties,
-                policyEvaluationService, null, authenticatedUser(), new ObjectMapper());
+                policyEvaluationService, null, authenticatedUser(), new ObjectMapper(), planSummaryRecorder);
     }
+
+    // Null unless a test sets it, which is how the controller is built without a recorder.
+    private PlanSummaryRecorder planSummaryRecorder;
 
     /** A storage mock whose reads return the last saved context, so successive writes build on each other. */
     private StorageTypeService inMemoryStorage(String initialContext) {
@@ -116,6 +120,56 @@ class ContextControllerTest {
         verify(storageTypeService).saveContext(1, "{\"planRenderedText\":{\"s1\":\"text\"},"
                 + "\"contextRevisions\":{\"planStructuredOutput/s1\":10,\"structuredOutputStatus\":10},"
                 + "\"planStructuredOutput\":{\"s1\":[]},\"structuredOutputStatus\":{\"state\":\"COMPLETE\"}}");
+    }
+
+    @Test
+    void aFinalPlanPatchThatWasAppliedIsRecordedOnceFromTheRawBody() throws IOException {
+        planSummaryRecorder = Mockito.mock(PlanSummaryRecorder.class);
+        ContextController controller = controller(inMemoryStorage(null), runningJob());
+        String body = "{\"revision\":10,\"set\":{\"planStructuredOutput/s1\":[]}}";
+
+        ResponseEntity<String> response = controller.patchContext(1, body);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        org.mockito.ArgumentCaptor<JsonNode> sent = org.mockito.ArgumentCaptor.forClass(JsonNode.class);
+        verify(planSummaryRecorder, times(1)).recordFromPatch(Mockito.eq(1), sent.capture());
+        assertEquals(new ObjectMapper().readTree(body), sent.getValue());
+    }
+
+    @Test
+    void aPlanPatchThatWasSkippedAsStaleIsNotRecordedAgain() throws IOException {
+        planSummaryRecorder = Mockito.mock(PlanSummaryRecorder.class);
+        ContextController controller = controller(
+                inMemoryStorage("{\"contextRevisions\":{\"planStructuredOutput/s1\":10},\"planStructuredOutput\":{\"s1\":[]}}"),
+                runningJob());
+
+        ResponseEntity<String> response = controller.patchContext(1, "{\"revision\":10,\"set\":{\"planStructuredOutput/s1\":[]}}");
+
+        assertEquals("{\"applied\":0,\"skipped\":1}", response.getBody());
+        verify(planSummaryRecorder, never()).recordFromPatch(Mockito.anyInt(), Mockito.any());
+    }
+
+    @Test
+    void aPatchWithoutAPlanSnapshotIsNotRecorded() throws IOException {
+        planSummaryRecorder = Mockito.mock(PlanSummaryRecorder.class);
+        ContextController controller = controller(inMemoryStorage(null), runningJob());
+
+        controller.patchContext(1, "{\"revision\":1,\"set\":{\"terrakubeUI/s1\":\"ui\"}}");
+
+        verify(planSummaryRecorder, never()).recordFromPatch(Mockito.anyInt(), Mockito.any());
+    }
+
+    @Test
+    void aRecorderThatThrowsNeverFailsTheExecutorsWrite() throws IOException {
+        planSummaryRecorder = Mockito.mock(PlanSummaryRecorder.class);
+        Mockito.doThrow(new IllegalStateException("database down")).when(planSummaryRecorder)
+                .recordFromPatch(Mockito.anyInt(), Mockito.any());
+        ContextController controller = controller(inMemoryStorage(null), runningJob());
+
+        ResponseEntity<String> response = controller.patchContext(1, "{\"revision\":10,\"set\":{\"planStructuredOutput/s1\":[]}}");
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals("{\"applied\":1,\"skipped\":0}", response.getBody());
     }
 
     @Test

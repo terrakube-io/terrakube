@@ -73,6 +73,7 @@ export type OrganizationAttributes = {
   name: string;
   executionMode?: string;
   icon?: string;
+  projectLandingTab?: string;
   workspaceCount?: number;
   workspaceStatusCounts?: Record<string, number>;
 };
@@ -568,6 +569,40 @@ export type ProjectModel = {
   id: string;
   name: string;
   description?: string;
+  // The tab this project opens on, and the organization default it falls back to.
+  landingTab?: string;
+  organizationLandingTab?: string;
+  // Defaults for new workspaces, and the organization default the execution mode falls back to.
+  defaultTerraformVersion?: string;
+  defaultExecutionMode?: string;
+  defaultTemplate?: string;
+  organizationExecutionMode?: string;
+};
+
+// Computed by the API (project_summary) from the project's non-deleted workspaces.
+export type ProjectSummaryModel = {
+  id: string;
+  name: string;
+  description?: string;
+  workspaceCount: number;
+  completedCount: number;
+  failedCount: number;
+  runningCount: number;
+  queuedCount: number;
+  waitingApprovalCount: number;
+  neverRunCount: number;
+  nonCompliantCount: number;
+  hardViolationCount: number;
+  softViolationCount: number;
+  compliantCount: number;
+  exemptedCount: number;
+  lockedCount: number;
+  attentionCount: number;
+  lastRunAt?: string;
+  // Jobs still waiting to run, and when the oldest of them entered the queue.
+  queuedJobCount: number;
+  queuedSince?: string;
+  teamCount: number;
 };
 
 // Workspaces

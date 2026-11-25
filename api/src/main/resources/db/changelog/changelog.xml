@@ -151,4 +151,15 @@
     <include file="/db/changelog/local/changelog-2.35.0-registry-lookup-indexes.xml"/>
     <include file="/db/changelog/local/changelog-2.35.0-step-execution-duration.xml"/>
     <include file="/db/changelog/local/changelog-2.35.0-pr-comment-interim.xml"/>
+    <include file="/db/changelog/local/changelog-2.35.0-project-indexes.xml"/>
+    <include file="/db/changelog/local/changelog-2.35.0-job-queued-at.xml"/>
+    <include file="/db/changelog/local/changelog-2.35.0-collection-scope.xml"/>
+    <include file="/db/changelog/local/changelog-2.35.0-project-tag.xml"/>
+    <include file="/db/changelog/local/changelog-2.35.0-landing-tab.xml"/>
+    <include file="/db/changelog/local/changelog-2.35.0-project-defaults.xml"/>
+    <include file="/db/changelog/local/changelog-2.35.0-policy-violations-template.xml"/>
+    <include file="/db/changelog/local/changelog-2.35.0-job-plan-summary.xml"/>
+    <include file="/db/changelog/local/changelog-2.35.0-drift.xml"/>
+    <include file="/db/changelog/local/changelog-2.35.0-project-owner.xml"/>
+    <include file="/db/changelog/local/changelog-2.35.0-managed-in-code.xml"/>
 </databaseChangeLog>

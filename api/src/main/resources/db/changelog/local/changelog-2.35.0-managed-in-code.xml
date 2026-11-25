@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+
+    <!-- The repository an organization is kept in, and how its settings screens should say so. Nullable, not backfilled. -->
+    <changeSet id="2-35-0-managed-in-code" author="terrakube">
+        <addColumn tableName="organization">
+            <column name="managed_in_code_repository" type="varchar(512)"/>
+            <column name="managed_in_code_mode" type="varchar(16)"/>
+        </addColumn>
+    </changeSet>
+</databaseChangeLog>

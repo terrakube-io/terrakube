@@ -93,6 +93,48 @@ describe("WorkspaceDetails", () => {
     expect(screen.getByText("Remote")).toBeInTheDocument();
   });
 
+  it("requests the workspace with a fields entry for every included type", async () => {
+    const workspace = {
+      id: "ws-1",
+      type: "workspace",
+      attributes: { name: "sample-workspace", source: "", branch: "" },
+    };
+    getMock.mockImplementation((url: string) =>
+      Promise.resolve({ data: { data: url.includes("/workspace/ws-1") ? workspace : [] } })
+    );
+
+    render(
+      <MemoryRouter initialEntries={["/organizations/org-1/workspaces/ws-1"]}>
+        <Routes>
+          <Route
+            path="/organizations/:orgid/workspaces/:id"
+            element={<WorkspaceDetails setOrganizationName={jest.fn()} setWorkspaceManageState={jest.fn()} />}
+          />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await waitFor(() =>
+      expect(getMock).toHaveBeenCalledWith(
+        "organization/org-1/workspace/ws-1?include=job,variable,history,schedule,vcs,organization,reference,project" +
+          "&fields[workspace]=allowRemoteApply,branch,createdBy,createdDate,defaultTemplate,deleted,description," +
+          "executionMode,folder,globalRemoteState,iacType,lastJobDate,lastJobStatus,lockDescription,locked," +
+          "moduleSshKey,name,policyComplianceStatus,requireApproveToApply,restrictApplyToConfiguredBranch,sharedIds," +
+          "source,terraformVersion,updatedBy,updatedDate,access,agent,history,job,notificationConfiguration," +
+          "organization,project,reference,runTriggers,schedule,sourceRunTriggers,ssh,variable,vcs,webhook,workspaceTag" +
+          "&fields[job]=status,via,comments,createdBy,createdDate,updatedDate,commitId,templateReference,approvedBy," +
+          "approvedAt,approvalTeam,prCommentError" +
+          "&fields[variable]=key,value,category,hcl,sensitive,incomplete,description" +
+          "&fields[history]=jobReference,output,createdBy,createdDate" +
+          "&fields[schedule]=cron,templateReference" +
+          "&fields[vcs]=vcsType" +
+          "&fields[organization]=name" +
+          "&fields[project]=name" +
+          "&fields[reference]="
+      )
+    );
+  });
+
   const renderOverviewWithRuns = async (runs: Array<{ id: string; status: string }>) => {
     getMock.mockImplementation((url: string) => {
       if (url.includes("/workspace/ws-1")) {

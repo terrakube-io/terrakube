@@ -1,0 +1,45 @@
+export type ProjectTab = "overview" | "workspaces" | "variables" | "policies" | "teams" | "general";
+
+const STORAGE_KEY = "terrakube-project-landing-tab";
+export const PROJECT_TABS: ProjectTab[] = ["overview", "workspaces", "variables", "policies", "teams", "general"];
+
+export const PROJECT_TAB_LABELS: Record<ProjectTab, string> = {
+  overview: "Overview",
+  workspaces: "Workspaces",
+  variables: "Variables",
+  policies: "Policies",
+  teams: "Team access",
+  general: "Settings",
+};
+
+function normalize(value: unknown): ProjectTab | null {
+  return typeof value === "string" && (PROJECT_TABS as string[]).includes(value) ? (value as ProjectTab) : null;
+}
+
+/** The tab this person chose in their browser, or null when they have not chosen one. */
+export function getStoredLandingTab(): ProjectTab | null {
+  try {
+    return normalize(localStorage.getItem(STORAGE_KEY));
+  } catch {
+    return null;
+  }
+}
+
+export function getLandingTab(): ProjectTab {
+  return getStoredLandingTab() ?? "overview";
+}
+
+/** Passing null forgets the choice, so the project and organization settings apply again. */
+export function setLandingTab(tab: ProjectTab | null): void {
+  try {
+    if (tab === null) localStorage.removeItem(STORAGE_KEY);
+    else localStorage.setItem(STORAGE_KEY, tab);
+  } catch {
+    // Storage blocked: the choice is not kept.
+  }
+}
+
+/** Order of precedence: the person's own choice, then the project, then the organization, then the overview. */
+export function resolveLandingTab(project?: string | null, organization?: string | null): ProjectTab {
+  return getStoredLandingTab() ?? normalize(project) ?? normalize(organization) ?? "overview";
+}

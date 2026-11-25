@@ -45,6 +45,9 @@ const OrganizationsPickerPage = lazy(() => import("@/modules/organizations/Organ
 const OrganizationsDetailPage = lazy(() => import("@/modules/organizations/OrganizationDetailsPage"));
 const ProjectsPage = lazy(() => import("@/modules/projects/ProjectsPage"));
 const ProjectDetailPage = lazy(() => import("@/modules/projects/ProjectDetailPage"));
+const GoRedirect = lazy(() => import("@/modules/navigation/GoRedirect"));
+const InboxPage = lazy(() => import("@/modules/inbox/InboxPage"));
+const CommandPalette = lazy(() => import("@/modules/navigation/CommandPalette"));
 
 // Workspaces
 const CreateWorkspace = lazy(() =>
@@ -265,6 +268,9 @@ const AppLayout = () => {
           onOrgChange={handleOrgChange}
           workspaceManageState={workspaceManageState}
         />
+        <Suspense fallback={null}>
+          <CommandPalette organizations={orgs} />
+        </Suspense>
         <Layout className="app-content-shell">
           <div className="app-content-scroll">
             {backendError ? (
@@ -312,6 +318,15 @@ const router = createBrowserRouter(
           element: <CreateOrganizationRoute />,
         },
         {
+          path: "/inbox",
+          element: <InboxPage />,
+        },
+        {
+          // Name-based links, for places that only know names: pull requests, checks, Backstage, chat.
+          path: "/go/:org/*",
+          element: <GoRedirect />,
+        },
+        {
           path: "/organizations/:id/workspaces",
           element: <OrganizationsDetailRoute />,
         },
@@ -320,7 +335,7 @@ const router = createBrowserRouter(
           element: <OrganizationsProjectsRoute />,
         },
         {
-          path: "/organizations/:orgid/projects/:id",
+          path: "/organizations/:orgid/projects/:id/:section?",
           element: <OrganizationsProjectDetailRoute />,
         },
         {

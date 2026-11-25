@@ -17,6 +17,7 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.concurrent.TimeUnit;
 import io.terrakube.api.plugin.notification.JobNotificationTrigger;
+import io.terrakube.api.plugin.project.ProjectDefaultTagService;
 import io.terrakube.api.plugin.scheduler.ScheduleJobService;
 import io.terrakube.api.plugin.scheduler.JobStatusChangeService;
 import io.terrakube.api.plugin.subscription.JobStatusEvent;
@@ -131,6 +132,7 @@ class RemoteTfeServiceTest {
     private final GlobalVarRepository globalVarRepository = Mockito.mock(GlobalVarRepository.class);
     private final RbacService rbacService = Mockito.mock(RbacService.class);
     private final JobNotificationTrigger jobNotificationTrigger = Mockito.mock(JobNotificationTrigger.class);
+    private final ProjectDefaultTagService projectDefaultTagService = Mockito.mock(ProjectDefaultTagService.class);
 
     @ParameterizedTest
     @CsvSource({"pending,running", "running,running", "queue,running", "approved,running", "waitingApproval,finished",
@@ -1715,7 +1717,8 @@ class RemoteTfeServiceTest {
                 historyRepository, templateRepository, scheduleJobService, "https://localhost", storageTypeService,
                 stepRepository, redisTemplate, 1, tagRepository, workspaceTagRepository, teamTokenService,
                 archiveRepository, accessRepository, encryptionService, addressRepository, projectRepository,
-                variableRepository, globalVarRepository, rbacService, jobNotificationTrigger);
+                variableRepository, globalVarRepository, rbacService, jobNotificationTrigger,
+                projectDefaultTagService);
     }
 
     private JwtAuthenticationToken currentUser() {

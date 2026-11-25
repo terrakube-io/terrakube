@@ -168,4 +168,55 @@ describe("CreateEditCollection", () => {
 
     expect(await screen.findByRole("button", { name: "Delete this variable collection" })).toBeDisabled();
   });
+  describe("applying a collection to the whole organization", () => {
+    const withReferences = (references: unknown[]) =>
+      (axiosInstance.get as jest.Mock).mockImplementation((url: string) => {
+        if (url.endsWith("/item")) return Promise.resolve({ data: { data: [] } });
+        if (url.endsWith("/reference")) return Promise.resolve({ data: { data: references } });
+        if (url.endsWith("/workspace?fields[workspace]=name")) return Promise.resolve({ data: { data: [] } });
+        return Promise.resolve({ data: { data: collection } });
+      });
+
+    it("asks first, then attaches it with the organization scope", async () => {
+      withReferences([]);
+      (axiosInstance.post as jest.Mock).mockResolvedValue({ data: { data: { id: "ref-9" } } });
+      renderAt("/organizations/org-1/settings/collection/edit/col-1");
+
+      const toggle = await screen.findByRole("switch", { name: "Whole organization" });
+      fireEvent.click(toggle);
+      expect(axiosInstance.post).not.toHaveBeenCalled();
+      fireEvent.click(await screen.findByRole("button", { name: "Apply to organization" }));
+
+      await waitFor(() =>
+        expect(axiosInstance.post).toHaveBeenCalledWith(
+          "organization/org-1/collection/col-1/reference",
+          expect.objectContaining({
+            data: expect.objectContaining({ attributes: expect.objectContaining({ scope: "ORGANIZATION" }) }),
+          }),
+          expect.anything()
+        )
+      );
+      await waitFor(() => expect(toggle).toBeChecked());
+    });
+
+    it("asks first, then removes the organization reference and no other", async () => {
+      withReferences([
+        { id: "ref-ws", attributes: { scope: "WORKSPACE" }, relationships: { workspace: { data: { id: "w1" } } } },
+        { id: "ref-org", attributes: { scope: "ORGANIZATION" } },
+      ]);
+      (axiosInstance.delete as jest.Mock).mockResolvedValue({});
+      renderAt("/organizations/org-1/settings/collection/edit/col-1");
+
+      const toggle = await screen.findByRole("switch", { name: "Whole organization" });
+      await waitFor(() => expect(toggle).toBeChecked());
+      fireEvent.click(toggle);
+      expect(axiosInstance.delete).not.toHaveBeenCalled();
+      fireEvent.click(await screen.findByRole("button", { name: "Stop applying" }));
+
+      await waitFor(() =>
+        expect(axiosInstance.delete).toHaveBeenCalledWith("organization/org-1/collection/col-1/reference/ref-org")
+      );
+      expect(axiosInstance.delete).toHaveBeenCalledTimes(1);
+    });
+  });
 });

@@ -155,6 +155,8 @@ public class PolicyEvaluationService {
             // Update workspace compliance status (Gap 11.1)
             Workspace workspace = job.getWorkspace();
             if (workspace != null) {
+                workspace.setPolicyHardViolations(hardViolations);
+                workspace.setPolicySoftViolations(softViolations);
                 if (hardViolations > 0 || softViolations > 0) {
                     workspace.setPolicyComplianceStatus(PolicyComplianceStatus.NON_COMPLIANT);
                 } else if (evalStatus == PolicyEvaluationStatus.EXEMPTED) {

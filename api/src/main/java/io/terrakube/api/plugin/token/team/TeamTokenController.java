@@ -3,6 +3,7 @@ package io.terrakube.api.plugin.token.team;
 import io.terrakube.api.plugin.security.rbac.RbacService;
 import io.terrakube.api.plugin.token.TokenIssuancePolicy;
 import io.terrakube.api.repository.AccessRepository;
+import io.terrakube.api.repository.ProjectRepository;
 import io.terrakube.api.repository.TeamRepository;
 import io.terrakube.api.repository.WorkspaceRepository;
 import io.terrakube.api.rs.token.group.Group;
@@ -30,14 +31,16 @@ import java.util.UUID;
 public class TeamTokenController {
 
     private final WorkspaceRepository workspaceRepository;
+    private final ProjectRepository projectRepository;
     private final RbacService rbacService;
     private final TeamTokenService teamTokenService;
     private final TeamRepository teamRepository;
     private final String instanceOwner;
     private final TokenIssuancePolicy tokenIssuancePolicy;
 
-    public TeamTokenController(WorkspaceRepository workspaceRepository, RbacService rbacService, TeamTokenService teamTokenService, TeamRepository teamRepository, @Value("${io.terrakube.owner}") String instanceOwner, TokenIssuancePolicy tokenIssuancePolicy) {
+    public TeamTokenController(WorkspaceRepository workspaceRepository, ProjectRepository projectRepository, RbacService rbacService, TeamTokenService teamTokenService, TeamRepository teamRepository, @Value("${io.terrakube.owner}") String instanceOwner, TokenIssuancePolicy tokenIssuancePolicy) {
         this.workspaceRepository = workspaceRepository;
+        this.projectRepository = projectRepository;
         this.rbacService = rbacService;
         this.teamTokenService = teamTokenService;
         this.teamRepository = teamRepository;
@@ -160,6 +163,75 @@ public class TeamTokenController {
         return new ResponseEntity<>(permissions, HttpStatus.ACCEPTED);
     }
 
+    /**
+     * The caller's own effective permissions on a project: their organization team permissions combined with the
+     * project access entries of their groups. Workspace-level overrides are not included. Answers 404 when the
+     * project is not in the organization or the caller could not see it, so the ids cannot be used to probe.
+     */
+    @Transactional
+    @GetMapping(path = "/permissions/organization/{organizationId}/project/{projectId}")
+    public ResponseEntity<PermissionSet> getPermissionsProject(Principal principal,
+            @PathVariable("organizationId") String organizationId, @PathVariable("projectId") String projectId) {
+        if (!(principal instanceof JwtAuthenticationToken principalJwt)) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Authentication required");
+        }
+        UUID organizationUuid;
+        UUID projectUuid;
+        try {
+            organizationUuid = UUID.fromString(organizationId);
+            projectUuid = UUID.fromString(projectId);
+        } catch (IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Project not found");
+        }
+        var project = projectRepository.findById(projectUuid)
+                .filter(found -> found.getOrganization() != null && organizationUuid.equals(found.getOrganization().getId()))
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Project not found"));
+
+        PermissionSet permissions = new PermissionSet();
+        List<String> groups = teamTokenService.getCurrentGroups(principalJwt);
+        var organizationTeams = teamRepository.findAllByOrganizationIdAndNameIn(organizationUuid, groups);
+        // The same rule as the project read filter: a caller who could not list the project gets the answer for a
+        // project that does not exist, so this endpoint cannot be used to find out which projects exist.
+        boolean canSeeProject = groups.contains(instanceOwner)
+                || organizationTeams.stream().anyMatch(team -> rbacService.canManageWorkspace(team))
+                || project.getProjectAccess().stream().anyMatch(access -> groups.contains(access.getName()));
+        if (!canSeeProject) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Project not found");
+        }
+        organizationTeams.forEach(team -> {
+            // Only a team that can manage workspaces gives access to a project; a read or plan team does not.
+            if (rbacService.canManageWorkspace(team)) {
+                permissions.addGrant(team.getName(), team.getRole());
+            }
+            permissions.setManageState(permissions.manageState || rbacService.canManageState(team));
+            permissions.setManageWorkspace(permissions.manageWorkspace || rbacService.canManageWorkspace(team));
+            permissions.setManageJob(permissions.manageJob || rbacService.canManageJob(team));
+            permissions.setPlanJob(permissions.planJob || rbacService.canPlanJob(team));
+            permissions.setApproveJob(permissions.approveJob || rbacService.canApproveJob(team));
+            permissions.setManagePolicies(permissions.managePolicies || rbacService.canManagePolicies(team));
+            permissions.setManagePermission(permissions.managePermission || rbacService.canManageWorkspace(team));
+            permissions.setManageProject(permissions.manageProject || rbacService.canManageWorkspace(team));
+        });
+        project.getProjectAccess().stream()
+                .filter(access -> groups.contains(access.getName()))
+                .forEach(access -> {
+                    permissions.addGrant(access.getName(), access.getRole());
+                    permissions.setManageState(permissions.manageState || rbacService.canManageState(access));
+                    permissions.setManageWorkspace(permissions.manageWorkspace || rbacService.canManageWorkspace(access));
+                    permissions.setManageJob(permissions.manageJob || rbacService.canManageJob(access));
+                    permissions.setPlanJob(permissions.planJob || rbacService.canPlanJob(access));
+                    permissions.setApproveJob(permissions.approveJob || rbacService.canApproveJob(access));
+                    permissions.setManageProject(permissions.manageProject || rbacService.canManageProject(access));
+                });
+        if (groups.contains(instanceOwner)) {
+            permissions.setManagePermission(true);
+            permissions.setManagePolicies(true);
+            permissions.setManageProject(true);
+        }
+        permissions.settleAccessLevel();
+        return new ResponseEntity<>(permissions, HttpStatus.ACCEPTED);
+    }
+
     @Transactional
     @DeleteMapping(path = "/{groupTokenId}")
     public ResponseEntity<String> deleteToken(@PathVariable("groupTokenId") String groupTokenId, Principal principal) {
@@ -216,5 +288,53 @@ public class TeamTokenController {
         private boolean approveJob;
         private boolean managePermission;
         private boolean managePolicies;
+        private boolean manageProject;
+
+        // Which teams grant the access and the highest role among them. Only filled in by the project endpoint, and
+        // left out of the JSON elsewhere so the other permission responses keep their shape.
+        @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_EMPTY)
+        private List<String> grantedThrough = new ArrayList<>();
+        @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+        private String accessLevel;
+
+        private static final List<String> ROLE_ORDER = List.of("read", "plan", "write", "admin");
+
+        // True when one of the grants is a custom role, whose rights are the flags and not a ranked level.
+        @com.fasterxml.jackson.annotation.JsonIgnore
+        private boolean customGrant;
+
+        void addGrant(String team, String role) {
+            if (!grantedThrough.contains(team)) {
+                grantedThrough.add(team);
+            }
+            // The same normalization as RbacV2Service: a blank or unknown role is a custom one.
+            String normalized = role == null ? "" : role.trim().toLowerCase(java.util.Locale.ROOT);
+            int candidate = ROLE_ORDER.indexOf(normalized);
+            if (candidate < 0) {
+                customGrant = true;
+                if (accessLevel == null) {
+                    accessLevel = "custom";
+                }
+                return;
+            }
+            int current = accessLevel == null || "custom".equals(accessLevel) ? -1 : ROLE_ORDER.indexOf(accessLevel);
+            if (candidate > current) {
+                accessLevel = normalized;
+            }
+        }
+
+        /**
+         * Call once every grant is in. A custom role has no rank, so beside a ranked role it must not be outvoted by
+         * the lower one: the level is then at least what the flags that came out of all the grants allow.
+         */
+        void settleAccessLevel() {
+            if (!customGrant || accessLevel == null || "custom".equals(accessLevel)) {
+                return;
+            }
+            String fromFlags = manageProject ? "admin" : (manageWorkspace || approveJob) ? "write" : planJob ? "plan" : "read";
+            if (ROLE_ORDER.indexOf(fromFlags) > ROLE_ORDER.indexOf(accessLevel)) {
+                accessLevel = fromFlags;
+            }
+        }
     }
 }

@@ -17,6 +17,10 @@
   max-width: 1600px;
 }
 
+.page-wrapper-inner-full {
+  width: 100%;
+}
+
 .page-wrapper-inner-reading {
   width: 100%;
   max-width: 1100px;

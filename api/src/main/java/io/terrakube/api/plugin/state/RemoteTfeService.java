@@ -59,6 +59,7 @@ import io.terrakube.api.rs.job.JobVia;
 import io.terrakube.api.rs.job.address.Address;
 import io.terrakube.api.rs.job.address.AddressType;
 import io.terrakube.api.rs.job.step.Step;
+import io.terrakube.api.rs.hooks.workspace.ProjectWorkspaceDefaults;
 import io.terrakube.api.rs.project.Project;
 import io.terrakube.api.rs.tag.Tag;
 import io.terrakube.api.rs.template.Template;
@@ -73,6 +74,7 @@ import io.terrakube.api.rs.workspace.parameters.Category;
 import io.terrakube.api.rs.workspace.parameters.Variable;
 import io.terrakube.api.rs.workspace.tag.WorkspaceTag;
 import io.terrakube.api.plugin.notification.JobNotificationTrigger;
+import io.terrakube.api.plugin.project.ProjectDefaultTagService;
 import io.terrakube.api.plugin.policy.PolicyApprovalGuard;
 import io.terrakube.api.plugin.security.audit.JobApprovalService;
 import io.terrakube.api.plugin.state.model.policy.PolicyCheckData;
@@ -169,6 +171,7 @@ public class RemoteTfeService {
 
     private static final Pattern EXACT_TERRAFORM_VERSION_PATTERN = Pattern.compile("^\\d+(\\.\\d+){0,2}(-[0-9A-Za-z.-]+)?$");
     private JobNotificationTrigger jobNotificationTrigger;
+    private final ProjectDefaultTagService projectDefaultTagService;
 
     @Autowired
     private JobStatusChangeService jobStatusChangeService;
@@ -260,7 +263,7 @@ public class RemoteTfeService {
                             TeamTokenService teamTokenService,
                             ArchiveRepository archiveRepository,
                             AccessRepository accessRepository,
-                            EncryptionService encryptionService, AddressRepository addressRepository, ProjectRepository projectRepository, VariableRepository variableRepository, GlobalVarRepository globalVarRepository, RbacService rbacService, JobNotificationTrigger jobNotificationTrigger) {
+                            EncryptionService encryptionService, AddressRepository addressRepository, ProjectRepository projectRepository, VariableRepository variableRepository, GlobalVarRepository globalVarRepository, RbacService rbacService, JobNotificationTrigger jobNotificationTrigger, ProjectDefaultTagService projectDefaultTagService) {
         this.jobRepository = jobRepository;
         this.contentRepository = contentRepository;
         this.organizationRepository = organizationRepository;
@@ -285,6 +288,7 @@ public class RemoteTfeService {
         this.globalVarRepository = globalVarRepository;
         this.rbacService = rbacService;
         this.jobNotificationTrigger = jobNotificationTrigger;
+        this.projectDefaultTagService = projectDefaultTagService;
     }
 
     private boolean isExecutorService(JwtAuthenticationToken currentUser) {
@@ -1245,6 +1249,7 @@ public class RemoteTfeService {
             //newWorkspace.setId(UUID.randomUUID());
             newWorkspace.setName(workspaceName);
             String terraformVersion = "";
+            boolean versionRequested = workspaceData.getData().getAttributes().get("terraform-version") != null;
             if (workspaceData.getData().getAttributes().get("terraform-version") != null) {
                 terraformVersion = workspaceData.getData().getAttributes().get("terraform-version").toString();
             } else {
@@ -1260,10 +1265,12 @@ public class RemoteTfeService {
                     ? organization.getExecutionMode()
                     : ExecutionMode.remote;
             ExecutionMode executionMode = fallbackMode;
+            boolean modeRequested = false;
             Object execModeAttr = workspaceData.getData().getAttributes().get("execution-mode");
             if (execModeAttr != null) {
                 try {
                     executionMode = ExecutionMode.valueOf(execModeAttr.toString().toLowerCase(Locale.ROOT));
+                    modeRequested = true;
                 } catch (IllegalArgumentException e) {
                     log.warn("Unknown execution-mode '{}' requested for workspace {}, falling back to organization default: {}",
                             execModeAttr, newWorkspace.getName(), fallbackMode);
@@ -1278,6 +1285,20 @@ public class RemoteTfeService {
                 log.info("Project Id: {}", projectId);
                 Project project = projectRepository.getReferenceById(UUID.fromString(projectId));
                 newWorkspace.setProject(project);
+                // Request, then project, then organization: the same rule the Elide create applies.
+                ExecutionMode projectMode = ProjectWorkspaceDefaults.executionMode(project);
+                if (!modeRequested && projectMode != null) {
+                    newWorkspace.setExecutionMode(projectMode);
+                }
+                String projectVersion = ProjectWorkspaceDefaults.terraformVersion(project);
+                if (!versionRequested && projectVersion != null) {
+                    newWorkspace.setTerraformVersion(projectVersion);
+                }
+                String projectTemplate = ProjectWorkspaceDefaults.template(project);
+                if (projectTemplate != null && (newWorkspace.getDefaultTemplate() == null
+                        || newWorkspace.getDefaultTemplate().isBlank())) {
+                    newWorkspace.setDefaultTemplate(projectTemplate);
+                }
             }
             // go-tfe sends list-style tags as "tags" and key/value tags as "tag-bindings"
             io.terrakube.api.plugin.state.model.workspace.Relationships relationships = workspaceData.getData().getRelationships();
@@ -1294,11 +1315,22 @@ public class RemoteTfeService {
                 addKeyOnlyTags(newWorkspace, relationships.getTags());
                 upsertTagBindings(newWorkspace, relationships.getTagBindings());
             }
+            // After the tags of the request, so a value the request chose for a tag wins over the project's.
+            copyProjectDefaultTags(newWorkspace);
         }
         Map<String, Object> otherAttributes = new HashMap<>();
         otherAttributes.put("locked", false);
         return getWorkspace(organizationName, workspaceData.getData().getAttributes().get("name").toString(),
                 otherAttributes, currentUser);
+    }
+
+    private void copyProjectDefaultTags(Workspace workspace) {
+        if (workspace.getProject() == null) {
+            return;
+        }
+        // Not caught: the copy joins the create's transaction, so a failure rolls the create back whatever is done
+        // here. Letting it propagate reports the real cause instead of an unexpected rollback at commit.
+        projectDefaultTagService.copyDefaults(workspace);
     }
 
     WorkspaceData updateWorkspaceLock(String workspaceId, boolean locked, JwtAuthenticationToken currentUser) {

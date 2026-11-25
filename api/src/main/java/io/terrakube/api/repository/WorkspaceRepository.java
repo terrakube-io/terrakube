@@ -2,17 +2,21 @@ package io.terrakube.api.repository;
 
 import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.job.JobStatus;
+import io.terrakube.api.rs.project.Project;
 import io.terrakube.api.rs.workspace.Workspace;
 import jakarta.persistence.LockModeType;
 import jakarta.persistence.QueryHint;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Slice;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.jpa.repository.QueryHints;
 import org.springframework.data.repository.query.Param;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Date;
 import java.util.List;
@@ -20,6 +24,44 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface WorkspaceRepository extends JpaRepository<Workspace, UUID> {
+
+    /**
+     * Counts the workspaces a person can still see in a project. Native so it is explicit about {@code deleted}. The
+     * flag is compared as an integer because SQL Server has no boolean literals.
+     */
+    @Query(value = "select count(w.id) from workspace w where w.project_id = :projectId and cast(w.deleted as integer) = 0",
+            nativeQuery = true)
+    long countLiveByProject(@Param("projectId") String projectId);
+
+    /**
+     * Records a drift check on its own columns, so it cannot write back what a concurrent save of the entity changed,
+     * and only when no newer check is recorded: a late write of an older run must not replace a newer result.
+     *
+     * @return 1 when recorded, 0 when a newer check is already there
+     */
+    @Transactional
+    @Modifying
+    @Query("update workspace w set w.driftStatus = :status, w.driftFirstSeen = :firstSeen, "
+            + "w.driftLastChecked = :checked, w.driftJobId = :jobId where w.id = :id "
+            + "and (w.driftJobId is null or w.driftJobId <= :jobId)")
+    int updateDrift(@Param("id") UUID id, @Param("status") String status, @Param("firstSeen") Date firstSeen,
+                    @Param("checked") Date checked, @Param("jobId") Integer jobId);
+
+    /** A page of the ids of the project's workspaces, without a count query. Soft deleted ones are excluded. */
+    @Query("select w.id from workspace w where w.project = :project order by w.id")
+    Slice<UUID> findIdsByProject(@Param("project") Project project, Pageable pageable);
+
+
+    /**
+     * Lets go of the soft deleted workspaces of a project. They are invisible, so they cannot be moved or deleted
+     * by the person deleting the project, yet their {@code project_id} would still fail {@code fk_workspace_project}.
+     */
+    @Transactional
+    @Modifying
+    @Query(value = "update workspace set project_id = null where project_id = :projectId and cast(deleted as integer) = 1",
+            nativeQuery = true)
+    int detachDeletedFromProject(@Param("projectId") String projectId);
+
 
     /**
      * Returns a page of workspaces for drift-scan use; generates a paginated SELECT

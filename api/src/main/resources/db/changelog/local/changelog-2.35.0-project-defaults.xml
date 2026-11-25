@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+
+    <!-- Defaults a project gives the workspaces created in it. Nullable, not backfilled. -->
+    <changeSet id="2-35-0-project-defaults" author="terrakube">
+        <addColumn tableName="project">
+            <column name="default_terraform_version" type="varchar(32)"/>
+            <column name="default_execution_mode" type="varchar(16)"/>
+        </addColumn>
+    </changeSet>
+</databaseChangeLog>

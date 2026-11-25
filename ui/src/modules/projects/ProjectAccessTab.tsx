@@ -113,6 +113,7 @@ function effectivePermissions(record: ProjectAccessModel): ProjectAccessPermissi
 
 export default function ProjectAccessTab({ orgid, projectId, canManage }: Props) {
   const [accessList, setAccessList] = useState<ProjectAccessModel[]>([]);
+  const [restricted, setRestricted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [adding, setAdding] = useState(false);
   const [teams, setTeams] = useState<TeamOption[]>([]);
@@ -133,9 +134,10 @@ export default function ProjectAccessTab({ orgid, projectId, canManage }: Props)
   const load = async () => {
     setLoading(true);
     try {
-      const result = await projectService.listProjectAccess(orgid, projectId);
+      const result = await projectService.listProjectTeams(orgid, projectId);
       if (!result.isError) {
-        setAccessList(result.data ?? []);
+        setAccessList(result.data?.teams ?? []);
+        setRestricted(result.data?.restricted ?? false);
       } else {
         message.error("Failed to load team access list");
       }
@@ -384,9 +386,9 @@ export default function ProjectAccessTab({ orgid, projectId, canManage }: Props)
           pagination={false}
           scroll={{ x: "max-content" }}
           locale={{
-            emptyText: canManage
-              ? "No teams have been granted project-level access."
-              : "You don't have permission to view or manage team assignments for this project.",
+            emptyText: restricted
+              ? "You can see this project but not who has access. Only users who manage project access can see team names."
+              : "No teams have been granted project-level access.",
           }}
           className="project-access-table"
         />

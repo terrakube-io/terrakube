@@ -200,11 +200,14 @@ public class ExecutorJobImpl implements ExecutorJob {
             }
 
             jobExecutionWatchdog.markFree();
-            executorCapacityGate.release();
             if (executorFlagsProperties.isEphemeral()) {
+                executorCapacityGate.release();
                 shutdownService.shutdownApplication();
             } else {
+                // Publish ACCEPTING_TRAFFIC before releasing the capacity gate so a newly admitted
+                // step cannot have its REFUSING_TRAFFIC state overwritten by this finishing thread.
                 publishReadiness(ReadinessState.ACCEPTING_TRAFFIC);
+                executorCapacityGate.release();
                 publishExecutorAvailable();
             }
         }

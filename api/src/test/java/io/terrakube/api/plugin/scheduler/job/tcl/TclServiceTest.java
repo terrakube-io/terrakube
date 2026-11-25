@@ -511,4 +511,20 @@ public class TclServiceTest {
         Mockito.verify(jobRepository).save(job);
         Mockito.verify(stepRepository, Mockito.never()).save(any(Step.class));
     }
+
+    @Test
+    void onlyAFlowOfPlainPlansIsADriftCheck() {
+        java.util.function.Function<String, String> encoded = yaml -> java.util.Base64.getEncoder()
+                .encodeToString(yaml.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+        org.junit.jupiter.api.Assertions.assertTrue(TclService.isDriftCheckFlow(encoded.apply("flow:\n- type: terraformPlan\n  step: 100\n")));
+        // A plan of a destroy lists every resource as a delete, so neither it nor a flow that has one is a check.
+        org.junit.jupiter.api.Assertions.assertFalse(TclService.isDriftCheckFlow(encoded.apply("flow:\n- type: terraformPlanDestroy\n  step: 100\n")));
+        org.junit.jupiter.api.Assertions.assertFalse(TclService.isDriftCheckFlow(encoded.apply("flow:\n- type: terraformPlan\n  step: 100\n- type: terraformPlanDestroy\n  step: 200\n")));
+        org.junit.jupiter.api.Assertions.assertFalse(TclService.isDriftCheckFlow(encoded.apply("flow:\n- type: terraformPlan\n  step: 100\n- type: terraformApply\n  step: 200\n")));
+        org.junit.jupiter.api.Assertions.assertFalse(TclService.isDriftCheckFlow(encoded.apply("flow: []\n")));
+        org.junit.jupiter.api.Assertions.assertFalse(TclService.isDriftCheckFlow("not base64 %%%"));
+        org.junit.jupiter.api.Assertions.assertFalse(TclService.isDriftCheckFlow(null));
+        org.junit.jupiter.api.Assertions.assertFalse(TclService.isDriftCheckFlow(""));
+    }
 }
