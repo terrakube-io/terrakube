@@ -22,6 +22,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 @Slf4j
 public class ExecutionLease {
+    // Hash-tagging by {jobId} co-locates the execution lock and dispatch claim keys in the same
+    // Redis Cluster slot so claimScript's two-key Lua script never fails with CROSSSLOT. Under
+    // JdkSerializationRedisSerializer, keys must stay under 123 bytes so the 2-byte length prefix
+    // never contains 0x7b ('{').
     static final String LOCK_PREFIX = "job-execution-lock:";
     static final String CLAIM_PREFIX = "job-dispatch-claim:";
 
@@ -74,7 +78,7 @@ public class ExecutionLease {
             Duration lockTtl, Duration claimTtl) {
         ExecutionLease lease = new ExecutionLease(redisTemplate, jobId, lockTtl, claimTtl);
         try {
-            Boolean acquired = redisTemplate.opsForValue().setIfAbsent(LOCK_PREFIX + jobId, lease.token, lockTtl);
+            Boolean acquired = redisTemplate.opsForValue().setIfAbsent(lockKey(jobId), lease.token, lockTtl);
             return Boolean.TRUE.equals(acquired) ? Optional.of(lease) : Optional.empty();
         } catch (DataAccessException e) {
             log.warn("Could not reach Redis to acquire execution lock for Job {}, will retry: {}", jobId, e.getMessage());
@@ -91,7 +95,7 @@ public class ExecutionLease {
         if (lost.get() || released.get()) {
             return false;
         }
-        boolean owned = runScript(renewScript(lockTtl), List.of(LOCK_PREFIX + jobId), token);
+        boolean owned = runScript(renewScript(lockTtl), List.of(lockKey(jobId)), token);
         if (!owned && !released.get()) {
             lost.set(true);
             log.error("Job {} lost its execution lock before this worker finished; it will not dispatch", jobId);
@@ -112,7 +116,7 @@ public class ExecutionLease {
         if (lost.get()) {
             return false;
         }
-        boolean claimed = runScript(claimScript(claimTtl), List.of(LOCK_PREFIX + jobId, claimKey(stepId)), token);
+        boolean claimed = runScript(claimScript(claimTtl), List.of(lockKey(jobId), claimKey(stepId)), token);
         if (!claimed) {
             log.warn("Job {} Step {} was not claimed for dispatch: the lock is lost or the step was already claimed", jobId, stepId);
         }
@@ -126,11 +130,15 @@ public class ExecutionLease {
 
     public void release() {
         released.set(true);
-        runScript(RELEASE_SCRIPT, List.of(LOCK_PREFIX + jobId), token);
+        runScript(RELEASE_SCRIPT, List.of(lockKey(jobId)), token);
     }
 
-    private static String claimKey(int jobId, String stepId) {
-        return CLAIM_PREFIX + jobId + ":" + stepId;
+    static String lockKey(int jobId) {
+        return LOCK_PREFIX + "{" + jobId + "}";
+    }
+
+    static String claimKey(int jobId, String stepId) {
+        return CLAIM_PREFIX + "{" + jobId + "}:" + stepId;
     }
 
     private String claimKey(String stepId) {

@@ -12,7 +12,8 @@ import java.util.Date;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -31,25 +32,30 @@ class DeleteJobLogStreamJobTest {
     }
 
     @Test
-    void deletesBothStreamsForEachSweptJob() {
+    void deletesBothStreamsIndividuallyForEachSweptJob() {
         when(jobRepository.findTerminalJobIdsUpdatedBetween(any(Date.class), any(Date.class)))
                 .thenReturn(List.of(1, 2));
 
         job().run();
 
-        verify(redisTemplate).delete(argThat((Collection<String> keys) ->
-                keys.contains("1") && keys.contains("1-context")));
-        verify(redisTemplate).delete(argThat((Collection<String> keys) ->
-                keys.contains("2") && keys.contains("2-context")));
+        verify(redisTemplate).delete("1");
+        verify(redisTemplate).delete("1-context");
+        verify(redisTemplate).delete("2");
+        verify(redisTemplate).delete("2-context");
+        verify(redisTemplate, never()).delete(any(Collection.class));
     }
 
     @Test
-    void aRedisFailureDoesNotAbortTheSweep() {
+    void aRedisFailureDoesNotAbortTheSweepOrSkipContextStream() {
         when(jobRepository.findTerminalJobIdsUpdatedBetween(any(Date.class), any(Date.class)))
                 .thenReturn(List.of(1, 3));
-        when(redisTemplate.delete(any(Collection.class))).thenThrow(new RuntimeException("blip"));
+        doThrow(new RuntimeException("blip")).when(redisTemplate).delete("1");
 
         job().run(); // must not throw
+
+        verify(redisTemplate).delete("1-context");
+        verify(redisTemplate).delete("3");
+        verify(redisTemplate).delete("3-context");
     }
 
     @Test
@@ -58,6 +64,7 @@ class DeleteJobLogStreamJobTest {
                 .thenThrow(new RuntimeException("db down"));
 
         job().run(); // must not throw
+        verify(redisTemplate, never()).delete(anyString());
         verify(redisTemplate, never()).delete(any(Collection.class));
     }
 
@@ -68,6 +75,7 @@ class DeleteJobLogStreamJobTest {
 
         job().run();
 
+        verify(redisTemplate, never()).delete(anyString());
         verify(redisTemplate, never()).delete(any(Collection.class));
     }
 }

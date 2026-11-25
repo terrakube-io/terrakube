@@ -232,7 +232,7 @@ class InactiveJobsTest {
     @Test
     void aRunThatAnotherWorkerIsProcessingIsLeftForTheNextPass() throws Exception {
         Job stuck = job(13, JobStatus.running, 7);
-        doReturn(false).when(valueOperations).setIfAbsent(eq("job-execution-lock:13"), any(), any(Duration.class));
+        doReturn(false).when(valueOperations).setIfAbsent(eq("job-execution-lock:{13}"), any(), any(Duration.class));
         jobs(stuck);
 
         subject().execute(context);
@@ -263,7 +263,7 @@ class InactiveJobsTest {
 
         subject().execute(context);
 
-        verify(redisTemplate).execute(any(RedisScript.class), eq(List.of("job-execution-lock:15")), any(Object[].class));
+        verify(redisTemplate).execute(any(RedisScript.class), eq(List.of("job-execution-lock:{15}")), any(Object[].class));
     }
 
     @Test

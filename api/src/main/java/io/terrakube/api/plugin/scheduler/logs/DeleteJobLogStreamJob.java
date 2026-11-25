@@ -9,7 +9,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Component;
 
-import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 
@@ -57,16 +56,21 @@ public class DeleteJobLogStreamJob implements Job {
             return;
         }
 
+        // Delete each stream key individually: Redis Cluster rejects multi-key DEL with CROSSSLOT
+        // when {jobId} and {jobId}-context do not share a hash slot.
         int deleted = 0;
         for (Integer jobId : jobIds) {
-            try {
-                List<String> keys = new ArrayList<>(2);
-                keys.add(String.valueOf(jobId));
-                keys.add(jobId + "-context");
-                redisTemplate.delete(keys);
+            boolean jobDeleted = true;
+            for (String key : List.of(String.valueOf(jobId), jobId + "-context")) {
+                try {
+                    redisTemplate.delete(key);
+                } catch (Exception e) {
+                    jobDeleted = false;
+                    log.warn("Redis log stream cleanup failed for job {} key {}: {}", jobId, key, e.getMessage());
+                }
+            }
+            if (jobDeleted) {
                 deleted++;
-            } catch (Exception e) {
-                log.warn("Redis log stream cleanup failed for job {}: {}", jobId, e.getMessage());
             }
         }
 
