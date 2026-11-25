@@ -2452,7 +2452,7 @@ class TerraformExecutorServiceImplTest {
         doReturn(jsonPlanClient).when(subject).buildJsonEnabledPlanClient();
         when(planStructuredOutputService.getPlanAsJson(eq(terraformJob), any(File.class)))
                 .thenReturn("{\"format_version\":\"1.2\"}");
-        when(opaService.evaluateAllPolicies(eq(terraformJob), any(File.class), any(File.class), any()))
+        when(opaService.evaluateAllPolicies(eq(terraformJob), any(File.class), any(File.class), Mockito.isNull(), any()))
                 .thenReturn(List.of());
 
         ExecutorJobResult result = subject.plan(terraformJob, tempDir.toFile(), false);
@@ -2460,7 +2460,7 @@ class TerraformExecutorServiceImplTest {
         assertTrue(result.isSuccessfulExecution());
         verify(planStructuredOutputService, Mockito.times(1)).getPlanAsJson(eq(terraformJob), any(File.class));
         verify(opaService).evaluateAllPolicies(eq(terraformJob), any(File.class),
-                argThat(file -> file.exists() && "plan.json".equals(file.getName())), any());
+                argThat(file -> file.exists() && "plan.json".equals(file.getName())), Mockito.isNull(), any());
     }
 
     @Test
@@ -2475,8 +2475,8 @@ class TerraformExecutorServiceImplTest {
         policy.setPolicyId("policy-1");
         terraformJob.setPolicyList(List.of(policy));
 
-        File infracostOpaDataFile = Files.writeString(tempDir.resolve("infracost-opa-data.json"), "{\"infracost\":{\"totalMonthlyCost\":\"350.00\"}}").toFile();
-        when(infracostService.evaluateCost(eq(terraformJob), any(File.class), any(File.class)))
+        File infracostOpaDataFile = Files.writeString(tempDir.resolve("infracost-opa-data.json"), "{\"infracost\":{\"totalMonthlyCost\":350.00}}").toFile();
+        when(infracostService.evaluateCost(eq(terraformJob), any(File.class), any(File.class), any()))
                 .thenReturn(io.terrakube.executor.service.infracost.InfracostResult.builder()
                         .status(io.terrakube.executor.service.infracost.InfracostResult.Status.SUCCESS)
                         .infracostOpaDataFile(infracostOpaDataFile)
@@ -2497,7 +2497,7 @@ class TerraformExecutorServiceImplTest {
 
         assertTrue(result.isSuccessfulExecution());
         verify(infracostService).evaluateCost(eq(terraformJob), any(File.class),
-                argThat(file -> file.exists() && "plan.json".equals(file.getName())));
+                argThat(file -> file.exists() && "plan.json".equals(file.getName())), any());
         verify(opaService).evaluateAllPolicies(eq(terraformJob), any(File.class),
                 argThat(file -> file.exists() && "plan.json".equals(file.getName())),
                 eq(infracostOpaDataFile), any());

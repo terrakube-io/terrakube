@@ -343,7 +343,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
                 File infracostOpaDataFile = null;
                 if (infracostExecutorService != null && planJsonFile.exists()) {
                     InfracostResult infracostResult = infracostExecutorService.evaluateCost(
-                            terraformJob, terraformWorkingDir, planJsonFile);
+                            terraformJob, terraformWorkingDir, planJsonFile, planOutput);
                     if (infracostResult != null) {
                         infracostOpaDataFile = infracostResult.getInfracostOpaDataFile();
                     }
@@ -351,11 +351,8 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
 
                 if (opaExecutorService != null && terraformJob.getPolicyList() != null && !terraformJob.getPolicyList().isEmpty()) {
                     if (planJsonFile.exists()) {
-                        List<OpaEvaluationResult> opaResults = infracostOpaDataFile != null
-                                ? opaExecutorService.evaluateAllPolicies(
-                                        terraformJob, terraformWorkingDir, planJsonFile, infracostOpaDataFile, planOutput)
-                                : opaExecutorService.evaluateAllPolicies(
-                                        terraformJob, terraformWorkingDir, planJsonFile, planOutput);
+                        List<OpaEvaluationResult> opaResults = opaExecutorService.evaluateAllPolicies(
+                                terraformJob, terraformWorkingDir, planJsonFile, infracostOpaDataFile, planOutput);
                         boolean hasHardViolations = opaResults.stream().anyMatch(r -> r.getHardMandatoryViolations() > 0);
                         hasSoftViolations = opaResults.stream().anyMatch(r -> r.getSoftMandatoryViolations() > 0);
                         if (hasSoftViolations && terraformJob.getPolicyList() != null) {

@@ -7,6 +7,7 @@ import io.terrakube.executor.configuration.InfracostExecutorProperties;
 import io.terrakube.executor.service.mode.TerraformJob;
 import io.terrakube.executor.service.scripts.bash.ProcessLauncher;
 import io.terrakube.executor.service.terraform.JobContextService;
+import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FileUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,16 +15,22 @@ import org.springframework.stereotype.Service;
 
 import java.io.File;
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.regex.Pattern;
 
@@ -31,6 +38,9 @@ import java.util.regex.Pattern;
 @Service
 public class InfracostExecutorServiceImpl implements InfracostExecutorService {
 
+    private static final String CONTEXT_KEY_PREFIX = "infracost";
+    private static final int DEFAULT_CONTEXT_MAX_BYTES = 49152;
+    private static final int DEFAULT_MAX_CONTEXT_RESOURCES = 50;
     private static final String INFRACOST_DIR = ".terrakube-infracost";
     private static final String INFRACOST_OUT_FILE = "infracost.json";
     private static final String INFRACOST_OPA_DATA_FILE = "infracost-opa-data.json";
@@ -72,8 +82,17 @@ public class InfracostExecutorServiceImpl implements InfracostExecutorService {
         this.systemEnvLookup = systemEnvLookup;
     }
 
+    @PreDestroy
+    void shutdown() {
+        processExecutor.shutdownNow();
+    }
+
     @Override
-    public InfracostResult evaluateCost(TerraformJob job, File workingDirectory, File planJsonFile) {
+    public InfracostResult evaluateCost(
+            TerraformJob job,
+            File workingDirectory,
+            File planJsonFile,
+            Consumer<String> planOutput) {
         if (job == null || workingDirectory == null) {
             return skipped();
         }
@@ -94,7 +113,7 @@ public class InfracostExecutorServiceImpl implements InfracostExecutorService {
         try {
             FileUtils.forceMkdir(workDir);
         } catch (IOException e) {
-            return recordFailure(job, workDir, "Unable to initialize Infracost working directory", apiKey, e);
+            return recordFailure(job, workDir, "Unable to initialize Infracost working directory", apiKey, e, planOutput);
         }
 
         try {
@@ -109,7 +128,7 @@ public class InfracostExecutorServiceImpl implements InfracostExecutorService {
             File usageFile = resolveOptionalWorkspaceFile(workingDirectory, resolveSetting(job, "INFRACOST_USAGE_FILE"), "infracost-usage.yml");
 
             if (configFile == null && !hasPlanJson) {
-                return recordFailure(job, workDir, "Plan JSON missing; cost estimation skipped.", apiKey, null);
+                return recordFailure(job, workDir, "Plan JSON missing; cost estimation skipped.", apiKey, null, planOutput);
             }
 
             String version = resolveSetting(job, "INFRACOST_VERSION");
@@ -135,7 +154,7 @@ public class InfracostExecutorServiceImpl implements InfracostExecutorService {
                 launcher.destroyForcibly();
                 return recordFailure(job, workDir,
                         String.format("Infracost estimation timed out after %d seconds. Plan proceeded without cost estimation.", timeoutSeconds),
-                        apiKey, te);
+                        apiKey, te, planOutput);
             }
 
             if (exitCode != 0 || !outputFile.isFile() || outputFile.length() == 0) {
@@ -143,13 +162,13 @@ public class InfracostExecutorServiceImpl implements InfracostExecutorService {
                 String message = details.isBlank()
                         ? String.format("Infracost CLI exited with code %d. Plan proceeded without cost estimation.", exitCode)
                         : String.format("Infracost CLI failed (exit %d): %s", exitCode, details);
-                return recordFailure(job, workDir, message, apiKey, null);
+                return recordFailure(job, workDir, message, apiKey, null, planOutput);
             }
 
             JsonNode root = objectMapper.readTree(outputFile);
             Map<String, Object> normalized = normalizePayload(root, apiKey);
 
-            persistToJobContext(job, normalized);
+            persistToJobContext(job, buildBoundedContextPayload(normalized));
             File opaDataFile = writeOpaDataFile(workDir, normalized);
 
             log.info("Infracost estimation succeeded for job {}: totalMonthlyCost={} {}",
@@ -162,11 +181,11 @@ public class InfracostExecutorServiceImpl implements InfracostExecutorService {
                     .build();
         } catch (InterruptedException ie) {
             Thread.currentThread().interrupt();
-            return recordFailure(job, workDir, "Infracost estimation was interrupted. Plan proceeded without cost estimation.", apiKey, ie);
+            return recordFailure(job, workDir, "Infracost estimation was interrupted. Plan proceeded without cost estimation.", apiKey, ie, planOutput);
         } catch (Exception e) {
             return recordFailure(job, workDir,
                     "Infracost estimation encountered an error: " + e.getMessage(),
-                    apiKey, e);
+                    apiKey, e, planOutput);
         }
     }
 
@@ -226,12 +245,12 @@ public class InfracostExecutorServiceImpl implements InfracostExecutorService {
         payload.put("status", "SUCCESS");
         putTextIfPresent(payload, "version", root.get("version"));
         payload.put("currency", textOrDefault(root.get("currency"), properties.getDefaultCurrency() != null ? properties.getDefaultCurrency() : "USD"));
-        putTextIfPresent(payload, "totalMonthlyCost", root.get("totalMonthlyCost"));
-        putTextIfPresent(payload, "totalHourlyCost", root.get("totalHourlyCost"));
-        putTextIfPresent(payload, "pastTotalMonthlyCost", root.get("pastTotalMonthlyCost"));
-        putTextIfPresent(payload, "pastTotalHourlyCost", root.get("pastTotalHourlyCost"));
-        putTextIfPresent(payload, "diffTotalMonthlyCost", root.get("diffTotalMonthlyCost"));
-        putTextIfPresent(payload, "diffTotalHourlyCost", root.get("diffTotalHourlyCost"));
+        putDecimalIfPresent(payload, "totalMonthlyCost", root.get("totalMonthlyCost"));
+        putDecimalIfPresent(payload, "totalHourlyCost", root.get("totalHourlyCost"));
+        putDecimalIfPresent(payload, "pastTotalMonthlyCost", root.get("pastTotalMonthlyCost"));
+        putDecimalIfPresent(payload, "pastTotalHourlyCost", root.get("pastTotalHourlyCost"));
+        putDecimalIfPresent(payload, "diffTotalMonthlyCost", root.get("diffTotalMonthlyCost"));
+        putDecimalIfPresent(payload, "diffTotalHourlyCost", root.get("diffTotalHourlyCost"));
         putTextIfPresent(payload, "timeGenerated", root.get("timeGenerated"));
 
         JsonNode shareUrl = root.get("shareUrl");
@@ -256,12 +275,21 @@ public class InfracostExecutorServiceImpl implements InfracostExecutorService {
         return payload;
     }
 
-    private InfracostResult recordFailure(TerraformJob job, File workDir, String rawMessage, String apiKey, Throwable cause) {
+    private InfracostResult recordFailure(
+            TerraformJob job,
+            File workDir,
+            String rawMessage,
+            String apiKey,
+            Throwable cause,
+            Consumer<String> planOutput) {
         String safeMessage = truncate(redactSecrets(rawMessage != null ? rawMessage : "Infracost estimation failed", apiKey));
         if (cause != null) {
             log.warn("Infracost fail-open for job {}: {}", job.getJobId(), safeMessage, cause);
         } else {
             log.warn("Infracost fail-open for job {}: {}", job.getJobId(), safeMessage);
+        }
+        if (planOutput != null) {
+            planOutput.accept("[WARN] Infracost cost estimation failed (fail-open): " + safeMessage);
         }
 
         Map<String, Object> errorPayload = new LinkedHashMap<>();
@@ -283,14 +311,221 @@ public class InfracostExecutorServiceImpl implements InfracostExecutorService {
         if (jobContextService == null || job.getOrganizationId() == null || job.getJobId() == null) {
             return;
         }
+        String contextKey = (job.getStepId() != null && !job.getStepId().isBlank())
+                ? CONTEXT_KEY_PREFIX + "/" + job.getStepId()
+                : CONTEXT_KEY_PREFIX;
         try {
             jobContextService.patchContextFresh(
                     job.getOrganizationId(),
                     job.getJobId(),
-                    Map.of("infracost", infracostPayload)
+                    Map.of(contextKey, infracostPayload)
             );
         } catch (Exception e) {
-            log.warn("Failed to persist Infracost context for job {}: {}", job.getJobId(), e.getMessage());
+            log.warn("Failed to persist Infracost context ({}) for job {}: {}", contextKey, job.getJobId(), e.getMessage());
+        }
+    }
+
+    Map<String, Object> buildBoundedContextPayload(Map<String, Object> fullPayload) {
+        int maxBytes = properties.getContextMaxBytes() > 0 ? properties.getContextMaxBytes() : DEFAULT_CONTEXT_MAX_BYTES;
+        int maxResources = properties.getMaxContextResources() > 0 ? properties.getMaxContextResources() : DEFAULT_MAX_CONTEXT_RESOURCES;
+
+        int totalResources = countDistinctProjectResources(fullPayload);
+        byte[] fullBytes = serializeUtf8(fullPayload);
+        if (fullBytes != null && fullBytes.length <= maxBytes && totalResources <= maxResources) {
+            return fullPayload;
+        }
+
+        Map<String, Object> trimmed = copyHeaderFields(fullPayload);
+        List<Map<String, Object>> trimmedProjects = trimProjectsToTopResources(fullPayload, maxResources);
+        trimmed.put("projects", trimmedProjects);
+        int keptResources = countDistinctProjectResources(trimmed);
+        int omitted = Math.max(0, totalResources - keptResources);
+        trimmed.put("truncated", true);
+        trimmed.put("omittedResourceCount", omitted);
+
+        byte[] trimmedBytes = serializeUtf8(trimmed);
+        if (trimmedBytes != null && trimmedBytes.length <= maxBytes) {
+            return trimmed;
+        }
+
+        // Still above byte cap: drop project resource breakdowns, keeping totals + summary.
+        Map<String, Object> summaryOnly = copyHeaderFields(fullPayload);
+        summaryOnly.put("projects", List.of());
+        summaryOnly.put("truncated", true);
+        summaryOnly.put("omittedResourceCount", totalResources);
+
+        byte[] summaryBytes = serializeUtf8(summaryOnly);
+        if (summaryBytes != null && summaryBytes.length <= maxBytes) {
+            return summaryOnly;
+        }
+
+        // Last resort: drop verbose summary counts too so the context patch fits comfortably.
+        Map<String, Object> minimal = copyHeaderFields(fullPayload);
+        minimal.remove("summary");
+        minimal.put("projects", List.of());
+        minimal.put("truncated", true);
+        minimal.put("omittedResourceCount", totalResources);
+        return minimal;
+    }
+
+    private static Map<String, Object> copyHeaderFields(Map<String, Object> fullPayload) {
+        Map<String, Object> copy = new LinkedHashMap<>();
+        for (String key : List.of(
+                "status", "version", "currency",
+                "totalMonthlyCost", "totalHourlyCost",
+                "pastTotalMonthlyCost", "pastTotalHourlyCost",
+                "diffTotalMonthlyCost", "diffTotalHourlyCost",
+                "timeGenerated", "shareUrl", "summary")) {
+            if (fullPayload.containsKey(key)) {
+                copy.put(key, fullPayload.get(key));
+            }
+        }
+        return copy;
+    }
+
+    private List<Map<String, Object>> trimProjectsToTopResources(Map<String, Object> fullPayload, int maxResources) {
+        List<Map<String, Object>> projects = asMapList(fullPayload.get("projects"));
+        if (projects.isEmpty()) {
+            return List.of();
+        }
+
+        record RankedResource(int projectIndex, String name, BigDecimal rankCost) {
+        }
+
+        List<RankedResource> ranked = new ArrayList<>();
+        for (int pIdx = 0; pIdx < projects.size(); pIdx++) {
+            Map<String, Object> project = projects.get(pIdx);
+            Map<String, BigDecimal> maxImpactByName = new LinkedHashMap<>();
+            collectResourceWeights(asSectionResources(project.get("diff")), maxImpactByName);
+            collectResourceWeights(asSectionResources(project.get("breakdown")), maxImpactByName);
+            collectResourceWeights(asSectionResources(project.get("pastBreakdown")), maxImpactByName);
+            for (Map.Entry<String, BigDecimal> entry : maxImpactByName.entrySet()) {
+                ranked.add(new RankedResource(pIdx, entry.getKey(), entry.getValue()));
+            }
+        }
+
+        ranked.sort(Comparator.comparing(RankedResource::rankCost, Comparator.reverseOrder())
+                .thenComparingInt(RankedResource::projectIndex)
+                .thenComparing(RankedResource::name));
+
+        Map<Integer, Set<String>> keepByProject = new HashMap<>();
+        int limit = Math.min(maxResources, ranked.size());
+        for (int i = 0; i < limit; i++) {
+            RankedResource item = ranked.get(i);
+            keepByProject.computeIfAbsent(item.projectIndex(), k -> new HashSet<>()).add(item.name());
+        }
+
+        List<Map<String, Object>> result = new ArrayList<>(projects.size());
+        for (int pIdx = 0; pIdx < projects.size(); pIdx++) {
+            Map<String, Object> project = projects.get(pIdx);
+            Set<String> kept = keepByProject.getOrDefault(pIdx, Collections.emptySet());
+            Map<String, Object> trimmedProject = new LinkedHashMap<>();
+            if (project.containsKey("name")) {
+                trimmedProject.put("name", project.get("name"));
+            }
+            for (String sectionKey : List.of("pastBreakdown", "breakdown", "diff")) {
+                Object sectionObj = project.get(sectionKey);
+                if (sectionObj instanceof Map<?, ?> sectionMap) {
+                    Map<String, Object> copySection = new LinkedHashMap<>();
+                    for (Map.Entry<?, ?> e : sectionMap.entrySet()) {
+                        String key = String.valueOf(e.getKey());
+                        if ("resources".equals(key)) {
+                            copySection.put("resources", filterAndStripResources(asMapList(e.getValue()), kept));
+                        } else {
+                            copySection.put(key, e.getValue());
+                        }
+                    }
+                    trimmedProject.put(sectionKey, copySection);
+                }
+            }
+            result.add(trimmedProject);
+        }
+        return result;
+    }
+
+    private static void collectResourceWeights(List<Map<String, Object>> resources, Map<String, BigDecimal> maxByName) {
+        for (Map<String, Object> resource : resources) {
+            Object nameObj = resource.get("name");
+            if (nameObj == null) {
+                continue;
+            }
+            String name = String.valueOf(nameObj);
+            BigDecimal weight = parseDecimal(resource.get("monthlyCost")).abs();
+            maxByName.merge(name, weight, BigDecimal::max);
+        }
+    }
+
+    private static List<Map<String, Object>> filterAndStripResources(List<Map<String, Object>> resources, Set<String> keptNames) {
+        if (resources.isEmpty() || keptNames.isEmpty()) {
+            return List.of();
+        }
+        List<Map<String, Object>> filtered = new ArrayList<>();
+        for (Map<String, Object> resource : resources) {
+            Object nameObj = resource.get("name");
+            if (nameObj != null && keptNames.contains(String.valueOf(nameObj))) {
+                Map<String, Object> copy = new LinkedHashMap<>(resource);
+                copy.remove("metadata");
+                filtered.add(copy);
+            }
+        }
+        return filtered;
+    }
+
+    private static int countDistinctProjectResources(Map<String, Object> payload) {
+        List<Map<String, Object>> projects = asMapList(payload.get("projects"));
+        int total = 0;
+        for (Map<String, Object> project : projects) {
+            Set<String> names = new HashSet<>();
+            for (String sectionKey : List.of("breakdown", "pastBreakdown", "diff")) {
+                for (Map<String, Object> resource : asSectionResources(project.get(sectionKey))) {
+                    Object nameObj = resource.get("name");
+                    if (nameObj != null) {
+                        names.add(String.valueOf(nameObj));
+                    }
+                }
+            }
+            total += names.size();
+        }
+        return total;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> asMapList(Object value) {
+        if (!(value instanceof List<?> list)) {
+            return List.of();
+        }
+        List<Map<String, Object>> out = new ArrayList<>(list.size());
+        for (Object item : list) {
+            if (item instanceof Map<?, ?> map) {
+                out.add((Map<String, Object>) map);
+            }
+        }
+        return out;
+    }
+
+    private static List<Map<String, Object>> asSectionResources(Object section) {
+        if (section instanceof Map<?, ?> map) {
+            return asMapList(map.get("resources"));
+        }
+        return List.of();
+    }
+
+    private byte[] serializeUtf8(Map<String, Object> payload) {
+        try {
+            return objectMapper.writeValueAsString(payload).getBytes(StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static BigDecimal parseDecimal(Object value) {
+        if (value == null) {
+            return BigDecimal.ZERO;
+        }
+        try {
+            return new BigDecimal(String.valueOf(value).trim());
+        } catch (NumberFormatException e) {
+            return BigDecimal.ZERO;
         }
     }
 
@@ -366,6 +601,26 @@ public class InfracostExecutorServiceImpl implements InfracostExecutorService {
         return text.length() <= MAX_ERROR_MESSAGE_LENGTH
                 ? text
                 : text.substring(0, MAX_ERROR_MESSAGE_LENGTH) + "...";
+    }
+
+    private static void putDecimalIfPresent(Map<String, Object> target, String key, JsonNode node) {
+        if (node == null || node.isNull()) {
+            return;
+        }
+        if (node.isNumber()) {
+            target.put(key, node.decimalValue());
+            return;
+        }
+        if (node.isTextual()) {
+            String raw = node.asText().trim();
+            if (!raw.isEmpty()) {
+                try {
+                    target.put(key, new BigDecimal(raw));
+                } catch (NumberFormatException e) {
+                    log.debug("Ignoring non-numeric cost field {}={}", key, raw);
+                }
+            }
+        }
     }
 
     private static void putTextIfPresent(Map<String, Object> target, String key, JsonNode node) {

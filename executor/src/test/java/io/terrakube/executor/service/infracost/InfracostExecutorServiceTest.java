@@ -160,12 +160,14 @@ class InfracostExecutorServiceTest {
 
         ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
         verify(jobContextService).patchContextFresh(eq("org-1"), eq("100"), captor.capture());
-        assertTrue(captor.getValue().containsKey("infracost"));
+        assertTrue(captor.getValue().containsKey("infracost/step-1"));
 
         JsonNode opaNode = objectMapper.readTree(result.getInfracostOpaDataFile()).path("infracost");
         assertEquals("SUCCESS", opaNode.path("status").asText());
-        assertEquals("165.20", opaNode.path("totalMonthlyCost").asText());
-        assertEquals("45.20", opaNode.path("diffTotalMonthlyCost").asText());
+        assertTrue(opaNode.path("totalMonthlyCost").isNumber(), "totalMonthlyCost must be JSON number for Rego");
+        assertEquals(0, new java.math.BigDecimal("165.20").compareTo(opaNode.path("totalMonthlyCost").decimalValue()));
+        assertTrue(opaNode.path("diffTotalMonthlyCost").isNumber());
+        assertEquals(0, new java.math.BigDecimal("45.20").compareTo(opaNode.path("diffTotalMonthlyCost").decimalValue()));
     }
 
     @Test
@@ -194,7 +196,7 @@ class InfracostExecutorServiceTest {
 
         ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
         verify(jobContextService).patchContextFresh(eq("org-1"), eq("100"), captor.capture());
-        Map<String, Object> infracostMap = (Map<String, Object>) captor.getValue().get("infracost");
+        Map<String, Object> infracostMap = (Map<String, Object>) captor.getValue().get("infracost/step-1");
         assertEquals("ERROR", infracostMap.get("status"));
         assertFalse(String.valueOf(infracostMap.get("errorMessage")).contains(secret));
     }
@@ -374,6 +376,105 @@ class InfracostExecutorServiceTest {
 
         InfracostResult result = service.evaluateCost(job, workDir, null);
         assertEquals(InfracostResult.Status.SUCCESS, result.getStatus());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void testTwoPlanStepsPersistUnderDistinctStepKeys() throws Exception {
+        File workDir = tempDir.toFile();
+        File planJson = Files.writeString(tempDir.resolve("plan.json"), "{}").toFile();
+        File fakeBin = writeFakeInfracostScript("""
+                #!/bin/sh
+                OUT=""
+                while [ "$#" -gt 0 ]; do
+                  case "$1" in
+                    --out-file) OUT="$2"; shift 2 ;;
+                    *) shift ;;
+                  esac
+                done
+                echo '{"version":"0.2","currency":"USD","totalMonthlyCost":"99.50","projects":[]}' > "$OUT"
+                """);
+        when(binaryService.getInfracostBinary(null)).thenReturn(fakeBin);
+
+        TerraformJob step1 = baseJob();
+        step1.setStepId("plan-1");
+        step1.getEnvironmentVariables().put("INFRACOST_API_KEY", "ico-two-step-key");
+
+        TerraformJob step2 = baseJob();
+        step2.setStepId("plan-2");
+        step2.getEnvironmentVariables().put("INFRACOST_API_KEY", "ico-two-step-key");
+
+        service.evaluateCost(step1, workDir, planJson);
+        service.evaluateCost(step2, workDir, planJson);
+
+        ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
+        verify(jobContextService, times(2)).patchContextFresh(eq("org-1"), eq("100"), captor.capture());
+        List<Map<String, Object>> patches = captor.getAllValues();
+        assertTrue(patches.get(0).containsKey("infracost/plan-1"));
+        assertTrue(patches.get(1).containsKey("infracost/plan-2"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void testLargeProjectsPayloadIsTruncatedForContextButFullForOpa() throws Exception {
+        properties.setMaxContextResources(3);
+        properties.setContextMaxBytes(2500);
+
+        File workDir = tempDir.toFile();
+        File planJson = Files.writeString(tempDir.resolve("plan.json"), "{}").toFile();
+        StringBuilder resourcesJson = new StringBuilder();
+        for (int i = 1; i <= 10; i++) {
+            if (i > 1) resourcesJson.append(',');
+            resourcesJson.append(String.format(
+                    "{\"name\":\"aws_instance.node_%d\",\"monthlyCost\":\"%d.00\",\"metadata\":{\"blob\":\"%s\"}}",
+                    i, i * 10, "x".repeat(120)));
+        }
+        String payloadJson = "{\"version\":\"0.2\",\"currency\":\"USD\",\"totalMonthlyCost\":\"550.00\","
+                + "\"summary\":{\"totalDetectedResources\":10,\"totalSupportedResources\":10},"
+                + "\"projects\":[{\"name\":\"large\",\"breakdown\":{\"resources\":[" + resourcesJson + "]}}]}";
+
+        File fakeBin = writeFakeInfracostScript("#!/bin/sh\nOUT=\"\"\nwhile [ \"$#\" -gt 0 ]; do\n"
+                + "  case \"$1\" in --out-file) OUT=\"$2\"; shift 2 ;; *) shift ;; esac\ndone\n"
+                + "cat > \"$OUT\" <<'JSON'\n" + payloadJson + "\nJSON\n");
+        when(binaryService.getInfracostBinary(null)).thenReturn(fakeBin);
+
+        TerraformJob job = baseJob();
+        job.getEnvironmentVariables().put("INFRACOST_API_KEY", "ico-large-key");
+
+        InfracostResult result = service.evaluateCost(job, workDir, planJson);
+        assertEquals(InfracostResult.Status.SUCCESS, result.getStatus());
+
+        // Local OPA data keeps all 10 resources untruncated
+        JsonNode opaResources = objectMapper.readTree(result.getInfracostOpaDataFile())
+                .path("infracost").path("projects").get(0).path("breakdown").path("resources");
+        assertEquals(10, opaResources.size());
+
+        // Context patch is bounded to <= contextMaxBytes and marks truncation
+        ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
+        verify(jobContextService).patchContextFresh(eq("org-1"), eq("100"), captor.capture());
+        Map<String, Object> ctx = (Map<String, Object>) captor.getValue().get("infracost/step-1");
+        assertEquals(true, ctx.get("truncated"));
+        assertTrue(((Number) ctx.get("omittedResourceCount")).intValue() >= 7);
+        assertTrue(objectMapper.writeValueAsBytes(ctx).length <= 2500);
+    }
+
+    @Test
+    void testFailureEmitsWarningToPlanOutput() throws Exception {
+        File workDir = tempDir.toFile();
+        File planJson = Files.writeString(tempDir.resolve("plan.json"), "{}").toFile();
+        String secret = "ico-console-secret-xyz";
+        File fakeBin = writeFakeInfracostScript("#!/bin/sh\necho \"fail $INFRACOST_API_KEY\" >&2\nexit 1\n");
+        when(binaryService.getInfracostBinary(null)).thenReturn(fakeBin);
+
+        TerraformJob job = baseJob();
+        job.getEnvironmentVariables().put("INFRACOST_API_KEY", secret);
+        java.util.List<String> lines = new java.util.ArrayList<>();
+
+        InfracostResult result = service.evaluateCost(job, workDir, planJson, lines::add);
+        assertEquals(InfracostResult.Status.ERROR, result.getStatus());
+        assertFalse(lines.isEmpty());
+        assertTrue(lines.get(0).contains("[WARN] Infracost cost estimation failed"));
+        assertFalse(lines.get(0).contains(secret));
     }
 
     private File writeFakeInfracostScript(String scriptContent) throws IOException {
