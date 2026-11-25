@@ -7,6 +7,8 @@ import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.agent.Agent;
 import io.terrakube.api.rs.collection.Reference;
 import io.terrakube.api.rs.hooks.workspace.WorkspaceManageHook;
+import io.terrakube.api.rs.hooks.workspace.WorkspaceProjectDefaultsHook;
+import io.terrakube.api.rs.hooks.workspace.WorkspaceProjectTagHook;
 import io.terrakube.api.rs.hooks.workspace.WorkspaceUnlockHook;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
@@ -39,7 +41,9 @@ import java.util.UUID;
 @CreatePermission(expression = "team manage workspace OR team project limited create workspace")
 @UpdatePermission(expression = "team manage workspace OR team project limited manage workspace OR team limited manage workspace")
 @DeletePermission(expression = "team manage workspace")
+@LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.CREATE, phase = LifeCycleHookBinding.TransactionPhase.PREFLUSH, hook = WorkspaceProjectDefaultsHook.class)
 @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.CREATE, phase = LifeCycleHookBinding.TransactionPhase.PRECOMMIT, hook = WorkspaceManageHook.class)
+@LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.CREATE, phase = LifeCycleHookBinding.TransactionPhase.POSTCOMMIT, hook = WorkspaceProjectTagHook.class)
 // Elide silently truncates un-paged collections to 500 rows, and clients cannot opt into page[...] because the
 // read permission above is evaluated in memory (Elide rejects it with "Cannot paginate workspace"). Raise the
 // implicit ceiling to Elide's maximum so organizations with more than 500 workspaces list completely.
@@ -131,9 +135,47 @@ public class Workspace extends GenericAuditFields {
     @Enumerated(EnumType.STRING)
     private ExecutionMode executionMode;
 
+    // The drift columns are written only by WorkspaceRepository.updateDrift. An entity save never writes them, so a
+    // workspace loaded before a check was recorded cannot write the old values back when it is saved later.
+
+    // "drifted" or "clean" from the last drift check (a scheduled plan-only run), null when never checked.
+    // Written by DriftCheckService.
+    @CreatePermission(expression = "NONE")
+    @UpdatePermission(expression = "NONE")
+    @Column(name = "drift_status", insertable = false, updatable = false)
+    private String driftStatus;
+
+    // When the current drift was first seen. Null while clean or never checked.
+    @CreatePermission(expression = "NONE")
+    @UpdatePermission(expression = "NONE")
+    @Column(name = "drift_first_seen", insertable = false, updatable = false)
+    private Date driftFirstSeen;
+
+    @CreatePermission(expression = "NONE")
+    @UpdatePermission(expression = "NONE")
+    @Column(name = "drift_last_checked", insertable = false, updatable = false)
+    private Date driftLastChecked;
+
+    // The run of the last check.
+    @CreatePermission(expression = "NONE")
+    @UpdatePermission(expression = "NONE")
+    @Column(name = "drift_job_id", insertable = false, updatable = false)
+    private Integer driftJobId;
+
     @Column(name = "policy_compliance_status")
     @Enumerated(EnumType.STRING)
     private io.terrakube.api.rs.policy.PolicyComplianceStatus policyComplianceStatus = io.terrakube.api.rs.policy.PolicyComplianceStatus.UNKNOWN;
+
+    // Violations of the latest policy evaluation. Set by PolicyEvaluationService, never by clients.
+    @CreatePermission(expression = "user is a super service OR user is a superuser")
+    @UpdatePermission(expression = "user is a super service OR user is a superuser")
+    @Column(name = "policy_hard_violations")
+    private Integer policyHardViolations;
+
+    @CreatePermission(expression = "user is a super service OR user is a superuser")
+    @UpdatePermission(expression = "user is a super service OR user is a superuser")
+    @Column(name = "policy_soft_violations")
+    private Integer policySoftViolations;
 
     @ManyToOne
     private Organization organization;
@@ -160,6 +202,7 @@ public class Workspace extends GenericAuditFields {
     private List<WorkspaceTag> workspaceTag;
 
     @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.PRECOMMIT, hook = WorkspaceManageHook.class)
+    @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.POSTCOMMIT, hook = WorkspaceProjectTagHook.class)
     @UpdatePermission(expression = "team manage workspace OR team project limited reassign workspace")
     @OneToOne
     private Project project;

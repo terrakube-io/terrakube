@@ -1,4 +1,4 @@
-import axiosInstance from "@/config/axiosConfig";
+import { axiosAuxiliary } from "@/config/axiosConfig";
 import { apiPost } from "@/modules/api/apiWrapper";
 import { ApiResponse } from "@/modules/api/types";
 import {
@@ -425,8 +425,9 @@ async function listWorkspacePage(
   };
 }
 
+// Used by the bulk move, which reports each workspace itself, so a failure must not take over the page.
 async function assignWorkspaceToProject(orgId: string, workspaceId: string, projectId: string): Promise<void> {
-  await axiosInstance.patch(
+  await axiosAuxiliary.patch(
     `organization/${orgId}/workspace/${workspaceId}/relationships/project`,
     { data: { type: "project", id: projectId } },
     { headers: { "Content-Type": "application/vnd.api+json" } }
@@ -434,7 +435,7 @@ async function assignWorkspaceToProject(orgId: string, workspaceId: string, proj
 }
 
 async function removeWorkspaceFromProject(orgId: string, workspaceId: string): Promise<void> {
-  await axiosInstance.patch(
+  await axiosAuxiliary.patch(
     `organization/${orgId}/workspace/${workspaceId}/relationships/project`,
     { data: null },
     { headers: { "Content-Type": "application/vnd.api+json" } }

@@ -116,26 +116,394 @@
   font-size: 12px;
 }
 
-/* Name is sorted by default, which antd marks with a shaded column. Here that reads as a highlighted column
-   rather than a sort, and the caret in the header already says it, so the shading is dropped. */
-.project-workspaces-table .ant-table-tbody > tr > td.ant-table-column-sort {
-  background: transparent;
+/* Projects index: health bar, chips, cards and table. */
+.project-health-bar {
+  display: flex;
+  width: 100%;
+  min-width: 120px;
+  height: 8px;
+  gap: 2px;
+  border-radius: 4px;
+  overflow: hidden;
 }
 
-.project-workspaces-table .ant-table-thead > tr > th.ant-table-column-sort {
-  background: var(--ant-table-header-bg, var(--tk-fill-secondary));
+.project-health-large .project-health-bar {
+  height: 12px;
 }
 
-.project-workspace-source {
+.project-health-small {
+  min-width: 140px;
+}
+
+.project-health-segment,
+.project-health-swatch {
+  min-width: 4px;
+}
+
+.project-health-segment {
+  height: 100%;
+}
+
+.project-health-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 6px;
+  border-radius: 2px;
+}
+
+.health-completed {
+  background: var(--ant-color-success, #52c41a);
+}
+
+.health-failed {
+  background: var(--ant-color-error, #ff4d4f);
+}
+
+.health-running {
+  background: var(--ant-color-info, #1677ff);
+}
+
+/* Hatched, so queued does not rely on colour alone. */
+.health-queued {
+  background: repeating-linear-gradient(
+    45deg,
+    var(--tk-border-secondary, #bfbfbf),
+    var(--tk-border-secondary, #bfbfbf) 3px,
+    var(--tk-bg-container, #fff) 3px,
+    var(--tk-bg-container, #fff) 6px
+  );
+}
+
+.health-waiting {
+  background: var(--ant-color-warning, #faad14);
+}
+
+.health-never {
+  background: var(--tk-border-secondary, #d9d9d9);
+}
+
+/* Dotted, so "no run status" does not rely on being a lighter grey than "never executed". */
+.health-noStatus {
+  background: radial-gradient(circle, var(--tk-text-quaternary, #bfbfbf) 1px, var(--tk-bg-container, #fff) 1.5px) 0 0 /
+    4px 4px;
+}
+
+.project-health-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+  color: var(--tk-text-secondary, #8c8c8c);
+}
+
+.project-health-empty {
+  color: var(--tk-text-secondary, #8c8c8c);
+  font-size: 12px;
+}
+
+.projects-toolbar {
+  margin-bottom: 12px;
+}
+
+.projects-toolbar .projects-search-input {
+  margin-bottom: 0;
+}
+
+.projects-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+/* A card that is a link fills its grid cell, so cards of a row are as wide and as tall as each other. */
+.projects-card-grid > a {
+  display: block;
+  min-width: 0;
+}
+
+.project-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  border: 1px solid var(--tk-border-secondary, #d9d9d9);
+  border-radius: 8px;
+  background: var(--tk-bg-container, #fff);
+}
+
+.project-card-unassigned {
+  border-style: dashed;
+  color: var(--tk-text-secondary, #8c8c8c);
+}
+
+.project-card-header {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
-  min-width: 0;
 }
 
-.project-workspace-source a {
-  min-width: 0;
+.project-card-name {
+  font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.project-card-description {
+  margin: 0;
+  font-size: 13px;
+  color: var(--tk-text-secondary, #8c8c8c);
+}
+
+.project-card-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--tk-text-secondary, #8c8c8c);
+}
+
+.project-unassigned-table {
+  margin-top: 8px;
+}
+
+.project-unassigned-row td {
+  font-style: italic;
+  color: var(--tk-text-secondary, #8c8c8c);
+}
+
+/* Project overview tab. */
+.project-overview-alert,
+.project-overview-health {
+  margin-bottom: 16px;
+}
+
+.project-overview-health {
+  margin-top: 16px;
+}
+
+.project-overview-meta {
+  margin: 12px 0 0;
+}
+
+.project-overview-link.ant-btn {
+  padding: 0;
+  height: auto;
+}
+
+/* Bulk selection bar on the project workspace list. */
+.project-bulk-bar {
+  margin-bottom: 12px;
+}
+
+.project-bulk-impact {
+  margin-top: 16px;
+}
+
+/* Default tags section of the project settings. */
+.project-default-tags {
+  margin-top: 32px;
+}
+
+.project-default-tags-list {
+  margin-bottom: 12px;
+}
+
+.project-attention-list {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.project-access-banner {
+  margin-bottom: 16px;
+}
+
+.project-overview-details {
+  margin: 0;
+}
+
+.project-overview-details > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--tk-border-secondary, #f0f0f0);
+}
+
+.project-overview-details > div:last-child {
+  border-bottom: 0;
+}
+
+.project-overview-details dt {
+  color: var(--tk-text-secondary);
+}
+
+.project-overview-details dd {
+  margin: 0;
+}
+
+/* Move impact preview and delete pre-flight. */
+.project-move-impact {
+  margin-top: 16px;
+  padding: 12px 16px;
+  border: 1px solid var(--tk-border-secondary, #d9d9d9);
+  border-radius: 8px;
+}
+
+.project-move-impact dl {
+  margin: 0;
+}
+
+.project-move-impact-row {
+  display: grid;
+  grid-template-columns: 90px 1fr;
+  gap: 12px;
+  padding: 6px 0;
+}
+
+.project-move-impact dt {
+  font-weight: 600;
+}
+
+.project-move-impact dd {
+  margin: 0;
+}
+
+.project-move-impact-note {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--tk-text-secondary, #8c8c8c);
+}
+
+.project-workspaces-toolbar {
+  margin: 12px 0;
+}
+
+.projects-card-pagination {
+  margin-top: 16px;
+  justify-content: flex-end;
+}
+
+.project-effective-variables {
+  margin-top: 32px;
+}
+
+/* Click-through numbers, descriptions and the results summary. */
+a.project-badge,
+.project-pill-link {
+  text-decoration: none;
+}
+
+.project-name-description {
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--tk-text-secondary, #8c8c8c);
+}
+
+.projects-results-summary {
+  margin: -4px 0 12px;
+  font-size: 13px;
+  color: var(--tk-text-secondary, #595959);
+}
+
+.projects-clear-filters.ant-btn {
+  padding: 0;
+  height: auto;
+}
+
+.disabled-reason {
+  display: inline-block;
+  cursor: not-allowed;
+}
+
+.search-shortcut {
+  padding: 0 6px;
+  border: 1px solid var(--tk-border-secondary, #d9d9d9);
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--tk-text-secondary, #8c8c8c);
+}
+
+/* The bulk bar: dark like the design, and it holds its place when nothing is ticked. */
+.project-bulk-bar-active {
+  min-height: 48px;
+}
+
+/* Nothing selected: no reserved space. The bar appears when a row is ticked. */
+.project-bulk-bar-idle {
+  height: 0;
+  margin: 0;
+}
+
+.project-bulk-bar-active {
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: #1f1d2b;
+  color: #fff;
+}
+
+.project-bulk-bar-active .ant-typography {
+  color: #fff;
+}
+
+.project-bulk-bar-active .ant-typography.ant-typography-secondary {
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.project-bulk-bar-active .ant-btn-link {
+  color: #d3cfff;
+}
+
+.project-bulk-bar-active .ant-btn:disabled {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: transparent;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+/* The project lists wear the look of the workspace list: a bordered table with a quiet uppercase header. */
+.projects-table .ant-table {
+  border: 1px solid var(--tk-border-primary);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.projects-table .ant-table-thead > tr > th {
+  background: var(--tk-fill-secondary);
+  border-bottom: 1px solid var(--tk-border-primary);
+  color: var(--tk-text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.projects-table .ant-table-tbody > tr > td {
+  border-bottom: 1px solid var(--tk-border-secondary);
+}
+
+.projects-table .ant-table-tbody > tr:hover > td {
+  background: var(--tk-fill-secondary);
+}
+
+.projects-table .project-name-cell a,
+.project-card-name {
+  color: var(--tk-text-primary);
+}
+
+.project-card-badge-link {
+  flex-shrink: 0;
+}
+
+.project-chips {
+  margin-bottom: 16px;
 }

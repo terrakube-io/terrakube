@@ -9,7 +9,10 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 import org.hibernate.annotations.JdbcTypeCode;
+import io.terrakube.api.rs.hooks.collection.ReferenceScopeHook;
+import io.terrakube.api.rs.project.Project;
 import io.terrakube.api.rs.workspace.Workspace;
+import com.yahoo.elide.annotation.LifeCycleHookBinding;
 
 import java.sql.Types;
 import java.util.UUID;
@@ -19,6 +22,8 @@ import java.util.UUID;
 @CreatePermission(expression = "team manage collection reference")
 @UpdatePermission(expression = "team manage collection reference")
 @DeletePermission(expression = "team manage collection reference")
+@LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.CREATE, phase = LifeCycleHookBinding.TransactionPhase.PREFLUSH, hook = ReferenceScopeHook.class)
+@LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.PREFLUSH, hook = ReferenceScopeHook.class)
 @Getter
 @Setter
 @Entity(name = "reference")
@@ -36,7 +41,17 @@ public class Reference {
     @ManyToOne
     private Collection collection;
 
+    // Where the collection applies. Set at creation and fixed afterwards. Existing and omitted values are WORKSPACE.
+    @UpdatePermission(expression = "user is a superuser")
+    @Enumerated(EnumType.STRING)
+    @Column(name = "scope", nullable = false)
+    private ReferenceScope scope = ReferenceScope.WORKSPACE;
+
     @UpdatePermission(expression = "user is a superuser")
     @ManyToOne
     private Workspace workspace;
+
+    @UpdatePermission(expression = "user is a superuser")
+    @ManyToOne
+    private Project project;
 }

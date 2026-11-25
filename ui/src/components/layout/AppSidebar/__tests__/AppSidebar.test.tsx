@@ -1,5 +1,6 @@
 import { act, render, screen, fireEvent } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
+import { openCommandPalette } from "@/modules/navigation/openPalette";
 import AppSidebar from "../AppSidebar";
 import * as sidebarPreference from "../sidebarPreference";
 import { FlatOrganization } from "@/domain/types";
@@ -12,8 +13,19 @@ jest.mock("@/modules/organizations/organizationService", () => ({
   },
 }));
 
+jest.mock("@/modules/projects/projectService", () => ({
+  __esModule: true,
+  default: { getProjectSummary: jest.fn().mockResolvedValue({ isError: false, data: { workspaceCount: 18 } }) },
+}));
+
+jest.mock("@/modules/navigation/openPalette", () => ({ openCommandPalette: jest.fn() }));
+
 jest.mock("@/components/layout/HelpMenu", () => ({
   HelpMenu: () => <div data-testid="help-menu" />,
+}));
+
+jest.mock("@/components/layout/InboxBell", () => ({
+  InboxBell: () => <div data-testid="inbox-bell" />,
 }));
 
 jest.mock("@/components/layout/UserMenu", () => ({
@@ -43,6 +55,17 @@ function renderSidebar(path: string, overrides: Partial<Parameters<typeof AppSid
 }
 
 describe("AppSidebar", () => {
+  it("offers search as a field with its shortcut, and opens the palette from it", () => {
+    renderSidebar(orgPath);
+
+    const search = screen.getByRole("button", { name: /Search organizations, projects and workspaces/ });
+    expect(search).toHaveTextContent("Search");
+    expect(search.querySelector("kbd")).not.toBeNull();
+    fireEvent.click(search);
+
+    expect(openCommandPalette).toHaveBeenCalled();
+  });
+
   beforeEach(() => {
     sessionStorage.clear();
   });
@@ -174,6 +197,37 @@ describe("settings context", () => {
 describe("workspace-detail context", () => {
   beforeEach(() => {
     localStorage.clear();
+    sessionStorage.clear();
+  });
+
+  const rememberOrigin = (workspaceId: string, origin: { kind: string; path: string }) =>
+    sessionStorage.setItem("terrakube.workspaceOrigin", JSON.stringify({ workspaceId, origin }));
+
+  it("goes back to the inbox, with its filters, when the workspace was opened from there", async () => {
+    rememberOrigin(workspacePath.split("/")[4], { kind: "inbox", path: "/inbox?kind=failed" });
+    renderSidebar(workspacePath);
+
+    const backLink = await screen.findByText("Inbox");
+
+    expect(backLink.closest("a")).toHaveAttribute("href", "/inbox?kind=failed");
+  });
+
+  it("goes back to the project when the workspace was opened from it", async () => {
+    rememberOrigin(workspacePath.split("/")[4], { kind: "project", path: `${orgPath}/projects/p-1` });
+    renderSidebar(workspacePath);
+
+    const backLink = await screen.findByText("Project");
+
+    expect(backLink.closest("a")).toHaveAttribute("href", `${orgPath}/projects/p-1`);
+  });
+
+  it("goes back to the workspaces for a workspace that was remembered for another one", async () => {
+    rememberOrigin("another-workspace", { kind: "inbox", path: "/inbox" });
+    renderSidebar(workspacePath);
+
+    const backLink = await screen.findByText("Workspaces");
+
+    expect(backLink.closest("a")).toHaveAttribute("href", `${orgPath}/workspaces`);
   });
 
   it("shows the 6 workspace sections plus the back link instead of the top-level nav", async () => {
@@ -233,7 +287,9 @@ describe("workspace-detail context", () => {
 
     expect(await screen.findByText("Workspaces")).toBeInTheDocument();
     expect(screen.getByText("Projects")).toBeInTheDocument();
-    expect(screen.queryByText("Overview")).not.toBeInTheDocument();
+    // The organization has its own Overview, which is not the workspace's.
+    expect(screen.getByText("Overview").closest("a")).toHaveAttribute("href", `${orgPath}/overview`);
+    expect(screen.queryByText("Runs")).not.toBeInTheDocument();
   });
 
   it("can still be collapsed (with icons) while viewing a workspace's own sections", async () => {
@@ -509,5 +565,58 @@ describe("active settings item", () => {
 
     expect(link).toHaveAttribute("aria-current", "page");
     expect(document.querySelectorAll('[aria-current="page"]')).toHaveLength(1);
+  });
+
+  it("offers the cross-organization inbox next to the organization list", async () => {
+    renderSidebar("/organizations");
+
+    expect(await screen.findByRole("link", { name: "Needs attention" })).toHaveAttribute("href", "/inbox");
+  });
+
+  it("marks the inbox as the current page", async () => {
+    renderSidebar("/inbox");
+
+    const link = await screen.findByRole("link", { name: "Needs attention" });
+    expect(link.closest("li")).toHaveClass("ant-menu-item-selected");
+  });
+
+  describe("inside a project", () => {
+    const projectId = "9b2c6679-7425-40de-944b-e07fc1f90ae7";
+    const projectPath = `${orgPath}/projects/${projectId}`;
+
+    it("replaces the organization menu with the project menu and a way back", async () => {
+      renderSidebar(projectPath);
+
+      expect(await screen.findByText("Back to projects")).toBeInTheDocument();
+      for (const item of ["Overview", "Policies", "Team access", "Variables", "Settings"]) {
+        expect(screen.getByRole("link", { name: item })).toBeInTheDocument();
+      }
+      expect(screen.queryByText("Registry")).not.toBeInTheDocument();
+      expect(screen.getByRole("link", { name: "Back to projects" })).toHaveAttribute("href", `${orgPath}/projects`);
+    });
+
+    it("links the project Variables page and marks it as the current one", async () => {
+      renderSidebar(`${projectPath}/variables`);
+
+      const link = await screen.findByRole("link", { name: "Variables" });
+      expect(link).toHaveAttribute("href", `${projectPath}/variables`);
+      expect(link.closest("li")).toHaveClass("ant-menu-item-selected");
+    });
+
+    it("shows how many workspaces the project has", async () => {
+      renderSidebar(projectPath);
+
+      expect(await screen.findByRole("link", { name: "Workspaces (18)" })).toHaveAttribute(
+        "href",
+        `${projectPath}/workspaces`
+      );
+    });
+
+    it("marks the current section", async () => {
+      renderSidebar(`${projectPath}/policies`);
+
+      const link = await screen.findByRole("link", { name: "Policies" });
+      expect(link.closest("li")).toHaveClass("ant-menu-item-selected");
+    });
   });
 });

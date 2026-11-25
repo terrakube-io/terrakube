@@ -1,24 +1,35 @@
 import { DeleteOutlined } from "@ant-design/icons";
-import { Button, Flex, Form, Input, Layout, Menu, Popconfirm, Space, Spin, Typography, message } from "antd";
-import { useEffect, useState } from "react";
+import { ManagedInCodeBanner } from "@/components/settings/ManagedInCodeBanner";
+import { useManagedInCode } from "@/modules/organizations/managedInCode";
+import { Alert, Button, Flex, Form, Input, Select, Space, Spin, Typography, message } from "antd";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import PageWrapper from "@/components/layout/PageWrapper/PageWrapper";
-import projectService, { ProjectAccessModel } from "./projectService";
-import { apiGet } from "@/modules/api/apiWrapper";
+import projectService, { OrganizationTemplate } from "./projectService";
+import { useProjectPermissions } from "@/modules/permissions/useProjectPermissions";
 import ProjectWorkspaces from "./ProjectWorkspaces";
 import ProjectAccessTab from "./ProjectAccessTab";
-import workspaceService from "@/modules/workspaces/workspaceService";
+import ProjectDefaultTags from "./ProjectDefaultTags";
+import DisabledReason from "./DisabledReason";
+import ProjectDeleteDialog from "./ProjectDeleteDialog";
+import ProjectEffectiveVariables from "./ProjectEffectiveVariables";
+import ProjectOverview from "./ProjectOverview";
+import AccessChip from "@/components/display/AccessChip/AccessChip";
+import { accessLevelLabel, projectCapabilities } from "@/modules/permissions/accessModel";
+import ProjectPoliciesTab from "./ProjectPoliciesTab";
+import ProjectVariablesTab from "./ProjectVariablesTab";
+import { PROJECT_TAB_LABELS, ProjectTab, resolveLandingTab } from "./projectLandingTab";
+import { SECTION_LABELS, projectPath, sectionForTab, sectionFromParam } from "./projectNav";
 import useApiRequest from "@/modules/api/useApiRequest";
-import { ProjectModel } from "@/domain/types";
+import { ProjectModel, ProjectSummaryModel } from "@/domain/types";
 import { ORGANIZATION_NAME } from "../../config/actionTypes";
 import { useOrgPermissions } from "@/modules/permissions/useOrgPermissions";
-import type { MenuProps } from "antd";
 import { PermissionErrorMessage } from "@/components/feedback/PermissionErrorMessage";
 import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
 import "./Projects.css";
 
-const { Content, Sider } = Layout;
-type MenuItem = Required<MenuProps>["items"][number];
+// The banner explains what the person may do here, so it belongs where they act on access: not on every list.
+const SECTIONS_WITH_ACCESS_BANNER: string[] = ["overview", "teams", "settings"];
 
 type Props = {
   organizationName: string;
@@ -28,6 +39,11 @@ type Props = {
 type ProjectForm = {
   name: string;
   description?: string;
+  landingTab?: string;
+  defaultTerraformVersion?: string;
+  defaultExecutionMode?: string;
+  defaultTemplate?: string;
+  ownerTeam?: string;
 };
 
 type GeneralProps = {
@@ -37,6 +53,8 @@ type GeneralProps = {
   assignedWorkspacesCount: number;
   manageWorkspace: boolean;
   canUpdateProject: boolean;
+  canManageCollection: boolean;
+  canManagePolicies: boolean;
   onSaved: () => void;
 };
 
@@ -47,22 +65,55 @@ function ProjectGeneralSettings({
   assignedWorkspacesCount,
   manageWorkspace,
   canUpdateProject,
+  canManageCollection,
+  canManagePolicies,
   onSaved,
 }: GeneralProps) {
+  // Read-only here when the organization is kept in code and says so; the delete button stays with its own right.
+  const managed = useManagedInCode(orgid);
+  const canEdit = canUpdateProject && !managed?.readOnly;
   const [waiting, setWaiting] = useState(false);
   const [form] = Form.useForm<ProjectForm>();
   const navigate = useNavigate();
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [templates, setTemplates] = useState<OrganizationTemplate[]>([]);
+
+  useEffect(() => {
+    projectService
+      .listOrganizationTemplates(orgid)
+      .then(setTemplates)
+      .catch(() => setTemplates([]));
+  }, [orgid]);
 
   useEffect(() => {
     if (project) {
-      form.setFieldsValue({ name: project.name, description: project.description });
+      form.setFieldsValue({
+        name: project.name,
+        description: project.description,
+        landingTab: project.landingTab ?? "default",
+        defaultTerraformVersion: project.defaultTerraformVersion,
+        defaultExecutionMode: project.defaultExecutionMode ?? "default",
+        defaultTemplate: project.defaultTemplate ?? "default",
+        ownerTeam: project.ownerTeam,
+      });
     }
   }, [project, form]);
 
   const onFinish = async (values: ProjectForm) => {
     setWaiting(true);
     try {
-      await projectService.updateProject(orgid, projectId, values);
+      await projectService.updateProject(orgid, projectId, {
+        ...values,
+        landingTab: !values.landingTab || values.landingTab === "default" ? null : values.landingTab,
+        defaultTerraformVersion: values.defaultTerraformVersion?.trim() || null,
+        defaultExecutionMode:
+          !values.defaultExecutionMode || values.defaultExecutionMode === "default"
+            ? null
+            : values.defaultExecutionMode,
+        defaultTemplate:
+          !values.defaultTemplate || values.defaultTemplate === "default" ? null : values.defaultTemplate,
+        ownerTeam: values.ownerTeam?.trim() || null,
+      });
       message.success("Project updated successfully");
       onSaved();
     } catch (err: any) {
@@ -76,45 +127,108 @@ function ProjectGeneralSettings({
     }
   };
 
-  const onDelete = async () => {
-    try {
-      await projectService.deleteProject(orgid, projectId);
-      message.success("Project deleted successfully");
-      navigate(`/organizations/${orgid}/projects`);
-    } catch (err: any) {
-      const statusCode = err?.response?.status;
-      if (statusCode === 403) {
-        message.error(<PermissionErrorMessage action="delete projects" permission="Manage Workspaces" />);
-      } else if (statusCode === 423) {
-        message.error(
-          "Cannot delete project: Workspaces are still associated with this project. Please remove all workspaces first and try again."
-        );
-      } else {
-        message.error(err?.message ?? "Project deletion failed");
-      }
-    }
-  };
-
   return (
     <div className="project-settings-panel">
+      <ManagedInCodeBanner orgId={orgid} readOnlyHere />
       <SettingsPageHeader title="General Settings" description="Adjust the name and description for this project." />
       <Spin spinning={waiting}>
         <Form form={form} layout="vertical" name="project-general-settings" onFinish={onFinish} requiredMark={false}>
           <Form.Item name="name" label="Name" rules={[{ required: true, message: "Name is required" }]}>
-            <Input disabled={!canUpdateProject} />
+            <Input disabled={!canEdit} />
           </Form.Item>
           <Form.Item name="description" label="Description" extra="Optional">
-            <Input.TextArea rows={5} placeholder="Project description" disabled={!canUpdateProject} />
+            <Input.TextArea rows={5} placeholder="Project description" disabled={!canEdit} />
+          </Form.Item>
+          <Form.Item
+            name="ownerTeam"
+            label="Owner"
+            extra="The team that owns this project. It is shown in Needs attention, and people can limit it to their teams."
+          >
+            <Input disabled={!canEdit} placeholder="Team name" maxLength={256} />
+          </Form.Item>
+          <Form.Item
+            name="landingTab"
+            label="Opens on"
+            extra="The tab this project opens on. People can still choose their own."
+          >
+            <Select
+              disabled={!canEdit}
+              options={[
+                { value: "default", label: "Organization default" },
+                ...Object.entries(PROJECT_TAB_LABELS).map(([value, label]) => ({ value, label })),
+              ]}
+            />
+          </Form.Item>
+          <Typography.Title level={5}>Defaults for new workspaces</Typography.Title>
+          <Typography.Paragraph type="secondary">
+            Copied onto a workspace when it is created in this project. Existing workspaces are not changed.
+          </Typography.Paragraph>
+          <Form.Item
+            name="defaultTerraformVersion"
+            label="Terraform version"
+            extra={
+              project?.defaultTerraformVersion
+                ? "Defaulted from project"
+                : "Not set: the create form suggests the latest"
+            }
+          >
+            <Input disabled={!canEdit} placeholder="For example 1.9.8" maxLength={32} />
+          </Form.Item>
+          <Form.Item
+            name="defaultExecutionMode"
+            label="Execution mode"
+            extra={
+              project?.defaultExecutionMode
+                ? "Defaulted from project"
+                : `Defaulted from organisation${project?.organizationExecutionMode ? ` (${project.organizationExecutionMode})` : ""}`
+            }
+          >
+            <Select
+              disabled={!canEdit}
+              options={[
+                { value: "default", label: "Organization default" },
+                { value: "remote", label: "Remote" },
+                { value: "local", label: "Local" },
+              ]}
+            />
+          </Form.Item>
+          <Form.Item
+            name="defaultTemplate"
+            label="Template"
+            extra={
+              project?.defaultTemplate
+                ? "Defaulted from project"
+                : "Not set: the create form suggests the first template"
+            }
+          >
+            <Select
+              disabled={!canEdit}
+              options={[
+                { value: "default", label: "No default" },
+                ...templates.map((template) => ({ value: template.id, label: template.name })),
+              ]}
+            />
           </Form.Item>
           <Form.Item>
             <Flex justify="flex-end">
-              <Button type="primary" htmlType="submit" disabled={!canUpdateProject}>
-                Save settings
-              </Button>
+              <DisabledReason
+                disabled={!canEdit}
+                reason={
+                  managed?.readOnly
+                    ? "This organization is managed in code. Change these settings in its repository."
+                    : "Changing project settings needs the Admin role on this project, or Manage Workspaces in the organization."
+                }
+              >
+                <Button type="primary" htmlType="submit" disabled={!canEdit}>
+                  Save settings
+                </Button>
+              </DisabledReason>
             </Flex>
           </Form.Item>
         </Form>
       </Spin>
+
+      <ProjectDefaultTags orgid={orgid} projectId={projectId} canManage={canEdit} />
 
       <div className="project-delete-section">
         <Typography.Text type="secondary">
@@ -125,79 +239,62 @@ function ProjectGeneralSettings({
           <Typography.Text type="secondary">
             <Typography.Text strong>Warning!</Typography.Text> This action cannot be undone.
           </Typography.Text>
-          {assignedWorkspacesCount > 0 && (
-            <div className="project-delete-workspaces-warning">
-              <Typography.Text type="warning">
-                This project has {assignedWorkspacesCount} workspace{assignedWorkspacesCount > 1 ? "s" : ""} assigned.
-                Please remove all workspaces before deleting this project.
-              </Typography.Text>
-            </div>
-          )}
         </div>
-        <Popconfirm
-          okButtonProps={{ danger: true }}
-          title={
-            <p>
-              Project will be permanently deleted
-              <br />
-              from this organization.
-              <br />
-              Are you sure?
-            </p>
-          }
-          onConfirm={onDelete}
-          okText="Yes"
-          cancelText="No"
-          placement="bottom"
-          disabled={assignedWorkspacesCount > 0 || !manageWorkspace}
-        >
+        <DisabledReason disabled={!manageWorkspace} reason="Deleting a project needs the Manage Workspaces permission.">
           <Button
             type="primary"
             danger
             className="project-delete-button"
-            disabled={assignedWorkspacesCount > 0 || !manageWorkspace}
+            disabled={!manageWorkspace}
+            onClick={() => setDeleteOpen(true)}
           >
             <Space>
               <DeleteOutlined />
               Delete Project
             </Space>
           </Button>
-        </Popconfirm>
+        </DisabledReason>
+        <ProjectDeleteDialog
+          orgid={orgid}
+          projectId={projectId}
+          projectName={project?.name ?? ""}
+          workspaceCount={assignedWorkspacesCount}
+          canManagePolicies={canManagePolicies}
+          canManageCollection={canManageCollection}
+          open={deleteOpen}
+          onClose={() => setDeleteOpen(false)}
+          onDeleted={() => navigate(`/organizations/${orgid}/projects`)}
+        />
       </div>
     </div>
   );
 }
 
 export default function ProjectDetailPage({ organizationName, setOrganizationName }: Props) {
-  const { orgid, id } = useParams();
+  const { orgid, id, section: sectionParam } = useParams();
+  const navigate = useNavigate();
+  const section = sectionFromParam(sectionParam);
   const [project, setProject] = useState<ProjectModel | null>(null);
-  const [activeKey, setActiveKey] = useState("general");
-  const [assignedWorkspacesCount, setAssignedWorkspacesCount] = useState(0);
+  const landedOn = useRef<string | undefined>(undefined);
+  const [summary, setSummary] = useState<ProjectSummaryModel | null>(null);
+  const [summaryLoading, setSummaryLoading] = useState(true);
+  const [summaryFailed, setSummaryFailed] = useState(false);
   const { permissions } = useOrgPermissions();
-  const [userGroups, setUserGroups] = useState<string[]>([]);
-  const [projectAccessForPerm, setProjectAccessForPerm] = useState<ProjectAccessModel[]>([]);
-
-  useEffect(() => {
-    apiGet<{ groups: string[] }>("/access-token/v1/teams/current-teams").then((res) => {
-      if (!res.isError && res.data?.groups) setUserGroups(res.data.groups);
-    });
-  }, []);
-
-  useEffect(() => {
-    if (orgid && id) {
-      projectService.listProjectAccess(orgid, id).then((res) => {
-        if (!res.isError) setProjectAccessForPerm(res.data ?? []);
-      });
-    }
-  }, [orgid, id]);
-
-  const isProjectAdmin = projectAccessForPerm.some((a) => userGroups.includes(a.name) && a.role === "admin");
-  const canManageProject = permissions.manageWorkspace || isProjectAdmin;
+  const { permissions: projectPermissions } = useProjectPermissions(orgid, id);
+  const canManageProject = permissions.manageWorkspace || projectPermissions.manageProject;
 
   const { loading, execute, error } = useApiRequest({
     action: () => projectService.getProject(orgid!, id!),
     onReturn: (data) => {
       setProject(data);
+      // A bare project address opens on the right tab once, so reloading after a save does not move the user.
+      if (landedOn.current !== data.id) {
+        landedOn.current = data.id;
+        if (!sectionParam) {
+          const target = sectionForTab(resolveLandingTab(data.landingTab, data.organizationLandingTab));
+          if (target !== "overview") navigate(projectPath(orgid!, data.id, target), { replace: true });
+        }
+      }
       const stored = sessionStorage.getItem(ORGANIZATION_NAME);
       if (stored) setOrganizationName(stored);
     },
@@ -207,98 +304,157 @@ export default function ProjectDetailPage({ organizationName, setOrganizationNam
     execute();
   }, [id]);
 
-  useEffect(() => {
-    async function loadWorkspaces() {
-      try {
-        const result = await workspaceService.listWorkspaces(orgid!);
-        if (!result.isError && result.data) {
-          const assignedCount = result.data.workspaces.filter((ws) => ws.projectId === id).length;
-          setAssignedWorkspacesCount(assignedCount);
-        }
-      } catch {
-        // Silently fail if workspaces cannot be loaded
-      }
-    }
-
-    if (orgid && id) {
-      loadWorkspaces();
-    }
+  const loadSummary = useCallback(() => {
+    if (!orgid || !id) return;
+    setSummaryLoading(true);
+    projectService
+      .getProjectSummary(orgid, id)
+      .then((res) => {
+        setSummaryFailed(res.isError);
+        setSummary(res.isError ? null : (res.data ?? null));
+      })
+      .finally(() => setSummaryLoading(false));
   }, [orgid, id]);
 
-  // Reload workspace count when switching tabs
-  const handleTabChange = (key: string) => {
-    setActiveKey(key);
-    if (key === "general" && orgid && id) {
-      execute();
-      workspaceService.listWorkspaces(orgid).then((result) => {
-        if (!result.isError && result.data) {
-          const assignedCount = result.data.workspaces.filter((ws) => ws.projectId === id).length;
-          setAssignedWorkspacesCount(assignedCount);
-        }
-      });
-    }
-  };
+  useEffect(loadSummary, [loadSummary]);
 
-  const menuItems: MenuItem[] = [
-    {
-      type: "group",
-      label: "Project Settings",
-      key: "project-settings",
-      children: [
-        { key: "general", label: "General" },
-        { key: "workspaces", label: "Workspaces" },
-        { key: "teams", label: "Teams" },
-      ],
-    },
-  ];
+  // Counts shown on Overview and in Settings change when something is moved or edited elsewhere.
+  useEffect(() => {
+    if (section === "overview" || section === "settings") loadSummary();
+  }, [section, loadSummary]);
+
+  const openTab = (tab: ProjectTab) => navigate(projectPath(orgid!, id!, sectionForTab(tab)));
 
   const renderContent = () => {
-    switch (activeKey) {
+    switch (section) {
       case "workspaces":
-        return <ProjectWorkspaces key={`${orgid}:${id}`} orgid={orgid!} projectId={id!} />;
+        return (
+          <ProjectWorkspaces
+            key={`${orgid}:${id}`}
+            orgid={orgid!}
+            projectId={id!}
+            projectName={project?.name}
+            canManage={canManageProject}
+            canRemove={permissions.manageWorkspace}
+          />
+        );
+      case "policies":
+        return <ProjectPoliciesTab orgid={orgid!} projectId={id!} />;
       case "teams":
         return <ProjectAccessTab orgid={orgid!} projectId={id!} canManage={canManageProject} />;
-      case "general":
-      default:
+      case "variables":
+        return (
+          <>
+            <ProjectVariablesTab orgid={orgid!} projectId={id!} canManage={permissions.manageCollection} />
+            <ProjectEffectiveVariables orgid={orgid!} projectId={id!} />
+          </>
+        );
+      case "settings":
         return (
           <ProjectGeneralSettings
             orgid={orgid!}
             projectId={id!}
             project={project}
-            assignedWorkspacesCount={assignedWorkspacesCount}
+            assignedWorkspacesCount={summary?.workspaceCount ?? 0}
             manageWorkspace={permissions.manageWorkspace}
             canUpdateProject={canManageProject}
+            canManageCollection={permissions.manageCollection}
+            canManagePolicies={permissions.managePolicies}
             onSaved={execute}
+          />
+        );
+      case "overview":
+      default:
+        return (
+          <ProjectOverview
+            orgid={orgid!}
+            summary={summary}
+            loading={summaryLoading}
+            failed={summaryFailed}
+            onRetry={loadSummary}
+            onOpenTab={openTab}
+            canCreateWorkspace={permissions.manageWorkspace || projectPermissions.manageWorkspace}
+            canMoveWorkspaces={canManageProject}
           />
         );
     }
   };
 
+  const level = projectPermissions.accessLevel;
+  const through = projectPermissions.grantedThrough;
+
   return (
     <PageWrapper
+      width="full"
       title={project?.name ?? "Project"}
-      subTitle={`Project in the ${organizationName} organization`}
+      subTitle={[
+        project?.description || `Project in the ${organizationName} organization`,
+        project?.ownerTeam && `Owner ${project.ownerTeam}`,
+      ]
+        .filter(Boolean)
+        .join(" · ")}
       loadingText="Loading project..."
       loading={loading}
       error={error}
       breadcrumbs={[
         { label: organizationName, path: "/" },
         { label: "Projects", path: `/organizations/${orgid}/projects` },
-        { label: project?.name ?? "Project", path: `/organizations/${orgid}/projects/${id}` },
+        { label: project?.name ?? "Project", path: projectPath(orgid!, id!) },
+        ...(section === "overview"
+          ? []
+          : [{ label: SECTION_LABELS[section], path: projectPath(orgid!, id!, section) }]),
       ]}
-    >
-      <Layout className="project-detail-layout">
-        <Sider width={200} className="project-detail-sider">
-          <Menu
-            mode="inline"
-            selectedKeys={[activeKey]}
-            className="project-detail-menu"
-            items={menuItems}
-            onClick={(e) => handleTabChange(e.key)}
+      actions={
+        <Space>
+          <AccessChip
+            scope="project"
+            level={projectPermissions.accessLevel}
+            teams={projectPermissions.grantedThrough}
+            items={projectCapabilities(projectPermissions, permissions.manageWorkspace)}
           />
-        </Sider>
-        <Content className="project-detail-content">{renderContent()}</Content>
-      </Layout>
+          <DisabledReason
+            disabled={!canManageProject}
+            reason="Editing a project needs the Admin role on it, or Manage Workspaces in the organization."
+          >
+            <Button disabled={!canManageProject} onClick={() => navigate(projectPath(orgid!, id!, "settings"))}>
+              Edit
+            </Button>
+          </DisabledReason>
+          <DisabledReason
+            disabled={!permissions.manageWorkspace && !projectPermissions.manageWorkspace}
+            reason="Creating a workspace here needs write access to this project, or Manage Workspaces in the organization."
+          >
+            <Button
+              type="primary"
+              disabled={!permissions.manageWorkspace && !projectPermissions.manageWorkspace}
+              onClick={() => navigate(`/organizations/${orgid}/workspaces/create?projectId=${id}`)}
+            >
+              New workspace
+            </Button>
+          </DisabledReason>
+        </Space>
+      }
+    >
+      {level && !canManageProject && SECTIONS_WITH_ACCESS_BANNER.includes(section) && (
+        <Alert
+          type="info"
+          showIcon={false}
+          className="project-access-banner"
+          message={
+            <>
+              Your access in this project is <strong>{accessLevelLabel(level)}</strong>
+              {through.length > 0 && (
+                <>
+                  , through {through.length === 1 ? "team" : "teams"} <strong>{through.join(", ")}</strong>
+                </>
+              )}
+              . Editing the project, managing its access and deleting it need the Admin role on the project, or Manage
+              Workspaces in the organization.
+            </>
+          }
+        />
+      )}
+      {renderContent()}
     </PageWrapper>
   );
 }

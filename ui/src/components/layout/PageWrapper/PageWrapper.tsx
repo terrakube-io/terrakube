@@ -10,7 +10,7 @@ import { useOrganizationName } from "@/hooks/useOrganizationName";
 
 const { Content } = Layout;
 
-export type PageWidth = "fluid" | "reading" | "form";
+export type PageWidth = "fluid" | "full" | "reading" | "form";
 
 type Props = {
   title: string;

@@ -98,6 +98,10 @@ class ReplayAndIsolationTest {
     @Test
     @Timeout(30)
     void viewersJoiningWhileOutputIsBeingPublishedMissNothingAndSeeNothingTwice() throws Exception {
+        // A viewer that starts from the beginning is sent only the most recent records unless this is off. Which of the two
+        // it gets depends on how much has been written by the time the broadcaster thread first runs, so on a slow
+        // machine the first 1,000 of the 6,000 records were missing. This test is about the live handoff, so it wants all.
+        properties.setSseFreshViewerTailRecords(0);
         for (int n = 1; n <= 300; n++) {
             stream.append("stepA", "stepA-" + n);
         }
@@ -128,6 +132,30 @@ class ReplayAndIsolationTest {
                     "viewer resuming after " + resumePoints.get(i));
             assertTrue(latecomers.get(i).idsStrictlyIncreasing());
         }
+    }
+
+    @Test
+    @Timeout(20)
+    void outputWrittenBetweenTheLastReadAndSeeingTheJobFinishedIsStillDelivered() {
+        stream.append("stepA", "stepA-1");
+        properties.setSseFreshViewerTailRecords(0);
+        AtomicBoolean firstRead = new AtomicBoolean(true);
+        // The first read finds nothing new. Right after it, the job writes its last line and finishes, which is what
+        // a viewer sees when the end of the output and the end of the job land between two checks.
+        when(reader.readAfter(eq(JOB), any(RecordId.class), any(Duration.class))).thenAnswer(i -> {
+            List<MapRecord> result = stream.readAfter(i.getArgument(1), 100, Duration.ZERO);
+            if (result.isEmpty() && firstRead.compareAndSet(true, false)) {
+                stream.append("stepA", "stepA-2");
+                terminal.set(true);
+            }
+            return result;
+        });
+
+        Recorder viewer = subscribe(broadcaster(), "stepA", "0-0");
+
+        await().atMost(Duration.ofSeconds(10)).until(() -> viewer.completed);
+        assertEquals(expected("stepA", 1, 2), viewer.data);
+        assertEquals("complete", viewer.endReason());
     }
 
     @Test
@@ -189,8 +217,16 @@ class ReplayAndIsolationTest {
         for (int n = 1; n <= 3_000; n++) {
             stream.append("stepA", "stepA-" + n + "-" + "x".repeat(60));
             if (n % 25 == 0) {
-                // Paced so a viewer that is reading keeps within its budget; only the stalled one cannot.
-                Thread.sleep(1);
+                // Paced by what the healthy viewer has received, not by the clock: a viewer that is reading never falls
+                // more than 400 records (about 36 KB) behind, well inside its budget, however slow the machine is.
+                // Only the stalled one cannot keep within it.
+                // A loop and not await(): await polls every 100 ms even when it is already satisfied, which across 120
+                // checks would take most of the time this test has.
+                long giveUp = System.nanoTime() + Duration.ofSeconds(20).toNanos();
+                while (n - healthy.data.size() > 400) {
+                    assertTrue(System.nanoTime() < giveUp, "the healthy viewer stopped receiving at " + healthy.data.size());
+                    Thread.sleep(1);
+                }
             }
         }
         terminal.set(true);

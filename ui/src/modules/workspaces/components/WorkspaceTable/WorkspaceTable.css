@@ -289,3 +289,34 @@
     flex-basis: 100%;
   }
 }
+
+.workspace-col-select {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  width: 20px;
+}
+
+.workspace-name-tags {
+  position: relative;
+  z-index: 1;
+}
+
+.workspace-tag-with-source {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.workspace-tag-source {
+  color: var(--tk-text-secondary);
+  font-size: 12px;
+}
+
+/* The exact time of the last run opens on hover and focus, so it has to sit above the row's own link. */
+.workspace-col-run .workspace-last-run-line {
+  position: relative;
+  z-index: 1;
+}

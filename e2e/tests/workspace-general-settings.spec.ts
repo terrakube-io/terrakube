@@ -3,6 +3,9 @@ import { test, expect } from "@playwright/test";
 test("workspace general settings save changes and show the workspace's own agent", async ({ page }) => {
   await page.goto("/organizations");
   await page.getByRole("link", { name: "Open organization simple", exact: true }).click();
+  // Opening an organization lands on its overview; the workspace list is one click away.
+  await expect(page).toHaveURL(/\/organizations\/[^/]+\/overview/);
+  await page.getByRole("link", { name: "Workspaces", exact: true }).first().click();
   await expect(page).toHaveURL(/\/organizations\/[^/]+\/workspaces/);
   // First workspace in the list: its link ends with the workspace UUID.
   const findWorkspacePath = () =>

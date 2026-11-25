@@ -14,7 +14,7 @@ import io.terrakube.api.rs.project.Project;
 import java.sql.Types;
 import java.util.UUID;
 
-@ReadPermission(expression = "team manage project access OR team project limited manage project access")
+@ReadPermission(expression = "team manage project access OR team project limited manage project access OR project access own team")
 @CreatePermission(expression = "user is a superuser OR team manage project access OR team project limited manage project access")
 @UpdatePermission(expression = "user is a superuser OR team manage project access OR team project limited manage project access")
 @DeletePermission(expression = "user is a superuser OR team manage project access OR team project limited manage project access")

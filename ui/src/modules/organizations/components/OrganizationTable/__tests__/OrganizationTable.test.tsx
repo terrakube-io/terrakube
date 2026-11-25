@@ -110,7 +110,7 @@ describe("OrganizationTable", () => {
     renderTable();
     expect(screen.getByLabelText("Open organization acme-platform")).toHaveAttribute(
       "href",
-      "/organizations/org-1/workspaces"
+      "/organizations/org-1/overview"
     );
   });
 

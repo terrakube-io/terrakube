@@ -72,7 +72,7 @@ class ExecutionLeaseRedisIntegrationTest {
         assertThat(acquire(100)).isEmpty();
         first.release();
 
-        assertThat(redisTemplate.hasKey("job-execution-lock:100")).isFalse();
+        assertThat(redisTemplate.hasKey(ExecutionLease.lockKey(100))).isFalse();
         acquire(100).orElseThrow().release();
     }
 
@@ -84,10 +84,10 @@ class ExecutionLeaseRedisIntegrationTest {
 
         slow.release();
 
-        assertThat(redisTemplate.hasKey("job-execution-lock:101")).isTrue();
+        assertThat(redisTemplate.hasKey(ExecutionLease.lockKey(101))).isTrue();
         assertThat(acquire(101)).isEmpty();
         successor.release();
-        assertThat(redisTemplate.hasKey("job-execution-lock:101")).isFalse();
+        assertThat(redisTemplate.hasKey(ExecutionLease.lockKey(101))).isFalse();
     }
 
     @Test
@@ -111,7 +111,7 @@ class ExecutionLeaseRedisIntegrationTest {
 
         assertThat(lease.renew()).isFalse();
         assertThat(lease.isLost()).isFalse();
-        assertThat(redisTemplate.hasKey("job-execution-lock:190")).isFalse();
+        assertThat(redisTemplate.hasKey(ExecutionLease.lockKey(190))).isFalse();
     }
 
     @Test
@@ -159,7 +159,7 @@ class ExecutionLeaseRedisIntegrationTest {
         acquire(106).orElseThrow();
 
         assertThat(slow.claimDispatch("step-a")).isFalse();
-        assertThat(redisTemplate.hasKey("job-dispatch-claim:106:step-a")).isFalse();
+        assertThat(redisTemplate.hasKey(ExecutionLease.claimKey(106, "step-a"))).isFalse();
     }
 
     @Test
@@ -167,9 +167,9 @@ class ExecutionLeaseRedisIntegrationTest {
         ExecutionLease lease = acquire(107).orElseThrow();
         assertThat(lease.claimDispatch("step-a")).isTrue();
 
-        redisTemplate.opsForValue().set("job-dispatch-claim:107:step-b", "someone-else");
+        redisTemplate.opsForValue().set(ExecutionLease.claimKey(107, "step-b"), "someone-else");
         lease.releaseDispatchClaim("step-b");
-        assertThat(redisTemplate.hasKey("job-dispatch-claim:107:step-b")).isTrue();
+        assertThat(redisTemplate.hasKey(ExecutionLease.claimKey(107, "step-b"))).isTrue();
 
         lease.releaseDispatchClaim("step-a");
         assertThat(lease.claimDispatch("step-a")).isTrue();

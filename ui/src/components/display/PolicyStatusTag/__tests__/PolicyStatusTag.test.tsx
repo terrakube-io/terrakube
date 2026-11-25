@@ -11,7 +11,7 @@ describe("PolicyStatusTag", () => {
 
   it("renders NON-COMPLIANT status badge", () => {
     render(<PolicyStatusTag status="NON_COMPLIANT" />);
-    expect(screen.getByText("Non-Compliant")).toBeInTheDocument();
+    expect(screen.getByText("Non-compliant")).toBeInTheDocument();
     expect(screen.getByTestId("policy-status-tag-non-compliant")).toBeInTheDocument();
   });
 

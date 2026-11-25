@@ -1,8 +1,16 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { axe, toHaveNoViolations } from "jest-axe";
 import { MemoryRouter } from "react-router-dom";
 import RunList from "../RunList";
 import { FlatJob, JobStatus } from "@/domain/types";
 import { ORGANIZATION_ARCHIVE } from "@/config/actionTypes";
+
+expect.extend(toHaveNoViolations);
+
+const mockApproveRuns = jest.fn();
+jest.mock("@/modules/projects/bulkWorkspaceActions", () => ({
+  approveRuns: (...args: unknown[]) => mockApproveRuns(...args),
+}));
 
 jest.mock("@/config/axiosConfig", () => ({
   __esModule: true,
@@ -53,6 +61,80 @@ describe("RunList", () => {
     await waitFor(() => expect(within(rows[0]).getByText("Plan and Apply")).toBeInTheDocument());
   });
 
+  it("shows what the plan changes, and nothing for a run without a summary", () => {
+    renderList([
+      job("1", JobStatus.Completed),
+      job("2", JobStatus.WaitingApproval, { planAdd: 3, planChange: 1, planDestroy: 0 }),
+      job("3", JobStatus.Completed, { planAdd: 0, planChange: 0, planDestroy: 0 }),
+    ]);
+
+    const rows = screen.getAllByRole("listitem");
+    // Newest first: run 3, run 2, run 1.
+    expect(within(rows[0]).getByText("No changes")).toBeInTheDocument();
+    expect(within(rows[1]).getByText("3 to add, 1 to change, 0 to destroy")).toBeInTheDocument();
+    expect(within(rows[1]).getByText("+3").parentElement).toHaveTextContent("+3 ~1 -0");
+    expect(within(rows[2]).queryByText(/to add|No changes/)).not.toBeInTheDocument();
+  });
+
+  it("offers Approve only on a run that waits, and only to someone who may approve", async () => {
+    sessionStorage.setItem(ORGANIZATION_ARCHIVE, "org-1");
+    mockApproveRuns.mockResolvedValue({ succeeded: ["2"], failed: [] });
+    const onApproved = jest.fn();
+    const jobs = [job("1", JobStatus.Completed), job("2", JobStatus.WaitingApproval)];
+    const { unmount } = render(
+      <MemoryRouter>
+        <RunList
+          jobs={jobs}
+          onRunClick={jest.fn()}
+          runLink={(id) => `/runs/${id}`}
+          canApprove
+          onApproved={onApproved}
+        />
+      </MemoryRouter>
+    );
+
+    expect(screen.getAllByRole("button", { name: "Approve" })).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Approve" }));
+
+    await waitFor(() => expect(mockApproveRuns).toHaveBeenCalledWith("org-1", ["2"]));
+    await waitFor(() => expect(onApproved).toHaveBeenCalled());
+    unmount();
+
+    renderList(jobs);
+    expect(screen.queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
+  });
+
+  it("has no accessibility violations with plan counts and an Approve button", async () => {
+    const { container } = render(
+      <MemoryRouter>
+        <RunList
+          jobs={[
+            job("1", JobStatus.Completed),
+            job("2", JobStatus.WaitingApproval, { planAdd: 3, planChange: 1, planDestroy: 0 }),
+          ]}
+          onRunClick={jest.fn()}
+          runLink={(id) => `/runs/${id}`}
+          canApprove
+        />
+      </MemoryRouter>
+    );
+
+    expect(await axe(container)).toHaveNoViolations();
+  });
+
+  it("marks a run that was a drift check with what it found", () => {
+    renderList([job("1", JobStatus.Completed, { driftResult: "drift", planAdd: 0, planChange: 2, planDestroy: 0 })]);
+
+    expect(screen.getByText("Drift check: drift")).toBeInTheDocument();
+  });
+
+  it("names the pull request that started a run", () => {
+    renderList([job("1", JobStatus.Completed, { via: "Github" as never, prNumber: 1873 })]);
+
+    expect(screen.getByText(/PR #1873/)).toBeInTheDocument();
+  });
+
   it("filters by status and search, and clears back to every run", () => {
     renderList([job("1", JobStatus.Completed), job("2", JobStatus.Failed)]);
 
@@ -72,5 +154,34 @@ describe("RunList", () => {
     expect(screen.getByRole("heading", { name: "Runs (0)" })).toBeInTheDocument();
     expect(screen.getByText(/No runs yet/)).toBeInTheDocument();
     expect(screen.queryByRole("group", { name: "Filter by status" })).not.toBeInTheDocument();
+  });
+
+  describe("policy result", () => {
+    const renderWithPolicy = (policyByRun: Record<string, "FAILED" | "PASSED" | "WARNING">) =>
+      render(
+        <MemoryRouter>
+          <RunList
+            jobs={[job("1", JobStatus.Completed), job("2", JobStatus.Completed), job("3", JobStatus.Completed)]}
+            onRunClick={jest.fn()}
+            runLink={(id) => `/runs/${id}`}
+            policyByRun={policyByRun}
+          />
+        </MemoryRouter>
+      );
+
+    it("shows what the policy checks said next to the status, and nothing for a run that was not evaluated", async () => {
+      renderWithPolicy({ "1": "FAILED", "2": "PASSED" });
+
+      expect(await screen.findByText("Policy failed")).toBeInTheDocument();
+      expect(screen.getByText("Policy passed")).toBeInTheDocument();
+      expect(screen.queryAllByText(/^Policy /)).toHaveLength(2);
+    });
+
+    it("has no policy column at all when no result was read", async () => {
+      renderList([job("1", JobStatus.Completed)]);
+
+      await screen.findByText("Run 1 title");
+      expect(screen.queryByText(/^Policy /)).not.toBeInTheDocument();
+    });
   });
 });

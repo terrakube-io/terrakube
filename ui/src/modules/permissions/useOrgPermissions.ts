@@ -20,6 +20,9 @@ export interface OrgPermissionSet {
   approveJob: boolean;
   managePermission: boolean;
   managePolicies: boolean;
+  // Which teams grant the access and the highest role among them, when the API says.
+  grantedThrough?: string[];
+  accessLevel?: string;
 }
 
 const defaultPermissions: OrgPermissionSet = {
@@ -80,6 +83,8 @@ export function useOrgPermissions(orgIdOverride?: string) {
           approveJob: response.data.approveJob ?? false,
           managePermission: response.data.managePermission ?? false,
           managePolicies: response.data.managePolicies ?? response.data.managePermission ?? false,
+          grantedThrough: response.data.grantedThrough ?? [],
+          accessLevel: response.data.accessLevel ?? undefined,
         });
       })
       .catch(() => {

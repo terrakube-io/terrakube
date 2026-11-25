@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+
+    <!-- Hard and soft violation counts of the latest policy evaluation, and the template new workspaces in a project start with. Nullable, not backfilled. -->
+    <changeSet id="2-35-0-workspace-policy-violations" author="terrakube">
+        <addColumn tableName="workspace">
+            <column name="policy_hard_violations" type="int"/>
+            <column name="policy_soft_violations" type="int"/>
+        </addColumn>
+    </changeSet>
+    <changeSet id="2-35-0-project-default-template" author="terrakube">
+        <addColumn tableName="project">
+            <column name="default_template" type="varchar(36)"/>
+        </addColumn>
+    </changeSet>
+</databaseChangeLog>

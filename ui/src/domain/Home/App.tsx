@@ -45,6 +45,10 @@ const OrganizationsPickerPage = lazy(() => import("@/modules/organizations/Organ
 const OrganizationsDetailPage = lazy(() => import("@/modules/organizations/OrganizationDetailsPage"));
 const ProjectsPage = lazy(() => import("@/modules/projects/ProjectsPage"));
 const ProjectDetailPage = lazy(() => import("@/modules/projects/ProjectDetailPage"));
+const GoRedirect = lazy(() => import("@/modules/navigation/GoRedirect"));
+const InboxPage = lazy(() => import("@/modules/inbox/InboxPage"));
+const OrgOverviewPage = lazy(() => import("@/modules/organizations/overview/OrgOverviewPage"));
+const CommandPalette = lazy(() => import("@/modules/navigation/CommandPalette"));
 
 // Workspaces
 const CreateWorkspace = lazy(() =>
@@ -247,12 +251,12 @@ const AppLayout = () => {
     // Deeper sub-paths (a specific workspace, run, etc.) are dropped since
     // those resource ids belong to the old organization and won't resolve
     // under the new one.
-    const knownSections = ["workspaces", "registry", "settings", "projects"];
+    const knownSections = ["overview", "workspaces", "registry", "settings", "projects"];
     const paths = location.pathname.split("/").filter(Boolean);
     const orgIdx = paths.indexOf("organizations");
     const section = orgIdx >= 0 ? paths[orgIdx + 2] : undefined;
 
-    navigate(`/organizations/${orgId}/${section && knownSections.includes(section) ? section : "workspaces"}`);
+    navigate(`/organizations/${orgId}/${section && knownSections.includes(section) ? section : "overview"}`);
   };
 
   return (
@@ -265,6 +269,9 @@ const AppLayout = () => {
           onOrgChange={handleOrgChange}
           workspaceManageState={workspaceManageState}
         />
+        <Suspense fallback={null}>
+          <CommandPalette organizations={orgs} />
+        </Suspense>
         <Layout className="app-content-shell">
           <div className="app-content-scroll">
             {backendError ? (
@@ -312,15 +319,28 @@ const router = createBrowserRouter(
           element: <CreateOrganizationRoute />,
         },
         {
+          path: "/inbox",
+          element: <InboxPage />,
+        },
+        {
+          // Name-based links, for places that only know names: pull requests, checks, Backstage, chat.
+          path: "/go/:org/*",
+          element: <GoRedirect />,
+        },
+        {
           path: "/organizations/:id/workspaces",
           element: <OrganizationsDetailRoute />,
+        },
+        {
+          path: "/organizations/:id/overview",
+          element: <OrgOverviewPage />,
         },
         {
           path: "/organizations/:id/projects",
           element: <OrganizationsProjectsRoute />,
         },
         {
-          path: "/organizations/:orgid/projects/:id",
+          path: "/organizations/:orgid/projects/:id/:section?",
           element: <OrganizationsProjectDetailRoute />,
         },
         {

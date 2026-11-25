@@ -93,7 +93,53 @@ describe("WorkspaceDetails", () => {
     expect(screen.getByText("Remote")).toBeInTheDocument();
   });
 
-  const renderOverviewWithRuns = async (runs: Array<{ id: string; status: string }>) => {
+  it("requests the workspace with a fields entry for every included type", async () => {
+    const workspace = {
+      id: "ws-1",
+      type: "workspace",
+      attributes: { name: "sample-workspace", source: "", branch: "" },
+    };
+    getMock.mockImplementation((url: string) =>
+      Promise.resolve({ data: { data: url.includes("/workspace/ws-1") ? workspace : [] } })
+    );
+
+    render(
+      <MemoryRouter initialEntries={["/organizations/org-1/workspaces/ws-1"]}>
+        <Routes>
+          <Route
+            path="/organizations/:orgid/workspaces/:id"
+            element={<WorkspaceDetails setOrganizationName={jest.fn()} setWorkspaceManageState={jest.fn()} />}
+          />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await waitFor(() =>
+      expect(getMock).toHaveBeenCalledWith(
+        "organization/org-1/workspace/ws-1?include=job,variable,history,schedule,vcs,organization,reference,project" +
+          "&fields[workspace]=allowRemoteApply,branch,createdBy,createdDate,defaultTemplate,deleted,description," +
+          "executionMode,folder,globalRemoteState,iacType,lastJobDate,lastJobStatus,lockDescription,locked," +
+          "moduleSshKey,name,policyComplianceStatus,requireApproveToApply,restrictApplyToConfiguredBranch,sharedIds," +
+          "source,terraformVersion,updatedBy,updatedDate,access,agent,history,job,notificationConfiguration," +
+          "organization,project,reference,runTriggers,schedule,sourceRunTriggers,ssh,variable,vcs,webhook,workspaceTag" +
+          "&fields[job]=status,via,comments,createdBy,createdDate,updatedDate,commitId,templateReference,approvedBy," +
+          "approvedAt,approvalTeam,prCommentError" +
+          "&fields[variable]=key,value,category,hcl,sensitive,incomplete,description" +
+          "&fields[history]=jobReference,output,createdBy,createdDate" +
+          "&fields[schedule]=cron,templateReference" +
+          "&fields[vcs]=vcsType" +
+          "&fields[organization]=name" +
+          "&fields[project]=name" +
+          "&fields[reference]="
+      )
+    );
+  });
+
+  const renderOverviewWithRuns = async (
+    runs: Array<{ id: string; status: string; planAdd?: number; planChange?: number; planDestroy?: number }>,
+    workspaceAttributes: Record<string, unknown> = {},
+    project?: { id: string; name: string }
+  ) => {
     getMock.mockImplementation((url: string) => {
       if (url.includes("/workspace/ws-1")) {
         return Promise.resolve({
@@ -110,11 +156,16 @@ describe("WorkspaceDetails", () => {
                 terraformVersion: "1.5.0",
                 iacType: "terraform",
                 folder: "/",
+                ...workspaceAttributes,
               },
-              relationships: { organization: { data: { id: "org-1" } } },
+              relationships: {
+                organization: { data: { id: "org-1" } },
+                ...(project ? { project: { data: { id: project.id, type: "project" } } } : {}),
+              },
             },
             included: [
               { id: "org-1", type: "organization", attributes: { name: "test-org" } },
+              ...(project ? [{ id: project.id, type: "project", attributes: { name: project.name } }] : []),
               ...runs.map((run) => ({
                 id: run.id,
                 type: "job",
@@ -124,6 +175,9 @@ describe("WorkspaceDetails", () => {
                   createdDate: "2026-10-19T10:00:00Z",
                   updatedDate: "2026-10-19T10:05:00Z",
                   via: "UI",
+                  planAdd: run.planAdd,
+                  planChange: run.planChange,
+                  planDestroy: run.planDestroy,
                 },
               })),
             ],
@@ -179,5 +233,99 @@ describe("WorkspaceDetails", () => {
     const card = await screen.findByRole("article", { name: "Latest run" });
     expect(card).toHaveTextContent("#2");
     expect(screen.getByRole("heading", { name: "Latest run" })).toBeInTheDocument();
+  });
+
+  it("shows a drifted workspace in the header, on the way to the plan that found it", async () => {
+    await renderOverviewWithRuns([{ id: "1", status: "completed" }], {
+      driftStatus: "drifted",
+      driftFirstSeen: "2026-11-11T02:00:00Z",
+      driftJobId: 9,
+    });
+
+    const tag = await screen.findByRole("link", { name: /^Drifted/ });
+    expect(tag).toHaveAttribute("href", "/organizations/org-1/workspaces/ws-1/runs/9");
+  });
+
+  it("does not mark a workspace that has no drift", async () => {
+    await renderOverviewWithRuns([{ id: "1", status: "completed" }], { driftStatus: "clean" });
+
+    await screen.findByText("Latest run");
+    expect(screen.queryByRole("link", { name: /^Drifted/ })).not.toBeInTheDocument();
+  });
+
+  it("shows what the latest run plans to change", async () => {
+    await renderOverviewWithRuns([{ id: "1", status: "completed", planAdd: 3, planChange: 1, planDestroy: 0 }]);
+
+    expect(await screen.findByText("3 to add, 1 to change, 0 to destroy")).toBeInTheDocument();
+  });
+
+  describe("the way back, from where the workspace was opened", () => {
+    const payments = { id: "p-1", name: "payments" };
+    const link = (name: string) => screen.getAllByRole("link", { name }).find((element) => element.closest("nav"));
+
+    it("names the project and links to it when the workspace was opened from it", async () => {
+      sessionStorage.setItem(
+        "terrakube.workspaceOrigin",
+        JSON.stringify({ workspaceId: "ws-1", origin: { kind: "project", path: "/organizations/org-1/projects/p-1" } })
+      );
+      await renderOverviewWithRuns([{ id: "1", status: "completed" }], {}, payments);
+
+      await screen.findByText("Latest run");
+      expect(link("payments")).toHaveAttribute("href", "/organizations/org-1/projects/p-1");
+      expect(link("Projects")).toHaveAttribute("href", "/organizations/org-1/projects");
+    });
+
+    it("says Inbox when it was opened from the inbox", async () => {
+      sessionStorage.setItem(
+        "terrakube.workspaceOrigin",
+        JSON.stringify({ workspaceId: "ws-1", origin: { kind: "inbox", path: "/inbox?kind=failed" } })
+      );
+      await renderOverviewWithRuns([{ id: "1", status: "completed" }], {}, payments);
+
+      await screen.findByText("Latest run");
+      expect(link("Inbox")).toHaveAttribute("href", "/inbox?kind=failed");
+    });
+
+    it("remembers the project when it was opened by a direct link, so the way back leads there", async () => {
+      await renderOverviewWithRuns([{ id: "1", status: "completed" }], {}, payments);
+
+      await screen.findByText("Latest run");
+      await waitFor(() =>
+        expect(JSON.parse(sessionStorage.getItem("terrakube.workspaceOrigin") as string)).toEqual({
+          workspaceId: "ws-1",
+          origin: { kind: "project", path: "/organizations/org-1/projects/p-1" },
+        })
+      );
+    });
+
+    it("ignores an origin that was remembered for another workspace", async () => {
+      sessionStorage.setItem(
+        "terrakube.workspaceOrigin",
+        JSON.stringify({ workspaceId: "ws-other", origin: { kind: "inbox", path: "/inbox" } })
+      );
+      await renderOverviewWithRuns([{ id: "1", status: "completed" }]);
+
+      await screen.findByText("Latest run");
+      expect(screen.queryByRole("link", { name: "Inbox" })).not.toBeInTheDocument();
+    });
+
+    it("links to the project the workspace is in now when the remembered one is an old project", async () => {
+      sessionStorage.setItem(
+        "terrakube.workspaceOrigin",
+        JSON.stringify({
+          workspaceId: "ws-1",
+          origin: { kind: "project", path: "/organizations/org-1/projects/p-old" },
+        })
+      );
+      await renderOverviewWithRuns([{ id: "1", status: "completed" }], {}, { id: "p-new", name: "ledger" });
+
+      await screen.findByText("Latest run");
+      expect(link("ledger")).toHaveAttribute("href", "/organizations/org-1/projects/p-new");
+      await waitFor(() =>
+        expect(JSON.parse(sessionStorage.getItem("terrakube.workspaceOrigin") as string).origin.path).toBe(
+          "/organizations/org-1/projects/p-new"
+        )
+      );
+    });
   });
 });

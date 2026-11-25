@@ -5,6 +5,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.UUID;
 
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -21,6 +23,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 import io.terrakube.api.repository.JobRepository;
 import io.terrakube.api.repository.OrganizationRepository;
+import io.terrakube.api.repository.ProjectRepository;
 import io.terrakube.api.repository.StepRepository;
 import io.terrakube.api.repository.WorkspaceRepository;
 import io.terrakube.api.rs.Organization;
@@ -74,6 +77,50 @@ class MSSQLStartupTests {
     private OrganizationRepository organizationRepository;
     @Autowired
     private StepRepository stepRepository;
+
+    @Autowired
+    private ProjectRepository projectRepository;
+
+    @PersistenceContext
+    private EntityManager entityManager;
+
+    @Test
+    void projectSummaryAggregateRunsOnSqlServer() {
+        ProjectSummaryDatabaseCheck.run(organizationRepository, projectRepository, workspaceRepository, entityManager);
+    }
+
+    @Test
+    void projectDeleteGuardQueriesRunOnSqlServer() {
+        Organization organization = new Organization();
+        organization.setName("org-" + UUID.randomUUID().toString().substring(0, 8));
+        organization = organizationRepository.save(organization);
+        io.terrakube.api.rs.project.Project project = new io.terrakube.api.rs.project.Project();
+        project.setName("project-" + UUID.randomUUID().toString().substring(0, 8));
+        project.setOrganization(organization);
+        project = projectRepository.save(project);
+
+        Workspace live = workspaceIn(organization, project, false);
+        Workspace removed = workspaceIn(organization, project, true);
+        entityManager.flush();
+
+        // SQL Server has no boolean literals, so these two native queries are the ones that must be proven there.
+        assertThat(workspaceRepository.countLiveByProject(project.getId().toString())).isEqualTo(1);
+        assertThat(workspaceRepository.detachDeletedFromProject(project.getId().toString())).isEqualTo(1);
+        assertThat(live.getId()).isNotNull();
+        assertThat(removed.getId()).isNotNull();
+    }
+
+    private Workspace workspaceIn(Organization organization, io.terrakube.api.rs.project.Project project, boolean deleted) {
+        Workspace workspace = new Workspace();
+        workspace.setName("ws-" + UUID.randomUUID().toString().substring(0, 8));
+        workspace.setSource("https://github.com/example/repo.git");
+        workspace.setBranch("main");
+        workspace.setTerraformVersion("1.6.0");
+        workspace.setOrganization(organization);
+        workspace.setProject(project);
+        workspace.setDeleted(deleted);
+        return workspaceRepository.save(workspace);
+    }
 
     @Test
     void contextLoads() {

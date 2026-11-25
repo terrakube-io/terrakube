@@ -346,12 +346,14 @@ public class JobLogBroadcaster {
 
                 List<MapRecord> records = reader.readAfter(jobId, lastId.get(), properties.getSseJobIdleTimeout());
 
-                if (records.isEmpty()) {
-                    if (jobStatusCache.isTerminal(jobId)) {
+                if (records.isEmpty() && jobStatusCache.isTerminal(jobId)) {
+                    // Output written after the read above and before the job was seen finished is still in the
+                    // stream, so look once more, without waiting, before telling viewers it is complete.
+                    records = readLastPage();
+                    if (records.isEmpty()) {
                         endAll("complete");
                         return;
                     }
-                    continue;
                 }
                 dispatch(records);
             }
@@ -360,6 +362,16 @@ public class JobLogBroadcaster {
             endAll("rotate");
         } finally {
             fireOnEmpty();
+        }
+    }
+
+    /** One more read without waiting, under the same pod-wide permit as every other page read. */
+    private List<MapRecord> readLastPage() {
+        replayReadPermits.acquireUninterruptibly();
+        try {
+            return reader.readAfterPage(jobId, lastId.get(), properties.getSseReplayPageSize());
+        } finally {
+            replayReadPermits.release();
         }
     }
 

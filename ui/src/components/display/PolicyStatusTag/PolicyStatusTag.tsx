@@ -47,7 +47,7 @@ export default function PolicyStatusTag({
     case "NON_COMPLIANT":
       color = "var(--tk-status-error)";
       icon = <CloseCircleOutlined />;
-      label = "Non-Compliant";
+      label = "Non-compliant";
       testIdKey = "non-compliant";
       break;
     case "EXEMPTED":

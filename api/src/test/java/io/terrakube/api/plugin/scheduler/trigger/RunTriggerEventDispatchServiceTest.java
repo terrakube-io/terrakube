@@ -70,15 +70,21 @@ class RunTriggerEventDispatchServiceTest {
         UUID id = UUID.randomUUID();
         Date lastAttemptAt = new Date();
         properties.setEventMaxAttempts(10);
+        properties.setEventBackoffInitialSeconds(5);
+        properties.setEventBackoffMaxSeconds(900);
         doReturn(claimed(900, 3, lastAttemptAt)).when(runTriggerEventTransactions).claim(id);
         doThrow(new IllegalStateException("boom")).when(runTriggerDispatchService).dispatchInternal(900);
 
+        Date before = new Date();
         subject.process(id);
+        Date after = new Date();
 
         ArgumentCaptor<Date> nextAttemptAt = ArgumentCaptor.forClass(Date.class);
         verify(runTriggerEventTransactions).recordResult(eq(id), eq(lastAttemptAt),
                 eq(RunTriggerEventStatus.PENDING), eq("boom"), nextAttemptAt.capture());
-        assertThat(nextAttemptAt.getValue()).isAfter(lastAttemptAt);
+        // Full jitter may pick a zero delay, so the retry can be due right away. It is never in the
+        // past and never later than the third attempt's cap of 5s * 2^2 = 20s.
+        assertThat(nextAttemptAt.getValue()).isBetween(before, new Date(after.getTime() + 20_000L), true, true);
         verify(metrics).retried();
     }
 

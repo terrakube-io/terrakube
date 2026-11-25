@@ -1,4 +1,4 @@
-import { Form, Input, message, Space, Typography, ColorPicker } from "antd";
+import { Form, Input, message, Space, Typography, ColorPicker, Select } from "antd";
 import { Loading } from "@/components/feedback/Loading";
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
@@ -15,6 +15,8 @@ import { IdField } from "@/components/settings/IdField";
 import { DangerZone } from "@/components/settings/DangerZone";
 import { useOrganizationSummaries } from "@/modules/organizations/useOrganizationSummaries";
 import { cacheOrganizationName } from "@/hooks/useOrganizationName";
+import { clearManagedInCode, safeRepository } from "@/modules/organizations/managedInCode";
+import { ManagedInCodeBanner } from "@/components/settings/ManagedInCodeBanner";
 
 const DEFAULT_ICON = "FaBuilding";
 const DEFAULT_COLOR = "#000000";
@@ -24,6 +26,9 @@ const ORGANIZATION_FIELDS = sparseFields<Organization>("organization")(
   "description",
   "executionMode",
   "icon",
+  "projectLandingTab",
+  "managedInCodeRepository",
+  "managedInCodeMode",
   "prApplyMinRequirement"
 );
 type SparseOrganization = SparseOf<typeof ORGANIZATION_FIELDS>;
@@ -32,6 +37,9 @@ type GeneralSettingsForm = {
   name: string;
   description: string;
   executionMode: "remote" | "local";
+  projectLandingTab?: string;
+  managedInCodeRepository?: string;
+  managedInCodeMode?: string;
   icon?: string;
   prApplyMinRequirement: PrApplyRequirement;
 };
@@ -62,6 +70,10 @@ export const GeneralSettings = ({ managePermission = true }: Props) => {
           name: values.name,
           description: values.description,
           executionMode: values.executionMode,
+          projectLandingTab:
+            values.projectLandingTab && values.projectLandingTab !== "overview" ? values.projectLandingTab : null,
+          managedInCodeRepository: values.managedInCodeRepository?.trim() || null,
+          managedInCodeMode: values.managedInCodeRepository?.trim() ? values.managedInCodeMode || "warn" : null,
           icon: iconField,
           prApplyMinRequirement: values.prApplyMinRequirement,
         },
@@ -80,6 +92,7 @@ export const GeneralSettings = ({ managePermission = true }: Props) => {
           if (orgid) {
             updateOrganization(orgid, { ...values, icon: iconField });
             cacheOrganizationName(orgid, values.name);
+            clearManagedInCode(orgid);
           }
         } else {
           message.error("Organization update failed");
@@ -143,6 +156,9 @@ export const GeneralSettings = ({ managePermission = true }: Props) => {
           name: response.data.data.attributes.name,
           description: response.data.data.attributes.description,
           executionMode: response.data.data.attributes.executionMode,
+          projectLandingTab: response.data.data.attributes.projectLandingTab ?? "overview",
+          managedInCodeRepository: response.data.data.attributes.managedInCodeRepository,
+          managedInCodeMode: response.data.data.attributes.managedInCodeMode ?? "warn",
           prApplyMinRequirement: response.data.data.attributes.prApplyMinRequirement ?? "WRITE",
         });
         setLoading(false);
@@ -159,6 +175,7 @@ export const GeneralSettings = ({ managePermission = true }: Props) => {
 
   return (
     <div className="setting">
+      <ManagedInCodeBanner orgId={orgid} />
       <SettingsPageHeader
         docUrl="https://docs.terrakube.io/user-guide/organizations"
         title="General settings"
@@ -177,6 +194,9 @@ export const GeneralSettings = ({ managePermission = true }: Props) => {
                 name: organization?.attributes.name,
                 description: organization?.attributes.description,
                 executionMode: organization?.attributes.executionMode,
+                projectLandingTab: organization?.attributes.projectLandingTab ?? "overview",
+                managedInCodeRepository: organization?.attributes.managedInCodeRepository,
+                managedInCodeMode: organization?.attributes.managedInCodeMode ?? "warn",
                 prApplyMinRequirement: organization?.attributes.prApplyMinRequirement ?? "WRITE",
               }}
               saveLabel="Update organization"
@@ -224,6 +244,56 @@ export const GeneralSettings = ({ managePermission = true }: Props) => {
                       label: "Local",
                       help: "Your planning and applying jobs are performed on your own machines. Terrakube is used just for storing and syncing the state.",
                     },
+                  ]}
+                />
+              </Form.Item>
+
+              <Typography.Title level={4} className="general-settings-subtitle">
+                Project landing tab
+              </Typography.Title>
+              <Typography.Paragraph type="secondary">
+                The tab projects open on. A project can set its own, and people can choose theirs.
+              </Typography.Paragraph>
+              <Form.Item name="projectLandingTab" label="Projects open on">
+                <Select
+                  options={[
+                    { value: "overview", label: "Overview" },
+                    { value: "workspaces", label: "Workspaces" },
+                    { value: "variables", label: "Variables" },
+                    { value: "policies", label: "Policies" },
+                    { value: "teams", label: "Teams" },
+                    { value: "general", label: "General" },
+                  ]}
+                />
+              </Form.Item>
+              <Typography.Title level={4} className="general-settings-subtitle">
+                Managed in code
+              </Typography.Title>
+              <Typography.Paragraph type="secondary">
+                Set this when the organization is kept in a repository. Settings screens then say that an edit made
+                there is reverted by the next apply. It never blocks running, approving or locking.
+              </Typography.Paragraph>
+              <Form.Item
+                name="managedInCodeRepository"
+                label="Repository"
+                rules={[
+                  {
+                    // The banner links to it, and only an http or https address is kept: anything else would be saved
+                    // and then shown with no link and no word on why.
+                    validator: (_, value?: string) =>
+                      !value?.trim() || safeRepository(value.trim())
+                        ? Promise.resolve()
+                        : Promise.reject(new Error("Enter an http or https address")),
+                  },
+                ]}
+              >
+                <Input placeholder="https://github.com/example/tf-terrakube-admin" maxLength={512} />
+              </Form.Item>
+              <Form.Item name="managedInCodeMode" label="On the settings screens">
+                <Select
+                  options={[
+                    { value: "warn", label: "Show a notice" },
+                    { value: "readonly", label: "Show a notice and make them read-only" },
                   ]}
                 />
               </Form.Item>
