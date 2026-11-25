@@ -35,7 +35,7 @@ const workspace = {
   projectName: null,
 } as any;
 
-test("organization table row is a real anchor pointing at the org workspaces URL", () => {
+test("organization table row is a real anchor pointing at the org overview URL", () => {
   render(
     <MemoryRouter>
       <OrganizationTable organizations={[org]} />
@@ -43,10 +43,10 @@ test("organization table row is a real anchor pointing at the org workspaces URL
   );
   const link = screen.getByRole("link", { name: /open organization acme corp/i });
   expect(link.tagName).toBe("A");
-  expect(link.getAttribute("href")).toBe("/organizations/org-1/workspaces");
+  expect(link.getAttribute("href")).toBe("/organizations/org-1/overview");
 });
 
-test("organization grid card is a real anchor pointing at the org workspaces URL", () => {
+test("organization grid card is a real anchor pointing at the org overview URL", () => {
   render(
     <MemoryRouter>
       <OrganizationGridItem organization={org} />
@@ -54,7 +54,7 @@ test("organization grid card is a real anchor pointing at the org workspaces URL
   );
   const link = screen.getByRole("link");
   expect(link.tagName).toBe("A");
-  expect(link.getAttribute("href")).toBe("/organizations/org-1/workspaces");
+  expect(link.getAttribute("href")).toBe("/organizations/org-1/overview");
   expect(screen.getByText("Acme Corp")).toBeInTheDocument();
 });
 
