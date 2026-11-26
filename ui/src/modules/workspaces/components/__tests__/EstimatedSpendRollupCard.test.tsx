@@ -70,5 +70,26 @@ describe("EstimatedSpendRollupCard", () => {
     expect(screen.getByText("EUR (1 workspace)")).toBeInTheDocument();
     expect(screen.getByText("Payments: $150.25/mo")).toBeInTheDocument();
     expect(screen.getByText("Compliance: €80.00/mo")).toBeInTheDocument();
+    expect(screen.getByText(/cost sorting compares raw amounts without FX conversion/i)).toBeInTheDocument();
+  });
+
+  it("omits the multi-currency note when only a single currency is present", () => {
+    render(
+      <EstimatedSpendRollupCard
+        workspaces={[
+          {
+            id: "ws-1",
+            name: "us-app",
+            iacType: "terraform",
+            source: "",
+            currentMonthlyCost: 150.25,
+            costCurrency: "USD",
+          },
+        ]}
+      />
+    );
+
+    expect(screen.getByText("$150.25/mo")).toBeInTheDocument();
+    expect(screen.queryByText(/cost sorting compares raw amounts without FX conversion/i)).not.toBeInTheDocument();
   });
 });

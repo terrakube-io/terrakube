@@ -52,6 +52,12 @@ export default function EstimatedSpendRollupCard({
         ))}
       </div>
 
+      {aggregation.currencyTotals.length > 1 && (
+        <Typography.Text className="estimated-spend-rollup-meta">
+          Multiple currencies shown separately; cost sorting compares raw amounts without FX conversion.
+        </Typography.Text>
+      )}
+
       {showProjectBreakdown && aggregation.projectTotals.length > 1 && (
         <div className="estimated-spend-projects">
           <span className="estimated-spend-projects-label">By project:</span>

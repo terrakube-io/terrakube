@@ -339,7 +339,7 @@ export default function ProjectWorkspaces({
               onDone={() => load(true)}
             />
           )}
-          <EstimatedSpendRollupCard workspaces={workspaces} title="Estimated Project Monthly Spend" />
+          <EstimatedSpendRollupCard workspaces={workspaces} title="Estimated Project Monthly Spend (Current Page)" />
           {view === "rows" ? (
             workspaces.length === 0 ? (
               <EmptyState

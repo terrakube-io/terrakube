@@ -123,7 +123,10 @@ describe("workspaceService.listWorkspaces", () => {
       { organizationId: "org-1", first: 20, after: 0, sort: "cost_desc" },
       false
     );
+    expect(mockApiPost.mock.calls[0][1].query).toContain("$filter: String");
+    expect(mockApiPost.mock.calls[0][1].query).toContain("filter: $filter");
     expect(mockApiPost.mock.calls[0][1].variables.sort).toBe("-currentMonthlyCost,-id");
+    expect(mockApiPost.mock.calls[0][1].variables.filter).toBe("currentMonthlyCost=isnull=false");
     expect(descResult.data?.workspaces[0]).toEqual(
       expect.objectContaining({
         currentMonthlyCost: 145.75,
@@ -134,6 +137,15 @@ describe("workspaceService.listWorkspaces", () => {
 
     await workspaceService.listWorkspacePage({ organizationId: "org-1", first: 20, after: 0, sort: "cost_asc" }, false);
     expect(mockApiPost.mock.calls[1][1].variables.sort).toBe("currentMonthlyCost,id");
+    expect(mockApiPost.mock.calls[1][1].variables.filter).toBe("currentMonthlyCost=isnull=false");
+
+    await workspaceService.listWorkspacePage(
+      { organizationId: "org-1", first: 20, after: 0, search: "finops", sort: "cost_desc" },
+      false
+    );
+    expect(mockApiPost.mock.calls[2][1].variables.filter).toBe(
+      '(name=ini="*finops*",description=ini="*finops*");currentMonthlyCost=isnull=false'
+    );
   });
 });
 

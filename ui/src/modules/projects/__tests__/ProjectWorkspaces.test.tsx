@@ -131,7 +131,7 @@ describe("ProjectWorkspaces", () => {
     listWorkspacePage.mockResolvedValue(page([workspace({ currentMonthlyCost: 125.4, costCurrency: "USD" })]));
     renderTab();
 
-    expect(await screen.findByText("Estimated Project Monthly Spend")).toBeInTheDocument();
+    expect(await screen.findByText("Estimated Project Monthly Spend (Current Page)")).toBeInTheDocument();
     expect(screen.getAllByText("$125.40/mo").length).toBeGreaterThanOrEqual(2);
 
     await userEvent.click(screen.getByText("Est. Monthly Cost"));

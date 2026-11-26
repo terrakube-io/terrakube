@@ -183,7 +183,9 @@ function workspaceFilter(
       ? policyStatus === "UNKNOWN"
         ? "(policyComplianceStatus=isnull=true,policyComplianceStatus==UNKNOWN)"
         : `policyComplianceStatus==${quoteRsql(policyStatus)}`
-      : undefined
+      : undefined,
+    // PostgreSQL sorts NULLs first on DESC; exclude unpriced workspaces when sorting by cost
+    request.sort === "cost_desc" || request.sort === "cost_asc" ? "currentMonthlyCost=isnull=false" : undefined
   );
 }
 
