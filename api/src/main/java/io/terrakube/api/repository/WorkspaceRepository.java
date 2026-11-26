@@ -16,7 +16,6 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.jpa.repository.QueryHints;
 import org.springframework.data.repository.query.Param;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.Date;
@@ -135,11 +134,13 @@ public interface WorkspaceRepository extends JpaRepository<Workspace, UUID> {
     Optional<Workspace> lockForUpdate(@Param("id") UUID id);
 
     /**
-     * Writes only the three cost-tracking columns so callers cannot overwrite unrelated workspace fields.
+     * Writes only the three cost-tracking columns via native SQL so callers cannot overwrite unrelated workspace fields,
+     * and standard JPA entity saves (with {@code insertable = false, updatable = false}) cannot overwrite cost columns.
      */
     @Modifying
-    @Query("UPDATE workspace w SET w.currentMonthlyCost = :cost, w.costCurrency = :currency, w.costUpdatedAt = :updatedAt WHERE w.id = :id")
-    int updateCost(@Param("id") UUID id,
+    @Query(value = "UPDATE workspace SET current_monthly_cost = :cost, cost_currency = :currency, cost_updated_at = :updatedAt WHERE id = :id",
+            nativeQuery = true)
+    int updateCost(@Param("id") String id,
                    @Param("cost") BigDecimal cost,
                    @Param("currency") String currency,
                    @Param("updatedAt") Date updatedAt);

@@ -1,12 +1,16 @@
 package io.terrakube.api;
 
+import io.terrakube.api.plugin.cost.WorkspaceCostWriter;
 import io.terrakube.api.rs.team.Team;
 import io.terrakube.api.rs.workspace.Workspace;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 
+import java.math.BigDecimal;
+import java.util.Date;
 import java.util.UUID;
 
 import static io.restassured.RestAssured.given;
@@ -25,6 +29,9 @@ class WorkspaceCostPermissionTest extends ServerApplicationTests {
     private String previousRole;
     private boolean previousManageWorkspace;
     private UUID createdWorkspaceId;
+
+    @Autowired
+    private WorkspaceCostWriter workspaceCostWriter;
 
     @BeforeEach
     void grantManageWorkspaceToDevelopers() {
@@ -124,5 +131,30 @@ class WorkspaceCostPermissionTest extends ServerApplicationTests {
 
         assertThat(response.statusCode()).isEqualTo(HttpStatus.CREATED.value());
         createdWorkspaceId = UUID.fromString(response.jsonPath().getString("data.id"));
+    }
+
+    @Test
+    void staleWorkspaceEntitySaveDoesNotOverwriteUpdatedCostColumns() {
+        UUID wsId = UUID.fromString(WORKSPACE_ID);
+        Workspace staleWorkspace = workspaceRepository.findById(wsId).orElseThrow();
+        boolean originalLocked = staleWorkspace.isLocked();
+        Date updatedAt = new Date();
+
+        try {
+            workspaceCostWriter.writeCost(wsId, new BigDecimal("314.1500"), "EUR", updatedAt);
+
+            staleWorkspace.setLocked(!originalLocked);
+            workspaceRepository.save(staleWorkspace);
+
+            Workspace reloaded = workspaceRepository.findById(wsId).orElseThrow();
+            assertThat(reloaded.isLocked()).isEqualTo(!originalLocked);
+            assertThat(reloaded.getCurrentMonthlyCost()).isEqualByComparingTo(new BigDecimal("314.1500"));
+            assertThat(reloaded.getCostCurrency()).isEqualTo("EUR");
+            assertThat(reloaded.getCostUpdatedAt()).isNotNull();
+        } finally {
+            staleWorkspace.setLocked(originalLocked);
+            workspaceRepository.save(staleWorkspace);
+            workspaceCostWriter.writeCost(wsId, null, "USD", null);
+        }
     }
 }

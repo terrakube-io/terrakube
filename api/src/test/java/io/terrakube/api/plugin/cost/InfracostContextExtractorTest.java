@@ -136,4 +136,35 @@ class InfracostContextExtractorTest {
                 2, 2, 0, 0, null, null);
         assertThat(negative.formatMonthlyDelta()).isEqualTo("-$20.00 (-20.0%)");
     }
+
+    @Test
+    void sanitizesUntrustedCurrencyValuesInContext() {
+        when(storageTypeService.getContext(47)).thenReturn("""
+                {
+                  "infracost": {
+                    "status": "SUCCESS",
+                    "currency": "USD | [phish](https://evil.com) @everyone <@U12345>",
+                    "totalMonthlyCost": 42.00
+                  }
+                }
+                """);
+        InfracostSummary injected = extractor.extract(47).orElseThrow();
+        assertThat(injected.currencyOrDefault()).isEqualTo("USD");
+
+        when(storageTypeService.getContext(48)).thenReturn("""
+                {
+                  "infracost": {
+                    "status": "SUCCESS",
+                    "currency": " eur ",
+                    "totalMonthlyCost": 42.00
+                  }
+                }
+                """);
+        InfracostSummary validLower = extractor.extract(48).orElseThrow();
+        assertThat(validLower.currencyOrDefault()).isEqualTo("EUR");
+
+        assertThat(InfracostContextExtractor.sanitizeCurrency("SUPERLONGCURRENCY")).isEqualTo("USD");
+        assertThat(InfracostContextExtractor.sanitizeCurrency("  ")).isEqualTo("USD");
+        assertThat(InfracostContextExtractor.sanitizeCurrency(null)).isEqualTo("USD");
+    }
 }

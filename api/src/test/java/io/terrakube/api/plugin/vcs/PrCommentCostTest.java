@@ -13,6 +13,7 @@ import io.terrakube.api.repository.StepRepository;
 import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
+import io.terrakube.api.rs.job.step.Step;
 import io.terrakube.api.rs.vcs.Vcs;
 import io.terrakube.api.rs.vcs.VcsType;
 import io.terrakube.api.rs.workspace.Workspace;
@@ -170,6 +171,41 @@ class PrCommentCostTest {
         assertThat(rendered)
                 .contains("| **—** | **$25.00** | **—** |")
                 .doesNotContain("evil.example.com");
+    }
+
+    @Test
+    void renderCostEstimationSummaryLoadsStepsFromRepositoryWithoutTouchingLazyCollection() {
+        UUID step1Id = UUID.randomUUID();
+        UUID step2Id = UUID.randomUUID();
+        Step step1 = new Step();
+        step1.setId(step1Id);
+        step1.setStepNumber(100);
+        Step step2 = new Step();
+        step2.setId(step2Id);
+        step2.setStepNumber(200);
+
+        Job detachedJob = mock(Job.class);
+        when(detachedJob.getId()).thenReturn(782);
+        when(detachedJob.getStep()).thenThrow(new org.hibernate.LazyInitializationException("no session"));
+        when(stepRepository.findByJobId(782)).thenReturn(List.of(step1, step2));
+        when(storageTypeService.getContext(782)).thenReturn("""
+                {
+                  "infracost/%s": {
+                    "status": "SUCCESS",
+                    "currency": "USD",
+                    "totalMonthlyCost": 10.00
+                  },
+                  "infracost/%s": {
+                    "status": "SUCCESS",
+                    "currency": "USD",
+                    "totalMonthlyCost": 88.50
+                  }
+                }
+                """.formatted(step1Id, step2Id));
+
+        String rendered = prCommentService.renderCostEstimationSummary(detachedJob).orElseThrow();
+        assertThat(rendered).contains("$88.50");
+        verify(stepRepository).findByJobId(782);
     }
 
     private static Job githubPrJob(int id, JobStatus status) {

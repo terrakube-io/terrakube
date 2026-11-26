@@ -22,6 +22,6 @@ public class WorkspaceCostWriter {
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void writeCost(UUID workspaceId, BigDecimal cost, String currency, Date updatedAt) {
-        workspaceRepository.updateCost(workspaceId, cost, currency, updatedAt);
+        workspaceRepository.updateCost(workspaceId.toString(), cost, currency, updatedAt);
     }
 }

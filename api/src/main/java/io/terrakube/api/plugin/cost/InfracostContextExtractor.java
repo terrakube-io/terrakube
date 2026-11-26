@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.regex.Pattern;
 
 @Slf4j
 @Service
@@ -24,6 +25,8 @@ public class InfracostContextExtractor {
 
     private static final String CONTEXT_KEY_PREFIX = "infracost";
     private static final String STEP_KEY_PREFIX = CONTEXT_KEY_PREFIX + "/";
+    private static final Pattern CURRENCY_PATTERN = Pattern.compile("^[A-Z]{3,10}$");
+    private static final String DEFAULT_CURRENCY = "USD";
 
     private final StorageTypeService storageTypeService;
     private final ObjectMapper objectMapper;
@@ -73,10 +76,7 @@ public class InfracostContextExtractor {
             status = infracost.has("errorMessage") ? "ERROR" : "SUCCESS";
         }
 
-        String currency = textOrNull(infracost.get("currency"));
-        if (currency == null) {
-            currency = "USD";
-        }
+        String currency = sanitizeCurrency(textOrNull(infracost.get("currency")));
 
         JsonNode summaryNode = infracost.path("summary");
         return Optional.of(new InfracostSummary(
@@ -123,6 +123,14 @@ public class InfracostContextExtractor {
         }
         JsonNode legacyNode = root.get(CONTEXT_KEY_PREFIX);
         return (legacyNode != null && legacyNode.isObject()) ? legacyNode : null;
+    }
+
+    public static String sanitizeCurrency(String raw) {
+        if (raw == null) {
+            return DEFAULT_CURRENCY;
+        }
+        String normalized = raw.trim().toUpperCase(Locale.ROOT);
+        return CURRENCY_PATTERN.matcher(normalized).matches() ? normalized : DEFAULT_CURRENCY;
     }
 
     static String sanitizeShareUrl(String raw) {

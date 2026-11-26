@@ -24,6 +24,7 @@ import io.terrakube.api.rs.notification.NotificationOutbox;
 import io.terrakube.api.rs.notification.NotificationOutboxStatus;
 import io.terrakube.api.rs.template.Template;
 import io.terrakube.api.repository.NotificationOutboxRepository;
+import io.terrakube.api.repository.StepRepository;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -62,6 +63,7 @@ public class JobNotificationTrigger {
     private final NotificationDispatchService notificationDispatchService;
     private final JobFailureSummaryService jobFailureSummaryService;
     private final InfracostContextExtractor infracostContextExtractor;
+    private final StepRepository stepRepository;
 
     @Value("${io.terrakube.ui.url:}")
     private String uiUrl;
@@ -78,13 +80,15 @@ public class JobNotificationTrigger {
             NotificationOutboxRepository notificationOutboxRepository,
             NotificationDispatchService notificationDispatchService,
             JobFailureSummaryService jobFailureSummaryService,
-            InfracostContextExtractor infracostContextExtractor) {
+            InfracostContextExtractor infracostContextExtractor,
+            StepRepository stepRepository) {
         this.notificationConfigResolver = notificationConfigResolver;
         this.notificationPayloadRenderer = notificationPayloadRenderer;
         this.notificationOutboxRepository = notificationOutboxRepository;
         this.notificationDispatchService = notificationDispatchService;
         this.jobFailureSummaryService = jobFailureSummaryService;
         this.infracostContextExtractor = infracostContextExtractor;
+        this.stepRepository = stepRepository;
     }
 
     // Returns the ids of rows that are due for immediate dispatch. A row rendered for a
@@ -111,7 +115,9 @@ public class JobNotificationTrigger {
                 InfracostSummary costForConfig = null;
                 if (shouldAttachCostSummary(job.getStatus()) && needsCostSummary(configuration)) {
                     if (!costLoaded) {
-                        cachedCostSummary = infracostContextExtractor.extract(job.getId()).orElse(null);
+                        cachedCostSummary = infracostContextExtractor
+                                .extract(job.getId(), stepRepository.findByJobId(job.getId()))
+                                .orElse(null);
                         costLoaded = true;
                     }
                     costForConfig = cachedCostSummary;

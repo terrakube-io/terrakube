@@ -9,9 +9,11 @@ import io.terrakube.api.plugin.notification.JobNotificationTrigger;
 import io.terrakube.api.plugin.notification.NotificationConfigResolver;
 import io.terrakube.api.plugin.notification.NotificationDispatchService;
 import io.terrakube.api.repository.NotificationOutboxRepository;
+import io.terrakube.api.repository.StepRepository;
 import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
+import io.terrakube.api.rs.job.step.Step;
 import io.terrakube.api.rs.notification.NotificationChannelType;
 import io.terrakube.api.rs.notification.NotificationConfiguration;
 import io.terrakube.api.rs.notification.NotificationMessageStyle;
@@ -96,9 +98,10 @@ class CostNotificationPayloadTest {
         NotificationDispatchService dispatchService = mock(NotificationDispatchService.class);
         JobFailureSummaryService failureSummaryService = mock(JobFailureSummaryService.class);
         InfracostContextExtractor extractor = mock(InfracostContextExtractor.class);
+        StepRepository stepRepository = mock(StepRepository.class);
 
         JobNotificationTrigger trigger = new JobNotificationTrigger(
-                configResolver, renderer, outboxRepository, dispatchService, failureSummaryService, extractor);
+                configResolver, renderer, outboxRepository, dispatchService, failureSummaryService, extractor, stepRepository);
 
         Organization org = new Organization();
         org.setId(UUID.randomUUID());
@@ -131,13 +134,20 @@ class CostNotificationPayloadTest {
                 new BigDecimal("10.00"), BigDecimal.ZERO, new BigDecimal("10.00"),
                 1, 1, 0, 0, null, null);
 
+        Step step = new Step();
+        step.setId(UUID.randomUUID());
+        step.setStepNumber(100);
+        List<Step> steps = List.of(step);
+
         when(configResolver.resolve(ws)).thenReturn(List.of(detailedSlack, detailedTeams, webhook));
-        when(extractor.extract(55)).thenReturn(Optional.of(summary));
+        when(stepRepository.findByJobId(55)).thenReturn(steps);
+        when(extractor.extract(55, steps)).thenReturn(Optional.of(summary));
         when(renderer.render(any(), any())).thenReturn("{}");
 
         trigger.enqueue(job);
 
-        verify(extractor, times(1)).extract(55);
+        verify(stepRepository, times(1)).findByJobId(55);
+        verify(extractor, times(1)).extract(55, steps);
         ArgumentCaptor<NotificationContext> contextCaptor = ArgumentCaptor.forClass(NotificationContext.class);
         verify(renderer, times(3)).render(any(), contextCaptor.capture());
         assertThat(contextCaptor.getAllValues()).extracting(NotificationContext::costSummary).containsOnly(summary);

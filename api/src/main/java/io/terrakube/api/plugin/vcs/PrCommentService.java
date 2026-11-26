@@ -872,7 +872,7 @@ public class PrCommentService {
             return Optional.empty();
         }
         try {
-            List<Step> steps = job.getStep() != null ? job.getStep() : List.of();
+            List<Step> steps = stepRepository != null ? stepRepository.findByJobId(job.getId()) : List.of();
             Optional<InfracostSummary> summaryOpt = infracostContextExtractor.extractFromRootNode(contextRoot, steps);
             if (summaryOpt.isEmpty()) {
                 return Optional.empty();

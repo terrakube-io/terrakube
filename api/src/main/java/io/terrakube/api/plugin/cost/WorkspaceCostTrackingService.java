@@ -15,9 +15,7 @@ import java.math.RoundingMode;
 import java.util.Comparator;
 import java.util.Date;
 import java.util.List;
-import java.util.Locale;
 import java.util.Optional;
-import java.util.regex.Pattern;
 
 @Slf4j
 @Service
@@ -25,8 +23,6 @@ import java.util.regex.Pattern;
 public class WorkspaceCostTrackingService {
 
     static final BigDecimal MAX_DECIMAL_19_4 = new BigDecimal("999999999999999.9999");
-    private static final Pattern CURRENCY_PATTERN = Pattern.compile("^[A-Z]{3,10}$");
-    private static final String DEFAULT_CURRENCY = "USD";
 
     private final WorkspaceCostWriter workspaceCostWriter;
     private final TclService tclService;
@@ -90,11 +86,7 @@ public class WorkspaceCostTrackingService {
     }
 
     static String sanitizeCurrency(String raw) {
-        if (raw == null) {
-            return DEFAULT_CURRENCY;
-        }
-        String normalized = raw.trim().toUpperCase(Locale.ROOT);
-        return CURRENCY_PATTERN.matcher(normalized).matches() ? normalized : DEFAULT_CURRENCY;
+        return InfracostContextExtractor.sanitizeCurrency(raw);
     }
 
     private FlowType findLastCompletedStateFlow(Job job, List<Step> steps) {
