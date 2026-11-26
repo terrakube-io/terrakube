@@ -51,3 +51,43 @@ export const withBasePath = (path: string): string => {
 
   return `${baseNoTrailingSlash}${normalizedPath}`;
 };
+
+// Query parameters an OIDC redirect appends; a target carrying them would replay the callback.
+const OIDC_CALLBACK_PARAMS = ["code", "state", "session_state", "iss", "error", "error_description", "error_uri"];
+
+// The in-app location to come back to after signing in: path, query and fragment of the current URL.
+export const getPostLoginTarget = (): string =>
+  `${window.location.pathname}${window.location.search}${window.location.hash}`;
+
+// Resolves the sign-in state round-tripped through the identity provider into a same-origin path
+// under the UI base path, falling back to the base path for anything else (including the absolute
+// redirect URI older sessions stored as state), so the callback can never navigate off the UI.
+export const resolvePostLoginTarget = (state: unknown): string => {
+  const basePath = getBasePath();
+
+  if (typeof state !== "string" || !state.startsWith("/") || state.startsWith("//") || state.startsWith("/\\")) {
+    return basePath;
+  }
+
+  let target: URL;
+  try {
+    target = new URL(state, window.location.origin);
+  } catch {
+    return basePath;
+  }
+
+  // Dot segments can normalize a path into a protocol-relative one ("/..//host" -> "//host").
+  if (target.origin !== window.location.origin || target.pathname.startsWith("//")) {
+    return basePath;
+  }
+
+  // The bare base path ("/ui") is outside the router's "/ui/" basename and would render a 404.
+  if (target.pathname === trimTrailingSlash(basePath)) {
+    target.pathname = basePath;
+  } else if (!target.pathname.startsWith(basePath)) {
+    return basePath;
+  }
+
+  OIDC_CALLBACK_PARAMS.forEach((param) => target.searchParams.delete(param));
+  return `${target.pathname}${target.search}${target.hash}`;
+};
