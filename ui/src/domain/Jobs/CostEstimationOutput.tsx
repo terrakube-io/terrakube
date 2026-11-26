@@ -312,8 +312,18 @@ export const CostEstimationOutput: React.FC<Props> = ({ infracost }) => {
           type="info"
           showIcon
           data-testid="cost-truncated-notice"
-          title="Showing top priced resources in summary"
-          description="This plan exceeded the job context size limit, so only the highest-cost resources are displayed below."
+          title={
+            resources.length > 0 ? "Showing top priced resources in summary" : "Resource breakdown omitted in summary"
+          }
+          description={
+            resources.length > 0
+              ? infracost.omittedResourceCount != null && infracost.omittedResourceCount > 0
+                ? `This plan exceeded the job context size limit, so ${infracost.omittedResourceCount} lower-cost resources were omitted.`
+                : "This plan exceeded the job context size limit, so only the highest-cost resources are displayed below."
+              : infracost.omittedResourceCount != null && infracost.omittedResourceCount > 0
+                ? `This plan exceeded the job context size limit, so ${infracost.omittedResourceCount} resources were omitted from the job context summary.`
+                : "This plan exceeded the job context size limit, so the per-resource breakdown was omitted from the job context summary."
+          }
           style={{ marginBottom: 12 }}
         />
       )}
@@ -322,7 +332,7 @@ export const CostEstimationOutput: React.FC<Props> = ({ infracost }) => {
         <div className="cost-kpi-card">
           <span className="cost-kpi-label">Monthly Estimate</span>
           <span className="cost-kpi-value">{formatMonthlyCost(infracost.totalMonthlyCost, currency)}</span>
-          {infracost.totalHourlyCost && (
+          {parseCostAmount(infracost.totalHourlyCost) !== null && (
             <span className="cost-kpi-sub">{formatCurrency(infracost.totalHourlyCost, currency)}/hr</span>
           )}
         </div>
@@ -341,24 +351,37 @@ export const CostEstimationOutput: React.FC<Props> = ({ infracost }) => {
         <div className="cost-kpi-card">
           <span className="cost-kpi-label">Previous Monthly</span>
           <span className="cost-kpi-value">{formatMonthlyCost(infracost.pastTotalMonthlyCost, currency)}</span>
-          {infracost.pastTotalHourlyCost && (
+          {parseCostAmount(infracost.pastTotalHourlyCost) !== null && (
             <span className="cost-kpi-sub">{formatCurrency(infracost.pastTotalHourlyCost, currency)}/hr</span>
           )}
         </div>
         <div className="cost-kpi-card">
           <span className="cost-kpi-label">Priced Resources</span>
-          <span className="cost-kpi-value">
-            {pricedResourcesCount} / {detectedResourcesCount}
-          </span>
-          <span className="cost-kpi-sub">
-            {unsupportedCount > 0 && noPriceCount > 0
-              ? `${unsupportedCount} unsupported · ${noPriceCount} free`
-              : unsupportedCount > 0
-                ? `${unsupportedCount} unsupported`
-                : noPriceCount > 0
-                  ? `${noPriceCount} free`
-                  : "All detected resources priced"}
-          </span>
+          {infracost.truncated && !summary && resources.length === 0 ? (
+            <>
+              <span className="cost-kpi-value">—</span>
+              <span className="cost-kpi-sub">
+                {infracost.omittedResourceCount != null && infracost.omittedResourceCount > 0
+                  ? `${infracost.omittedResourceCount} resources omitted`
+                  : "Breakdown omitted from summary"}
+              </span>
+            </>
+          ) : (
+            <>
+              <span className="cost-kpi-value">
+                {pricedResourcesCount} / {detectedResourcesCount}
+              </span>
+              <span className="cost-kpi-sub">
+                {unsupportedCount > 0 && noPriceCount > 0
+                  ? `${unsupportedCount} unsupported · ${noPriceCount} free`
+                  : unsupportedCount > 0
+                    ? `${unsupportedCount} unsupported`
+                    : noPriceCount > 0
+                      ? `${noPriceCount} free`
+                      : "All detected resources priced"}
+              </span>
+            </>
+          )}
         </div>
       </div>
 

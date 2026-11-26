@@ -243,11 +243,13 @@ export default function ProjectWorkspaces({
       setSelected([]);
     };
 
+  const costSortActive = sort.startsWith("cost_");
   const filtersActive =
     debouncedSearch !== "" ||
     status !== WorkspaceStatusFilter.All ||
     policyStatus !== PolicyComplianceFilter.All ||
-    tagFilters.length > 0;
+    tagFilters.length > 0 ||
+    costSortActive;
   const projectIsEmpty = loaded && total === 0 && !filtersActive;
 
   return (
@@ -339,16 +341,26 @@ export default function ProjectWorkspaces({
               onDone={() => load(true)}
             />
           )}
-          <EstimatedSpendRollupCard workspaces={workspaces} title="Estimated Project Monthly Spend (Current Page)" />
+          <EstimatedSpendRollupCard
+            workspaces={workspaces}
+            title="Estimated Project Monthly Spend (Current Page)"
+            costSortActive={costSortActive}
+          />
           {view === "rows" ? (
             workspaces.length === 0 ? (
               <EmptyState
                 description={
                   !loaded
                     ? "Loading workspaces..."
-                    : filtersActive
-                      ? "No workspaces match these filters."
-                      : "No workspaces assigned to this project yet."
+                    : costSortActive &&
+                        debouncedSearch === "" &&
+                        status === WorkspaceStatusFilter.All &&
+                        policyStatus === PolicyComplianceFilter.All &&
+                        tagFilters.length === 0
+                      ? "No workspaces have a cost estimate yet."
+                      : filtersActive
+                        ? "No workspaces match these filters."
+                        : "No workspaces assigned to this project yet."
                 }
               />
             ) : (

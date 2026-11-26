@@ -102,9 +102,12 @@ export default function OrganizationsDetailPage({ organizationName, setOrganizat
     sortOption,
   ]);
 
-  // Facet counts only depend on the filters, so page turns and page-size changes reuse the last ones.
+  // Facet counts only depend on the filters (and whether cost-only sorting is active), so page turns reuse them.
   const countsKey = useMemo(
-    () => (request ? JSON.stringify({ ...request, first: 0, after: 0, sort: "" }) : ""),
+    () =>
+      request
+        ? JSON.stringify({ ...request, first: 0, after: 0, sort: "", costOnly: request.sort.startsWith("cost_") })
+        : "",
     [request]
   );
 
@@ -270,6 +273,7 @@ export default function OrganizationsDetailPage({ organizationName, setOrganizat
           workspaces={workspaces}
           title="Estimated Monthly Spend (Current Page)"
           showProjectBreakdown
+          costSortActive={sortOption.startsWith("cost_")}
         />
         {listViewMode === "compact" && id && (
           <WorkspaceTable

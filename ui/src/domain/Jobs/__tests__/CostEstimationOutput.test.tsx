@@ -304,4 +304,30 @@ describe("CostEstimationOutput", () => {
     expect(screen.queryByTestId("cost-unpriced-banner")).not.toBeInTheDocument();
     expect(screen.getByText("20 free")).toBeInTheDocument();
   });
+
+  it("renders numeric 0 hourly totals without stray zero text and handles minimal empty truncated payloads", () => {
+    const { container } = render(
+      <CostEstimationOutput
+        infracost={{
+          status: "SUCCESS",
+          currency: "USD",
+          totalMonthlyCost: 0,
+          totalHourlyCost: 0,
+          pastTotalMonthlyCost: 0,
+          pastTotalHourlyCost: 0,
+          diffTotalMonthlyCost: 0,
+          truncated: true,
+          omittedResourceCount: 250,
+          projects: [],
+        }}
+      />
+    );
+
+    expect(screen.getAllByText("$0.00/hr")).toHaveLength(2);
+    expect(container.textContent).not.toContain("$0.00/mo0");
+    expect(screen.getByText("Resource breakdown omitted in summary")).toBeInTheDocument();
+    expect(screen.getByText(/250 resources were omitted from the job context summary/i)).toBeInTheDocument();
+    expect(screen.getByText("250 resources omitted")).toBeInTheDocument();
+    expect(screen.queryByText("All detected resources priced")).not.toBeInTheDocument();
+  });
 });

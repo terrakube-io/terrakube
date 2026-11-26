@@ -92,4 +92,29 @@ describe("EstimatedSpendRollupCard", () => {
     expect(screen.getByText("$150.25/mo")).toBeInTheDocument();
     expect(screen.queryByText(/cost sorting compares raw amounts without FX conversion/i)).not.toBeInTheDocument();
   });
+
+  it("explains that unpriced workspaces are excluded when cost sort is active", () => {
+    const { rerender } = render(
+      <EstimatedSpendRollupCard
+        workspaces={[
+          {
+            id: "ws-1",
+            name: "us-app",
+            iacType: "terraform",
+            source: "",
+            currentMonthlyCost: 150.25,
+            costCurrency: "USD",
+          },
+        ]}
+        costSortActive
+      />
+    );
+
+    expect(
+      screen.getByText(/Showing only workspaces with a cost estimate · 1 priced on this page/i)
+    ).toBeInTheDocument();
+
+    rerender(<EstimatedSpendRollupCard workspaces={[]} costSortActive />);
+    expect(screen.getByText("Showing only workspaces with a cost estimate")).toBeInTheDocument();
+  });
 });

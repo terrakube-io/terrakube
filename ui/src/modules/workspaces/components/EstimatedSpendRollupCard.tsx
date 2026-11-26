@@ -13,17 +13,36 @@ type Props = {
   workspaces: WorkspaceListItem[];
   title?: string;
   showProjectBreakdown?: boolean;
+  costSortActive?: boolean;
 };
 
 export default function EstimatedSpendRollupCard({
   workspaces,
   title = "Estimated Monthly Spend",
   showProjectBreakdown = false,
+  costSortActive = false,
 }: Props) {
   const aggregation = useMemo(() => aggregateSpendByCurrency(workspaces), [workspaces]);
 
   if (aggregation.totalPricedCount === 0) {
-    return null;
+    if (!costSortActive) {
+      return null;
+    }
+    return (
+      <section className="estimated-spend-rollup" aria-label={title} data-testid="estimated-spend-rollup">
+        <div className="estimated-spend-rollup-header">
+          <span className="estimated-spend-rollup-title">
+            <span>{title}</span>
+            <Tooltip title={COST_ESTIMATION_DISCLAIMER}>
+              <InfoCircleOutlined className="estimated-spend-rollup-info" aria-label="Cost estimation disclaimer" />
+            </Tooltip>
+          </span>
+          <Typography.Text className="estimated-spend-rollup-meta">
+            Showing only workspaces with a cost estimate
+          </Typography.Text>
+        </div>
+      </section>
+    );
   }
 
   return (
@@ -36,8 +55,9 @@ export default function EstimatedSpendRollupCard({
           </Tooltip>
         </span>
         <Typography.Text className="estimated-spend-rollup-meta">
-          {aggregation.totalPricedCount} of {aggregation.totalWorkspaces} workspaces priced · Pre-deployment on-demand
-          estimate
+          {costSortActive
+            ? `Showing only workspaces with a cost estimate · ${aggregation.totalPricedCount} priced on this page · Pre-deployment on-demand estimate`
+            : `${aggregation.totalPricedCount} of ${aggregation.totalWorkspaces} workspaces priced · Pre-deployment on-demand estimate`}
         </Typography.Text>
       </div>
 

@@ -914,6 +914,7 @@ export type InfracostContext = {
   shareUrl?: string;
   errorMessage?: string;
   truncated?: boolean;
+  omittedResourceCount?: number;
   summary?: InfracostSummaryCounts;
   projects?: InfracostProject[];
 };

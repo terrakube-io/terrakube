@@ -140,6 +140,20 @@ describe("ProjectWorkspaces", () => {
     await waitFor(() => expect(lastRequest().sort).toBe("cost_asc"));
   });
 
+  it("keeps controls visible and shows cost empty state when cost sort returns 0 priced workspaces", async () => {
+    listWorkspacePage
+      .mockResolvedValueOnce(page([workspace({ currentMonthlyCost: null })], 1))
+      .mockResolvedValueOnce(page([], 0));
+    renderTab();
+
+    await screen.findByText("network-production");
+    await userEvent.click(screen.getByText("Est. Monthly Cost"));
+
+    expect(await screen.findByText("No workspaces have a cost estimate yet.")).toBeInTheDocument();
+    expect(screen.queryByText("No workspaces in this project.")).not.toBeInTheDocument();
+    expect(screen.getByText("Showing only workspaces with a cost estimate")).toBeInTheDocument();
+  });
+
   it("shows the workflow instead of a repository for CLI and API driven workspaces", async () => {
     listWorkspacePage.mockResolvedValue(
       page([
