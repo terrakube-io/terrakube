@@ -8,6 +8,7 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -82,6 +83,7 @@ class RepoWebhookServiceTest {
     ModuleRefreshTransactions moduleRefreshTransactions;
     ModuleRefreshProperties moduleRefreshProperties;
     PrApplyAuthorizationService prApplyAuthorizationService;
+    SupersededPullRequestJobCanceller supersededPullRequestJobCanceller;
 
     RepoWebhookService subject;
 
@@ -104,6 +106,7 @@ class RepoWebhookServiceTest {
         moduleRefreshProperties = new ModuleRefreshProperties();
         // A mock answers Optional.empty(): every comment author may apply unless a test says otherwise.
         prApplyAuthorizationService = mock(PrApplyAuthorizationService.class);
+        supersededPullRequestJobCanceller = mock(SupersededPullRequestJobCanceller.class);
 
         subject = new RepoWebhookService(
                 repoWebhookRepository,
@@ -122,7 +125,8 @@ class RepoWebhookServiceTest {
                 webhookProperties,
                 moduleRefreshTransactions,
                 moduleRefreshProperties,
-                prApplyAuthorizationService);
+                prApplyAuthorizationService,
+                supersededPullRequestJobCanceller);
     }
 
     private Workspace workspaceWithSource(String source) {
@@ -769,6 +773,58 @@ class RepoWebhookServiceTest {
 
             assertThat(savedJob.getPrNumber()).isEqualTo(7);
             assertThat(savedJob.isPrApplyEnabled()).isTrue();
+        }
+
+        @Test
+        void v2WebhookPullRequestAsksToCancelTheRunsTheNewRunSupersedes() throws Exception {
+            String repoUrl = "https://github.com/owner/repo";
+            String payload = "{\"action\":\"synchronize\"}";
+            RepoWebhook rw = repoWebhookWith(repoUrl, "cancel-superseded-secret");
+
+            Workspace ws = workspaceWithSource(repoUrl);
+            Webhook wh = new Webhook();
+            wh.setMigratedV2(true);
+            ws.setWebhook(wh);
+
+            WebhookEvent event = new WebhookEvent();
+            event.setEvent(WebhookEventType.PULL_REQUEST);
+            event.setBranch(".*");
+            event.setPath("**");
+            event.setPathType(WebhookEventPathType.PATTERN);
+            event.setTemplateId("plan-template");
+            event.setCancelSupersededPrRuns(true);
+            wh.setEvents(List.of(event));
+
+            when(workspaceRepository.findByNormalizedSourceWithMigratedWebhook(repoUrl)).thenReturn(List.of(ws));
+            when(webhookEventRepository.findByWebhookAndEventOrderByPriorityAsc(wh, WebhookEventType.PULL_REQUEST))
+                    .thenReturn(List.of(event));
+
+            WebhookResult prResult = new WebhookResult();
+            prResult.setEvent("pull_request");
+            prResult.setValid(true);
+            prResult.setBranch("feature-branch");
+            prResult.setCommit("beef456");
+            prResult.setPrNumber(7);
+            prResult.setFileChanges(List.of("main.tf"));
+            when(gitHubWebhookService.parseGitHubPayload(eq(payload), any())).thenReturn(prResult);
+            when(jobRepository.save(any(Job.class))).thenAnswer(inv -> {
+                Job j = inv.getArgument(0);
+                j.setId(201);
+                return j;
+            });
+            // A failure to cancel must not undo or stop the new run.
+            doThrow(new RuntimeException("boom")).when(supersededPullRequestJobCanceller)
+                    .cancelSupersededIfEnabled(any(), any(), any());
+
+            subject.processClaimedDelivery(rw, payload, Map.of("x-github-event", "pull_request"));
+
+            ArgumentCaptor<Job> jobCaptor = ArgumentCaptor.forClass(Job.class);
+            verify(scheduleJobService).createJobContext(jobCaptor.capture());
+            Job savedJob = jobCaptor.getValue();
+            assertThat(savedJob.getId()).isEqualTo(201);
+            assertThat(savedJob.getOverrideBranch()).isEqualTo("feature-branch");
+            verify(supersededPullRequestJobCanceller).cancelSupersededIfEnabled(eq(event), any(WebhookResult.class),
+                    eq(savedJob));
         }
 
         @Test
@@ -2358,7 +2414,8 @@ class RepoWebhookServiceTest {
                         webhookProperties,
                         moduleRefreshTransactions,
                         moduleRefreshProperties,
-                        prApplyAuthorizationService);
+                        prApplyAuthorizationService,
+                        supersededPullRequestJobCanceller);
 
                 concurrentSubject.processClaimedDelivery(rw, payload, Map.of());
 

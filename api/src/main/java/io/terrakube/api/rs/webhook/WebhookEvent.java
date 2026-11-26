@@ -66,6 +66,11 @@ public class WebhookEvent extends GenericAuditFields {
     @Column(name = "pr_apply_enabled")
     private boolean prApplyEnabled = false;
 
+    // Opt-in: when a pull request event starts a new run, cancel the older runs of the same branch that
+    // have not started yet, so only the latest commit of the pull request is planned.
+    @Column(name = "cancel_superseded_pr_runs")
+    private boolean cancelSupersededPrRuns = false;
+
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     private Webhook webhook;
 }
