@@ -17,14 +17,15 @@ import io.terrakube.api.plugin.notification.payload.NotificationContext;
 import io.terrakube.api.plugin.notification.payload.NotificationPayloadRenderer;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
+import io.terrakube.api.rs.notification.NotificationChannelType;
 import io.terrakube.api.rs.notification.NotificationConfiguration;
+import io.terrakube.api.rs.notification.NotificationMessageStyle;
 import io.terrakube.api.rs.notification.NotificationOutbox;
 import io.terrakube.api.rs.notification.NotificationOutboxStatus;
 import io.terrakube.api.rs.template.Template;
 import io.terrakube.api.repository.NotificationOutboxRepository;
 
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 
 // Shared by two very different callers:
 //  - JobNotificationHook (an Elide LifeCycleHook) uses enqueue() only, deferring dispatch to its
@@ -76,18 +77,8 @@ public class JobNotificationTrigger {
             NotificationPayloadRenderer notificationPayloadRenderer,
             NotificationOutboxRepository notificationOutboxRepository,
             NotificationDispatchService notificationDispatchService,
-            JobFailureSummaryService jobFailureSummaryService) {
-        this(notificationConfigResolver, notificationPayloadRenderer, notificationOutboxRepository,
-                notificationDispatchService, jobFailureSummaryService, null);
-    }
-
-    @Autowired
-    public JobNotificationTrigger(NotificationConfigResolver notificationConfigResolver,
-            NotificationPayloadRenderer notificationPayloadRenderer,
-            NotificationOutboxRepository notificationOutboxRepository,
-            NotificationDispatchService notificationDispatchService,
             JobFailureSummaryService jobFailureSummaryService,
-            @Autowired(required = false) InfracostContextExtractor infracostContextExtractor) {
+            InfracostContextExtractor infracostContextExtractor) {
         this.notificationConfigResolver = notificationConfigResolver;
         this.notificationPayloadRenderer = notificationPayloadRenderer;
         this.notificationOutboxRepository = notificationOutboxRepository;
@@ -109,13 +100,23 @@ public class JobNotificationTrigger {
         try {
             boolean deferDispatch = RECOVERABLE_STATUSES.contains(job.getStatus());
             List<NotificationConfiguration> configs = notificationConfigResolver.resolve(job.getWorkspace());
+            boolean costLoaded = false;
+            InfracostSummary cachedCostSummary = null;
             for (NotificationConfiguration configuration : configs) {
                 boolean statusMatches = configuration.getTriggers() != null && configuration.getTriggers().stream()
                         .anyMatch(trigger -> trigger.getJobStatus() == job.getStatus());
                 if (!statusMatches || !templateMatches(configuration, job)) {
                     continue;
                 }
-                UUID outboxId = saveOutboxRow(job, configuration, deferDispatch);
+                InfracostSummary costForConfig = null;
+                if (shouldAttachCostSummary(job.getStatus()) && needsCostSummary(configuration)) {
+                    if (!costLoaded) {
+                        cachedCostSummary = infracostContextExtractor.extract(job.getId()).orElse(null);
+                        costLoaded = true;
+                    }
+                    costForConfig = cachedCostSummary;
+                }
+                UUID outboxId = saveOutboxRow(job, configuration, deferDispatch, costForConfig);
                 if (!deferDispatch) {
                     insertedIds.add(outboxId);
                 }
@@ -129,9 +130,10 @@ public class JobNotificationTrigger {
 
     // Renders and persists one PENDING outbox row. A deferred row (job in a RECOVERABLE_STATUS)
     // gets a nextAttemptAt in the future so only the poller picks it up, after the grace window.
-    private UUID saveOutboxRow(Job job, NotificationConfiguration configuration, boolean deferred) {
+    private UUID saveOutboxRow(Job job, NotificationConfiguration configuration, boolean deferred,
+            InfracostSummary costSummary) {
         String payload = notificationPayloadRenderer.render(configuration.getChannelType(),
-                buildContext(job, configuration));
+                buildContext(job, configuration, costSummary));
 
         NotificationOutbox outbox = new NotificationOutbox();
         outbox.setId(UUID.randomUUID());
@@ -177,6 +179,10 @@ public class JobNotificationTrigger {
     }
 
     NotificationContext buildContext(Job job, NotificationConfiguration configuration) {
+        return buildContext(job, configuration, null);
+    }
+
+    NotificationContext buildContext(Job job, NotificationConfiguration configuration, InfracostSummary costSummary) {
         String workspaceUrl = String.format("%s/organizations/%s/workspaces/%s", uiUrl,
                 job.getOrganization().getId(), job.getWorkspace().getId());
         String runUrl = workspaceUrl + "/runs/" + job.getId();
@@ -186,9 +192,6 @@ public class JobNotificationTrigger {
         // markers and is useless here.
         String failureReason = job.getStatus() == JobStatus.failed
                 ? jobFailureSummaryService.describeFailure(job)
-                : null;
-        InfracostSummary costSummary = shouldAttachCostSummary(job.getStatus()) && infracostContextExtractor != null
-                ? infracostContextExtractor.extract(job.getId()).orElse(null)
                 : null;
         return new NotificationContext(
                 job.getOrganization().getName(),
@@ -202,6 +205,13 @@ public class JobNotificationTrigger {
                 workspaceUrl,
                 configuration.getMessageStyle(),
                 costSummary);
+    }
+
+    private static boolean needsCostSummary(NotificationConfiguration configuration) {
+        if (configuration.getChannelType() == NotificationChannelType.WEBHOOK) {
+            return true;
+        }
+        return configuration.getMessageStyle() != NotificationMessageStyle.SIMPLE;
     }
 
     private static boolean shouldAttachCostSummary(JobStatus status) {

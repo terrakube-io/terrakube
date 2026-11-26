@@ -19,7 +19,6 @@ import io.terrakube.api.rs.notification.NotificationTrigger;
 import io.terrakube.api.rs.workspace.Workspace;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-import org.mockito.Mockito;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -27,15 +26,21 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 class CostNotificationPayloadTest {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Test
-    void buildersIncludeCostEstimationDetails() throws Exception {
+    void buildersIncludeCostEstimationDetailsWithCamelCaseWebhookKeys() throws Exception {
         InfracostSummary costSummary = new InfracostSummary(
                 "SUCCESS", "USD",
                 new BigDecimal("165.20"), new BigDecimal("120.00"), new BigDecimal("45.20"),
@@ -70,19 +75,27 @@ class CostNotificationPayloadTest {
 
         String webhookJson = new WebhookPayloadBuilder(objectMapper).build(context);
         JsonNode webhookNode = objectMapper.readTree(webhookJson);
-        assertThat(webhookNode.path("cost_estimation").path("total_monthly_cost").asText()).isEqualTo("165.20");
-        assertThat(webhookNode.path("cost_estimation").path("diff_monthly_cost").asText()).isEqualTo("45.20");
-        assertThat(webhookNode.path("cost_estimation").path("estimated").asBoolean()).isTrue();
+        JsonNode costNode = webhookNode.path("costEstimation");
+        assertThat(costNode.path("totalMonthlyCost").asText()).isEqualTo("165.20");
+        assertThat(costNode.path("pastMonthlyCost").asText()).isEqualTo("120.00");
+        assertThat(costNode.path("diffMonthlyCost").asText()).isEqualTo("45.20");
+        assertThat(costNode.path("detectedResources").asInt()).isEqualTo(12);
+        assertThat(costNode.path("supportedResources").asInt()).isEqualTo(10);
+        assertThat(costNode.path("unsupportedResources").asInt()).isEqualTo(1);
+        assertThat(costNode.path("noPriceResources").asInt()).isEqualTo(1);
+        assertThat(costNode.path("shareUrl").asText()).isEqualTo("https://dashboard.infracost.io/share/demo");
+        assertThat(costNode.path("estimated").asBoolean()).isTrue();
+        assertThat(webhookNode.has("cost_estimation")).isFalse();
     }
 
     @Test
-    void jobNotificationTriggerAttachesCostSummaryToContext() {
-        NotificationConfigResolver configResolver = Mockito.mock(NotificationConfigResolver.class);
-        NotificationPayloadRenderer renderer = Mockito.mock(NotificationPayloadRenderer.class);
-        NotificationOutboxRepository outboxRepository = Mockito.mock(NotificationOutboxRepository.class);
-        NotificationDispatchService dispatchService = Mockito.mock(NotificationDispatchService.class);
-        JobFailureSummaryService failureSummaryService = Mockito.mock(JobFailureSummaryService.class);
-        InfracostContextExtractor extractor = Mockito.mock(InfracostContextExtractor.class);
+    void jobNotificationTriggerExtractsCostAtMostOnceAndSkipsSimpleStyles() {
+        NotificationConfigResolver configResolver = mock(NotificationConfigResolver.class);
+        NotificationPayloadRenderer renderer = mock(NotificationPayloadRenderer.class);
+        NotificationOutboxRepository outboxRepository = mock(NotificationOutboxRepository.class);
+        NotificationDispatchService dispatchService = mock(NotificationDispatchService.class);
+        JobFailureSummaryService failureSummaryService = mock(JobFailureSummaryService.class);
+        InfracostContextExtractor extractor = mock(InfracostContextExtractor.class);
 
         JobNotificationTrigger trigger = new JobNotificationTrigger(
                 configResolver, renderer, outboxRepository, dispatchService, failureSummaryService, extractor);
@@ -101,28 +114,45 @@ class CostNotificationPayloadTest {
         job.setOrganization(org);
         job.setWorkspace(ws);
 
-        NotificationConfiguration cfg = new NotificationConfiguration();
-        cfg.setId(UUID.randomUUID());
-        cfg.setName("FinOps Slack");
-        cfg.setChannelType(NotificationChannelType.SLACK);
-        cfg.setMessageStyle(NotificationMessageStyle.DETAILED);
-        NotificationTrigger nt = new NotificationTrigger();
-        nt.setJobStatus(JobStatus.completed);
-        cfg.setTriggers(List.of(nt));
+        NotificationConfiguration simpleSlack = config("Simple Slack", NotificationChannelType.SLACK, NotificationMessageStyle.SIMPLE);
+        when(configResolver.resolve(ws)).thenReturn(List.of(simpleSlack));
+        when(renderer.render(eq(NotificationChannelType.SLACK), any())).thenReturn("{}");
+
+        trigger.enqueue(job);
+        verifyNoInteractions(extractor);
+        clearInvocations(renderer);
+
+        NotificationConfiguration detailedSlack = config("FinOps Slack", NotificationChannelType.SLACK, NotificationMessageStyle.DETAILED);
+        NotificationConfiguration detailedTeams = config("FinOps Teams", NotificationChannelType.TEAMS, NotificationMessageStyle.DETAILED);
+        NotificationConfiguration webhook = config("FinOps Webhook", NotificationChannelType.WEBHOOK, NotificationMessageStyle.DETAILED);
 
         InfracostSummary summary = new InfracostSummary(
                 "SUCCESS", "USD",
                 new BigDecimal("10.00"), BigDecimal.ZERO, new BigDecimal("10.00"),
                 1, 1, 0, 0, null, null);
 
-        when(configResolver.resolve(ws)).thenReturn(List.of(cfg));
+        when(configResolver.resolve(ws)).thenReturn(List.of(detailedSlack, detailedTeams, webhook));
         when(extractor.extract(55)).thenReturn(Optional.of(summary));
-        when(renderer.render(eq(NotificationChannelType.SLACK), any())).thenReturn("{}");
+        when(renderer.render(any(), any())).thenReturn("{}");
 
         trigger.enqueue(job);
 
+        verify(extractor, times(1)).extract(55);
         ArgumentCaptor<NotificationContext> contextCaptor = ArgumentCaptor.forClass(NotificationContext.class);
-        verify(renderer).render(eq(NotificationChannelType.SLACK), contextCaptor.capture());
-        assertThat(contextCaptor.getValue().costSummary()).isEqualTo(summary);
+        verify(renderer, times(3)).render(any(), contextCaptor.capture());
+        assertThat(contextCaptor.getAllValues()).extracting(NotificationContext::costSummary).containsOnly(summary);
+    }
+
+    private static NotificationConfiguration config(
+            String name, NotificationChannelType channel, NotificationMessageStyle style) {
+        NotificationConfiguration cfg = new NotificationConfiguration();
+        cfg.setId(UUID.randomUUID());
+        cfg.setName(name);
+        cfg.setChannelType(channel);
+        cfg.setMessageStyle(style);
+        NotificationTrigger nt = new NotificationTrigger();
+        nt.setJobStatus(JobStatus.completed);
+        cfg.setTriggers(List.of(nt));
+        return cfg;
     }
 }

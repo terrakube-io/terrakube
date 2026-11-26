@@ -42,25 +42,25 @@ public class WebhookPayloadBuilder implements NotificationPayloadBuilder {
             costNode.put("currency", cost.currencyOrDefault());
             costNode.put("estimated", true);
             if (cost.totalMonthlyCost() != null) {
-                costNode.put("total_monthly_cost", cost.totalMonthlyCost().toPlainString());
+                costNode.put("totalMonthlyCost", cost.totalMonthlyCost().toPlainString());
             }
             if (cost.pastTotalMonthlyCost() != null) {
-                costNode.put("past_monthly_cost", cost.pastTotalMonthlyCost().toPlainString());
+                costNode.put("pastMonthlyCost", cost.pastTotalMonthlyCost().toPlainString());
             }
             if (cost.diffTotalMonthlyCost() != null) {
-                costNode.put("diff_monthly_cost", cost.diffTotalMonthlyCost().toPlainString());
+                costNode.put("diffMonthlyCost", cost.diffTotalMonthlyCost().toPlainString());
             }
-            costNode.put("detected_resources", cost.totalDetectedResources());
-            costNode.put("supported_resources", cost.totalSupportedResources());
-            costNode.put("unsupported_resources", cost.totalUnsupportedResources());
-            costNode.put("no_price_resources", cost.totalNoPriceResources());
+            costNode.put("detectedResources", cost.totalDetectedResources());
+            costNode.put("supportedResources", cost.totalSupportedResources());
+            costNode.put("unsupportedResources", cost.totalUnsupportedResources());
+            costNode.put("noPriceResources", cost.totalNoPriceResources());
             if (cost.shareUrl() != null) {
-                costNode.put("share_url", cost.shareUrl());
+                costNode.put("shareUrl", cost.shareUrl());
             }
             if (cost.errorMessage() != null) {
-                costNode.put("error_message", cost.errorMessage());
+                costNode.put("errorMessage", cost.errorMessage());
             }
-            body.put("cost_estimation", costNode);
+            body.put("costEstimation", costNode);
         }
         try {
             return objectMapper.writeValueAsString(body);

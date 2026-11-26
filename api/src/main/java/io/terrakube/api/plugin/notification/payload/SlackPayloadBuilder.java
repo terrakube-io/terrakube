@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import io.terrakube.api.plugin.cost.InfracostSummary;
 import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.notification.NotificationChannelType;
 import io.terrakube.api.rs.notification.NotificationMessageStyle;
@@ -58,20 +59,7 @@ public class SlackPayloadBuilder implements NotificationPayloadBuilder {
                     "text", Map.of("type", "mrkdwn", "text", "*Failure reason:* " + context.failureReason())));
         }
 
-        if (context.costSummary() != null && context.costSummary().isSuccess()) {
-            var cost = context.costSummary();
-            StringBuilder costText = new StringBuilder()
-                    .append("*💰 Pre-Deployment Cost Estimation:*\n")
-                    .append("• *Est. Monthly Cost:* ").append(cost.formatTotalMonthlyCost()).append("\n")
-                    .append("• *Est. Monthly Delta:* ").append(cost.formatMonthlyDelta());
-            int unpriced = cost.unpricedResourceCount();
-            if (unpriced > 0) {
-                costText.append(" _(").append(unpriced).append(" unpriced resource(s))_");
-            }
-            blocks.add(Map.of(
-                    "type", "section",
-                    "text", Map.of("type", "mrkdwn", "text", costText.toString())));
-        }
+        appendCostBlock(blocks, context.costSummary());
 
         if (context.runUrl() != null && !context.runUrl().isBlank()) {
             blocks.add(Map.of(
@@ -121,6 +109,23 @@ public class SlackPayloadBuilder implements NotificationPayloadBuilder {
         } catch (Exception e) {
             throw new IllegalStateException("Failed to render Slack payload", e);
         }
+    }
+
+    private static void appendCostBlock(List<Map<String, Object>> blocks, InfracostSummary cost) {
+        if (cost == null || !cost.isSuccess() || cost.totalMonthlyCost() == null) {
+            return;
+        }
+        StringBuilder costText = new StringBuilder()
+                .append("*💰 Pre-Deployment Cost Estimation:*\n")
+                .append("• *Est. Monthly Cost:* ").append(cost.formatTotalMonthlyCost()).append("\n")
+                .append("• *Est. Monthly Delta:* ").append(cost.formatMonthlyDelta());
+        int unpriced = cost.unpricedResourceCount();
+        if (unpriced > 0) {
+            costText.append(" _(").append(unpriced).append(" unpriced resource(s))_");
+        }
+        blocks.add(Map.of(
+                "type", "section",
+                "text", Map.of("type", "mrkdwn", "text", costText.toString())));
     }
 
     // SIMPLE-style configurations get a single-line ping for every status instead of the full

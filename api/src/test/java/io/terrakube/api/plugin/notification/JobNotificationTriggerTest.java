@@ -1,5 +1,6 @@
 package io.terrakube.api.plugin.notification;
 
+import io.terrakube.api.plugin.cost.InfracostContextExtractor;
 import io.terrakube.api.plugin.notification.payload.NotificationPayloadRenderer;
 import io.terrakube.api.repository.NotificationOutboxRepository;
 import io.terrakube.api.rs.Organization;
@@ -43,6 +44,8 @@ class JobNotificationTriggerTest {
     NotificationDispatchService notificationDispatchService;
     @Mock
     JobFailureSummaryService jobFailureSummaryService;
+    @Mock
+    InfracostContextExtractor infracostContextExtractor;
 
     @InjectMocks
     JobNotificationTrigger subject;

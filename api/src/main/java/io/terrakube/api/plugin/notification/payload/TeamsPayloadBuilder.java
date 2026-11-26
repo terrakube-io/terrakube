@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import io.terrakube.api.plugin.cost.InfracostSummary;
 import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.notification.NotificationChannelType;
 import io.terrakube.api.rs.notification.NotificationMessageStyle;
@@ -41,14 +42,7 @@ public class TeamsPayloadBuilder implements NotificationPayloadBuilder {
         if (context.configurationName() != null && !context.configurationName().isBlank()) {
             facts.add(Map.of("title", "Notification", "value", context.configurationName()));
         }
-        if (context.costSummary() != null && context.costSummary().isSuccess()) {
-            facts.add(Map.of("title", "Est. Monthly Cost", "value", context.costSummary().formatTotalMonthlyCost()));
-            facts.add(Map.of("title", "Est. Monthly Delta", "value", context.costSummary().formatMonthlyDelta()));
-            if (context.costSummary().unpricedResourceCount() > 0) {
-                facts.add(Map.of("title", "Unpriced Resources",
-                        "value", String.valueOf(context.costSummary().unpricedResourceCount())));
-            }
-        }
+        appendCostFacts(facts, context.costSummary());
 
         List<Map<String, Object>> body = new ArrayList<>();
         if (context.workspaceUrl() != null && !context.workspaceUrl().isBlank()) {
@@ -84,6 +78,18 @@ public class TeamsPayloadBuilder implements NotificationPayloadBuilder {
             return objectMapper.writeValueAsString(Map.of("type", "message", "attachments", List.of(attachment)));
         } catch (Exception e) {
             throw new IllegalStateException("Failed to render Teams payload", e);
+        }
+    }
+
+    private static void appendCostFacts(List<Map<String, Object>> facts, InfracostSummary cost) {
+        if (cost == null || !cost.isSuccess() || cost.totalMonthlyCost() == null) {
+            return;
+        }
+        facts.add(Map.of("title", "Est. Monthly Cost", "value", cost.formatTotalMonthlyCost()));
+        facts.add(Map.of("title", "Est. Monthly Delta", "value", cost.formatMonthlyDelta()));
+        if (cost.unpricedResourceCount() > 0) {
+            facts.add(Map.of("title", "Unpriced Resources",
+                    "value", String.valueOf(cost.unpricedResourceCount())));
         }
     }
 
