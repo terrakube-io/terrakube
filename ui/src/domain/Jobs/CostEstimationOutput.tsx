@@ -37,14 +37,37 @@ type FlattenedCostResource = {
   resourceType?: string;
   changeKind: ChangeKind;
   isUnpriced: boolean;
-  monthlyCost: string | null;
-  hourlyCost: string | null;
-  diffMonthlyCost: string | null;
+  monthlyCost: number | string | null;
+  hourlyCost: number | string | null;
+  diffMonthlyCost: number | string | null;
   costComponents: InfracostCostComponent[];
   subresources: InfracostResource[];
 };
 
 const EPSILON = 0.005;
+
+export function sanitizeInfracostShareUrl(raw?: string): string | undefined {
+  if (!raw) {
+    return undefined;
+  }
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== "https:" || parsed.username || parsed.password) {
+      return undefined;
+    }
+    const host = parsed.hostname.toLowerCase();
+    if (host === "infracost.io" || host.endsWith(".infracost.io")) {
+      return parsed.toString();
+    }
+    return undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 function sanitizeErrorMessage(raw?: string): string {
   if (!raw || !raw.trim()) {
@@ -198,10 +221,7 @@ export const CostEstimationOutput: React.FC<Props> = ({ infracost }) => {
   const [showUnpricedDetails, setShowUnpricedDetails] = useState(false);
 
   const currency = normalizeCurrencyCode(infracost.currency);
-  const safeShareUrl =
-    typeof infracost.shareUrl === "string" && infracost.shareUrl.startsWith("https://")
-      ? infracost.shareUrl
-      : undefined;
+  const safeShareUrl = sanitizeInfracostShareUrl(infracost.shareUrl);
 
   const resources = useMemo(() => flattenProjectResources(infracost), [infracost]);
 
@@ -292,6 +312,17 @@ export const CostEstimationOutput: React.FC<Props> = ({ infracost }) => {
           </a>
         )}
       </div>
+
+      {infracost.truncated && (
+        <Alert
+          type="info"
+          showIcon
+          data-testid="cost-truncated-notice"
+          title="Showing top priced resources in summary"
+          description="This plan exceeded the job context size limit, so only the highest-cost resources are displayed below."
+          style={{ marginBottom: 12 }}
+        />
+      )}
 
       <div className="cost-estimation-kpis">
         <div className="cost-kpi-card">

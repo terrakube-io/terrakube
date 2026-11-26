@@ -1425,4 +1425,49 @@ describe("DetailsJob Infracost estimation panel", () => {
     expect(screen.getAllByText("$142.50/mo").length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText("aws_instance.app")).toBeInTheDocument();
   });
+
+  it("selects step-scoped infracost/<stepId> by highest stepNumber and keeps polling fingerprint stable", async () => {
+    const { extractInfracostFromContext, infracostFingerprint } = await import("../Details");
+    type StepArg = NonNullable<Parameters<typeof extractInfracostFromContext>[1]>[number];
+    const step1 = { id: "step-a", stepNumber: 100 } as StepArg;
+    const step2 = { id: "step-b", stepNumber: 200 } as StepArg;
+
+    const payload = {
+      infracost: { status: "SUCCESS" as const, currency: "USD", totalMonthlyCost: 10 },
+      "infracost/step-b": {
+        status: "SUCCESS" as const,
+        currency: "USD",
+        totalMonthlyCost: 188.25,
+        pastTotalMonthlyCost: 100,
+        diffTotalMonthlyCost: 88.25,
+        timeGenerated: "2026-11-26T10:00:00Z",
+      },
+      "infracost/step-a": { status: "SUCCESS" as const, currency: "USD", totalMonthlyCost: 50 },
+    };
+
+    const selected = extractInfracostFromContext(payload, [step1, step2]);
+    expect(selected?.totalMonthlyCost).toBe(188.25);
+
+    const copy = { ...selected! };
+    expect(infracostFingerprint(selected)).toBe(infracostFingerprint(copy));
+    expect(infracostFingerprint({ ...selected!, totalMonthlyCost: 190 })).not.toBe(infracostFingerprint(selected));
+
+    getMock.mockImplementation((url: string) => {
+      if (url.includes("/context/v1/")) {
+        return Promise.resolve({ data: payload });
+      }
+      return Promise.resolve({
+        data: {
+          data: { id: "1", attributes: { status: "completed" } },
+          included: [
+            { id: "step-a", type: "step", attributes: { stepNumber: 100, name: "plan1", status: "completed" } },
+            { id: "step-b", type: "step", attributes: { stepNumber: 200, name: "plan2", status: "completed" } },
+          ],
+        },
+      });
+    });
+
+    render(<DetailsJob jobId="1" />);
+    expect((await screen.findAllByText("$188.25/mo")).length).toBeGreaterThanOrEqual(2);
+  });
 });

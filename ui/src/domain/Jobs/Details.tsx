@@ -114,6 +114,56 @@ type IncompleteVariableGuard = {
   rawMessage: string;
 };
 
+export function extractInfracostFromContext(
+  data: Record<string, unknown> | undefined | null,
+  steps?: JobStep[]
+): InfracostContext | undefined {
+  if (!data || typeof data !== "object") {
+    return undefined;
+  }
+  if (steps && steps.length > 0) {
+    const sorted = [...steps].sort((a, b) => (b.stepNumber ?? 0) - (a.stepNumber ?? 0));
+    for (const step of sorted) {
+      if (!step?.id) continue;
+      const candidate = data[`infracost/${step.id}`];
+      if (candidate && typeof candidate === "object") {
+        return candidate as InfracostContext;
+      }
+    }
+  }
+  let matchedPrefixed: InfracostContext | undefined;
+  for (const [key, value] of Object.entries(data)) {
+    if (key.startsWith("infracost/") && value && typeof value === "object") {
+      matchedPrefixed = value as InfracostContext;
+    }
+  }
+  if (matchedPrefixed) {
+    return matchedPrefixed;
+  }
+  const legacy = data.infracost;
+  return legacy && typeof legacy === "object" ? (legacy as InfracostContext) : undefined;
+}
+
+export function infracostFingerprint(ctx: InfracostContext | undefined): string {
+  if (!ctx) return "";
+  return [
+    ctx.status ?? "",
+    ctx.timeGenerated ?? "",
+    ctx.currency ?? "",
+    String(ctx.totalMonthlyCost ?? ""),
+    String(ctx.pastTotalMonthlyCost ?? ""),
+    String(ctx.diffTotalMonthlyCost ?? ""),
+    ctx.shareUrl ?? "",
+    ctx.errorMessage ?? "",
+    String(Boolean(ctx.truncated)),
+    String(ctx.summary?.totalDetectedResources ?? ""),
+    String(ctx.summary?.totalSupportedResources ?? ""),
+    String(ctx.summary?.totalUnsupportedResources ?? ""),
+    String(ctx.summary?.totalNoPriceResources ?? ""),
+    String(ctx.projects?.length ?? 0),
+  ].join("|");
+}
+
 export const DetailsJob = ({ jobId, workspaceName, canApprove = false }: Props) => {
   const organizationId = sessionStorage.getItem(ORGANIZATION_ARCHIVE);
   const [loading, setLoading] = useState(false);
@@ -124,6 +174,9 @@ export const DetailsJob = ({ jobId, workspaceName, canApprove = false }: Props) 
   const [workspaceDefaultBranch, setWorkspaceDefaultBranch] = useState<string>();
   const [workspaceVcsName, setWorkspaceVcsName] = useState<string>();
   const [steps, setSteps] = useState<JobStep[]>([]);
+  const stepsRef = useRef<JobStep[]>(steps);
+  stepsRef.current = steps;
+  const lastContextDataRef = useRef<Record<string, unknown> | undefined>(undefined);
   const [triggeredBy, setTriggeredBy] = useState<{
     jobId: number;
     workspaceId: string;
@@ -136,6 +189,17 @@ export const DetailsJob = ({ jobId, workspaceName, canApprove = false }: Props) 
   // resetting its filters. Controlled state keyed by id alone survives status changes; the effect
   // below still auto-opens a step the moment it starts running, same as before, but only if the
   // user hasn't already closed it themselves.
+  useEffect(() => {
+    const rawData = lastContextDataRef.current;
+    if (!rawData || steps.length === 0) return;
+    const nextInfracost = extractInfracostFromContext(rawData, steps);
+    if (nextInfracost) {
+      setInfracost((previous) =>
+        previous && infracostFingerprint(previous) === infracostFingerprint(nextInfracost) ? previous : nextInfracost
+      );
+    }
+  }, [steps]);
+
   const [activeStepKeys, setActiveStepKeys] = useState<Record<string, string[]>>({});
   const initializedStepIds = useRef<Set<string>>(new Set());
   const userToggledStepIds = useRef<Set<string>>(new Set());
@@ -674,8 +738,13 @@ export const DetailsJob = ({ jobId, workspaceName, canApprove = false }: Props) 
       if (response?.data?.policyEvaluation) {
         setPolicyEvaluation(response.data.policyEvaluation);
       }
-      if (response?.data?.infracost) {
-        setInfracost(response.data.infracost);
+      const rawData = response?.data as Record<string, unknown> | undefined;
+      lastContextDataRef.current = rawData;
+      const nextInfracost = extractInfracostFromContext(rawData, stepsRef.current);
+      if (nextInfracost) {
+        setInfracost((previous) =>
+          previous && infracostFingerprint(previous) === infracostFingerprint(nextInfracost) ? previous : nextInfracost
+        );
       }
     } catch (error) {
       if (isAbortError(error)) return;
@@ -701,6 +770,7 @@ export const DetailsJob = ({ jobId, workspaceName, canApprove = false }: Props) 
     abortContextRequests();
     abortStepDeliveryRequests();
     setRecoveryGaveUp(false);
+    lastContextDataRef.current = undefined;
     setInfracost(undefined);
 
     if (!jobId) {

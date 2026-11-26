@@ -159,17 +159,42 @@ describe("CostEstimationOutput", () => {
     expect(within(listItem).getByText("Storage (general purpose SSD, gp3)")).toBeInTheDocument();
   });
 
-  it("omits unsafe non-https shareUrl links", () => {
+  it("omits unsafe or untrusted non-infracost shareUrl links", () => {
+    for (const shareUrl of [
+      "javascript:alert(1)",
+      "http://dashboard.infracost.io/share/example",
+      "https://evil.example.com/share/example",
+      "https://user:pass@dashboard.infracost.io/share/example",
+    ]) {
+      const { unmount } = render(
+        <CostEstimationOutput
+          infracost={{
+            ...sampleInfracost,
+            shareUrl,
+          }}
+        />
+      );
+      expect(screen.queryByRole("link", { name: /View in Infracost Cloud/i })).not.toBeInTheDocument();
+      unmount();
+    }
+  });
+
+  it("displays an informational notice when the context payload is truncated and handles numeric totals", () => {
     render(
       <CostEstimationOutput
         infracost={{
           ...sampleInfracost,
-          shareUrl: "javascript:alert(1)",
+          totalMonthlyCost: 162.5,
+          pastTotalMonthlyCost: 120,
+          diffTotalMonthlyCost: 42.5,
+          truncated: true,
         }}
       />
     );
 
-    expect(screen.queryByRole("link", { name: /View in Infracost Cloud/i })).not.toBeInTheDocument();
+    expect(screen.getByTestId("cost-truncated-notice")).toBeInTheDocument();
+    expect(screen.getByText("$162.50/mo")).toBeInTheDocument();
+    expect(screen.getByText("+$42.50/mo (+35.4%)")).toBeInTheDocument();
   });
 
   it("renders graceful warning alert on ERROR status with redacted secrets", () => {

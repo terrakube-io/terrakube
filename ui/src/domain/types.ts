@@ -863,32 +863,32 @@ export type InfracostCostComponent = {
   hourlyQuantity?: string | null;
   monthlyQuantity?: string | null;
   price?: string | null;
-  hourlyCost?: string | null;
-  monthlyCost?: string | null;
+  hourlyCost?: number | string | null;
+  monthlyCost?: number | string | null;
 };
 
 export type InfracostResource = {
   name: string;
   resourceType?: string;
   metadata?: Record<string, unknown>;
-  hourlyCost?: string | null;
-  monthlyCost?: string | null;
+  hourlyCost?: number | string | null;
+  monthlyCost?: number | string | null;
   costComponents?: InfracostCostComponent[];
   subresources?: InfracostResource[];
 };
 
 export type InfracostProjectBreakdown = {
   resources?: InfracostResource[];
-  totalHourlyCost?: string | null;
-  totalMonthlyCost?: string | null;
+  totalHourlyCost?: number | string | null;
+  totalMonthlyCost?: number | string | null;
 };
 
 export type InfracostProject = {
   name: string;
   metadata?: Record<string, unknown>;
-  pastBreakdown?: InfracostProjectBreakdown;
-  breakdown?: InfracostProjectBreakdown;
-  diff?: InfracostProjectBreakdown;
+  pastBreakdown?: InfracostProjectBreakdown | null;
+  breakdown?: InfracostProjectBreakdown | null;
+  diff?: InfracostProjectBreakdown | null;
 };
 
 export type InfracostSummaryCounts = {
@@ -904,15 +904,16 @@ export type InfracostContext = {
   status: "SUCCESS" | "ERROR";
   version?: string;
   currency?: string;
-  totalMonthlyCost?: string | null;
-  totalHourlyCost?: string | null;
-  pastTotalMonthlyCost?: string | null;
-  pastTotalHourlyCost?: string | null;
-  diffTotalMonthlyCost?: string | null;
-  diffTotalHourlyCost?: string | null;
+  totalMonthlyCost?: number | string | null;
+  totalHourlyCost?: number | string | null;
+  pastTotalMonthlyCost?: number | string | null;
+  pastTotalHourlyCost?: number | string | null;
+  diffTotalMonthlyCost?: number | string | null;
+  diffTotalHourlyCost?: number | string | null;
   timeGenerated?: string;
   shareUrl?: string;
   errorMessage?: string;
+  truncated?: boolean;
   summary?: InfracostSummaryCounts;
   projects?: InfracostProject[];
 };
