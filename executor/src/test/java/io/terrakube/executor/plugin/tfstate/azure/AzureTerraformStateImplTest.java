@@ -494,15 +494,37 @@ class AzureTerraformStateImplTest {
     }
 
     @Test
-    void testDownloadTerraformBinaryReadsTheBlobOfItsOwnOsAndArchitecture(@TempDir Path tempDir) {
+    void testDownloadTerraformBinaryReadsTheBlobOfItsOwnOsAndArchitecture(@TempDir Path tempDir) throws IOException {
         when(blobContainerClient.exists()).thenReturn(true);
         when(blobClient.exists()).thenReturn(true);
+        doAnswer(invocation -> {
+            String destPath = invocation.getArgument(0);
+            FileUtils.writeStringToFile(new File(destPath), "terraform-binary", Charset.defaultCharset());
+            return null;
+        }).when(blobClient).downloadToFile(anyString(), eq(true));
         File target = tempDir.resolve("terraform/1.9.0/terraform").toFile();
 
         assertTrue(azureTerraformState.downloadTerraformBinary("1.9.0", false, "linux", "amd64", target));
 
         verify(blobServiceClient).getBlobContainerClient("tfbinary");
         verify(blobContainerClient).getBlobClient("terraform/1.9.0/linux_amd64/terraform");
-        verify(blobClient).downloadToFile(target.getAbsolutePath(), true);
+        verify(blobClient).downloadToFile(
+                argThat((String path) -> path.startsWith(target.getParent()) && path.endsWith(".tmp")),
+                eq(true));
+        assertEquals("terraform-binary", FileUtils.readFileToString(target, Charset.defaultCharset()));
+    }
+
+    @Test
+    void testSaveAndDownloadInfracostSha256Checksum() {
+        String sha256 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        when(blobContainerClient.exists()).thenReturn(true);
+        when(blobClient.exists()).thenReturn(true);
+        when(blobClient.downloadContent()).thenReturn(BinaryData.fromString(sha256 + "\n"));
+
+        assertTrue(azureTerraformState.saveInfracostChecksum("0.10.50", "linux", "amd64", sha256));
+
+        verify(blobContainerClient).getBlobClient("infracost/0.10.50/linux_amd64/infracost.sha256");
+        verify(blobClient).upload(any(BinaryData.class), eq(true));
+        assertEquals(sha256, azureTerraformState.downloadInfracostChecksum("0.10.50", "linux", "amd64").orElseThrow());
     }
 }

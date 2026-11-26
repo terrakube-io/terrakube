@@ -5,6 +5,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.terrakube.client.TerrakubeClient;
 import io.terrakube.executor.plugin.tfstate.TerraformState;
 import io.terrakube.executor.service.executor.ExecutorJobResult;
+import io.terrakube.executor.service.infracost.InfracostEnvSanitizer;
+import io.terrakube.executor.service.infracost.InfracostExecutorService;
+import io.terrakube.executor.service.infracost.InfracostResult;
 import io.terrakube.executor.service.mode.PolicyContext;
 import io.terrakube.executor.service.mode.PolicyExemptionContext;
 import io.terrakube.executor.service.logs.ExecutorLogsProperties;
@@ -67,10 +70,16 @@ public class OpaExecutorServiceImpl implements OpaExecutorService {
     private final JobContextService jobContextService;
     private final TerraformState terraformState;
     private ExecutorLogsProperties logsProperties = new ExecutorLogsProperties();
+    private InfracostExecutorService infracostExecutorService;
 
     @Autowired(required = false)
     void setLogsProperties(ExecutorLogsProperties logsProperties) {
         this.logsProperties = logsProperties;
+    }
+
+    @Autowired(required = false)
+    void setInfracostExecutorService(InfracostExecutorService infracostExecutorService) {
+        this.infracostExecutorService = infracostExecutorService;
     }
 
     @Autowired
@@ -92,6 +101,16 @@ public class OpaExecutorServiceImpl implements OpaExecutorService {
             TerraformJob job,
             File workingDirectory,
             File planJsonFile,
+            Consumer<String> planOutput) {
+        return evaluateAllPolicies(job, workingDirectory, planJsonFile, null, planOutput);
+    }
+
+    @Override
+    public List<OpaEvaluationResult> evaluateAllPolicies(
+            TerraformJob job,
+            File workingDirectory,
+            File planJsonFile,
+            File infracostDataFile,
             Consumer<String> planOutput) {
 
         if (job.getPolicyList() == null || job.getPolicyList().isEmpty()) {
@@ -119,6 +138,7 @@ public class OpaExecutorServiceImpl implements OpaExecutorService {
                             planJsonFile,
                             policyBundleDir,
                             policyInputsFile,
+                            infracostDataFile,
                             null
                     );
                 } catch (Exception e) {
@@ -220,6 +240,28 @@ public class OpaExecutorServiceImpl implements OpaExecutorService {
             File policyBundleDir,
             File policyInputsFile,
             Consumer<String> consoleOutput) {
+        return evaluatePolicySet(
+                policyContext,
+                exemptions,
+                workingDirectory,
+                planJsonFile,
+                policyBundleDir,
+                policyInputsFile,
+                null,
+                consoleOutput
+        );
+    }
+
+    @Override
+    public OpaEvaluationResult evaluatePolicySet(
+            PolicyContext policyContext,
+            List<PolicyExemptionContext> exemptions,
+            File workingDirectory,
+            File planJsonFile,
+            File policyBundleDir,
+            File policyInputsFile,
+            File infracostDataFile,
+            Consumer<String> consoleOutput) {
 
         List<String> logs = new ArrayList<>();
         Consumer<String> logConsumer = consoleOutput != null ? consoleOutput : logs::add;
@@ -246,6 +288,10 @@ public class OpaExecutorServiceImpl implements OpaExecutorService {
             commandList.add("--data");
             commandList.add(policyInputsFile.getAbsolutePath());
         }
+        if (infracostDataFile != null && infracostDataFile.exists()) {
+            commandList.add("--data");
+            commandList.add(infracostDataFile.getAbsolutePath());
+        }
         commandList.add("--input");
         commandList.add(planJsonFile.getAbsolutePath());
         commandList.add("--format");
@@ -258,6 +304,7 @@ public class OpaExecutorServiceImpl implements OpaExecutorService {
         int exitCode;
         try {
             ProcessBuilder processBuilder = new ProcessBuilder(commandList);
+            InfracostEnvSanitizer.stripFromEnvironmentMap(processBuilder.environment());
             if (workingDirectory != null) {
                 processBuilder.directory(workingDirectory);
             }
@@ -360,8 +407,17 @@ public class OpaExecutorServiceImpl implements OpaExecutorService {
                 }
             }
 
-            // Step 2: Evaluate all policies
-            List<OpaEvaluationResult> evalResults = evaluateAllPolicies(job, workingDirectory, planJsonFile, planOutput);
+            // Step 2: Evaluate Infracost (when configured) and all OPA policies
+            File infracostOpaDataFile = null;
+            if (infracostExecutorService != null) {
+                InfracostResult infracostResult = infracostExecutorService.evaluateCost(
+                        job, workingDirectory, planJsonFile, planOutput);
+                if (infracostResult != null) {
+                    infracostOpaDataFile = infracostResult.getInfracostOpaDataFile();
+                }
+            }
+            List<OpaEvaluationResult> evalResults = evaluateAllPolicies(
+                    job, workingDirectory, planJsonFile, infracostOpaDataFile, planOutput);
 
             boolean hasHardViolations = evalResults.stream().anyMatch(r -> r.getHardMandatoryViolations() > 0);
             result.setOutputBuffer(output);

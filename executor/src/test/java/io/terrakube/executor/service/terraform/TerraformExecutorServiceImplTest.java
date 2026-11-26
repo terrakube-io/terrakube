@@ -2452,7 +2452,7 @@ class TerraformExecutorServiceImplTest {
         doReturn(jsonPlanClient).when(subject).buildJsonEnabledPlanClient();
         when(planStructuredOutputService.getPlanAsJson(eq(terraformJob), any(File.class)))
                 .thenReturn("{\"format_version\":\"1.2\"}");
-        when(opaService.evaluateAllPolicies(eq(terraformJob), any(File.class), any(File.class), any()))
+        when(opaService.evaluateAllPolicies(eq(terraformJob), any(File.class), any(File.class), Mockito.isNull(), any()))
                 .thenReturn(List.of());
 
         ExecutorJobResult result = subject.plan(terraformJob, tempDir.toFile(), false);
@@ -2460,6 +2460,46 @@ class TerraformExecutorServiceImplTest {
         assertTrue(result.isSuccessfulExecution());
         verify(planStructuredOutputService, Mockito.times(1)).getPlanAsJson(eq(terraformJob), any(File.class));
         verify(opaService).evaluateAllPolicies(eq(terraformJob), any(File.class),
+                argThat(file -> file.exists() && "plan.json".equals(file.getName())), Mockito.isNull(), any());
+    }
+
+    @Test
+    void planEvaluatesInfracostAndForwardsOpaDataFileToOpaEvaluation() throws Exception {
+        io.terrakube.executor.service.opa.OpaExecutorService opaService = mock(io.terrakube.executor.service.opa.OpaExecutorService.class);
+        io.terrakube.executor.service.infracost.InfracostExecutorService infracostService = mock(io.terrakube.executor.service.infracost.InfracostExecutorService.class);
+        TerraformExecutorServiceImpl subject = spy(subject());
+        subject.opaExecutorService = opaService;
+        subject.setInfracostExecutorService(infracostService);
+        TerraformJob terraformJob = createJob();
+        io.terrakube.executor.service.mode.PolicyContext policy = new io.terrakube.executor.service.mode.PolicyContext();
+        policy.setPolicyId("policy-1");
+        terraformJob.setPolicyList(List.of(policy));
+
+        File infracostOpaDataFile = Files.writeString(tempDir.resolve("infracost-opa-data.json"), "{\"infracost\":{\"totalMonthlyCost\":350.00}}").toFile();
+        when(infracostService.evaluateCost(eq(terraformJob), any(File.class), any(File.class), any()))
+                .thenReturn(io.terrakube.executor.service.infracost.InfracostResult.builder()
+                        .status(io.terrakube.executor.service.infracost.InfracostResult.Status.SUCCESS)
+                        .infracostOpaDataFile(infracostOpaDataFile)
+                        .build());
+
+        when(terraformClient.init(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(true));
+        TerraformClient jsonPlanClient = mock(TerraformClient.class);
+        when(jsonPlanClient.planDetailExitCode(any(TerraformProcessData.class), any(Consumer.class), any()))
+                .thenReturn(CompletableFuture.completedFuture(2));
+        doReturn(jsonPlanClient).when(subject).buildJsonEnabledPlanClient();
+        when(planStructuredOutputService.getPlanAsJson(eq(terraformJob), any(File.class)))
+                .thenReturn("{\"format_version\":\"1.2\"}");
+        when(opaService.evaluateAllPolicies(eq(terraformJob), any(File.class), any(File.class), eq(infracostOpaDataFile), any()))
+                .thenReturn(List.of());
+
+        ExecutorJobResult result = subject.plan(terraformJob, tempDir.toFile(), false);
+
+        assertTrue(result.isSuccessfulExecution());
+        verify(infracostService).evaluateCost(eq(terraformJob), any(File.class),
                 argThat(file -> file.exists() && "plan.json".equals(file.getName())), any());
+        verify(opaService).evaluateAllPolicies(eq(terraformJob), any(File.class),
+                argThat(file -> file.exists() && "plan.json".equals(file.getName())),
+                eq(infracostOpaDataFile), any());
     }
 }

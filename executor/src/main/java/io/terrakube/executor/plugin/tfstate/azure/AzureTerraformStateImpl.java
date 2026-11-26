@@ -27,6 +27,7 @@ import io.terrakube.client.model.organization.workspace.history.HistoryAttribute
 import io.terrakube.client.model.organization.workspace.history.HistoryRequest;
 import io.terrakube.executor.plugin.tfstate.ArtifactStorageKeys;
 import io.terrakube.executor.plugin.tfstate.ArtifactVerificationException;
+import io.terrakube.executor.plugin.tfstate.BinaryCacheFileSupport;
 import io.terrakube.executor.plugin.tfstate.StorageRetryMetrics;
 import io.terrakube.executor.plugin.tfstate.TerraformOutputPathService;
 import io.terrakube.executor.plugin.tfstate.TerraformState;
@@ -40,6 +41,8 @@ import java.io.File;
 import java.io.IOException;
 import java.net.URL;
 import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.time.OffsetDateTime;
 import java.util.Optional;
 import java.util.UUID;
@@ -387,62 +390,40 @@ public class AzureTerraformStateImpl implements TerraformState {
     public boolean saveTerraformBinary(String version, boolean tofu, String os, String arch, File binaryFile) {
         String product = tofu ? "tofu" : "terraform";
         String blobName = product + "/" + version + "/" + os + "_" + arch + "/" + product;
-        log.info("Saving {} binary to Azure Blob: {}", product, blobName);
-        try {
-            BlobContainerClient blobContainerClient = blobServiceClient.getBlobContainerClient(CONTAINER_BINARY_NAME);
-            if (!blobContainerClient.exists()) {
-                blobContainerClient.create();
-            }
-            BlobClient blobClient = blobContainerClient.getBlobClient(blobName);
-            blobClient.uploadFromFile(binaryFile.getAbsolutePath(), true);
-            log.info("Successfully cached {} binary version {} ({}_{}) in Azure Blob", product, version, os, arch);
-            return true;
-        } catch (Exception e) {
-            log.warn("Failed to cache {} binary version {} ({}_{}) in Azure Blob: {}", product, version, os, arch, e.getMessage());
-            return false;
-        }
+        return saveCachedBinary(product, blobName, version, os, arch, binaryFile);
     }
 
     @Override
     public boolean downloadTerraformBinary(String version, boolean tofu, String os, String arch, File targetFile) {
         String product = tofu ? "tofu" : "terraform";
         String blobName = product + "/" + version + "/" + os + "_" + arch + "/" + product;
-        log.info("Attempting to restore {} binary from Azure Blob: {}", product, blobName);
-        try {
-            BlobContainerClient blobContainerClient = blobServiceClient.getBlobContainerClient(CONTAINER_BINARY_NAME);
-            if (!blobContainerClient.exists()) {
-                log.info("{} binary container does not exist in Azure Blob, no cache available", product);
-                return false;
-            }
-            BlobClient blobClient = blobContainerClient.getBlobClient(blobName);
-            if (!blobClient.exists()) {
-                log.info("{} binary version {} ({}_{}) not found in Azure Blob cache", product, version, os, arch);
-                return false;
-            }
-
-            File parentDir = targetFile.getParentFile();
-            if (parentDir != null && !parentDir.exists()) {
-                FileUtils.forceMkdir(parentDir);
-            }
-
-            blobClient.downloadToFile(targetFile.getAbsolutePath(), true);
-
-            if (!targetFile.setExecutable(true, true)) {
-                log.warn("Failed to set executable permission on restored {} binary", product);
-            }
-
-            log.info("Successfully restored {} binary version {} ({}_{}) from Azure Blob", product, version, os, arch);
-            return true;
-        } catch (Exception e) {
-            log.warn("Failed to restore {} binary version {} ({}_{}) from Azure Blob: {}", product, version, os, arch, e.getMessage());
-            return false;
-        }
+        return downloadCachedBinary(product, blobName, version, os, arch, targetFile);
     }
 
     @Override
     public boolean saveOpaBinary(String version, String os, String arch, File sourceFile) {
         String blobName = "opa/" + version + "/" + os + "_" + arch + "/opa";
-        log.info("Saving OPA binary to Azure Blob: {}", blobName);
+        return saveCachedBinary("OPA", blobName, version, os, arch, sourceFile);
+    }
+
+    @Override
+    public boolean downloadOpaBinary(String version, String os, String arch, File targetFile) {
+        String blobName = "opa/" + version + "/" + os + "_" + arch + "/opa";
+        return downloadCachedBinary("OPA", blobName, version, os, arch, targetFile);
+    }
+
+    @Override
+    public boolean saveInfracostBinary(String version, String os, String arch, File sourceFile) {
+        return saveCachedBinary("Infracost", infracostBinaryBlobName(version, os, arch), version, os, arch, sourceFile);
+    }
+
+    @Override
+    public boolean downloadInfracostBinary(String version, String os, String arch, File targetFile) {
+        return downloadCachedBinary("Infracost", infracostBinaryBlobName(version, os, arch), version, os, arch, targetFile);
+    }
+
+    private boolean saveCachedBinary(String label, String blobName, String version, String os, String arch, File sourceFile) {
+        log.info("Saving {} binary to Azure Blob: {}", label, blobName);
         try {
             BlobContainerClient blobContainerClient = blobServiceClient.getBlobContainerClient(CONTAINER_BINARY_NAME);
             if (!blobContainerClient.exists()) {
@@ -450,47 +431,87 @@ public class AzureTerraformStateImpl implements TerraformState {
             }
             BlobClient blobClient = blobContainerClient.getBlobClient(blobName);
             blobClient.uploadFromFile(sourceFile.getAbsolutePath(), true);
-            log.info("Successfully cached OPA binary version {} ({}_{}) in Azure Blob", version, os, arch);
+            log.info("Successfully cached {} binary version {} ({}_{}) in Azure Blob", label, version, os, arch);
             return true;
         } catch (Exception e) {
-            log.warn("Failed to cache OPA binary version {} ({}_{}) in Azure Blob: {}", version, os, arch, e.getMessage());
+            log.warn("Failed to cache {} binary version {} ({}_{}) in Azure Blob: {}", label, version, os, arch, e.getMessage());
+            return false;
+        }
+    }
+
+    private boolean downloadCachedBinary(String label, String blobName, String version, String os, String arch, File targetFile) {
+        log.info("Attempting to restore {} binary from Azure Blob: {}", label, blobName);
+        Path tempFile = null;
+        try {
+            BlobContainerClient blobContainerClient = blobServiceClient.getBlobContainerClient(CONTAINER_BINARY_NAME);
+            if (!blobContainerClient.exists()) {
+                log.info("{} binary container does not exist in Azure Blob, no cache available", label);
+                return false;
+            }
+            BlobClient blobClient = blobContainerClient.getBlobClient(blobName);
+            if (!blobClient.exists()) {
+                log.info("{} binary version {} ({}_{}) not found in Azure Blob cache", label, version, os, arch);
+                return false;
+            }
+
+            tempFile = BinaryCacheFileSupport.prepareTempTarget(targetFile);
+            blobClient.downloadToFile(tempFile.toAbsolutePath().toString(), true);
+            BinaryCacheFileSupport.finalizeDownloadedBinary(tempFile, targetFile, label);
+
+            log.info("Successfully restored {} binary version {} ({}_{}) from Azure Blob", label, version, os, arch);
+            return true;
+        } catch (Exception e) {
+            log.warn("Failed to restore {} binary version {} ({}_{}) from Azure Blob: {}", label, version, os, arch, e.getMessage());
+            return false;
+        } finally {
+            BinaryCacheFileSupport.deleteQuietly(tempFile);
+        }
+    }
+
+    @Override
+    public boolean saveInfracostChecksum(String version, String os, String arch, String sha256Hex) {
+        String blobName = infracostChecksumBlobName(version, os, arch);
+        log.info("Saving Infracost SHA-256 checksum to Azure Blob: {}", blobName);
+        try {
+            BlobContainerClient blobContainerClient = blobServiceClient.getBlobContainerClient(CONTAINER_BINARY_NAME);
+            if (!blobContainerClient.exists()) {
+                blobContainerClient.create();
+            }
+            BlobClient blobClient = blobContainerClient.getBlobClient(blobName);
+            blobClient.upload(BinaryData.fromString(sha256Hex), true);
+            return true;
+        } catch (Exception e) {
+            log.warn("Failed to cache Infracost SHA-256 checksum for version {} ({}_{}) in Azure Blob: {}", version, os, arch, e.getMessage());
             return false;
         }
     }
 
     @Override
-    public boolean downloadOpaBinary(String version, String os, String arch, File targetFile) {
-        String blobName = "opa/" + version + "/" + os + "_" + arch + "/opa";
-        log.info("Attempting to restore OPA binary from Azure Blob: {}", blobName);
+    public Optional<String> downloadInfracostChecksum(String version, String os, String arch) {
+        String blobName = infracostChecksumBlobName(version, os, arch);
         try {
             BlobContainerClient blobContainerClient = blobServiceClient.getBlobContainerClient(CONTAINER_BINARY_NAME);
             if (!blobContainerClient.exists()) {
-                log.info("OPA binary container does not exist in Azure Blob, no cache available");
-                return false;
+                return Optional.empty();
             }
             BlobClient blobClient = blobContainerClient.getBlobClient(blobName);
             if (!blobClient.exists()) {
-                log.info("OPA binary version {} ({}_{}) not found in Azure Blob cache", version, os, arch);
-                return false;
+                return Optional.empty();
             }
-
-            File parentDir = targetFile.getParentFile();
-            if (parentDir != null && !parentDir.exists()) {
-                FileUtils.forceMkdir(parentDir);
-            }
-
-            blobClient.downloadToFile(targetFile.getAbsolutePath(), true);
-
-            if (!targetFile.setExecutable(true, true)) {
-                log.warn("Failed to set executable permission on restored OPA binary");
-            }
-
-            log.info("Successfully restored OPA binary version {} ({}_{}) from Azure Blob", version, os, arch);
-            return true;
+            String value = blobClient.downloadContent().toString().trim();
+            return value.isEmpty() ? Optional.empty() : Optional.of(value);
         } catch (Exception e) {
-            log.warn("Failed to restore OPA binary version {} ({}_{}) from Azure Blob: {}", version, os, arch, e.getMessage());
-            return false;
+            log.warn("Failed to restore Infracost SHA-256 checksum for version {} ({}_{}) from Azure Blob: {}", version, os, arch, e.getMessage());
+            return Optional.empty();
         }
+    }
+
+    private static String infracostBinaryBlobName(String version, String os, String arch) {
+        return "infracost/" + version + "/" + os + "_" + arch + "/infracost";
+    }
+
+    private static String infracostChecksumBlobName(String version, String os, String arch) {
+        return infracostBinaryBlobName(version, os, arch) + ".sha256";
     }
 
     @Override

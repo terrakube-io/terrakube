@@ -3,6 +3,7 @@ package io.terrakube.executor.service.terraform;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.terrakube.executor.configuration.ExecutorFlagsProperties;
+import io.terrakube.executor.service.infracost.InfracostEnvSanitizer;
 import io.terrakube.executor.service.terraform.spool.ContextSpoolService;
 import io.terrakube.executor.service.terraform.structured.StructuredOutputPersistenceQueue;
 import io.terrakube.executor.service.terraform.structured.StructuredSnapshot;
@@ -336,7 +337,7 @@ public class PlanStructuredOutputService {
                 // TerraformExecutorServiceImpl.loadTempEnvironmentVariables, and fails against
                 // any backend/provider that needs them even though the plan itself just
                 // succeeded in the same working directory.
-                .terraformEnvironmentVariables(terraformJob.getEnvironmentVariables())
+                .terraformEnvironmentVariables(InfracostEnvSanitizer.sanitizeForTerraform(terraformJob.getEnvironmentVariables()))
                 .build();
 
         boolean success = terraformClient.showPlanJson(terraformProcessData, (Consumer<String>) planOutput::append, (Consumer<String>) planErrorOutput::append).get();
@@ -371,7 +372,7 @@ public class PlanStructuredOutputService {
                 .workingDirectory(terraformWorkingDir)
                 .detailExitCode(true)
                 .tofu(terraformJob.isTofu())
-                .terraformEnvironmentVariables(terraformJob.getEnvironmentVariables())
+                .terraformEnvironmentVariables(InfracostEnvSanitizer.sanitizeForTerraform(terraformJob.getEnvironmentVariables()))
                 .build();
 
         // showPlan's Consumer<String> is invoked once per line, same as plan()/apply()'s JSON line consumers.

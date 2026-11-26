@@ -351,6 +351,33 @@ class LocalTerraformStateImplTest {
     }
 
     @Test
+    void testSaveAndDownloadInfracostBinaryAndChecksum(@TempDir Path tempDir) throws IOException {
+        String version = "0.10.50-test";
+        String os = "linux";
+        String arch = "amd64";
+        String sha256 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+        File sourceFile = tempDir.resolve("infracost_mock").toFile();
+        FileUtils.writeStringToFile(sourceFile, "mock-infracost-binary-data", Charset.defaultCharset());
+
+        assertTrue(localTerraformState.saveInfracostBinary(version, os, arch, sourceFile));
+        assertTrue(localTerraformState.saveInfracostChecksum(version, os, arch, sha256));
+
+        File sidecarFile = new File(FileUtils.getUserDirectoryPath(),
+                ".terraform-spring-boot/local/infracost/" + version + "/" + os + "_" + arch + "/infracost.sha256");
+        assertTrue(sidecarFile.exists());
+        assertEquals(sha256, FileUtils.readFileToString(sidecarFile, Charset.defaultCharset()));
+
+        File targetFile = tempDir.resolve("infracost_restored").toFile();
+        assertTrue(localTerraformState.downloadInfracostBinary(version, os, arch, targetFile));
+        assertEquals("mock-infracost-binary-data", FileUtils.readFileToString(targetFile, Charset.defaultCharset()));
+        assertEquals(sha256, localTerraformState.downloadInfracostChecksum(version, os, arch).orElseThrow());
+
+        FileUtils.deleteQuietly(new File(FileUtils.getUserDirectoryPath(),
+                ".terraform-spring-boot/local/infracost/" + version));
+    }
+
+    @Test
     void testTerraformBinaryIsOnlyRestoredOnTheOsAndArchitectureItWasCachedFrom(@TempDir Path tempDir) throws IOException {
         // A version no real job uses, so only this test's own cache directory is created and removed.
         String version = "0.0.0-binary-cache-test";

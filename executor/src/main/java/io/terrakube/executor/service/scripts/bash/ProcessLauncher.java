@@ -14,6 +14,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -24,7 +25,7 @@ public final class ProcessLauncher {
     private static final long STREAM_DRAIN_TIMEOUT_SECONDS = 60;
     private static final List<String> PID_ISOLATION_PREFIX = detectPidIsolationPrefix();
 
-    private Process process;
+    private final AtomicReference<Process> process = new AtomicReference<>();
     private ProcessBuilder builder;
     private Consumer<String> outputListener, errorListener;
     private boolean inheritIO;
@@ -61,32 +62,31 @@ public final class ProcessLauncher {
     public ProcessLauncher(ExecutorService executor, String... commands) {
         assert executor != null;
         this.executor = executor;
-        this.process = null;
         this.builder = new ProcessBuilder(commands);
     }
 
     public void setOutputListener(Consumer<String> listener) {
-        assert this.process == null;
+        assert this.process.get() == null;
         this.outputListener = listener;
     }
 
     public void setErrorListener(Consumer<String> listener) {
-        assert this.process == null;
+        assert this.process.get() == null;
         this.errorListener = listener;
     }
 
     public void setInheritIO(boolean inheritIO) {
-        assert this.process == null;
+        assert this.process.get() == null;
         this.inheritIO = inheritIO;
     }
 
     public void setDirectory(File directory) {
-        assert this.process == null;
+        assert this.process.get() == null;
         this.builder.directory(directory);
     }
 
     public void clearEnvironment() {
-        assert this.process == null;
+        assert this.process.get() == null;
         this.builder.environment().clear();
     }
 
@@ -111,7 +111,7 @@ public final class ProcessLauncher {
     }
 
     public void setPidIsolation(boolean enabled) {
-        assert this.process == null;
+        assert this.process.get() == null;
         this.pidIsolation = enabled;
     }
 
@@ -119,8 +119,26 @@ public final class ProcessLauncher {
         return this.pidIsolation && !PID_ISOLATION_PREFIX.isEmpty();
     }
 
+    public void destroyForcibly() {
+        Process current = this.process.get();
+        if (current != null) {
+            try {
+                // Kill deepest descendants first so parent shells don't exit before children are signaled.
+                List<ProcessHandle> descendants = current.descendants().toList();
+                for (int i = descendants.size() - 1; i >= 0; i--) {
+                    descendants.get(i).destroyForcibly();
+                }
+            } catch (Exception e) {
+                log.debug("Unable to enumerate or kill descendant processes: {}", e.getMessage());
+            }
+            if (current.isAlive()) {
+                current.destroyForcibly();
+            }
+        }
+    }
+
     public CompletableFuture<Integer> launch() {
-        assert this.process == null;
+        assert this.process.get() == null;
         if (this.inheritIO) {
             this.builder.inheritIO();
         }
@@ -130,8 +148,10 @@ public final class ProcessLauncher {
             isolatedCommands.addAll(originalCommands);
             this.builder.command(isolatedCommands);
         }
+        Process started;
         try {
-            this.process = this.builder.start();
+            started = this.builder.start();
+            this.process.set(started);
         } catch (IOException ex) {
             throw new RuntimeException(ex);
         }
@@ -139,10 +159,10 @@ public final class ProcessLauncher {
         Future<Boolean> errorReader = null;
         if (!this.inheritIO) {
             if (this.outputListener != null) {
-                outputReader = this.executor.submit(() -> this.readProcessStream(this.process.getInputStream(), this.outputListener));
+                outputReader = this.executor.submit(() -> this.readProcessStream(started.getInputStream(), this.outputListener));
             }
             if (this.errorListener != null) {
-                errorReader = this.executor.submit(() -> this.readProcessStream(this.process.getErrorStream(), this.errorListener));
+                errorReader = this.executor.submit(() -> this.readProcessStream(started.getErrorStream(), this.errorListener));
             }
         }
         Future<Boolean> stdoutReader = outputReader;
@@ -151,7 +171,7 @@ public final class ProcessLauncher {
         // readers have handed every line to their listener, so callers never see partial output.
         return CompletableFuture.supplyAsync(() -> {
             try {
-                int exitCode = this.process.waitFor();
+                int exitCode = started.waitFor();
                 awaitStreamDrained(stdoutReader, "output");
                 awaitStreamDrained(stderrReader, "error");
                 return exitCode;
