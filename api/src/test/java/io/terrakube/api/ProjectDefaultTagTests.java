@@ -275,8 +275,7 @@ class ProjectDefaultTagTests extends ServerApplicationTests {
     }
 
     private List<WorkspaceTag> tagsOf(String name) {
-        Workspace workspace = workspaceRepository.findAllByOrganizationNameAndName("terrakube", name).stream().findFirst()
-                .orElseGet(() -> workspaceRepository.findAll().stream().filter(w -> name.equals(w.getName())).findFirst().orElseThrow());
+        Workspace workspace = workspaceRepository.getByOrganizationNameAndName("simple", name);
         return workspaceTagRepository.findByWorkspace(workspace);
     }
 }
