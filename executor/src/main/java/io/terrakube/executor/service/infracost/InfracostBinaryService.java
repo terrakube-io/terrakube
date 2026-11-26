@@ -273,12 +273,11 @@ public class InfracostBinaryService {
         Path tempDir = null;
         try {
             File parentDir = targetBinary.getParentFile();
-            if (parentDir != null) {
-                ensureDirectoryExists(parentDir);
-                tempDir = Files.createTempDirectory(parentDir.toPath(), "infracost-dl-");
-            } else {
-                tempDir = Files.createTempDirectory("infracost-dl-");
+            if (parentDir == null) {
+                throw new IllegalStateException("Infracost binary target path has no parent directory: " + targetBinary);
             }
+            ensureDirectoryExists(parentDir);
+            tempDir = Files.createTempDirectory(parentDir.toPath(), "infracost-dl-");
             File archiveFile = tempDir.resolve(archiveName).toFile();
             File sha256File = tempDir.resolve(archiveName + ".sha256").toFile();
 
