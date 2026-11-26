@@ -1,7 +1,7 @@
 import { Button, ConfigProvider, Typography } from "antd";
 import { useState } from "react";
 import { mgr } from "../../config/authConfig";
-import { getUiRedirectUri } from "../../config/basePath";
+import { getPostLoginTarget } from "../../config/basePath";
 import {
   ColorSchemeOption,
   ThemeMode,
@@ -33,8 +33,10 @@ const LoginContent = ({ themeMode }: { themeMode: ThemeMode }) => {
   const handleSignIn = () => {
     setSigninError(null);
     setIsSigningIn(true);
+    // The state carries the page the user opened (e.g. a deep link to a run) back through the identity
+    // provider, so the sign-in callback can return there instead of the base path.
     // signinRedirect() can reject (e.g. identity provider unreachable) before it navigates away.
-    mgr.signinRedirect({ state: getUiRedirectUri() }).catch(() => {
+    mgr.signinRedirect({ state: getPostLoginTarget() }).catch(() => {
       setIsSigningIn(false);
       setSigninError("Unable to reach the identity provider. Please try again in a moment.");
     });
