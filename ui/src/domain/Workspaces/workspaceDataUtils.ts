@@ -65,16 +65,17 @@ export const include = {
 
 // Action scripts get the whole workspace object and may read any of it, so every attribute and relationship stays.
 const WORKSPACE_FIELDS =
-  "fields[workspace]=allowRemoteApply,branch,createdBy,createdDate,defaultTemplate,deleted,description,executionMode," +
-  "folder,globalRemoteState,iacType,lastJobDate,lastJobStatus,lockDescription,locked,moduleSshKey,name," +
-  "policyComplianceStatus,requireApproveToApply,restrictApplyToConfiguredBranch,sharedIds,source,terraformVersion," +
+  "fields[workspace]=allowRemoteApply,branch,createdBy,createdDate,defaultTemplate,deleted,description,driftFirstSeen," +
+  "driftJobId,driftLastChecked,driftStatus,executionMode,folder,globalRemoteState,iacType,lastJobDate,lastJobStatus," +
+  "lockDescription,locked,moduleSshKey,name,policyComplianceStatus,policyHardViolations,policySoftViolations," +
+  "requireApproveToApply,restrictApplyToConfiguredBranch,sharedIds,source,terraformVersion," +
   "updatedBy,updatedDate,access,agent,history,job,notificationConfiguration,organization,project,reference," +
   "runTriggers,schedule,sourceRunTriggers,ssh,variable,vcs,webhook,workspaceTag";
 
 // Without planDurationMs/applyDurationMs, which would load every job's steps.
 const JOB_FIELDS =
   "fields[job]=status,via,comments,createdBy,createdDate,updatedDate,commitId,templateReference,approvedBy,approvedAt," +
-  "approvalTeam,prCommentError";
+  "approvalTeam,prCommentError,planAdd,planChange,planDestroy,driftResult";
 
 /**
  * Query string of the workspace page request. Elide returns bare {id, type} for an included type without its own

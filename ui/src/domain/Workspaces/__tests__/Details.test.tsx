@@ -118,12 +118,13 @@ describe("WorkspaceDetails", () => {
       expect(getMock).toHaveBeenCalledWith(
         "organization/org-1/workspace/ws-1?include=job,variable,history,schedule,vcs,organization,reference,project" +
           "&fields[workspace]=allowRemoteApply,branch,createdBy,createdDate,defaultTemplate,deleted,description," +
-          "executionMode,folder,globalRemoteState,iacType,lastJobDate,lastJobStatus,lockDescription,locked," +
-          "moduleSshKey,name,policyComplianceStatus,requireApproveToApply,restrictApplyToConfiguredBranch,sharedIds," +
+          "driftFirstSeen,driftJobId,driftLastChecked,driftStatus,executionMode,folder,globalRemoteState,iacType," +
+          "lastJobDate,lastJobStatus,lockDescription,locked,moduleSshKey,name,policyComplianceStatus," +
+          "policyHardViolations,policySoftViolations,requireApproveToApply,restrictApplyToConfiguredBranch,sharedIds," +
           "source,terraformVersion,updatedBy,updatedDate,access,agent,history,job,notificationConfiguration," +
           "organization,project,reference,runTriggers,schedule,sourceRunTriggers,ssh,variable,vcs,webhook,workspaceTag" +
           "&fields[job]=status,via,comments,createdBy,createdDate,updatedDate,commitId,templateReference,approvedBy," +
-          "approvedAt,approvalTeam,prCommentError" +
+          "approvedAt,approvalTeam,prCommentError,planAdd,planChange,planDestroy,driftResult" +
           "&fields[variable]=key,value,category,hcl,sensitive,incomplete,description" +
           "&fields[history]=jobReference,output,createdBy,createdDate" +
           "&fields[schedule]=cron,templateReference" +
