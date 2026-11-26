@@ -1,6 +1,12 @@
 import { apiUrl } from "@/config/apiUrls";
 import { ApprovalAttribution } from "@/components/display/ApprovalAttribution";
 import {
+  projectOrigin,
+  rememberWorkspaceOrigin,
+  useWorkspaceOrigin,
+  workspaceOriginOf,
+} from "@/modules/workspaces/workspaceOrigin";
+import {
   ArrowRightOutlined,
   BranchesOutlined,
   ClockCircleOutlined,
@@ -12,7 +18,7 @@ import {
   UnlockOutlined,
   UserOutlined,
 } from "@ant-design/icons";
-import { Alert, Avatar, Button, Col, Empty, message, Row, Space, Table, Tabs, Typography, Modal } from "antd";
+import { Alert, Avatar, Button, Col, Empty, message, Row, Space, Table, Tabs, Tag, Typography, Modal } from "antd";
 
 import { lazy, Suspense, useEffect, useState } from "react";
 import { useJobStatusSubscription, usePolling } from "../../hooks";
@@ -24,6 +30,8 @@ const ActionLoader = lazy(() => import("../../ActionLoader"));
 import { ORGANIZATION_ARCHIVE, ORGANIZATION_NAME, WORKSPACE_ARCHIVE } from "../../config/actionTypes";
 import axiosInstance, { getErrorMessage } from "../../config/axiosConfig";
 import { CreateJob } from "../Jobs/Create";
+import AccessChip from "@/components/display/AccessChip/AccessChip";
+import { WorkspacePermissionSet, workspaceCapabilities } from "@/modules/permissions/accessModel";
 import PolicyStatusTag from "@/components/display/PolicyStatusTag";
 import {
   Action,
@@ -53,6 +61,10 @@ import LoadingFallback from "@/components/feedback/LoadingFallback";
 import PageWrapper from "@/components/layout/PageWrapper/PageWrapper";
 import { LinkButton } from "@/components/navigation/LinkButton";
 import RunList from "@/modules/workspaces/components/RunList";
+import WorkspaceStates from "@/modules/workspaces/components/WorkspaceStates";
+import { PolicyResult, listRunPolicyResults } from "@/modules/workspaces/runPolicyService";
+import PlanSummaryText from "@/modules/workspaces/components/PlanSummaryText";
+import { shortAgo } from "@/modules/projects/projectHealth";
 import WorkspaceStatusTag from "@/components/display/WorkspaceStatusTag";
 
 import {
@@ -127,6 +139,12 @@ export const WorkspaceDetails = ({
   const [manageState, setManageState] = useState(false);
   const [planJob, setPlanJob] = useState(false);
   const [approveJob, setApproveJob] = useState(false);
+  // The same answer as the four flags above, with the role and the teams it comes through, for the access chip.
+  const [workspaceAccess, setWorkspaceAccess] = useState<{
+    permissions: WorkspacePermissionSet;
+    level?: string;
+    teams: string[];
+  }>();
   const [permissionsLoaded, setPermissionsLoaded] = useState(false);
   const [variables, setVariables] = useState<FlatVariable[]>([]);
   const [collectionVariables, setCollectionVariables] = useState<any[]>([]);
@@ -397,6 +415,17 @@ export const WorkspaceDetails = ({
               setManageWorkspace(response.data.manageWorkspace);
               setPlanJob(response.data.planJob);
               setApproveJob(response.data.approveJob);
+              setWorkspaceAccess({
+                permissions: {
+                  manageWorkspace: response.data.manageWorkspace ?? false,
+                  manageState: response.data.manageState ?? false,
+                  manageJob: response.data.manageJob ?? false,
+                  planJob: response.data.planJob ?? false,
+                  approveJob: response.data.approveJob ?? false,
+                },
+                level: response.data.accessLevel ?? undefined,
+                teams: response.data.grantedThrough ?? [],
+              });
               setPermissionsLoaded(true);
             })
             .catch((err) => {
@@ -464,6 +493,10 @@ export const WorkspaceDetails = ({
             if (proj) {
               setProjectName(proj.attributes?.name ?? null);
               setProjectId(proj.id ?? null);
+              // Opened by a direct link or after a refresh: the workspace belongs to this project, so go back there.
+              if (proj.id && !workspaceOriginOf(id)) {
+                rememberWorkspaceOrigin(id!, projectOrigin(organizationId!, proj.id));
+              }
             } else {
               setProjectName(null);
               setProjectId(null);
@@ -534,6 +567,22 @@ export const WorkspaceDetails = ({
       });
   };
 
+  // The policy result of every run, read when the Runs tab is opened and again whenever a run is added or changes
+  // status. A run is created before its policy is evaluated, and the result appears when it reaches waitingApproval,
+  // so a count of runs would never read it again for the newest run.
+  const [policyByRun, setPolicyByRun] = useState<Record<string, PolicyResult>>({});
+  const runStatuses = jobs.map((job) => `${job.id}:${job.status}`).join(",");
+  useEffect(() => {
+    if (activeKey !== "2" || !id || !organizationId) return;
+    let alive = true;
+    listRunPolicyResults(organizationId, id)
+      .then((results) => alive && setPolicyByRun(results))
+      .catch(() => alive && setPolicyByRun({}));
+    return () => {
+      alive = false;
+    };
+  }, [activeKey, id, organizationId, runStatuses]);
+
   const currentRun = selectCurrentRun(jobs);
   const latestJob = currentRun?.job;
   const runCardTitle = currentRun?.active ? "Current run" : "Latest run";
@@ -545,6 +594,13 @@ export const WorkspaceDetails = ({
         return (
           <Row>
             <Col span={18} className="workspace-overview-main">
+              <WorkspaceStates
+                orgId={organizationId}
+                workspace={workspace}
+                run={latestJob ? { id: latestJob.id, status: latestJob.status, at: latestJob.updatedDate } : undefined}
+                runLink={runLink}
+                onRunClick={changeJob}
+              />
               {workspace.attributes.source === "empty" &&
               workspace.attributes.branch === "remote-content" &&
               (workspace.relationships?.history?.data?.length || 0) < 1 ? (
@@ -595,6 +651,18 @@ export const WorkspaceDetails = ({
                               ?.name ?? "—"}
                           </dd>
                         </div>
+                        {latestJob.planAdd != null && (
+                          <div>
+                            <dt>Plan</dt>
+                            <dd>
+                              <PlanSummaryText
+                                add={latestJob.planAdd}
+                                change={latestJob.planChange}
+                                destroy={latestJob.planDestroy}
+                              />
+                            </dd>
+                          </div>
+                        )}
                         <div>
                           <dt>Policy checks</dt>
                           <dd>
@@ -793,7 +861,14 @@ export const WorkspaceDetails = ({
             <DetailsJob jobId={jobId!} workspaceName={workspaceName} canApprove={approveJob} />
           </Suspense>
         ) : (
-          <RunList jobs={jobs} onRunClick={changeJob} runLink={runLink} />
+          <RunList
+            jobs={jobs}
+            onRunClick={changeJob}
+            runLink={runLink}
+            canApprove={approveJob}
+            policyByRun={policyByRun}
+            onApproved={() => loadWorkspace(false)}
+          />
         );
       case "3":
         return (
@@ -855,9 +930,25 @@ export const WorkspaceDetails = ({
     }
   };
 
+  const origin = useWorkspaceOrigin(id);
+  // A remembered project can be an old one: the workspace may have been moved since. The project it is in now is the
+  // one to name and link, and the remembered entry is corrected so the sidebar's way back leads there too.
+  const originIsThisProject =
+    origin?.kind === "project" && Boolean(projectId) && origin.path.endsWith(`/projects/${projectId}`);
+  useEffect(() => {
+    if (!id || !organizationId || !projectId || origin?.kind !== "project" || originIsThisProject) return;
+    rememberWorkspaceOrigin(id, projectOrigin(organizationId, projectId));
+  }, [id, organizationId, projectId, origin, originIsThisProject]);
   const pageBreadcrumbs = [
     { label: organizationNameLocal ?? "", path: `/organizations/${organizationId}/workspaces` },
-    { label: "Workspaces", path: `/organizations/${organizationId}/workspaces` },
+    ...(origin?.kind === "project" && projectName && projectId
+      ? [
+          { label: "Projects", path: `/organizations/${organizationId}/projects` },
+          { label: projectName, path: `/organizations/${organizationId}/projects/${projectId}` },
+        ]
+      : origin?.kind === "inbox"
+        ? [{ label: "Inbox", path: origin.path }]
+        : [{ label: "Workspaces", path: `/organizations/${organizationId}/workspaces` }]),
     { label: workspaceName, path: `/organizations/${organizationId}/workspaces/${id}` },
     ...(activeKey === "6" && settingsSection
       ? [
@@ -922,6 +1013,14 @@ export const WorkspaceDetails = ({
                 />
               </Suspense>
             ))}
+        {workspaceAccess && (
+          <AccessChip
+            scope="workspace"
+            level={workspaceAccess.level}
+            teams={workspaceAccess.teams}
+            items={workspaceCapabilities(workspaceAccess.permissions)}
+          />
+        )}
         <Button
           type="default"
           htmlType="button"
@@ -987,6 +1086,19 @@ export const WorkspaceDetails = ({
                     </>
                   )}
                 </Typography.Text>
+                {workspace.attributes.driftStatus === "drifted" && (
+                  <Tag color="warning" className="workspace-status-drift">
+                    <Link
+                      to={
+                        workspace.attributes.driftJobId != null
+                          ? `/organizations/${organizationId}/workspaces/${id}/runs/${workspace.attributes.driftJobId}`
+                          : `/organizations/${organizationId}/workspaces/${id}`
+                      }
+                    >
+                      Drifted {shortAgo(workspace.attributes.driftFirstSeen)}
+                    </Link>
+                  </Tag>
+                )}
                 <PolicyStatusTag
                   status={workspace.attributes?.policyComplianceStatus}
                   organizationId={organizationId}

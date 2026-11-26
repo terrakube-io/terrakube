@@ -24,6 +24,10 @@ jest.mock("@/components/layout/HelpMenu", () => ({
   HelpMenu: () => <div data-testid="help-menu" />,
 }));
 
+jest.mock("@/components/layout/InboxBell", () => ({
+  InboxBell: () => <div data-testid="inbox-bell" />,
+}));
+
 jest.mock("@/components/layout/UserMenu", () => ({
   UserMenu: () => <div data-testid="user-menu" />,
 }));
@@ -193,6 +197,37 @@ describe("settings context", () => {
 describe("workspace-detail context", () => {
   beforeEach(() => {
     localStorage.clear();
+    sessionStorage.clear();
+  });
+
+  const rememberOrigin = (workspaceId: string, origin: { kind: string; path: string }) =>
+    sessionStorage.setItem("terrakube.workspaceOrigin", JSON.stringify({ workspaceId, origin }));
+
+  it("goes back to the inbox, with its filters, when the workspace was opened from there", async () => {
+    rememberOrigin(workspacePath.split("/")[4], { kind: "inbox", path: "/inbox?kind=failed" });
+    renderSidebar(workspacePath);
+
+    const backLink = await screen.findByText("Inbox");
+
+    expect(backLink.closest("a")).toHaveAttribute("href", "/inbox?kind=failed");
+  });
+
+  it("goes back to the project when the workspace was opened from it", async () => {
+    rememberOrigin(workspacePath.split("/")[4], { kind: "project", path: `${orgPath}/projects/p-1` });
+    renderSidebar(workspacePath);
+
+    const backLink = await screen.findByText("Project");
+
+    expect(backLink.closest("a")).toHaveAttribute("href", `${orgPath}/projects/p-1`);
+  });
+
+  it("goes back to the workspaces for a workspace that was remembered for another one", async () => {
+    rememberOrigin("another-workspace", { kind: "inbox", path: "/inbox" });
+    renderSidebar(workspacePath);
+
+    const backLink = await screen.findByText("Workspaces");
+
+    expect(backLink.closest("a")).toHaveAttribute("href", `${orgPath}/workspaces`);
   });
 
   it("shows the 6 workspace sections plus the back link instead of the top-level nav", async () => {
@@ -252,7 +287,9 @@ describe("workspace-detail context", () => {
 
     expect(await screen.findByText("Workspaces")).toBeInTheDocument();
     expect(screen.getByText("Projects")).toBeInTheDocument();
-    expect(screen.queryByText("Overview")).not.toBeInTheDocument();
+    // The organization has its own Overview, which is not the workspace's.
+    expect(screen.getByText("Overview").closest("a")).toHaveAttribute("href", `${orgPath}/overview`);
+    expect(screen.queryByText("Runs")).not.toBeInTheDocument();
   });
 
   it("can still be collapsed (with icons) while viewing a workspace's own sections", async () => {

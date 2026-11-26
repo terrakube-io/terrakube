@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { message } from "antd";
 import { DetailsJob } from "../Details";
 import { stepLogCache } from "../stepLogCache";
@@ -806,6 +806,24 @@ describe("run actions", () => {
         expect.anything()
       )
     );
+  });
+
+  it("shows the policy result in the approval bar, next to the plan, so approving is informed", async () => {
+    useStructuredOutputStreamMock.mockReturnValue(null);
+    sessionStorage.setItem("ORGANIZATION_ARCHIVE", "org-1");
+    getMock.mockImplementation((url: string) =>
+      Promise.resolve({
+        data: url.includes("/context/v1/")
+          ? { policyEvaluation: { hardMandatoryViolations: 0, softMandatoryViolations: 0 } }
+          : { data: { id: "7", attributes: { status: "waitingApproval", createdBy: "a@example.com" } }, included: [] },
+      })
+    );
+
+    render(<DetailsJob jobId="7" canApprove />);
+
+    const bar = await screen.findByRole("region", { name: "Run approval" });
+    await waitFor(() => expect(within(bar).getByText("Compliant")).toBeInTheDocument());
+    expect(within(bar).getByText("Policy")).toBeInTheDocument();
   });
 
   const mockJobStatus = (getStatus: () => string) =>

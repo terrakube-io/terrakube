@@ -1,6 +1,7 @@
 import { Tooltip } from "antd";
 import { Link } from "react-router-dom";
 import { ProjectSummaryModel } from "@/domain/types";
+import StatusPill from "./StatusPill";
 import { ProjectHealthBar } from "./ProjectHealthBar";
 import { attentionBadge, shortAgo } from "./projectHealth";
 import { attentionFilter, projectWorkspacesLink } from "./projectLinks";
@@ -34,14 +35,14 @@ export default function ProjectCard({ orgid, project, unassigned = false, canSee
         )}
         {badge &&
           (unassigned ? (
-            <span className={`project-badge project-badge-${badge.tone}`}>{badge.text}</span>
+            <StatusPill tone={badge.tone}>{badge.text}</StatusPill>
           ) : (
             <Link
               to={projectWorkspacesLink(orgid, project.id, attentionFilter(project))}
-              className={`project-badge project-badge-${badge.tone}`}
+              className="project-card-badge-link"
               aria-label={`${badge.text} in ${project.name}, show them`}
             >
-              {badge.text}
+              <StatusPill tone={badge.tone}>{badge.text}</StatusPill>
             </Link>
           ))}
       </header>
@@ -50,7 +51,7 @@ export default function ProjectCard({ orgid, project, unassigned = false, canSee
       <footer className="project-card-footer">
         <span>{neverRan ? "0 runs yet" : plural(project.workspaceCount, "workspace")}</span>
         {unassigned ? (
-          <Link to={`/organizations/${orgid}/workspaces`}>Move them to a project</Link>
+          <Link to={`/organizations/${orgid}/workspaces`}>List all workspaces</Link>
         ) : (
           <>
             {canSeeTeams ? (
@@ -59,7 +60,9 @@ export default function ProjectCard({ orgid, project, unassigned = false, canSee
               <Tooltip
                 title={`Only users who manage project access can see team names. Total: ${plural(project.teamCount, "team")}.`}
               >
-                <span aria-label={`${plural(project.teamCount, "team")}, names hidden`}>-</span>
+                <span role="img" aria-label={`${plural(project.teamCount, "team")}, names hidden`}>
+                  -
+                </span>
               </Tooltip>
             )}
             <Tooltip title={project.lastRunAt ? new Date(project.lastRunAt).toLocaleString() : "No runs yet"}>

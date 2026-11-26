@@ -260,17 +260,18 @@ describe("BulkWorkspaceBar", () => {
     expect(screen.getByRole("button", { name: "Lock" })).toBeInTheDocument();
   });
 
-  it("asks before locking and only then changes anything", async () => {
+  it("asks before locking the selection, and locks only once that is confirmed", async () => {
     patch.mockResolvedValue({});
     const onDone = jest.fn();
     renderBar([item("w1"), item("w2")], onDone);
 
     fireEvent.click(screen.getByRole("button", { name: "Lock" }));
 
-    expect((await screen.findAllByText("Lock 2 workspaces?")).length).toBeGreaterThan(0);
+    expect(await screen.findByText("Lock 2 workspaces?")).toBeInTheDocument();
     expect(patch).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getAllByRole("button", { name: "Lock" }).pop() as HTMLElement);
+    const confirm = screen.getAllByRole("button", { name: "Lock" }).find((button) => button.closest(".ant-popover"));
+    fireEvent.click(confirm!);
 
     await waitFor(() => expect(onDone).toHaveBeenCalled());
     expect(patch).toHaveBeenCalledTimes(2);

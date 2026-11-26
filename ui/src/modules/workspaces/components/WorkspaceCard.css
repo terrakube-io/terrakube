@@ -1,18 +1,73 @@
-.ant-card.workspace-card,
-.ant-space.workspace-card-body {
+/* Every card has the same parts in the same places, so a row of cards lines up whatever the names and statuses are. */
+.ant-card.workspace-card {
   width: 100%;
+  height: 100%;
 }
 
-.ant-space.workspace-card-meta {
-  margin-top: 25px;
+.ant-card.workspace-card .ant-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: 100%;
+}
+
+.workspace-card-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 8px;
+}
+
+.workspace-card-tags {
+  max-width: 200px;
+}
+
+/* One line, cut with an ellipsis: the full name is the tooltip. */
+.ant-typography.workspace-card-title {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Two lines of room even when the description is short, so the rows below start at the same height. */
+.ant-typography.workspace-card-description {
+  min-height: 3em;
+  margin: 0;
+}
+
+.workspace-card-statuses,
+.workspace-card-meta {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.workspace-card-meta {
+  justify-content: space-between;
+}
+
+/* Last, and pinned to the bottom, so a short card still ends where its neighbours do. */
+.workspace-card-source {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: auto;
+  min-width: 0;
 }
 
 .ant-typography.workspace-card-vcs-link {
   position: relative;
   z-index: 2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .ant-typography.workspace-card-cli {
-  vertical-align: middle;
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
 }

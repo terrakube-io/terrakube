@@ -1,4 +1,6 @@
 import { DeleteOutlined } from "@ant-design/icons";
+import { ManagedInCodeBanner } from "@/components/settings/ManagedInCodeBanner";
+import { useManagedInCode } from "@/modules/organizations/managedInCode";
 import { Alert, Button, Flex, Form, Input, Select, Space, Spin, Typography, message } from "antd";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -12,6 +14,8 @@ import DisabledReason from "./DisabledReason";
 import ProjectDeleteDialog from "./ProjectDeleteDialog";
 import ProjectEffectiveVariables from "./ProjectEffectiveVariables";
 import ProjectOverview from "./ProjectOverview";
+import AccessChip from "@/components/display/AccessChip/AccessChip";
+import { accessLevelLabel, projectCapabilities } from "@/modules/permissions/accessModel";
 import ProjectPoliciesTab from "./ProjectPoliciesTab";
 import ProjectVariablesTab from "./ProjectVariablesTab";
 import { PROJECT_TAB_LABELS, ProjectTab, resolveLandingTab } from "./projectLandingTab";
@@ -39,6 +43,7 @@ type ProjectForm = {
   defaultTerraformVersion?: string;
   defaultExecutionMode?: string;
   defaultTemplate?: string;
+  ownerTeam?: string;
 };
 
 type GeneralProps = {
@@ -64,6 +69,9 @@ function ProjectGeneralSettings({
   canManagePolicies,
   onSaved,
 }: GeneralProps) {
+  // Read-only here when the organization is kept in code and says so; the delete button stays with its own right.
+  const managed = useManagedInCode(orgid);
+  const canEdit = canUpdateProject && !managed?.readOnly;
   const [waiting, setWaiting] = useState(false);
   const [form] = Form.useForm<ProjectForm>();
   const navigate = useNavigate();
@@ -86,6 +94,7 @@ function ProjectGeneralSettings({
         defaultTerraformVersion: project.defaultTerraformVersion,
         defaultExecutionMode: project.defaultExecutionMode ?? "default",
         defaultTemplate: project.defaultTemplate ?? "default",
+        ownerTeam: project.ownerTeam,
       });
     }
   }, [project, form]);
@@ -103,6 +112,7 @@ function ProjectGeneralSettings({
             : values.defaultExecutionMode,
         defaultTemplate:
           !values.defaultTemplate || values.defaultTemplate === "default" ? null : values.defaultTemplate,
+        ownerTeam: values.ownerTeam?.trim() || null,
       });
       message.success("Project updated successfully");
       onSaved();
@@ -119,14 +129,22 @@ function ProjectGeneralSettings({
 
   return (
     <div className="project-settings-panel">
+      <ManagedInCodeBanner orgId={orgid} readOnlyHere />
       <SettingsPageHeader title="General Settings" description="Adjust the name and description for this project." />
       <Spin spinning={waiting}>
         <Form form={form} layout="vertical" name="project-general-settings" onFinish={onFinish} requiredMark={false}>
           <Form.Item name="name" label="Name" rules={[{ required: true, message: "Name is required" }]}>
-            <Input disabled={!canUpdateProject} />
+            <Input disabled={!canEdit} />
           </Form.Item>
           <Form.Item name="description" label="Description" extra="Optional">
-            <Input.TextArea rows={5} placeholder="Project description" disabled={!canUpdateProject} />
+            <Input.TextArea rows={5} placeholder="Project description" disabled={!canEdit} />
+          </Form.Item>
+          <Form.Item
+            name="ownerTeam"
+            label="Owner"
+            extra="The team that owns this project. It is shown in Needs attention, and people can limit it to their teams."
+          >
+            <Input disabled={!canEdit} placeholder="Team name" maxLength={256} />
           </Form.Item>
           <Form.Item
             name="landingTab"
@@ -134,7 +152,7 @@ function ProjectGeneralSettings({
             extra="The tab this project opens on. People can still choose their own."
           >
             <Select
-              disabled={!canUpdateProject}
+              disabled={!canEdit}
               options={[
                 { value: "default", label: "Organization default" },
                 ...Object.entries(PROJECT_TAB_LABELS).map(([value, label]) => ({ value, label })),
@@ -154,7 +172,7 @@ function ProjectGeneralSettings({
                 : "Not set: the create form suggests the latest"
             }
           >
-            <Input disabled={!canUpdateProject} placeholder="For example 1.9.8" maxLength={32} />
+            <Input disabled={!canEdit} placeholder="For example 1.9.8" maxLength={32} />
           </Form.Item>
           <Form.Item
             name="defaultExecutionMode"
@@ -166,7 +184,7 @@ function ProjectGeneralSettings({
             }
           >
             <Select
-              disabled={!canUpdateProject}
+              disabled={!canEdit}
               options={[
                 { value: "default", label: "Organization default" },
                 { value: "remote", label: "Remote" },
@@ -184,7 +202,7 @@ function ProjectGeneralSettings({
             }
           >
             <Select
-              disabled={!canUpdateProject}
+              disabled={!canEdit}
               options={[
                 { value: "default", label: "No default" },
                 ...templates.map((template) => ({ value: template.id, label: template.name })),
@@ -194,10 +212,14 @@ function ProjectGeneralSettings({
           <Form.Item>
             <Flex justify="flex-end">
               <DisabledReason
-                disabled={!canUpdateProject}
-                reason="Changing project settings needs the Admin role on this project, or Manage Workspaces in the organization."
+                disabled={!canEdit}
+                reason={
+                  managed?.readOnly
+                    ? "This organization is managed in code. Change these settings in its repository."
+                    : "Changing project settings needs the Admin role on this project, or Manage Workspaces in the organization."
+                }
               >
-                <Button type="primary" htmlType="submit" disabled={!canUpdateProject}>
+                <Button type="primary" htmlType="submit" disabled={!canEdit}>
                   Save settings
                 </Button>
               </DisabledReason>
@@ -206,7 +228,7 @@ function ProjectGeneralSettings({
         </Form>
       </Spin>
 
-      <ProjectDefaultTags orgid={orgid} projectId={projectId} canManage={canUpdateProject} />
+      <ProjectDefaultTags orgid={orgid} projectId={projectId} canManage={canEdit} />
 
       <div className="project-delete-section">
         <Typography.Text type="secondary">
@@ -359,15 +381,18 @@ export default function ProjectDetailPage({ organizationName, setOrganizationNam
   };
 
   const level = projectPermissions.accessLevel;
-  const accessLevelLabel = (value: string) =>
-    value === "custom" ? "Custom permissions" : value.charAt(0).toUpperCase() + value.slice(1);
   const through = projectPermissions.grantedThrough;
 
   return (
     <PageWrapper
       width="full"
       title={project?.name ?? "Project"}
-      subTitle={project?.description || `Project in the ${organizationName} organization`}
+      subTitle={[
+        project?.description || `Project in the ${organizationName} organization`,
+        project?.ownerTeam && `Owner ${project.ownerTeam}`,
+      ]
+        .filter(Boolean)
+        .join(" · ")}
       loadingText="Loading project..."
       loading={loading}
       error={error}
@@ -381,6 +406,12 @@ export default function ProjectDetailPage({ organizationName, setOrganizationNam
       ]}
       actions={
         <Space>
+          <AccessChip
+            scope="project"
+            level={projectPermissions.accessLevel}
+            teams={projectPermissions.grantedThrough}
+            items={projectCapabilities(projectPermissions, permissions.manageWorkspace)}
+          />
           <DisabledReason
             disabled={!canManageProject}
             reason="Editing a project needs the Admin role on it, or Manage Workspaces in the organization."
@@ -404,25 +435,21 @@ export default function ProjectDetailPage({ organizationName, setOrganizationNam
         </Space>
       }
     >
-      {level && SECTIONS_WITH_ACCESS_BANNER.includes(section) && (
+      {level && !canManageProject && SECTIONS_WITH_ACCESS_BANNER.includes(section) && (
         <Alert
           type="info"
           showIcon={false}
           className="project-access-banner"
           message={
             <>
-              Your access in this project: <strong>{accessLevelLabel(level)}</strong>
+              Your access in this project is <strong>{accessLevelLabel(level)}</strong>
               {through.length > 0 && (
                 <>
                   , through {through.length === 1 ? "team" : "teams"} <strong>{through.join(", ")}</strong>
                 </>
               )}
-              .{" "}
-              {permissions.manageWorkspace
-                ? "You can edit the project, manage its access and delete it."
-                : canManageProject
-                  ? "You can edit the project and manage its access. Deleting it needs organization level rights."
-                  : "You cannot edit the project, manage its access or delete it."}
+              . Editing the project, managing its access and deleting it need the Admin role on the project, or Manage
+              Workspaces in the organization.
             </>
           }
         />

@@ -16,6 +16,20 @@
   --status-success: #73d13d;
 }
 
+/* The project chips are the same pills outside the filter container, so they need the same colours for their icons. */
+.project-chips {
+  --status-warning: #9c5c00;
+  --status-error: #cf1322;
+  --status-running: var(--tk-status-info);
+  --status-success: #389e0d;
+}
+
+[data-theme="dark"] .project-chips {
+  --status-warning: #d89614;
+  --status-error: #ff7875;
+  --status-success: #73d13d;
+}
+
 .workspace-filter-controls {
   display: flex;
   align-items: center;

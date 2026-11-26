@@ -74,6 +74,8 @@ export type OrganizationAttributes = {
   executionMode?: string;
   icon?: string;
   projectLandingTab?: string;
+  managedInCodeRepository?: string;
+  managedInCodeMode?: string;
   workspaceCount?: number;
   workspaceStatusCounts?: Record<string, number>;
 };
@@ -191,6 +193,12 @@ export type JobAttributes = {
   triggeredByJobId?: number;
   /** How many triggered runs deep this one is. Zero for a run nobody triggered. */
   cascadeDepth?: number;
+  /** What the plan adds, changes and destroys. Null for a plan that has no summary (older, or failed). */
+  planAdd?: number | null;
+  planChange?: number | null;
+  planDestroy?: number | null;
+  /** "drift" or "clean" for a run that was a drift check, empty for every other run. */
+  driftResult?: "drift" | "clean" | null;
 } & AuditFieldBase;
 
 /** Output-delivery outcome of a step, tracked apart from whether the step itself succeeded. */
@@ -231,6 +239,10 @@ export type FlatJob = {
   createdDate?: string;
   updatedDate?: string;
   templateReference?: string;
+  planAdd?: number | null;
+  planChange?: number | null;
+  planDestroy?: number | null;
+  driftResult?: "drift" | "clean" | null;
 };
 // VCS
 
@@ -577,6 +589,8 @@ export type ProjectModel = {
   defaultExecutionMode?: string;
   defaultTemplate?: string;
   organizationExecutionMode?: string;
+  /** The team that owns the project, by name. */
+  ownerTeam?: string;
 };
 
 // Computed by the API (project_summary) from the project's non-deleted workspaces.
@@ -584,6 +598,8 @@ export type ProjectSummaryModel = {
   id: string;
   name: string;
   description?: string;
+  /** The team that owns the project, when it has one. */
+  ownerTeam?: string | null;
   workspaceCount: number;
   completedCount: number;
   failedCount: number;
@@ -598,6 +614,11 @@ export type ProjectSummaryModel = {
   exemptedCount: number;
   lockedCount: number;
   attentionCount: number;
+  // Workspaces driven from the CLI or API (no repository), and the ones that run from a repository.
+  cliDrivenCount: number;
+  vcsDrivenCount: number;
+  // CLI workspaces on local execution that never ran in Terrakube (included in neverRunCount): they have no run status.
+  noRunStatusCount: number;
   lastRunAt?: string;
   // Jobs still waiting to run, and when the oldest of them entered the queue.
   queuedJobCount: number;
@@ -636,6 +657,13 @@ export type WorkspaceAttributes = {
   sharedIds?: string;
   policyComplianceStatus?: "COMPLIANT" | "NON_COMPLIANT" | "EXEMPTED" | "UNKNOWN";
   lastJobStatus?: string;
+  /** "drifted" when the last drift check found changes, "clean" when it found none, empty when never checked. */
+  driftStatus?: "drifted" | "clean" | null;
+  /** When the current drift was first seen. Empty while clean. */
+  driftFirstSeen?: string | null;
+  driftLastChecked?: string | null;
+  /** The run of the last drift check, so its plan can be opened. */
+  driftJobId?: number | null;
   /** Only plan-only runs may use a branch other than the workspace branch. */
   restrictApplyToConfiguredBranch?: boolean;
   requireApproveToApply?: boolean;

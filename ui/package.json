@@ -23,6 +23,7 @@
     "html-react-parser": "^6.1.10",
     "html-to-image": "^1.11.13",
     "luxon": "^3.7.2",
+    "match-sorter": "^8.3.1",
     "monaco-editor": "^0.57.0",
     "oidc-client-ts": "3.5.0",
     "react": "19.3.1",
@@ -37,7 +38,8 @@
     "rehype-raw": "^7.0.0",
     "rehype-sanitize": "^6.0.0",
     "remark-gfm": "4.0.1",
-    "sucrase": "^3.35.1"
+    "sucrase": "^3.35.1",
+    "tinykeys": "^4.0.1"
   },
   "scripts": {
     "start": "vite",
@@ -79,6 +81,7 @@
     "@testing-library/react": "^16.3.3",
     "@testing-library/user-event": "^14.6.13",
     "@types/jest": "^30.0.0",
+    "@types/jest-axe": "^3.5.9",
     "@types/luxon": "^3.7.6",
     "@types/node": "^26.6.6",
     "@types/react": "^19.3.0",
@@ -99,6 +102,7 @@
     "globals": "^17.14.0",
     "identity-obj-proxy": "^3.0.0",
     "jest": "^30.5.2",
+    "jest-axe": "^11.0.0",
     "jest-environment-jsdom": "^30.5.2",
     "jest-transformer-svg": "^2.1.0",
     "prettier": "^3.10.1",

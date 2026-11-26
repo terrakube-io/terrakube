@@ -1,7 +1,7 @@
-import { Button, Tag, Typography, Pagination } from "antd";
+import { Button, Checkbox, Flex, Tag, Typography, Pagination } from "antd";
+import { WorkspaceOrigin, listOrigin, rememberWorkspaceOrigin } from "@/modules/workspaces/workspaceOrigin";
 import {
   FolderOutlined,
-  ClockCircleOutlined,
   LockOutlined,
   CaretUpOutlined,
   CaretDownOutlined,
@@ -17,13 +17,13 @@ import WorkspaceStatusTag from "@/components/display/WorkspaceStatusTag";
 import PolicyStatusTag from "@/components/display/PolicyStatusTag";
 import { statusColors } from "@/modules/workspaces/utils/workspaceStatusColors";
 import { getWorkspaceStatusIcon } from "@/modules/workspaces/utils/workspaceStatusIcon";
+import LastRun from "@/modules/workspaces/components/LastRun";
 import IacTypeLogo from "@/modules/workspaces/components/IacTypeLogo";
 import VcsLogo from "@/components/display/VcsLogo";
 import getVcsNameFromUrl from "@/modules/workspaces/utils/getVcsNameFromUrl";
 import getVcsTypeFromUrl from "@/modules/workspaces/utils/getVcsTypeFromUrl";
 import { WorkspaceSortOption } from "@/modules/workspaces/utils/workspaceSort";
 import "./WorkspaceTable.css";
-import { relativeTime } from "@/modules/utils/dates";
 
 const GROUP_PREVIEW_SIZE = 10;
 
@@ -40,6 +40,14 @@ type Props = {
   /** Organization tags, used to turn the tag ids on each row into names. */
   tags?: TagModel[];
   onSelectProject: (projectId: string | null) => void;
+  /** Where "back" leads from a workspace opened here. The organization list unless told otherwise. */
+  origin?: WorkspaceOrigin;
+  /** On a project's own list the project is the page, so its chip is left out and the tags take its place. */
+  hideProject?: boolean;
+  /** The tags a project hands to its workspaces. Their rows say "from project" next to the tag. */
+  defaultTags?: ReadonlyMap<string, string>;
+  /** Adds a checkbox to every row and to the header, for actions on several workspaces at once. */
+  selection?: { selected: WorkspaceListItem[]; onChange: (rows: WorkspaceListItem[]) => void };
   sortOption: WorkspaceSortOption;
   onSortChange: (option: WorkspaceSortOption) => void;
   page?: number;
@@ -55,7 +63,14 @@ type Props = {
   groupsForcedOpen?: boolean;
 };
 
-type SortSpec = { asc: WorkspaceSortOption; desc: WorkspaceSortOption } | { single: WorkspaceSortOption };
+type SortSpec =
+  | {
+      asc: WorkspaceSortOption;
+      desc: WorkspaceSortOption;
+      /** Which way the first click on an unsorted column goes. Ascending unless a column reads better the other way. */
+      first?: "asc" | "desc";
+    }
+  | { single: WorkspaceSortOption };
 
 function activateOnKey(e: KeyboardEvent, callback: () => void) {
   if (e.key === "Enter" || e.key === " ") {
@@ -92,7 +107,9 @@ function SortableHeader({
   }
   const isAsc = sortOption === spec.asc;
   const isDesc = sortOption === spec.desc;
-  const activate = () => onSortChange(isAsc ? spec.desc : spec.asc);
+  const startsDescending = spec.first === "desc";
+  // An active column flips; an unsorted one starts the way the column reads best.
+  const activate = () => onSortChange(isAsc ? spec.desc : isDesc ? spec.asc : startsDescending ? spec.desc : spec.asc);
   return (
     <span
       className="workspace-sortable-header"
@@ -115,19 +132,44 @@ function WorkspaceRow({
   organizationId,
   onSelectProject,
   tags,
+  origin,
+  hideProject,
+  defaultTags,
+  selection,
 }: {
   item: WorkspaceListItem;
   organizationId: string;
   onSelectProject: (projectId: string | null) => void;
   tags: TagModel[];
+  origin: WorkspaceOrigin;
+  hideProject: boolean;
+  defaultTags?: ReadonlyMap<string, string>;
+  selection?: Props["selection"];
 }) {
+  const checked = !!selection?.selected.some((row) => row.id === item.id);
   return (
     <div className="workspace-row">
       <Link
         to={`/organizations/${organizationId}/workspaces/${item.id}`}
         className="workspace-row-link"
         aria-label={`Open workspace ${item.name}`}
+        onClick={() => rememberWorkspaceOrigin(item.id, origin)}
       />
+      {selection && (
+        <div className="workspace-col-select">
+          <Checkbox
+            checked={checked}
+            aria-label={`Select ${item.name}`}
+            onChange={(event) =>
+              selection.onChange(
+                event.target.checked
+                  ? [...selection.selected, item]
+                  : selection.selected.filter((row) => row.id !== item.id)
+              )
+            }
+          />
+        </div>
+      )}
       <div className="workspace-col-name">
         <div className="workspace-name-line1">
           <span
@@ -143,9 +185,21 @@ function WorkspaceRow({
             {item.name}
           </Typography.Text>
           {/* The other columns have fixed widths, so the tags open from an icon and leave the room to the name */}
-          <WorkspaceTagChips bindings={item.tags} tags={tags} collapsed />
+          {!defaultTags && <WorkspaceTagChips bindings={item.tags} tags={tags} collapsed />}
         </div>
-        {item.projectName && (
+        {defaultTags && (item.tags ?? []).length > 0 && (
+          <Flex wrap gap={4} align="center" className="workspace-name-line2 workspace-name-tags">
+            {(item.tags ?? []).map((binding) => (
+              <span key={binding.tagId} className="workspace-tag-with-source">
+                <WorkspaceTagChips bindings={[binding]} tags={tags} />
+                {defaultTags.has(binding.tagId) && (defaultTags.get(binding.tagId) ?? "") === (binding.value ?? "") && (
+                  <span className="workspace-tag-source">from project</span>
+                )}
+              </span>
+            ))}
+          </Flex>
+        )}
+        {!hideProject && item.projectName && (
           <div className="workspace-name-line2">
             <Tag
               icon={<FolderOutlined />}
@@ -173,8 +227,7 @@ function WorkspaceRow({
         />
       </div>
       <div className="workspace-col-run">
-        <ClockCircleOutlined />
-        <span>{relativeTime(item.lastRun) ?? "Never executed"}</span>
+        <LastRun lastRun={item.lastRun} />
       </div>
       <div className="workspace-col-version">
         <IacTypeLogo type={item.iacType} />
@@ -211,6 +264,10 @@ export default function WorkspaceTable({
   groups,
   tags = [],
   onSelectProject,
+  origin,
+  hideProject = false,
+  defaultTags,
+  selection,
   sortOption,
   onSortChange,
   page: controlledPage,
@@ -223,6 +280,7 @@ export default function WorkspaceTable({
   groupsForcedOpen = false,
 }: Props) {
   const listId = useId();
+  const rowOrigin = origin ?? listOrigin(organizationId);
   const [internalPage, setInternalPage] = useState(1);
   const [internalPageSize, setInternalPageSize] = useState(20);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
@@ -289,6 +347,22 @@ export default function WorkspaceTable({
         </div>
       )}
       <div className="workspace-list-header">
+        {selection && (
+          <div className="workspace-col-select">
+            <Checkbox
+              aria-label="Select all workspaces on this page"
+              checked={
+                workspaces.length > 0 &&
+                workspaces.every((item) => selection.selected.some((row) => row.id === item.id))
+              }
+              indeterminate={
+                selection.selected.length > 0 &&
+                !workspaces.every((item) => selection.selected.some((row) => row.id === item.id))
+              }
+              onChange={(event) => selection.onChange(event.target.checked ? [...workspaces] : [])}
+            />
+          </div>
+        )}
         <div className="workspace-col-name">
           <SortableHeader
             label="Name"
@@ -299,7 +373,7 @@ export default function WorkspaceTable({
         </div>
         <div className="workspace-col-status">
           <SortableHeader
-            label="Status (grouped)"
+            label={isGrouped ? "Status (grouped)" : "Status"}
             spec={{ single: "status" }}
             sortOption={sortOption}
             onSortChange={onSortChange}
@@ -311,7 +385,7 @@ export default function WorkspaceTable({
         <div className="workspace-col-run">
           <SortableHeader
             label="Last run"
-            spec={{ asc: "lastRun_asc", desc: "lastRun_desc" }}
+            spec={{ asc: "lastRun_asc", desc: "lastRun_desc", first: "desc" }}
             sortOption={sortOption}
             onSortChange={onSortChange}
           />
@@ -381,6 +455,10 @@ export default function WorkspaceTable({
                         organizationId={organizationId}
                         onSelectProject={onSelectProject}
                         tags={tags}
+                        origin={rowOrigin}
+                        hideProject={hideProject}
+                        defaultTags={defaultTags}
+                        selection={selection}
                       />
                     ))}
                   {!isCollapsed && !isControlled && group.items.length > GROUP_PREVIEW_SIZE && (
@@ -405,6 +483,10 @@ export default function WorkspaceTable({
               organizationId={organizationId}
               onSelectProject={onSelectProject}
               tags={tags}
+              origin={rowOrigin}
+              hideProject={hideProject}
+              defaultTags={defaultTags}
+              selection={selection}
             />
           ))}
 

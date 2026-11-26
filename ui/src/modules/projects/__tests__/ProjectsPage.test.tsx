@@ -54,6 +54,9 @@ const summary = (overrides: Record<string, unknown>) => ({
   hardViolationCount: 0,
   softViolationCount: 0,
   lockedCount: 0,
+  cliDrivenCount: 0,
+  vcsDrivenCount: 0,
+  noRunStatusCount: 0,
   attentionCount: 1,
   teamCount: 1,
   ...overrides,
@@ -216,7 +219,7 @@ describe("ProjectsPage", () => {
     renderProjectsPage();
     await waitFor(() => expect(projectService.listProjectSummaries).toHaveBeenCalledTimes(1));
 
-    fireEvent.click(await screen.findByText(/Needs attention 3/));
+    fireEvent.click(await screen.findByRole("button", { name: /Needs attention\s*3/ }));
     await screen.findByText("Newer answer");
 
     await act(async () => {
@@ -225,6 +228,14 @@ describe("ProjectsPage", () => {
 
     expect(screen.getByText("Newer answer")).toBeInTheDocument();
     expect(screen.queryByText("Older answer")).not.toBeInTheDocument();
+  });
+
+  it("marks the active chip as pressed, like the workspace list", async () => {
+    renderProjectsPage();
+
+    await screen.findByText("Billing API");
+    expect(screen.getByRole("button", { name: /All\s*50/ })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: /Empty\s*1/ })).toHaveAttribute("aria-pressed", "false");
   });
 
   it("shows a dash with the total on hover instead of the team count when the caller cannot see who has access", async () => {
@@ -283,7 +294,7 @@ describe("ProjectsPage", () => {
     renderProjectsPage();
     await screen.findByText("Billing API");
 
-    fireEvent.click(screen.getByText(/Needs attention 3/));
+    fireEvent.click(screen.getByRole("button", { name: /Needs attention\s*3/ }));
 
     await waitFor(() => expect(lastQuery()).toMatchObject({ chip: "attention", page: 1 }));
   });
@@ -342,7 +353,7 @@ describe("ProjectsPage", () => {
 
     expect(await screen.findByText("Unassigned")).toBeInTheDocument();
     expect(screen.getByText("41 workspaces")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Move them to a project" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "List all workspaces" })).toBeInTheDocument();
   });
 
   it("applies a saved view: its search, chip and sort, back on page 1, with the address following", async () => {
@@ -402,7 +413,7 @@ describe("ProjectsPage", () => {
     renderProjectsPage();
     await screen.findByText("Unassigned");
 
-    fireEvent.click(screen.getByText(/Empty 1/));
+    fireEvent.click(screen.getByRole("button", { name: /Empty\s*1/ }));
 
     await waitFor(() => expect(screen.queryByText("Unassigned")).not.toBeInTheDocument());
   });
@@ -489,7 +500,7 @@ describe("ProjectsPage", () => {
       await screen.findByText("Billing API");
       expect(screen.getByTestId("where")).toHaveTextContent(/^\/organizations\/org-1\/projects$/);
 
-      fireEvent.click(screen.getByText(/Empty 1/));
+      fireEvent.click(screen.getByRole("button", { name: /Empty\s*1/ }));
 
       await waitFor(() => expect(screen.getByTestId("where")).toHaveTextContent("chip=empty"));
     });

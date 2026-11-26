@@ -1,0 +1,77 @@
+.workspace-drift {
+  margin-bottom: 16px;
+}
+
+/* In the row of state cards the grid sets the gap, and a margin would make this card shorter than its neighbours. */
+.overview-states .workspace-drift {
+  margin-bottom: 0;
+}
+
+.workspace-drift-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
+.workspace-drift-line .ant-tag {
+  margin: 0;
+}
+
+.workspace-drift-history {
+  width: 100%;
+  margin-top: 12px;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.workspace-drift-history th {
+  padding: 6px 8px;
+  color: var(--tk-text-secondary);
+  font-weight: 600;
+  text-align: left;
+  border-bottom: 1px solid var(--tk-border-primary);
+}
+
+.workspace-drift-history td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--tk-border-secondary);
+}
+
+.workspace-drift-caption,
+.workspace-drift-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.workspace-drift-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.workspace-drift-blocks {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.workspace-drift-block {
+  width: 6px;
+  height: 16px;
+  border-radius: 1px;
+}
+
+.workspace-drift-block-clean {
+  background: var(--tk-status-success);
+}
+
+.workspace-drift-block-drift {
+  background: var(--tk-status-warning);
+}

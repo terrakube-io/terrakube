@@ -6,7 +6,7 @@ import { EmptyState } from "@/components/feedback/EmptyState";
 export function ProjectsSkeleton({ view }: { view: "cards" | "table" }) {
   if (view === "cards") {
     return (
-      <div className="projects-card-grid" aria-busy="true" aria-label="Loading projects">
+      <div className="projects-card-grid" role="status" aria-busy="true" aria-label="Loading projects">
         {Array.from({ length: 6 }, (_, index) => (
           <div key={index} className="project-card">
             <Skeleton active title={{ width: "55%" }} paragraph={{ rows: 3 }} />
@@ -16,7 +16,7 @@ export function ProjectsSkeleton({ view }: { view: "cards" | "table" }) {
     );
   }
   return (
-    <div aria-busy="true" aria-label="Loading projects">
+    <div role="status" aria-busy="true" aria-label="Loading projects">
       {Array.from({ length: 6 }, (_, index) => (
         <Skeleton key={index} active title={false} paragraph={{ rows: 1, width: "100%" }} />
       ))}

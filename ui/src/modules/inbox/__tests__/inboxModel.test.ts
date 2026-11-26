@@ -20,6 +20,15 @@ describe("sortItems", () => {
     expect(sorted.map((entry) => entry.name)).toEqual(["oldest", "recent"]);
   });
 
+  it("lists the drift that has gone unfixed longest first", () => {
+    const sorted = sortItems("drifted", [
+      item("new", "2026-11-12T02:00:00Z", "drifted"),
+      item("old", "2026-11-01T02:00:00Z", "drifted"),
+    ]);
+
+    expect(sorted.map((entry) => entry.name)).toEqual(["old", "new"]);
+  });
+
   it("lists the most recent failure first", () => {
     const sorted = sortItems("failed", [item("old", "2026-11-08T06:00:00Z"), item("new", "2026-11-08T10:00:00Z")]);
 
@@ -46,8 +55,8 @@ describe("sortItems", () => {
 });
 
 describe("counts", () => {
-  it("adds the three kinds", () => {
-    expect(totalCount({ waiting: 1, failed: 2, policy: 3 })).toBe(6);
+  it("adds the four kinds", () => {
+    expect(totalCount({ waiting: 1, failed: 2, drifted: 4, policy: 3 })).toBe(10);
     expect(totalCount(emptyCounts())).toBe(0);
   });
 });

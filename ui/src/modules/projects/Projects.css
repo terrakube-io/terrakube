@@ -116,30 +116,6 @@
   font-size: 12px;
 }
 
-/* Name is sorted by default, which antd marks with a shaded column. Here that reads as a highlighted column
-   rather than a sort, and the caret in the header already says it, so the shading is dropped. */
-.project-workspaces-table .ant-table-tbody > tr > td.ant-table-column-sort {
-  background: transparent;
-}
-
-.project-workspaces-table .ant-table-thead > tr > th.ant-table-column-sort {
-  background: var(--ant-table-header-bg, var(--tk-fill-secondary));
-}
-
-.project-workspace-source {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-
-.project-workspace-source a {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 /* Projects index: health bar, chips, cards and table. */
 .project-health-bar {
   display: flex;
@@ -207,6 +183,12 @@
   background: var(--tk-border-secondary, #d9d9d9);
 }
 
+/* Dotted, so "no run status" does not rely on being a lighter grey than "never executed". */
+.health-noStatus {
+  background: radial-gradient(circle, var(--tk-text-quaternary, #bfbfbf) 1px, var(--tk-bg-container, #fff) 1.5px) 0 0 /
+    4px 4px;
+}
+
 .project-health-legend {
   display: flex;
   flex-wrap: wrap;
@@ -231,26 +213,17 @@
   margin-bottom: 0;
 }
 
-.project-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 16px;
-}
-
-.project-chips .project-chip.ant-tag {
-  margin: 0;
-  padding: 2px 12px;
-  border: 1px solid var(--tk-border-secondary, #d9d9d9);
-  border-radius: 14px;
-  font-size: 13px;
-}
-
 .projects-card-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 16px;
   margin-bottom: 16px;
+}
+
+/* A card that is a link fills its grid cell, so cards of a row are as wide and as tall as each other. */
+.projects-card-grid > a {
+  display: block;
+  min-width: 0;
 }
 
 .project-card {
@@ -296,44 +269,6 @@
   color: var(--tk-text-secondary, #8c8c8c);
 }
 
-.project-badge {
-  flex-shrink: 0;
-  padding: 1px 8px;
-  border-radius: 10px;
-  font-size: 12px;
-  font-weight: 500;
-}
-
-.project-badge-danger,
-.project-pill-danger {
-  color: var(--ant-color-error, #cf1322);
-  background: var(--ant-color-error-bg, #fff1f0);
-}
-
-.project-badge-warning,
-.project-pill-warning {
-  color: var(--ant-color-warning-text, #ad6800);
-  background: var(--ant-color-warning-bg, #fffbe6);
-}
-
-.project-pill-success {
-  color: var(--ant-color-success-text, #237804);
-  background: var(--ant-color-success-bg, #f6ffed);
-}
-
-.project-pill-neutral {
-  color: var(--tk-text-secondary, #595959);
-  background: var(--tk-bg-layout, #f0f0f0);
-}
-
-.project-pill {
-  display: inline-block;
-  padding: 0 8px;
-  border-radius: 10px;
-  font-size: 12px;
-  font-weight: 500;
-}
-
 .project-unassigned-table {
   margin-top: 8px;
 }
@@ -355,10 +290,6 @@
 
 .project-overview-meta {
   margin: 12px 0 0;
-}
-
-.project-overview-landing {
-  margin-top: 24px;
 }
 
 .project-overview-link.ant-btn {
@@ -389,86 +320,33 @@
   padding-left: 20px;
 }
 
-/* Status chips next to workspace names, and the project page chrome. */
-.project-status {
-  display: inline-block;
-  padding: 0 8px;
-  border-radius: 10px;
-  font-size: 12px;
-  font-weight: 500;
-  white-space: nowrap;
-}
-
-.project-status-success {
-  color: var(--ant-color-success-text, #237804);
-  background: var(--ant-color-success-bg, #f6ffed);
-}
-
-.project-status-danger {
-  color: var(--ant-color-error, #cf1322);
-  background: var(--ant-color-error-bg, #fff1f0);
-}
-
-.project-status-info {
-  color: var(--ant-color-info, #1677ff);
-  background: var(--ant-color-info-bg, #e6f4ff);
-}
-
-.project-status-warning {
-  color: var(--ant-color-warning-text, #ad6800);
-  background: var(--ant-color-warning-bg, #fffbe6);
-}
-
-.project-status-neutral {
-  color: var(--tk-text-secondary, #595959);
-  background: var(--tk-bg-layout, #f0f0f0);
-}
-
 .project-access-banner {
   margin-bottom: 16px;
 }
 
-.project-tiles {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 12px;
-  margin-bottom: 16px;
-}
-
-.project-tile-number {
-  font-size: 28px;
-  font-weight: 600;
-  line-height: 1.2;
-}
-
-.project-tile-number-danger {
-  color: var(--ant-color-error, #cf1322);
-}
-
-.project-overview-columns {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-  gap: 16px;
-  margin-top: 16px;
-}
-
-.project-activity-list {
+.project-overview-details {
   margin: 0;
-  padding: 0;
-  list-style: none;
 }
 
-.project-activity-list li {
+.project-overview-details > div {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  padding: 8px 0;
+  gap: 12px;
+  padding: 6px 0;
   border-bottom: 1px solid var(--tk-border-secondary, #f0f0f0);
 }
 
-.project-activity-list li:last-child {
+.project-overview-details > div:last-child {
   border-bottom: 0;
+}
+
+.project-overview-details dt {
+  color: var(--tk-text-secondary);
+}
+
+.project-overview-details dd {
+  margin: 0;
 }
 
 /* Move impact preview and delete pre-flight. */
@@ -504,31 +382,6 @@
   color: var(--tk-text-secondary, #8c8c8c);
 }
 
-/* Workspaces tab: name cell, tag provenance and toolbar. */
-.project-workspace-name {
-  line-height: 1.3;
-}
-
-.project-workspace-lock {
-  margin-left: 6px;
-  color: var(--tk-text-secondary, #8c8c8c);
-}
-
-.project-workspace-source {
-  font-size: 12px;
-}
-
-.project-tag-with-source {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.project-tag-source {
-  font-size: 11px;
-  color: var(--tk-text-secondary, #8c8c8c);
-}
-
 .project-workspaces-toolbar {
   margin: 12px 0;
 }
@@ -546,11 +399,6 @@
 a.project-badge,
 .project-pill-link {
   text-decoration: none;
-}
-
-a.project-badge:hover {
-  filter: brightness(0.95);
-  text-decoration: underline;
 }
 
 .project-name-description {
@@ -573,19 +421,6 @@ a.project-badge:hover {
   height: auto;
 }
 
-.project-tile-link {
-  display: block;
-  color: inherit;
-}
-
-a.project-status {
-  text-decoration: none;
-}
-
-a.project-status:hover {
-  text-decoration: underline;
-}
-
 .disabled-reason {
   display: inline-block;
   cursor: not-allowed;
@@ -600,9 +435,14 @@ a.project-status:hover {
 }
 
 /* The bulk bar: dark like the design, and it holds its place when nothing is ticked. */
-.project-bulk-bar-idle,
 .project-bulk-bar-active {
   min-height: 48px;
+}
+
+/* Nothing selected: no reserved space. The bar appears when a row is ticked. */
+.project-bulk-bar-idle {
+  height: 0;
+  margin: 0;
 }
 
 .project-bulk-bar-active {
@@ -628,4 +468,42 @@ a.project-status:hover {
   background: rgba(255, 255, 255, 0.12);
   border-color: transparent;
   color: rgba(255, 255, 255, 0.55);
+}
+
+/* The project lists wear the look of the workspace list: a bordered table with a quiet uppercase header. */
+.projects-table .ant-table {
+  border: 1px solid var(--tk-border-primary);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.projects-table .ant-table-thead > tr > th {
+  background: var(--tk-fill-secondary);
+  border-bottom: 1px solid var(--tk-border-primary);
+  color: var(--tk-text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.projects-table .ant-table-tbody > tr > td {
+  border-bottom: 1px solid var(--tk-border-secondary);
+}
+
+.projects-table .ant-table-tbody > tr:hover > td {
+  background: var(--tk-fill-secondary);
+}
+
+.projects-table .project-name-cell a,
+.project-card-name {
+  color: var(--tk-text-primary);
+}
+
+.project-card-badge-link {
+  flex-shrink: 0;
+}
+
+.project-chips {
+  margin-bottom: 16px;
 }
