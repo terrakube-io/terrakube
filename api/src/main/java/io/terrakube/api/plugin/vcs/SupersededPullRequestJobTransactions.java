@@ -40,10 +40,10 @@ class SupersededPullRequestJobTransactions {
     private final JobStatusChangeService jobStatusChangeService;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
-    public List<Integer> findSupersededJobIds(Workspace workspace, String overrideBranch, int newJobId) {
+    public List<Integer> findSupersededJobIds(Workspace workspace, int prNumber, int newJobId) {
         return jobRepository
-                .findByWorkspaceAndOverrideBranchAndIdLessThanAndStatusInOrderByIdAsc(workspace, overrideBranch,
-                        newJobId, NOT_STARTED)
+                .findByWorkspaceAndPrNumberAndIdLessThanAndStatusInOrderByIdAsc(workspace, prNumber, newJobId,
+                        NOT_STARTED)
                 .stream()
                 .map(Job::getId)
                 .toList();
@@ -69,6 +69,10 @@ class SupersededPullRequestJobTransactions {
         }
         // The bulk update above bypasses Elide's hooks: do what they would have done for a cancel.
         jobRepository.findById(jobId).ifPresent(job -> {
+            if (job.getApprovedBy() != null) {
+                log.info("Job {} had been approved by {}; its approval was for a commit that is now superseded",
+                        jobId, job.getApprovedBy());
+            }
             job.setStatus(JobStatus.cancelled);
             jobStatusChangeService.afterStatusChanged(job);
         });

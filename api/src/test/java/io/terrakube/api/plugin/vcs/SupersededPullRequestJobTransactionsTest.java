@@ -50,18 +50,18 @@ class SupersededPullRequestJobTransactionsTest {
     }
 
     @Test
-    void looksForOlderNotStartedRunsOfTheSameWorkspaceAndBranch() {
+    void looksForOlderNotStartedRunsOfTheSameWorkspaceAndPullRequest() {
         Workspace workspace = new Workspace();
         Job older = new Job();
         older.setId(7);
         doReturn(List.of(older)).when(jobRepository)
-                .findByWorkspaceAndOverrideBranchAndIdLessThanAndStatusInOrderByIdAsc(any(), any(), anyInt(), any());
+                .findByWorkspaceAndPrNumberAndIdLessThanAndStatusInOrderByIdAsc(any(), any(), anyInt(), any());
 
-        List<Integer> ids = subject.findSupersededJobIds(workspace, "feature/login", 50);
+        List<Integer> ids = subject.findSupersededJobIds(workspace, 12, 50);
 
         assertEquals(List.of(7), ids);
-        verify(jobRepository).findByWorkspaceAndOverrideBranchAndIdLessThanAndStatusInOrderByIdAsc(workspace,
-                "feature/login", 50, SupersededPullRequestJobTransactions.NOT_STARTED);
+        verify(jobRepository).findByWorkspaceAndPrNumberAndIdLessThanAndStatusInOrderByIdAsc(workspace, 12, 50,
+                SupersededPullRequestJobTransactions.NOT_STARTED);
     }
 
     @Test

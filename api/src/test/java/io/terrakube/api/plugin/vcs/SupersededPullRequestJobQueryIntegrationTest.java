@@ -88,18 +88,19 @@ class SupersededPullRequestJobQueryIntegrationTest {
         return workspaceRepository.save(workspace);
     }
 
-    private Job newJob(Workspace workspace, String branch, JobStatus status) {
+    private Job newJob(Workspace workspace, String branch, Integer prNumber, JobStatus status) {
         Job job = new Job();
         job.setOrganization(organization);
         job.setWorkspace(workspace);
         job.setOverrideBranch(branch);
+        job.setPrNumber(prNumber);
         job.setStatus(status);
         return jobRepository.save(job);
     }
 
-    private List<Integer> superseded(Workspace workspace, String branch, Job newJob) {
+    private List<Integer> superseded(Workspace workspace, int prNumber, Job newJob) {
         return jobRepository
-                .findByWorkspaceAndOverrideBranchAndIdLessThanAndStatusInOrderByIdAsc(workspace, branch,
+                .findByWorkspaceAndPrNumberAndIdLessThanAndStatusInOrderByIdAsc(workspace, prNumber,
                         newJob.getId(), SupersededPullRequestJobTransactions.NOT_STARTED)
                 .stream()
                 .map(Job::getId)
@@ -107,30 +108,44 @@ class SupersededPullRequestJobQueryIntegrationTest {
     }
 
     @Test
-    void findsOnlyOlderNotStartedRunsOfTheSameWorkspaceAndBranch() {
+    void findsOnlyOlderNotStartedRunsOfTheSameWorkspaceAndPullRequest() {
         Workspace workspace = newWorkspace();
         Workspace otherWorkspace = newWorkspace();
-        Job pending = newJob(workspace, "feature/login", JobStatus.pending);
-        Job waitingApproval = newJob(workspace, "feature/login", JobStatus.waitingApproval);
-        Job approved = newJob(workspace, "feature/login", JobStatus.approved);
-        newJob(workspace, "feature/login", JobStatus.queue);
-        newJob(workspace, "feature/login", JobStatus.running);
-        newJob(workspace, "feature/login", JobStatus.completed);
-        newJob(workspace, "feature/other", JobStatus.pending);
-        newJob(workspace, null, JobStatus.pending);
-        newJob(otherWorkspace, "feature/login", JobStatus.pending);
-        Job newRun = newJob(workspace, "feature/login", JobStatus.pending);
-        newJob(workspace, "feature/login", JobStatus.pending);
+        Job pending = newJob(workspace, "feature/login", 12, JobStatus.pending);
+        Job waitingApproval = newJob(workspace, "feature/login", 12, JobStatus.waitingApproval);
+        Job approved = newJob(workspace, "feature/login", 12, JobStatus.approved);
+        newJob(workspace, "feature/login", 12, JobStatus.queue);
+        newJob(workspace, "feature/login", 12, JobStatus.running);
+        newJob(workspace, "feature/login", 12, JobStatus.completed);
+        newJob(workspace, "feature/login", 13, JobStatus.pending);
+        newJob(workspace, "feature/login", null, JobStatus.pending);
+        newJob(otherWorkspace, "feature/login", 12, JobStatus.pending);
+        Job newRun = newJob(workspace, "feature/login", 12, JobStatus.pending);
+        newJob(workspace, "feature/login", 12, JobStatus.pending);
 
-        assertThat(superseded(workspace, "feature/login", newRun))
+        assertThat(superseded(workspace, 12, newRun))
                 .containsExactly(pending.getId(), waitingApproval.getId(), approved.getId());
+    }
+
+    @Test
+    void aPullRequestFromAForkNeverReachesPushRunsOrOtherPullRequestsOfTheSameBranchName() {
+        Workspace workspace = newWorkspace();
+        // A push run on main waiting for the apply approval, and a run of another pull request whose head
+        // branch is also called main (a fork's default branch).
+        newJob(workspace, "main", null, JobStatus.waitingApproval);
+        newJob(workspace, "main", null, JobStatus.approved);
+        newJob(workspace, "main", 7, JobStatus.pending);
+        Job ownOlderRun = newJob(workspace, "main", 21, JobStatus.pending);
+        Job newRun = newJob(workspace, "main", 21, JobStatus.pending);
+
+        assertThat(superseded(workspace, 21, newRun)).containsExactly(ownOlderRun.getId());
     }
 
     @Test
     void theCancelLeavesARunThatAlreadyStartedAlone() {
         Workspace workspace = newWorkspace();
-        Job queued = newJob(workspace, "feature/login", JobStatus.queue);
-        Job pending = newJob(workspace, "feature/login", JobStatus.pending);
+        Job queued = newJob(workspace, "feature/login", 12, JobStatus.queue);
+        Job pending = newJob(workspace, "feature/login", 12, JobStatus.pending);
 
         assertThat(jobRepository.updateStatusByIdAndStatusIn(JobStatus.cancelled, queued.getId(),
                 SupersededPullRequestJobTransactions.NOT_STARTED)).isZero();

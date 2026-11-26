@@ -2,7 +2,6 @@ package io.terrakube.api.plugin.vcs;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
@@ -55,6 +54,7 @@ class SupersededPullRequestJobCancellerTest {
         newJob.setId(50);
         newJob.setWorkspace(workspace);
         newJob.setOverrideBranch("feature/login");
+        newJob.setPrNumber(12);
     }
 
     @Test
@@ -108,13 +108,13 @@ class SupersededPullRequestJobCancellerTest {
     }
 
     @Test
-    void flagOnCancelsEveryOlderNotStartedRunOfTheSameWorkspaceAndBranch() {
-        doReturn(List.of(10, 20, 30)).when(transactions).findSupersededJobIds(workspace, "feature/login", 50);
+    void flagOnCancelsEveryOlderNotStartedRunOfTheSameWorkspaceAndPullRequest() {
+        doReturn(List.of(10, 20, 30)).when(transactions).findSupersededJobIds(workspace, 12, 50);
         doReturn(true).when(transactions).cancelIfNotStarted(anyInt());
 
         subject.cancelSupersededIfEnabled(event, pullRequest, newJob);
 
-        verify(transactions).findSupersededJobIds(workspace, "feature/login", 50);
+        verify(transactions).findSupersededJobIds(workspace, 12, 50);
         verify(transactions).cancelIfNotStarted(10);
         verify(transactions).cancelIfNotStarted(20);
         verify(transactions).cancelIfNotStarted(30);
@@ -124,7 +124,7 @@ class SupersededPullRequestJobCancellerTest {
     @Test
     void mergeRequestEventIsAPullRequestEvent() {
         pullRequest.setEvent("merge_request");
-        doReturn(List.of(10)).when(transactions).findSupersededJobIds(workspace, "feature/login", 50);
+        doReturn(List.of(10)).when(transactions).findSupersededJobIds(workspace, 12, 50);
 
         subject.cancelSupersededIfEnabled(event, pullRequest, newJob);
 
@@ -132,8 +132,10 @@ class SupersededPullRequestJobCancellerTest {
     }
 
     @Test
-    void nullBranchCancelsNothing() {
-        newJob.setOverrideBranch(null);
+    void runWithoutPullRequestNumberCancelsNothingEvenWithTheSameBranch() {
+        // The PR workflow is off, so the run carries no pull request number. The branch name alone cannot
+        // tell a pull request from a fork or from another pull request, so nothing may be cancelled.
+        newJob.setPrNumber(null);
 
         subject.cancelSupersededIfEnabled(event, pullRequest, newJob);
 
@@ -141,19 +143,32 @@ class SupersededPullRequestJobCancellerTest {
     }
 
     @Test
-    void blankBranchCancelsNothing() {
-        newJob.setOverrideBranch("  ");
+    void zeroPullRequestNumberCancelsNothing() {
+        newJob.setPrNumber(0);
 
         subject.cancelSupersededIfEnabled(event, pullRequest, newJob);
 
         verifyNoInteractions(transactions);
+    }
+
+    @Test
+    void theBranchNameDoesNotDecideWhichRunsAreCancelled() {
+        // Two pull requests that use the same head branch name (a fork's "main", "patch-1") are different
+        // pull requests: only the number of the new run is looked up.
+        newJob.setOverrideBranch("main");
+        doReturn(List.of(10)).when(transactions).findSupersededJobIds(workspace, 12, 50);
+
+        subject.cancelSupersededIfEnabled(event, pullRequest, newJob);
+
+        verify(transactions).findSupersededJobIds(workspace, 12, 50);
+        verify(transactions).cancelIfNotStarted(10);
     }
 
     @Test
     void jobWithoutWorkspaceOrIdCancelsNothing() {
         Job unsaved = new Job();
         unsaved.setWorkspace(workspace);
-        unsaved.setOverrideBranch("feature/login");
+        unsaved.setPrNumber(12);
         subject.cancelSupersededIfEnabled(event, pullRequest, unsaved);
 
         newJob.setWorkspace(null);
@@ -166,7 +181,7 @@ class SupersededPullRequestJobCancellerTest {
 
     @Test
     void oneFailingCancelDoesNotStopTheOthers() {
-        doReturn(List.of(10, 20, 30)).when(transactions).findSupersededJobIds(workspace, "feature/login", 50);
+        doReturn(List.of(10, 20, 30)).when(transactions).findSupersededJobIds(workspace, 12, 50);
         doThrow(new RuntimeException("boom")).when(transactions).cancelIfNotStarted(20);
 
         assertDoesNotThrow(() -> subject.cancelSupersededIfEnabled(event, pullRequest, newJob));
@@ -178,7 +193,7 @@ class SupersededPullRequestJobCancellerTest {
 
     @Test
     void aFailedLookupIsLoggedAndNotThrown() {
-        doThrow(new RuntimeException("db down")).when(transactions).findSupersededJobIds(any(), anyString(), anyInt());
+        doThrow(new RuntimeException("db down")).when(transactions).findSupersededJobIds(any(), anyInt(), anyInt());
 
         assertDoesNotThrow(() -> subject.cancelSupersededIfEnabled(event, pullRequest, newJob));
 
@@ -187,7 +202,7 @@ class SupersededPullRequestJobCancellerTest {
 
     @Test
     void insideATransactionTheRunsAreCancelledOnlyAfterItCommits() {
-        doReturn(List.of(10)).when(transactions).findSupersededJobIds(workspace, "feature/login", 50);
+        doReturn(List.of(10)).when(transactions).findSupersededJobIds(workspace, 12, 50);
         TransactionSynchronizationManager.initSynchronization();
         try {
             subject.cancelSupersededIfEnabled(event, pullRequest, newJob);
