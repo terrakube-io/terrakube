@@ -51,7 +51,7 @@ public class InfracostBinaryService {
     private static final String REDIS_UPLOAD_LOCK_PREFIX = "infracost-binary-uploading:";
     private static final Duration REDIS_UPLOAD_LOCK_TTL = Duration.ofSeconds(120);
     private static final Pattern SHA256_HEX_PATTERN = Pattern.compile("\\b([a-fA-F0-9]{64})\\b");
-    private static final Pattern VERSION_OUTPUT_PATTERN = Pattern.compile("v?([0-9]+(?:\\.[0-9]+)+(?:-[a-zA-Z0-9.]+)?)");
+    private static final Pattern VERSION_OUTPUT_PATTERN = Pattern.compile("v?(\\d++(?:\\.\\d++)++(?:-[a-zA-Z0-9.]++)?+)");
 
     private record VerifiedBinaryEntry(long lastModifiedMillis, long sizeBytes, String sha256Hex) {
     }
@@ -272,8 +272,13 @@ public class InfracostBinaryService {
 
         Path tempDir = null;
         try {
-            ensureDirectoryExists(targetBinary.getParentFile());
-            tempDir = Files.createTempDirectory(targetBinary.getParentFile().toPath(), "infracost-dl-");
+            File parentDir = targetBinary.getParentFile();
+            if (parentDir != null) {
+                ensureDirectoryExists(parentDir);
+                tempDir = Files.createTempDirectory(parentDir.toPath(), "infracost-dl-");
+            } else {
+                tempDir = Files.createTempDirectory("infracost-dl-");
+            }
             File archiveFile = tempDir.resolve(archiveName).toFile();
             File sha256File = tempDir.resolve(archiveName + ".sha256").toFile();
 
@@ -565,6 +570,10 @@ public class InfracostBinaryService {
             String output = new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
             Matcher matcher = VERSION_OUTPUT_PATTERN.matcher(output);
             return matcher.find() ? Optional.of(matcher.group(1)) : Optional.empty();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.debug("Interrupted while probing Infracost binary version {}: {}", binary.getAbsolutePath(), e.getMessage());
+            return Optional.empty();
         } catch (Exception e) {
             log.debug("Failed to probe Infracost binary version {}: {}", binary.getAbsolutePath(), e.getMessage());
             return Optional.empty();
