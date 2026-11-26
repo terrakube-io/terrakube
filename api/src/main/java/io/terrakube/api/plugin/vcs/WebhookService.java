@@ -54,6 +54,7 @@ public class WebhookService {
     WebhookProperties webhookProperties;
     ModuleRefreshTransactions moduleRefreshTransactions;
     PrApplyAuthorizationService prApplyAuthorizationService;
+    SupersededPullRequestJobCanceller supersededPullRequestJobCanceller;
 
     @Transactional
     public String processWebhook(String webhookId, String jsonPayload, Map<String, String> headers) {
@@ -145,6 +146,7 @@ public class WebhookService {
                 }
 
                 sendCommitStatus(savedJob);
+                supersededPullRequestJobCanceller.cancelSupersededIfEnabled(matchedEvent, webhookResult, savedJob);
             }
         } catch (JobBranchPolicyException e) {
             refuseRun(workspace, webhookResult, e.getMessage());

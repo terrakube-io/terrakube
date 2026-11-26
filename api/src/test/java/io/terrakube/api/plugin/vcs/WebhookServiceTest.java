@@ -6,7 +6,9 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
@@ -18,6 +20,7 @@ import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -69,6 +72,7 @@ public class WebhookServiceTest {
     WebhookProperties webhookProperties;
     ModuleRefreshTransactions moduleRefreshTransactions;
     PrApplyAuthorizationService prApplyAuthorizationService;
+    SupersededPullRequestJobCanceller supersededPullRequestJobCanceller;
 
     WebhookService subject;
 
@@ -94,6 +98,7 @@ public class WebhookServiceTest {
         moduleRefreshTransactions = mock(ModuleRefreshTransactions.class);
         // A mock answers Optional.empty(): every comment author may apply unless a test says otherwise.
         prApplyAuthorizationService = mock(PrApplyAuthorizationService.class);
+        supersededPullRequestJobCanceller = mock(SupersededPullRequestJobCanceller.class);
 
         subject = new WebhookService(
                 webhookRepository,
@@ -110,7 +115,8 @@ public class WebhookServiceTest {
                 workspaceBranchPolicy,
                 webhookProperties,
                 moduleRefreshTransactions,
-                prApplyAuthorizationService);
+                prApplyAuthorizationService,
+                supersededPullRequestJobCanceller);
 
         workspace = new Workspace();
         workspace.setName("test-workspace");
@@ -539,6 +545,55 @@ public class WebhookServiceTest {
 
         verify(jobRepository, times(1)).save(any());
         verify(scheduleJobService, times(1)).createJobContext(any());
+    }
+
+    @Test
+    public void pullRequestRunAsksToCancelTheRunsItSupersedesAndSurvivesAFailureToCancel() throws Exception {
+        webhookProperties.setPrBaseBranchFilter(false);
+        UUID webhookId = UUID.randomUUID();
+        workspace.setId(UUID.randomUUID());
+        doReturn(Optional.of(webhook)).when(webhookRepository).findById(webhookId);
+
+        WebhookResult prResult = new WebhookResult();
+        prResult.setValid(true);
+        prResult.setEvent("pull_request");
+        prResult.setBranch("feature/login");
+        prResult.setCommit("sha-second-commit");
+        prResult.setPrNumber(12);
+        prResult.setFileChanges(List.of("main.tf"));
+        doReturn(prResult).when(gitHubWebhookService).processWebhook(any(), any(), any(), any(), any());
+
+        pullRequestEvent.setCancelSupersededPrRuns(true);
+        doAnswer(invocation -> {
+            Job job = invocation.getArgument(0);
+            job.setId(42);
+            return job;
+        }).when(jobRepository).save(any());
+        doThrow(new RuntimeException("boom")).when(supersededPullRequestJobCanceller)
+                .cancelSupersededIfEnabled(any(), any(), any());
+
+        assertDoesNotThrow(() -> subject.processWebhook(webhookId.toString(), "{}", Map.of()));
+
+        ArgumentCaptor<Job> scheduled = ArgumentCaptor.forClass(Job.class);
+        verify(scheduleJobService, times(1)).createJobContext(scheduled.capture());
+        assertEquals(42, scheduled.getValue().getId());
+        assertEquals("feature/login", scheduled.getValue().getOverrideBranch());
+        verify(supersededPullRequestJobCanceller, times(1))
+                .cancelSupersededIfEnabled(pullRequestEvent, prResult, scheduled.getValue());
+    }
+
+    @Test
+    public void planCommentDoesNotCancelSupersededRuns() throws Exception {
+        pullRequestEvent.setPrWorkflowEnabled(true);
+        pullRequestEvent.setCancelSupersededPrRuns(true);
+        WebhookResult result = createCommentResult("plan", 5);
+        Job savedJob = new Job();
+        savedJob.setWorkspace(workspace);
+        doReturn(savedJob).when(jobRepository).save(any());
+
+        subject.handlePrCommentCommand(result, webhook, workspace);
+
+        verify(supersededPullRequestJobCanceller, never()).cancelSupersededIfEnabled(any(), any(), any());
     }
 
     @Test

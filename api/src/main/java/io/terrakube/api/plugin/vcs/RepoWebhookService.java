@@ -74,6 +74,7 @@ public class RepoWebhookService {
     ModuleRefreshTransactions moduleRefreshTransactions;
     ModuleRefreshProperties moduleRefreshProperties;
     PrApplyAuthorizationService prApplyAuthorizationService;
+    SupersededPullRequestJobCanceller supersededPullRequestJobCanceller;
 
     private boolean isGitLab(RepoWebhook repoWebhook) {
         return repoWebhook.getVcs() != null && repoWebhook.getVcs().getVcsType() == VcsType.GITLAB;
@@ -456,7 +457,8 @@ public class RepoWebhookService {
             if (webhookResult.isPrComment()) {
                 job.setCommandCommentId(webhookResult.getCommentId());
             }
-            saveAndScheduleJob(workspace, webhookResult, job);
+            Job savedJob = saveAndScheduleJob(workspace, webhookResult, job);
+            supersededPullRequestJobCanceller.cancelSupersededIfEnabled(matchedEvent, webhookResult, savedJob);
         } catch (JobBranchPolicyException e) {
             refuseRun(workspace, webhookResult, e.getMessage());
         } catch (IllegalArgumentException e) {
@@ -547,7 +549,7 @@ public class RepoWebhookService {
         return job;
     }
 
-    private void saveAndScheduleJob(Workspace workspace, WebhookResult webhookResult, Job job)
+    private Job saveAndScheduleJob(Workspace workspace, WebhookResult webhookResult, Job job)
             throws ParseException, SchedulerException {
         // Auditing runs on this worker, which has no request authentication. Supplying the
         // verified actor here prevents @CreatedBy from replacing it with Internal.
@@ -563,6 +565,7 @@ public class RepoWebhookService {
             }
         }
         scheduleJobService.createJobContext(savedJob);
+        return savedJob;
     }
 
     private boolean verifyGitlabToken(Map<String, String> headers, String secret) {

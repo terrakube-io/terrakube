@@ -162,4 +162,5 @@
     <include file="/db/changelog/local/changelog-2.35.0-drift.xml"/>
     <include file="/db/changelog/local/changelog-2.35.0-project-owner.xml"/>
     <include file="/db/changelog/local/changelog-2.35.0-managed-in-code.xml"/>
+    <include file="/db/changelog/local/changelog-2.35.0-webhook-event-cancel-superseded-pr-runs.xml"/>
 </databaseChangeLog>

@@ -32,6 +32,7 @@ import io.terrakube.api.plugin.vcs.PrApplyAuthorizationService;
 import io.terrakube.api.plugin.vcs.PrCommentService;
 import io.terrakube.api.plugin.vcs.RepoWebhookDeliveryTransactions;
 import io.terrakube.api.plugin.vcs.RepoWebhookService;
+import io.terrakube.api.plugin.vcs.SupersededPullRequestJobCanceller;
 import io.terrakube.api.plugin.vcs.WebhookProperties;
 import io.terrakube.api.plugin.vcs.WebhookResult;
 import io.terrakube.api.plugin.vcs.provider.azdevops.AzDevOpsWebhookService;
@@ -149,7 +150,7 @@ class RepoWebhookJobAuditIntegrationTest extends ServerApplicationTests {
                     jobRepository, scheduling, mock(PrCommentService.class), mock(RepoWebhookDeliveryTransactions.class),
                     new ObjectMapper(), worker, mock(WorkspaceBranchPolicy.class), new WebhookProperties(),
                     mock(ModuleRefreshTransactions.class), new ModuleRefreshProperties(),
-                    mock(PrApplyAuthorizationService.class));
+                    mock(PrApplyAuthorizationService.class), mock(SupersededPullRequestJobCanceller.class));
             service.processClaimedDelivery(repoWebhook, "payload", Map.of());
             var captor = ArgumentCaptor.forClass(Job.class);
             verify(scheduling).createJobContext(captor.capture());

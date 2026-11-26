@@ -68,6 +68,11 @@ public interface JobRepository extends JpaRepository<Job, Integer> {
 
     Optional<List<Job>> findByWorkspaceAndStatusInAndIdLessThan(Workspace workspace, List<JobStatus> jobStatuses, int jobId);
 
+    // The older runs of one pull request of a workspace in the given statuses, oldest first: the runs a new
+    // run of that pull request supersedes (SupersededPullRequestJobCanceller).
+    List<Job> findByWorkspaceAndPrNumberAndIdLessThanAndStatusInOrderByIdAsc(Workspace workspace,
+            Integer prNumber, int jobId, Collection<JobStatus> jobStatuses);
+
     Optional<Job> findFirstByWorkspaceAndStatusInOrderByIdDesc(Workspace workspace, List<JobStatus> jobStatuses);
     Optional<Job> findFirstByWorkspaceAndStatusInOrderByIdAsc(Workspace workspace, List<JobStatus> jobStatuses);
     Optional<Job> findFirstByWorkspaceAndIdNotAndStatusInOrderByIdAsc(Workspace workspace, int jobId, Collection<JobStatus> jobStatuses);
