@@ -3,7 +3,7 @@ import { WorkspaceListItem } from "@/modules/workspaces/types";
 export const COST_ESTIMATION_DISCLAIMER =
   "Estimated pre-deployment monthly cost based on Terraform plan and on-demand list pricing. Does not reflect actual cloud billing, discounts, or runtime usage.";
 
-const EPSILON = 0.005;
+export const COST_EPSILON = 0.005;
 
 export function parseCostAmount(value?: number | string | null): number | null {
   if (value === null || value === undefined || value === "") {
@@ -24,7 +24,7 @@ export function formatCurrency(amount?: number | string | null, currency?: strin
     return "—";
   }
   const code = normalizeCurrencyCode(currency);
-  const rounded = Object.is(num, -0) || Math.abs(num) < EPSILON ? 0 : num;
+  const rounded = Object.is(num, -0) || Math.abs(num) < COST_EPSILON ? 0 : num;
   try {
     return new Intl.NumberFormat("en-US", {
       style: "currency",
@@ -59,7 +59,7 @@ export function formatCostDelta(
     return { text: "—", direction: "neutral" };
   }
 
-  if (Math.abs(diffNum) < EPSILON) {
+  if (Math.abs(diffNum) < COST_EPSILON) {
     return {
       text: `${formatCurrency(0, currency)}/mo`,
       direction: "neutral",
@@ -71,7 +71,7 @@ export function formatCostDelta(
   const baseText = `${prefix}${formatCurrency(Math.abs(diffNum), currency)}/mo`;
 
   const pastNum = parseCostAmount(past);
-  if (pastNum !== null && Math.abs(pastNum) >= EPSILON) {
+  if (pastNum !== null && Math.abs(pastNum) >= COST_EPSILON) {
     const pct = (diffNum / Math.abs(pastNum)) * 100;
     const pctSign = pct > 0 ? "+" : "";
     const percentText = `${pctSign}${pct.toFixed(1)}%`;

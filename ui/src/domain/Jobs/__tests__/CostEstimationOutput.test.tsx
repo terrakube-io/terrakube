@@ -128,21 +128,35 @@ describe("CostEstimationOutput", () => {
     const shareLink = screen.getByRole("link", { name: /View in Infracost Cloud/i });
     expect(shareLink).toHaveAttribute("href", "https://dashboard.infracost.io/share/example");
 
-    expect(screen.getByText(/2 unpriced or unsupported resource\(s\) omitted/i)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Show details" }));
-    expect(screen.getByText(/aws_iam_role: 1 \(Unsupported\)/)).toBeInTheDocument();
-    expect(screen.getByText(/aws_kms_key: 1 \(No price\)/)).toBeInTheDocument();
+    expect(screen.getByText("1 unsupported · 1 free")).toBeInTheDocument();
+    const banner = screen.getByTestId("cost-unpriced-banner");
+    expect(within(banner).getByText(/1 unsupported resource\(s\) omitted from total cost/i)).toBeInTheDocument();
+    fireEvent.click(within(banner).getByRole("button", { name: "Show details" }));
+    expect(within(banner).getByText(/aws_iam_role: 1 \(Unsupported\)/)).toBeInTheDocument();
+    expect(within(banner).queryByText(/aws_kms_key/)).not.toBeInTheDocument();
   });
 
-  it("filters resources by pill and search query, and expands cost components", () => {
+  it("filters resources by pill and search query, aligns pill counts with visible badges, and expands cost components", () => {
     render(<CostEstimationOutput infracost={sampleInfracost} />);
 
     const filterGroup = screen.getByRole("group", { name: "Filter resources by cost change" });
 
+    // Unpriced resource (aws_kms_key.main) is excluded from Created count and only counted in Unpriced
+    const createdPill = within(filterGroup).getByRole("button", { name: /Created/i });
+    const unpricedPill = within(filterGroup).getByRole("button", { name: /Unpriced/i });
+    expect(within(createdPill).getByText("1")).toBeInTheDocument();
+    expect(within(unpricedPill).getByText("1")).toBeInTheDocument();
+
     // Filter to Created resources
-    fireEvent.click(within(filterGroup).getByRole("button", { name: /Created/i }));
+    fireEvent.click(createdPill);
     expect(screen.getByText("aws_s3_bucket.assets")).toBeInTheDocument();
     expect(screen.queryByText("aws_instance.api")).not.toBeInTheDocument();
+    expect(screen.queryByText("aws_kms_key.main")).not.toBeInTheDocument();
+
+    // Filter to Unpriced resources
+    fireEvent.click(unpricedPill);
+    expect(screen.getByText("aws_kms_key.main")).toBeInTheDocument();
+    expect(screen.queryByText("aws_s3_bucket.assets")).not.toBeInTheDocument();
 
     // Filter back to All and search
     fireEvent.click(within(filterGroup).getByRole("button", { name: /^All/i }));
@@ -210,5 +224,84 @@ describe("CostEstimationOutput", () => {
     expect(screen.getByText("Cost estimation unavailable")).toBeInTheDocument();
     expect(screen.getByText(/\[REDACTED\]/)).toBeInTheDocument();
     expect(screen.queryByText(/ico-abcdefghijklmnop/)).not.toBeInTheDocument();
+  });
+
+  it("handles pastBreakdown: null without misclassifying unchanged or downsized resources", () => {
+    render(
+      <CostEstimationOutput
+        infracost={{
+          status: "SUCCESS",
+          currency: "USD",
+          totalMonthlyCost: "100.00",
+          pastTotalMonthlyCost: "140.00",
+          diffTotalMonthlyCost: "-40.00",
+          summary: {
+            totalDetectedResources: 2,
+            totalSupportedResources: 2,
+            totalUnsupportedResources: 0,
+            totalNoPriceResources: 0,
+          },
+          projects: [
+            {
+              name: "app-prod",
+              pastBreakdown: null,
+              breakdown: {
+                resources: [
+                  {
+                    name: "aws_db_instance.main",
+                    resourceType: "aws_db_instance",
+                    monthlyCost: "80.00",
+                  },
+                  {
+                    name: "aws_nat_gateway.steady",
+                    resourceType: "aws_nat_gateway",
+                    monthlyCost: "20.00",
+                  },
+                ],
+              },
+              diff: {
+                resources: [
+                  {
+                    name: "aws_db_instance.main",
+                    monthlyCost: "-40.00",
+                  },
+                ],
+              },
+            },
+          ],
+        }}
+      />
+    );
+
+    const filterGroup = screen.getByRole("group", { name: "Filter resources by cost change" });
+    expect(within(within(filterGroup).getByRole("button", { name: /Changed/i })).getByText("1")).toBeInTheDocument();
+    expect(within(within(filterGroup).getByRole("button", { name: /Created/i })).getByText("0")).toBeInTheDocument();
+    expect(within(within(filterGroup).getByRole("button", { name: /Deleted/i })).getByText("0")).toBeInTheDocument();
+
+    const dbRow = screen.getByRole("button", { name: /aws_db_instance\.main/i });
+    expect(within(dbRow).getByText("~ Changed")).toBeInTheDocument();
+    const natRow = screen.getByRole("button", { name: /aws_nat_gateway\.steady/i });
+    expect(within(natRow).getByText("Unchanged")).toBeInTheDocument();
+  });
+
+  it("does not show unsupported warning banner when only free (noPrice) resources exist", () => {
+    render(
+      <CostEstimationOutput
+        infracost={{
+          ...sampleInfracost,
+          summary: {
+            totalDetectedResources: 22,
+            totalSupportedResources: 2,
+            totalUnsupportedResources: 0,
+            totalNoPriceResources: 20,
+            unsupportedResourceCounts: {},
+            noPriceResourceCounts: { aws_iam_role: 20 },
+          },
+        }}
+      />
+    );
+
+    expect(screen.queryByTestId("cost-unpriced-banner")).not.toBeInTheDocument();
+    expect(screen.getByText("20 free")).toBeInTheDocument();
   });
 });

@@ -12,6 +12,7 @@ import {
 } from "@ant-design/icons";
 import { InfracostContext, InfracostCostComponent, InfracostProject, InfracostResource } from "../types";
 import {
+  COST_EPSILON,
   COST_ESTIMATION_DISCLAIMER,
   formatCostDelta,
   formatCurrency,
@@ -19,7 +20,6 @@ import {
   normalizeCurrencyCode,
   parseCostAmount,
 } from "@/modules/workspaces/utils/costFormat";
-import "@/modules/workspaces/components/WorkspaceFilter.css";
 import "./runTokens.css";
 import "./CostEstimationOutput.css";
 
@@ -43,8 +43,6 @@ type FlattenedCostResource = {
   costComponents: InfracostCostComponent[];
   subresources: InfracostResource[];
 };
-
-const EPSILON = 0.005;
 
 export function sanitizeInfracostShareUrl(raw?: string): string | undefined {
   if (!raw) {
@@ -95,28 +93,36 @@ function resolveChangeKind(
 
   const diffNum = parseCostAmount(diffRes?.monthlyCost);
   if (currentRes && !pastRes) {
-    if (project.pastBreakdown !== undefined) {
+    if (project.pastBreakdown != null) {
       return "created";
     }
     const curNum = parseCostAmount(currentRes.monthlyCost);
-    if (diffNum !== null && curNum !== null && Math.abs(diffNum - curNum) < EPSILON && curNum > EPSILON) {
+    if (diffNum !== null && curNum !== null && Math.abs(diffNum - curNum) < COST_EPSILON && curNum > COST_EPSILON) {
       return "created";
     }
-    if (diffNum !== null && Math.abs(diffNum) >= EPSILON) {
-      return diffNum > 0 ? "changed" : "deleted";
+    if (diffNum !== null && Math.abs(diffNum) >= COST_EPSILON) {
+      return "changed";
     }
     return "unchanged";
   }
 
-  if (diffNum !== null && Math.abs(diffNum) >= EPSILON) {
+  if (diffNum !== null && Math.abs(diffNum) >= COST_EPSILON) {
     return "changed";
   }
   const curNum = parseCostAmount(currentRes?.monthlyCost);
   const pastNum = parseCostAmount(pastRes?.monthlyCost);
-  if (curNum !== null && pastNum !== null && Math.abs(curNum - pastNum) >= EPSILON) {
+  if (curNum !== null && pastNum !== null && Math.abs(curNum - pastNum) >= COST_EPSILON) {
     return "changed";
   }
   return "unchanged";
+}
+
+function indexByName(list: InfracostResource[]): Map<string, InfracostResource> {
+  const map = new Map<string, InfracostResource>();
+  for (const r of list) {
+    if (r?.name) map.set(r.name, r);
+  }
+  return map;
 }
 
 function flattenProjectResources(infracost: InfracostContext): FlattenedCostResource[] {
@@ -129,18 +135,9 @@ function flattenProjectResources(infracost: InfracostContext): FlattenedCostReso
     const pastList = project.pastBreakdown?.resources ?? [];
     const diffList = project.diff?.resources ?? [];
 
-    const currentByName = new Map<string, InfracostResource>();
-    for (const r of currentList) {
-      if (r.name) currentByName.set(r.name, r);
-    }
-    const pastByName = new Map<string, InfracostResource>();
-    for (const r of pastList) {
-      if (r.name) pastByName.set(r.name, r);
-    }
-    const diffByName = new Map<string, InfracostResource>();
-    for (const r of diffList) {
-      if (r.name) diffByName.set(r.name, r);
-    }
+    const currentByName = indexByName(currentList);
+    const pastByName = indexByName(pastList);
+    const diffByName = indexByName(diffList);
 
     const orderedNames: string[] = [];
     const seen = new Set<string>();
@@ -228,25 +225,22 @@ export const CostEstimationOutput: React.FC<Props> = ({ infracost }) => {
   const summary = infracost.summary;
   const unsupportedCount = summary?.totalUnsupportedResources ?? 0;
   const noPriceCount = summary?.totalNoPriceResources ?? 0;
-  const totalUnpricedResources = unsupportedCount + noPriceCount;
 
-  const unpricedEntries = useMemo(() => {
-    const entries: Array<{ kind: "Unsupported" | "No price"; resourceType: string; count: number }> = [];
-    for (const [resourceType, count] of Object.entries(summary?.unsupportedResourceCounts ?? {})) {
-      entries.push({ kind: "Unsupported", resourceType, count });
-    }
-    for (const [resourceType, count] of Object.entries(summary?.noPriceResourceCounts ?? {})) {
-      entries.push({ kind: "No price", resourceType, count });
-    }
-    return entries.sort((a, b) => b.count - a.count || a.resourceType.localeCompare(b.resourceType));
+  const unsupportedEntries = useMemo(() => {
+    return Object.entries(summary?.unsupportedResourceCounts ?? {})
+      .map(([resourceType, count]) => ({ resourceType, count }))
+      .sort((a, b) => b.count - a.count || a.resourceType.localeCompare(b.resourceType));
   }, [summary]);
+
+  const effectiveUnsupportedCount =
+    unsupportedCount > 0 ? unsupportedCount : unsupportedEntries.reduce((sum, entry) => sum + entry.count, 0);
 
   const counts = useMemo(() => {
     return {
       all: resources.length,
-      changed: resources.filter((r) => r.changeKind === "changed").length,
-      created: resources.filter((r) => r.changeKind === "created").length,
-      deleted: resources.filter((r) => r.changeKind === "deleted").length,
+      changed: resources.filter((r) => !r.isUnpriced && r.changeKind === "changed").length,
+      created: resources.filter((r) => !r.isUnpriced && r.changeKind === "created").length,
+      deleted: resources.filter((r) => !r.isUnpriced && r.changeKind === "deleted").length,
       unpriced: resources.filter((r) => r.isUnpriced).length,
     };
   }, [resources]);
@@ -254,9 +248,9 @@ export const CostEstimationOutput: React.FC<Props> = ({ infracost }) => {
   const filteredResources = useMemo(() => {
     const needle = searchQuery.trim().toLowerCase();
     return resources.filter((row) => {
-      if (filter === "changed" && row.changeKind !== "changed") return false;
-      if (filter === "created" && row.changeKind !== "created") return false;
-      if (filter === "deleted" && row.changeKind !== "deleted") return false;
+      if (filter === "changed" && (row.isUnpriced || row.changeKind !== "changed")) return false;
+      if (filter === "created" && (row.isUnpriced || row.changeKind !== "created")) return false;
+      if (filter === "deleted" && (row.isUnpriced || row.changeKind !== "deleted")) return false;
       if (filter === "unpriced" && !row.isUnpriced) return false;
       if (!needle) return true;
       return (
@@ -357,25 +351,25 @@ export const CostEstimationOutput: React.FC<Props> = ({ infracost }) => {
             {pricedResourcesCount} / {detectedResourcesCount}
           </span>
           <span className="cost-kpi-sub">
-            {totalUnpricedResources > 0
-              ? `${totalUnpricedResources} unpriced / unsupported`
-              : "All detected resources priced"}
+            {unsupportedCount > 0 && noPriceCount > 0
+              ? `${unsupportedCount} unsupported · ${noPriceCount} free`
+              : unsupportedCount > 0
+                ? `${unsupportedCount} unsupported`
+                : noPriceCount > 0
+                  ? `${noPriceCount} free`
+                  : "All detected resources priced"}
           </span>
         </div>
       </div>
 
-      {(totalUnpricedResources > 0 || unpricedEntries.length > 0) && (
+      {(effectiveUnsupportedCount > 0 || unsupportedEntries.length > 0) && (
         <div className="cost-unpriced-banner" data-testid="cost-unpriced-banner">
           <div className="cost-unpriced-header">
             <span className="cost-unpriced-title">
               <WarningOutlined aria-hidden />
-              <span>
-                {totalUnpricedResources > 0
-                  ? `${totalUnpricedResources} unpriced or unsupported resource(s) omitted from total cost`
-                  : "Unpriced resource details"}
-              </span>
+              <span>{effectiveUnsupportedCount} unsupported resource(s) omitted from total cost</span>
             </span>
-            {unpricedEntries.length > 0 && (
+            {unsupportedEntries.length > 0 && (
               <Button
                 type="link"
                 size="small"
@@ -386,11 +380,11 @@ export const CostEstimationOutput: React.FC<Props> = ({ infracost }) => {
               </Button>
             )}
           </div>
-          {showUnpricedDetails && unpricedEntries.length > 0 && (
+          {showUnpricedDetails && unsupportedEntries.length > 0 && (
             <div className="cost-unpriced-details">
-              {unpricedEntries.map((entry) => (
-                <Tag key={`${entry.kind}:${entry.resourceType}`} color="warning">
-                  {entry.resourceType}: {entry.count} ({entry.kind})
+              {unsupportedEntries.map((entry) => (
+                <Tag key={`Unsupported:${entry.resourceType}`} color="warning">
+                  {entry.resourceType}: {entry.count} (Unsupported)
                 </Tag>
               ))}
             </div>
@@ -399,7 +393,7 @@ export const CostEstimationOutput: React.FC<Props> = ({ infracost }) => {
       )}
 
       <div className="cost-toolbar">
-        <div className="workspace-status-pills" role="group" aria-label="Filter resources by cost change">
+        <div className="cost-filter-pills" role="group" aria-label="Filter resources by cost change">
           {(
             [
               { key: "all", label: "All", count: counts.all },
@@ -413,11 +407,11 @@ export const CostEstimationOutput: React.FC<Props> = ({ infracost }) => {
               key={pill.key}
               type="button"
               aria-pressed={filter === pill.key}
-              className={clsx("workspace-status-pill", { "workspace-status-pill--active": filter === pill.key })}
+              className={clsx("cost-filter-pill", { "cost-filter-pill--active": filter === pill.key })}
               onClick={() => setFilter(pill.key)}
             >
               {pill.label}
-              <span className="workspace-status-count">{pill.count}</span>
+              <span className="cost-filter-count">{pill.count}</span>
             </button>
           ))}
         </div>
