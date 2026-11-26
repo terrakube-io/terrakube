@@ -1,7 +1,13 @@
 package io.terrakube.api.plugin.scheduler.reconciliation;
 
 import java.util.Optional;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import io.terrakube.api.plugin.cost.InfracostContextExtractor;
 import io.terrakube.api.plugin.cost.WorkspaceCostTrackingService;
+import io.terrakube.api.plugin.cost.WorkspaceCostWriter;
+import io.terrakube.api.plugin.scheduler.job.tcl.TclService;
+import io.terrakube.api.plugin.scheduler.job.tcl.model.FlowType;
+import io.terrakube.api.plugin.storage.StorageTypeService;
 import io.terrakube.api.plugin.workspace.WorkspaceJobStatusService;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import io.terrakube.api.helpers.FailUnkownMethod;
@@ -27,11 +33,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class JobReconciliationServiceTest {
 
@@ -42,6 +50,7 @@ class JobReconciliationServiceTest {
     ScheduleJobService scheduleJobService;
     Scheduler scheduler;
     RunTriggerEventWriter runTriggerEventWriter;
+    WorkspaceCostTrackingService workspaceCostTrackingService;
     JobReconciliationService subject;
 
     @BeforeEach
@@ -59,10 +68,11 @@ class JobReconciliationServiceTest {
         lenient().doReturn(Optional.empty()).when(jobRepository).findFirstByWorkspaceAndIdNotAndStatusInOrderByIdAsc(any(), anyInt(), any());
         lenient().doReturn(Optional.empty()).when(jobRepository).findFirstByWorkspaceOrderByIdDesc(any());
         runTriggerEventWriter = mock(RunTriggerEventWriter.class);
+        workspaceCostTrackingService = mock(WorkspaceCostTrackingService.class);
         subject = new JobReconciliationService(jobRepository, stepRepository, new WorkspaceJobStatusService(jobRepository, workspaceRepository),
                 new JobTerminalStateDeriver(), jobNotificationTrigger, scheduleJobService,
                 scheduler, new JobReconciliationMetrics(new SimpleMeterRegistry()),
-                runTriggerEventWriter);
+                runTriggerEventWriter, workspaceCostTrackingService);
     }
 
     private Job job(int id, JobStatus status) {
@@ -252,5 +262,67 @@ class JobReconciliationServiceTest {
 
         assertThat(result.targetStatus()).isEqualTo(JobStatus.completed);
         verify(costTrackingService, times(1)).updateWorkspaceCostOnCompletion(j, steps);
+    }
+
+    @Test
+    void reconcileCompletesEvenWhenInfracostHasOutOfRangeTotalAndLongCurrency() {
+        StorageTypeService storage = mock(StorageTypeService.class);
+        TclService tclService = mock(TclService.class);
+        WorkspaceCostWriter writer = new WorkspaceCostWriter(workspaceRepository);
+        WorkspaceCostTrackingService realCostService = new WorkspaceCostTrackingService(
+                writer, tclService, new InfracostContextExtractor(storage, new ObjectMapper()));
+
+        JobReconciliationService costAwareSubject = new JobReconciliationService(
+                jobRepository,
+                stepRepository,
+                new WorkspaceJobStatusService(jobRepository, workspaceRepository),
+                new JobTerminalStateDeriver(),
+                jobNotificationTrigger,
+                scheduleJobService,
+                scheduler,
+                new JobReconciliationMetrics(new SimpleMeterRegistry()),
+                runTriggerEventWriter,
+                realCostService);
+
+        Job j = job(759, JobStatus.approved);
+        j.getWorkspace().setId(UUID.randomUUID());
+        j.setTcl("ZmxvdzoK");
+        List<Step> steps = List.of(step(JobStatus.completed, 100), step(JobStatus.completed, 200));
+        doReturn(j).when(jobRepository).lockForUpdate(759);
+        doReturn(steps).when(stepRepository).findByJobId(759);
+        when(tclService.getFlowTypeForStep(j, 100)).thenReturn(FlowType.terraformPlan.name());
+        when(tclService.getFlowTypeForStep(j, 200)).thenReturn(FlowType.terraformApply.name());
+        when(storage.getContext(759)).thenReturn("""
+                {
+                  "infracost": {
+                    "status": "SUCCESS",
+                    "currency": "OVERLY_LONG_CURRENCY_CODE",
+                    "totalMonthlyCost": 999999999999999999.00
+                  }
+                }
+                """);
+
+        ReconciliationResult result = costAwareSubject.reconcile(759, false);
+
+        assertThat(result.targetStatus()).isEqualTo(JobStatus.completed);
+        assertThat(j.getStatus()).isEqualTo(JobStatus.completed);
+        verify(runTriggerEventWriter, times(1)).enqueueIfQualifying(j);
+        verify(workspaceRepository, never()).updateCost(any(), any(), any(), any());
+
+        // Even if updateCost throws during a valid destroy, reconcile must still complete.
+        doThrow(new RuntimeException("DB timeout")).when(workspaceRepository).updateCost(any(), any(), any(), any());
+        when(tclService.getFlowTypeForStep(j, 100)).thenReturn(FlowType.terraformPlanDestroy.name());
+        Job j2 = job(760, JobStatus.approved);
+        j2.setWorkspace(j.getWorkspace());
+        j2.setTcl("ZmxvdzoK");
+        doReturn(j2).when(jobRepository).lockForUpdate(760);
+        doReturn(steps).when(stepRepository).findByJobId(760);
+        when(tclService.getFlowTypeForStep(j2, 100)).thenReturn(FlowType.terraformPlanDestroy.name());
+        when(tclService.getFlowTypeForStep(j2, 200)).thenReturn(FlowType.terraformApply.name());
+
+        ReconciliationResult destroyResult = costAwareSubject.reconcile(760, false);
+
+        assertThat(destroyResult.targetStatus()).isEqualTo(JobStatus.completed);
+        verify(runTriggerEventWriter, times(1)).enqueueIfQualifying(j2);
     }
 }

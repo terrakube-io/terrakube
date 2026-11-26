@@ -2,7 +2,6 @@ package io.terrakube.api.plugin.cost;
 
 import io.terrakube.api.plugin.scheduler.job.tcl.TclService;
 import io.terrakube.api.plugin.scheduler.job.tcl.model.FlowType;
-import io.terrakube.api.repository.WorkspaceRepository;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.job.step.Step;
@@ -12,22 +11,30 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.Comparator;
 import java.util.Date;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
+import java.util.regex.Pattern;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class WorkspaceCostTrackingService {
 
-    private final WorkspaceRepository workspaceRepository;
+    static final BigDecimal MAX_DECIMAL_19_4 = new BigDecimal("999999999999999.9999");
+    private static final Pattern CURRENCY_PATTERN = Pattern.compile("^[A-Z]{3,10}$");
+    private static final String DEFAULT_CURRENCY = "USD";
+
+    private final WorkspaceCostWriter workspaceCostWriter;
     private final TclService tclService;
     private final InfracostContextExtractor infracostContextExtractor;
 
     public void updateWorkspaceCostOnCompletion(Job job, List<Step> steps) {
-        if (job == null || job.getWorkspace() == null || steps == null || steps.isEmpty()) {
+        if (job == null || job.getWorkspace() == null || job.getWorkspace().getId() == null
+                || steps == null || steps.isEmpty()) {
             return;
         }
 
@@ -39,40 +46,55 @@ public class WorkspaceCostTrackingService {
 
         try {
             Workspace workspace = job.getWorkspace();
-            if (workspace.getId() != null) {
-                workspace = workspaceRepository.findById(workspace.getId()).orElse(workspace);
-            }
-
             if (terminalStateFlow == FlowType.terraformDestroy) {
-                workspace.setCurrentMonthlyCost(BigDecimal.ZERO);
-                if (workspace.getCostCurrency() == null || workspace.getCostCurrency().isBlank()) {
-                    workspace.setCostCurrency("USD");
-                }
-                workspace.setCostUpdatedAt(new Date());
-                workspaceRepository.save(workspace);
+                String currency = sanitizeCurrency(workspace.getCostCurrency());
+                workspaceCostWriter.writeCost(workspace.getId(), BigDecimal.ZERO, currency, new Date());
                 log.info("Reset estimated monthly cost to 0 for workspace {} after completed destroy job {}",
                         workspace.getId(), job.getId());
                 return;
             }
 
-            Optional<InfracostSummary> summaryOpt = infracostContextExtractor.extract(job.getId());
+            Optional<InfracostSummary> summaryOpt = infracostContextExtractor.extract(job.getId(), steps);
             if (summaryOpt.isEmpty()) {
                 return;
             }
             InfracostSummary summary = summaryOpt.get();
-            if (!summary.isSuccess() || summary.totalMonthlyCost() == null) {
+            if (!summary.isSuccess()) {
                 return;
             }
 
-            workspace.setCurrentMonthlyCost(summary.totalMonthlyCost());
-            workspace.setCostCurrency(summary.currencyOrDefault());
-            workspace.setCostUpdatedAt(new Date());
-            workspaceRepository.save(workspace);
+            BigDecimal sanitizedCost = sanitizeCost(summary.totalMonthlyCost(), job.getId());
+            if (sanitizedCost == null) {
+                return;
+            }
+            String sanitizedCurrency = sanitizeCurrency(summary.currencyOrDefault());
+
+            workspaceCostWriter.writeCost(workspace.getId(), sanitizedCost, sanitizedCurrency, new Date());
             log.info("Updated estimated monthly cost for workspace {} to {} {} after completed apply job {}",
-                    workspace.getId(), summary.totalMonthlyCost(), summary.currencyOrDefault(), job.getId());
+                    workspace.getId(), sanitizedCost, sanitizedCurrency, job.getId());
         } catch (Exception e) {
             log.warn("Failed to update workspace cost for job {}: {}", job.getId(), e.getMessage());
         }
+    }
+
+    static BigDecimal sanitizeCost(BigDecimal raw, int jobId) {
+        if (raw == null) {
+            return null;
+        }
+        BigDecimal scaled = raw.setScale(4, RoundingMode.HALF_UP);
+        if (scaled.abs().compareTo(MAX_DECIMAL_19_4) > 0) {
+            log.warn("Ignoring out-of-range monthly cost {} for job {} (exceeds DECIMAL(19,4))", raw, jobId);
+            return null;
+        }
+        return scaled;
+    }
+
+    static String sanitizeCurrency(String raw) {
+        if (raw == null) {
+            return DEFAULT_CURRENCY;
+        }
+        String normalized = raw.trim().toUpperCase(Locale.ROOT);
+        return CURRENCY_PATTERN.matcher(normalized).matches() ? normalized : DEFAULT_CURRENCY;
     }
 
     private FlowType findLastCompletedStateFlow(Job job, List<Step> steps) {
@@ -80,6 +102,7 @@ public class WorkspaceCostTrackingService {
             return null;
         }
         FlowType lastStateFlow = null;
+        boolean pendingPlanDestroy = false;
         List<Step> orderedSteps = steps.stream()
                 .sorted(Comparator.comparingInt(Step::getStepNumber))
                 .toList();
@@ -88,10 +111,16 @@ public class WorkspaceCostTrackingService {
                 continue;
             }
             String flowType = tclService.getFlowTypeForStep(job, step.getStepNumber());
-            if (FlowType.terraformApply.name().equals(flowType)) {
-                lastStateFlow = FlowType.terraformApply;
+            if (FlowType.terraformPlanDestroy.name().equals(flowType)) {
+                pendingPlanDestroy = true;
+            } else if (FlowType.terraformPlan.name().equals(flowType)) {
+                pendingPlanDestroy = false;
             } else if (FlowType.terraformDestroy.name().equals(flowType)) {
                 lastStateFlow = FlowType.terraformDestroy;
+                pendingPlanDestroy = false;
+            } else if (FlowType.terraformApply.name().equals(flowType)) {
+                lastStateFlow = pendingPlanDestroy ? FlowType.terraformDestroy : FlowType.terraformApply;
+                pendingPlanDestroy = false;
             }
         }
         return lastStateFlow;

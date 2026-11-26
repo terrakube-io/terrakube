@@ -12,12 +12,12 @@ import io.terrakube.api.plugin.workspace.WorkspaceJobStatusService;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.job.step.Step;
+import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.quartz.JobKey;
 import org.quartz.ObjectAlreadyExistsException;
 import org.quartz.Scheduler;
 import org.quartz.SchedulerException;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -47,6 +47,7 @@ import static io.terrakube.api.plugin.scheduler.ScheduleJobService.PREFIX_JOB_CO
  */
 @Slf4j
 @Service
+@AllArgsConstructor
 public class JobReconciliationService {
 
     private final JobRepository jobRepository;
@@ -59,44 +60,6 @@ public class JobReconciliationService {
     private final JobReconciliationMetrics metrics;
     private final RunTriggerEventWriter runTriggerEventWriter;
     private final WorkspaceCostTrackingService workspaceCostTrackingService;
-
-    public JobReconciliationService(
-            JobRepository jobRepository,
-            StepRepository stepRepository,
-            WorkspaceJobStatusService workspaceJobStatusService,
-            JobTerminalStateDeriver deriver,
-            JobNotificationTrigger jobNotificationTrigger,
-            ScheduleJobService scheduleJobService,
-            Scheduler scheduler,
-            JobReconciliationMetrics metrics,
-            RunTriggerEventWriter runTriggerEventWriter) {
-        this(jobRepository, stepRepository, workspaceJobStatusService, deriver, jobNotificationTrigger,
-                scheduleJobService, scheduler, metrics, runTriggerEventWriter, null);
-    }
-
-    @Autowired
-    public JobReconciliationService(
-            JobRepository jobRepository,
-            StepRepository stepRepository,
-            WorkspaceJobStatusService workspaceJobStatusService,
-            JobTerminalStateDeriver deriver,
-            JobNotificationTrigger jobNotificationTrigger,
-            ScheduleJobService scheduleJobService,
-            Scheduler scheduler,
-            JobReconciliationMetrics metrics,
-            RunTriggerEventWriter runTriggerEventWriter,
-            @Autowired(required = false) WorkspaceCostTrackingService workspaceCostTrackingService) {
-        this.jobRepository = jobRepository;
-        this.stepRepository = stepRepository;
-        this.workspaceJobStatusService = workspaceJobStatusService;
-        this.deriver = deriver;
-        this.jobNotificationTrigger = jobNotificationTrigger;
-        this.scheduleJobService = scheduleJobService;
-        this.scheduler = scheduler;
-        this.metrics = metrics;
-        this.runTriggerEventWriter = runTriggerEventWriter;
-        this.workspaceCostTrackingService = workspaceCostTrackingService;
-    }
 
     @Transactional
     public ReconciliationResult reconcile(int jobId, boolean dryRun) {
@@ -146,9 +109,7 @@ public class JobReconciliationService {
 
         deleteTriggerAfterCommit(jobId);
         if (target == JobStatus.completed) {
-            if (workspaceCostTrackingService != null) {
-                workspaceCostTrackingService.updateWorkspaceCostOnCompletion(job, steps);
-            }
+            afterCommit(() -> workspaceCostTrackingService.updateWorkspaceCostOnCompletion(job, steps));
             // Synchronous, unlike the Quartz cleanup above: the event row has to commit
             // atomically with the status transition it's about, not after it.
             runTriggerEventWriter.enqueueIfQualifying(job);
