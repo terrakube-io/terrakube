@@ -275,6 +275,44 @@ class InfracostBinaryServiceTest {
     }
 
     @Test
+    void testGetInfracostBinary_StalledMidBodyDownloadFailsAtDeadline() throws Exception {
+        String version = "0.10.48";
+        String os = InfracostBinaryService.resolveOs();
+        String arch = InfracostBinaryService.resolveArchitecture();
+        String archiveName = InfracostBinaryService.getArchiveFilename(os, arch);
+        java.util.concurrent.CountDownLatch releaseStall = new java.util.concurrent.CountDownLatch(1);
+        httpServer.createContext("/v" + version + "/" + archiveName, exchange -> {
+            exchange.sendResponseHeaders(200, 1024 * 1024);
+            try (OutputStream out = exchange.getResponseBody()) {
+                out.write("partial-tarball-".getBytes(StandardCharsets.UTF_8));
+                out.flush();
+                try {
+                    releaseStall.await(5, java.util.concurrent.TimeUnit.SECONDS);
+                } catch (InterruptedException ignored) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        });
+        when(terraformState.downloadInfracostBinary(eq(version), eq(os), eq(arch), any())).thenReturn(false);
+
+        long startNanos = System.nanoTime();
+        try {
+            Instant shortDeadline = Instant.now().plusMillis(350);
+            assertThrows(IllegalStateException.class, () -> service.getInfracostBinary(version, shortDeadline));
+        } finally {
+            releaseStall.countDown();
+        }
+        long elapsedMillis = java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startNanos);
+        assertTrue(elapsedMillis < 2000, "Expected stalled mid-body download to fail near deadline, took " + elapsedMillis + " ms");
+
+        Path binPath = tempDir.resolve(String.format(".terrakube/bin/infracost/%s/%s_%s/infracost", version, os, arch));
+        Path shaPath = tempDir.resolve(String.format(".terrakube/bin/infracost/%s/%s_%s/infracost.sha256", version, os, arch));
+        assertFalse(Files.exists(binPath));
+        assertFalse(Files.exists(shaPath));
+        verify(terraformState, never()).saveInfracostBinary(anyString(), anyString(), anyString(), any());
+    }
+
+    @Test
     void testGetInfracostBinary_UpstreamSha256Mismatch_FailsAndCleansCache() throws Exception {
         String version = "0.10.47";
         String os = InfracostBinaryService.resolveOs();

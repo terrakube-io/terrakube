@@ -18,7 +18,6 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -34,9 +33,12 @@ import java.time.Instant;
 import java.util.HexFormat;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Function;
 import java.util.regex.Matcher;
@@ -324,37 +326,40 @@ public class InfracostBinaryService {
     }
 
     private void downloadUrlToFile(URI uri, File destination, Instant deadline) throws IOException {
-        Duration remaining = Duration.between(Instant.now(), deadline);
-        if (remaining.isZero() || remaining.isNegative()) {
+        long remainingMillis = Duration.between(Instant.now(), deadline).toMillis();
+        if (remainingMillis <= 0) {
             throw new IOException("Infracost binary download exceeded fail-open deadline");
         }
         HttpRequest request = HttpRequest.newBuilder(uri)
-                .timeout(remaining)
+                .timeout(Duration.ofMillis(remainingMillis))
                 .GET()
                 .build();
+        Path destinationPath = destination.toPath();
+        CompletableFuture<HttpResponse<Path>> future =
+                httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofFile(destinationPath));
         try {
-            HttpResponse<InputStream> response = httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream());
+            HttpResponse<Path> response = future.get(remainingMillis, TimeUnit.MILLISECONDS);
             int statusCode = response.statusCode();
             if (statusCode < 200 || statusCode >= 300) {
-                try (InputStream body = response.body()) {
-                    // close error stream
-                }
+                Files.deleteIfExists(destinationPath);
                 throw new IOException("Unexpected HTTP " + statusCode + " downloading " + uri);
             }
-            try (InputStream in = response.body();
-                 OutputStream out = Files.newOutputStream(destination.toPath())) {
-                byte[] buffer = new byte[16384];
-                int read;
-                while ((read = in.read(buffer)) != -1) {
-                    if (Instant.now().isAfter(deadline)) {
-                        throw new IOException("Infracost binary download exceeded fail-open deadline");
-                    }
-                    out.write(buffer, 0, read);
-                }
-            }
+        } catch (TimeoutException e) {
+            future.cancel(true);
+            Files.deleteIfExists(destinationPath);
+            throw new IOException("Infracost binary download exceeded fail-open deadline", e);
         } catch (InterruptedException e) {
+            future.cancel(true);
+            Files.deleteIfExists(destinationPath);
             Thread.currentThread().interrupt();
             throw new IOException("Interrupted while downloading " + uri, e);
+        } catch (ExecutionException e) {
+            Files.deleteIfExists(destinationPath);
+            Throwable cause = e.getCause();
+            if (cause instanceof IOException ioException) {
+                throw ioException;
+            }
+            throw new IOException("Failed downloading " + uri, cause);
         }
     }
 
