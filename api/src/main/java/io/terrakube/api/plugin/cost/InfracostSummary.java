@@ -19,6 +19,8 @@ public record InfracostSummary(
         String shareUrl,
         String errorMessage) {
 
+    public static final String MISSING_VALUE = "—";
+
     public boolean isSuccess() {
         return "SUCCESS".equalsIgnoreCase(status);
     }
@@ -36,27 +38,30 @@ public record InfracostSummary(
     }
 
     public String formatTotalMonthlyCost() {
-        return formatMoney(totalMonthlyCost, currencyOrDefault());
+        return totalMonthlyCost != null ? formatMoney(totalMonthlyCost, currencyOrDefault()) : MISSING_VALUE;
     }
 
     public String formatPastMonthlyCost() {
-        return formatMoney(pastTotalMonthlyCost, currencyOrDefault());
+        return pastTotalMonthlyCost != null ? formatMoney(pastTotalMonthlyCost, currencyOrDefault()) : MISSING_VALUE;
     }
 
     public String formatMonthlyDelta() {
         if (diffTotalMonthlyCost == null) {
-            return formatMoney(BigDecimal.ZERO, currencyOrDefault());
+            return MISSING_VALUE;
         }
-        String sign = diffTotalMonthlyCost.signum() > 0 ? "+" : (diffTotalMonthlyCost.signum() < 0 ? "-" : "");
+        String sign = "";
+        if (diffTotalMonthlyCost.signum() > 0) {
+            sign = "+";
+        } else if (diffTotalMonthlyCost.signum() < 0) {
+            sign = "-";
+        }
         String formattedAbs = formatMoney(diffTotalMonthlyCost.abs(), currencyOrDefault());
         if (pastTotalMonthlyCost != null && pastTotalMonthlyCost.signum() > 0) {
             BigDecimal pct = diffTotalMonthlyCost
                     .multiply(BigDecimal.valueOf(100))
                     .divide(pastTotalMonthlyCost, 1, RoundingMode.HALF_UP);
             String pctSign = pct.signum() > 0 ? "+" : "";
-            return String.format("%s%s (%s%s%%)", sign, formattedAbs, pctSign, pct.stripTrailingZeros().scale() <= 0
-                    ? pct.setScale(1, RoundingMode.HALF_UP).toPlainString()
-                    : pct.toPlainString());
+            return String.format("%s%s (%s%s%%)", sign, formattedAbs, pctSign, pct.toPlainString());
         }
         return sign + formattedAbs;
     }
