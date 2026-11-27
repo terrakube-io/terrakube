@@ -290,4 +290,13 @@ describe("WORKSPACE_PAGE_QUERY", () => {
     expect(jobFields).not.toContain("applyDurationMs");
     expect(jobFields).toContain("comments");
   });
+
+  it("asks for the plan and drift fields the run list, latest run and drift card show", () => {
+    const jobFields = params.get("fields[job]")!.split(",");
+    ["planAdd", "planChange", "planDestroy", "driftResult"].forEach((field) => expect(jobFields).toContain(field));
+    const workspaceFields = params.get("fields[workspace]")!.split(",");
+    ["driftStatus", "driftFirstSeen", "driftLastChecked", "driftJobId"].forEach((field) =>
+      expect(workspaceFields).toContain(field)
+    );
+  });
 });
