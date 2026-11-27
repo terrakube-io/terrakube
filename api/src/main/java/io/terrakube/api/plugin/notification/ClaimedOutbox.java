@@ -2,7 +2,18 @@ package io.terrakube.api.plugin.notification;
 
 import java.util.Date;
 
+import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.notification.NotificationConfiguration;
 
-record ClaimedOutbox(NotificationConfiguration configuration, String payload, int attemptCount, Date lastAttemptAt) {
+record ClaimedOutbox(
+        NotificationConfiguration configuration,
+        String payload,
+        int attemptCount,
+        Date lastAttemptAt,
+        Integer jobId,
+        JobStatus jobStatus) {
+
+    ClaimedOutbox(NotificationConfiguration configuration, String payload, int attemptCount, Date lastAttemptAt) {
+        this(configuration, payload, attemptCount, lastAttemptAt, null, null);
+    }
 }

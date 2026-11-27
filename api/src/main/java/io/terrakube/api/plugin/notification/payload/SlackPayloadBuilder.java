@@ -6,8 +6,12 @@ import java.util.Map;
 
 import org.springframework.stereotype.Component;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
+import io.terrakube.api.plugin.cost.InfracostSummary;
 import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.notification.NotificationChannelType;
 import io.terrakube.api.rs.notification.NotificationMessageStyle;
@@ -58,6 +62,8 @@ public class SlackPayloadBuilder implements NotificationPayloadBuilder {
                     "text", Map.of("type", "mrkdwn", "text", "*Failure reason:* " + context.failureReason())));
         }
 
+        appendCostBlock(blocks, context.costSummary());
+
         if (context.runUrl() != null && !context.runUrl().isBlank()) {
             blocks.add(Map.of(
                     "type", "actions",
@@ -106,6 +112,69 @@ public class SlackPayloadBuilder implements NotificationPayloadBuilder {
         } catch (Exception e) {
             throw new IllegalStateException("Failed to render Slack payload", e);
         }
+    }
+
+    @Override
+    public String enrichCost(String payload, InfracostSummary costSummary) {
+        Map<String, Object> costBlock = buildCostBlock(costSummary);
+        if (costBlock == null || payload == null || payload.isBlank()) {
+            return payload;
+        }
+        try {
+            JsonNode tree = objectMapper.readTree(payload);
+            if (!(tree instanceof ObjectNode root)) {
+                return payload;
+            }
+            JsonNode attachments = root.get("attachments");
+            if (!(attachments instanceof ArrayNode attArray) || attArray.isEmpty()) {
+                return payload;
+            }
+            JsonNode blocksNode = attArray.get(0).get("blocks");
+            if (!(blocksNode instanceof ArrayNode blocks)) {
+                return payload;
+            }
+            for (JsonNode existing : blocks) {
+                if (existing.path("text").path("text").asText("").contains("Pre-Deployment Cost Estimation")) {
+                    return payload;
+                }
+            }
+            int insertIndex = blocks.size();
+            for (int i = 2; i < blocks.size(); i++) {
+                String type = blocks.get(i).path("type").asText("");
+                if ("actions".equals(type) || "context".equals(type)) {
+                    insertIndex = i;
+                    break;
+                }
+            }
+            blocks.insert(insertIndex, objectMapper.valueToTree(costBlock));
+            return objectMapper.writeValueAsString(root);
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to enrich Slack payload with cost estimation", e);
+        }
+    }
+
+    private static void appendCostBlock(List<Map<String, Object>> blocks, InfracostSummary cost) {
+        Map<String, Object> block = buildCostBlock(cost);
+        if (block != null) {
+            blocks.add(block);
+        }
+    }
+
+    private static Map<String, Object> buildCostBlock(InfracostSummary cost) {
+        if (cost == null || !cost.isSuccess() || cost.totalMonthlyCost() == null) {
+            return null;
+        }
+        StringBuilder costText = new StringBuilder()
+                .append("*💰 Pre-Deployment Cost Estimation:*\n")
+                .append("• *Est. Monthly Cost:* ").append(cost.formatTotalMonthlyCost()).append("\n")
+                .append("• *Est. Monthly Delta:* ").append(cost.formatMonthlyDelta());
+        int unpriced = cost.unpricedResourceCount();
+        if (unpriced > 0) {
+            costText.append(" _(").append(unpriced).append(" unpriced resource(s))_");
+        }
+        return Map.of(
+                "type", "section",
+                "text", Map.of("type", "mrkdwn", "text", costText.toString()));
     }
 
     // SIMPLE-style configurations get a single-line ping for every status instead of the full

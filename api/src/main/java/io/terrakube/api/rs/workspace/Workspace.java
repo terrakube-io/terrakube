@@ -32,6 +32,7 @@ import lombok.Setter;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.SQLRestriction;
 
+import java.math.BigDecimal;
 import java.sql.Types;
 import java.util.Date;
 import java.util.List;
@@ -176,6 +177,21 @@ public class Workspace extends GenericAuditFields {
     @UpdatePermission(expression = "user is a super service OR user is a superuser")
     @Column(name = "policy_soft_violations")
     private Integer policySoftViolations;
+
+    @CreatePermission(expression = "NONE")
+    @UpdatePermission(expression = "NONE")
+    @Column(name = "current_monthly_cost", precision = 19, scale = 4, insertable = false, updatable = false)
+    private BigDecimal currentMonthlyCost;
+
+    @CreatePermission(expression = "NONE")
+    @UpdatePermission(expression = "NONE")
+    @Column(name = "cost_currency", length = 10, insertable = false, updatable = false)
+    private String costCurrency = "USD";
+
+    @CreatePermission(expression = "NONE")
+    @UpdatePermission(expression = "NONE")
+    @Column(name = "cost_updated_at", insertable = false, updatable = false)
+    private Date costUpdatedAt;
 
     @ManyToOne
     private Organization organization;

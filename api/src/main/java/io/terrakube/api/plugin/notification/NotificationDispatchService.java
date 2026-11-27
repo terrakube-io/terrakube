@@ -2,13 +2,24 @@ package io.terrakube.api.plugin.notification;
 
 import java.time.Duration;
 import java.util.Date;
+import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
+import io.terrakube.api.plugin.cost.InfracostContextExtractor;
+import io.terrakube.api.plugin.cost.InfracostSummary;
+import io.terrakube.api.plugin.notification.payload.NotificationPayloadRenderer;
 import io.terrakube.api.plugin.notification.sender.NotificationDeliveryException;
 import io.terrakube.api.plugin.notification.sender.NotificationDeliveryService;
+import io.terrakube.api.repository.StepRepository;
+import io.terrakube.api.rs.job.JobStatus;
+import io.terrakube.api.rs.job.step.Step;
+import io.terrakube.api.rs.notification.NotificationChannelType;
+import io.terrakube.api.rs.notification.NotificationConfiguration;
+import io.terrakube.api.rs.notification.NotificationMessageStyle;
 import io.terrakube.api.rs.notification.NotificationOutboxStatus;
 
 import lombok.extern.slf4j.Slf4j;
@@ -23,11 +34,20 @@ public class NotificationDispatchService {
 
     private final NotificationOutboxTransactions notificationOutboxTransactions;
     private final NotificationDeliveryService notificationDeliveryService;
+    private final InfracostContextExtractor infracostContextExtractor;
+    private final StepRepository stepRepository;
+    private final NotificationPayloadRenderer notificationPayloadRenderer;
 
     public NotificationDispatchService(NotificationOutboxTransactions notificationOutboxTransactions,
-            NotificationDeliveryService notificationDeliveryService) {
+            NotificationDeliveryService notificationDeliveryService,
+            InfracostContextExtractor infracostContextExtractor,
+            StepRepository stepRepository,
+            NotificationPayloadRenderer notificationPayloadRenderer) {
         this.notificationOutboxTransactions = notificationOutboxTransactions;
         this.notificationDeliveryService = notificationDeliveryService;
+        this.infracostContextExtractor = infracostContextExtractor;
+        this.stepRepository = stepRepository;
+        this.notificationPayloadRenderer = notificationPayloadRenderer;
     }
 
     @Async("notificationDispatchExecutor")
@@ -36,17 +56,15 @@ public class NotificationDispatchService {
     }
 
     // claim() and recordResult() each open their own short transaction on a separate bean
-    // (NotificationOutboxTransactions) - the HTTP delivery call in between runs with no
-    // transaction (and therefore no DB connection or row lock) held for its duration.
-    // Previously the pessimistic lock and the outbound call to Slack/Teams/webhook shared one
-    // transaction, so a slow or hanging destination could hold a pooled DB connection for up to
-    // the sender's full timeout (10s connect + 30s read).
+    // (NotificationOutboxTransactions) - the cost-context read and HTTP delivery call in
+    // between run with no transaction (and therefore no DB connection or row lock) held.
     public void attemptDelivery(UUID outboxId) {
         ClaimedOutbox claimed = notificationOutboxTransactions.claim(outboxId);
         if (claimed == null) {
             return;
         }
-        DeliveryOutcome outcome = deliver(claimed);
+        String payload = resolveDispatchPayload(claimed);
+        DeliveryOutcome outcome = deliver(claimed.configuration(), payload);
 
         NotificationOutboxStatus newStatus;
         Date nextAttemptAt = null;
@@ -79,13 +97,49 @@ public class NotificationDispatchService {
                 nextAttemptAt);
     }
 
-    private DeliveryOutcome deliver(ClaimedOutbox claimed) {
+    private DeliveryOutcome deliver(NotificationConfiguration configuration, String payload) {
         try {
-            notificationDeliveryService.deliver(claimed.configuration(), claimed.payload());
+            notificationDeliveryService.deliver(configuration, payload);
             return DeliveryOutcome.success();
         } catch (NotificationDeliveryException e) {
             return DeliveryOutcome.failure(e);
         }
+    }
+
+    private String resolveDispatchPayload(ClaimedOutbox claimed) {
+        NotificationConfiguration configuration = claimed.configuration();
+        if (configuration == null || claimed.jobId() == null
+                || !shouldAttachCostSummary(claimed.jobStatus())
+                || !needsCostSummary(configuration)) {
+            return claimed.payload();
+        }
+        try {
+            List<Step> steps = stepRepository.findByJobId(claimed.jobId());
+            Optional<InfracostSummary> summaryOpt = infracostContextExtractor.extract(claimed.jobId(), steps);
+            if (summaryOpt.isEmpty()) {
+                return claimed.payload();
+            }
+            return notificationPayloadRenderer.enrichWithCost(
+                    configuration.getChannelType(), claimed.payload(), summaryOpt.get());
+        } catch (Exception e) {
+            log.warn("Unable to resolve Infracost summary at dispatch for job {}: {}",
+                    claimed.jobId(), e.getMessage());
+            return claimed.payload();
+        }
+    }
+
+    private static boolean needsCostSummary(NotificationConfiguration configuration) {
+        if (configuration.getChannelType() == NotificationChannelType.WEBHOOK) {
+            return true;
+        }
+        return configuration.getMessageStyle() != NotificationMessageStyle.SIMPLE;
+    }
+
+    private static boolean shouldAttachCostSummary(JobStatus status) {
+        return status == JobStatus.completed
+                || status == JobStatus.waitingApproval
+                || status == JobStatus.failed
+                || status == JobStatus.noChanges;
     }
 
     private long backoffMillis(int attemptCount) {

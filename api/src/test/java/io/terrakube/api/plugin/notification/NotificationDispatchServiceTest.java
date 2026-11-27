@@ -1,7 +1,14 @@
 package io.terrakube.api.plugin.notification;
 
+import io.terrakube.api.plugin.cost.InfracostContextExtractor;
+import io.terrakube.api.plugin.notification.payload.NotificationPayloadRenderer;
 import io.terrakube.api.plugin.notification.sender.NotificationDeliveryException;
 import io.terrakube.api.plugin.notification.sender.NotificationDeliveryService;
+import io.terrakube.api.repository.StepRepository;
+import io.terrakube.api.rs.job.JobStatus;
+import io.terrakube.api.rs.notification.NotificationChannelType;
+import io.terrakube.api.rs.notification.NotificationConfiguration;
+import io.terrakube.api.rs.notification.NotificationMessageStyle;
 import io.terrakube.api.rs.notification.NotificationOutboxStatus;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -27,6 +34,12 @@ class NotificationDispatchServiceTest {
     NotificationOutboxTransactions notificationOutboxTransactions;
     @Mock
     NotificationDeliveryService notificationDeliveryService;
+    @Mock
+    InfracostContextExtractor infracostContextExtractor;
+    @Mock
+    StepRepository stepRepository;
+    @Mock
+    NotificationPayloadRenderer notificationPayloadRenderer;
 
     @InjectMocks
     NotificationDispatchService subject;
@@ -117,5 +130,23 @@ class NotificationDispatchServiceTest {
 
         verifyNoInteractions(notificationDeliveryService);
         verify(notificationOutboxTransactions, never()).recordResult(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void costLookupFailureAtDispatchStillDeliversBasePayloadFailOpen() {
+        UUID id = UUID.randomUUID();
+        Date lastAttemptAt = new Date();
+        NotificationConfiguration cfg = new NotificationConfiguration();
+        cfg.setChannelType(NotificationChannelType.SLACK);
+        cfg.setMessageStyle(NotificationMessageStyle.DETAILED);
+        ClaimedOutbox claimed = new ClaimedOutbox(cfg, "{\"base\":true}", 1, lastAttemptAt, 42, JobStatus.completed);
+        when(notificationOutboxTransactions.claim(id)).thenReturn(claimed);
+        when(stepRepository.findByJobId(42)).thenThrow(new RuntimeException("DB hiccup"));
+
+        subject.attemptDelivery(id);
+
+        verify(notificationDeliveryService).deliver(cfg, "{\"base\":true}");
+        verify(notificationOutboxTransactions).recordResult(eq(id), eq(lastAttemptAt),
+                eq(NotificationOutboxStatus.SENT), isNull(), isNull());
     }
 }

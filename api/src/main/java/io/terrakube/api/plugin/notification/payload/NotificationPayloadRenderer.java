@@ -7,6 +7,7 @@ import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
 
+import io.terrakube.api.plugin.cost.InfracostSummary;
 import io.terrakube.api.rs.notification.NotificationChannelType;
 
 @Service
@@ -25,5 +26,16 @@ public class NotificationPayloadRenderer {
             throw new IllegalStateException("No payload builder registered for channel type " + channelType);
         }
         return builder.build(context);
+    }
+
+    public String enrichWithCost(NotificationChannelType channelType, String payload, InfracostSummary costSummary) {
+        if (costSummary == null || payload == null || payload.isBlank()) {
+            return payload;
+        }
+        NotificationPayloadBuilder builder = buildersByType.get(channelType);
+        if (builder == null) {
+            return payload;
+        }
+        return builder.enrichCost(payload, costSummary);
     }
 }

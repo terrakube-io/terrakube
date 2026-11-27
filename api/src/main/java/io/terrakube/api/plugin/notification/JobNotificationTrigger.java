@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import io.terrakube.api.plugin.cost.InfracostSummary;
 import io.terrakube.api.plugin.notification.payload.NotificationContext;
 import io.terrakube.api.plugin.notification.payload.NotificationPayloadRenderer;
 import io.terrakube.api.rs.job.Job;
@@ -161,6 +162,10 @@ public class JobNotificationTrigger {
     }
 
     NotificationContext buildContext(Job job, NotificationConfiguration configuration) {
+        return buildContext(job, configuration, null);
+    }
+
+    NotificationContext buildContext(Job job, NotificationConfiguration configuration, InfracostSummary costSummary) {
         String workspaceUrl = String.format("%s/organizations/%s/workspaces/%s", uiUrl,
                 job.getOrganization().getId(), job.getWorkspace().getId());
         String runUrl = workspaceUrl + "/runs/" + job.getId();
@@ -181,6 +186,7 @@ public class JobNotificationTrigger {
                 failureReason,
                 configuration.getName(),
                 workspaceUrl,
-                configuration.getMessageStyle());
+                configuration.getMessageStyle(),
+                costSummary);
     }
 }

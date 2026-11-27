@@ -97,7 +97,10 @@ class NotificationOutboxTransactionsTest {
                 eq(NotificationOutboxStatus.SENDING), any())).thenReturn(1);
         when(notificationOutboxRepository.findById(id)).thenReturn(Optional.of(row));
 
-        assertThat(subject.claim(id)).isNotNull();
+        ClaimedOutbox claimed = subject.claim(id);
+        assertThat(claimed).isNotNull();
+        assertThat(claimed.jobId()).isEqualTo(721);
+        assertThat(claimed.jobStatus()).isEqualTo(io.terrakube.api.rs.job.JobStatus.failed);
         verify(notificationOutboxRepository, never()).recordDeliveryResult(any(), any(), any(),
                 eq(NotificationOutboxStatus.SKIPPED), any(), any(), any());
     }
