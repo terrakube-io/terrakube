@@ -262,8 +262,9 @@ export const Schedules = ({ schedules, manageWorkspace, reload }: Props) => {
               if (mode === "create") onCreate(values);
               else onUpdate(values);
             })
-            .catch((info) => {
-              console.log("Validate Failed:", info);
+            .catch((info: unknown) => {
+              // The form already shows validation errors next to the fields; anything else is a real failure.
+              if (!(info as { errorFields?: unknown } | undefined)?.errorFields) console.error(info);
             });
         }}
       >

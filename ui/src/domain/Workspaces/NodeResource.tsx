@@ -10,13 +10,7 @@ const { Meta } = Card;
 export default memo(function NodeResource({ data, isConnectable }: NodeProps<Resource>) {
   return (
     <>
-      <Handle
-        type="source"
-        position={Position.Top}
-        className="state-diagram-handle"
-        onConnect={(params) => console.log("handle onConnect", params)}
-        isConnectable={isConnectable}
-      />
+      <Handle type="source" position={Position.Top} className="state-diagram-handle" isConnectable={isConnectable} />
       <Card className="state-diagram-node">
         <Meta
           avatar={GetResourceIcon(data)}

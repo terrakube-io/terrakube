@@ -11,7 +11,6 @@ import { renderToStaticMarkup } from "react-dom/server";
 import AnsiImport from "ansi-to-react";
 import { splitLines } from "../ansiChunks";
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const Ansi: any = (AnsiImport as any).default ?? AnsiImport;
 
 function makeLog(lines: number): string[] {

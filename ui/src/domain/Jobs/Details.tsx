@@ -23,7 +23,7 @@ import { useAbortController, usePolling, useStructuredOutputStream } from "../..
 import WorkspaceStatusTag from "@/components/display/WorkspaceStatusTag";
 import { getWorkspaceStatusIcon } from "../../modules/workspaces/utils/workspaceStatusIcon";
 import { getWorkspaceStatusText } from "../../modules/workspaces/utils/workspaceStatusText";
-import { formatJobVia, IncludedItem, Job, JobStep, Workspace } from "../types";
+import { formatJobVia, IncludedItem, Job, JobStep, PolicyEvaluationContext, Workspace } from "../types";
 import {
   ContextAvailability,
   StructuredOutputMarker,
@@ -63,7 +63,6 @@ import {
 import { relativeTime } from "@/modules/utils/dates";
 import { formatExecutionDuration } from "./executionDuration";
 import { PolicyChecksOutput } from "./PolicyChecksOutput";
-import { PolicyEvaluationContext } from "../types";
 import "./runTokens.css";
 import "./Details.css";
 

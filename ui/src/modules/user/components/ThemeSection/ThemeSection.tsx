@@ -1,5 +1,5 @@
 import { ColorSchemeOption, ThemeMode } from "../../../../config/themeConfig";
-import { useTheme } from "../../../../context/ThemeContext";
+import { useTheme } from "@/context/useTheme";
 import "./ThemeSection.css";
 import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
 
