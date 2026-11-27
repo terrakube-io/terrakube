@@ -1,0 +1,4695 @@
+{
+  "formats": {
+    "rfc3339-fraction-utc": {
+      "standard": "rfc3339",
+      "precision": "variable-fraction",
+      "offset": "utc-z",
+      "example": "2026-11-19T15:28:21.123456Z",
+      "description": "UTC with a Z suffix and as many fractional-second digits as the value carries, possibly none."
+    },
+    "rfc3339-seconds-utc": {
+      "standard": "rfc3339",
+      "precision": "second",
+      "offset": "utc-z",
+      "example": "2026-11-19T15:28:21Z",
+      "description": "Whole seconds in UTC with a Z suffix."
+    }
+  },
+  "types": [
+    {
+      "name": "access",
+      "root": false,
+      "attributes": [
+        {
+          "name": "approveJob",
+          "type": {
+            "kind": "boolean"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "destroyJob",
+          "type": {
+            "kind": "boolean"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "manageJob",
+          "type": {
+            "kind": "boolean"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "manageState",
+          "type": {
+            "kind": "boolean"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "manageWorkspace",
+          "type": {
+            "kind": "boolean"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "name",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "planJob",
+          "type": {
+            "kind": "boolean"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "role",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        }
+      ],
+      "relationships": [
+        {
+          "name": "workspace",
+          "target": "workspace",
+          "many": false,
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "action",
+      "root": true,
+      "attributes": [
+        {
+          "name": "action",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "active",
+          "type": {
+            "kind": "boolean"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "category",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "createdBy",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "createdDate",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "description",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "displayCriteria",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "label",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "name",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "type",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "updatedBy",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "updatedDate",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "version",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        }
+      ],
+      "relationships": []
+    },
+    {
+      "name": "address",
+      "root": true,
+      "attributes": [
+        {
+          "name": "createdBy",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "createdDate",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "name",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "updatedBy",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "updatedDate",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": true,
+          "optional": false
+        }
+      ],
+      "relationships": [
+        {
+          "name": "job",
+          "target": "job",
+          "many": false,
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "agent",
+      "root": false,
+      "attributes": [
+        {
+          "name": "description",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "name",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "url",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        }
+      ],
+      "relationships": [
+        {
+          "name": "organization",
+          "target": "organization",
+          "many": false,
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "collection",
+      "root": false,
+      "attributes": [
+        {
+          "name": "createdBy",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "createdDate",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "description",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "name",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "priority",
+          "type": {
+            "kind": "number"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "updatedBy",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "updatedDate",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": true,
+          "optional": false
+        }
+      ],
+      "relationships": [
+        {
+          "name": "item",
+          "target": "item",
+          "many": true,
+          "required": false
+        },
+        {
+          "name": "organization",
+          "target": "organization",
+          "many": false,
+          "required": true
+        },
+        {
+          "name": "reference",
+          "target": "reference",
+          "many": true,
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "federated",
+      "root": true,
+      "attributes": [
+        {
+          "name": "audience",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "issuerUrl",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "name",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        }
+      ],
+      "relationships": [
+        {
+          "name": "claims",
+          "target": "federated_claim",
+          "many": true,
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "federated_claim",
+      "root": false,
+      "attributes": [
+        {
+          "name": "claimKey",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "claimValue",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        }
+      ],
+      "relationships": [
+        {
+          "name": "federated",
+          "target": "federated",
+          "many": false,
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "github_app_token",
+      "root": true,
+      "attributes": [
+        {
+          "name": "appId",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "createdBy",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "createdDate",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "expiresAt",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-fraction-utc"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "installationId",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "owner",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "token",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": true
+        },
+        {
+          "name": "updatedBy",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "updatedDate",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": true,
+          "optional": false
+        }
+      ],
+      "relationships": []
+    },
+    {
+      "name": "globalvar",
+      "root": false,
+      "attributes": [
+        {
+          "name": "category",
+          "type": {
+            "kind": "enum",
+            "name": "Category",
+            "values": [
+              "TERRAFORM",
+              "ENV"
+            ]
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "description",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "hcl",
+          "type": {
+            "kind": "boolean"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "key",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "sensitive",
+          "type": {
+            "kind": "boolean"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "value",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": true
+        }
+      ],
+      "relationships": [
+        {
+          "name": "organization",
+          "target": "organization",
+          "many": false,
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "history",
+      "root": false,
+      "attributes": [
+        {
+          "name": "createdBy",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "createdDate",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "jobReference",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "lineage",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "md5",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "output",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "serial",
+          "type": {
+            "kind": "number"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "updatedBy",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "updatedDate",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": true,
+          "optional": false
+        }
+      ],
+      "relationships": [
+        {
+          "name": "workspace",
+          "target": "workspace",
+          "many": false,
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "implementation",
+      "root": true,
+      "attributes": [
+        {
+          "name": "arch",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "asciiArmor",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "downloadUrl",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "filename",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "keyId",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "os",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "shasum",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "shasumsSignatureUrl",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "shasumsUrl",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "source",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "sourceUrl",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "trustSignature",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        }
+      ],
+      "relationships": [
+        {
+          "name": "version",
+          "target": "version",
+          "many": false,
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "item",
+      "root": false,
+      "attributes": [
+        {
+          "name": "category",
+          "type": {
+            "kind": "enum",
+            "name": "Category",
+            "values": [
+              "TERRAFORM",
+              "ENV"
+            ]
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "description",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "hcl",
+          "type": {
+            "kind": "boolean"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "key",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "sensitive",
+          "type": {
+            "kind": "boolean"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "value",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": true
+        }
+      ],
+      "relationships": [
+        {
+          "name": "collection",
+          "target": "collection",
+          "many": false,
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "job",
+      "root": false,
+      "attributes": [
+        {
+          "name": "applyDurationMs",
+          "type": {
+            "kind": "number"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "approvalTeam",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "approvedAt",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "approvedBy",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "cascadeDepth",
+          "type": {
+            "kind": "number"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "comments",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "commitId",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "createdBy",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "createdDate",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "dispatchFailureCount",
+          "type": {
+            "kind": "number"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "dispatchFirstFailureAt",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "dispatchLastAttemptAt",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "dispatchLastError",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "dispatchNextRetryAt",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "driftResult",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "encryptedVariables",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": true
+        },
+        {
+          "name": "output",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": true
+        },
+        {
+          "name": "overrideBranch",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "overrideSource",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "planAdd",
+          "type": {
+            "kind": "number"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "planChange",
+          "type": {
+            "kind": "number"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "planChanges",
+          "type": {
+            "kind": "boolean"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "planDestroy",
+          "type": {
+            "kind": "number"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "planDurationMs",
+          "type": {
+            "kind": "number"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "prCommentError",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "prNumber",
+          "type": {
+            "kind": "number"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "queuedAt",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "refresh",
+          "type": {
+            "kind": "boolean"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "refreshOnly",
+          "type": {
+            "kind": "boolean"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "replaceAddrs",
+          "type": {
+            "kind": "array",
+            "items": {
+              "kind": "string"
+            }
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "resolvedTerraformVersion",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "status",
+          "type": {
+            "kind": "enum",
+            "name": "JobStatus",
+            "values": [
+              "pending",
+              "waitingApproval",
+              "approved",
+              "queue",
+              "running",
+              "completed",
+              "noChanges",
+              "notExecuted",
+              "rejected",
+              "cancelled",
+              "failed",
+              "unknown",
+              "NeverExecuted"
+            ]
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "targetAddrs",
+          "type": {
+            "kind": "array",
+            "items": {
+              "kind": "string"
+            }
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "templateReference",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "terraformPlan",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": true
+        },
+        {
+          "name": "terraformPlanArtifacts",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "terraformPlanArtifactsChecksum",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "triggeredByJobId",
+          "type": {
+            "kind": "number"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "updatedBy",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "updatedDate",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "variableNames",
+          "type": {
+            "kind": "array",
+            "items": {
+              "kind": "string"
+            }
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "variables",
+          "type": {
+            "kind": "map",
+            "values": {
+              "kind": "string"
+            }
+          },
+          "nullable": true,
+          "optional": true
+        },
+        {
+          "name": "variablesAsArguments",
+          "type": {
+            "kind": "boolean"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "via",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        }
+      ],
+      "relationships": [
+        {
+          "name": "address",
+          "target": "address",
+          "many": true,
+          "required": false
+        },
+        {
+          "name": "organization",
+          "target": "organization",
+          "many": false,
+          "required": true
+        },
+        {
+          "name": "policyEvaluation",
+          "target": "policy_evaluation",
+          "many": true,
+          "required": false
+        },
+        {
+          "name": "step",
+          "target": "step",
+          "many": true,
+          "required": false
+        },
+        {
+          "name": "workspace",
+          "target": "workspace",
+          "many": false,
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "module",
+      "root": false,
+      "attributes": [
+        {
+          "name": "createdBy",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "createdDate",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "description",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "downloadQuantity",
+          "type": {
+            "kind": "number"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "folder",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "lastRefresh",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "lastRefreshError",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "lastTagDetectedAt",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "latestVersion",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "name",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "nextRefresh",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "provider",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "registryPath",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "source",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "tagPrefix",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "updatedBy",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "updatedDate",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": true,
+          "optional": false
+        }
+      ],
+      "relationships": [
+        {
+          "name": "organization",
+          "target": "organization",
+          "many": false,
+          "required": true
+        },
+        {
+          "name": "ssh",
+          "target": "ssh",
+          "many": false,
+          "required": false
+        },
+        {
+          "name": "vcs",
+          "target": "vcs",
+          "many": false,
+          "required": false
+        },
+        {
+          "name": "version",
+          "target": "module_version",
+          "many": true,
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "module_version",
+      "root": false,
+      "attributes": [
+        {
+          "name": "commit",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "deprecationMessage",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "gitTag",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "status",
+          "type": {
+            "kind": "enum",
+            "name": "VersionStatus",
+            "values": [
+              "active",
+              "deprecated",
+              "removed"
+            ]
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "version",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        }
+      ],
+      "relationships": [
+        {
+          "name": "module",
+          "target": "module",
+          "many": false,
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "notification_configuration",
+      "root": true,
+      "attributes": [
+        {
+          "name": "active",
+          "type": {
+            "kind": "boolean"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "channelType",
+          "type": {
+            "kind": "enum",
+            "name": "NotificationChannelType",
+            "values": [
+              "SLACK",
+              "TEAMS",
+              "WEBHOOK"
+            ]
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "createdBy",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "createdDate",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "description",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "destinationUrl",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "messageStyle",
+          "type": {
+            "kind": "enum",
+            "name": "NotificationMessageStyle",
+            "values": [
+              "DETAILED",
+              "SIMPLE"
+            ]
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "name",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "signingSecret",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": true
+        },
+        {
+          "name": "updatedBy",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "updatedDate",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": true,
+          "optional": false
+        }
+      ],
+      "relationships": [
+        {
+          "name": "organization",
+          "target": "organization",
+          "many": false,
+          "required": true
+        },
+        {
+          "name": "policySet",
+          "target": "policy_set",
+          "many": true,
+          "required": false
+        },
+        {
+          "name": "templates",
+          "target": "template",
+          "many": true,
+          "required": false
+        },
+        {
+          "name": "triggers",
+          "target": "notification_trigger",
+          "many": true,
+          "required": false
+        },
+        {
+          "name": "workspace",
+          "target": "workspace",
+          "many": false,
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "notification_trigger",
+      "root": true,
+      "attributes": [
+        {
+          "name": "createdBy",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "createdDate",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "jobStatus",
+          "type": {
+            "kind": "enum",
+            "name": "JobStatus",
+            "values": [
+              "pending",
+              "waitingApproval",
+              "approved",
+              "queue",
+              "running",
+              "completed",
+              "noChanges",
+              "notExecuted",
+              "rejected",
+              "cancelled",
+              "failed",
+              "unknown",
+              "NeverExecuted"
+            ]
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "updatedBy",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "updatedDate",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": true,
+          "optional": false
+        }
+      ],
+      "relationships": [
+        {
+          "name": "configuration",
+          "target": "notification_configuration",
+          "many": false,
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "organization",
+      "root": true,
+      "attributes": [
+        {
+          "name": "description",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "disabled",
+          "type": {
+            "kind": "boolean"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "executionMode",
+          "type": {
+            "kind": "enum",
+            "name": "ExecutionMode",
+            "values": [
+              "local",
+              "remote"
+            ]
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "icon",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "managedInCodeMode",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "managedInCodeRepository",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "name",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "projectLandingTab",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        }
+      ],
+      "relationships": [
+        {
+          "name": "agent",
+          "target": "agent",
+          "many": true,
+          "required": false
+        },
+        {
+          "name": "collection",
+          "target": "collection",
+          "many": true,
+          "required": false
+        },
+        {
+          "name": "globalvar",
+          "target": "globalvar",
+          "many": true,
+          "required": false
+        },
+        {
+          "name": "job",
+          "target": "job",
+          "many": true,
+          "required": false
+        },
+        {
+          "name": "module",
+          "target": "module",
+          "many": true,
+          "required": false
+        },
+        {
+          "name": "notificationConfiguration",
+          "target": "notification_configuration",
+          "many": true,
+          "required": false
+        },
+        {
+          "name": "policyExemption",
+          "target": "policy_exemption",
+          "many": true,
+          "required": false
+        },
+        {
+          "name": "policySet",
+          "target": "policy_set",
+          "many": true,
+          "required": false
+        },
+        {
+          "name": "project",
+          "target": "project",
+          "many": true,
+          "required": false
+        },
+        {
+          "name": "projectSummary",
+          "target": "project_summary",
+          "many": true,
+          "required": false
+        },
+        {
+          "name": "provider",
+          "target": "provider",
+          "many": true,
+          "required": false
+        },
+        {
+          "name": "ssh",
+          "target": "ssh",
+          "many": true,
+          "required": false
+        },
+        {
+          "name": "tag",
+          "target": "tag",
+          "many": true,
+          "required": false
+        },
+        {
+          "name": "team",
+          "target": "team",
+          "many": true,
+          "required": false
+        },
+        {
+          "name": "template",
+          "target": "template",
+          "many": true,
+          "required": false
+        },
+        {
+          "name": "vcs",
+          "target": "vcs",
+          "many": true,
+          "required": false
+        },
+        {
+          "name": "workspace",
+          "target": "workspace",
+          "many": true,
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "policy_attachment",
+      "root": false,
+      "attributes": [
+        {
+          "name": "createdBy",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "createdDate",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "updatedBy",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "updatedDate",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": true,
+          "optional": false
+        }
+      ],
+      "relationships": [
+        {
+          "name": "policySet",
+          "target": "policy_set",
+          "many": false,
+          "required": true
+        },
+        {
+          "name": "project",
+          "target": "project",
+          "many": false,
+          "required": false
+        },
+        {
+          "name": "tag",
+          "target": "tag",
+          "many": false,
+          "required": false
+        },
+        {
+          "name": "workspace",
+          "target": "workspace",
+          "many": false,
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "policy_evaluation",
+      "root": false,
+      "attributes": [
+        {
+          "name": "createdBy",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "createdDate",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "hardMandatoryViolations",
+          "type": {
+            "kind": "number"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "passedRules",
+          "type": {
+            "kind": "number"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "shadowHardViolations",
+          "type": {
+            "kind": "number"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "shadowSoftViolations",
+          "type": {
+            "kind": "number"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "softMandatoryViolations",
+          "type": {
+            "kind": "number"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "status",
+          "type": {
+            "kind": "enum",
+            "name": "PolicyEvaluationStatus",
+            "values": [
+              "PASSED",
+              "FAILED",
+              "WARNING",
+              "EXEMPTED",
+              "OVERRIDDEN"
+            ]
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "storageUri",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "updatedBy",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "updatedDate",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "warningRules",
+          "type": {
+            "kind": "number"
+          },
+          "nullable": false,
+          "optional": false
+        }
+      ],
+      "relationships": [
+        {
+          "name": "job",
+          "target": "job",
+          "many": false,
+          "required": true
+        },
+        {
+          "name": "override",
+          "target": "policy_override",
+          "many": false,
+          "required": false
+        },
+        {
+          "name": "step",
+          "target": "step",
+          "many": false,
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "policy_exemption",
+      "root": true,
+      "attributes": [
+        {
+          "name": "createdBy",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "createdDate",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "expiresAt",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "justification",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "ruleId",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "ticketReference",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "updatedBy",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "updatedDate",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": true,
+          "optional": false
+        }
+      ],
+      "relationships": [
+        {
+          "name": "organization",
+          "target": "organization",
+          "many": false,
+          "required": true
+        },
+        {
+          "name": "policySet",
+          "target": "policy_set",
+          "many": false,
+          "required": true
+        },
+        {
+          "name": "project",
+          "target": "project",
+          "many": false,
+          "required": false
+        },
+        {
+          "name": "workspace",
+          "target": "workspace",
+          "many": false,
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "policy_override",
+      "root": false,
+      "attributes": [
+        {
+          "name": "createdBy",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "createdDate",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "justification",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "overriddenAt",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "overriddenBy",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "updatedBy",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "updatedDate",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": true,
+          "optional": false
+        }
+      ],
+      "relationships": [
+        {
+          "name": "evaluation",
+          "target": "policy_evaluation",
+          "many": false,
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "policy_set",
+      "root": true,
+      "attributes": [
+        {
+          "name": "branch",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "createdBy",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "createdDate",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "description",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "enforcementLevel",
+          "type": {
+            "kind": "enum",
+            "name": "PolicyEnforcementLevel",
+            "values": [
+              "ADVISORY",
+              "SOFT_MANDATORY",
+              "HARD_MANDATORY"
+            ]
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "folder",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "global",
+          "type": {
+            "kind": "boolean"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "name",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "opaVersion",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "overrideTeam",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "repository",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "shadowEnforcementLevel",
+          "type": {
+            "kind": "enum",
+            "name": "PolicyEnforcementLevel",
+            "values": [
+              "ADVISORY",
+              "SOFT_MANDATORY",
+              "HARD_MANDATORY"
+            ]
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "updatedBy",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "updatedDate",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": true,
+          "optional": false
+        }
+      ],
+      "relationships": [
+        {
+          "name": "attachments",
+          "target": "policy_attachment",
+          "many": true,
+          "required": false
+        },
+        {
+          "name": "exemptions",
+          "target": "policy_exemption",
+          "many": true,
+          "required": false
+        },
+        {
+          "name": "notificationConfiguration",
+          "target": "notification_configuration",
+          "many": false,
+          "required": false
+        },
+        {
+          "name": "organization",
+          "target": "organization",
+          "many": false,
+          "required": true
+        },
+        {
+          "name": "parameters",
+          "target": "policy_set_parameter",
+          "many": true,
+          "required": false
+        },
+        {
+          "name": "vcs",
+          "target": "vcs",
+          "many": false,
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "policy_set_parameter",
+      "root": false,
+      "attributes": [
+        {
+          "name": "createdBy",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "createdDate",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "description",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "key",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "updatedBy",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "updatedDate",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "value",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        }
+      ],
+      "relationships": [
+        {
+          "name": "policySet",
+          "target": "policy_set",
+          "many": false,
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "project",
+      "root": true,
+      "attributes": [
+        {
+          "name": "createdBy",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "createdDate",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "defaultExecutionMode",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "defaultTemplate",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "defaultTerraformVersion",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "description",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "landingTab",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "name",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "ownerTeam",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "updatedBy",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "updatedDate",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": true,
+          "optional": false
+        }
+      ],
+      "relationships": [
+        {
+          "name": "organization",
+          "target": "organization",
+          "many": false,
+          "required": true
+        },
+        {
+          "name": "projectAccess",
+          "target": "project_access",
+          "many": true,
+          "required": false
+        },
+        {
+          "name": "projectTag",
+          "target": "project_tag",
+          "many": true,
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "project_access",
+      "root": false,
+      "attributes": [
+        {
+          "name": "approveJob",
+          "type": {
+            "kind": "boolean"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "destroyJob",
+          "type": {
+            "kind": "boolean"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "manageJob",
+          "type": {
+            "kind": "boolean"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "manageState",
+          "type": {
+            "kind": "boolean"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "manageWorkspace",
+          "type": {
+            "kind": "boolean"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "name",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "planJob",
+          "type": {
+            "kind": "boolean"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "role",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        }
+      ],
+      "relationships": [
+        {
+          "name": "project",
+          "target": "project",
+          "many": false,
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "project_summary",
+      "root": true,
+      "attributes": [
+        {
+          "name": "attentionCount",
+          "type": {
+            "kind": "number"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "cliDrivenCount",
+          "type": {
+            "kind": "number"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "completedCount",
+          "type": {
+            "kind": "number"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "compliantCount",
+          "type": {
+            "kind": "number"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "description",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "exemptedCount",
+          "type": {
+            "kind": "number"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "failedCount",
+          "type": {
+            "kind": "number"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "hardViolationCount",
+          "type": {
+            "kind": "number"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "hasRun",
+          "type": {
+            "kind": "number"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "lastRunAt",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "lockedCount",
+          "type": {
+            "kind": "number"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "name",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "neverRunCount",
+          "type": {
+            "kind": "number"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "nonCompliantCount",
+          "type": {
+            "kind": "number"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "noRunStatusCount",
+          "type": {
+            "kind": "number"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "organizationId",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "ownerTeam",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "queuedCount",
+          "type": {
+            "kind": "number"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "queuedJobCount",
+          "type": {
+            "kind": "number"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "queuedSince",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "runningCount",
+          "type": {
+            "kind": "number"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "softViolationCount",
+          "type": {
+            "kind": "number"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "teamCount",
+          "type": {
+            "kind": "number"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "vcsDrivenCount",
+          "type": {
+            "kind": "number"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "waitingApprovalCount",
+          "type": {
+            "kind": "number"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "workspaceCount",
+          "type": {
+            "kind": "number"
+          },
+          "nullable": true,
+          "optional": false
+        }
+      ],
+      "relationships": [
+        {
+          "name": "organization",
+          "target": "organization",
+          "many": false,
+          "required": false
+        },
+        {
+          "name": "projectAccess",
+          "target": "project_access",
+          "many": true,
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "project_tag",
+      "root": false,
+      "attributes": [
+        {
+          "name": "createdBy",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "createdDate",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "tagId",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "updatedBy",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "updatedDate",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "value",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        }
+      ],
+      "relationships": [
+        {
+          "name": "project",
+          "target": "project",
+          "many": false,
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "provider",
+      "root": false,
+      "attributes": [
+        {
+          "name": "description",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "imported",
+          "type": {
+            "kind": "boolean"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "name",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "registryNamespace",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        }
+      ],
+      "relationships": [
+        {
+          "name": "organization",
+          "target": "organization",
+          "many": false,
+          "required": true
+        },
+        {
+          "name": "version",
+          "target": "version",
+          "many": true,
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "reference",
+      "root": true,
+      "attributes": [
+        {
+          "name": "description",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "scope",
+          "type": {
+            "kind": "enum",
+            "name": "ReferenceScope",
+            "values": [
+              "WORKSPACE",
+              "PROJECT",
+              "ORGANIZATION"
+            ]
+          },
+          "nullable": false,
+          "optional": false
+        }
+      ],
+      "relationships": [
+        {
+          "name": "collection",
+          "target": "collection",
+          "many": false,
+          "required": true
+        },
+        {
+          "name": "project",
+          "target": "project",
+          "many": false,
+          "required": false
+        },
+        {
+          "name": "workspace",
+          "target": "workspace",
+          "many": false,
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "runTrigger",
+      "root": true,
+      "attributes": [
+        {
+          "name": "createdBy",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "createdDate",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "enabled",
+          "type": {
+            "kind": "boolean"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "updatedBy",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "updatedDate",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": true,
+          "optional": false
+        }
+      ],
+      "relationships": [
+        {
+          "name": "destinationWorkspace",
+          "target": "workspace",
+          "many": false,
+          "required": true
+        },
+        {
+          "name": "sourceWorkspace",
+          "target": "workspace",
+          "many": false,
+          "required": true
+        },
+        {
+          "name": "template",
+          "target": "template",
+          "many": false,
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "schedule",
+      "root": false,
+      "attributes": [
+        {
+          "name": "createdBy",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "createdDate",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "cron",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "description",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "enabled",
+          "type": {
+            "kind": "boolean"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "templateReference",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "updatedBy",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "updatedDate",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": true,
+          "optional": false
+        }
+      ],
+      "relationships": [
+        {
+          "name": "workspace",
+          "target": "workspace",
+          "many": false,
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "ssh",
+      "root": false,
+      "attributes": [
+        {
+          "name": "createdBy",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "createdDate",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "description",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "name",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "privateKey",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": true
+        },
+        {
+          "name": "sshType",
+          "type": {
+            "kind": "enum",
+            "name": "SshType",
+            "values": [
+              "rsa",
+              "ed25519"
+            ]
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "updatedBy",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "updatedDate",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": true,
+          "optional": false
+        }
+      ],
+      "relationships": [
+        {
+          "name": "organization",
+          "target": "organization",
+          "many": false,
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "step",
+      "root": false,
+      "attributes": [
+        {
+          "name": "deliveryRevision",
+          "type": {
+            "kind": "number"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "deliveryState",
+          "type": {
+            "kind": "enum",
+            "name": "DeliveryState",
+            "values": [
+              "ACKED",
+              "SPOOLED",
+              "RECOVERED",
+              "EXPIRED",
+              "NOT_DURABLE"
+            ]
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "deliveryTimestamp",
+          "type": {
+            "kind": "number"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "executionDurationMs",
+          "type": {
+            "kind": "number"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "executionPhase",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "name",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "output",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": true
+        },
+        {
+          "name": "status",
+          "type": {
+            "kind": "enum",
+            "name": "JobStatus",
+            "values": [
+              "pending",
+              "waitingApproval",
+              "approved",
+              "queue",
+              "running",
+              "completed",
+              "noChanges",
+              "notExecuted",
+              "rejected",
+              "cancelled",
+              "failed",
+              "unknown",
+              "NeverExecuted"
+            ]
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "stepNumber",
+          "type": {
+            "kind": "number"
+          },
+          "nullable": false,
+          "optional": false
+        }
+      ],
+      "relationships": [
+        {
+          "name": "job",
+          "target": "job",
+          "many": false,
+          "required": true
+        },
+        {
+          "name": "policyEvaluation",
+          "target": "policy_evaluation",
+          "many": true,
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "tag",
+      "root": false,
+      "attributes": [
+        {
+          "name": "createdBy",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "createdDate",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "name",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "updatedBy",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "updatedDate",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": true,
+          "optional": false
+        }
+      ],
+      "relationships": [
+        {
+          "name": "organization",
+          "target": "organization",
+          "many": false,
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "team",
+      "root": false,
+      "attributes": [
+        {
+          "name": "approveJob",
+          "type": {
+            "kind": "boolean"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "destroyJob",
+          "type": {
+            "kind": "boolean"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "manageCollection",
+          "type": {
+            "kind": "boolean"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "manageJob",
+          "type": {
+            "kind": "boolean"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "manageModule",
+          "type": {
+            "kind": "boolean"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "managePolicies",
+          "type": {
+            "kind": "boolean"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "manageProvider",
+          "type": {
+            "kind": "boolean"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "manageState",
+          "type": {
+            "kind": "boolean"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "manageTemplate",
+          "type": {
+            "kind": "boolean"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "manageVcs",
+          "type": {
+            "kind": "boolean"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "manageWorkspace",
+          "type": {
+            "kind": "boolean"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "name",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "planJob",
+          "type": {
+            "kind": "boolean"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "role",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        }
+      ],
+      "relationships": [
+        {
+          "name": "organization",
+          "target": "organization",
+          "many": false,
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "template",
+      "root": true,
+      "attributes": [
+        {
+          "name": "createdBy",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "createdDate",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "description",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "name",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "tcl",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "updatedBy",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "updatedDate",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "version",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        }
+      ],
+      "relationships": [
+        {
+          "name": "organization",
+          "target": "organization",
+          "many": false,
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "variable",
+      "root": false,
+      "attributes": [
+        {
+          "name": "category",
+          "type": {
+            "kind": "enum",
+            "name": "Category",
+            "values": [
+              "TERRAFORM",
+              "ENV"
+            ]
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "description",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "hcl",
+          "type": {
+            "kind": "boolean"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "incomplete",
+          "type": {
+            "kind": "boolean"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "key",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "sensitive",
+          "type": {
+            "kind": "boolean"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "value",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": true
+        }
+      ],
+      "relationships": [
+        {
+          "name": "workspace",
+          "target": "workspace",
+          "many": false,
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "vcs",
+      "root": false,
+      "attributes": [
+        {
+          "name": "accessToken",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": true
+        },
+        {
+          "name": "apiUrl",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "callback",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "clientId",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "clientSecret",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": true
+        },
+        {
+          "name": "connectionType",
+          "type": {
+            "kind": "enum",
+            "name": "VcsConnectionType",
+            "values": [
+              "OAUTH",
+              "STANDALONE"
+            ]
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "createdBy",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "createdDate",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "description",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "endpoint",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "name",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "privateKey",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": true
+        },
+        {
+          "name": "redirectUrl",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "status",
+          "type": {
+            "kind": "enum",
+            "name": "VcsStatus",
+            "values": [
+              "PENDING",
+              "COMPLETED",
+              "ERROR"
+            ]
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "updatedBy",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "updatedDate",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "vcsType",
+          "type": {
+            "kind": "enum",
+            "name": "VcsType",
+            "values": [
+              "GITHUB",
+              "GITLAB",
+              "BITBUCKET",
+              "AZURE_DEVOPS",
+              "AZURE_SP_MI",
+              "PUBLIC"
+            ]
+          },
+          "nullable": false,
+          "optional": false
+        }
+      ],
+      "relationships": [
+        {
+          "name": "organization",
+          "target": "organization",
+          "many": false,
+          "required": true
+        },
+        {
+          "name": "workspace",
+          "target": "workspace",
+          "many": true,
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "version",
+      "root": false,
+      "attributes": [
+        {
+          "name": "deprecationMessage",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "protocols",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "status",
+          "type": {
+            "kind": "enum",
+            "name": "VersionStatus",
+            "values": [
+              "active",
+              "deprecated",
+              "removed"
+            ]
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "versionNumber",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        }
+      ],
+      "relationships": [
+        {
+          "name": "implementation",
+          "target": "implementation",
+          "many": true,
+          "required": false
+        },
+        {
+          "name": "provider",
+          "target": "provider",
+          "many": false,
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "webhook",
+      "root": true,
+      "attributes": [
+        {
+          "name": "createdBy",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "createdDate",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "migratedV2",
+          "type": {
+            "kind": "boolean"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "remoteHookId",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "syncError",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "updatedBy",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "updatedDate",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": true,
+          "optional": false
+        }
+      ],
+      "relationships": [
+        {
+          "name": "events",
+          "target": "webhook_event",
+          "many": true,
+          "required": false
+        },
+        {
+          "name": "workspace",
+          "target": "workspace",
+          "many": false,
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "webhook_event",
+      "root": true,
+      "attributes": [
+        {
+          "name": "branch",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "createdBy",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "createdDate",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "event",
+          "type": {
+            "kind": "enum",
+            "name": "WebhookEventType",
+            "values": [
+              "PUSH",
+              "PULL_REQUEST",
+              "PR_COMMENT",
+              "PING",
+              "RELEASE",
+              "UNKNOWN"
+            ]
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "path",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "pathType",
+          "type": {
+            "kind": "enum",
+            "name": "WebhookEventPathType",
+            "values": [
+              "PATTERN",
+              "REGEX"
+            ]
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "prApplyEnabled",
+          "type": {
+            "kind": "boolean"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "priority",
+          "type": {
+            "kind": "number"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "prWorkflowEnabled",
+          "type": {
+            "kind": "boolean"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "templateId",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "updatedBy",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "updatedDate",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": true,
+          "optional": false
+        }
+      ],
+      "relationships": [
+        {
+          "name": "webhook",
+          "target": "webhook",
+          "many": false,
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "workspace",
+      "root": true,
+      "attributes": [
+        {
+          "name": "allowRemoteApply",
+          "type": {
+            "kind": "boolean"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "branch",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "createdBy",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "createdDate",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "defaultTemplate",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "deleted",
+          "type": {
+            "kind": "boolean"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "description",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "driftFirstSeen",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "driftJobId",
+          "type": {
+            "kind": "number"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "driftLastChecked",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "driftStatus",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "executionMode",
+          "type": {
+            "kind": "enum",
+            "name": "ExecutionMode",
+            "values": [
+              "local",
+              "remote"
+            ]
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "folder",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "globalRemoteState",
+          "type": {
+            "kind": "boolean"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "iacType",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "lastJobDate",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "lastJobStatus",
+          "type": {
+            "kind": "enum",
+            "name": "JobStatus",
+            "values": [
+              "pending",
+              "waitingApproval",
+              "approved",
+              "queue",
+              "running",
+              "completed",
+              "noChanges",
+              "notExecuted",
+              "rejected",
+              "cancelled",
+              "failed",
+              "unknown",
+              "NeverExecuted"
+            ]
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "lockDescription",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "locked",
+          "type": {
+            "kind": "boolean"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "moduleSshKey",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "name",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "policyComplianceStatus",
+          "type": {
+            "kind": "enum",
+            "name": "PolicyComplianceStatus",
+            "values": [
+              "COMPLIANT",
+              "NON_COMPLIANT",
+              "EXEMPTED",
+              "UNKNOWN"
+            ]
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "policyHardViolations",
+          "type": {
+            "kind": "number"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "policySoftViolations",
+          "type": {
+            "kind": "number"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "requireApproveToApply",
+          "type": {
+            "kind": "boolean"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "restrictApplyToConfiguredBranch",
+          "type": {
+            "kind": "boolean"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "sharedIds",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "source",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "terraformVersion",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "updatedBy",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "updatedDate",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": true,
+          "optional": false
+        }
+      ],
+      "relationships": [
+        {
+          "name": "access",
+          "target": "access",
+          "many": true,
+          "required": false
+        },
+        {
+          "name": "agent",
+          "target": "agent",
+          "many": false,
+          "required": false
+        },
+        {
+          "name": "history",
+          "target": "history",
+          "many": true,
+          "required": false
+        },
+        {
+          "name": "job",
+          "target": "job",
+          "many": true,
+          "required": false
+        },
+        {
+          "name": "notificationConfiguration",
+          "target": "notification_configuration",
+          "many": true,
+          "required": false
+        },
+        {
+          "name": "organization",
+          "target": "organization",
+          "many": false,
+          "required": true
+        },
+        {
+          "name": "project",
+          "target": "project",
+          "many": false,
+          "required": false
+        },
+        {
+          "name": "reference",
+          "target": "reference",
+          "many": true,
+          "required": false
+        },
+        {
+          "name": "runTriggers",
+          "target": "runTrigger",
+          "many": true,
+          "required": false
+        },
+        {
+          "name": "schedule",
+          "target": "schedule",
+          "many": true,
+          "required": false
+        },
+        {
+          "name": "sourceRunTriggers",
+          "target": "runTrigger",
+          "many": true,
+          "required": false
+        },
+        {
+          "name": "ssh",
+          "target": "ssh",
+          "many": false,
+          "required": false
+        },
+        {
+          "name": "variable",
+          "target": "variable",
+          "many": true,
+          "required": false
+        },
+        {
+          "name": "vcs",
+          "target": "vcs",
+          "many": false,
+          "required": false
+        },
+        {
+          "name": "webhook",
+          "target": "webhook",
+          "many": false,
+          "required": false
+        },
+        {
+          "name": "workspaceTag",
+          "target": "workspacetag",
+          "many": true,
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "workspacetag",
+      "root": false,
+      "attributes": [
+        {
+          "name": "createdBy",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "createdDate",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "tagId",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": false,
+          "optional": false
+        },
+        {
+          "name": "updatedBy",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "updatedDate",
+          "type": {
+            "kind": "datetime",
+            "format": "rfc3339-seconds-utc"
+          },
+          "nullable": true,
+          "optional": false
+        },
+        {
+          "name": "value",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true,
+          "optional": false
+        }
+      ],
+      "relationships": [
+        {
+          "name": "workspace",
+          "target": "workspace",
+          "many": false,
+          "required": true
+        }
+      ]
+    }
+  ],
+  "problems": []
+}
