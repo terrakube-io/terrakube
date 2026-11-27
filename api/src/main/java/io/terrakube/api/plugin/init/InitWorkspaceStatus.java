@@ -16,7 +16,6 @@ import org.springframework.stereotype.Service;
 
 import java.util.Date;
 import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
 
 @AllArgsConstructor
@@ -38,13 +37,16 @@ public class InitWorkspaceStatus {
                 Optional<Job> lastJob = jobRepository.findFirstByWorkspaceOrderByIdDesc(workspace);
                 if( lastJob.isPresent()){
                     Job job = lastJob.get();
-                    WorkspaceJobStatusService.Shown shown = workspaceJobStatusService.shownFor(job);
-                    Date date = shown.date();
-                    // Only the rows that are not right yet are written: on a database that is already
-                    // correct, a restart changes nothing.
-                    if (workspace.getLastJobStatus() != shown.status() || !Objects.equals(workspace.getLastJobDate(), date)) {
+                    WorkspaceJobStatusService.Shown shown = workspaceJobStatusService.shownFor(job, lastChange(job, workspace));
+                    // The same guard WorkspaceJobStatusService.refresh uses: while the status shown is the
+                    // stored one and the stored date is at or after the job's creation, the stored date is
+                    // the one the live path chose, so a restart writes nothing.
+                    Date current = workspace.getLastJobDate();
+                    boolean keepDate = workspace.getLastJobStatus() == shown.status() && current != null
+                            && job.getCreatedDate() != null && !current.before(job.getCreatedDate());
+                    if (!keepDate) {
                         workspace.setLastJobStatus(shown.status());
-                        workspace.setLastJobDate(date);
+                        workspace.setLastJobDate(shown.date());
                         workspaceRepository.save(workspace);
                     }
                 } else {
@@ -56,5 +58,15 @@ public class InitWorkspaceStatus {
                 }
             }));
         });
+    }
+
+    private static Date lastChange(Job job, Workspace workspace) {
+        if (job.getUpdatedDate() != null) {
+            return job.getUpdatedDate();
+        }
+        if (workspace.getLastJobDate() != null) {
+            return workspace.getLastJobDate();
+        }
+        return new Date(System.currentTimeMillis());
     }
 }

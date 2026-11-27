@@ -58,7 +58,11 @@ public class WorkspaceJobStatusService {
      * </ul>
      */
     public Shown shownFor(Job changed) {
-        Date now = new Date(System.currentTimeMillis());
+        return shownFor(changed, new Date(System.currentTimeMillis()));
+    }
+
+    /** {@code now} is the date used when {@code changed} is the job shown. */
+    public Shown shownFor(Job changed, Date now) {
         Workspace workspace = changed.getWorkspace();
         if (workspace == null) {
             return new Shown(changed.getStatus(), now);

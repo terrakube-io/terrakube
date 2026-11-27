@@ -20,6 +20,8 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -60,7 +62,7 @@ class InitWorkspaceStatusTest {
         Job job = lastJob();
         Date date = new Date(1_000_000_000L);
         workspace.setLastJobStatus(JobStatus.pending);
-        when(workspaceJobStatusService.shownFor(job))
+        when(workspaceJobStatusService.shownFor(eq(job), any()))
                 .thenReturn(new WorkspaceJobStatusService.Shown(JobStatus.waitingApproval, date));
 
         init.initWorkspaceStatus();
@@ -74,9 +76,10 @@ class InitWorkspaceStatusTest {
     void aWorkspaceThatIsAlreadyRightIsNotWritten() {
         Job job = lastJob();
         Date date = new Date(1_000_000_000L);
+        job.setCreatedDate(date);
         workspace.setLastJobStatus(JobStatus.waitingApproval);
         workspace.setLastJobDate(date);
-        when(workspaceJobStatusService.shownFor(job))
+        when(workspaceJobStatusService.shownFor(eq(job), any()))
                 .thenReturn(new WorkspaceJobStatusService.Shown(JobStatus.waitingApproval, new Date(date.getTime())));
 
         init.initWorkspaceStatus();
@@ -102,5 +105,47 @@ class InitWorkspaceStatusTest {
         init.initWorkspaceStatus();
 
         verify(workspaceRepository, never()).save(any());
+    }
+
+    @Test
+    void aRestartKeepsTheDateOfTheLatestFinishedRun() {
+        init = new InitWorkspaceStatus(organizationRepository, workspaceRepository, jobRepository,
+                new WorkspaceJobStatusService(jobRepository, workspaceRepository));
+        Job job = new Job();
+        job.setId(5);
+        job.setStatus(JobStatus.completed);
+        job.setWorkspace(workspace);
+        job.setCreatedDate(new Date(1_000_000_000L));
+        job.setUpdatedDate(new Date(1_000_000_005L));
+        when(jobRepository.findFirstByWorkspaceOrderByIdDesc(workspace)).thenReturn(Optional.of(job));
+        when(jobRepository.findFirstByWorkspaceAndIdNotAndStatusInOrderByIdAsc(any(), anyInt(), any())).thenReturn(Optional.empty());
+        workspace.setLastJobStatus(JobStatus.completed);
+        workspace.setLastJobDate(new Date(1_000_000_010L));
+
+        init.initWorkspaceStatus();
+
+        assertEquals(new Date(1_000_000_010L), workspace.getLastJobDate());
+        verify(workspaceRepository, never()).save(any());
+    }
+
+    @Test
+    void aRestartDatesAWrongStatusWithTheRunsOwnDate() {
+        init = new InitWorkspaceStatus(organizationRepository, workspaceRepository, jobRepository,
+                new WorkspaceJobStatusService(jobRepository, workspaceRepository));
+        Job job = new Job();
+        job.setId(5);
+        job.setStatus(JobStatus.failed);
+        job.setWorkspace(workspace);
+        job.setUpdatedDate(new Date(2_000_000_000L));
+        when(jobRepository.findFirstByWorkspaceOrderByIdDesc(workspace)).thenReturn(Optional.of(job));
+        when(jobRepository.findFirstByWorkspaceAndIdNotAndStatusInOrderByIdAsc(any(), anyInt(), any())).thenReturn(Optional.empty());
+        workspace.setLastJobStatus(JobStatus.running);
+        workspace.setLastJobDate(null);
+
+        init.initWorkspaceStatus();
+
+        assertEquals(JobStatus.failed, workspace.getLastJobStatus());
+        assertEquals(new Date(2_000_000_000L), workspace.getLastJobDate());
+        verify(workspaceRepository).save(workspace);
     }
 }
