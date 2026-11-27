@@ -76,32 +76,82 @@ const JOB_FIELDS =
   "fields[job]=status,via,comments,createdBy,createdDate,updatedDate,commitId,templateReference,approvedBy,approvedAt," +
   "approvalTeam,prCommentError";
 
-/**
- * Query string of the workspace page request. Elide returns bare {id, type} for an included type without its own
- * fields[] entry, so every include needs one; the page only reads a reference's id.
- */
-export const WORKSPACE_PAGE_QUERY = [
-  "include=job,variable,history,schedule,vcs,organization,reference,project",
+// The header, status strip and rail read these on every tab; the newest history entry also feeds the state preview.
+const BASE_INCLUDE = "history,vcs,organization,project";
+const BASE_FIELDS = [
   WORKSPACE_FIELDS,
-  JOB_FIELDS,
-  "fields[variable]=key,value,category,hcl,sensitive,incomplete,description",
   "fields[history]=jobReference,output,createdBy,createdDate",
-  "fields[schedule]=cron,templateReference",
   "fields[vcs]=vcsType",
   "fields[organization]=name",
   "fields[project]=name",
-  "fields[reference]=",
-].join("&");
+];
+
+// Elide returns bare {id, type} for an included type without its own fields[] entry, so every include needs one.
+const pageQuery = (include: string, fields: string[]) => [`include=${include}`, ...fields].join("&");
+
+/** One workspace page request, and which of the collections only some tabs show it carries. */
+export type WorkspacePageRequest = {
+  query: string;
+  jobs: boolean;
+  variables: boolean;
+  schedule: boolean;
+};
+
+const BASE_REQUEST: WorkspacePageRequest = {
+  query: pageQuery(BASE_INCLUDE, BASE_FIELDS),
+  jobs: false,
+  variables: false,
+  schedule: false,
+};
+
+const JOBS_REQUEST: WorkspacePageRequest = {
+  ...BASE_REQUEST,
+  query: pageQuery(`job,${BASE_INCLUDE}`, [...BASE_FIELDS, JOB_FIELDS]),
+  jobs: true,
+};
+
+// The page only reads a reference's id, to load that collection's variables.
+const VARIABLES_REQUEST: WorkspacePageRequest = {
+  ...BASE_REQUEST,
+  query: pageQuery(`variable,reference,${BASE_INCLUDE}`, [
+    ...BASE_FIELDS,
+    "fields[variable]=key,value,category,hcl,sensitive,incomplete,description",
+    "fields[reference]=",
+  ]),
+  variables: true,
+};
+
+const SCHEDULES_REQUEST: WorkspacePageRequest = {
+  ...BASE_REQUEST,
+  query: pageQuery(`schedule,${BASE_INCLUDE}`, [...BASE_FIELDS, "fields[schedule]=cron,templateReference"]),
+  schedule: true,
+};
+
+/** The workspace page request for a tab; an open run loads its own data, so the Runs tab skips the job list then. */
+export function workspacePageRequest(tab: string, runOpen: boolean): WorkspacePageRequest {
+  switch (tab) {
+    case "1":
+      return JOBS_REQUEST;
+    case "2":
+      return runOpen ? BASE_REQUEST : JOBS_REQUEST;
+    case "4":
+      return VARIABLES_REQUEST;
+    case "5":
+      return SCHEDULES_REQUEST;
+    default:
+      return BASE_REQUEST;
+  }
+}
 
 export async function setupWorkspaceIncludes(
   data: any,
+  request: Pick<WorkspacePageRequest, "jobs" | "variables" | "schedule">,
   setVariables: (val: any[]) => void,
   setJobs: (val: any[]) => void,
   setEnvVariables: (val: any[]) => void,
   setHistory: (val: FlatJobHistory[]) => void,
   setSchedule: (val: any[]) => void,
   templates: Template[],
-  setLastRun: (val: string) => void,
   setVCSProvider: (val: VcsType) => void,
   setCurrentStateId: (val: string) => void,
   currentStateId: string,
@@ -123,12 +173,13 @@ export async function setupWorkspaceIncludes(
   const collectionEnvVariables: any[] = [];
   const globalVariables: FlatVariable[] = [];
   const globalEnvVariables: FlatVariable[] = [];
-  const includes = data.included;
+  const includes = data.included ?? [];
   const asyncPromises: Promise<void>[] = [];
 
   includes.forEach((element: any) => {
     switch (element.type) {
       case include.ORGANIZATION:
+        if (!request.variables) break;
         asyncPromises.push(
           axiosInstance.get(`/organization/${element.id}/globalvar`).then((response: any) => {
             const globalVar = response.data.data;
@@ -167,7 +218,6 @@ export async function setupWorkspaceIncludes(
           latestChange: relativeTime(element.attributes.createdDate),
           ...element.attributes,
         });
-        setLastRun(element.attributes.updatedDate);
         break;
       }
       case include.HISTORY: {
@@ -249,15 +299,22 @@ export async function setupWorkspaceIncludes(
   const byKey = (a: { key?: string }, b: { key?: string }) =>
     (a.key ?? "").localeCompare(b.key ?? "", undefined, { sensitivity: "base" });
 
-  setVariables([...variables].sort(byKey));
-  setEnvVariables([...envVariables].sort(byKey));
-  setJobs(jobs);
+  // A collection the request didn't carry keeps what is on screen.
+  if (request.variables) {
+    setVariables([...variables].sort(byKey));
+    setEnvVariables([...envVariables].sort(byKey));
+    setCollectionVariables([...collectionVariables].sort(byKey));
+    setCollectionEnvVariables([...collectionEnvVariables].sort(byKey));
+    setGlobalVariables([...globalVariables].sort(byKey));
+    setGlobalEnvVariables([...globalEnvVariables].sort(byKey));
+  }
+  if (request.jobs) {
+    setJobs(jobs);
+  }
   setHistory(history);
-  setSchedule(schedule);
-  setCollectionVariables([...collectionVariables].sort(byKey));
-  setCollectionEnvVariables([...collectionEnvVariables].sort(byKey));
-  setGlobalVariables([...globalVariables].sort(byKey));
-  setGlobalEnvVariables([...globalEnvVariables].sort(byKey));
+  if (request.schedule) {
+    setSchedule(schedule);
+  }
 
   // set state data
   const lastState = [...history].sort(

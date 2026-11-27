@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { WorkspaceDetails } from "../Details";
 
@@ -93,46 +93,126 @@ describe("WorkspaceDetails", () => {
     expect(screen.getByText("Remote")).toBeInTheDocument();
   });
 
-  it("requests the workspace with a fields entry for every included type", async () => {
-    const workspace = {
-      id: "ws-1",
-      type: "workspace",
-      attributes: { name: "sample-workspace", source: "", branch: "" },
-    };
-    getMock.mockImplementation((url: string) =>
-      Promise.resolve({ data: { data: url.includes("/workspace/ws-1") ? workspace : [] } })
-    );
+  const WORKSPACE_FIELDS =
+    "fields[workspace]=allowRemoteApply,branch,createdBy,createdDate,defaultTemplate,deleted,description," +
+    "executionMode,folder,globalRemoteState,iacType,lastJobDate,lastJobStatus,lockDescription,locked,moduleSshKey," +
+    "name,policyComplianceStatus,requireApproveToApply,restrictApplyToConfiguredBranch,sharedIds,source," +
+    "terraformVersion,updatedBy,updatedDate,access,agent,history,job,notificationConfiguration,organization,project," +
+    "reference,runTriggers,schedule,sourceRunTriggers,ssh,variable,vcs,webhook,workspaceTag";
+  const BASE_FIELDS =
+    `&${WORKSPACE_FIELDS}&fields[history]=jobReference,output,createdBy,createdDate&fields[vcs]=vcsType` +
+    "&fields[organization]=name&fields[project]=name";
+  const OVERVIEW_URL =
+    `organization/org-1/workspace/ws-1?include=job,history,vcs,organization,project${BASE_FIELDS}` +
+    "&fields[job]=status,via,comments,createdBy,createdDate,updatedDate,commitId,templateReference,approvedBy," +
+    "approvedAt,approvalTeam,prCommentError";
+  const VARIABLES_URL =
+    `organization/org-1/workspace/ws-1?include=variable,reference,history,vcs,organization,project${BASE_FIELDS}` +
+    "&fields[variable]=key,value,category,hcl,sensitive,incomplete,description&fields[reference]=";
+  const SCHEDULES_URL =
+    `organization/org-1/workspace/ws-1?include=schedule,history,vcs,organization,project${BASE_FIELDS}` +
+    "&fields[schedule]=cron,templateReference";
+  const BASE_URL = `organization/org-1/workspace/ws-1?include=history,vcs,organization,project${BASE_FIELDS}`;
 
-    render(
+  const workspaceResponse = (included: object[] = []) => ({
+    data: {
+      data: {
+        id: "ws-1",
+        type: "workspace",
+        attributes: { name: "sample-workspace", source: "https://github.com/example/repo.git", branch: "main" },
+        relationships: { organization: { data: { id: "org-1" } } },
+      },
+      included: [{ id: "org-1", type: "organization", attributes: { name: "test-org" } }, ...included],
+    },
+  });
+
+  // Workspace requests stay pending until the test answers them.
+  const pendingWorkspaceRequests = () => {
+    const pending = new Map<string, (included?: object[]) => void>();
+    getMock.mockImplementation((url: string) => {
+      if (url.startsWith("organization/org-1/workspace/ws-1?")) {
+        return new Promise((resolve) => pending.set(url, (included) => resolve(workspaceResponse(included))));
+      }
+      if (url === "organization/org-1/workspace/ws-1") return Promise.resolve(workspaceResponse());
+      return Promise.resolve({ data: { data: [] } });
+    });
+    return async (url: string, included?: object[]) => {
+      await waitFor(() => expect(pending.has(url)).toBe(true));
+      await act(async () => {
+        pending.get(url)!(included);
+        pending.delete(url);
+      });
+    };
+  };
+
+  const renderTab = (selectedTab?: string) => {
+    const tree = (tab?: string) => (
       <MemoryRouter initialEntries={["/organizations/org-1/workspaces/ws-1"]}>
         <Routes>
           <Route
             path="/organizations/:orgid/workspaces/:id"
-            element={<WorkspaceDetails setOrganizationName={jest.fn()} setWorkspaceManageState={jest.fn()} />}
+            element={
+              <WorkspaceDetails setOrganizationName={jest.fn()} setWorkspaceManageState={jest.fn()} selectedTab={tab} />
+            }
           />
         </Routes>
       </MemoryRouter>
     );
+    const { rerender } = render(tree(selectedTab));
+    return (tab: string) => rerender(tree(tab));
+  };
 
-    await waitFor(() =>
-      expect(getMock).toHaveBeenCalledWith(
-        "organization/org-1/workspace/ws-1?include=job,variable,history,schedule,vcs,organization,reference,project" +
-          "&fields[workspace]=allowRemoteApply,branch,createdBy,createdDate,defaultTemplate,deleted,description," +
-          "executionMode,folder,globalRemoteState,iacType,lastJobDate,lastJobStatus,lockDescription,locked," +
-          "moduleSshKey,name,policyComplianceStatus,requireApproveToApply,restrictApplyToConfiguredBranch,sharedIds," +
-          "source,terraformVersion,updatedBy,updatedDate,access,agent,history,job,notificationConfiguration," +
-          "organization,project,reference,runTriggers,schedule,sourceRunTriggers,ssh,variable,vcs,webhook,workspaceTag" +
-          "&fields[job]=status,via,comments,createdBy,createdDate,updatedDate,commitId,templateReference,approvedBy," +
-          "approvedAt,approvalTeam,prCommentError" +
-          "&fields[variable]=key,value,category,hcl,sensitive,incomplete,description" +
-          "&fields[history]=jobReference,output,createdBy,createdDate" +
-          "&fields[schedule]=cron,templateReference" +
-          "&fields[vcs]=vcsType" +
-          "&fields[organization]=name" +
-          "&fields[project]=name" +
-          "&fields[reference]="
-      )
-    );
+  const run = { id: "7", type: "job", attributes: { status: "completed", createdBy: "someone", via: "UI" } };
+
+  it("loads the runs with the overview and nothing the overview does not show", async () => {
+    const answer = pendingWorkspaceRequests();
+    renderTab();
+    await answer(OVERVIEW_URL, [run]);
+    expect(await screen.findByRole("article", { name: "Latest run" })).toHaveTextContent("#7");
+    expect(getMock).not.toHaveBeenCalledWith("/organization/org-1/globalvar");
+  });
+
+  it.each([
+    ["2", OVERVIEW_URL],
+    ["3", BASE_URL],
+    ["4", VARIABLES_URL],
+    ["5", SCHEDULES_URL],
+    ["6", BASE_URL],
+    ["7", BASE_URL],
+  ])("loads tab %s with its own collections", async (tab, url) => {
+    const answer = pendingWorkspaceRequests();
+    renderTab(tab);
+    await answer(url);
+    const workspaceRequests = getMock.mock.calls.map(([called]) => called).filter((called) => called.includes("?"));
+    expect(workspaceRequests).toEqual([url]);
+  });
+
+  it("shows a spinner, not an empty run list, until a load with the runs lands", async () => {
+    const answer = pendingWorkspaceRequests();
+    const showTab = renderTab("4");
+    await answer(VARIABLES_URL);
+    expect(await screen.findByText(/Terraform Variables/)).toBeInTheDocument();
+
+    showTab("2");
+    await waitFor(() => expect(getMock).toHaveBeenCalledWith(OVERVIEW_URL));
+    expect(screen.queryByText(/No runs yet/)).not.toBeInTheDocument();
+    expect(document.querySelector(".ant-spin")).toBeInTheDocument();
+
+    await answer(OVERVIEW_URL);
+    expect(await screen.findByText(/No runs yet/)).toBeInTheDocument();
+  });
+
+  it("keeps the runs on screen while a tab without them is open and reloads them on return", async () => {
+    const answer = pendingWorkspaceRequests();
+    const showTab = renderTab("1");
+    await answer(OVERVIEW_URL, [run]);
+    expect(await screen.findByRole("article", { name: "Latest run" })).toHaveTextContent("#7");
+
+    showTab("3");
+    await answer(BASE_URL);
+    showTab("1");
+    expect(screen.getByRole("article", { name: "Latest run" })).toHaveTextContent("#7");
+    await answer(OVERVIEW_URL, [run]);
   });
 
   const renderOverviewWithRuns = async (

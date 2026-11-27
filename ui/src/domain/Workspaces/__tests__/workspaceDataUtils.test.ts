@@ -4,7 +4,7 @@ import {
   parseState,
   parseOldState,
   setupWorkspaceIncludes,
-  WORKSPACE_PAGE_QUERY,
+  workspacePageRequest,
 } from "../workspaceDataUtils";
 import { Resource } from "../../types";
 
@@ -185,6 +185,7 @@ describe("setupWorkspaceIncludes job and history titles", () => {
     let capturedHistory: any[] = [];
     await setupWorkspaceIncludes(
       payload,
+      { jobs: true, variables: true, schedule: true },
       () => {},
       (jobs) => {
         capturedJobs = jobs;
@@ -195,7 +196,6 @@ describe("setupWorkspaceIncludes job and history titles", () => {
       },
       () => {},
       [],
-      () => {},
       () => {},
       () => {},
       "",
@@ -267,27 +267,101 @@ describe("setupWorkspaceIncludes job and history titles", () => {
   });
 });
 
-describe("WORKSPACE_PAGE_QUERY", () => {
-  const params = new URLSearchParams(WORKSPACE_PAGE_QUERY);
+describe("workspacePageRequest", () => {
+  const params = (tab: string, runOpen = false) => new URLSearchParams(workspacePageRequest(tab, runOpen).query);
+  const includes = (tab: string, runOpen = false) => params(tab, runOpen).get("include")!.split(",");
+  const tabs = ["1", "2", "3", "4", "5", "6", "7"];
 
-  it("names fields for every included type so none comes back as a bare identifier", () => {
-    const included = params.get("include")!.split(",");
-    expect(included).toEqual(["job", "variable", "history", "schedule", "vcs", "organization", "reference", "project"]);
-    included.forEach((type) => expect(params.has(`fields[${type}]`)).toBe(true));
+  it("includes each tab's collections only on the tabs that show them", () => {
+    const base = ["history", "vcs", "organization", "project"];
+    expect(includes("1")).toEqual(["job", ...base]);
+    expect(includes("2")).toEqual(["job", ...base]);
+    expect(includes("2", true)).toEqual(base);
+    expect(includes("3")).toEqual(base);
+    expect(includes("4")).toEqual(["variable", "reference", ...base]);
+    expect(includes("5")).toEqual(["schedule", ...base]);
+    expect(includes("6")).toEqual(base);
+    expect(includes("7")).toEqual(base);
   });
 
-  it("keeps the linkage of every included relationship on the workspace", () => {
-    const workspaceFields = params.get("fields[workspace]")!.split(",");
-    params
-      .get("include")!
-      .split(",")
-      .forEach((relationship) => expect(workspaceFields).toContain(relationship));
+  it("says which collections each request carries", () => {
+    expect(workspacePageRequest("1", false)).toMatchObject({ jobs: true, variables: false, schedule: false });
+    expect(workspacePageRequest("2", true)).toMatchObject({ jobs: false, variables: false, schedule: false });
+    expect(workspacePageRequest("4", false)).toMatchObject({ jobs: false, variables: true, schedule: false });
+    expect(workspacePageRequest("5", false)).toMatchObject({ jobs: false, variables: false, schedule: true });
+  });
+
+  it("names fields for every included type so none comes back as a bare identifier", () => {
+    tabs.forEach((tab) => includes(tab).forEach((type) => expect(params(tab).has(`fields[${type}]`)).toBe(true)));
+  });
+
+  it("keeps every workspace attribute and relationship on every tab", () => {
+    const workspaceFields = params("1").get("fields[workspace]")!;
+    expect(workspaceFields.split(",")).toHaveLength(41);
+    tabs.forEach((tab) => {
+      expect(params(tab).get("fields[workspace]")).toBe(workspaceFields);
+      includes(tab).forEach((relationship) => expect(workspaceFields.split(",")).toContain(relationship));
+    });
   });
 
   it("never asks for the job fields computed from every step", () => {
-    const jobFields = params.get("fields[job]")!.split(",");
+    const jobFields = params("1").get("fields[job]")!.split(",");
     expect(jobFields).not.toContain("planDurationMs");
     expect(jobFields).not.toContain("applyDurationMs");
     expect(jobFields).toContain("comments");
+  });
+});
+
+describe("setupWorkspaceIncludes on a request without a tab's collections", () => {
+  it("keeps the collections it did not load and skips the global variables", async () => {
+    const setters = {
+      variables: jest.fn(),
+      jobs: jest.fn(),
+      envVariables: jest.fn(),
+      history: jest.fn(),
+      schedule: jest.fn(),
+      collectionVariables: jest.fn(),
+      collectionEnvVariables: jest.fn(),
+      globalVariables: jest.fn(),
+      globalEnvVariables: jest.fn(),
+    };
+    const get = jest.fn(() => Promise.resolve({ data: {} }));
+    await setupWorkspaceIncludes(
+      {
+        data: { attributes: { iacType: "terraform" } },
+        included: [{ id: "org-1", type: "organization", attributes: { name: "org" } }],
+      },
+      { jobs: false, variables: false, schedule: false },
+      setters.variables,
+      setters.jobs,
+      setters.envVariables,
+      setters.history,
+      setters.schedule,
+      [],
+      () => {},
+      () => {},
+      "",
+      { get },
+      () => {},
+      () => {},
+      () => {},
+      setters.collectionVariables,
+      setters.collectionEnvVariables,
+      setters.globalVariables,
+      setters.globalEnvVariables
+    );
+
+    expect(setters.history).toHaveBeenCalledWith([]);
+    [
+      setters.variables,
+      setters.jobs,
+      setters.envVariables,
+      setters.schedule,
+      setters.collectionVariables,
+      setters.collectionEnvVariables,
+      setters.globalVariables,
+      setters.globalEnvVariables,
+    ].forEach((setter) => expect(setter).not.toHaveBeenCalled());
+    expect(get).not.toHaveBeenCalledWith("/organization/org-1/globalvar");
   });
 });
