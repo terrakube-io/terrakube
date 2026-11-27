@@ -299,7 +299,7 @@ public class ProviderMirrorService {
         }
         Path temp = null;
         try {
-            temp = Files.createTempFile("mirror", ".zip");
+            temp = PrivateTemp.file(null, "mirror", ".zip");
             guard.download(download.resolve(url), temp, properties.getMaxArchiveSizeMb() * 1024 * 1024);
             String actual = sha256(temp);
             if (!actual.equalsIgnoreCase(shasum)) {

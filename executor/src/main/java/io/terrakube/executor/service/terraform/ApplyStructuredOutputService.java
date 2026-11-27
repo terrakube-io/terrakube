@@ -8,6 +8,7 @@ import io.terrakube.executor.service.terraform.structured.StructuredOutputPersis
 import io.terrakube.executor.service.terraform.structured.StructuredSnapshot;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -38,7 +39,7 @@ public class ApplyStructuredOutputService {
             StructuredOutputPersistenceQueue persistenceQueue,
             ExecutorFlagsProperties executorFlagsProperties,
             @Autowired(required = false) ContextSpoolService contextSpoolService,
-            @Autowired(required = false) io.terrakube.executor.service.logs.ProcessLogs processLogs) {
+            @Autowired(required = false) @Qualifier("processLogs") io.terrakube.executor.service.logs.ProcessLogs processLogs) {
         this.jobContextService = jobContextService;
         this.objectMapper = objectMapper;
         this.persistenceQueue = persistenceQueue;

@@ -54,6 +54,9 @@ public final class ProcessLauncher {
             Process p = new ProcessBuilder(command).start();
             boolean finished = p.waitFor(2, TimeUnit.SECONDS);
             return finished && p.exitValue() == 0;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
         } catch (Exception e) {
             return false;
         }

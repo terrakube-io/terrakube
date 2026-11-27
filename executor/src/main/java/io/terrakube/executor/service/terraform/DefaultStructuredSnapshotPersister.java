@@ -5,6 +5,7 @@ import io.terrakube.executor.service.logs.ProcessLogs;
 import io.terrakube.executor.service.terraform.structured.StructuredSnapshot;
 import io.terrakube.executor.service.terraform.structured.StructuredSnapshotPersister;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
 import java.util.HashMap;
@@ -29,7 +30,7 @@ public class DefaultStructuredSnapshotPersister implements StructuredSnapshotPer
     public DefaultStructuredSnapshotPersister(JobContextService jobContextService,
                                               PlanStructuredOutputService planStructuredOutputService,
                                               ApplyStructuredOutputService applyStructuredOutputService,
-                                              ProcessLogs processLogs,
+                                              @Qualifier("processLogs") ProcessLogs processLogs,
                                               ObjectMapper objectMapper) {
         this.jobContextService = jobContextService;
         this.planStructuredOutputService = planStructuredOutputService;

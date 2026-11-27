@@ -70,7 +70,7 @@ public class StructuredOutputPersistenceQueue {
     private Thread worker;
     private ScheduledExecutorService recoveryScheduler;
     // Test seam: runs on the worker after a snapshot leaves `pending` and before it is persisted.
-    volatile Runnable afterDequeue = () -> { };
+    final AtomicReference<Runnable> afterDequeue = new AtomicReference<>(() -> { });
 
     /** One snapshot held for delayed recovery after its normal retry budget was spent. */
     private static final class RetainedSnapshot {
@@ -320,7 +320,7 @@ public class StructuredOutputPersistenceQueue {
                 continue;
             }
             try {
-                afterDequeue.run();
+                afterDequeue.get().run();
                 persistWithRetry(snapshot);
             } catch (Throwable t) {
                 log.warn("structured-output worker skipped a snapshot for job {} step {}: {}",

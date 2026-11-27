@@ -35,7 +35,9 @@ import io.terrakube.executor.service.opa.model.OpaEvaluationResult;
 import io.terrakube.executor.service.mode.PolicyContext;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.text.TextStringBuilder;
+import io.terrakube.executor.service.PrivateTemp;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -146,12 +148,12 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
     private final Set<TerraformClient> liveJsonClients = ConcurrentHashMap.newKeySet();
     private final AtomicBoolean shuttingDown = new AtomicBoolean(false);
 
-    public TerraformExecutorServiceImpl(TerraformClient terraformClient, TerraformState terraformState, ScriptEngineService scriptEngineService, ProcessLogs logsService, PlanStructuredOutputService planStructuredOutputService, ApplyStructuredOutputService applyStructuredOutputService, TerraformOutputsService terraformOutputsService, ObjectMapper objectMapper, @Value("${io.terrakube.terraform.flags.enableColor}") boolean enableColorOutput, @Value("${io.terrakube.executor.redis.timeout}") int redisTimeout, StructuredOutputPersistenceQueue structuredOutputPersistenceQueue, ExecutorFlagsProperties executorFlagsProperties, StructuredOutputProperties structuredOutputProperties, MeterRegistry meterRegistry, BinaryCacheRecoveryService binaryCacheRecoveryService) {
+    public TerraformExecutorServiceImpl(TerraformClient terraformClient, TerraformState terraformState, ScriptEngineService scriptEngineService, @Qualifier("processLogs") ProcessLogs logsService, PlanStructuredOutputService planStructuredOutputService, ApplyStructuredOutputService applyStructuredOutputService, TerraformOutputsService terraformOutputsService, ObjectMapper objectMapper, @Value("${io.terrakube.terraform.flags.enableColor}") boolean enableColorOutput, @Value("${io.terrakube.executor.redis.timeout}") int redisTimeout, StructuredOutputPersistenceQueue structuredOutputPersistenceQueue, ExecutorFlagsProperties executorFlagsProperties, StructuredOutputProperties structuredOutputProperties, MeterRegistry meterRegistry, BinaryCacheRecoveryService binaryCacheRecoveryService) {
         this(terraformClient, terraformState, scriptEngineService, logsService, planStructuredOutputService, applyStructuredOutputService, terraformOutputsService, objectMapper, enableColorOutput, redisTimeout, structuredOutputPersistenceQueue, executorFlagsProperties, structuredOutputProperties, meterRegistry, binaryCacheRecoveryService, null);
     }
 
     @Autowired
-    public TerraformExecutorServiceImpl(TerraformClient terraformClient, TerraformState terraformState, ScriptEngineService scriptEngineService, ProcessLogs logsService, PlanStructuredOutputService planStructuredOutputService, ApplyStructuredOutputService applyStructuredOutputService, TerraformOutputsService terraformOutputsService, ObjectMapper objectMapper, @Value("${io.terrakube.terraform.flags.enableColor}") boolean enableColorOutput, @Value("${io.terrakube.executor.redis.timeout}") int redisTimeout, StructuredOutputPersistenceQueue structuredOutputPersistenceQueue, ExecutorFlagsProperties executorFlagsProperties, StructuredOutputProperties structuredOutputProperties, MeterRegistry meterRegistry, BinaryCacheRecoveryService binaryCacheRecoveryService, @Autowired(required = false) OpaExecutorService opaExecutorService) {
+    public TerraformExecutorServiceImpl(TerraformClient terraformClient, TerraformState terraformState, ScriptEngineService scriptEngineService, @Qualifier("processLogs") ProcessLogs logsService, PlanStructuredOutputService planStructuredOutputService, ApplyStructuredOutputService applyStructuredOutputService, TerraformOutputsService terraformOutputsService, ObjectMapper objectMapper, @Value("${io.terrakube.terraform.flags.enableColor}") boolean enableColorOutput, @Value("${io.terrakube.executor.redis.timeout}") int redisTimeout, StructuredOutputPersistenceQueue structuredOutputPersistenceQueue, ExecutorFlagsProperties executorFlagsProperties, StructuredOutputProperties structuredOutputProperties, MeterRegistry meterRegistry, BinaryCacheRecoveryService binaryCacheRecoveryService, @Autowired(required = false) OpaExecutorService opaExecutorService) {
         this.terraformClient = terraformClient;
         this.terraformState = terraformState;
         this.scriptEngineService = scriptEngineService;
@@ -517,7 +519,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
     // Next to the clone rather than inside it, on the same disk as the rest of the executor's work.
     private static Path scratchDirectory(File executorTempDirectory) throws IOException {
         File parent = executorTempDirectory.getAbsoluteFile().getParentFile();
-        Path scratch = parent != null ? parent.toPath() : Files.createTempDirectory("terrakube-artifacts");
+        Path scratch = parent != null ? parent.toPath() : PrivateTemp.directory("terrakube-artifacts");
         Files.createDirectories(scratch);
         return scratch;
     }
@@ -849,7 +851,7 @@ public class TerraformExecutorServiceImpl implements TerraformExecutor {
     @PreDestroy
     void closeLiveJsonClients() {
         shuttingDown.set(true);
-        for (TerraformClient client : liveJsonClients) {
+        for (TerraformClient client : List.copyOf(liveJsonClients)) {
             log.warn("Executor shutting down with a terraform process in flight, terminating it");
             release(client);
         }

@@ -27,7 +27,6 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Proxy;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
 @Slf4j
@@ -43,7 +42,7 @@ public class ModuleAuthorizationService {
     private final String instanceOwner;
     private final String authType;
 
-    private final Cache<String, Optional<String>> orgIdCache;
+    private final Cache<String, String> orgIdCache;
     private final Cache<String, Response<List<Team>>> teamsCache;
     private final Cache<String, ResponseWithInclude<List<Workspace>, Access>> workspacesAccessCache;
     private final Cache<String, ResponseWithInclude<List<Federated>, FederatedClaim>> federatedCache;
@@ -127,14 +126,14 @@ public class ModuleAuthorizationService {
         if (commonSearchService == null || !RegistryPathValidator.isValidIdentifier(organizationName)) {
             return null;
         }
-        Optional<String> cached = orgIdCache.getIfPresent(organizationName);
+        String cached = orgIdCache.getIfPresent(organizationName);
         if (cached != null) {
-            return cached.orElse(null);
+            return cached;
         }
         try {
             String orgId = commonSearchService.getOrganizationId(organizationName);
             if (orgId != null && !orgId.isBlank()) {
-                orgIdCache.put(organizationName, Optional.of(orgId));
+                orgIdCache.put(organizationName, orgId);
                 return orgId;
             }
             return null;
