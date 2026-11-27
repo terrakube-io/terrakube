@@ -3,6 +3,7 @@ package io.terrakube.api.plugin.notification;
 import io.terrakube.api.plugin.cost.InfracostContextExtractor;
 import io.terrakube.api.plugin.notification.payload.NotificationPayloadRenderer;
 import io.terrakube.api.repository.NotificationOutboxRepository;
+import io.terrakube.api.repository.StepRepository;
 import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
@@ -46,6 +47,8 @@ class JobNotificationTriggerTest {
     JobFailureSummaryService jobFailureSummaryService;
     @Mock
     InfracostContextExtractor infracostContextExtractor;
+    @Mock
+    StepRepository stepRepository;
 
     @InjectMocks
     JobNotificationTrigger subject;
@@ -105,6 +108,21 @@ class JobNotificationTriggerTest {
         assertThat(captor.getValue().getJobStatus()).isEqualTo(JobStatus.completed);
         assertThat(captor.getValue().getNextAttemptAt()).isNull();
         assertThat(ids).containsExactly(captor.getValue().getId());
+    }
+
+    @Test
+    void enqueue_continuesSendingNotificationsWhenCostLookupThrows() {
+        Job job = jobWithStatus(JobStatus.completed);
+        NotificationConfiguration matching = configWithTrigger(NotificationChannelType.SLACK, JobStatus.completed);
+        matching.setMessageStyle(io.terrakube.api.rs.notification.NotificationMessageStyle.DETAILED);
+        when(notificationConfigResolver.resolve(job.getWorkspace())).thenReturn(List.of(matching));
+        when(stepRepository.findByJobId(42)).thenThrow(new RuntimeException("DB hiccup"));
+        when(notificationPayloadRenderer.render(eq(NotificationChannelType.SLACK), any())).thenReturn("{}");
+
+        List<UUID> ids = subject.enqueue(job);
+
+        verify(notificationOutboxRepository, times(1)).save(any(NotificationOutbox.class));
+        assertThat(ids).hasSize(1);
     }
 
     @Test

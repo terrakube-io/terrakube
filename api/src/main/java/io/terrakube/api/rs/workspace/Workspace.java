@@ -178,18 +178,18 @@ public class Workspace extends GenericAuditFields {
     @Column(name = "policy_soft_violations")
     private Integer policySoftViolations;
 
-    @CreatePermission(expression = "user is a super service")
-    @UpdatePermission(expression = "user is a super service")
+    @CreatePermission(expression = "NONE")
+    @UpdatePermission(expression = "NONE")
     @Column(name = "current_monthly_cost", precision = 19, scale = 4, insertable = false, updatable = false)
     private BigDecimal currentMonthlyCost;
 
-    @CreatePermission(expression = "user is a super service")
-    @UpdatePermission(expression = "user is a super service")
+    @CreatePermission(expression = "NONE")
+    @UpdatePermission(expression = "NONE")
     @Column(name = "cost_currency", length = 10, insertable = false, updatable = false)
     private String costCurrency = "USD";
 
-    @CreatePermission(expression = "user is a super service")
-    @UpdatePermission(expression = "user is a super service")
+    @CreatePermission(expression = "NONE")
+    @UpdatePermission(expression = "NONE")
     @Column(name = "cost_updated_at", insertable = false, updatable = false)
     private Date costUpdatedAt;
 

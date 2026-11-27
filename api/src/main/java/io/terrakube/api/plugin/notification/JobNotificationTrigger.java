@@ -115,10 +115,16 @@ public class JobNotificationTrigger {
                 InfracostSummary costForConfig = null;
                 if (shouldAttachCostSummary(job.getStatus()) && needsCostSummary(configuration)) {
                     if (!costLoaded) {
-                        cachedCostSummary = infracostContextExtractor
-                                .extract(job.getId(), stepRepository.findByJobId(job.getId()))
-                                .orElse(null);
                         costLoaded = true;
+                        try {
+                            cachedCostSummary = infracostContextExtractor
+                                    .extract(job.getId(), stepRepository.findByJobId(job.getId()))
+                                    .orElse(null);
+                        } catch (Exception e) {
+                            log.warn("Unable to load Infracost summary for job {} notifications: {}",
+                                    job.getId(), e.getMessage());
+                            cachedCostSummary = null;
+                        }
                     }
                     costForConfig = cachedCostSummary;
                 }
