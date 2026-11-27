@@ -712,6 +712,7 @@ public class RemoteTfeService {
             attributes.put("execution-mode", workspace.getExecutionMode());
 
             attributes.put("global-remote-state", workspace.isGlobalRemoteState());
+            attributes.put("project-remote-state", workspace.isProjectRemoteState());
             // The CLI checks every configured tag key against this list, key/value tags included
             attributes.put("tag-names", workspaceTagNames(workspaceTags, tagNames));
 
@@ -832,6 +833,21 @@ public class RemoteTfeService {
                     }
                 });
             } else {
+                Set<UUID> addedConsumerIds = new HashSet<>();
+                if (workspaceData.isProjectRemoteState() && workspaceData.getProject() != null
+                        && workspaceData.getProject().getId() != null) {
+                    log.info("Generating workspace list from project state sharing");
+                    List<Workspace> projectWorkspaces =
+                            workspaceRepository.findAllByProject_Id(workspaceData.getProject().getId());
+                    for (Workspace projectWorkspace : projectWorkspaces) {
+                        if (!projectWorkspace.getId().toString().equals(workspaceId)
+                                && addedConsumerIds.add(projectWorkspace.getId())) {
+                            log.info("Adding project workspace {} as state consumer", projectWorkspace.getName());
+                            stateConsumerList.getData().add(getWorkspace(projectWorkspace.getOrganization().getName(),
+                                    projectWorkspace.getName(), new HashMap<>(), currentUser).getData());
+                        }
+                    }
+                }
                 log.info("Generating workspace list from sharedIds (globalRemoteState is false)");
                 if (workspaceData.getSharedIds() != null && !workspaceData.getSharedIds().isEmpty()) {
                     String[] sharedIds = workspaceData.getSharedIds().split(",");
@@ -839,9 +855,11 @@ public class RemoteTfeService {
                         if (!sharedId.trim().isEmpty()) {
                             try {
                                 Workspace sharedWorkspace = workspaceRepository.getReferenceById(UUID.fromString(sharedId.trim()));
-                                log.info("Adding shared workspace {} as state consumers", sharedWorkspace.getName());
-                                stateConsumerList.getData().add(getWorkspace(sharedWorkspace.getOrganization().getName(),
-                                        sharedWorkspace.getName(), new HashMap<>(), currentUser).getData());
+                                if (addedConsumerIds.add(sharedWorkspace.getId())) {
+                                    log.info("Adding shared workspace {} as state consumers", sharedWorkspace.getName());
+                                    stateConsumerList.getData().add(getWorkspace(sharedWorkspace.getOrganization().getName(),
+                                            sharedWorkspace.getName(), new HashMap<>(), currentUser).getData());
+                                }
                             } catch (Exception e) {
                                 log.error("Error adding shared workspace ID {}: {}", sharedId, e.getMessage());
                             }
@@ -1557,22 +1575,31 @@ public class RemoteTfeService {
         }
         Workspace workspace = workspaceOptional.get();
 
-        if (workspace.isGlobalRemoteState()) {
-            UUID consumerWsUuid;
+        Workspace consumerWorkspace = null;
+        if (workspace.isGlobalRemoteState() || workspace.isProjectRemoteState()) {
             try {
-                consumerWsUuid = UUID.fromString(workspaceIdToken);
+                UUID consumerWsUuid = UUID.fromString(workspaceIdToken);
+                consumerWorkspace = workspaceRepository.findById(consumerWsUuid).orElse(null);
             } catch (IllegalArgumentException e) {
-                return false;
+                log.debug("Workspace token has invalid workspace ID for remote state sharing: {}", workspaceIdToken);
             }
-            Optional<Workspace> consumerOptional = workspaceRepository.findById(consumerWsUuid);
-            if (consumerOptional.isPresent()) {
-                Workspace consumerWs = consumerOptional.get();
-                if (workspace.getOrganization() != null && consumerWs.getOrganization() != null
-                        && workspace.getOrganization().getId().equals(consumerWs.getOrganization().getId())) {
-                    return true;
-                }
-            }
-            return false;
+        }
+
+        if (workspace.isGlobalRemoteState()) {
+            return consumerWorkspace != null && workspace.getOrganization() != null
+                    && consumerWorkspace.getOrganization() != null
+                    && workspace.getOrganization().getId() != null
+                    && workspace.getOrganization().getId().equals(consumerWorkspace.getOrganization().getId());
+        }
+
+        if (workspace.isProjectRemoteState() && consumerWorkspace != null
+                && workspace.getProject() != null && workspace.getProject().getId() != null
+                && consumerWorkspace.getProject() != null && consumerWorkspace.getProject().getId() != null
+                && workspace.getOrganization() != null && workspace.getOrganization().getId() != null
+                && consumerWorkspace.getOrganization() != null && consumerWorkspace.getOrganization().getId() != null
+                && workspace.getOrganization().getId().equals(consumerWorkspace.getOrganization().getId())
+                && workspace.getProject().getId().equals(consumerWorkspace.getProject().getId())) {
+            return true;
         }
 
         String sharedIds = workspace.getSharedIds();
