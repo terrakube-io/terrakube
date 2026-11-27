@@ -3,7 +3,7 @@ import { Loading } from "@/components/feedback/Loading";
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import axiosInstance, { getErrorMessage, isPermissionError } from "../../config/axiosConfig";
-import { Organization, sparseFields, SparseOf } from "../types";
+import { Organization, PrApplyRequirement, sparseFields, SparseOf } from "../types";
 import { IconSelector } from "../Organizations/IconSelector";
 import { organizationNameRules } from "../../config/validation";
 import "./Settings.css";
@@ -28,7 +28,8 @@ const ORGANIZATION_FIELDS = sparseFields<Organization>("organization")(
   "icon",
   "projectLandingTab",
   "managedInCodeRepository",
-  "managedInCodeMode"
+  "managedInCodeMode",
+  "prApplyMinRequirement"
 );
 type SparseOrganization = SparseOf<typeof ORGANIZATION_FIELDS>;
 
@@ -40,6 +41,7 @@ type GeneralSettingsForm = {
   managedInCodeRepository?: string;
   managedInCodeMode?: string;
   icon?: string;
+  prApplyMinRequirement: PrApplyRequirement;
 };
 
 type Props = {
@@ -73,6 +75,7 @@ export const GeneralSettings = ({ managePermission = true }: Props) => {
           managedInCodeRepository: values.managedInCodeRepository?.trim() || null,
           managedInCodeMode: values.managedInCodeRepository?.trim() ? values.managedInCodeMode || "warn" : null,
           icon: iconField,
+          prApplyMinRequirement: values.prApplyMinRequirement,
         },
       },
     };
@@ -156,6 +159,7 @@ export const GeneralSettings = ({ managePermission = true }: Props) => {
           projectLandingTab: response.data.data.attributes.projectLandingTab ?? "overview",
           managedInCodeRepository: response.data.data.attributes.managedInCodeRepository,
           managedInCodeMode: response.data.data.attributes.managedInCodeMode ?? "warn",
+          prApplyMinRequirement: response.data.data.attributes.prApplyMinRequirement ?? "WRITE",
         });
         setLoading(false);
       })
@@ -193,6 +197,7 @@ export const GeneralSettings = ({ managePermission = true }: Props) => {
                 projectLandingTab: organization?.attributes.projectLandingTab ?? "overview",
                 managedInCodeRepository: organization?.attributes.managedInCodeRepository,
                 managedInCodeMode: organization?.attributes.managedInCodeMode ?? "warn",
+                prApplyMinRequirement: organization?.attributes.prApplyMinRequirement ?? "WRITE",
               }}
               saveLabel="Update organization"
               saveDisabled={!managePermission}
@@ -289,6 +294,30 @@ export const GeneralSettings = ({ managePermission = true }: Props) => {
                   options={[
                     { value: "warn", label: "Show a notice" },
                     { value: "readonly", label: "Show a notice and make them read-only" },
+                  ]}
+                />
+              </Form.Item>
+
+              <Typography.Title level={4} className="general-settings-subtitle">
+                Apply from a pull request comment
+              </Typography.Title>
+              <Typography.Paragraph type="secondary">
+                The least every workspace requires before <code>terrakube apply</code> on a pull request starts an
+                apply. A workspace can require more, but not less. Checked on GitHub and GitLab.
+              </Typography.Paragraph>
+              <Form.Item name="prApplyMinRequirement" label="Minimum">
+                <RadioChoices
+                  options={[
+                    {
+                      value: "WRITE",
+                      label: "Write access",
+                      help: "The comment author needs write access to the repository (GitHub) or the Developer role (GitLab).",
+                    },
+                    {
+                      value: "APPROVED",
+                      label: "Approved pull request",
+                      help: "Write access, and the pull request approved under the repository's own rules: on GitHub, branch protection must require a review; on GitLab, someone other than the author must approve. Bitbucket and Azure DevOps comments are refused.",
+                    },
                   ]}
                 />
               </Form.Item>

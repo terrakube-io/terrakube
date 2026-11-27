@@ -66,6 +66,16 @@ public class WebhookEvent extends GenericAuditFields {
     @Column(name = "pr_apply_enabled")
     private boolean prApplyEnabled = false;
 
+    /** Who may apply from a "terrakube apply" comment; the organization minimum can raise it. */
+    @Column(name = "pr_apply_requirement")
+    @Enumerated(EnumType.STRING)
+    private PrApplyRequirement prApplyRequirement = PrApplyRequirement.WRITE;
+
+    /** A null from the API means the default; the column is NOT NULL. */
+    public void setPrApplyRequirement(PrApplyRequirement prApplyRequirement) {
+        this.prApplyRequirement = prApplyRequirement == null ? PrApplyRequirement.WRITE : prApplyRequirement;
+    }
+
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     private Webhook webhook;
 }

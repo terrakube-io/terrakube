@@ -686,4 +686,138 @@ public class GitHubWebhookServiceTest {
             assertFalse(GitHubWebhookService.GITHUB_LOGIN.matcher(login).matches(), login);
         }
     }
+
+    @Nested
+    class PullRequestReviewDecision {
+
+        WireMockServer wireMockServer;
+        GitHubWebhookService subjectWithRestTemplate;
+        Vcs vcs;
+
+        @BeforeEach
+        void setUp() throws Exception {
+            wireMockServer = new WireMockServer(options().dynamicPort());
+            wireMockServer.start();
+            TokenService tokenService = mock(TokenService.class);
+            when(tokenService.getAccessToken(any(String[].class), any())).thenReturn("test-token");
+            subjectWithRestTemplate = new GitHubWebhookService(new ObjectMapper(), tokenService);
+            subjectWithRestTemplate.setWebhookRestTemplate(
+                    new RestTemplate(new HttpComponentsClientHttpRequestFactory()));
+            vcs = new Vcs();
+            vcs.setApiUrl("http://localhost:" + wireMockServer.port());
+        }
+
+        @AfterEach
+        void tearDown() {
+            wireMockServer.stop();
+        }
+
+        private void stubGraphql(String body) {
+            wireMockServer.stubFor(post(urlEqualTo("/graphql")).willReturn(aResponse().withStatus(200)
+                    .withHeader("Content-Type", "application/json").withBody(body)));
+        }
+
+        @Test
+        void readsTheReviewDecisionAndHeadOfThePullRequest() throws Exception {
+            stubGraphql("{\"data\":{\"repository\":{\"pullRequest\":"
+                    + "{\"reviewDecision\":\"APPROVED\",\"headRefOid\":\"abc123\",\"state\":\"OPEN\"}}}}");
+
+            var approval = subjectWithRestTemplate.getPullRequestApproval(vcs, "https://github.com/owner/repo", 12);
+
+            assertTrue(approval.isPresent());
+            assertTrue(approval.get().approved());
+            assertEquals("APPROVED", approval.get().decision());
+            assertEquals("abc123", approval.get().headSha());
+            assertTrue(approval.get().open());
+            var request = new ObjectMapper().readTree(
+                    wireMockServer.findAll(postRequestedFor(urlEqualTo("/graphql"))).getFirst().getBodyAsString());
+            assertEquals("owner", request.path("variables").path("owner").asText());
+            assertEquals("repo", request.path("variables").path("name").asText());
+            assertEquals(12, request.path("variables").path("number").asInt());
+        }
+
+        @Test
+        void readsTheStateOfAClosedPullRequest() {
+            stubGraphql("{\"data\":{\"repository\":{\"pullRequest\":"
+                    + "{\"reviewDecision\":\"APPROVED\",\"headRefOid\":\"abc123\",\"state\":\"CLOSED\"}}}}");
+
+            var approval = subjectWithRestTemplate.getPullRequestApproval(vcs, "https://github.com/owner/repo", 12);
+
+            assertTrue(approval.isPresent());
+            assertEquals("CLOSED", approval.get().state());
+            assertFalse(approval.get().open());
+        }
+
+        @Test
+        void aNullDecisionIsNotApproved() {
+            stubGraphql("{\"data\":{\"repository\":{\"pullRequest\":"
+                    + "{\"reviewDecision\":null,\"headRefOid\":\"abc123\"}}}}");
+
+            var approval = subjectWithRestTemplate.getPullRequestApproval(vcs, "https://github.com/owner/repo", 12);
+
+            assertTrue(approval.isPresent());
+            assertFalse(approval.get().approved());
+            assertEquals("no review required", approval.get().decision());
+        }
+
+        @Test
+        void reviewRequiredIsNotApproved() {
+            stubGraphql("{\"data\":{\"repository\":{\"pullRequest\":"
+                    + "{\"reviewDecision\":\"REVIEW_REQUIRED\",\"headRefOid\":\"abc123\"}}}}");
+
+            var approval = subjectWithRestTemplate.getPullRequestApproval(vcs, "https://github.com/owner/repo", 12);
+
+            assertTrue(approval.isPresent());
+            assertFalse(approval.get().approved());
+        }
+
+        @Test
+        void isEmptyWhenGraphqlReturnsErrors() {
+            stubGraphql("{\"data\":{\"repository\":{\"pullRequest\":null}},"
+                    + "\"errors\":[{\"type\":\"FORBIDDEN\",\"message\":\"Resource not accessible by integration\"}]}");
+
+            assertTrue(subjectWithRestTemplate.getPullRequestApproval(vcs, "https://github.com/owner/repo", 12)
+                    .isEmpty());
+        }
+
+        @Test
+        void isEmptyWhenGitHubRefuses() {
+            wireMockServer.stubFor(post(urlEqualTo("/graphql")).willReturn(aResponse().withStatus(401)));
+
+            assertTrue(subjectWithRestTemplate.getPullRequestApproval(vcs, "https://github.com/owner/repo", 12)
+                    .isEmpty());
+        }
+
+        @ParameterizedTest
+        @MethodSource("graphqlUrls")
+        void derivesTheGraphqlEndpointFromTheRestApiUrl(String apiUrl, String expected) {
+            assertEquals(expected, GitHubWebhookService.graphqlUrl(apiUrl));
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = {"https://api.github.com", "https://ghe.example.com/api/v3/"})
+        void allowsTheGraphqlEndpointOfTheConfiguredOrigin(String apiUrl) {
+            assertTrue(GitHubWebhookService.isAllowedGraphqlUrl(apiUrl, GitHubWebhookService.graphqlUrl(apiUrl)));
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = {"https://api.github.com?x=1", "https://api.github.com/#frag",
+                "https://user@api.github.com", "https://api.github.com/../evil", "not a url"})
+        void blocksAGraphqlUrlThatIsNotAPlainEndpoint(String apiUrl) {
+            assertFalse(GitHubWebhookService.isAllowedGraphqlUrl(apiUrl, GitHubWebhookService.graphqlUrl(apiUrl)));
+        }
+
+        @Test
+        void blocksAGraphqlUrlOnAnotherOrigin() {
+            assertFalse(GitHubWebhookService.isAllowedGraphqlUrl("https://api.github.com", "https://evil.example/graphql"));
+        }
+
+        static Stream<Arguments> graphqlUrls() {
+            return Stream.of(
+                    Arguments.of("https://api.github.com", "https://api.github.com/graphql"),
+                    Arguments.of("https://api.github.com/", "https://api.github.com/graphql"),
+                    Arguments.of("https://ghe.example.com/api/v3", "https://ghe.example.com/api/graphql"),
+                    Arguments.of("https://ghe.example.com/api/v3/", "https://ghe.example.com/api/graphql"));
+        }
+    }
 }

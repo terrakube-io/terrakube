@@ -483,7 +483,8 @@ public class RepoWebhookService {
         }
 
         // The job auto-approves, so its approval step does not stop anyone: check the author first.
-        Optional<String> refusal = prApplyAuthorizationService.refusalReason(workspace, webhookResult);
+        Optional<String> refusal = prApplyAuthorizationService.refusalReason(workspace, webhookResult,
+                WebhookEventMatcher.strictestPrApplyRequirement(workspace.getWebhook(), webhookEventRepository));
         if (refusal.isPresent()) {
             prCommentService.postApplyNotAuthorizedNotice(workspace, prNumber != null ? prNumber.intValue() : null,
                     refusal.get());

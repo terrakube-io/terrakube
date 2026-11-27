@@ -333,6 +333,197 @@ describe("WorkspaceWebhook", () => {
       });
     });
 
+    it("loads and saves the approved pull request requirement of apply by comment", async () => {
+      loadEvents([
+        {
+          ...base,
+          event: "PULL_REQUEST",
+          priority: 0,
+          branch: "main",
+          path: "**",
+          pathType: "PATTERN",
+          prWorkflowEnabled: true,
+          prApplyEnabled: true,
+          prApplyRequirement: "APPROVED",
+        },
+      ]);
+      renderWebhook();
+      await screen.findByText("Triggers (1)");
+      expect(screen.getByText(/Apply by comment once approved/)).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole("button", { name: "Edit trigger 1" }));
+      const requireApproval = screen.getByRole("checkbox", { name: /Require an approved pull request/ });
+      expect(requireApproval).toBeChecked();
+      fireEvent.click(requireApproval);
+
+      fireEvent.click(screen.getByRole("button", { name: "Save webhook" }));
+      await waitFor(() => expect(axiosInstance.post).toHaveBeenCalledTimes(1));
+      expect(savedOps()[1].data.attributes).toMatchObject({ prApplyEnabled: true, prApplyRequirement: "WRITE" });
+    });
+
+    it("shows the approved pull request requirement as required when the organization asks for it", async () => {
+      const event = {
+        ...base,
+        event: "PULL_REQUEST",
+        priority: 0,
+        branch: "main",
+        path: "**",
+        pathType: "PATTERN",
+        prWorkflowEnabled: true,
+        prApplyEnabled: true,
+        prApplyRequirement: "WRITE",
+      };
+      (axiosInstance.get as jest.Mock).mockImplementation((url: string) =>
+        Promise.resolve(
+          url.endsWith("/events")
+            ? { data: { data: [{ id: "ev-1", attributes: event }] } }
+            : url.startsWith("organization/org-1?")
+              ? { data: { data: { attributes: { prApplyMinRequirement: "APPROVED" } } } }
+              : { data: { data: { attributes: { remoteHookId: "4242" } } } }
+        )
+      );
+      renderWebhook();
+      await screen.findByText(/Apply by comment once approved/);
+
+      fireEvent.click(screen.getByRole("button", { name: "Edit trigger 1" }));
+      const requireApproval = screen.getByRole("checkbox", { name: /Require an approved pull request/ });
+      expect(requireApproval).toBeChecked();
+      expect(requireApproval).toBeDisabled();
+      expect(screen.getByText(/Required by the organization settings/)).toBeInTheDocument();
+
+      // The trigger keeps its own setting; the organization minimum is applied by the API.
+      fireEvent.click(screen.getByRole("button", { name: "Save webhook" }));
+      await waitFor(() => expect(axiosInstance.post).toHaveBeenCalledTimes(1));
+      expect(savedOps()[1].data.attributes).toMatchObject({ prApplyRequirement: "WRITE" });
+    });
+
+    it("says so when the organization setting cannot be read", async () => {
+      (axiosInstance.get as jest.Mock).mockImplementation((url: string) =>
+        url.startsWith("organization/org-1?")
+          ? Promise.reject(new Error("forbidden"))
+          : Promise.resolve(
+              url.endsWith("/events")
+                ? {
+                    data: {
+                      data: [
+                        {
+                          id: "ev-1",
+                          attributes: {
+                            ...base,
+                            event: "PULL_REQUEST",
+                            priority: 0,
+                            branch: "main",
+                            path: "**",
+                            pathType: "PATTERN",
+                            prWorkflowEnabled: true,
+                            prApplyEnabled: true,
+                          },
+                        },
+                      ],
+                    },
+                  }
+                : { data: { data: { attributes: { remoteHookId: "4242" } } } }
+            )
+      );
+      renderWebhook();
+      await screen.findByText("Triggers (1)");
+
+      fireEvent.click(screen.getByRole("button", { name: "Edit trigger 1" }));
+      expect(await screen.findByText(/Couldn't read the organization setting/)).toBeInTheDocument();
+      expect(screen.getByRole("checkbox", { name: /Require an approved pull request/ })).toBeEnabled();
+    });
+
+    it("shows every apply trigger as needing approval when one of them requires it", async () => {
+      const prTrigger = {
+        ...base,
+        event: "PULL_REQUEST",
+        path: "**",
+        pathType: "PATTERN",
+        prWorkflowEnabled: true,
+        prApplyEnabled: true,
+      };
+      loadEvents([
+        { ...prTrigger, priority: 0, branch: "main", prApplyRequirement: "APPROVED" },
+        { ...prTrigger, priority: 1, branch: "release/.*", prApplyRequirement: "WRITE" },
+      ]);
+      renderWebhook();
+      await screen.findByText("Triggers (2)");
+
+      expect(screen.getAllByText(/Apply by comment once approved/)).toHaveLength(2);
+      fireEvent.click(screen.getByRole("button", { name: "Edit trigger 2" }));
+      expect(screen.getByText(/Another pull request trigger of this workspace requires it/)).toBeInTheDocument();
+
+      // A trigger that cannot start an apply is not covered, so it does not get the note.
+      fireEvent.click(screen.getByRole("checkbox", { name: /Allow apply from a pull request comment/ }));
+      await waitFor(() =>
+        expect(screen.queryByText(/Another pull request trigger of this workspace requires it/)).not.toBeInTheDocument()
+      );
+    });
+
+    it("drops the approved pull request requirement when apply by comment is turned off", async () => {
+      loadEvents([
+        {
+          ...base,
+          event: "PULL_REQUEST",
+          priority: 0,
+          branch: "main",
+          path: "**",
+          pathType: "PATTERN",
+          prWorkflowEnabled: true,
+          prApplyEnabled: true,
+          prApplyRequirement: "APPROVED",
+        },
+      ]);
+      renderWebhook();
+      await screen.findByText("Triggers (1)");
+
+      fireEvent.click(screen.getByRole("button", { name: "Edit trigger 1" }));
+      fireEvent.click(screen.getByRole("checkbox", { name: /Allow apply from a pull request comment/ }));
+      expect(screen.getByRole("checkbox", { name: /Require an approved pull request/ })).not.toBeChecked();
+
+      fireEvent.click(screen.getByRole("button", { name: "Save webhook" }));
+      await waitFor(() => expect(axiosInstance.post).toHaveBeenCalledTimes(1));
+      expect(savedOps()[1].data.attributes).toMatchObject({ prApplyEnabled: false, prApplyRequirement: "WRITE" });
+    });
+
+    it("says apply works from the UI only when the VCS provider's approvals cannot be checked", async () => {
+      loadEvents([
+        {
+          ...base,
+          event: "PULL_REQUEST",
+          priority: 0,
+          branch: "main",
+          path: "**",
+          pathType: "PATTERN",
+          prWorkflowEnabled: true,
+          prApplyEnabled: true,
+          prApplyRequirement: "APPROVED",
+        },
+      ]);
+      render(
+        <MemoryRouter>
+          <WorkspaceWebhook
+            workspace={withVcs}
+            vcsProvider={VcsType.BITBUCKET}
+            orgTemplates={templates}
+            manageWorkspace
+          />
+        </MemoryRouter>
+      );
+
+      expect(await screen.findByText(/Apply from the UI only: approvals cannot be checked/)).toBeInTheDocument();
+      expect(screen.queryByText(/Apply by comment once approved/)).not.toBeInTheDocument();
+    });
+
+    it("only offers the approved pull request requirement when apply by comment is on", async () => {
+      loadEvents([{ ...base, event: "PULL_REQUEST", priority: 0, branch: "main", path: "*", prWorkflowEnabled: true }]);
+      renderWebhook();
+      await screen.findByText("Triggers (1)");
+
+      fireEvent.click(screen.getByRole("button", { name: "Edit trigger 1" }));
+      expect(screen.getByRole("checkbox", { name: /Require an approved pull request/ })).toBeDisabled();
+    });
+
     it("rejects an invalid regex and says which one", async () => {
       loadEvents([{ ...base, priority: 0, branch: "main", path: "terraform/(" }]);
       renderWebhook();

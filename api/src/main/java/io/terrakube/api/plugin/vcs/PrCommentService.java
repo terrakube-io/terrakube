@@ -14,11 +14,14 @@ import io.terrakube.api.plugin.vcs.provider.gitlab.GitlabCommitStatus;
 import io.terrakube.api.repository.JobRepository;
 import io.terrakube.api.repository.PolicyEvaluationRepository;
 import io.terrakube.api.repository.StepRepository;
+import io.terrakube.api.repository.WebhookEventRepository;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.policy.PolicyEvaluation;
 import io.terrakube.api.rs.policy.PolicyEvaluationStatus;
 import io.terrakube.api.rs.vcs.VcsType;
+import io.terrakube.api.rs.webhook.PrApplyRequirement;
+import io.terrakube.api.rs.webhook.WebhookEventType;
 import io.terrakube.api.rs.job.step.Step;
 import io.terrakube.api.rs.workspace.Workspace;
 
@@ -64,6 +67,14 @@ public class PrCommentService {
 
     @Value("${io.terrakube.ui.url:}")
     String uiUrl;
+
+    /** Set by Spring; null when a test builds the service by hand, and then no approval hint is added. */
+    WebhookEventRepository webhookEventRepository;
+
+    @Autowired(required = false)
+    void setWebhookEventRepository(WebhookEventRepository webhookEventRepository) {
+        this.webhookEventRepository = webhookEventRepository;
+    }
 
     @Autowired
     public PrCommentService(GitHubWebhookService gitHubWebhookService, GitLabWebhookService gitLabWebhookService,
@@ -652,6 +663,13 @@ public class PrCommentService {
             sb.append("This run is waiting for approval. Approve or reject it in the Terrakube UI.\n");
         } else if (job.isPrCommentInterim()) {
             sb.append(approvalOutcome(job.getStatus())).append("\n");
+        } else if (job.isPrApplyEnabled() && requiresApprovedPullRequest(job)) {
+            if (canCheckApprovals(job)) {
+                sb.append("This workspace requires an approved pull request. Once it is approved, apply this plan by commenting: `terrakube apply`\n");
+            } else {
+                // PrApplyAuthorizationService refuses every such comment: do not invite one.
+                sb.append("This workspace requires an approved pull request, which Terrakube cannot check on this VCS provider yet. Apply this plan from the Terrakube UI.\n");
+            }
         } else if (job.isPrApplyEnabled()) {
             sb.append("To apply this plan, comment: `terrakube apply`\n");
         } else {
@@ -661,6 +679,41 @@ public class PrCommentService {
         sb.append("To re-plan, comment: `terrakube plan`\n");
 
         return sb.toString();
+    }
+
+    /**
+     * Whether a "terrakube apply" comment on this job's workspace needs an approved pull request, as
+     * PrApplyAuthorizationService decides it: the strictest apply trigger and the organization minimum.
+     * Only shapes the hint in the plan comment: if the triggers cannot be read, the organization minimum
+     * alone decides.
+     */
+    boolean requiresApprovedPullRequest(Job job) {
+        Workspace workspace = job.getWorkspace();
+        if (workspace == null) {
+            return false;
+        }
+        PrApplyRequirement organization = workspace.getOrganization() != null
+                ? workspace.getOrganization().getPrApplyMinRequirement()
+                : null;
+        PrApplyRequirement triggers = PrApplyRequirement.WRITE;
+        if (webhookEventRepository != null && workspace.getId() != null) {
+            try {
+                triggers = WebhookEventMatcher.strictestPrApplyRequirement(webhookEventRepository
+                        .findByWebhookWorkspaceIdAndEvent(workspace.getId(), WebhookEventType.PULL_REQUEST));
+            } catch (Exception e) {
+                // The organization minimum still counts; only the triggers' part is missing.
+                log.warn("Could not read the pull request triggers of workspace {}: {}", workspace.getName(),
+                        e.getMessage());
+            }
+        }
+        return PrApplyRequirement.strictest(triggers, organization) == PrApplyRequirement.APPROVED;
+    }
+
+    /** Approvals are read from GitHub and GitLab only (PrApplyAuthorizationService). */
+    private static boolean canCheckApprovals(Job job) {
+        Workspace workspace = job.getWorkspace();
+        VcsType type = workspace != null && workspace.getVcs() != null ? workspace.getVcs().getVcsType() : null;
+        return type == VcsType.GITHUB || type == VcsType.GITLAB;
     }
 
     public Optional<String> renderPolicyGuardrailsSummary(Job job) {

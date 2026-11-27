@@ -17,6 +17,7 @@ import io.terrakube.api.rs.tag.Tag;
 import io.terrakube.api.rs.team.Team;
 import io.terrakube.api.rs.template.Template;
 import io.terrakube.api.rs.vcs.Vcs;
+import io.terrakube.api.rs.webhook.PrApplyRequirement;
 import io.terrakube.api.rs.workspace.Workspace;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.Pattern;
@@ -140,6 +141,18 @@ public class Organization {
     @Column(name = "project_landing_tab")
     private String projectLandingTab;
 
+    /**
+     * The least a workspace may require before applying from a "terrakube apply" pull request comment.
+     * A workspace can raise it but not lower it.
+     */
+    @Column(name = "pr_apply_min_requirement")
+    @Enumerated(EnumType.STRING)
+    private PrApplyRequirement prApplyMinRequirement = PrApplyRequirement.WRITE;
+
+    /** A null from the API means the default; the column is NOT NULL. */
+    public void setPrApplyMinRequirement(PrApplyRequirement prApplyMinRequirement) {
+        this.prApplyMinRequirement = prApplyMinRequirement == null ? PrApplyRequirement.WRITE : prApplyMinRequirement;
+    }
 
     @UpdatePermission(expression = "user belongs organization")
     @OneToMany(mappedBy = "organization")

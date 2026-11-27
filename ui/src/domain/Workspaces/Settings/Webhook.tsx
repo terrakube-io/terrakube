@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import axiosInstance, { getErrorMessage } from "../../../config/axiosConfig";
 import { configuredBranch, isPlanOnlyTemplate } from "../../Jobs/planOnlyTemplate";
-import { Template, VcsType, WebhookEvent, WebhookEventPathType, Workspace } from "../../types";
+import { PrApplyRequirement, Template, VcsType, WebhookEvent, WebhookEventPathType, Workspace } from "../../types";
 import { atomicHeader } from "../Workspaces";
 import DeleteConfirmationModal from "@/components/modals/DeleteConfirmationModal/DeleteConfirmationModal";
 import SettingsSection from "@/components/settings/SettingsSection/SettingsSection";
@@ -30,6 +30,8 @@ type Trigger = {
   template?: string;
   prWorkflowEnabled: boolean;
   prApplyEnabled: boolean;
+  // Stored as prApplyRequirement: APPROVED when checked, WRITE otherwise.
+  prApplyRequireApproval: boolean;
   created?: boolean;
 };
 
@@ -51,6 +53,7 @@ const newTrigger = (overrides: Partial<Trigger> = {}): Trigger => ({
   paths: [],
   prWorkflowEnabled: false,
   prApplyEnabled: false,
+  prApplyRequireApproval: false,
   ...overrides,
 });
 
@@ -68,6 +71,7 @@ const fromEvent = (event: WebhookEvent): Trigger => {
     template: event.attributes.templateId,
     prWorkflowEnabled: event.attributes.prWorkflowEnabled || false,
     prApplyEnabled: event.attributes.prApplyEnabled || false,
+    prApplyRequireApproval: event.attributes.prApplyRequirement === "APPROVED",
     created: true,
   };
 };
@@ -85,7 +89,46 @@ const toAttributes = (trigger: Trigger, position: number) => ({
   templateId: trigger.template,
   prWorkflowEnabled: trigger.prWorkflowEnabled || false,
   prApplyEnabled: trigger.prApplyEnabled || false,
+  prApplyRequirement: trigger.prApplyRequireApproval ? "APPROVED" : "WRITE",
 });
+
+// What "approved" means, as the API checks it (PrApplyAuthorizationService), then where the setting applies.
+const ApprovalHelp = ({ notes }: { notes: string[] }) => (
+  <>
+    <div>
+      The pull request must also be approved under the repository&apos;s own rules, for the commit being applied.
+    </div>
+    <ul className="webhook-help-list">
+      <li>
+        <strong>GitHub</strong>: branch protection must require a review. Dismiss stale approvals so a new commit needs
+        a new approval.
+      </li>
+      <li>
+        <strong>GitLab</strong>: someone other than the author must approve. Reset approvals on push so a new commit
+        needs a new approval.
+      </li>
+      <li>
+        <strong>Bitbucket and Azure DevOps</strong>: cannot be checked yet, so their comments are refused.
+      </li>
+    </ul>
+    {notes.map((note) => (
+      <div key={note}>{note}</div>
+    ))}
+  </>
+);
+
+const REQUIRE_APPROVAL_LABEL = "Require an approved pull request";
+// The API checks a comment against the strictest pull request trigger that can start an apply, not only the one it
+// matched: which trigger matches depends on the pull request's branch and files, which its author controls.
+const WORKSPACE_NOTE = "It applies to every pull request trigger of this workspace that allows apply from a comment.";
+const APPROVAL_VCS = [VcsType.GITHUB, VcsType.GITLAB];
+const OTHER_TRIGGER_NOTE =
+  "Another pull request trigger of this workspace requires it, so comments on this one need an approved pull request too.";
+const ORG_NOTE: Record<PrApplyRequirement | "unknown", string> = {
+  WRITE: "The organization settings can require this for every workspace.",
+  APPROVED: "Required by the organization settings for every workspace.",
+  unknown: "Couldn't read the organization setting, which can require this for every workspace.",
+};
 
 const EVENT_LABELS: Record<string, string> = { push: "Push", pull_request: "Pull request", release: "Release" };
 const SHARED_WEBHOOK_VCS = [VcsType.GITHUB, VcsType.GITLAB, VcsType.AZURE_SP_MI, VcsType.AZURE_DEVOPS];
@@ -131,6 +174,27 @@ export const WorkspaceWebhook = ({
   const [deletedIds, setDeletedIds] = useState<string[]>([]);
   const [pendingDelete, setPendingDelete] = useState<Trigger | null>(null);
   const [confirmDisable, setConfirmDisable] = useState(false);
+  // The organization minimum: when it requires an approved pull request, every trigger does. "unknown" when it
+  // could not be read and null while it loads; the API applies it either way, so the page does not guess.
+  const [orgMinimum, setOrgMinimum] = useState<PrApplyRequirement | "unknown" | null>(null);
+  const orgRequiresApproval = orgMinimum === "APPROVED";
+  // A trigger that can start an apply from a comment and requires approval raises it for the whole workspace.
+  const anyTriggerRequiresApproval = triggers.some(
+    (t) => t.event === "pull_request" && t.prWorkflowEnabled && t.prApplyEnabled && t.prApplyRequireApproval
+  );
+  const workspaceRequiresApproval = orgRequiresApproval || anyTriggerRequiresApproval;
+  // Approvals are only read from GitHub and GitLab: elsewhere an approval-required comment is always refused.
+  const approvalsUncheckable = Boolean(vcsProvider && !APPROVAL_VCS.includes(vcsProvider));
+
+  useEffect(() => {
+    if (!hasVcs) {
+      return;
+    }
+    axiosInstance
+      .get(`organization/${organizationId}?fields[organization]=prApplyMinRequirement`)
+      .then((response) => setOrgMinimum(response.data?.data?.attributes?.prApplyMinRequirement ?? "WRITE"))
+      .catch(() => setOrgMinimum("unknown"));
+  }, [organizationId, hasVcs]);
 
   useEffect(() => {
     if (!webhookId || !hasVcs) {
@@ -479,7 +543,13 @@ export const WorkspaceWebhook = ({
                             !isRelease && trigger.pathMode === WebhookEventPathType.REGEX && "Regex paths",
                             !isRelease && trigger.pathMode === WebhookEventPathType.PATTERN && "Wildcard paths",
                             trigger.event === "pull_request" && trigger.prWorkflowEnabled && "Plan posted on PRs",
-                            trigger.event === "pull_request" && trigger.prApplyEnabled && "Apply by comment",
+                            trigger.event === "pull_request" &&
+                              trigger.prApplyEnabled &&
+                              (!workspaceRequiresApproval
+                                ? "Apply by comment"
+                                : approvalsUncheckable
+                                  ? "Apply from the UI only: approvals cannot be checked"
+                                  : "Apply by comment once approved"),
                             !trigger.created && "Not saved",
                           ].filter(Boolean);
                           return (
@@ -738,6 +808,7 @@ export const WorkspaceWebhook = ({
                                               onChange={(e) => {
                                                 if (!e.target.checked) {
                                                   form.setFieldValue(["events", name, "prApplyEnabled"], false);
+                                                  form.setFieldValue(["events", name, "prApplyRequireApproval"], false);
                                                 }
                                               }}
                                             >
@@ -760,10 +831,48 @@ export const WorkspaceWebhook = ({
                                           >
                                             <Checkbox
                                               disabled={!manageWorkspace || !trigger.prWorkflowEnabled || restrictApply}
+                                              onChange={(e) => {
+                                                // Like the apply setting itself, the requirement goes with it.
+                                                if (!e.target.checked) {
+                                                  form.setFieldValue(["events", name, "prApplyRequireApproval"], false);
+                                                }
+                                              }}
                                             >
                                               Allow apply from a pull request comment
                                             </Checkbox>
                                           </Form.Item>
+                                          {orgRequiresApproval ? (
+                                            // Not bound to the form: the trigger keeps its own value, the API
+                                            // applies the stricter of the two.
+                                            <Form.Item extra={<ApprovalHelp notes={[ORG_NOTE.APPROVED]} />}>
+                                              <Checkbox checked={trigger.prApplyEnabled} disabled>
+                                                {REQUIRE_APPROVAL_LABEL}
+                                              </Checkbox>
+                                            </Form.Item>
+                                          ) : (
+                                            <Form.Item
+                                              name={[name, "prApplyRequireApproval"]}
+                                              valuePropName="checked"
+                                              extra={
+                                                <ApprovalHelp
+                                                  notes={[
+                                                    WORKSPACE_NOTE,
+                                                    workspaceRequiresApproval &&
+                                                    trigger.prApplyEnabled &&
+                                                    !trigger.prApplyRequireApproval
+                                                      ? OTHER_TRIGGER_NOTE
+                                                      : orgMinimum && ORG_NOTE[orgMinimum],
+                                                  ].filter((note): note is string => Boolean(note))}
+                                                />
+                                              }
+                                            >
+                                              <Checkbox
+                                                disabled={!manageWorkspace || !trigger.prApplyEnabled || restrictApply}
+                                              >
+                                                {REQUIRE_APPROVAL_LABEL}
+                                              </Checkbox>
+                                            </Form.Item>
+                                          )}
                                         </>
                                       )}
                                     </div>

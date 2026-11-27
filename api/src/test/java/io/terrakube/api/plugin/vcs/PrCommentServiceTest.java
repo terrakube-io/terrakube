@@ -47,6 +47,10 @@ import io.terrakube.api.rs.job.step.Step;
 import io.terrakube.api.rs.vcs.Vcs;
 import io.terrakube.api.rs.vcs.VcsType;
 import io.terrakube.api.rs.workspace.Workspace;
+import io.terrakube.api.repository.WebhookEventRepository;
+import io.terrakube.api.rs.webhook.PrApplyRequirement;
+import io.terrakube.api.rs.webhook.WebhookEvent;
+import io.terrakube.api.rs.webhook.WebhookEventType;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -791,6 +795,77 @@ public class PrCommentServiceTest {
         assertTrue(markdown.contains("Apply via PR comment is disabled"));
         assertTrue(markdown.contains("Allow Apply via PR Comment"));
         assertTrue(markdown.contains("terrakube plan"));
+    }
+
+    @Test
+    public void postPlanResultAsksForAnApprovalFirstWhenTheOrganizationRequiresIt() {
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
+        job.getWorkspace().getOrganization().setPrApplyMinRequirement(PrApplyRequirement.APPROVED);
+        stubStepOutput("Plan: 1 to add, 0 to change, 0 to destroy.");
+        doReturn("12345").when(gitHubWebhookService).postPrComment(any(), any());
+
+        subject.postPlanResult(job);
+
+        ArgumentCaptor<String> markdownCaptor = ArgumentCaptor.forClass(String.class);
+        verify(gitHubWebhookService, times(1)).postPrComment(eq(job), markdownCaptor.capture());
+        assertTrue(markdownCaptor.getValue().contains("requires an approved pull request. Once it is approved"));
+        assertTrue(markdownCaptor.getValue().contains("`terrakube apply`"));
+    }
+
+    @Test
+    public void postPlanResultDoesNotInviteAnApplyThatBitbucketCannotCheck() {
+        Job job = createJob(VcsType.BITBUCKET, 5, JobStatus.completed);
+        job.getWorkspace().getOrganization().setPrApplyMinRequirement(PrApplyRequirement.APPROVED);
+        stubStepOutput("Plan: 1 to add, 0 to change, 0 to destroy.");
+        doReturn("12345").when(bitBucketWebhookService).postPrComment(any(), any());
+
+        subject.postPlanResult(job);
+
+        ArgumentCaptor<String> markdownCaptor = ArgumentCaptor.forClass(String.class);
+        verify(bitBucketWebhookService, times(1)).postPrComment(eq(job), markdownCaptor.capture());
+        assertTrue(markdownCaptor.getValue().contains("cannot check on this VCS provider yet"));
+        assertFalse(markdownCaptor.getValue().contains("`terrakube apply`"));
+    }
+
+    @Test
+    public void postPlanResultKeepsTheOrganizationMinimumWhenTheTriggersCannotBeRead() {
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
+        job.getWorkspace().setId(UUID.randomUUID());
+        job.getWorkspace().getOrganization().setPrApplyMinRequirement(PrApplyRequirement.APPROVED);
+        WebhookEventRepository webhookEventRepository = mock(WebhookEventRepository.class);
+        doThrow(new IllegalStateException("no session")).when(webhookEventRepository)
+                .findByWebhookWorkspaceIdAndEvent(any(), any());
+        subject.setWebhookEventRepository(webhookEventRepository);
+        stubStepOutput("Plan: 1 to add, 0 to change, 0 to destroy.");
+        doReturn("12345").when(gitHubWebhookService).postPrComment(any(), any());
+
+        subject.postPlanResult(job);
+
+        ArgumentCaptor<String> markdownCaptor = ArgumentCaptor.forClass(String.class);
+        verify(gitHubWebhookService, times(1)).postPrComment(eq(job), markdownCaptor.capture());
+        assertTrue(markdownCaptor.getValue().contains("requires an approved pull request. Once it is approved"));
+    }
+
+    @Test
+    public void postPlanResultAsksForAnApprovalFirstWhenAnApplyTriggerRequiresIt() {
+        Job job = createJob(VcsType.GITHUB, 5, JobStatus.completed);
+        job.getWorkspace().setId(UUID.randomUUID());
+        WebhookEvent trigger = new WebhookEvent();
+        trigger.setPrWorkflowEnabled(true);
+        trigger.setPrApplyEnabled(true);
+        trigger.setPrApplyRequirement(PrApplyRequirement.APPROVED);
+        WebhookEventRepository webhookEventRepository = mock(WebhookEventRepository.class);
+        doReturn(List.of(trigger)).when(webhookEventRepository)
+                .findByWebhookWorkspaceIdAndEvent(job.getWorkspace().getId(), WebhookEventType.PULL_REQUEST);
+        subject.setWebhookEventRepository(webhookEventRepository);
+        stubStepOutput("Plan: 1 to add, 0 to change, 0 to destroy.");
+        doReturn("12345").when(gitHubWebhookService).postPrComment(any(), any());
+
+        subject.postPlanResult(job);
+
+        ArgumentCaptor<String> markdownCaptor = ArgumentCaptor.forClass(String.class);
+        verify(gitHubWebhookService, times(1)).postPrComment(eq(job), markdownCaptor.capture());
+        assertTrue(markdownCaptor.getValue().contains("requires an approved pull request. Once it is approved"));
     }
 
     @Test

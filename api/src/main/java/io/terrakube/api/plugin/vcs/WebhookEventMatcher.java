@@ -4,6 +4,7 @@ import java.util.List;
 
 import io.terrakube.api.plugin.execution.WorkspaceBranches;
 import io.terrakube.api.repository.WebhookEventRepository;
+import io.terrakube.api.rs.webhook.PrApplyRequirement;
 import io.terrakube.api.rs.webhook.Webhook;
 import io.terrakube.api.rs.webhook.WebhookEvent;
 import io.terrakube.api.rs.webhook.WebhookEventPathType;
@@ -152,6 +153,26 @@ public final class WebhookEventMatcher {
                 .orElseThrow(() -> new IllegalArgumentException(
                         "No valid template found for the configured webhook event " + result.getEvent()
                                 + " normalized " + result.getNormalizedEvent()));
+    }
+
+    /**
+     * The strictest apply requirement among the webhook's pull request triggers that allow apply from
+     * a comment. Which trigger a comment matches depends on the pull request's branch and changed
+     * files, which its author controls, so the matched trigger alone must not decide who may apply.
+     */
+    public static PrApplyRequirement strictestPrApplyRequirement(Webhook webhook,
+            WebhookEventRepository webhookEventRepository) {
+        return strictestPrApplyRequirement(
+                webhookEventRepository.findByWebhookAndEventOrderByPriorityAsc(webhook, WebhookEventType.PULL_REQUEST));
+    }
+
+    /** {@link #strictestPrApplyRequirement(Webhook, WebhookEventRepository)} over triggers already read. */
+    public static PrApplyRequirement strictestPrApplyRequirement(List<WebhookEvent> pullRequestTriggers) {
+        return pullRequestTriggers.stream()
+                // The same two settings an apply from a comment needs (WebhookService, RepoWebhookService).
+                .filter(event -> event.isPrWorkflowEnabled() && event.isPrApplyEnabled())
+                .map(WebhookEvent::getPrApplyRequirement)
+                .reduce(PrApplyRequirement.WRITE, PrApplyRequirement::strictest);
     }
 
     public static String findTemplateId(WebhookResult result, Webhook webhook,

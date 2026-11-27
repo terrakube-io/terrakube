@@ -31,6 +31,8 @@ import org.springframework.web.client.RestTemplate;
 import org.springframework.web.reactive.function.client.ExchangeFilterFunction;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.util.UriComponentsBuilder;
+import io.terrakube.api.plugin.vcs.PullRequestApproval;
+import io.terrakube.api.plugin.vcs.VcsApiUrlValidator;
 import io.terrakube.api.plugin.vcs.WebhookResult;
 import io.terrakube.api.plugin.vcs.WebhookServiceBase;
 import io.terrakube.api.rs.workspace.Workspace;
@@ -679,6 +681,99 @@ public class GitLabWebhookService extends WebhookServiceBase {
             }
             log.error("Could not read the access level of user {} on workspace {}: {}", userId, workspace.getName(),
                     e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * Whether a merge request is approved under the project's approval rules (merge request approvals
+     * API: {@code approved} with no {@code approvals_left}), with the head commit read after the
+     * approvals. Reading the head second means a head that matches the comment's commit was also the
+     * head when the approvals were read. It also needs an approval from someone other than the merge
+     * request's author, even when no rule requires one, since GitLab lets authors approve their own
+     * merge requests unless a rule prevents it. Empty when GitLab could not be asked, so a caller that
+     * gates on it can refuse.
+     *
+     * <p>The approvals API does not say which commit each approval was given on. With "Reset approvals
+     * on push", GitLab removes them in a background job after the push, so for a short while a new head
+     * can still read as approved.
+     */
+    public Optional<PullRequestApproval> getMergeRequestApproval(Workspace workspace, int mergeRequestIid) {
+        if (mergeRequestIid <= 0) {
+            return Optional.empty();
+        }
+        try {
+            String ownerAndRepo = extractOwnerAndRepoGitlab(workspace.getSource());
+            String token = workspace.getVcs().getAccessToken();
+            String projectId = getGitlabProjectId(ownerAndRepo, token, workspace.getVcs().getApiUrl());
+            String mergeRequestUrl = workspace.getVcs().getApiUrl() + "/projects/" + projectId + "/merge_requests/"
+                    + mergeRequestIid;
+            // The token goes with these requests: they must stay on the connection's API origin and path.
+            if (!VcsApiUrlValidator.isAllowedForVcs(workspace.getVcs(), mergeRequestUrl)
+                    || !VcsApiUrlValidator.isAllowedForVcs(workspace.getVcs(), mergeRequestUrl + "/approvals")) {
+                log.warn("Blocked GitLab merge request approvals request outside the configured VCS API URL");
+                return Optional.empty();
+            }
+
+            ResponseEntity<String> approvalsResponse = callGitlabApi(token, null, mergeRequestUrl + "/approvals",
+                    HttpMethod.GET);
+            if (approvalsResponse == null || !approvalsResponse.getStatusCode().is2xxSuccessful()) {
+                log.error("Could not read the approvals of merge request !{} on workspace {}", mergeRequestIid,
+                        workspace.getName());
+                return Optional.empty();
+            }
+            JsonNode approvals = objectMapper.readTree(approvalsResponse.getBody());
+            if (!approvals.path("approved").isBoolean()) {
+                log.error("Merge request !{} on workspace {} returned no approval state", mergeRequestIid,
+                        workspace.getName());
+                return Optional.empty();
+            }
+
+            ResponseEntity<String> mergeRequestResponse = callGitlabApi(token, null, mergeRequestUrl, HttpMethod.GET);
+            if (mergeRequestResponse == null || !mergeRequestResponse.getStatusCode().is2xxSuccessful()) {
+                log.error("Could not read merge request !{} on workspace {}", mergeRequestIid, workspace.getName());
+                return Optional.empty();
+            }
+            JsonNode mergeRequest = objectMapper.readTree(mergeRequestResponse.getBody());
+            String headSha = mergeRequest.path("sha").asText(null);
+            JsonNode authorId = mergeRequest.path("author").path("id");
+            if (!authorId.canConvertToLong()) {
+                log.error("Merge request !{} on workspace {} returned no author", mergeRequestIid, workspace.getName());
+                return Optional.empty();
+            }
+
+            boolean approvedByRules = approvals.path("approved").asBoolean()
+                    && approvals.path("approvals_left").asInt(0) == 0;
+            // The author's own approval does not count: without approval rules GitLab lets authors approve.
+            // An approver without a user id (a deleted user, for example) cannot be told apart from the
+            // author, so it does not count either.
+            long otherApprovers = 0;
+            for (JsonNode approver : approvals.path("approved_by")) {
+                JsonNode approverId = approver.path("user").path("id");
+                if (approverId.canConvertToLong() && approverId.asLong() != authorId.asLong()) {
+                    otherApprovers++;
+                }
+            }
+            boolean approved = approvedByRules && otherApprovers > 0;
+            String decision;
+            if (approved) {
+                decision = "approved";
+            } else if (!approvedByRules) {
+                int approvalsLeft = approvals.path("approvals_left").asInt(0);
+                decision = approvalsLeft > 0 ? approvalsLeft + " approval(s) left" : "not approved";
+            } else if (approvals.path("approved_by").isEmpty()) {
+                decision = "no approvals";
+            } else {
+                decision = "only approved by its author";
+            }
+            return Optional.of(new PullRequestApproval(approved, decision, headSha,
+                    mergeRequest.path("state").asText(null)));
+        } catch (Exception e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            log.error("Could not read the approvals of merge request !{} on workspace {}: {}", mergeRequestIid,
+                    workspace.getName(), e.getMessage());
             return Optional.empty();
         }
     }

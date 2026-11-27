@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+    <changeSet id="2-35-0-pr-apply-requirement" author="terrakube">
+        <comment>Who may apply from a pull request comment: WRITE (default, unchanged behaviour) or APPROVED.
+            The organization value is a minimum that a workspace can raise but not lower.</comment>
+        <addColumn tableName="webhook_event">
+            <column name="pr_apply_requirement" type="varchar(32)" defaultValue="WRITE">
+                <constraints nullable="false"/>
+            </column>
+        </addColumn>
+        <addColumn tableName="organization">
+            <column name="pr_apply_min_requirement" type="varchar(32)" defaultValue="WRITE">
+                <constraints nullable="false"/>
+            </column>
+        </addColumn>
+    </changeSet>
+</databaseChangeLog>
