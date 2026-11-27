@@ -14,7 +14,7 @@ import lombok.extern.slf4j.Slf4j;
 import io.terrakube.api.plugin.storage.StepOutputPartsReader;
 import io.terrakube.api.plugin.storage.StorageRetryMetrics;
 import io.terrakube.api.plugin.storage.StorageTypeService;
-import io.terrakube.api.plugin.storage.StorageUnavailableException;
+import io.terrakube.api.plugin.storage.UploadSpool;
 import io.terrakube.api.plugin.storage.model.ByteRange;
 import io.terrakube.api.plugin.storage.model.StepOutputPart;
 import io.terrakube.api.plugin.storage.model.StepOutputStream;
@@ -24,6 +24,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.util.List;
 
 @Slf4j
@@ -218,16 +219,19 @@ public class AzureStorageTypeServiceImpl implements StorageTypeService {
         String blobName = String.format(TERRAFORM_TAR_GZ, contentId);
         log.info("Content file: {}", blobName);
 
-        byte[] content;
+        Path spooled = UploadSpool.spool(contentId, inputStream, null);
         try {
-            content = inputStream.readAllBytes();
-        } catch (IOException e) {
-            // Reading the upload's own request body failed - can't be retried (it's a one-shot
-            // stream), so fail the upload instead of silently marking it uploaded (#3671).
-            throw new StorageUnavailableException("Unable to read uploaded content for " + contentId, e);
+            // Same retry/metrics as uploadBlob, but from the file: the request stream can't be re-read.
+            storageRetryMetrics.withRetry("azure", "write", () -> {
+                BlobContainerClient containerClient = blobServiceClient.getBlobContainerClient(CONTAINER_TERRAFORM_CONTENT);
+                containerClient.createIfNotExists();
+                containerClient.getBlobClient(blobName).uploadFromFile(spooled.toString(), true);
+                log.info("Upload Object {} completed", blobName);
+                return null;
+            });
+        } finally {
+            UploadSpool.delete(spooled);
         }
-
-        uploadBlob(CONTAINER_TERRAFORM_CONTENT, blobName, content);
     }
 
     @Override

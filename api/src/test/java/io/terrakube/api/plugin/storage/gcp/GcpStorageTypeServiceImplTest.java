@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import io.terrakube.api.plugin.storage.StorageUnavailableException;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -14,11 +15,14 @@ import java.io.InputStream;
 import java.nio.channels.WritableByteChannel;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Collections;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -124,13 +128,38 @@ class GcpStorageTypeServiceImplTest {
     }
 
     @Test
-    void testCreateContentFile() throws IOException {
-        when(storage.get(any(BlobId.class))).thenReturn(null);
-        InputStream is = new ByteArrayInputStream("data".getBytes());
+    void createContentFileUploadsFromATempFileAndDeletesIt() throws IOException {
+        byte[] data = "data".getBytes(StandardCharsets.UTF_8);
+        Path[] uploadedPath = new Path[1];
+        when(storage.createFrom(any(BlobInfo.class), any(Path.class))).thenAnswer(invocation -> {
+            uploadedPath[0] = invocation.getArgument(1);
+            assertArrayEquals(data, Files.readAllBytes(uploadedPath[0]));
+            return blob;
+        });
 
-        gcpStorageTypeService.createContentFile("id1", is);
+        gcpStorageTypeService.createContentFile("id1", new ByteArrayInputStream(data));
 
-        verify(storage).create(any(BlobInfo.class), any(byte[].class));
+        verify(storage).createFrom(argThat((BlobInfo info) ->
+                info.getBlobId().equals(BlobId.of(bucketName, "content/id1/terraformContent.tar.gz")) &&
+                "application/gzip".equals(info.getContentType())
+        ), any(Path.class));
+        assertFalse(Files.exists(uploadedPath[0]));
+    }
+
+    @Test
+    void createContentFileFailsWithoutUploadingWhenTheRequestBodyCannotBeRead() {
+        InputStream failing = new InputStream() {
+            @Override
+            public int read() throws IOException {
+                throw new IOException("connection reset");
+            }
+        };
+
+        StorageUnavailableException e = assertThrows(StorageUnavailableException.class,
+                () -> gcpStorageTypeService.createContentFile("id1", failing));
+
+        assertEquals("Unable to read uploaded content for id1", e.getMessage());
+        verifyNoInteractions(storage);
     }
 
     @Test

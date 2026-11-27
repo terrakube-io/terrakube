@@ -1,6 +1,7 @@
 package io.terrakube.api.plugin.token.dynamic;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import io.terrakube.api.plugin.routing.PublicUrls;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.jsonwebtoken.Jwts;
@@ -41,8 +42,8 @@ import java.util.concurrent.TimeoutException;
 @Service
 public class DynamicCredentialsService {
 
-    @Value("#{@publicUrls.issuerHost()}")
-    String hostname;
+    @org.springframework.beans.factory.annotation.Autowired
+    PublicUrls publicUrls;
 
     @Value("${io.terrakube.dynamic.credentials.hostname}")
     String overrideHostname;
@@ -317,7 +318,7 @@ public class DynamicCredentialsService {
                     .claim("terrakube_organization_name", organizationName)
                     .claim("terrakube_job_id", String.valueOf(job.getId()))
                     .issuedAt(Date.from(now))
-                    .issuer(String.format("https://%s", overrideHostname.isEmpty() ? hostname : overrideHostname))
+                    .issuer(publicUrls.dynamicCredentialIssuer(overrideHostname))
                     .expiration(Date.from(now.plus(dynamicCredentialTtl, ChronoUnit.MINUTES)));
             // The workspace project is optional; expose its name as a claim so federated
             // trust policies (GCP/Azure/AWS/Vault) can scope by project when one is set.

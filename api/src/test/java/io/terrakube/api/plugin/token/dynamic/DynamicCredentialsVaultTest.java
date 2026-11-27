@@ -6,6 +6,7 @@ import ch.qos.logback.core.read.ListAppender;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.http.Fault;
+import io.terrakube.api.plugin.routing.PublicUrls;
 import io.terrakube.api.rs.Organization;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.workspace.Workspace;
@@ -70,7 +71,7 @@ class DynamicCredentialsVaultTest {
         service = new DynamicCredentialsService();
         ReflectionTestUtils.setField(service, "objectMapper", new ObjectMapper());
         ReflectionTestUtils.setField(service, "webClientBuilder", WebClient.builder());
-        ReflectionTestUtils.setField(service, "hostname", "terrakube.example.com");
+        ReflectionTestUtils.setField(service, "publicUrls", new PublicUrls("", "terrakube.example.com"));
         ReflectionTestUtils.setField(service, "overrideHostname", "");
         ReflectionTestUtils.setField(service, "privateKeyPath", privateKeyFile.toString());
         ReflectionTestUtils.setField(service, "kid", "kid");
