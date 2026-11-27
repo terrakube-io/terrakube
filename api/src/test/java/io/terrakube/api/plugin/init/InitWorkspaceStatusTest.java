@@ -76,6 +76,7 @@ class InitWorkspaceStatusTest {
     void aWorkspaceThatIsAlreadyRightIsNotWritten() {
         Job job = lastJob();
         Date date = new Date(1_000_000_000L);
+        job.setCreatedDate(date);
         workspace.setLastJobStatus(JobStatus.waitingApproval);
         workspace.setLastJobDate(date);
         when(workspaceJobStatusService.shownFor(eq(job), any()))
@@ -114,15 +115,16 @@ class InitWorkspaceStatusTest {
         job.setId(5);
         job.setStatus(JobStatus.completed);
         job.setWorkspace(workspace);
-        job.setUpdatedDate(new Date(1_000_000_000L));
+        job.setCreatedDate(new Date(1_000_000_000L));
+        job.setUpdatedDate(new Date(1_000_000_005L));
         when(jobRepository.findFirstByWorkspaceOrderByIdDesc(workspace)).thenReturn(Optional.of(job));
         when(jobRepository.findFirstByWorkspaceAndIdNotAndStatusInOrderByIdAsc(any(), anyInt(), any())).thenReturn(Optional.empty());
         workspace.setLastJobStatus(JobStatus.completed);
-        workspace.setLastJobDate(new Date(1_000_000_000L));
+        workspace.setLastJobDate(new Date(1_000_000_010L));
 
         init.initWorkspaceStatus();
 
-        assertEquals(new Date(1_000_000_000L), workspace.getLastJobDate());
+        assertEquals(new Date(1_000_000_010L), workspace.getLastJobDate());
         verify(workspaceRepository, never()).save(any());
     }
 
