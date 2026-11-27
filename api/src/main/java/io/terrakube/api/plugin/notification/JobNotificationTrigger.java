@@ -11,20 +11,16 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
-import io.terrakube.api.plugin.cost.InfracostContextExtractor;
 import io.terrakube.api.plugin.cost.InfracostSummary;
 import io.terrakube.api.plugin.notification.payload.NotificationContext;
 import io.terrakube.api.plugin.notification.payload.NotificationPayloadRenderer;
 import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
-import io.terrakube.api.rs.notification.NotificationChannelType;
 import io.terrakube.api.rs.notification.NotificationConfiguration;
-import io.terrakube.api.rs.notification.NotificationMessageStyle;
 import io.terrakube.api.rs.notification.NotificationOutbox;
 import io.terrakube.api.rs.notification.NotificationOutboxStatus;
 import io.terrakube.api.rs.template.Template;
 import io.terrakube.api.repository.NotificationOutboxRepository;
-import io.terrakube.api.repository.StepRepository;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -62,8 +58,6 @@ public class JobNotificationTrigger {
     private final NotificationOutboxRepository notificationOutboxRepository;
     private final NotificationDispatchService notificationDispatchService;
     private final JobFailureSummaryService jobFailureSummaryService;
-    private final InfracostContextExtractor infracostContextExtractor;
-    private final StepRepository stepRepository;
 
     @Value("${io.terrakube.ui.url:}")
     private String uiUrl;
@@ -79,16 +73,12 @@ public class JobNotificationTrigger {
             NotificationPayloadRenderer notificationPayloadRenderer,
             NotificationOutboxRepository notificationOutboxRepository,
             NotificationDispatchService notificationDispatchService,
-            JobFailureSummaryService jobFailureSummaryService,
-            InfracostContextExtractor infracostContextExtractor,
-            StepRepository stepRepository) {
+            JobFailureSummaryService jobFailureSummaryService) {
         this.notificationConfigResolver = notificationConfigResolver;
         this.notificationPayloadRenderer = notificationPayloadRenderer;
         this.notificationOutboxRepository = notificationOutboxRepository;
         this.notificationDispatchService = notificationDispatchService;
         this.jobFailureSummaryService = jobFailureSummaryService;
-        this.infracostContextExtractor = infracostContextExtractor;
-        this.stepRepository = stepRepository;
     }
 
     // Returns the ids of rows that are due for immediate dispatch. A row rendered for a
@@ -104,31 +94,13 @@ public class JobNotificationTrigger {
         try {
             boolean deferDispatch = RECOVERABLE_STATUSES.contains(job.getStatus());
             List<NotificationConfiguration> configs = notificationConfigResolver.resolve(job.getWorkspace());
-            boolean costLoaded = false;
-            InfracostSummary cachedCostSummary = null;
             for (NotificationConfiguration configuration : configs) {
                 boolean statusMatches = configuration.getTriggers() != null && configuration.getTriggers().stream()
                         .anyMatch(trigger -> trigger.getJobStatus() == job.getStatus());
                 if (!statusMatches || !templateMatches(configuration, job)) {
                     continue;
                 }
-                InfracostSummary costForConfig = null;
-                if (shouldAttachCostSummary(job.getStatus()) && needsCostSummary(configuration)) {
-                    if (!costLoaded) {
-                        costLoaded = true;
-                        try {
-                            cachedCostSummary = infracostContextExtractor
-                                    .extract(job.getId(), stepRepository.findByJobId(job.getId()))
-                                    .orElse(null);
-                        } catch (Exception e) {
-                            log.warn("Unable to load Infracost summary for job {} notifications: {}",
-                                    job.getId(), e.getMessage());
-                            cachedCostSummary = null;
-                        }
-                    }
-                    costForConfig = cachedCostSummary;
-                }
-                UUID outboxId = saveOutboxRow(job, configuration, deferDispatch, costForConfig);
+                UUID outboxId = saveOutboxRow(job, configuration, deferDispatch);
                 if (!deferDispatch) {
                     insertedIds.add(outboxId);
                 }
@@ -142,10 +114,9 @@ public class JobNotificationTrigger {
 
     // Renders and persists one PENDING outbox row. A deferred row (job in a RECOVERABLE_STATUS)
     // gets a nextAttemptAt in the future so only the poller picks it up, after the grace window.
-    private UUID saveOutboxRow(Job job, NotificationConfiguration configuration, boolean deferred,
-            InfracostSummary costSummary) {
+    private UUID saveOutboxRow(Job job, NotificationConfiguration configuration, boolean deferred) {
         String payload = notificationPayloadRenderer.render(configuration.getChannelType(),
-                buildContext(job, configuration, costSummary));
+                buildContext(job, configuration));
 
         NotificationOutbox outbox = new NotificationOutbox();
         outbox.setId(UUID.randomUUID());
@@ -217,19 +188,5 @@ public class JobNotificationTrigger {
                 workspaceUrl,
                 configuration.getMessageStyle(),
                 costSummary);
-    }
-
-    private static boolean needsCostSummary(NotificationConfiguration configuration) {
-        if (configuration.getChannelType() == NotificationChannelType.WEBHOOK) {
-            return true;
-        }
-        return configuration.getMessageStyle() != NotificationMessageStyle.SIMPLE;
-    }
-
-    private static boolean shouldAttachCostSummary(JobStatus status) {
-        return status == JobStatus.completed
-                || status == JobStatus.waitingApproval
-                || status == JobStatus.failed
-                || status == JobStatus.noChanges;
     }
 }

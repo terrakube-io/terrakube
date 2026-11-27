@@ -325,4 +325,40 @@ class JobReconciliationServiceTest {
         assertThat(destroyResult.targetStatus()).isEqualTo(JobStatus.completed);
         verify(runTriggerEventWriter, times(1)).enqueueIfQualifying(j2);
     }
+
+    @Test
+    void reconcileUpdatesWorkspaceCostEvenWhenTriggerDeletionThrowsInAfterCommit() {
+        WorkspaceCostTrackingService costTrackingService = mock(WorkspaceCostTrackingService.class);
+        JobReconciliationService costAwareSubject = new JobReconciliationService(
+                jobRepository,
+                stepRepository,
+                new WorkspaceJobStatusService(jobRepository, workspaceRepository),
+                new JobTerminalStateDeriver(),
+                jobNotificationTrigger,
+                scheduleJobService,
+                scheduler,
+                new JobReconciliationMetrics(new SimpleMeterRegistry()),
+                runTriggerEventWriter,
+                costTrackingService);
+
+        Job j = job(761, JobStatus.approved);
+        List<Step> steps = List.of(step(JobStatus.completed, 100), step(JobStatus.completed, 200));
+        doReturn(j).when(jobRepository).lockForUpdate(761);
+        doReturn(steps).when(stepRepository).findByJobId(761);
+        doThrow(new org.springframework.dao.QueryTimeoutException("DB hiccup"))
+                .when(jobRepository).findNextDispatchableExecutableJobId();
+
+        org.springframework.transaction.support.TransactionSynchronizationManager.initSynchronization();
+        try {
+            ReconciliationResult result = costAwareSubject.reconcile(761, false);
+            assertThat(result.targetStatus()).isEqualTo(JobStatus.completed);
+
+            org.springframework.transaction.support.TransactionSynchronizationManager.getSynchronizations()
+                    .forEach(org.springframework.transaction.support.TransactionSynchronization::afterCommit);
+
+            verify(costTrackingService, times(1)).updateWorkspaceCostOnCompletion(j, steps);
+        } finally {
+            org.springframework.transaction.support.TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
 }

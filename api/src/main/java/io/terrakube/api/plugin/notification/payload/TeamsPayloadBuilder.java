@@ -6,7 +6,10 @@ import java.util.Map;
 
 import org.springframework.stereotype.Component;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import io.terrakube.api.plugin.cost.InfracostSummary;
 import io.terrakube.api.rs.job.JobStatus;
@@ -81,16 +84,61 @@ public class TeamsPayloadBuilder implements NotificationPayloadBuilder {
         }
     }
 
-    private static void appendCostFacts(List<Map<String, Object>> facts, InfracostSummary cost) {
-        if (cost == null || !cost.isSuccess() || cost.totalMonthlyCost() == null) {
-            return;
+    @Override
+    public String enrichCost(String payload, InfracostSummary costSummary) {
+        List<Map<String, Object>> costFacts = buildCostFacts(costSummary);
+        if (costFacts.isEmpty() || payload == null || payload.isBlank()) {
+            return payload;
         }
+        try {
+            JsonNode tree = objectMapper.readTree(payload);
+            if (!(tree instanceof ObjectNode root)) {
+                return payload;
+            }
+            JsonNode attachments = root.get("attachments");
+            if (!(attachments instanceof ArrayNode attArray) || attArray.isEmpty()) {
+                return payload;
+            }
+            JsonNode bodyNode = attArray.get(0).path("content").get("body");
+            if (!(bodyNode instanceof ArrayNode bodyArray)) {
+                return payload;
+            }
+            for (JsonNode item : bodyArray) {
+                if ("FactSet".equals(item.path("type").asText(""))
+                        && item.get("facts") instanceof ArrayNode factsArray) {
+                    for (JsonNode fact : factsArray) {
+                        if ("Est. Monthly Cost".equals(fact.path("title").asText(""))) {
+                            return payload;
+                        }
+                    }
+                    for (Map<String, Object> costFact : costFacts) {
+                        factsArray.add(objectMapper.valueToTree(costFact));
+                    }
+                    return objectMapper.writeValueAsString(root);
+                }
+            }
+            return payload;
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to enrich Teams payload with cost estimation", e);
+        }
+    }
+
+    private static void appendCostFacts(List<Map<String, Object>> facts, InfracostSummary cost) {
+        facts.addAll(buildCostFacts(cost));
+    }
+
+    private static List<Map<String, Object>> buildCostFacts(InfracostSummary cost) {
+        if (cost == null || !cost.isSuccess() || cost.totalMonthlyCost() == null) {
+            return List.of();
+        }
+        List<Map<String, Object>> facts = new ArrayList<>();
         facts.add(Map.of("title", "Est. Monthly Cost", "value", cost.formatTotalMonthlyCost()));
         facts.add(Map.of("title", "Est. Monthly Delta", "value", cost.formatMonthlyDelta()));
         if (cost.unpricedResourceCount() > 0) {
             facts.add(Map.of("title", "Unpriced Resources",
                     "value", String.valueOf(cost.unpricedResourceCount())));
         }
+        return facts;
     }
 
     // SIMPLE-style configurations get a single-line card instead of the full one - no facts, no
