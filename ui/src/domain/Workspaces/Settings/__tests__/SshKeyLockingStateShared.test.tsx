@@ -138,7 +138,7 @@ describe("WorkspaceStateShared", () => {
     expect(screen.getByRole("button", { name: "Remove access for Unknown workspace" })).toBeInTheDocument();
   });
 
-  it("searches by a quoted name and asks for names only", async () => {
+  it("searches by a quoted name and requests names and projects", async () => {
     render(<WorkspaceStateShared workspace={workspace({ globalRemoteState: false })} manageWorkspace={true} />);
 
     fireEvent.change(screen.getByRole("combobox", { name: "Add a workspace by name" }), {
@@ -147,7 +147,7 @@ describe("WorkspaceStateShared", () => {
 
     await waitFor(() =>
       expect(axiosInstance.get).toHaveBeenCalledWith(
-        "/organization/org-1/workspace?fields[workspace]=name&filter[workspace]=name%3D%3D'*it%5C's%20prod*'"
+        "/organization/org-1/workspace?fields[workspace]=name,project&filter[workspace]=name%3D%3D'*it%5C's%20prod*'&include=project"
       )
     );
   });
@@ -309,7 +309,7 @@ describe("WorkspaceStateShared", () => {
         await screen.findByText(sameProjectDisabled ? "same-project (already has project access)" : "same-project")
       ).toBeInTheDocument();
       expect(axiosInstance.get).toHaveBeenCalledWith(
-        "/organization/org-1/workspace?filter[workspace]=name==*project*&include=project"
+        "/organization/org-1/workspace?fields[workspace]=name,project&filter[workspace]=name%3D%3D'*project*'&include=project"
       );
       const sameOption = screen.getByText(
         sameProjectDisabled ? "same-project (already has project access)" : "same-project"
@@ -340,7 +340,7 @@ describe("WorkspaceStateShared", () => {
 
   it("preserves existing individual grants when project access is enabled", async () => {
     (axiosInstance.get as jest.Mock).mockResolvedValue({
-      data: { data: { attributes: { name: "existing-grant" } } },
+      data: { data: [{ id: "ws-a", attributes: { name: "existing-grant" } }] },
     });
     render(
       <WorkspaceStateShared

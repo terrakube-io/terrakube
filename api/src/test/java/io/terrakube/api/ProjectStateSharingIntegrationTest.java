@@ -134,7 +134,8 @@ class ProjectStateSharingIntegrationTest extends ServerApplicationTests {
     @Test
     void workspaceSearchIncludesProjectRelationshipForPicker() {
         given().header("Authorization", "Bearer " + token)
-                .queryParam("filter[workspace]", "name==*" + sameProject.getName() + "*")
+                .queryParam("fields[workspace]", "name,project")
+                .queryParam("filter[workspace]", "name=='*" + sameProject.getName() + "*'")
                 .queryParam("include", "project")
                 .when().get("/api/v1/organization/" + ORG_ID + "/workspace")
                 .then().statusCode(200)
