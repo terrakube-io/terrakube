@@ -123,8 +123,35 @@ describe("ProjectWorkspaces", () => {
     await screen.findByText("network-production");
 
     const header = document.querySelector(".workspace-list-header") as HTMLElement;
-    expect(header.textContent).toBe("NameStatusPolicyLast runVersionSource");
+    expect(header.textContent).toBe("NameStatusPolicyLast runVersionEst. Monthly CostSource");
     expect(screen.queryByText("Payments")).not.toBeInTheDocument();
+  });
+
+  it("displays estimated monthly cost, rollup card, and supports sorting by cost", async () => {
+    listWorkspacePage.mockResolvedValue(page([workspace({ currentMonthlyCost: 125.4, costCurrency: "USD" })]));
+    renderTab();
+
+    expect(await screen.findByText("Estimated Project Monthly Spend (Current Page)")).toBeInTheDocument();
+    expect(screen.getAllByText("$125.40/mo").length).toBeGreaterThanOrEqual(2);
+
+    await userEvent.click(screen.getByText("Est. Monthly Cost"));
+    await waitFor(() => expect(lastRequest().sort).toBe("cost_desc"));
+    await userEvent.click(screen.getByText("Est. Monthly Cost"));
+    await waitFor(() => expect(lastRequest().sort).toBe("cost_asc"));
+  });
+
+  it("keeps controls visible and shows cost empty state when cost sort returns 0 priced workspaces", async () => {
+    listWorkspacePage
+      .mockResolvedValueOnce(page([workspace({ currentMonthlyCost: null })], 1))
+      .mockResolvedValueOnce(page([], 0));
+    renderTab();
+
+    await screen.findByText("network-production");
+    await userEvent.click(screen.getByText("Est. Monthly Cost"));
+
+    expect(await screen.findByText("No workspaces have a cost estimate yet.")).toBeInTheDocument();
+    expect(screen.queryByText("No workspaces in this project.")).not.toBeInTheDocument();
+    expect(screen.getByText("Showing only workspaces with a cost estimate")).toBeInTheDocument();
   });
 
   it("shows the workflow instead of a repository for CLI and API driven workspaces", async () => {

@@ -77,6 +77,76 @@ describe("workspaceService.listWorkspaces", () => {
     expect(result.data!.workspaces.find((w) => w.id === "ws-2")?.locked).toBe(false);
     expect(result.data!.workspaces.find((w) => w.id === "ws-2")?.policyComplianceStatus).toBe("NON_COMPLIANT");
   });
+
+  it("maps workspace cost fields and passes cost sort parameters to Elide GraphQL", async () => {
+    mockApiPost.mockResolvedValue({
+      isError: false,
+      responseCode: 200,
+      data: {
+        organization: {
+          edges: [
+            {
+              node: {
+                name: "Acme",
+                workspace: {
+                  edges: [
+                    {
+                      node: {
+                        id: "ws-cost-1",
+                        name: "finops-ws",
+                        source: "",
+                        branch: "main",
+                        terraformVersion: "1.9.2",
+                        iacType: "terraform",
+                        lastJobStatus: "completed",
+                        lastJobDate: "2026-11-21T00:00:00Z",
+                        locked: false,
+                        policyComplianceStatus: "COMPLIANT",
+                        currentMonthlyCost: "145.75",
+                        costCurrency: "USD",
+                        costUpdatedAt: "2026-11-21T00:00:00Z",
+                        workspaceTag: { edges: [] },
+                        project: { edges: [] },
+                      },
+                    },
+                  ],
+                  pageInfo: { endCursor: "1", hasNextPage: false, totalRecords: 1 },
+                },
+              },
+            },
+          ],
+        },
+      },
+    });
+
+    const descResult = await workspaceService.listWorkspacePage(
+      { organizationId: "org-1", first: 20, after: 0, sort: "cost_desc" },
+      false
+    );
+    expect(mockApiPost.mock.calls[0][1].query).toContain("$filter: String");
+    expect(mockApiPost.mock.calls[0][1].query).toContain("filter: $filter");
+    expect(mockApiPost.mock.calls[0][1].variables.sort).toBe("-currentMonthlyCost,-id");
+    expect(mockApiPost.mock.calls[0][1].variables.filter).toBe("currentMonthlyCost=isnull=false");
+    expect(descResult.data?.workspaces[0]).toEqual(
+      expect.objectContaining({
+        currentMonthlyCost: 145.75,
+        costCurrency: "USD",
+        costUpdatedAt: "2026-11-21T00:00:00Z",
+      })
+    );
+
+    await workspaceService.listWorkspacePage({ organizationId: "org-1", first: 20, after: 0, sort: "cost_asc" }, false);
+    expect(mockApiPost.mock.calls[1][1].variables.sort).toBe("currentMonthlyCost,id");
+    expect(mockApiPost.mock.calls[1][1].variables.filter).toBe("currentMonthlyCost=isnull=false");
+
+    await workspaceService.listWorkspacePage(
+      { organizationId: "org-1", first: 20, after: 0, search: "finops", sort: "cost_desc" },
+      false
+    );
+    expect(mockApiPost.mock.calls[2][1].variables.filter).toBe(
+      '(name=ini="*finops*",description=ini="*finops*");currentMonthlyCost=isnull=false'
+    );
+  });
 });
 
 describe("workspaceService.listWorkspacePage", () => {

@@ -104,6 +104,17 @@
   white-space: nowrap;
 }
 
+.workspace-col-cost {
+  width: 120px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  font-size: 13.5px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 /* The source link ellipsizes, so this is the column that gives way before the name does. */
 .workspace-col-source {
   flex: 0 1 260px;
@@ -261,8 +272,8 @@
 
 /* Narrow lists: the row wraps into name + meta on one line, status and run on the next.
    The column header is hidden because sorting lives in the filter bar's sort select.
-   Below 900px the fixed columns (about 730px with gaps and padding) leave the name too little room. */
-@container workspace-list (max-width: 899px) {
+   Below 980px the fixed columns leave the name too little room. */
+@container workspace-list (max-width: 979px) {
   .workspace-list-header {
     display: none;
   }
@@ -281,8 +292,10 @@
   .workspace-col-status,
   .workspace-col-policy,
   .workspace-col-run,
-  .workspace-col-version {
+  .workspace-col-version,
+  .workspace-col-cost {
     width: auto;
+    justify-content: flex-start;
   }
 
   .workspace-col-source {

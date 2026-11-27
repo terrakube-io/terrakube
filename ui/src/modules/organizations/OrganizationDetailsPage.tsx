@@ -4,6 +4,7 @@ import PageWrapper from "@/components/layout/PageWrapper/PageWrapper";
 import { ImportOutlined, PlusOutlined } from "@ant-design/icons";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import WorkspaceFilter from "@/modules/workspaces/components/WorkspaceFilter";
+import EstimatedSpendRollupCard from "@/modules/workspaces/components/EstimatedSpendRollupCard";
 import { WorkspaceListItem, WorkspacePageInfo, WorkspacePageRequest } from "@/modules/workspaces/types";
 import { JobStatus } from "@/domain/types";
 import { Link, useParams } from "react-router-dom";
@@ -101,9 +102,12 @@ export default function OrganizationsDetailPage({ organizationName, setOrganizat
     sortOption,
   ]);
 
-  // Facet counts only depend on the filters, so page turns and page-size changes reuse the last ones.
+  // Facet counts only depend on the filters (and whether cost-only sorting is active), so page turns reuse them.
   const countsKey = useMemo(
-    () => (request ? JSON.stringify({ ...request, first: 0, after: 0, sort: "" }) : ""),
+    () =>
+      request
+        ? JSON.stringify({ ...request, first: 0, after: 0, sort: "", costOnly: request.sort.startsWith("cost_") })
+        : "",
     [request]
   );
 
@@ -265,6 +269,12 @@ export default function OrganizationsDetailPage({ organizationName, setOrganizat
             onGroupByProjectChange={filterState.setGroupByProject}
           />
         )}
+        <EstimatedSpendRollupCard
+          workspaces={workspaces}
+          title="Estimated Monthly Spend (Current Page)"
+          showProjectBreakdown
+          costSortActive={sortOption.startsWith("cost_")}
+        />
         {listViewMode === "compact" && id && (
           <WorkspaceTable
             organizationId={id}

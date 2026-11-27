@@ -1,5 +1,12 @@
 import { ApprovalAttribution } from "@/components/display/ApprovalAttribution";
-import { CheckOutlined, CloseOutlined, SafetyCertificateOutlined, StopOutlined, UserOutlined } from "@ant-design/icons";
+import {
+  CheckOutlined,
+  CloseOutlined,
+  DollarOutlined,
+  SafetyCertificateOutlined,
+  StopOutlined,
+  UserOutlined,
+} from "@ant-design/icons";
 import {
   Alert,
   Avatar,
@@ -23,7 +30,15 @@ import { useAbortController, usePolling, useStructuredOutputStream } from "../..
 import WorkspaceStatusTag from "@/components/display/WorkspaceStatusTag";
 import { getWorkspaceStatusIcon } from "../../modules/workspaces/utils/workspaceStatusIcon";
 import { getWorkspaceStatusText } from "../../modules/workspaces/utils/workspaceStatusText";
-import { formatJobVia, IncludedItem, Job, JobStep, Workspace } from "../types";
+import {
+  formatJobVia,
+  IncludedItem,
+  InfracostContext,
+  Job,
+  JobStep,
+  PolicyEvaluationContext,
+  Workspace,
+} from "../types";
 import {
   ContextAvailability,
   StructuredOutputMarker,
@@ -63,7 +78,8 @@ import {
 import { relativeTime } from "@/modules/utils/dates";
 import { formatExecutionDuration } from "./executionDuration";
 import { PolicyChecksOutput } from "./PolicyChecksOutput";
-import { PolicyEvaluationContext } from "../types";
+import { CostEstimationOutput } from "./CostEstimationOutput";
+import { formatCostDelta, formatMonthlyCost } from "@/modules/workspaces/utils/costFormat";
 import "./runTokens.css";
 import "./Details.css";
 
@@ -98,6 +114,56 @@ type IncompleteVariableGuard = {
   rawMessage: string;
 };
 
+export function extractInfracostFromContext(
+  data: Record<string, unknown> | undefined | null,
+  steps?: JobStep[]
+): InfracostContext | undefined {
+  if (!data || typeof data !== "object") {
+    return undefined;
+  }
+  if (steps && steps.length > 0) {
+    const sorted = [...steps].sort((a, b) => (b.stepNumber ?? 0) - (a.stepNumber ?? 0));
+    for (const step of sorted) {
+      if (!step?.id) continue;
+      const candidate = data[`infracost/${step.id}`];
+      if (candidate && typeof candidate === "object") {
+        return candidate as InfracostContext;
+      }
+    }
+  }
+  let matchedPrefixed: InfracostContext | undefined;
+  for (const [key, value] of Object.entries(data)) {
+    if (key.startsWith("infracost/") && value && typeof value === "object") {
+      matchedPrefixed = value as InfracostContext;
+    }
+  }
+  if (matchedPrefixed) {
+    return matchedPrefixed;
+  }
+  const legacy = data.infracost;
+  return legacy && typeof legacy === "object" ? (legacy as InfracostContext) : undefined;
+}
+
+export function infracostFingerprint(ctx: InfracostContext | undefined): string {
+  if (!ctx) return "";
+  return [
+    ctx.status ?? "",
+    ctx.timeGenerated ?? "",
+    ctx.currency ?? "",
+    String(ctx.totalMonthlyCost ?? ""),
+    String(ctx.pastTotalMonthlyCost ?? ""),
+    String(ctx.diffTotalMonthlyCost ?? ""),
+    ctx.shareUrl ?? "",
+    ctx.errorMessage ?? "",
+    String(Boolean(ctx.truncated)),
+    String(ctx.summary?.totalDetectedResources ?? ""),
+    String(ctx.summary?.totalSupportedResources ?? ""),
+    String(ctx.summary?.totalUnsupportedResources ?? ""),
+    String(ctx.summary?.totalNoPriceResources ?? ""),
+    String(ctx.projects?.length ?? 0),
+  ].join("|");
+}
+
 export const DetailsJob = ({ jobId, workspaceName, canApprove = false }: Props) => {
   const organizationId = sessionStorage.getItem(ORGANIZATION_ARCHIVE);
   const [loading, setLoading] = useState(false);
@@ -108,6 +174,9 @@ export const DetailsJob = ({ jobId, workspaceName, canApprove = false }: Props) 
   const [workspaceDefaultBranch, setWorkspaceDefaultBranch] = useState<string>();
   const [workspaceVcsName, setWorkspaceVcsName] = useState<string>();
   const [steps, setSteps] = useState<JobStep[]>([]);
+  const stepsRef = useRef<JobStep[]>(steps);
+  stepsRef.current = steps;
+  const lastContextDataRef = useRef<Record<string, unknown> | undefined>(undefined);
   const [triggeredBy, setTriggeredBy] = useState<{
     jobId: number;
     workspaceId: string;
@@ -120,6 +189,17 @@ export const DetailsJob = ({ jobId, workspaceName, canApprove = false }: Props) 
   // resetting its filters. Controlled state keyed by id alone survives status changes; the effect
   // below still auto-opens a step the moment it starts running, same as before, but only if the
   // user hasn't already closed it themselves.
+  useEffect(() => {
+    const rawData = lastContextDataRef.current;
+    if (!rawData || steps.length === 0) return;
+    const nextInfracost = extractInfracostFromContext(rawData, steps);
+    if (nextInfracost) {
+      setInfracost((previous) =>
+        previous && infracostFingerprint(previous) === infracostFingerprint(nextInfracost) ? previous : nextInfracost
+      );
+    }
+  }, [steps]);
+
   const [activeStepKeys, setActiveStepKeys] = useState<Record<string, string[]>>({});
   const initializedStepIds = useRef<Set<string>>(new Set());
   const userToggledStepIds = useRef<Set<string>>(new Set());
@@ -155,6 +235,7 @@ export const DetailsJob = ({ jobId, workspaceName, canApprove = false }: Props) 
   const [terraformOutputs, setTerraformOutputs] = useState<StructuredOutputsByStep>({});
   const [jobDiagnostics, setJobDiagnostics] = useState<JobDiagnosticsByStep>({});
   const [policyEvaluation, setPolicyEvaluation] = useState<PolicyEvaluationContext | undefined>(undefined);
+  const [infracost, setInfracost] = useState<InfracostContext | undefined>(undefined);
   const hasPolicyBlockingViolations = useMemo(() => hasBlockingPolicyViolations(policyEvaluation), [policyEvaluation]);
   const [contextAvailability, setContextAvailability] = useState<ContextAvailability>("pending");
   // Sticky: once a persisted context has been seen, a later transient 503 does not un-see it.
@@ -657,6 +738,14 @@ export const DetailsJob = ({ jobId, workspaceName, canApprove = false }: Props) 
       if (response?.data?.policyEvaluation) {
         setPolicyEvaluation(response.data.policyEvaluation);
       }
+      const rawData = response?.data as Record<string, unknown> | undefined;
+      lastContextDataRef.current = rawData;
+      const nextInfracost = extractInfracostFromContext(rawData, stepsRef.current);
+      if (nextInfracost) {
+        setInfracost((previous) =>
+          previous && infracostFingerprint(previous) === infracostFingerprint(nextInfracost) ? previous : nextInfracost
+        );
+      }
     } catch (error) {
       if (isAbortError(error)) return;
       if (requestId !== contextRequestRef.current) return;
@@ -681,6 +770,8 @@ export const DetailsJob = ({ jobId, workspaceName, canApprove = false }: Props) 
     abortContextRequests();
     abortStepDeliveryRequests();
     setRecoveryGaveUp(false);
+    lastContextDataRef.current = undefined;
+    setInfracost(undefined);
 
     if (!jobId) {
       setLoading(false);
@@ -1055,6 +1146,45 @@ export const DetailsJob = ({ jobId, workspaceName, canApprove = false }: Props) 
               {(attributes.cascadeDepth ?? 0) > 1 && ` It is ${attributes.cascadeDepth} triggers deep in the chain.`}
             </>
           }
+        />
+      )}
+
+      {infracost && (
+        <Collapse
+          className="run-panel"
+          defaultActiveKey={["cost-estimation"]}
+          items={[
+            {
+              key: "cost-estimation",
+              label: (() => {
+                if (infracost.status === "ERROR") {
+                  return (
+                    <span className="run-panel-label">
+                      <DollarOutlined className="run-panel-icon" aria-hidden />
+                      <h3 className="run-panel-title">Cost Estimation (Infracost)</h3>
+                      <Tag color="warning">Unavailable</Tag>
+                    </span>
+                  );
+                }
+                const delta = formatCostDelta(
+                  infracost.diffTotalMonthlyCost,
+                  infracost.pastTotalMonthlyCost,
+                  infracost.currency
+                );
+                const tagColor =
+                  delta.direction === "increase" ? "red" : delta.direction === "decrease" ? "green" : "default";
+                return (
+                  <span className="run-panel-label">
+                    <DollarOutlined className="run-panel-icon" aria-hidden />
+                    <h3 className="run-panel-title">Cost Estimation (Infracost)</h3>
+                    <Tag>{formatMonthlyCost(infracost.totalMonthlyCost, infracost.currency)}</Tag>
+                    {infracost.diffTotalMonthlyCost != null && <Tag color={tagColor}>{delta.text}</Tag>}
+                  </span>
+                );
+              })(),
+              children: <CostEstimationOutput infracost={infracost} />,
+            },
+          ]}
         />
       )}
 

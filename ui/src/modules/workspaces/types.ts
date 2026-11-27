@@ -28,6 +28,9 @@ export type WorkspaceListItem = {
   projectName?: string;
   locked?: boolean;
   policyComplianceStatus?: string;
+  currentMonthlyCost?: number | null;
+  costCurrency?: string | null;
+  costUpdatedAt?: string | null;
 };
 
 export type ListWorkspacesResponse = {
@@ -68,5 +71,7 @@ export type WorkspacePageRequest = {
     | "source_asc"
     | "source_desc"
     | "terraformVersion_asc"
-    | "terraformVersion_desc";
+    | "terraformVersion_desc"
+    | "cost_desc"
+    | "cost_asc";
 };
