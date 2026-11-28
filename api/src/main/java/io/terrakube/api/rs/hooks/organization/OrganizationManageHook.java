@@ -13,7 +13,6 @@ import io.terrakube.api.plugin.softdelete.SoftDeleteService;
 import io.terrakube.api.repository.OrganizationRepository;
 import io.terrakube.api.rs.Organization;
 
-import java.util.List;
 import java.util.Optional;
 
 @AllArgsConstructor
@@ -33,13 +32,7 @@ public class OrganizationManageHook implements LifeCycleHook<Organization> {
                 case CREATE:
                     switch (transactionPhase) {
                         case PRECOMMIT:
-                            List<Organization> matches = organizationRepository.findAllByName(organization.getName());
-                            boolean conflict = matches.stream()
-                                    .anyMatch(match -> !match.getId().equals(organization.getId()));
-                            if (conflict) {
-                                throw new OrganizationManagementException(HttpStatus.SC_CONFLICT,
-                                        "An organization named " + organization.getName() + " already exists.");
-                            }
+                            validateOrganizationNameConflict(organization);
                             break;
                         case POSTCOMMIT:
                             try {
@@ -54,8 +47,13 @@ public class OrganizationManageHook implements LifeCycleHook<Organization> {
                     }
                     break;
                 case UPDATE:
-                    if(organization.isDisabled()){
-                        softDeleteService.disableOrganization(organization);
+                    if (transactionPhase == LifeCycleHookBinding.TransactionPhase.PRECOMMIT && optional.isPresent()) {
+                        String fieldName = optional.get().getFieldName();
+                        if ("name".equals(fieldName)) {
+                            validateOrganizationNameConflict(organization);
+                        } else if ("disabled".equals(fieldName) && organization.isDisabled()) {
+                            softDeleteService.disableOrganization(organization);
+                        }
                     }
                     break;
                 default:
@@ -63,5 +61,18 @@ public class OrganizationManageHook implements LifeCycleHook<Organization> {
                     break;
             }
 
+    }
+
+    private void validateOrganizationNameConflict(Organization organization) {
+        if (organization.getName() == null) {
+            return;
+        }
+        boolean conflict = organization.getId() == null
+                ? organizationRepository.existsByNameIgnoreCase(organization.getName())
+                : organizationRepository.existsByNameIgnoreCaseAndIdNot(organization.getName(), organization.getId());
+        if (conflict) {
+            throw new OrganizationManagementException(HttpStatus.SC_CONFLICT,
+                    "An organization named " + organization.getName() + " already exists.");
+        }
     }
 }

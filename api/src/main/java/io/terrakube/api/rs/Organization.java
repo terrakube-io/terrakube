@@ -36,7 +36,6 @@ import java.util.UUID;
 @DeletePermission(expression = "user is a superuser")
 @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.CREATE, phase = LifeCycleHookBinding.TransactionPhase.PRECOMMIT, hook = OrganizationManageHook.class)
 @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.CREATE, phase = LifeCycleHookBinding.TransactionPhase.POSTCOMMIT, hook = OrganizationManageHook.class)
-@LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.PRECOMMIT, hook = OrganizationManageHook.class)
 @Include
 @Getter
 @Setter
@@ -49,9 +48,13 @@ public class Organization {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
+    // Update hooks are bound per field so the hook knows which field changed (a class-level binding gets no
+    // ChangeSpec), and only a rename runs the name conflict check.
+    @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.PRECOMMIT, hook = OrganizationManageHook.class)
     @Column(name = "name")
     private String name;
 
+    @LifeCycleHookBinding(operation = LifeCycleHookBinding.Operation.UPDATE, phase = LifeCycleHookBinding.TransactionPhase.PRECOMMIT, hook = OrganizationManageHook.class)
     @Column(name = "disabled")
     private boolean disabled;
 
