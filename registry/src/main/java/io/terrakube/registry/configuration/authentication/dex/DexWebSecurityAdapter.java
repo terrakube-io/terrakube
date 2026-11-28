@@ -19,6 +19,7 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import io.terrakube.client.TerrakubeClient;
 import io.terrakube.registry.configuration.OpenRegistryProperties;
+import io.terrakube.registry.service.token.TokenStatusClient;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Arrays;
 import java.util.List;
@@ -46,7 +47,7 @@ public class DexWebSecurityAdapter {
 
     @Bean
     @Order(1)
-    public SecurityFilterChain filterChain(HttpSecurity http, @Value("${io.terrakube.token.issuer-uri:}") String issuerUri, @Value("${io.terrakube.registry.authentication.type:DEX}") String authType, @Value("${io.terrakube.token.audience-validation:false}") boolean audienceValidation, @Value("${io.terrakube.token.extra-audiences:}") String extraAudiences, @Value("${io.terrakube.token.pat}") String patJwtSecret, @Value("${io.terrakube.token.internal}") String internalJwtSecret, TerrakubeClient terrakubeClient, OpenRegistryProperties openRegistryProperties) throws Exception {
+    public SecurityFilterChain filterChain(HttpSecurity http, @Value("${io.terrakube.token.issuer-uri:}") String issuerUri, @Value("${io.terrakube.registry.authentication.type:DEX}") String authType, @Value("${io.terrakube.token.audience-validation:false}") boolean audienceValidation, @Value("${io.terrakube.token.extra-audiences:}") String extraAudiences, @Value("${io.terrakube.token.pat}") String patJwtSecret, @Value("${io.terrakube.token.internal}") String internalJwtSecret, TerrakubeClient terrakubeClient, TokenStatusClient tokenStatusClient, OpenRegistryProperties openRegistryProperties) throws Exception {
         if (issuerUri == null || issuerUri.isBlank()) {
             throw new IllegalStateException("io.terrakube.token.issuer-uri (DexIssuerUri) must be configured when io.terrakube.registry.authentication.type=" + authType);
         }
@@ -68,10 +69,13 @@ public class DexWebSecurityAdapter {
                             .patSecret(patJwtSecret)
                             .internalSecret(internalJwtSecret)
                             .terrakubeClient(terrakubeClient)
+                            .tokenStatusClient(tokenStatusClient)
                             .federatedCacheExpireAfterWrite(openRegistryProperties.getFederatedCacheExpireAfterWrite())
                             .federatedCacheMaximumSize(openRegistryProperties.getFederatedCacheMaximumSize())
                             .providerManagerCacheExpireAfterWrite(openRegistryProperties.getProviderManagerCacheExpireAfterWrite())
                             .providerManagerCacheMaximumSize(openRegistryProperties.getProviderManagerCacheMaximumSize())
+                            .patRevocationCacheTtlSeconds(openRegistryProperties.getPatRevocationCacheTtlSeconds())
+                            .patRevocationCacheMaximumSize(openRegistryProperties.getPatRevocationCacheMaximumSize())
                             .build();
                     oauth2.authenticationManagerResolver(authenticationManagerResolver);
                 });

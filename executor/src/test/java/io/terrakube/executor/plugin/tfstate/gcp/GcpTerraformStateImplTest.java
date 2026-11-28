@@ -506,7 +506,7 @@ class GcpTerraformStateImplTest {
 
         assertTrue(gcpTerraformState.saveTerraformBinary("v1.12.6", true, "linux", "arm64", binary));
 
-        verify(storage).create(info.capture(), any(byte[].class));
+        verify(storage).createFrom(info.capture(), eq(binary.toPath()));
         assertEquals(BlobId.of(bucketName, "tfbinary/tofu/v1.12.6/linux_arm64/tofu"), info.getValue().getBlobId());
     }
 
@@ -516,7 +516,11 @@ class GcpTerraformStateImplTest {
         com.google.cloud.storage.Blob blob = mock(com.google.cloud.storage.Blob.class);
         when(blob.exists()).thenReturn(true);
         when(storage.get(blobId)).thenReturn(blob);
-        when(storage.readAllBytes(blobId)).thenReturn("terraform-binary".getBytes(StandardCharsets.UTF_8));
+        doAnswer(invocation -> {
+            Path dest = invocation.getArgument(1);
+            Files.writeString(dest, "terraform-binary", StandardCharsets.UTF_8);
+            return null;
+        }).when(storage).downloadTo(eq(blobId), any(Path.class));
         File target = tempDir.resolve("terraform/1.9.0/terraform").toFile();
 
         assertTrue(gcpTerraformState.downloadTerraformBinary("1.9.0", false, "linux", "amd64", target));
@@ -524,5 +528,24 @@ class GcpTerraformStateImplTest {
 
         // Nothing is cached for another architecture, so it is never handed this binary.
         assertFalse(gcpTerraformState.downloadTerraformBinary("1.9.0", false, "linux", "arm64", target));
+    }
+
+    @Test
+    void testSaveAndDownloadInfracostSha256Checksum() {
+        BlobId checksumId = BlobId.of(bucketName, "infracost/0.10.50/linux_amd64/infracost.sha256");
+        String sha256 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+        assertTrue(gcpTerraformState.saveInfracostChecksum("0.10.50", "linux", "amd64", sha256));
+
+        ArgumentCaptor<BlobInfo> info = ArgumentCaptor.forClass(BlobInfo.class);
+        verify(storage).create(info.capture(), eq(sha256.getBytes(StandardCharsets.UTF_8)));
+        assertEquals(checksumId, info.getValue().getBlobId());
+
+        com.google.cloud.storage.Blob blob = mock(com.google.cloud.storage.Blob.class);
+        when(blob.exists()).thenReturn(true);
+        when(storage.get(checksumId)).thenReturn(blob);
+        when(storage.readAllBytes(checksumId)).thenReturn(sha256.getBytes(StandardCharsets.UTF_8));
+
+        assertEquals(sha256, gcpTerraformState.downloadInfracostChecksum("0.10.50", "linux", "amd64").orElseThrow());
     }
 }

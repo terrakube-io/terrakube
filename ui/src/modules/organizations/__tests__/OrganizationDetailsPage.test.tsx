@@ -145,4 +145,37 @@ describe("OrganizationDetailsPage project filter", () => {
     render(<OrganizationsDetailPage organizationName="org" setOrganizationName={jest.fn()} />);
     await waitFor(() => expect(tableProps?.groupsForcedOpen).toBe(true));
   });
+
+  it("refetches facet counts when switching to or from a cost sort", async () => {
+    (projectService.listProjects as jest.Mock).mockResolvedValue({ isError: false, data: [] });
+    render(<OrganizationsDetailPage organizationName="org" setOrganizationName={jest.fn()} />);
+    await waitFor(() => expect(workspaceService.listWorkspacePage).toHaveBeenCalledWith(expect.anything(), true));
+
+    (workspaceService.listWorkspacePage as jest.Mock).mockClear();
+    await act(async () => tableProps.onSortChange("cost_desc"));
+    await waitFor(() =>
+      expect(workspaceService.listWorkspacePage).toHaveBeenLastCalledWith(
+        expect.objectContaining({ sort: "cost_desc" }),
+        true
+      )
+    );
+
+    (workspaceService.listWorkspacePage as jest.Mock).mockClear();
+    await act(async () => tableProps.onSortChange("cost_asc"));
+    await waitFor(() =>
+      expect(workspaceService.listWorkspacePage).toHaveBeenLastCalledWith(
+        expect.objectContaining({ sort: "cost_asc" }),
+        false
+      )
+    );
+
+    (workspaceService.listWorkspacePage as jest.Mock).mockClear();
+    await act(async () => tableProps.onSortChange("name_asc"));
+    await waitFor(() =>
+      expect(workspaceService.listWorkspacePage).toHaveBeenLastCalledWith(
+        expect.objectContaining({ sort: "name_asc" }),
+        true
+      )
+    );
+  });
 });

@@ -470,11 +470,11 @@ class OpaExecutorServiceTest {
         File workingDirectory = workingDirectoryWithPlan(tempDir);
         OpaExecutorServiceImpl subject = Mockito.spy(opaExecutorService);
         Mockito.doAnswer(invocation -> {
-            Consumer<String> output = invocation.getArgument(3);
+            Consumer<String> output = invocation.getArgument(4);
             output.accept("policy one: passed");
             output.accept("policy two: passed");
             return List.of();
-        }).when(subject).evaluateAllPolicies(Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any());
+        }).when(subject).evaluateAllPolicies(Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any());
 
         ExecutorJobResult result = subject.evaluateJob(policyJob(), workingDirectory);
 
@@ -521,10 +521,10 @@ class OpaExecutorServiceTest {
             File evaluatedPlan = invocation.getArgument(2);
             assertTrue(evaluatedPlan.exists());
             assertEquals("{\"resource_changes\":[]}", java.nio.file.Files.readString(evaluatedPlan.toPath()));
-            Consumer<String> output = invocation.getArgument(3);
+            Consumer<String> output = invocation.getArgument(4);
             output.accept("security-baseline: passed");
             return List.of();
-        }).when(subject).evaluateAllPolicies(Mockito.eq(job), Mockito.eq(workingDirectory), Mockito.any(File.class), Mockito.any());
+        }).when(subject).evaluateAllPolicies(Mockito.eq(job), Mockito.eq(workingDirectory), Mockito.any(File.class), Mockito.any(), Mockito.any());
 
         ExecutorJobResult result = subject.evaluateJob(job, workingDirectory);
 
@@ -552,7 +552,7 @@ class OpaExecutorServiceTest {
 
         assertFalse(result.isSuccessfulExecution());
         assertEquals(1, result.getExitCode());
-        Mockito.verify(subject, Mockito.never()).evaluateAllPolicies(Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any());
+        Mockito.verify(subject, Mockito.never()).evaluateAllPolicies(Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any());
         try (StepOutputBuffer output = result.getOutputBuffer()) {
             assertEquals("No plan.json or state found for compliance evaluation.\n", output.toString());
         }
@@ -566,10 +566,10 @@ class OpaExecutorServiceTest {
         OpaExecutorServiceImpl subject = Mockito.spy(opaExecutorService);
         subject.setLogsProperties(properties);
         Mockito.doAnswer(invocation -> {
-            Consumer<String> output = invocation.getArgument(3);
+            Consumer<String> output = invocation.getArgument(4);
             output.accept("enough output to move the buffer to a file");
             throw new IllegalStateException("evaluation failed");
-        }).when(subject).evaluateAllPolicies(Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any());
+        }).when(subject).evaluateAllPolicies(Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any());
 
         TerraformJob job = policyJob();
         assertThrows(IllegalStateException.class, () -> subject.evaluateJob(job, workingDirectory));
@@ -578,5 +578,75 @@ class OpaExecutorServiceTest {
             assertEquals(List.of("work"), left.map(path -> path.getFileName().toString()).toList(),
                     "no spilled output file may stay next to the working directory");
         }
+    }
+
+    @Test
+    void evaluatePolicySetPassesInfracostDataFlagToOpaBinary(@TempDir Path tempDir) throws Exception {
+        File workDir = tempDir.toFile();
+        File bundleDir = tempDir.resolve("bundle").toFile();
+        assertTrue(bundleDir.mkdirs());
+        File planJson = java.nio.file.Files.writeString(tempDir.resolve("plan.json"), "{}").toFile();
+        File infracostData = java.nio.file.Files.writeString(
+                tempDir.resolve("infracost-opa-data.json"),
+                "{\"infracost\":{\"totalMonthlyCost\":\"350.00\"}}").toFile();
+        File argsLog = tempDir.resolve("captured-args.txt").toFile();
+
+        File fakeOpa = tempDir.resolve("fake-opa.sh").toFile();
+        java.nio.file.Files.writeString(fakeOpa.toPath(),
+                "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"" + argsLog.getAbsolutePath() + "\"\n"
+                        + "echo '{\"result\":[{\"expressions\":[{\"value\":{}}]}]}'\n");
+        assertTrue(fakeOpa.setExecutable(true, true));
+        Mockito.when(opaBinaryService.getOpaBinary(null)).thenReturn(fakeOpa);
+
+        PolicyContext policyContext = PolicyContext.builder()
+                .policyId("finops-1")
+                .policyName("finops-soft-mandatory")
+                .enforcementLevel("SOFT_MANDATORY")
+                .build();
+
+        OpaEvaluationResult evalResult = opaExecutorService.evaluatePolicySet(
+                policyContext,
+                List.of(),
+                workDir,
+                planJson,
+                bundleDir,
+                null,
+                infracostData,
+                line -> {}
+        );
+
+        assertEquals("PASSED", evalResult.getStatus());
+        String captured = java.nio.file.Files.readString(argsLog.toPath());
+        assertTrue(captured.contains(infracostData.getAbsolutePath()),
+                "Expected --data <infracostData> in OPA CLI args: " + captured);
+    }
+
+    @Test
+    void evaluateJobInvokesInfracostAndForwardsOpaDataFile(@TempDir Path tempDir) throws Exception {
+        File workingDirectory = workingDirectoryWithPlan(tempDir);
+        TerraformJob job = policyJob();
+        File infracostData = java.nio.file.Files.writeString(
+                tempDir.resolve("infracost-opa-data.json"),
+                "{\"infracost\":{\"totalMonthlyCost\":1500.00}}").toFile();
+
+        io.terrakube.executor.service.infracost.InfracostExecutorService infracostService =
+                Mockito.mock(io.terrakube.executor.service.infracost.InfracostExecutorService.class);
+        Mockito.when(infracostService.evaluateCost(Mockito.eq(job), Mockito.eq(workingDirectory), Mockito.any(File.class), Mockito.any()))
+                .thenReturn(io.terrakube.executor.service.infracost.InfracostResult.builder()
+                        .status(io.terrakube.executor.service.infracost.InfracostResult.Status.SUCCESS)
+                        .infracostOpaDataFile(infracostData)
+                        .build());
+
+        OpaExecutorServiceImpl subject = Mockito.spy(opaExecutorService);
+        subject.setInfracostExecutorService(infracostService);
+        Mockito.doReturn(List.of()).when(subject).evaluateAllPolicies(
+                Mockito.eq(job), Mockito.eq(workingDirectory), Mockito.any(File.class), Mockito.eq(infracostData), Mockito.any());
+
+        ExecutorJobResult result = subject.evaluateJob(job, workingDirectory);
+
+        assertTrue(result.isSuccessfulExecution());
+        Mockito.verify(infracostService).evaluateCost(Mockito.eq(job), Mockito.eq(workingDirectory), Mockito.any(File.class), Mockito.any());
+        Mockito.verify(subject).evaluateAllPolicies(
+                Mockito.eq(job), Mockito.eq(workingDirectory), Mockito.any(File.class), Mockito.eq(infracostData), Mockito.any());
     }
 }

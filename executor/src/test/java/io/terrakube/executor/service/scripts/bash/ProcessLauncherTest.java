@@ -9,6 +9,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ProcessLauncherTest {
 
@@ -39,5 +41,72 @@ class ProcessLauncherTest {
         } finally {
             executor.shutdownNow();
         }
+    }
+
+    @Test
+    void destroyForciblyKillsSpawnedChildProcessesWithoutUnshare() throws Exception {
+        ExecutorService executor = Executors.newWorkStealingPool();
+        java.nio.file.Path childPidFile = java.nio.file.Files.createTempFile("proc-launcher-child-", ".pid");
+        try {
+            ProcessLauncher launcher = new ProcessLauncher(
+                    executor,
+                    "sh", "-c",
+                    "sleep 30 & echo $! > \"" + childPidFile.toAbsolutePath() + "\"; wait"
+            );
+            launcher.setPidIsolation(false);
+            var future = launcher.launch();
+
+            long childPid = -1;
+            long waitLimit = System.currentTimeMillis() + 5000;
+            while (System.currentTimeMillis() < waitLimit) {
+                String content = java.nio.file.Files.readString(childPidFile).trim();
+                if (!content.isEmpty()) {
+                    childPid = Long.parseLong(content);
+                    break;
+                }
+                Thread.sleep(25);
+            }
+            assertTrue(childPid > 0, "Child sleep process PID should be recorded");
+
+            launcher.destroyForcibly();
+            future.handle((code, ex) -> null).get(5, TimeUnit.SECONDS);
+
+            long finalChildPid = childPid;
+            long goneDeadline = System.currentTimeMillis() + 5000;
+            while (System.currentTimeMillis() < goneDeadline) {
+                if (!isProcessStillRunning(finalChildPid)) {
+                    break;
+                }
+                Thread.sleep(25);
+            }
+            assertFalse(isProcessStillRunning(childPid),
+                    "Descendant child process must be killed by destroyForcibly()");
+        } finally {
+            java.nio.file.Files.deleteIfExists(childPidFile);
+            executor.shutdownNow();
+        }
+    }
+
+    private static boolean isProcessStillRunning(long pid) {
+        return ProcessHandle.of(pid).map(handle -> {
+            if (!handle.isAlive()) {
+                return false;
+            }
+            // Under containers or sandboxes where PID 1 does not reap reparented orphans,
+            // a killed child stays in 'Z' (zombie) state and ProcessHandle.isAlive() still returns true.
+            java.nio.file.Path statPath = java.nio.file.Path.of("/proc/" + pid + "/stat");
+            if (java.nio.file.Files.isReadable(statPath)) {
+                try {
+                    String stat = java.nio.file.Files.readString(statPath);
+                    int rparen = stat.lastIndexOf(')');
+                    if (rparen > 0 && rparen + 2 < stat.length() && stat.charAt(rparen + 2) == 'Z') {
+                        return false;
+                    }
+                } catch (java.io.IOException ignored) {
+                    return false;
+                }
+            }
+            return true;
+        }).orElse(false);
     }
 }

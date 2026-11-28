@@ -9,6 +9,7 @@ import io.terrakube.client.TerrakubeClient;
 import io.terrakube.client.model.federated.Federated;
 import io.terrakube.client.model.federated.claim.FederatedClaim;
 import io.terrakube.client.model.response.ResponseWithInclude;
+import io.terrakube.registry.service.token.TokenStatusClient;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -49,6 +50,7 @@ public class RegistryAuthenticationManagerResolver implements AuthenticationMana
     private List<String> dexAudiences;
     private String patSecret;
     private TerrakubeClient terrakubeClient;
+    private TokenStatusClient tokenStatusClient;
 
     @Builder.Default
     private long federatedCacheExpireAfterWrite = 10;
@@ -63,10 +65,17 @@ public class RegistryAuthenticationManagerResolver implements AuthenticationMana
     private long providerManagerCacheMaximumSize = 100;
 
     @Builder.Default
+    private long patRevocationCacheTtlSeconds = 30;
+
+    @Builder.Default
+    private long patRevocationCacheMaximumSize = 10000;
+
+    @Builder.Default
     private java.util.function.Function<String, JwtDecoder> jwtDecoderFactory = JwtDecoders::fromIssuerLocation;
 
     private Cache<FederatedCacheKey, List<FederatedConfig>> federatedCache;
     private Cache<String, ProviderManager> providerManagerCache;
+    private Cache<String, Boolean> patRevocationCache;
 
     public Cache<FederatedCacheKey, List<FederatedConfig>> getFederatedCache() {
         if (federatedCache == null) {
@@ -86,6 +95,16 @@ public class RegistryAuthenticationManagerResolver implements AuthenticationMana
                     .build();
         }
         return providerManagerCache;
+    }
+
+    public Cache<String, Boolean> getPatRevocationCache() {
+        if (patRevocationCache == null) {
+            patRevocationCache = Caffeine.newBuilder()
+                    .expireAfterWrite(patRevocationCacheTtlSeconds, TimeUnit.SECONDS)
+                    .maximumSize(patRevocationCacheMaximumSize)
+                    .build();
+        }
+        return patRevocationCache;
     }
 
     @Override
@@ -135,7 +154,7 @@ public class RegistryAuthenticationManagerResolver implements AuthenticationMana
                 break;
             case jwtPat:
                 providerManager = getProviderManagerCache().get("pat",
-                        k -> new ProviderManager(new JwtAuthenticationProvider(getJwtEncoder(jwtPat))));
+                        k -> new ProviderManager(new JwtAuthenticationProvider(getPatDecoder())));
                 break;
             default:
                 providerManager = getProviderManagerCache().get(this.issuerUri,
@@ -212,6 +231,65 @@ public class RegistryAuthenticationManagerResolver implements AuthenticationMana
                     .build());
         });
         return new ProviderManager(provider);
+    }
+
+    private JwtDecoder getPatDecoder() {
+        JwtDecoder signatureDecoder = getJwtEncoder(jwtPat);
+        return token -> {
+            Jwt jwt = signatureDecoder.decode(token);
+            String verifiedIssuer = extractClaimString(jwt.getClaims(), "iss");
+            if (!jwtPat.equals(verifiedIssuer)) {
+                throw new BadJwtException("Invalid issuer for Terrakube token");
+            }
+            String jti = jwt.getId();
+            if (!isValidUuid(jti)) {
+                throw new BadJwtException("Token is revoked or unknown");
+            }
+            if (!isPatTokenActive(jti)) {
+                throw new BadJwtException("Token is revoked or unknown");
+            }
+            return jwt;
+        };
+    }
+
+    private boolean isPatTokenActive(String jti) {
+        if (patRevocationCacheTtlSeconds > 0) {
+            Boolean cached = getPatRevocationCache().getIfPresent(jti);
+            if (cached != null) {
+                return cached;
+            }
+        }
+        if (tokenStatusClient == null) {
+            log.warn("TokenStatusClient is not configured; failing closed for Terrakube PAT/team token check");
+            return false;
+        }
+        try {
+            TokenStatusClient.TokenStatusResponse response = tokenStatusClient.getTokenStatus(jti);
+            if (response == null) {
+                log.warn("Empty token status response for jti {}; failing closed", jti);
+                return false;
+            }
+            boolean active = response.active();
+            if (patRevocationCacheTtlSeconds > 0) {
+                getPatRevocationCache().put(jti, active);
+            }
+            return active;
+        } catch (Exception ex) {
+            log.warn("Failed to verify token revocation status for jti {}: {}", jti, ex.getMessage());
+            return false;
+        }
+    }
+
+    private static boolean isValidUuid(String value) {
+        if (value == null || value.isBlank()) {
+            return false;
+        }
+        try {
+            UUID.fromString(value);
+            return true;
+        } catch (IllegalArgumentException ex) {
+            return false;
+        }
     }
 
     // An empty dexAudiences list keeps the previous behaviour (issuer and expiry checks only).

@@ -1,5 +1,6 @@
 package io.terrakube.api.plugin.scheduler.reconciliation;
 
+import io.terrakube.api.plugin.cost.WorkspaceCostTrackingService;
 import io.terrakube.api.plugin.notification.JobNotificationTrigger;
 import io.terrakube.api.plugin.scheduler.ScheduleJobService;
 import io.terrakube.api.plugin.scheduler.trigger.RunTriggerEventWriter;
@@ -58,6 +59,7 @@ public class JobReconciliationService {
     private final Scheduler scheduler;
     private final JobReconciliationMetrics metrics;
     private final RunTriggerEventWriter runTriggerEventWriter;
+    private final WorkspaceCostTrackingService workspaceCostTrackingService;
 
     @Transactional
     public ReconciliationResult reconcile(int jobId, boolean dryRun) {
@@ -105,12 +107,13 @@ public class JobReconciliationService {
         metrics.reconciled(target);
         log.info("Reconciled job {} from {} to {} (derived {})", jobId, from, target, outcome);
 
-        deleteTriggerAfterCommit(jobId);
         if (target == JobStatus.completed) {
+            afterCommit(() -> workspaceCostTrackingService.updateWorkspaceCostOnCompletion(job, steps));
             // Synchronous, unlike the Quartz cleanup above: the event row has to commit
             // atomically with the status transition it's about, not after it.
             runTriggerEventWriter.enqueueIfQualifying(job);
         }
+        deleteTriggerAfterCommit(jobId);
         return result(jobId, job, outcome, target, ReconciliationDisposition.APPLIED, evidence);
     }
 
@@ -176,18 +179,26 @@ public class JobReconciliationService {
 
     /**
      * Runs the action once this method's transaction has committed, or immediately when there
-     * is none to wait for (the admin endpoint calls in without one).
+     * is none to wait for (the admin endpoint calls in without one). Each callback is isolated
+     * so a failure in one post-commit action never skips subsequent callbacks.
      */
     private void afterCommit(Runnable action) {
+        Runnable safeAction = () -> {
+            try {
+                action.run();
+            } catch (RuntimeException e) {
+                log.warn("Post-commit reconciliation action failed: {}", e.getMessage(), e);
+            }
+        };
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void afterCommit() {
-                    action.run();
+                    safeAction.run();
                 }
             });
         } else {
-            action.run();
+            safeAction.run();
         }
     }
 }

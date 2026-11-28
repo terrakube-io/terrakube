@@ -252,6 +252,10 @@
                     <env>
                         <BP_OPENTELEMETRY_ENABLED>true</BP_OPENTELEMETRY_ENABLED>
 						<BP_JVM_VERSION>25</BP_JVM_VERSION>
+						<!-- Paketo otherwise calculates -XX:MaxDirectMemorySize=10M, too small for Netty 4.2 (see docs/ops/jvm-direct-memory.md).
+						     Prepended, so a value in a runtime JAVA_TOOL_OPTIONS comes later and wins. -->
+						<BPE_DELIM_JAVA_TOOL_OPTIONS xml:space="preserve"> </BPE_DELIM_JAVA_TOOL_OPTIONS>
+						<BPE_PREPEND_JAVA_TOOL_OPTIONS>-XX:MaxDirectMemorySize=64M</BPE_PREPEND_JAVA_TOOL_OPTIONS>
                     </env>
                 	</image>
 				</configuration>

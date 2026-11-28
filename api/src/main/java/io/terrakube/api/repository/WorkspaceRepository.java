@@ -16,8 +16,8 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.jpa.repository.QueryHints;
 import org.springframework.data.repository.query.Param;
-import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.util.Date;
 import java.util.List;
 import java.util.Optional;
@@ -136,4 +136,16 @@ public interface WorkspaceRepository extends JpaRepository<Workspace, UUID> {
     @QueryHints(@QueryHint(name = "jakarta.persistence.lock.timeout", value = "5000"))
     @Query("SELECT w FROM workspace w WHERE w.id = :id")
     Optional<Workspace> lockForUpdate(@Param("id") UUID id);
+
+    /**
+     * Writes only the three cost-tracking columns via native SQL so callers cannot overwrite unrelated workspace fields,
+     * and standard JPA entity saves (with {@code insertable = false, updatable = false}) cannot overwrite cost columns.
+     */
+    @Modifying
+    @Query(value = "UPDATE workspace SET current_monthly_cost = :cost, cost_currency = :currency, cost_updated_at = :updatedAt WHERE id = :id",
+            nativeQuery = true)
+    int updateCost(@Param("id") String id,
+                   @Param("cost") BigDecimal cost,
+                   @Param("currency") String currency,
+                   @Param("updatedAt") Date updatedAt);
 }

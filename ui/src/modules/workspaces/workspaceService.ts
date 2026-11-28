@@ -34,6 +34,9 @@ async function listWorkspaces(organizationId: string): Promise<ApiResponse<ListW
                       lastJobDate
                       locked
                       policyComplianceStatus
+                      currentMonthlyCost
+                      costCurrency
+                      costUpdatedAt
                       workspaceTag {
                         edges {
                           node {
@@ -97,6 +100,9 @@ async function listWorkspaces(organizationId: string): Promise<ApiResponse<ListW
       terraformVersion: element.node.terraformVersion,
       locked: element.node.locked,
       policyComplianceStatus: element.node.policyComplianceStatus,
+      currentMonthlyCost: element.node.currentMonthlyCost != null ? Number(element.node.currentMonthlyCost) : null,
+      costCurrency: element.node.costCurrency ?? null,
+      costUpdatedAt: element.node.costUpdatedAt ?? null,
       tags: toTagBindings(element.node?.workspaceTag?.edges),
       projectId: element.node?.project?.edges?.[0]?.node?.id,
       projectName: element.node?.project?.edges?.[0]?.node?.name,
@@ -128,6 +134,8 @@ const workspaceSortMap: Record<WorkspacePageRequest["sort"], string> = {
   source_desc: "-source,-id",
   terraformVersion_asc: "terraformVersion,id",
   terraformVersion_desc: "-terraformVersion,-id",
+  cost_desc: "-currentMonthlyCost,-id",
+  cost_asc: "currentMonthlyCost,id",
 };
 
 function combineFilters(...filters: (string | undefined)[]): string | undefined {
@@ -175,7 +183,9 @@ function workspaceFilter(
       ? policyStatus === "UNKNOWN"
         ? "(policyComplianceStatus=isnull=true,policyComplianceStatus==UNKNOWN)"
         : `policyComplianceStatus==${quoteRsql(policyStatus)}`
-      : undefined
+      : undefined,
+    // PostgreSQL sorts NULLs first on DESC; exclude unpriced workspaces when sorting by cost
+    request.sort === "cost_desc" || request.sort === "cost_asc" ? "currentMonthlyCost=isnull=false" : undefined
   );
 }
 
@@ -350,6 +360,9 @@ async function listWorkspacePage(
                   lastJobDate
                   locked
                   policyComplianceStatus
+                  currentMonthlyCost
+                  costCurrency
+                  costUpdatedAt
                   workspaceTag { edges { node { tagId value } } }
                   project { edges { node { id name } } }
                 }
@@ -400,6 +413,9 @@ async function listWorkspacePage(
     lastRun: node.lastJobDate,
     locked: node.locked,
     policyComplianceStatus: node.policyComplianceStatus,
+    currentMonthlyCost: node.currentMonthlyCost != null ? Number(node.currentMonthlyCost) : null,
+    costCurrency: node.costCurrency ?? null,
+    costUpdatedAt: node.costUpdatedAt ?? null,
     tags: toTagBindings(node.workspaceTag?.edges),
     projectId: node.project?.edges?.[0]?.node?.id,
     projectName: node.project?.edges?.[0]?.node?.name,

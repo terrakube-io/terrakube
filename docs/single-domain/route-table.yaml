@@ -61,6 +61,7 @@ routes:
       - /admin/v1
       - /migrate/v1
       - /execution/v1
+      - /internal/v1
       - /.well-known
   - prefix: /dex/
     match: prefix

@@ -1366,3 +1366,108 @@ describe("DetailsJob job variables notice", () => {
     expect(screen.queryByText(/run variables?/)).not.toBeInTheDocument();
   });
 });
+
+describe("DetailsJob Infracost estimation panel", () => {
+  beforeEach(() => {
+    useStructuredOutputStreamMock.mockReturnValue(null);
+  });
+
+  it("renders the Cost Estimation (Infracost) panel when context contains infracost data", async () => {
+    getMock.mockImplementation((url: string) => {
+      if (url.includes("/context/v1/")) {
+        return Promise.resolve({
+          data: {
+            infracost: {
+              status: "SUCCESS",
+              currency: "USD",
+              totalMonthlyCost: "142.50",
+              pastTotalMonthlyCost: "100.00",
+              diffTotalMonthlyCost: "42.50",
+              summary: {
+                totalDetectedResources: 1,
+                totalSupportedResources: 1,
+                totalUnsupportedResources: 0,
+                totalNoPriceResources: 0,
+              },
+              projects: [
+                {
+                  name: "infra",
+                  pastBreakdown: { resources: [] },
+                  breakdown: {
+                    resources: [
+                      {
+                        name: "aws_instance.app",
+                        resourceType: "aws_instance",
+                        monthlyCost: "142.50",
+                      },
+                    ],
+                  },
+                  diff: {
+                    resources: [{ name: "aws_instance.app", monthlyCost: "42.50" }],
+                  },
+                },
+              ],
+            },
+          },
+        });
+      }
+      return Promise.resolve({
+        data: {
+          data: { id: "1", attributes: { status: "completed" } },
+          included: [],
+        },
+      });
+    });
+
+    render(<DetailsJob jobId="1" />);
+
+    expect(await screen.findByText("Cost Estimation (Infracost)")).toBeInTheDocument();
+    expect(screen.getAllByText("$142.50/mo").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText("aws_instance.app")).toBeInTheDocument();
+  });
+
+  it("selects step-scoped infracost/<stepId> by highest stepNumber and keeps polling fingerprint stable", async () => {
+    const { extractInfracostFromContext, infracostFingerprint } = await import("../Details");
+    type StepArg = NonNullable<Parameters<typeof extractInfracostFromContext>[1]>[number];
+    const step1 = { id: "step-a", stepNumber: 100 } as StepArg;
+    const step2 = { id: "step-b", stepNumber: 200 } as StepArg;
+
+    const payload = {
+      infracost: { status: "SUCCESS" as const, currency: "USD", totalMonthlyCost: 10 },
+      "infracost/step-b": {
+        status: "SUCCESS" as const,
+        currency: "USD",
+        totalMonthlyCost: 188.25,
+        pastTotalMonthlyCost: 100,
+        diffTotalMonthlyCost: 88.25,
+        timeGenerated: "2026-11-26T10:00:00Z",
+      },
+      "infracost/step-a": { status: "SUCCESS" as const, currency: "USD", totalMonthlyCost: 50 },
+    };
+
+    const selected = extractInfracostFromContext(payload, [step1, step2]);
+    expect(selected?.totalMonthlyCost).toBe(188.25);
+
+    const copy = { ...selected! };
+    expect(infracostFingerprint(selected)).toBe(infracostFingerprint(copy));
+    expect(infracostFingerprint({ ...selected!, totalMonthlyCost: 190 })).not.toBe(infracostFingerprint(selected));
+
+    getMock.mockImplementation((url: string) => {
+      if (url.includes("/context/v1/")) {
+        return Promise.resolve({ data: payload });
+      }
+      return Promise.resolve({
+        data: {
+          data: { id: "1", attributes: { status: "completed" } },
+          included: [
+            { id: "step-a", type: "step", attributes: { stepNumber: 100, name: "plan1", status: "completed" } },
+            { id: "step-b", type: "step", attributes: { stepNumber: 200, name: "plan2", status: "completed" } },
+          ],
+        },
+      });
+    });
+
+    render(<DetailsJob jobId="1" />);
+    expect((await screen.findAllByText("$188.25/mo")).length).toBeGreaterThanOrEqual(2);
+  });
+});

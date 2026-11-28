@@ -433,4 +433,35 @@ describe("WorkspaceTable", () => {
       });
     });
   });
+
+  describe("Estimated Monthly Cost column", () => {
+    it("displays formatted cost or em-dash and toggles cost_desc -> cost_asc on header click", () => {
+      const onSortChange = jest.fn();
+      const pricedWorkspaces: WorkspaceListItem[] = [
+        { ...workspaces[0], currentMonthlyCost: 210.5, costCurrency: "USD" },
+        { ...workspaces[1], currentMonthlyCost: null },
+      ];
+      const { rerender } = renderTable({ workspaces: pricedWorkspaces, onSortChange, sortOption: "name_asc" });
+
+      expect(screen.getByText("$210.50/mo")).toBeInTheDocument();
+      expect(screen.getByText("—")).toBeInTheDocument();
+
+      const header = screen.getByRole("button", { name: /Est\. Monthly Cost/i });
+      fireEvent.click(header);
+      expect(onSortChange).toHaveBeenCalledWith("cost_desc");
+
+      rerender(
+        <MemoryRouter>
+          <WorkspaceTable
+            {...defaultProps}
+            workspaces={pricedWorkspaces}
+            onSortChange={onSortChange}
+            sortOption="cost_desc"
+          />
+        </MemoryRouter>
+      );
+      fireEvent.click(screen.getByRole("button", { name: /Est\. Monthly Cost/i }));
+      expect(onSortChange).toHaveBeenCalledWith("cost_asc");
+    });
+  });
 });

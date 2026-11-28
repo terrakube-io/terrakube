@@ -15,6 +15,7 @@ import io.terrakube.executor.service.artifact.ArtifactRestoreService;
 import io.terrakube.executor.service.executor.ExecutorCapacityGate;
 import io.terrakube.executor.service.executor.ExecutorJobImpl;
 import io.terrakube.executor.service.executor.JobExecutionWatchdog;
+import io.terrakube.executor.service.infracost.InfracostExecutorService;
 import io.terrakube.executor.service.logs.ProcessLogs;
 import io.terrakube.executor.service.opa.OpaExecutorService;
 import io.terrakube.executor.service.scripts.ScriptEngineService;
@@ -56,6 +57,7 @@ class TerraformExecutorServiceWiringTest {
         @Bean StructuredOutputPersistenceQueue structuredOutputPersistenceQueue() { return Mockito.mock(StructuredOutputPersistenceQueue.class); }
         @Bean BinaryCacheRecoveryService binaryCacheRecoveryService() { return Mockito.mock(BinaryCacheRecoveryService.class); }
         @Bean OpaExecutorService opaExecutorService() { return Mockito.mock(OpaExecutorService.class); }
+        @Bean InfracostExecutorService infracostExecutorService() { return Mockito.mock(InfracostExecutorService.class); }
         @Bean WorkspaceSecurity workspaceSecurity() { return Mockito.mock(WorkspaceSecurity.class); }
         @Bean TerrakubeClient terrakubeClient() { return Mockito.mock(TerrakubeClient.class); }
         @Bean UpdateJobStatus updateJobStatus() { return Mockito.mock(UpdateJobStatus.class); }
@@ -92,6 +94,7 @@ class TerraformExecutorServiceWiringTest {
 
                     TerraformExecutorServiceImpl executorService = context.getBean(TerraformExecutorServiceImpl.class);
                     assertThat(executorService.opaExecutorService).isNotNull();
+                    assertThat(executorService.infracostExecutorService).isNotNull();
                     // plan artifacts are only in effect if both services were injected
                     assertThat(org.springframework.test.util.ReflectionTestUtils.getField(executorService, "artifactPackagingService"))
                             .isSameAs(context.getBean(ArtifactPackagingService.class));

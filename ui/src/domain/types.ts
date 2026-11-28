@@ -656,6 +656,9 @@ export type WorkspaceAttributes = {
   globalRemoteState?: boolean;
   sharedIds?: string;
   policyComplianceStatus?: "COMPLIANT" | "NON_COMPLIANT" | "EXEMPTED" | "UNKNOWN";
+  currentMonthlyCost?: number | string | null;
+  costCurrency?: string | null;
+  costUpdatedAt?: string | null;
   lastJobStatus?: string;
   /** "drifted" when the last drift check found changes, "clean" when it found none, empty when never checked. */
   driftStatus?: "drifted" | "clean" | null;
@@ -852,4 +855,66 @@ export type PolicyEvaluationContext = {
   shadowHardViolations?: number;
   shadowSoftViolations?: number;
   results?: PolicyEvaluationResultItem[];
+};
+
+export type InfracostCostComponent = {
+  name: string;
+  unit?: string;
+  hourlyQuantity?: string | null;
+  monthlyQuantity?: string | null;
+  price?: string | null;
+  hourlyCost?: number | string | null;
+  monthlyCost?: number | string | null;
+};
+
+export type InfracostResource = {
+  name: string;
+  resourceType?: string;
+  metadata?: Record<string, unknown>;
+  hourlyCost?: number | string | null;
+  monthlyCost?: number | string | null;
+  costComponents?: InfracostCostComponent[];
+  subresources?: InfracostResource[];
+};
+
+export type InfracostProjectBreakdown = {
+  resources?: InfracostResource[];
+  totalHourlyCost?: number | string | null;
+  totalMonthlyCost?: number | string | null;
+};
+
+export type InfracostProject = {
+  name: string;
+  metadata?: Record<string, unknown>;
+  pastBreakdown?: InfracostProjectBreakdown | null;
+  breakdown?: InfracostProjectBreakdown | null;
+  diff?: InfracostProjectBreakdown | null;
+};
+
+export type InfracostSummaryCounts = {
+  totalDetectedResources?: number;
+  totalSupportedResources?: number;
+  totalUnsupportedResources?: number;
+  totalNoPriceResources?: number;
+  unsupportedResourceCounts?: Record<string, number>;
+  noPriceResourceCounts?: Record<string, number>;
+};
+
+export type InfracostContext = {
+  status: "SUCCESS" | "ERROR";
+  version?: string;
+  currency?: string;
+  totalMonthlyCost?: number | string | null;
+  totalHourlyCost?: number | string | null;
+  pastTotalMonthlyCost?: number | string | null;
+  pastTotalHourlyCost?: number | string | null;
+  diffTotalMonthlyCost?: number | string | null;
+  diffTotalHourlyCost?: number | string | null;
+  timeGenerated?: string;
+  shareUrl?: string;
+  errorMessage?: string;
+  truncated?: boolean;
+  omittedResourceCount?: number;
+  summary?: InfracostSummaryCounts;
+  projects?: InfracostProject[];
 };

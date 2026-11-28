@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import io.terrakube.api.repository.NotificationOutboxRepository;
+import io.terrakube.api.rs.job.Job;
 import io.terrakube.api.rs.job.JobStatus;
 import io.terrakube.api.rs.notification.NotificationOutbox;
 import io.terrakube.api.rs.notification.NotificationOutboxStatus;
@@ -30,7 +31,7 @@ public class NotificationOutboxTransactions {
 
     private final NotificationOutboxRepository notificationOutboxRepository;
 
-    NotificationOutboxTransactions(NotificationOutboxRepository notificationOutboxRepository) {
+    public NotificationOutboxTransactions(NotificationOutboxRepository notificationOutboxRepository) {
         this.notificationOutboxRepository = notificationOutboxRepository;
     }
 
@@ -58,8 +59,13 @@ public class NotificationOutboxTransactions {
         // LazyInitializationException the moment the sender reads a field off it. Force it to
         // load now, while the session is still open.
         Hibernate.initialize(outbox.getConfiguration());
+        Job job = outbox.getJob();
+        Integer jobId = job != null ? job.getId() : null;
+        JobStatus effectiveJobStatus = outbox.getJobStatus() != null
+                ? outbox.getJobStatus()
+                : (job != null ? job.getStatus() : null);
         return new ClaimedOutbox(outbox.getConfiguration(), outbox.getPayload(), outbox.getAttemptCount(),
-                outbox.getLastAttemptAt());
+                outbox.getLastAttemptAt(), jobId, effectiveJobStatus);
     }
 
     // False-alarm guard for a row that has just been claimed (PENDING -> SENDING). The payload

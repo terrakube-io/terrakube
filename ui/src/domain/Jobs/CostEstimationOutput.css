@@ -1,0 +1,315 @@
+.cost-estimation {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.cost-estimation-disclaimer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  padding: 8px 12px;
+  border: 1px solid var(--tk-border-primary);
+  border-radius: 6px;
+  background: var(--tk-fill-secondary);
+  color: var(--tk-text-secondary);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+[data-theme="dark"] .cost-estimation-disclaimer {
+  background: var(--tk-bg-elevated);
+}
+
+.cost-estimation-disclaimer-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cost-estimation-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px;
+}
+
+.cost-kpi-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--tk-border-primary);
+  border-radius: 8px;
+  background: var(--tk-fill-secondary);
+}
+
+[data-theme="dark"] .cost-kpi-card {
+  background: var(--tk-bg-elevated);
+}
+
+.cost-kpi-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--tk-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.cost-kpi-value {
+  font-size: 18px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--tk-text-primary);
+}
+
+.cost-kpi-value--increase {
+  color: var(--run-delete);
+}
+
+.cost-kpi-value--decrease {
+  color: var(--run-create);
+}
+
+.cost-kpi-sub {
+  font-size: 12px;
+  color: var(--tk-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.cost-unpriced-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 14px;
+  border: 1px solid var(--run-warn-border);
+  border-radius: 6px;
+  background: var(--run-warn-bg);
+  color: var(--tk-text-primary);
+  font-size: 13px;
+}
+
+.cost-unpriced-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.cost-unpriced-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  color: var(--run-warn);
+}
+
+.cost-unpriced-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.cost-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+
+.cost-filter-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.cost-filter-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 16px;
+  border: 1px solid var(--ant-color-border, #d9d9d9);
+  background: var(--ant-color-bg-container, #ffffff);
+  color: var(--ant-color-text-secondary, #595959);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  line-height: 1.4;
+}
+
+.cost-filter-pill:hover {
+  border-color: var(--ant-color-primary-border-hover, #69b1ff);
+  color: var(--ant-color-primary, #1677ff);
+}
+
+.cost-filter-pill--active {
+  background: var(--ant-color-primary-bg, #e6f4ff);
+  border-color: var(--ant-color-primary, #1677ff);
+  color: var(--ant-color-primary, #1677ff);
+}
+
+.cost-filter-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--ant-color-fill-secondary, rgba(0, 0, 0, 0.06));
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.cost-filter-pill--active .cost-filter-count {
+  background: var(--ant-color-primary, #1677ff);
+  color: #ffffff;
+}
+
+.cost-search {
+  flex: 0 1 280px;
+  min-width: 200px;
+}
+
+.cost-resource-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--run-divider);
+}
+
+.cost-resource-item {
+  border-bottom: 1px solid var(--run-divider);
+}
+
+.cost-resource-item:last-child {
+  border-bottom: 0;
+}
+
+.cost-resource-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  width: 100%;
+  padding: 10px 4px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.cost-resource-row:hover {
+  background: var(--tk-fill-secondary);
+}
+
+.cost-resource-row:focus-visible {
+  outline: 2px solid var(--run-focus);
+  outline-offset: -2px;
+}
+
+.cost-resource-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1 1 260px;
+}
+
+.cost-resource-address {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--tk-text-primary);
+  overflow-wrap: anywhere;
+}
+
+.cost-resource-project {
+  font-size: 12px;
+  color: var(--tk-text-secondary);
+}
+
+.cost-resource-costs {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.cost-resource-monthly {
+  font-weight: 600;
+  color: var(--tk-text-primary);
+}
+
+.cost-resource-diff--increase {
+  color: var(--run-delete);
+}
+
+.cost-resource-diff--decrease {
+  color: var(--run-create);
+}
+
+.cost-components-wrapper {
+  padding: 4px 16px 14px 28px;
+  overflow-x: auto;
+}
+
+.cost-components-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.cost-components-table th,
+.cost-components-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--run-divider);
+  text-align: left;
+}
+
+.cost-components-table th {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--tk-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.cost-components-table td.cost-numeric,
+.cost-components-table th.cost-numeric {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.cost-subresource-heading {
+  padding-top: 10px;
+  font-weight: 600;
+  color: var(--tk-text-primary);
+  background: var(--tk-fill-secondary);
+}
+
+[data-theme="dark"] .cost-subresource-heading {
+  background: var(--tk-bg-elevated);
+}
+
+@media (max-width: 575.98px) {
+  .cost-search {
+    flex-basis: 100%;
+  }
+
+  .cost-components-wrapper {
+    padding: 4px 4px 12px 12px;
+  }
+}

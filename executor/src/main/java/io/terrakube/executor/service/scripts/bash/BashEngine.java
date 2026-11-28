@@ -1,6 +1,7 @@
 package io.terrakube.executor.service.scripts.bash;
 
 import com.diogonunes.jcolor.AnsiFormat;
+import io.terrakube.executor.service.infracost.InfracostEnvSanitizer;
 import io.terrakube.executor.service.mode.TerraformJob;
 import io.terrakube.executor.service.scripts.CommandExecution;
 import io.terrakube.executor.service.scripts.ScriptEngineService;
@@ -20,7 +21,10 @@ import java.nio.charset.Charset;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -102,6 +106,7 @@ public class BashEngine implements CommandExecution {
             }
         }
 
+        List<String> loadedTempEnvKeys = new ArrayList<>();
         String tempEnv = workingDirectory.getAbsolutePath() + "/.terrakube_temp_env";
         Path path = Paths.get(tempEnv);
         if (Files.exists(path)) {
@@ -114,6 +119,7 @@ public class BashEngine implements CommandExecution {
                         String key = line.substring(0, eqIdx);
                         String val = line.substring(eqIdx + 1);
                         log.info("Loading {}", key);
+                        loadedTempEnvKeys.add(key);
                         processLauncher.setEnvironmentVariable(key, val);
                     }
                 }
@@ -146,6 +152,11 @@ public class BashEngine implements CommandExecution {
                 terraformJob.getStepId()));
         terraformJob.getEnvironmentVariables().forEach((key, value) -> processLauncher.setEnvironmentVariable(key, value));
         terraformJob.getVariables().forEach((key, value) -> processLauncher.setEnvironmentVariable(key, value));
+        InfracostEnvSanitizer.stripFromProcessLauncher(
+                processLauncher,
+                loadedTempEnvKeys,
+                terraformJob.getEnvironmentVariables() != null ? terraformJob.getEnvironmentVariables().keySet() : Collections.emptySet(),
+                terraformJob.getVariables() != null ? terraformJob.getVariables().keySet() : Collections.emptySet());
         processLauncher.setOrAppendEnvironmentVariable("PATH", workingDirectory.getAbsolutePath() + ScriptEngineService.TOOLS, ":");
 
         //Adding terraform to the process PATH

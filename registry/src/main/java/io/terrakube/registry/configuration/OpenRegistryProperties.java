@@ -30,6 +30,10 @@ public class OpenRegistryProperties {
     private long providerManagerCacheExpireAfterWrite = 10;
     private long providerManagerCacheMaximumSize = 100;
 
+    /** Seconds PAT/team token active status is cached; 0 disables caching. */
+    private long patRevocationCacheTtlSeconds = 30;
+    private long patRevocationCacheMaximumSize = 10000;
+
     /** Seconds the module version list is kept. This is the delay before a new version is served. */
     private long moduleVersionsCacheTtlSeconds = 600;
 
@@ -56,6 +60,14 @@ public class OpenRegistryProperties {
         if (providerCacheTtlSeconds <= 0) {
             throw new IllegalStateException("io.terrakube.registry.providerCacheTtlSeconds must be at least 1, "
                     + "got " + providerCacheTtlSeconds);
+        }
+        if (patRevocationCacheTtlSeconds < 0) {
+            throw new IllegalStateException("io.terrakube.registry.patRevocationCacheTtlSeconds must be at least 0, "
+                    + "got " + patRevocationCacheTtlSeconds);
+        }
+        if (patRevocationCacheMaximumSize < 1) {
+            throw new IllegalStateException("io.terrakube.registry.patRevocationCacheMaximumSize must be at least 1, "
+                    + "got " + patRevocationCacheMaximumSize);
         }
         if (publicUrl != null && !publicUrl.isBlank()) {
             if (!publicUrl.matches("https?://[^/?#@]+")) {

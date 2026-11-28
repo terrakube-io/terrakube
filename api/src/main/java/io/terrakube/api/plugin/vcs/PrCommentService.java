@@ -3,6 +3,8 @@ package io.terrakube.api.plugin.vcs;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.terrakube.api.plugin.cost.InfracostContextExtractor;
+import io.terrakube.api.plugin.cost.InfracostSummary;
 import io.terrakube.api.plugin.context.ContextPatchApplier;
 import io.terrakube.api.plugin.logs.StepOutputReader;
 import io.terrakube.api.plugin.storage.StorageTypeService;
@@ -27,6 +29,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumSet;
@@ -61,6 +64,7 @@ public class PrCommentService {
     StepOutputReader stepOutputReader;
     ObjectMapper objectMapper;
     PolicyEvaluationRepository policyEvaluationRepository;
+    InfracostContextExtractor infracostContextExtractor;
 
     @Value("${io.terrakube.ui.url:}")
     String uiUrl;
@@ -69,7 +73,8 @@ public class PrCommentService {
     public PrCommentService(GitHubWebhookService gitHubWebhookService, GitLabWebhookService gitLabWebhookService,
             BitBucketWebhookService bitBucketWebhookService, JobRepository jobRepository, StepRepository stepRepository,
             StorageTypeService storageTypeService, StepOutputReader stepOutputReader, ObjectMapper objectMapper,
-            PolicyEvaluationRepository policyEvaluationRepository) {
+            PolicyEvaluationRepository policyEvaluationRepository,
+            InfracostContextExtractor infracostContextExtractor) {
         this.gitHubWebhookService = gitHubWebhookService;
         this.gitLabWebhookService = gitLabWebhookService;
         this.bitBucketWebhookService = bitBucketWebhookService;
@@ -79,13 +84,24 @@ public class PrCommentService {
         this.stepOutputReader = stepOutputReader;
         this.objectMapper = objectMapper;
         this.policyEvaluationRepository = policyEvaluationRepository;
+        this.infracostContextExtractor = infracostContextExtractor != null
+                ? infracostContextExtractor
+                : new InfracostContextExtractor(storageTypeService, objectMapper);
+    }
+
+    public PrCommentService(GitHubWebhookService gitHubWebhookService, GitLabWebhookService gitLabWebhookService,
+            BitBucketWebhookService bitBucketWebhookService, JobRepository jobRepository, StepRepository stepRepository,
+            StorageTypeService storageTypeService, StepOutputReader stepOutputReader, ObjectMapper objectMapper,
+            PolicyEvaluationRepository policyEvaluationRepository) {
+        this(gitHubWebhookService, gitLabWebhookService, bitBucketWebhookService, jobRepository, stepRepository,
+                storageTypeService, stepOutputReader, objectMapper, policyEvaluationRepository, null);
     }
 
     public PrCommentService(GitHubWebhookService gitHubWebhookService, GitLabWebhookService gitLabWebhookService,
             BitBucketWebhookService bitBucketWebhookService, JobRepository jobRepository, StepRepository stepRepository,
             StorageTypeService storageTypeService, StepOutputReader stepOutputReader, ObjectMapper objectMapper) {
         this(gitHubWebhookService, gitLabWebhookService, bitBucketWebhookService, jobRepository, stepRepository,
-                storageTypeService, stepOutputReader, objectMapper, null);
+                storageTypeService, stepOutputReader, objectMapper, null, null);
     }
 
     public void postPlanResult(Job job) {
@@ -536,14 +552,33 @@ public class PrCommentService {
      * to during the run) directly from storage rather than the executor's live context API,
      * since by the time a PR comment is posted the job has already finished.
      */
-    private Optional<String> renderStructuredChangesTable(Job job, boolean apply) {
+    private JsonNode readJobContextRoot(Job job) {
+        if (job == null || storageTypeService == null || objectMapper == null) {
+            return null;
+        }
         try {
             String contextJson = storageTypeService.getContext(job.getId());
             if (contextJson == null || contextJson.isBlank()) {
+                return null;
+            }
+            return objectMapper.readTree(contextJson);
+        } catch (Exception e) {
+            log.debug("No storage context for job {}: {}", job.getId(), e.getMessage());
+            return null;
+        }
+    }
+
+    private Optional<String> renderStructuredChangesTable(Job job, boolean apply) {
+        return renderStructuredChangesTable(job, apply, readJobContextRoot(job));
+    }
+
+    private Optional<String> renderStructuredChangesTable(Job job, boolean apply, JsonNode contextRoot) {
+        try {
+            if (contextRoot == null || !contextRoot.isObject()) {
                 return Optional.empty();
             }
 
-            Map<String, Object> context = objectMapper.readValue(contextJson, new TypeReference<Map<String, Object>>() {
+            Map<String, Object> context = objectMapper.convertValue(contextRoot, new TypeReference<Map<String, Object>>() {
             });
             Object rawByStep = context.get(apply ? "applyStructuredOutput" : "planStructuredOutput");
             if (!(rawByStep instanceof Map<?, ?> byStep)) {
@@ -617,16 +652,27 @@ public class PrCommentService {
         sb.append("**Job:** ").append(jobReference(job)).append("\n\n");
 
         String icon = statusIcon(job.getStatus());
+        JsonNode contextRoot = readJobContextRoot(job);
+        boolean hasPlanOutput = planOutput != null && !planOutput.isEmpty();
 
-        if (planOutput != null && !planOutput.isEmpty()) {
+        if (hasPlanOutput) {
             String summary = matchRunSummary(planOutput);
             if (summary != null) {
                 sb.append(icon).append(" ").append(summary).append("\n\n");
             }
+            renderStructuredChangesTable(job, false, contextRoot).ifPresent(table -> sb.append(table).append("\n"));
+        } else if (job.getStatus() == JobStatus.waitingApproval) {
+            sb.append(icon).append(" See the plan in the Terrakube UI.\n\n");
+        } else if (job.getStatus() == JobStatus.completed) {
+            sb.append(icon).append(" No changes detected.\n\n");
+        } else {
+            sb.append(icon).append(" Plan failed. Check the Terrakube UI for details.\n\n");
+        }
 
-            renderStructuredChangesTable(job, false).ifPresent(table -> sb.append(table).append("\n"));
-            renderPolicyGuardrailsSummary(job).ifPresent(pSummary -> sb.append(pSummary).append("\n\n"));
+        renderCostEstimationSummary(job, contextRoot).ifPresent(cSummary -> sb.append(cSummary).append("\n\n"));
+        renderPolicyGuardrailsSummary(job, contextRoot).ifPresent(pSummary -> sb.append(pSummary).append("\n\n"));
 
+        if (hasPlanOutput) {
             String content = planOutput;
             if (content.length() > MAX_COMMENT_LENGTH) {
                 content = content.substring(0, MAX_COMMENT_LENGTH)
@@ -636,15 +682,6 @@ public class PrCommentService {
             sb.append("```diff\n");
             sb.append(content);
             sb.append("\n```\n\n</details>\n\n");
-        } else if (job.getStatus() == JobStatus.waitingApproval) {
-            sb.append(icon).append(" See the plan in the Terrakube UI.\n\n");
-            renderPolicyGuardrailsSummary(job).ifPresent(pSummary -> sb.append(pSummary).append("\n\n"));
-        } else if (job.getStatus() == JobStatus.completed) {
-            sb.append(icon).append(" No changes detected.\n\n");
-            renderPolicyGuardrailsSummary(job).ifPresent(pSummary -> sb.append(pSummary).append("\n\n"));
-        } else {
-            sb.append(icon).append(" Plan failed. Check the Terrakube UI for details.\n\n");
-            renderPolicyGuardrailsSummary(job).ifPresent(pSummary -> sb.append(pSummary).append("\n\n"));
         }
 
         sb.append("---\n");
@@ -664,19 +701,14 @@ public class PrCommentService {
     }
 
     public Optional<String> renderPolicyGuardrailsSummary(Job job) {
+        return renderPolicyGuardrailsSummary(job, readJobContextRoot(job));
+    }
+
+    Optional<String> renderPolicyGuardrailsSummary(Job job, JsonNode contextRoot) {
         try {
-            JsonNode policyEvalNode = null;
-            try {
-                String contextJson = storageTypeService.getContext(job.getId());
-                if (contextJson != null && !contextJson.isBlank()) {
-                    JsonNode root = objectMapper.readTree(contextJson);
-                    if (root.has("policyEvaluation")) {
-                        policyEvalNode = root.get("policyEvaluation");
-                    }
-                }
-            } catch (Exception e) {
-                log.debug("No storage context for job {}: {}", job.getId(), e.getMessage());
-            }
+            JsonNode policyEvalNode = (contextRoot != null && contextRoot.has("policyEvaluation"))
+                    ? contextRoot.get("policyEvaluation")
+                    : null;
 
             List<PolicyEvaluation> dbEvals = (policyEvaluationRepository != null && job != null) ?
                     policyEvaluationRepository.findByJob(job) : List.of();
@@ -829,6 +861,88 @@ public class PrCommentService {
             log.warn("Unable to render policy guardrails summary for job {}: {}", job.getId(), e.getMessage());
             return Optional.empty();
         }
+    }
+
+    public Optional<String> renderCostEstimationSummary(Job job) {
+        return renderCostEstimationSummary(job, readJobContextRoot(job));
+    }
+
+    Optional<String> renderCostEstimationSummary(Job job, JsonNode contextRoot) {
+        if (job == null || infracostContextExtractor == null) {
+            return Optional.empty();
+        }
+        try {
+            List<Step> steps = stepRepository != null ? stepRepository.findByJobId(job.getId()) : List.of();
+            Optional<InfracostSummary> summaryOpt = infracostContextExtractor.extractFromRootNode(contextRoot, steps);
+            if (summaryOpt.isEmpty()) {
+                return Optional.empty();
+            }
+            InfracostSummary summary = summaryOpt.get();
+            if (summary.isError()) {
+                return Optional.of(formatCostErrorSection(summary));
+            }
+            if (!summary.isSuccess() || summary.totalMonthlyCost() == null) {
+                return Optional.empty();
+            }
+            return Optional.of(formatCostSuccessSection(summary));
+        } catch (Exception e) {
+            log.warn("Unable to render cost estimation summary for job {}: {}", job.getId(), e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    private static String formatCostErrorSection(InfracostSummary summary) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("### 💰 Cost Estimation (Infracost)\n\n");
+        sb.append("> ℹ️ Pre-deployment cost estimation was unavailable for this plan.\n");
+        if (summary.errorMessage() != null && !summary.errorMessage().isBlank()) {
+            String safeError = summary.errorMessage().replace("```", "` ` `").trim();
+            sb.append("\n```text\n").append(safeError).append("\n```\n");
+        }
+        return sb.toString();
+    }
+
+    private static String formatCostSuccessSection(InfracostSummary summary) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("### 💰 Cost Estimation (Infracost)\n\n");
+        sb.append("| Est. Previous Monthly | Est. New Monthly | Est. Monthly Delta |\n");
+        sb.append("| :--- | :--- | :--- |\n");
+        sb.append(String.format("| **%s** | **%s** | **%s**%s |",
+                summary.formatPastMonthlyCost(),
+                summary.formatTotalMonthlyCost(),
+                summary.formatMonthlyDelta(),
+                deltaArrow(summary.diffTotalMonthlyCost())));
+        sb.append("\n\n");
+
+        appendResourceCoverage(sb, summary);
+
+        sb.append("> ℹ️ **Disclaimer**: *All cost figures are pre-deployment estimates based on declared resources and public list pricing. Actual cloud billing may vary based on dynamic usage, traffic, and provider discounting.*\n");
+        if (summary.shareUrl() != null && !summary.shareUrl().isBlank()) {
+            sb.append(">\n> 📊 [View Detailed Breakdown in Infracost Dashboard](")
+                    .append(summary.shareUrl())
+                    .append(")\n");
+        }
+        return sb.toString();
+    }
+
+    private static void appendResourceCoverage(StringBuilder sb, InfracostSummary summary) {
+        if (summary.totalDetectedResources() <= 0) {
+            return;
+        }
+        sb.append(String.format("Resources priced: **%d / %d**",
+                summary.totalSupportedResources(), summary.totalDetectedResources()));
+        int unpriced = summary.unpricedResourceCount();
+        if (unpriced > 0) {
+            sb.append(String.format(" _(%d unpriced/unsupported)_", unpriced));
+        }
+        sb.append("\n\n");
+    }
+
+    private static String deltaArrow(BigDecimal diff) {
+        if (diff == null || diff.signum() == 0) {
+            return "";
+        }
+        return diff.signum() > 0 ? " ↗️" : " ↘️";
     }
 
     public void sendPolicyCommitStatus(Job job) {

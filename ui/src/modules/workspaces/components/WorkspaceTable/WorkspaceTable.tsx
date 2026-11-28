@@ -1,4 +1,4 @@
-import { Button, Checkbox, Flex, Tag, Typography, Pagination } from "antd";
+import { Button, Checkbox, Flex, Tag, Tooltip, Typography, Pagination } from "antd";
 import { WorkspaceOrigin, listOrigin, rememberWorkspaceOrigin } from "@/modules/workspaces/workspaceOrigin";
 import {
   FolderOutlined,
@@ -23,6 +23,8 @@ import VcsLogo from "@/components/display/VcsLogo";
 import getVcsNameFromUrl from "@/modules/workspaces/utils/getVcsNameFromUrl";
 import getVcsTypeFromUrl from "@/modules/workspaces/utils/getVcsTypeFromUrl";
 import { WorkspaceSortOption } from "@/modules/workspaces/utils/workspaceSort";
+import { COST_ESTIMATION_DISCLAIMER, formatMonthlyCost } from "@/modules/workspaces/utils/costFormat";
+import { relativeTime } from "@/modules/utils/dates";
 import "./WorkspaceTable.css";
 
 const GROUP_PREVIEW_SIZE = 10;
@@ -233,6 +235,19 @@ function WorkspaceRow({
         <IacTypeLogo type={item.iacType} />
         <span>{item.terraformVersion}</span>
       </div>
+      <div className="workspace-col-cost">
+        <Tooltip
+          title={
+            item.currentMonthlyCost != null
+              ? item.costUpdatedAt
+                ? `${COST_ESTIMATION_DISCLAIMER} Updated ${relativeTime(item.costUpdatedAt) ?? item.costUpdatedAt}.`
+                : COST_ESTIMATION_DISCLAIMER
+              : `No cost estimate recorded yet. ${COST_ESTIMATION_DISCLAIMER}`
+          }
+        >
+          <span>{formatMonthlyCost(item.currentMonthlyCost, item.costCurrency)}</span>
+        </Tooltip>
+      </div>
       <div className="workspace-col-source">
         {item.branch !== "remote-content" && item.normalizedSource ? (
           <>
@@ -394,6 +409,14 @@ export default function WorkspaceTable({
           <SortableHeader
             label="Version"
             spec={{ asc: "terraformVersion_asc", desc: "terraformVersion_desc" }}
+            sortOption={sortOption}
+            onSortChange={onSortChange}
+          />
+        </div>
+        <div className="workspace-col-cost">
+          <SortableHeader
+            label="Est. Monthly Cost"
+            spec={{ asc: "cost_asc", desc: "cost_desc", first: "desc" }}
             sortOption={sortOption}
             onSortChange={onSortChange}
           />

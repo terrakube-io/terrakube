@@ -1,6 +1,9 @@
 package io.terrakube.registry.configuration.authentication.dex;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.io.Decoders;
+import io.jsonwebtoken.security.Keys;
 import io.terrakube.client.TerrakubeClient;
 import io.terrakube.client.model.federated.ClaimsData;
 import io.terrakube.client.model.federated.Federated;
@@ -10,6 +13,7 @@ import io.terrakube.client.model.federated.claim.FederatedClaim;
 import io.terrakube.client.model.federated.claim.FederatedClaimAttributes;
 import io.terrakube.client.model.generic.Resource;
 import io.terrakube.client.model.response.ResponseWithInclude;
+import io.terrakube.registry.service.token.TokenStatusClient;
 import jakarta.servlet.http.HttpServletRequest;
 import org.apache.commons.lang3.RandomStringUtils;
 import org.junit.jupiter.api.BeforeEach;
@@ -19,7 +23,11 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.AuthenticationException;
+import org.springframework.security.oauth2.server.resource.authentication.BearerTokenAuthenticationToken;
 
+import java.time.Instant;
 import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -32,6 +40,9 @@ class RegistryAuthenticationManagerResolverTest {
     private TerrakubeClient terrakubeClient;
 
     @Mock
+    private TokenStatusClient tokenStatusClient;
+
+    @Mock
     private HttpServletRequest request;
 
     @Mock
@@ -39,15 +50,18 @@ class RegistryAuthenticationManagerResolverTest {
 
     private RegistryAuthenticationManagerResolver resolver;
 
+    private String patSecret;
     private final String issuerUri = "https://dex.example.com";
 
     @BeforeEach
     void setUp() {
+        patSecret = Base64.getUrlEncoder().withoutPadding().encodeToString(RandomStringUtils.secure().nextAlphanumeric(32).getBytes());
         resolver = RegistryAuthenticationManagerResolver.builder()
-                .patSecret(Base64.getEncoder().encodeToString(RandomStringUtils.secure().nextAlphanumeric(32).getBytes()))
+                .patSecret(patSecret)
                 .internalSecret(Base64.getEncoder().encodeToString(RandomStringUtils.secure().nextAlphanumeric(32).getBytes()))
                 .issuerUri(issuerUri)
                 .terrakubeClient(terrakubeClient)
+                .tokenStatusClient(tokenStatusClient)
                 .jwtDecoderFactory(url -> {
                     if (url.equals(issuerUri)) {
                         throw new IllegalArgumentException("Unable to resolve the Configuration with the provided Issuer of \"" + url + "\"");
@@ -449,10 +463,13 @@ class RegistryAuthenticationManagerResolverTest {
                 .patSecret(secret)
                 .internalSecret(secret)
                 .issuerUri(issuerUri)
+                .tokenStatusClient(tokenStatusClient)
                 .build();
 
-        String token = createRealSignedToken("Terrakube", secret);
+        String jti = UUID.randomUUID().toString();
+        String token = createSignedPatJwt(jti, secret);
         when(request.getHeader("authorization")).thenReturn("Bearer " + token);
+        when(tokenStatusClient.getTokenStatus(jti)).thenReturn(new TokenStatusClient.TokenStatusResponse(true));
 
         AuthenticationManager manager = customResolver.resolve(request);
         assertNotNull(manager);
@@ -601,6 +618,132 @@ class RegistryAuthenticationManagerResolverTest {
         assertEquals(List.of("terrakube-app", "cli", "ui"), DexWebSecurityAdapter.acceptedAudiences("terrakube-app", " cli, ui ,,terrakube-app"));
         assertEquals(List.of("terrakube-app"), DexWebSecurityAdapter.acceptedAudiences("terrakube-app", ""));
         assertEquals(List.of("terrakube-app"), DexWebSecurityAdapter.acceptedAudiences("terrakube-app", null));
+    }
+
+    @Test
+    void patToken_active_authenticatesAndCachesRevocationStatus() {
+        String jti = UUID.randomUUID().toString();
+        String jwt = createSignedPatJwt(jti, patSecret);
+        when(request.getHeader("authorization")).thenReturn("Bearer " + jwt);
+        when(tokenStatusClient.getTokenStatus(jti)).thenReturn(new TokenStatusClient.TokenStatusResponse(true));
+
+        AuthenticationManager manager = resolver.resolve(request);
+        Authentication auth1 = manager.authenticate(new BearerTokenAuthenticationToken(jwt));
+        Authentication auth2 = manager.authenticate(new BearerTokenAuthenticationToken(jwt));
+
+        assertTrue(auth1.isAuthenticated());
+        assertTrue(auth2.isAuthenticated());
+        verify(tokenStatusClient, times(1)).getTokenStatus(jti);
+    }
+
+    @Test
+    void patToken_revoked_rejectsAndCachesRevokedStatus() {
+        String jti = UUID.randomUUID().toString();
+        String jwt = createSignedPatJwt(jti, patSecret);
+        when(request.getHeader("authorization")).thenReturn("Bearer " + jwt);
+        when(tokenStatusClient.getTokenStatus(jti)).thenReturn(new TokenStatusClient.TokenStatusResponse(false));
+
+        AuthenticationManager manager = resolver.resolve(request);
+        assertThrows(AuthenticationException.class, () -> manager.authenticate(new BearerTokenAuthenticationToken(jwt)));
+        assertThrows(AuthenticationException.class, () -> manager.authenticate(new BearerTokenAuthenticationToken(jwt)));
+
+        verify(tokenStatusClient, times(1)).getTokenStatus(jti);
+    }
+
+    @Test
+    void patToken_missingOrNonUuidJti_rejectsWithoutCallingApi() {
+        String noJtiJwt = createSignedPatJwt(null, patSecret);
+        String badJtiJwt = createSignedPatJwt("not-a-uuid", patSecret);
+        when(request.getHeader("authorization")).thenReturn("Bearer " + noJtiJwt);
+
+        AuthenticationManager manager = resolver.resolve(request);
+        assertThrows(AuthenticationException.class, () -> manager.authenticate(new BearerTokenAuthenticationToken(noJtiJwt)));
+        assertThrows(AuthenticationException.class, () -> manager.authenticate(new BearerTokenAuthenticationToken(badJtiJwt)));
+
+        verifyNoInteractions(tokenStatusClient);
+    }
+
+    @Test
+    void patToken_invalidSignature_rejectsWithoutCallingApiOrPopulatingCache() {
+        String jti = UUID.randomUUID().toString();
+        String wrongSecret = Base64.getUrlEncoder().withoutPadding().encodeToString(RandomStringUtils.secure().nextAlphanumeric(32).getBytes());
+        String badSigJwt = createSignedPatJwt(jti, wrongSecret);
+        when(request.getHeader("authorization")).thenReturn("Bearer " + badSigJwt);
+
+        AuthenticationManager manager = resolver.resolve(request);
+        assertThrows(AuthenticationException.class, () -> manager.authenticate(new BearerTokenAuthenticationToken(badSigJwt)));
+
+        verifyNoInteractions(tokenStatusClient);
+        assertNull(resolver.getPatRevocationCache().getIfPresent(jti));
+    }
+
+    @Test
+    void patToken_apiFailure_failsClosedWithoutCaching() {
+        String jti = UUID.randomUUID().toString();
+        String jwt = createSignedPatJwt(jti, patSecret);
+        when(request.getHeader("authorization")).thenReturn("Bearer " + jwt);
+        when(tokenStatusClient.getTokenStatus(jti))
+                .thenThrow(new RuntimeException("API unavailable"))
+                .thenReturn(new TokenStatusClient.TokenStatusResponse(true));
+
+        AuthenticationManager manager = resolver.resolve(request);
+        assertThrows(AuthenticationException.class, () -> manager.authenticate(new BearerTokenAuthenticationToken(jwt)));
+        assertNull(resolver.getPatRevocationCache().getIfPresent(jti));
+
+        Authentication recovered = manager.authenticate(new BearerTokenAuthenticationToken(jwt));
+        assertTrue(recovered.isAuthenticated());
+        verify(tokenStatusClient, times(2)).getTokenStatus(jti);
+    }
+
+    @Test
+    void patToken_nullTokenStatusClient_failsClosed() {
+        String jti = UUID.randomUUID().toString();
+        String jwt = createSignedPatJwt(jti, patSecret);
+        RegistryAuthenticationManagerResolver noClientResolver = RegistryAuthenticationManagerResolver.builder()
+                .patSecret(patSecret)
+                .internalSecret(Base64.getEncoder().encodeToString(RandomStringUtils.secure().nextAlphanumeric(32).getBytes()))
+                .issuerUri(issuerUri)
+                .build();
+        when(request.getHeader("authorization")).thenReturn("Bearer " + jwt);
+
+        AuthenticationManager manager = noClientResolver.resolve(request);
+        assertThrows(AuthenticationException.class, () -> manager.authenticate(new BearerTokenAuthenticationToken(jwt)));
+    }
+
+    @Test
+    void patToken_zeroCacheTtl_queriesApiOnEveryRequest() {
+        String jti = UUID.randomUUID().toString();
+        String jwt = createSignedPatJwt(jti, patSecret);
+        RegistryAuthenticationManagerResolver uncachedResolver = RegistryAuthenticationManagerResolver.builder()
+                .patSecret(patSecret)
+                .internalSecret(Base64.getEncoder().encodeToString(RandomStringUtils.secure().nextAlphanumeric(32).getBytes()))
+                .issuerUri(issuerUri)
+                .tokenStatusClient(tokenStatusClient)
+                .patRevocationCacheTtlSeconds(0)
+                .build();
+        when(request.getHeader("authorization")).thenReturn("Bearer " + jwt);
+        when(tokenStatusClient.getTokenStatus(jti))
+                .thenReturn(new TokenStatusClient.TokenStatusResponse(true))
+                .thenReturn(new TokenStatusClient.TokenStatusResponse(false));
+
+        AuthenticationManager manager = uncachedResolver.resolve(request);
+        assertTrue(manager.authenticate(new BearerTokenAuthenticationToken(jwt)).isAuthenticated());
+        assertThrows(AuthenticationException.class, () -> manager.authenticate(new BearerTokenAuthenticationToken(jwt)));
+        verify(tokenStatusClient, times(2)).getTokenStatus(jti);
+    }
+
+    private String createSignedPatJwt(String jti, String base64UrlSecret) {
+        var builder = Jwts.builder()
+                .issuer("Terrakube")
+                .subject("Terrakube")
+                .claim("email", "user@example.com")
+                .claim("groups", List.of("team-a"))
+                .issuedAt(Date.from(Instant.now()))
+                .expiration(Date.from(Instant.now().plusSeconds(3600)));
+        if (jti != null) {
+            builder.id(jti);
+        }
+        return builder.signWith(Keys.hmacShaKeyFor(Decoders.BASE64URL.decode(base64UrlSecret))).compact();
     }
 
     private String createMockJwtToken(Map<String, Object> payloadMap) throws Exception {
