@@ -53,8 +53,14 @@ public class DataSourceAutoConfiguration {
                 break;
             case POSTGRESQL:
                 log.info("postgresql datasource using SSL Mode: {}", dataSourceConfigurationProperties.getSslMode());
+                if (dataSourceConfigurationProperties.isAwsIamAuth() && dataSourceConfigurationProperties.isAzureAdAuth()) {
+                    throw new IllegalStateException("AWS IAM and Microsoft Entra ID authentication cannot both be enabled for the PostgreSQL datasource");
+                }
                 PGSimpleDataSource ds;
-                if (dataSourceConfigurationProperties.isAwsIamAuth()) {
+                if (dataSourceConfigurationProperties.isAzureAdAuth()) {
+                    log.info("postgresql datasource using Microsoft Entra ID authentication");
+                    ds = new PostgresAzureAdAuthDataSource(dataSourceConfigurationProperties.getAzureClientId());
+                } else if (dataSourceConfigurationProperties.isAwsIamAuth()) {
                     PostgresAwsIamAuthDataSource dsAwsIam = new PostgresAwsIamAuthDataSource();
                     dsAwsIam.setRegion(dataSourceConfigurationProperties.getAwsRegion());
                     ds = dsAwsIam;
