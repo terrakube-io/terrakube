@@ -87,7 +87,7 @@ class WorkspaceCostPermissionTest extends ServerApplicationTests {
                     .extract().statusCode();
 
             assertThat(createStatus).as("POST with %s", extraAttr).isEqualTo(HttpStatus.FORBIDDEN.value());
-            assertThat(workspaceRepository.findAllByOrganizationNameAndName("simple", workspaceName)).isEmpty();
+            assertThat(workspaceRepository.getByOrganizationNameAndName("simple", workspaceName)).isNull();
         }
 
         int patchStatus = given()
