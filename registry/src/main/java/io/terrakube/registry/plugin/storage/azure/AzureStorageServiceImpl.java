@@ -6,6 +6,7 @@ import com.azure.storage.blob.BlobServiceClient;
 import com.azure.storage.blob.models.BlobErrorCode;
 import com.azure.storage.blob.models.BlobHttpHeaders;
 import com.azure.storage.blob.models.BlobStorageException;
+import com.azure.storage.blob.models.UserDelegationKey;
 import com.azure.storage.blob.sas.BlobSasPermission;
 import com.azure.storage.blob.sas.BlobServiceSasSignatureValues;
 import lombok.Builder;
@@ -21,8 +22,10 @@ import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.net.URI;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
 
 @Slf4j
 @Builder
@@ -31,6 +34,7 @@ public class AzureStorageServiceImpl implements StorageService {
     private static final String CONTAINER_NAME = "registry";
     private static final String BUCKET_DOWNLOAD_MODULE_LOCATION = "%s/terraform/modules/v1/download/%s/%s/%s/%s/module.zip";
     private static final String BLOB_ZIP_MODULE_LOCATION = "%s/%s/%s/%s/module.zip";
+    private static final Duration USER_DELEGATION_KEY_LIFETIME = Duration.ofHours(1);
 
     @NonNull
     BlobServiceClient blobServiceClient;
@@ -41,15 +45,20 @@ public class AzureStorageServiceImpl implements StorageService {
     @NonNull
     String registryHostname;
 
-    // Not @NonNull: only required when presignedRedirectEnabled is true. The SAS token is
-    // generated from the blobServiceClient's shared-key credential (connection string path).
-    // If Azure AD / Managed Identity is ever used instead, delegation via UserDelegationKey
-    // would be required — see the module-download resilience design.
+    // Only used when presignedRedirectEnabled is true.
     @Builder.Default
     private int presignedUrlExpirySeconds = 300;
 
     @Builder.Default
     private boolean presignedRedirectEnabled = false;
+
+    // True when the blobServiceClient authenticates with Microsoft Entra ID instead of the account
+    // key. A service SAS needs the account key, so the SAS is signed with a user delegation key.
+    @Builder.Default
+    private boolean userDelegationSas = false;
+
+    @Builder.Default
+    private final AtomicReference<UserDelegationKey> userDelegationKey = new AtomicReference<>();
 
     @Override
     public String searchModule(String organizationName, String moduleName, String providerName,
@@ -96,9 +105,10 @@ public class AzureStorageServiceImpl implements StorageService {
      * getModuleVersionPath's 10-minute cache) — its validity window is much shorter than the cache
      * TTL, so every ZIP request gets a fresh SAS token computed here.
      *
-     * <p>Requires the {@link BlobServiceClient} to be built with a shared-key credential
-     * (connection string). SAS generation will fail if the client was built with Azure AD /
-     * Managed Identity credentials without a UserDelegationKey.
+     * <p>With a shared-key client (connection string) this is a service SAS. With a Microsoft Entra ID
+     * client it is a user delegation SAS, which needs the identity to be allowed
+     * {@code Microsoft.Storage/storageAccounts/blobServices/generateUserDelegationKey/action}
+     * (included in Storage Blob Data Contributor / Reader).
      */
     @Override
     public Optional<URI> getPresignedDownloadUrl(String organizationName, String moduleName, String providerName,
@@ -122,11 +132,14 @@ public class AzureStorageServiceImpl implements StorageService {
             // host and Azure Storage. Without it, a client whose clock is even slightly ahead of
             // the server's can receive AuthenticationFailed ("Signature not valid yet") for an
             // otherwise valid SAS token issued right now.
-            BlobServiceSasSignatureValues sasValues = new BlobServiceSasSignatureValues(
-                    OffsetDateTime.now().plusSeconds(presignedUrlExpirySeconds), permissions)
-                    .setStartTime(OffsetDateTime.now().minusMinutes(1));
+            OffsetDateTime now = OffsetDateTime.now();
+            OffsetDateTime sasExpiry = now.plusSeconds(presignedUrlExpirySeconds);
+            BlobServiceSasSignatureValues sasValues = new BlobServiceSasSignatureValues(sasExpiry, permissions)
+                    .setStartTime(now.minusMinutes(1));
 
-            String sasToken = blobClient.generateSas(sasValues);
+            String sasToken = userDelegationSas
+                    ? blobClient.generateUserDelegationSas(sasValues, userDelegationKey(now, sasExpiry))
+                    : blobClient.generateSas(sasValues);
             // Never log the SAS token itself — it carries the signature query string.
             log.info("Generated Azure SAS download URL for container {} blob {}", CONTAINER_NAME, blobName);
             return Optional.of(URI.create(blobClient.getBlobUrl() + "?" + sasToken));
@@ -135,6 +148,21 @@ public class AzureStorageServiceImpl implements StorageService {
                     e.getMessage());
             throw new StorageUnavailableException("Failed to generate Azure SAS URL for blob " + blobName, e);
         }
+    }
+
+    /**
+     * Returns a user delegation key that is valid at least until {@code sasExpiry}. The key is
+     * requested from Azure Storage once and reused until it no longer covers a new SAS, instead of
+     * one extra round trip per module download.
+     */
+    private synchronized UserDelegationKey userDelegationKey(OffsetDateTime now, OffsetDateTime sasExpiry) {
+        UserDelegationKey key = userDelegationKey.get();
+        if (key == null || key.getSignedExpiry().isBefore(sasExpiry)) {
+            key = blobServiceClient.getUserDelegationKey(now.minusMinutes(1), sasExpiry.plus(USER_DELEGATION_KEY_LIFETIME));
+            userDelegationKey.set(key);
+            log.info("Got an Azure Storage user delegation key that expires at {}", key.getSignedExpiry());
+        }
+        return key;
     }
 
     /**

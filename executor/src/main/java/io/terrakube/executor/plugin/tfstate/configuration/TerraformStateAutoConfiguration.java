@@ -1,7 +1,6 @@
 package io.terrakube.executor.plugin.tfstate.configuration;
 
 import com.azure.storage.blob.BlobServiceClient;
-import com.azure.storage.blob.BlobServiceClientBuilder;
 import com.google.cloud.storage.Storage;
 import io.terrakube.client.TerrakubeClient;
 import io.terrakube.executor.plugin.tfstate.StorageRetryMetrics;
@@ -11,6 +10,7 @@ import io.terrakube.executor.plugin.tfstate.TerraformStateMetadataService;
 import io.terrakube.executor.plugin.tfstate.TerraformStatePathService;
 import io.terrakube.executor.plugin.tfstate.aws.AwsTerraformStateImpl;
 import io.terrakube.executor.plugin.tfstate.aws.AwsTerraformStateProperties;
+import io.terrakube.executor.plugin.tfstate.azure.AzureStorageClients;
 import io.terrakube.executor.plugin.tfstate.azure.AzureTerraformStateImpl;
 import io.terrakube.executor.plugin.tfstate.azure.AzureTerraformStateProperties;
 import io.terrakube.executor.plugin.tfstate.gcp.GcpStorageClients;
@@ -64,12 +64,9 @@ public class TerraformStateAutoConfiguration {
         if (terraformStateProperties != null)
             switch (terraformStateProperties.getType()) {
                 case AzureTerraformStateImpl:
-                    BlobServiceClient blobServiceClient = new BlobServiceClientBuilder()
-                            .connectionString(
-                                    String.format("DefaultEndpointsProtocol=https;AccountName=%s;AccountKey=%s;EndpointSuffix=core.windows.net",
-                                            azureTerraformStateProperties.getStorageAccountName(),
-                                            azureTerraformStateProperties.getStorageAccessKey())
-                            ).buildClient();
+                    BlobServiceClient blobServiceClient = AzureStorageClients.blobServiceClient(
+                            azureTerraformStateProperties.getStorageAccountName(),
+                            azureTerraformStateProperties.getStorageAccessKey());
 
                     terraformState = AzureTerraformStateImpl.builder()
                             .resourceGroupName(azureTerraformStateProperties.getResourceGroupName())

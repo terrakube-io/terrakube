@@ -4,6 +4,7 @@ import com.azure.storage.blob.BlobClient;
 import com.azure.storage.blob.BlobContainerClient;
 import com.azure.storage.blob.BlobServiceClient;
 import com.azure.storage.blob.models.BlobStorageException;
+import com.azure.storage.blob.models.UserDelegationKey;
 import io.terrakube.registry.plugin.storage.StorageUnavailableException;
 import io.terrakube.registry.service.git.GitService;
 import io.terrakube.registry.service.git.ModuleVersionDownload;
@@ -283,5 +284,74 @@ class AzureStorageServiceImplPresignedTest {
         // which means the full effective validity is expirySeconds + ~60s.
         assertTrue(captured.getExpiryTime().minusSeconds(59).isAfter(captured.getStartTime()),
                 "SAS expiryTime should be at least 59 seconds after startTime (60s skew window)");
+    }
+
+    // ---- getPresignedDownloadUrl: Microsoft Entra ID client, user delegation SAS ----
+
+    @Test
+    void getPresignedDownloadUrl_withEntraId_signsWithACachedUserDelegationKey() {
+        BlobServiceClient blobServiceClient = mock(BlobServiceClient.class);
+        BlobContainerClient containerClient = mock(BlobContainerClient.class);
+        BlobClient blobClient = mock(BlobClient.class);
+        UserDelegationKey key = new UserDelegationKey().setSignedExpiry(OffsetDateTime.now().plusHours(1));
+
+        when(blobServiceClient.getBlobContainerClient("registry")).thenReturn(containerClient);
+        when(containerClient.getBlobClient(anyString())).thenReturn(blobClient);
+        when(blobClient.getBlobUrl())
+                .thenReturn("https://myaccount.blob.core.windows.net/registry/org/module/azure/1.0.0/module.zip");
+        when(blobServiceClient.getUserDelegationKey(any(), any())).thenReturn(key);
+        when(blobClient.generateUserDelegationSas(any(), same(key))).thenReturn("sv=2021-06-08&skoid=oid&sig=REDACTED");
+
+        AzureStorageServiceImpl service = AzureStorageServiceImpl.builder()
+                .blobServiceClient(blobServiceClient)
+                .gitService(mock(GitService.class))
+                .registryHostname("https://registry.terrakube.io")
+                .presignedRedirectEnabled(true)
+                .presignedUrlExpirySeconds(300)
+                .userDelegationSas(true)
+                .build();
+
+        Optional<URI> first = service.getPresignedDownloadUrl("org", "module", "azure", "1.0.0");
+        Optional<URI> second = service.getPresignedDownloadUrl("org", "module", "azure", "1.0.0");
+
+        assertEquals("https://myaccount.blob.core.windows.net/registry/org/module/azure/1.0.0/module.zip"
+                + "?sv=2021-06-08&skoid=oid&sig=REDACTED", first.orElseThrow().toString());
+        assertEquals(first, second);
+        ArgumentCaptor<OffsetDateTime> keyExpiry = ArgumentCaptor.forClass(OffsetDateTime.class);
+        verify(blobServiceClient, times(1)).getUserDelegationKey(any(), keyExpiry.capture());
+        assertTrue(keyExpiry.getValue().isAfter(OffsetDateTime.now().plusSeconds(300)),
+                "The user delegation key must outlive the SAS signed with it");
+        verify(blobClient, never()).generateSas(any());
+    }
+
+    @Test
+    void getPresignedDownloadUrl_withEntraId_renewsAUserDelegationKeyThatEndsBeforeTheSas() {
+        BlobServiceClient blobServiceClient = mock(BlobServiceClient.class);
+        BlobContainerClient containerClient = mock(BlobContainerClient.class);
+        BlobClient blobClient = mock(BlobClient.class);
+        UserDelegationKey expiring = new UserDelegationKey().setSignedExpiry(OffsetDateTime.now().plusMinutes(1));
+        UserDelegationKey renewed = new UserDelegationKey().setSignedExpiry(OffsetDateTime.now().plusHours(1));
+
+        when(blobServiceClient.getBlobContainerClient("registry")).thenReturn(containerClient);
+        when(containerClient.getBlobClient(anyString())).thenReturn(blobClient);
+        when(blobClient.getBlobUrl()).thenReturn("https://myaccount.blob.core.windows.net/registry/module.zip");
+        when(blobServiceClient.getUserDelegationKey(any(), any())).thenReturn(expiring, renewed);
+        when(blobClient.generateUserDelegationSas(any(), any())).thenReturn("sig=REDACTED");
+
+        AzureStorageServiceImpl service = AzureStorageServiceImpl.builder()
+                .blobServiceClient(blobServiceClient)
+                .gitService(mock(GitService.class))
+                .registryHostname("https://registry.terrakube.io")
+                .presignedRedirectEnabled(true)
+                .presignedUrlExpirySeconds(300)
+                .userDelegationSas(true)
+                .build();
+
+        service.getPresignedDownloadUrl("org", "module", "azure", "1.0.0");
+        service.getPresignedDownloadUrl("org", "module", "azure", "1.0.0");
+
+        verify(blobServiceClient, times(2)).getUserDelegationKey(any(), any());
+        verify(blobClient).generateUserDelegationSas(any(), same(expiring));
+        verify(blobClient).generateUserDelegationSas(any(), same(renewed));
     }
 }

@@ -8,9 +8,6 @@ import com.azure.storage.blob.BlobClient;
 import com.azure.storage.blob.BlobContainerClient;
 import com.azure.storage.blob.BlobServiceClient;
 import com.azure.storage.blob.models.BlobStorageException;
-import com.azure.storage.blob.sas.BlobSasPermission;
-import com.azure.storage.blob.sas.BlobServiceSasSignatureValues;
-import com.azure.storage.common.sas.SasProtocol;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NonNull;
@@ -43,7 +40,6 @@ import java.net.URL;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
-import java.time.OffsetDateTime;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -97,7 +93,14 @@ public class AzureTerraformStateImpl implements TerraformState {
             azureBackendHcl.appendln("      storage_account_name = \"" + storageAccountName + "\"");
             azureBackendHcl.appendln("      container_name       = \"" + storageContainerName + "\"");
             azureBackendHcl.appendln("      key                  = \"" + organizationId + "/" + workspaceId + "/terraform.tfstate" + "\"");
-            azureBackendHcl.appendln("      access_key           = \"" + storageAccessKey + "\"");
+            if (AzureStorageClients.usesEntraId(storageAccessKey)) {
+                // No account key: Terraform/OpenTofu authenticate to the state container with Microsoft
+                // Entra ID, using the identity from the standard ARM_* environment variables. Workspace
+                // ARM_* variables change that identity, see docs/ops/azure-storage-entra-id.md.
+                azureBackendHcl.appendln("      use_azuread_auth     = true");
+            } else {
+                azureBackendHcl.appendln("      access_key           = \"" + storageAccessKey + "\"");
+            }
             azureBackendHcl.appendln("  }");
             azureBackendHcl.appendln("}");
 
@@ -278,15 +281,9 @@ public class AzureTerraformStateImpl implements TerraformState {
                         BlobClient blobClient = blobContainerClient.getBlobClient(blobName);
                         File targetFile = new File(workingDirectory.getAbsolutePath() + "/" + TERRAFORM_PLAN_FILE);
 
-                        BlobSasPermission blobSasPermission = new BlobSasPermission().setReadPermission(true);
-                        BlobServiceSasSignatureValues sasBuilder = new BlobServiceSasSignatureValues(OffsetDateTime.now().plusMinutes(5), blobSasPermission)
-                                .setProtocol(SasProtocol.HTTPS_ONLY);
-
-                        FileUtils.copyURLToFile(
-                                new URL(String.format("%s?%s", blobClient.getBlobUrl(), blobClient.generateSas(sasBuilder))),
-                                targetFile,
-                                30000,
-                                30000);
+                        // Read through the client instead of a SAS URL: a SAS needs the account key, which is
+                        // not available when the client authenticates with Microsoft Entra ID.
+                        blobClient.downloadToFile(targetFile.getAbsolutePath(), true);
                         return null;
                     });
                     planExists.set(true);
