@@ -1,12 +1,12 @@
 package io.terrakube.api.plugin.storage.configuration;
 
 import com.azure.storage.blob.BlobServiceClient;
-import com.azure.storage.blob.BlobServiceClientBuilder;
 import com.google.cloud.storage.Storage;
 import io.terrakube.api.plugin.storage.StorageRetryMetrics;
 import io.terrakube.api.plugin.storage.StorageTypeService;
 import io.terrakube.api.plugin.storage.aws.AwsStorageTypeProperties;
 import io.terrakube.api.plugin.storage.aws.AwsStorageTypeServiceImpl;
+import io.terrakube.api.plugin.storage.azure.AzureStorageClients;
 import io.terrakube.api.plugin.storage.azure.AzureStorageTypeProperties;
 import io.terrakube.api.plugin.storage.azure.AzureStorageTypeServiceImpl;
 import io.terrakube.api.plugin.storage.gcp.GcpStorageClients;
@@ -83,12 +83,9 @@ public class StorageTypeAutoConfiguration {
         log.info("StorageType={}", storageTypeProperties.getType());
         switch (storageTypeProperties.getType()) {
             case AZURE:
-                BlobServiceClient blobServiceClient = new BlobServiceClientBuilder()
-                        .connectionString(
-                                String.format("DefaultEndpointsProtocol=https;AccountName=%s;AccountKey=%s;EndpointSuffix=core.windows.net",
-                                        azureStorageTypeProperties.getAccountName(),
-                                        azureStorageTypeProperties.getAccountKey())
-                        ).buildClient();
+                BlobServiceClient blobServiceClient = AzureStorageClients.blobServiceClient(
+                        azureStorageTypeProperties.getAccountName(),
+                        azureStorageTypeProperties.getAccountKey());
 
                 storageTypeService = AzureStorageTypeServiceImpl.builder()
                         .blobServiceClient(blobServiceClient)

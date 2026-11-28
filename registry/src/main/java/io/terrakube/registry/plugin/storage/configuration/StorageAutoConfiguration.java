@@ -2,12 +2,12 @@ package io.terrakube.registry.plugin.storage.configuration;
 
 
 import com.azure.storage.blob.BlobServiceClient;
-import com.azure.storage.blob.BlobServiceClientBuilder;
 import com.google.auth.oauth2.GoogleCredentials;
 import io.terrakube.registry.configuration.OpenRegistryProperties;
 import io.terrakube.registry.plugin.storage.StorageService;
 import io.terrakube.registry.plugin.storage.aws.AwsStorageServiceImpl;
 import io.terrakube.registry.plugin.storage.aws.AwsStorageServiceProperties;
+import io.terrakube.registry.plugin.storage.azure.AzureStorageClients;
 import io.terrakube.registry.plugin.storage.azure.AzureStorageServiceImpl;
 import io.terrakube.registry.plugin.storage.azure.AzureStorageServiceProperties;
 import io.terrakube.registry.plugin.storage.gcp.GcpStorageClients;
@@ -57,12 +57,9 @@ public class StorageAutoConfiguration {
         log.info("StorageType={}", storageProperties.getType());
         switch (storageProperties.getType()) {
             case AzureStorageImpl:
-                BlobServiceClient blobServiceClient = new BlobServiceClientBuilder()
-                        .connectionString(
-                                String.format("DefaultEndpointsProtocol=https;AccountName=%s;AccountKey=%s;EndpointSuffix=core.windows.net",
-                                        azureStorageServiceProperties.getAccountName(),
-                                        azureStorageServiceProperties.getAccountKey())
-                        ).buildClient();
+                BlobServiceClient blobServiceClient = AzureStorageClients.blobServiceClient(
+                        azureStorageServiceProperties.getAccountName(),
+                        azureStorageServiceProperties.getAccountKey());
 
                 storageService = AzureStorageServiceImpl.builder()
                         .blobServiceClient(blobServiceClient)
@@ -70,6 +67,7 @@ public class StorageAutoConfiguration {
                         .registryHostname(openRegistryProperties.getHostname())
                         .presignedUrlExpirySeconds(azureStorageServiceProperties.getPresignedUrlExpirySeconds())
                         .presignedRedirectEnabled(azureStorageServiceProperties.isPresignedRedirectEnabled())
+                        .userDelegationSas(AzureStorageClients.usesEntraId(azureStorageServiceProperties.getAccountKey()))
                         .build();
                 break;
             case AwsStorageImpl:
