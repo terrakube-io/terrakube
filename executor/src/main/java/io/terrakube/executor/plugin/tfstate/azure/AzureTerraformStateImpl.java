@@ -95,7 +95,8 @@ public class AzureTerraformStateImpl implements TerraformState {
             azureBackendHcl.appendln("      key                  = \"" + organizationId + "/" + workspaceId + "/terraform.tfstate" + "\"");
             if (AzureStorageClients.usesEntraId(storageAccessKey)) {
                 // No account key: Terraform/OpenTofu authenticate to the state container with Microsoft
-                // Entra ID, using the identity from the standard ARM_* environment variables.
+                // Entra ID, using the identity from the standard ARM_* environment variables. Workspace
+                // ARM_* variables change that identity, see docs/ops/azure-storage-entra-id.md.
                 azureBackendHcl.appendln("      use_azuread_auth     = true");
             } else {
                 azureBackendHcl.appendln("      access_key           = \"" + storageAccessKey + "\"");

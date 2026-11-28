@@ -19,6 +19,7 @@ The full user and administrator documentation is at [docs.terrakube.io](https://
 | [Registry caching and revalidation](ops/registry-caching.md) | You want to know how long the registry caches module and provider lookups, how `ETag` and `Cache-Control` behave, or why a module's download count lags. |
 | [Registry direct storage download](ops/registry-direct-storage-download.md) | You want module downloads to go straight to object storage instead of through the registry. |
 | [Registry provider network mirror](ops/registry-provider-mirror.md) | You want Terraform or OpenTofu to install providers through the registry, from uploaded files or by pull-through from a public registry. |
+| [Azure Blob Storage without an account key](ops/azure-storage-entra-id.md) | You want the api, registry and executor to use Microsoft Entra ID (for example AKS Workload Identity) instead of the storage account key, or workspaces with their own Azure credentials fail `terraform init` with a 403. |
 
 ## Templates
 

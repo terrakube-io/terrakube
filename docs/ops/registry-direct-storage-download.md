@@ -13,7 +13,7 @@ The flag only takes effect when the storage backend already presigns URLs. Enabl
 | Backend | Enable | Expiry (default 300 s) | Prerequisites |
 | --- | --- | --- | --- |
 | AWS S3 | `AwsS3PresignedRedirectEnabled=true` | `AwsS3PresignedUrlExpirySeconds` | Registry credentials may `s3:GetObject` on the bucket; clients can reach the S3 endpoint. |
-| Azure Blob | `AzureBlobPresignedRedirectEnabled=true` | `AzureBlobPresignedUrlExpirySeconds` | Registry uses a shared-key (connection string) credential; clients can reach the blob endpoint. |
+| Azure Blob | `AzureBlobPresignedRedirectEnabled=true` | `AzureBlobPresignedUrlExpirySeconds` | With `AzureAccountKey` the SAS is signed with the account key; without it the SAS is a user delegation SAS and the registry identity needs `generateUserDelegationKey` on the storage account ([details](azure-storage-entra-id.md#registry-download-redirect)); clients can reach the blob endpoint. |
 | GCS | `GcpPresignedRedirectEnabled=true` | `GcpPresignedUrlExpirySeconds` | Registry credentials can sign (service account key, or `iam.serviceAccounts.signBlob`); clients can reach `storage.googleapis.com`. |
 
 ## Behavior
