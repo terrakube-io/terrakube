@@ -22,6 +22,8 @@ public class DataSourceConfigurationProperties {
     private boolean awsIamAuth;
     private boolean trustCertificate;
     private String awsRegion;
+    private boolean azureAdAuth;
+    private String azureClientId;
 
     private int poolSize = 10;
     private int poolMinIdle = 5;
